@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { api } from '../api'
+import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 
 function fmt(s) {
   if (!s || isNaN(s)) return '0:00'
@@ -133,8 +135,10 @@ export default function FullscreenPlayer() {
     progress, duration, volume, shuffle, repeat, showQueue,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement, toggleQueue,
+    playbackContext,
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
+  const nav = useNavigate()
   const wordSync = localStorage.getItem('word-sync') === '1'
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
@@ -148,6 +152,14 @@ export default function FullscreenPlayer() {
   useEffect(() => {
     api.getSettings().then(s => setSettings(s || {}))
   }, [])
+
+  const canOpenContext = isContextNavigable(playbackContext)
+  const openContext = () => {
+    if (!canOpenContext) return
+    // Leave fullscreen first, otherwise the overlay hides the page we land on.
+    toggleFullscreen()
+    navigateToContext(nav, playbackContext, currentTrack?.id)
+  }
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') toggleFullscreen() }
@@ -238,6 +250,24 @@ export default function FullscreenPlayer() {
             className="absolute top-5 left-5 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
             <X size={15} />
           </button>
+
+          {playbackContext?.name && (
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-20 max-w-[60%] text-center pointer-events-none">
+              <p className="text-[10px] font-display uppercase tracking-[0.28em] text-white/45">
+                {contextLabel(playbackContext)}
+              </p>
+              {canOpenContext ? (
+                <button
+                  onClick={openContext}
+                  title={`Go to ${playbackContext.name}`}
+                  className="pointer-events-auto mt-1 max-w-full truncate text-sm font-medium text-white/85 hover:text-white hover:underline transition-colors">
+                  {playbackContext.name}
+                </button>
+              ) : (
+                <p className="mt-1 truncate text-sm font-medium text-white/85">{playbackContext.name}</p>
+              )}
+            </div>
+          )}
           <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 transition-all duration-500 ${isLyricsVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
             <AnimatePresence mode="wait">
               <motion.div

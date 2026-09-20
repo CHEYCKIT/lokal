@@ -4,6 +4,7 @@ import { X, Search, Play, Pause, Disc3, Loader2 } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
+import { makeAlbumContext } from '../playbackContext'
 
 const PAGE_SIZE = 40
 
@@ -55,6 +56,7 @@ function AlbumDetail({ album, onClose }) {
   const [hoveredTrack, setHoveredTrack] = useState(null)
   const [loading, setLoading] = useState(true)
   const { playQueue, currentTrack, isPlaying, playTrack, togglePlay } = usePlayerStore()
+  const albumContext = makeAlbumContext(album)
 
   useEffect(() => {
     setLoading(true)
@@ -67,7 +69,7 @@ function AlbumDetail({ album, onClose }) {
   const handlePlay = (track, index, e) => {
     e.stopPropagation()
     if (currentTrack?.id === track.id) togglePlay()
-    else playTrack(track, tracks)
+    else playTrack(track, tracks, albumContext)
   }
 
   return (
@@ -86,7 +88,7 @@ function AlbumDetail({ album, onClose }) {
           <p className="text-xs text-muted/60">{album.track_count} tracks{album.year ? ` · ${album.year}` : ''}</p>
         </div>
         {tracks.length > 0 && (
-          <button onClick={() => playQueue(tracks, 0)} className="flex items-center gap-2 px-4 py-2 bg-accent text-base rounded-full text-sm font-medium flex-shrink-0">
+          <button onClick={() => playQueue(tracks, 0, albumContext)} className="flex items-center gap-2 px-4 py-2 bg-accent text-base rounded-full text-sm font-medium flex-shrink-0">
             <Play size={14} fill="currentColor" /> Play
           </button>
         )}
@@ -105,7 +107,7 @@ function AlbumDetail({ album, onClose }) {
             return (
               <div 
                 key={t.id} 
-                onDoubleClick={() => playQueue(tracks, i)}
+                onDoubleClick={() => playQueue(tracks, i, albumContext)}
                 onMouseEnter={() => setHoveredTrack(t.id)}
                 onMouseLeave={() => setHoveredTrack(null)}
                 onClick={(e) => handlePlay(t, i, e)}
