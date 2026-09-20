@@ -210,3 +210,7 @@ router.get('/:id/albums/:album/tracks', (req, res) => {
 })
 
 module.exports = router
+// Exposed so other endpoints (see the /api/artist-image route in
+// server/index.js) resolve the same fallback image the artists list/detail
+// endpoints already report in `image_path` — see addArtistFallback above.
+module.exports.addArtistFallback = addArtistFallback

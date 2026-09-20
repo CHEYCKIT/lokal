@@ -22,7 +22,8 @@ if (fs.existsSync(publicPath)) app.use(express.static(publicPath))
 
 
 app.use('/api/tracks', require('./routes/tracks'))
-app.use('/api/artists', require('./routes/artists'))
+const artistsRouter = require('./routes/artists')
+app.use('/api/artists', artistsRouter)
 app.use('/api/playlists', require('./routes/playlists'))
 app.use('/api/lyrics', require('./routes/lyrics'))
 app.use('/api/users', require('./routes/users'))
@@ -78,8 +79,19 @@ app.get('/api/artist-image/:artistId', (req, res) => {
     const p = path.join(getStorageDir(), 'artwork', `artist-${req.params.artistId}${ext}`)
     if (fs.existsSync(p)) return res.sendFile(p)
   }
-  const artist = getDB().prepare('SELECT image_path FROM artists WHERE id = ?').get(req.params.artistId)
-  if (artist?.image_path && fs.existsSync(artist.image_path)) return res.sendFile(artist.image_path)
+  const db = getDB()
+  const artist = db.prepare('SELECT id, image_path FROM artists WHERE id = ?').get(req.params.artistId)
+
+  // Match the fallback the artists list/detail endpoints already apply (see
+  // addArtistFallback in server/routes/artists.js): if the artist has no
+  // dedicated image, use a top track's embedded artwork instead. Without
+  // this, the client sees a truthy `image_path` for such artists (from the
+  // fallback applied there) but this endpoint 404s, producing a broken
+  // image instead of falling back to the generated avatar (issue #14).
+  const withFallback = artist ? artistsRouter.addArtistFallback(db, artist) : null
+  if (withFallback?.image_path && fs.existsSync(withFallback.image_path)) {
+    return res.sendFile(withFallback.image_path)
+  }
   res.status(404).send('No image')
 })
 
