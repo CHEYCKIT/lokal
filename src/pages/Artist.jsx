@@ -6,6 +6,7 @@ import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
+import { makeAlbumContext, makeArtistContext } from '../playbackContext'
 
 export default function Artist() {
   const { id } = useParams()
@@ -14,6 +15,7 @@ export default function Artist() {
   const [selectedAlbum, setSelectedAlbum] = useState(null)
   const [showManage, setShowManage] = useState(false)
   const { playQueue } = usePlayerStore()
+  const artistContext = makeArtistContext(id, artist?.name)
 
   const load = () => {
     Promise.all([api.getArtist(id), api.getSettings()]).then(([data, appSettings]) => {
@@ -98,7 +100,7 @@ export default function Artist() {
 
       <div className="space-y-7 px-8 py-5">
         <div className="flex items-center gap-3">
-          <button onClick={() => playQueue(artist.tracks, 0)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
+          <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
           </button>
         </div>
@@ -113,7 +115,7 @@ export default function Artist() {
         {artist.topTracks?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
-            <TrackList tracks={artist.topTracks} showAlbum={false} />
+            <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} />
           </section>
         )}
 
@@ -150,7 +152,7 @@ export default function Artist() {
           </section>
         )}
 
-        {selectedAlbum && <AlbumTracks album={selectedAlbum} />}
+        {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} />}
       </div>
 
       <ArtistManageModal
@@ -164,9 +166,10 @@ export default function Artist() {
   )
 }
 
-function AlbumTracks({ album }) {
+function AlbumTracks({ album, artistName = null }) {
   const [tracks, setTracks] = useState([])
   const { playQueue } = usePlayerStore()
+  const albumContext = makeAlbumContext({ title: album, album_artist: artistName })
 
   useEffect(() => {
     api.getAlbumTracks(album).then((result) => setTracks(result || []))
@@ -184,9 +187,9 @@ function AlbumTracks({ album }) {
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-white">{album}</h3>
-        <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
+        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
-      <TrackList tracks={tracks} showAlbum={false} />
+      <TrackList tracks={tracks} showAlbum={false} context={albumContext} />
     </motion.div>
   )
 }

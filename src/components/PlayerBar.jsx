@@ -4,6 +4,7 @@ import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, 
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { navigateToTrackAlbum } from '../playbackContext'
 import Waveform from './Waveform'
 import Modal from './Modal'
 
@@ -118,6 +119,12 @@ export default function PlayerBar() {
     nav(`/artist/a-${slug}`)
   }
 
+  const hasAlbum = !!currentTrack?.album
+  const handleTitleClick = () => {
+    if (!hasAlbum) return
+    navigateToTrackAlbum(nav, currentTrack)
+  }
+
   return (
     <>
       <div className="h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
@@ -139,7 +146,16 @@ export default function PlayerBar() {
           <AnimatePresence mode="wait">
             <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
               <div className="flex items-center gap-2 min-w-0">
-                <p className="text-sm font-medium truncate text-white">{currentTrack?.title || '—'}</p>
+                {hasAlbum ? (
+                  <button
+                    onClick={handleTitleClick}
+                    title={`Go to album: ${currentTrack.album}`}
+                    className="text-sm font-medium truncate text-white hover:text-accent hover:underline transition-colors text-left min-w-0">
+                    {currentTrack.title}
+                  </button>
+                ) : (
+                  <p className="text-sm font-medium truncate text-white">{currentTrack?.title || '—'}</p>
+                )}
                 {!!currentTrack?.explicit && (
                   <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">
                     E

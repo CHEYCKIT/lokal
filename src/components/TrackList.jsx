@@ -51,7 +51,7 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false }) {
+export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null }) {
   const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore()
   const { user, openAddToPlaylist, openAddMultipleToPlaylist } = useAppStore()
   const [hoveredId, setHoveredId] = useState(null)
@@ -73,6 +73,9 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [ghostLocalLoading, setGhostLocalLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
   const loaderRef = useRef(null)
+  const highlightRowRef = useRef(null)
+  const handledHighlightRef = useRef(null)
+  const [flashTrackId, setFlashTrackId] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const isLargeList = mergedTracks.length > LARGE_LIST_STEP
@@ -81,6 +84,47 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   useEffect(() => {
     setVisibleCount(LARGE_LIST_STEP)
   }, [tracks.length])
+
+  // Issue #16: when we arrive from a "playing from ..." shortcut, make sure the
+  // track is actually rendered (large lists are paginated), then scroll to it
+  // and flash it so it is obvious which row is playing.
+  useEffect(() => {
+    if (!highlightTrackId) {
+      handledHighlightRef.current = null
+      return
+    }
+    if (handledHighlightRef.current === highlightTrackId) return
+
+    const index = tracks.findIndex(track => track.id === highlightTrackId)
+    if (index === -1) return
+
+    if (isLargeList && index >= visibleCount) {
+      setVisibleCount(Math.min(index + LARGE_LIST_STEP, tracks.length))
+      return // re-runs once the row exists
+    }
+
+    handledHighlightRef.current = highlightTrackId
+    setFlashTrackId(highlightTrackId)
+
+    const node = highlightRowRef.current
+    if (node) {
+      // rAF so the row has been laid out before we scroll to it.
+      requestAnimationFrame(() => {
+        try {
+          node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        } catch {
+          node.scrollIntoView()
+        }
+      })
+    }
+  }, [highlightTrackId, tracks, isLargeList, visibleCount])
+
+  // Kept separate so re-renders of the list can't cancel the flash timer.
+  useEffect(() => {
+    if (!flashTrackId) return
+    const timer = setTimeout(() => setFlashTrackId(null), 2000)
+    return () => clearTimeout(timer)
+  }, [flashTrackId])
 
   useEffect(() => {
     if (!isLargeList || !loaderRef.current) return
@@ -158,7 +202,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
     saveRecentTrack(track)
     if (currentTrack?.id === track.id) togglePlay()
-    else playTrack(track, mergedTracks)
+    else playTrack(track, mergedTracks, context)
   }
 
   const toggleLike = async (track, e) => {
@@ -439,6 +483,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
 
       {visibleTracks.map((track, i) => {
         const isCurrent = currentTrack?.id === track.id
+        const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
+        const isFlashing = !!flashTrackId && track.id === flashTrackId
         const isHov = hoveredId === track.id
         const isSelected = selectedIds.has(track.id)
         const isDragging = draggedId === track.id
@@ -456,6 +502,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         return (
           <RowComponent key={`${track.id}-${i}`}
             {...motionProps}
+            ref={isHighlighted ? highlightRowRef : undefined}
             draggable={!!playlistId}
             onDragStart={(e) => handleDragStart(e, track)}
             onDragOver={(e) => handleDragOver(e, track)}
@@ -466,8 +513,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onMouseLeave={() => setHoveredId(null)}
             onClick={(e) => handleTrackClick(track, e)}
             onDoubleClick={e => handlePlay(track, e)}
-            style={{ contentVisibility: 'auto', containIntrinsicSize: '44px' }}
-            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
+            style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: '44px' }}
+            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
           >
             {playlistId && (
               <div className="flex items-center justify-center w-6 text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
