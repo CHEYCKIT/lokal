@@ -65,7 +65,12 @@ export default function Artist() {
 
   if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
 
-  const imgSrc = artist.image_path ? (api.isElectron ? `file://${artist.image_path}` : null) : null
+  // Web mode previously hardcoded this to null, so the artist detail page
+  // never showed an image outside Electron even when one existed — see
+  // getArtistImage in Artists.jsx for the same pattern already used there.
+  const imgSrc = artist.image_path
+    ? (api.isElectron ? `file://${artist.image_path}` : `/api/artist-image/${encodeURIComponent(artist.id)}`)
+    : null
   const artSrc = (track) => track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null
   const releaseLabel = (type) => {
     if (type === 'single') return 'Single'
