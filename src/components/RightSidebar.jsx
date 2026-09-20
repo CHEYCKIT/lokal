@@ -11,6 +11,7 @@ import {
   navigateToContext,
   navigateToTrackAlbum,
 } from '../playbackContext'
+import { navigateToTrackArtist } from '../artistLink'
 
 function InfoRow({ label, value, onClick = null, title = null }) {
   if (!value) return null
@@ -99,8 +100,26 @@ export default function RightSidebar() {
 
               <AnimatePresence mode="wait">
                 <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <p className="font-display text-white text-sm leading-tight">{currentTrack?.title || 'Nothing playing'}</p>
-                  <p className="text-xs text-muted mt-0.5">{currentTrack?.artist}</p>
+                  {currentTrack?.album ? (
+                    <button
+                      onClick={() => navigateToTrackAlbum(nav, currentTrack)}
+                      title={`Go to album: ${currentTrack.album}`}
+                      className="font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
+                      {currentTrack?.title || 'Nothing playing'}
+                    </button>
+                  ) : (
+                    <p className="font-display text-white text-sm leading-tight">{currentTrack?.title || 'Nothing playing'}</p>
+                  )}
+                  {currentTrack?.artist ? (
+                    <button
+                      onClick={() => navigateToTrackArtist(nav, currentTrack)}
+                      title={`Go to artist: ${currentTrack.artist}`}
+                      className="text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
+                      {currentTrack.artist}
+                    </button>
+                  ) : (
+                    <p className="text-xs text-muted mt-0.5">{currentTrack?.artist}</p>
+                  )}
                 </motion.div>
               </AnimatePresence>
 

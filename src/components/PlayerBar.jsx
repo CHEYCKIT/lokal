@@ -5,24 +5,11 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
+import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
 import Modal from './Modal'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
-
-function artistToSlug(artistName, keepCommaArtists = []) {
-  if (!artistName) return ''
-  const lowerName = artistName.toLowerCase().trim()
-  for (const keep of keepCommaArtists) {
-    const lowerKeep = keep.toLowerCase().trim()
-    if (lowerName === lowerKeep || lowerName.startsWith(lowerKeep + ' ') || lowerName.endsWith(' ' + lowerKeep)) {
-      const slug = keep.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      return slug
-    }
-  }
-  const firstPart = artistName.split(',')[0].trim()
-  return firstPart.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-}
 
 export default function PlayerBar() {
   const nav = useNavigate()
