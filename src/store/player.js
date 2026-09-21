@@ -12,6 +12,17 @@ function sanitizeSingleTrack(track) {
   return track?.id && !isGhostTrack(track) ? track : null
 }
 
+// Settings > Appearance > Layout > Side Panels. Defaults to merged/exclusive
+// (only one of the Now Playing sidebar / Queue open at a time) unless the
+// user has explicitly opted into the old independent (both-open) behavior.
+function exclusiveSidePanels() {
+  try {
+    return localStorage.getItem('lokal-exclusive-panels') !== '0'
+  } catch {
+    return true
+  }
+}
+
 function loadQueue() {
   try {
     const data = localStorage.getItem('lokal-queue')
@@ -515,9 +526,25 @@ export const usePlayerStore = create((set, get) => ({
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
-  toggleRightSidebar: () => set(s => ({ showRightSidebar: !s.showRightSidebar })),
+  toggleRightSidebar: () => set(s => {
+    const opening = !s.showRightSidebar
+    return {
+      showRightSidebar: opening,
+      // Issue: side panel and Queue overlapping/crowding the screen when both
+      // are open. Default (merged) closes the other panel when one opens;
+      // "Independent" in Settings > Appearance > Layout restores the old
+      // behavior of letting both stay open together.
+      showQueue: opening && exclusiveSidePanels() ? false : s.showQueue,
+    }
+  }),
   toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
-  toggleQueue: () => set(s => ({ showQueue: !s.showQueue })),
+  toggleQueue: () => set(s => {
+    const opening = !s.showQueue
+    return {
+      showQueue: opening,
+      showRightSidebar: opening && exclusiveSidePanels() ? false : s.showRightSidebar,
+    }
+  }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 

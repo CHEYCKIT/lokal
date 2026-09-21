@@ -2145,6 +2145,33 @@ module.exports = {
       </Section>
       )}
 
+      {inCategory('appearance') && (
+      <Section title="Layout">
+        <Row
+          label="Side Panels"
+          desc="Merged: opening the Now Playing panel or the Queue closes the other one, so they never crowd the screen together. Independent: both can stay open side by side, like before."
+        >
+          <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
+            {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
+              const current = settings.exclusive_side_panels !== '0' ? '1' : '0'
+              return (
+                <button
+                  key={value}
+                  onClick={() => {
+                    set('exclusive_side_panels', value)
+                    try { localStorage.setItem('lokal-exclusive-panels', value) } catch {}
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </Row>
+      </Section>
+      )}
+
       {inCategory('artists') && (
       <Section title="Artist Management">
         <div className="space-y-3">
