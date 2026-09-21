@@ -210,10 +210,10 @@ export default function PlayerBar() {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 w-52 justify-end">
+        <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
           {currentTrack && (
-            <div className="flex-shrink-0">
-              <Waveform isPlaying={isPlaying} />
+            <div className="min-w-0 shrink basis-[120px] overflow-hidden">
+              <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
           )}
           <button onClick={toggleLyricsFullscreen} className="text-subtle hover:text-accent transition-colors" title="Lyrics"><Mic2 size={16} /></button>

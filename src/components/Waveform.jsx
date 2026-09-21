@@ -13,6 +13,15 @@ export default function Waveform({
   const smoothedRef = useRef(null)
   const resizeObserverRef = useRef(null)
   const phaseRef = useRef(0)
+  // The previous version derived cssW from canvas.parentElement.clientWidth,
+  // but the parent has no width of its own -- it sizes to fit the canvas,
+  // and the canvas was styled with a fixed pixel width. That's a
+  // self-referential loop: the canvas always "measures" the width it already
+  // has, so it never actually shrinks when the window is resized narrower.
+  // Fixed by rendering the canvas at width: 100% (so its box is genuinely
+  // determined by whatever flex-shrinkable wrapper it's placed in) and
+  // observing the canvas's own resulting box size instead of the parent's.
+  const sizeRef = useRef({ w: defaultWidth, h: defaultHeight })
   const [analyserVersion, setAnalyserVersion] = useState(0)
 
   useEffect(() => {
@@ -28,11 +37,13 @@ export default function Waveform({
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
-      const parent = canvas.parentElement
-      const cssW = (parent ? parent.clientWidth : defaultWidth) || defaultWidth
-      const cssH = (parent ? parent.clientHeight : defaultHeight) || defaultHeight
+      // clientWidth reflects the box the surrounding flex layout actually
+      // assigned this element -- no longer circular now that the canvas's
+      // own CSS width is 100% of its (independently shrinkable) wrapper.
+      const cssW = canvas.clientWidth || defaultWidth
+      const cssH = defaultHeight
+      sizeRef.current = { w: cssW, h: cssH }
 
-      canvas.style.width = `${cssW}px`
       canvas.style.height = `${cssH}px`
       canvas.width = Math.max(1, Math.floor(cssW * dpr))
       canvas.height = Math.max(1, Math.floor(cssH * dpr))
@@ -40,9 +51,9 @@ export default function Waveform({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
 
-    if (typeof ResizeObserver !== 'undefined' && canvas.parentElement) {
+    if (typeof ResizeObserver !== 'undefined') {
       resizeObserverRef.current = new ResizeObserver(resize)
-      resizeObserverRef.current.observe(canvas.parentElement)
+      resizeObserverRef.current.observe(canvas)
     } else {
       window.addEventListener('resize', resize)
     }
@@ -69,17 +80,11 @@ export default function Waveform({
       ctx.fillStyle = fill
       ctx.fill()
     }
-    const ctxClear = () => {
-      const cssW = parseFloat(canvas.style.width) || defaultWidth
-      const cssH = parseFloat(canvas.style.height) || defaultHeight
-      ctx.clearRect(0, 0, cssW, cssH)
-    }
 
     if (!analyser) {
       const drawStatic = () => {
-        ctxClear()
-        const cssW = parseFloat(canvas.style.width) || defaultWidth
-        const cssH = parseFloat(canvas.style.height) || defaultHeight
+        const { w: cssW, h: cssH } = sizeRef.current
+        ctx.clearRect(0, 0, cssW, cssH)
         const barWidth = Math.max(1, cssW / barCount - 2)
         for (let i = 0; i < barCount; i++) {
           const barHeight = 3 + Math.random() * 4
@@ -127,8 +132,7 @@ export default function Waveform({
     }
 
     const draw = () => {
-      const cssW = parseFloat(canvas.style.width) || defaultWidth
-      const cssH = parseFloat(canvas.style.height) || defaultHeight
+      const { w: cssW, h: cssH } = sizeRef.current
 
       if (!isPlaying) {
         ctx.clearRect(0, 0, cssW, cssH)
@@ -194,7 +198,7 @@ export default function Waveform({
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ display: 'block', width: `${defaultWidth}px`, height: `${defaultHeight}px` }}
+      style={{ display: 'block', width: '100%', height: `${defaultHeight}px` }}
     />
   )
 }
