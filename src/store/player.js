@@ -15,7 +15,10 @@ function sanitizeSingleTrack(track) {
 // Settings > Appearance > Layout > Side Panels. Defaults to merged/exclusive
 // (only one of the Now Playing sidebar / Queue open at a time) unless the
 // user has explicitly opted into the old independent (both-open) behavior.
-function exclusiveSidePanels() {
+// Only used to seed initial store state -- once loaded, components read the
+// reactive `exclusiveSidePanels` field instead, so a live setting change
+// (no reload) is reflected everywhere immediately.
+function readExclusiveSidePanelsSetting() {
   try {
     return localStorage.getItem('lokal-exclusive-panels') !== '0'
   } catch {
@@ -82,6 +85,15 @@ export const usePlayerStore = create((set, get) => ({
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
   showRightSidebar: false, showFullscreen: false, showQueue: false,
+  // Which content the right-hand panel shows. Only meaningful in merged
+  // mode -- independent mode's Queue lives in its own separate panel and
+  // never touches this.
+  sidePanelView: 'info',
+  // Settings > Appearance > Layout > Side Panels. Store state (not just a
+  // localStorage read inside actions) so components can react live when
+  // the setting changes, without needing a reload. Initialized from
+  // localStorage so the choice persists across sessions.
+  exclusiveSidePanels: readExclusiveSidePanelsSetting(),
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
   activeAudioElement: 'primary',
 
@@ -526,25 +538,50 @@ export const usePlayerStore = create((set, get) => ({
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
+  // Opens/closes the right-hand panel itself. In merged mode, reopening
+  // always resets to the base "info" view -- the panel's info/lyrics
+  // content is the persistent base that Queue slides up over, per Spotify's
+  // own pattern, so reopening should land back on that base rather than
+  // wherever it happened to be showing when last closed.
   toggleRightSidebar: () => set(s => {
     const opening = !s.showRightSidebar
+    if (!s.exclusiveSidePanels) {
+      // Independent mode: exactly the original, fully separate behavior --
+      // no interaction with the Queue panel at all.
+      return { showRightSidebar: opening }
+    }
     return {
       showRightSidebar: opening,
-      // Issue: side panel and Queue overlapping/crowding the screen when both
-      // are open. Default (merged) closes the other panel when one opens;
-      // "Independent" in Settings > Appearance > Layout restores the old
-      // behavior of letting both stay open together.
-      showQueue: opening && exclusiveSidePanels() ? false : s.showQueue,
+      sidePanelView: opening ? 'info' : s.sidePanelView,
     }
   }),
   toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
-  toggleQueue: () => set(s => {
-    const opening = !s.showQueue
-    return {
-      showQueue: opening,
-      showRightSidebar: opening && exclusiveSidePanels() ? false : s.showRightSidebar,
+  // Closes the *standalone* Queue panel (independent mode only -- that's
+  // the only mode where it's ever mounted as its own sibling, so this
+  // never needs to know about the sidebar).
+  toggleQueue: () => set(s => ({ showQueue: !s.showQueue })),
+  // What the Queue button in the player bar actually calls. Mode-aware:
+  // independent mode behaves exactly like toggleQueue above (two fully
+  // separate panels). Merged mode never mounts a second panel -- it opens
+  // the single right-hand panel to its Queue view if closed, slides the
+  // Queue view up over whatever's currently showing if the panel is
+  // already open elsewhere, or slides it back down to the base info view
+  // if Queue is already what's showing. Nothing here ever changes the
+  // panel's width; only its internal view changes.
+  toggleQueueButton: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      return { showQueue: !s.showQueue }
     }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'queue' }
+    }
+    return { sidePanelView: s.sidePanelView === 'queue' ? 'info' : 'queue' }
   }),
+  setSidePanelView: (view) => set({ sidePanelView: view }),
+  setExclusiveSidePanels: (value) => {
+    try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
+    set({ exclusiveSidePanels: value })
+  },
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 

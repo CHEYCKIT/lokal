@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
 import { api } from '../api'
-import { useAppStore } from '../store/player'
+import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
@@ -208,6 +208,7 @@ export default function Settings() {
 
   
   const { openAlbums, user, logout } = useAppStore()
+  const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
   const fileInputRef = useRef(null)
   const artistOffsetRef = useRef(0)
   const artistRequestRef = useRef(0)
@@ -2149,7 +2150,7 @@ module.exports = {
       <Section title="Layout">
         <Row
           label="Side Panels"
-          desc="Merged: opening the Now Playing panel or the Queue closes the other one, so they never crowd the screen together. Independent: both can stay open side by side, like before."
+          desc="Merged: the Queue slides up over the Now Playing panel instead of opening a second one alongside it. Independent: Queue is its own separate panel and can stay open next to Now Playing, like before."
         >
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
@@ -2160,6 +2161,7 @@ module.exports = {
                   onClick={() => {
                     set('exclusive_side_panels', value)
                     try { localStorage.setItem('lokal-exclusive-panels', value) } catch {}
+                    setExclusiveSidePanels(value === '1')
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
                 >

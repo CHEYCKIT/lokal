@@ -192,7 +192,7 @@ export default function App() {
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
-    showMiniPlayer, likedIds,
+    showMiniPlayer, likedIds, exclusiveSidePanels,
   } = usePlayerStore()
   const volumeRef = useRef(volume)
   const { user } = useAppStore()
@@ -1519,7 +1519,7 @@ export default function App() {
                 <AnimatedRoutes />
               </main>
               <RightSidebar />
-              <QueuePanel />
+              {!exclusiveSidePanels && <QueuePanel />}
             </div>
             <PlayerBar />
             <FullscreenPlayer />
