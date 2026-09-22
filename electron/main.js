@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { pathToFileURL } = require('url')
 const log = require('electron-log')
 
 const date = new Date().toISOString().replace(/[:.]/g, '-')
@@ -35,33 +36,71 @@ function initWindowsSmtcBridge() {
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
     const handle = mainWindow?.getNativeWindowHandle()
-    if (!handle || handle.length < 4) return
-    smtcWindowHandle = Number(handle.readUIntLE(0, Math.min(handle.length, 6)))
+    if (!handle || handle.length < 4) throw new Error('Native window handle unavailable')
+    smtcWindowHandle = handle.readUInt32LE(0)
     smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
+
     smtcPollTimer = setInterval(() => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       const requests = smtcBridge.poll_requests()
+
       if (requests.shuffle !== null && requests.shuffle !== undefined) {
         mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
       }
       if (requests.repeat !== null && requests.repeat !== undefined) {
         mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
       }
+      if (requests.button) {
+        const action = {
+          play: 'play',
+          pause: 'pause',
+          stop: 'pause',
+          next: 'next',
+          previous: 'prev',
+        }[requests.button]
+        if (action) mainWindow.webContents.send('remote:command', { action })
+      }
+      if (requests.position !== null && requests.position !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'seek', value: requests.position })
+      }
     }, 100)
-    console.log('[smtc] Windows shuffle/repeat bridge enabled')
+
+    console.log('[smtc] Native Windows SMTC bridge enabled')
   } catch (e) {
-    console.warn('[smtc] Windows shuffle/repeat bridge unavailable:', e.message)
+    smtcBridge = null
+    console.warn('[smtc] Windows SMTC bridge unavailable:', e.message)
   }
 }
 
 function updateWindowsSmtcState(state) {
-  if (!smtcBridge || !smtcWindowHandle) return
+  if (!smtcBridge) return
   try {
-    smtcBridge.set_shuffle_state(Boolean(state?.shuffle), smtcWindowHandle)
+    smtcBridge.set_shuffle_state(Boolean(state?.shuffle))
     const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
-    smtcBridge.set_repeat_state(repeat, smtcWindowHandle)
+    smtcBridge.set_repeat_state(repeat)
+    smtcBridge.set_playing(Boolean(state?.isPlaying))
+    if (Number.isFinite(state?.duration) && state.duration > 0) {
+      smtcBridge.update_timeline(
+        Number(state.progress) || 0,
+        Number(state.duration) || 0,
+      )
+    }
+
+    const track = state?.currentTrack
+    if (track) {
+      let artwork = track.artwork_path || ''
+      if (artwork && !/^(?:https?:|file:|data:)/i.test(artwork)) {
+        try { artwork = pathToFileURL(artwork).toString() } catch {}
+      }
+      smtcBridge.update_metadata(
+        track.title || '',
+        track.artist || '',
+        track.album || '',
+        artwork,
+      )
+    }
   } catch (e) {
-    console.warn('[smtc] Failed to update shuffle/repeat state:', e.message)
+    console.warn('[smtc] Failed to update native SMTC state:', e.message)
   }
 }
 let isUpdating = false;
