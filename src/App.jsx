@@ -188,7 +188,7 @@ export default function App() {
 
   const {
     currentTrack, isPlaying, progress, duration, volume, repeat,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, enableShuffle, disableShuffle,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -737,6 +737,11 @@ export default function App() {
       if (action === 'pause' && state.isPlaying) return state.togglePlay()
       if (action === 'next') return state.next()
       if (action === 'prev') return state.prev()
+      if (action === 'setShuffle') return command.value ? state.enableShuffle() : state.disableShuffle()
+      if (action === 'setRepeat') {
+        const mode = Number(command.value)
+        return usePlayerStore.setState({ repeat: mode === 1 ? 'all' : mode === 2 ? 'one' : 'none' })
+      }
       if (action === 'volume') {
         const value = Number(command?.value)
         if (Number.isFinite(value)) state.setVolume(Math.max(0, Math.min(1, value)))
