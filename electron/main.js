@@ -28,17 +28,17 @@ const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar
 
 let smtcBridge = null
 let smtcPollTimer = null
-let smtcWindowHandle = 0
 
 function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
+  if (smtcBridge) return
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
     const win = smtcBridge.find_own_window()
     if (!win || !win.hwnd) throw new Error('Native window handle unavailable')
-    smtcWindowHandle = Number(win.hwnd)
-    console.log('[smtc] Binding to native window:', smtcWindowHandle, win.title)
-    smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
+    const hwnd = Number(win.hwnd)
+    console.log('[smtc] Binding to native window:', hwnd, win.title)
+    smtcBridge.arm_shuffle_repeat(hwnd)
 
     smtcPollTimer = setInterval(() => {
       if (!mainWindow || mainWindow.isDestroyed()) return
@@ -221,9 +221,6 @@ if (!perfSettings.hardwareAcceleration) {
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
-
-// Keep Chromium's native SMTC/MediaSession implementation. The native bridge only augments it with shuffle/repeat support.
-app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
 
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
