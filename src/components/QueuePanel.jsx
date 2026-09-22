@@ -226,14 +226,23 @@ export default function QueuePanel() {
     <AnimatePresence>
       {showQueue && (
         <motion.aside
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 320, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
+          initial={{ width: 0 }}
+          animate={{ width: 320 }}
+          exit={{ width: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          className="border-l border-border overflow-hidden flex-shrink-0 flex flex-col"
-          style={{ minWidth: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+          className="overflow-hidden flex-shrink-0"
+          style={{ minWidth: 320 }}
         >
-          <QueueContent onClose={toggleQueue} />
+          <motion.div
+            initial={{ x: 320 }}
+            animate={{ x: 0 }}
+            exit={{ x: 320 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            className="h-full flex flex-col border-l border-border"
+            style={{ width: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+          >
+            <QueueContent onClose={toggleQueue} />
+          </motion.div>
         </motion.aside>
       )}
     </AnimatePresence>

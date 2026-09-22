@@ -560,14 +560,12 @@ export const usePlayerStore = create((set, get) => ({
   // the only mode where it's ever mounted as its own sibling, so this
   // never needs to know about the sidebar).
   toggleQueue: () => set(s => ({ showQueue: !s.showQueue })),
-  // What the Queue button in the player bar actually calls. Mode-aware:
-  // independent mode behaves exactly like toggleQueue above (two fully
-  // separate panels). Merged mode never mounts a second panel -- it opens
-  // the single right-hand panel to its Queue view if closed, slides the
-  // Queue view up over whatever's currently showing if the panel is
-  // already open elsewhere, or slides it back down to the base info view
-  // if Queue is already what's showing. Nothing here ever changes the
-  // panel's width; only its internal view changes.
+  // Mode-aware Queue button. Independent mode: behaves exactly like the
+  // original, unmodified toggleQueue. Merged mode: opens the single panel
+  // straight to Queue if it's closed (the separate "Now Playing" button
+  // handles opening to info), slides Queue up over whatever's showing if
+  // the panel's already open, or slides back down to info if Queue is
+  // already what's showing.
   toggleQueueButton: () => set(s => {
     if (!s.exclusiveSidePanels) {
       return { showQueue: !s.showQueue }

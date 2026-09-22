@@ -59,13 +59,28 @@ export default function RightSidebar() {
     <AnimatePresence>
       {showRightSidebar && (
         <motion.aside
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 300, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
+          initial={{ width: 0 }}
+          animate={{ width: 300 }}
+          exit={{ width: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          className="border-l border-border overflow-hidden flex-shrink-0 flex flex-col"
-          style={{ minWidth: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+          className="overflow-hidden flex-shrink-0"
+          style={{ minWidth: 300 }}
         >
+          {/* Actual visual panel: fixed width, slides via transform instead
+              of the width above. Keeping backdrop-filter/background off the
+              width-animating element avoids a real Chromium rendering glitch
+              where blur-under-an-actively-resizing-box briefly paints as a
+              flat, undissolved rectangle -- what read as a "black box"
+              flashing during close. This element's own width never changes,
+              so nothing here can trigger that; sliding is purely x. */}
+          <motion.div
+            initial={{ x: 300 }}
+            animate={{ x: 0 }}
+            exit={{ x: 300 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            className="h-full flex flex-col border-l border-border"
+            style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+          >
           <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0 border-b border-border">
             <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
               {[['info', 'Details'], ['lyrics', 'Lyrics']].map(([id, label]) => (
@@ -205,6 +220,7 @@ export default function RightSidebar() {
               )}
             </AnimatePresence>
           </div>
+          </motion.div>
         </motion.aside>
       )}
     </AnimatePresence>
