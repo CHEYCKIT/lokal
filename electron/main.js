@@ -25,6 +25,45 @@ const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
+
+let smtcBridge = null
+let smtcPollTimer = null
+let smtcWindowHandle = 0
+
+function initWindowsSmtcBridge() {
+  if (process.platform !== 'win32') return
+  try {
+    smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
+    const handle = mainWindow?.getNativeWindowHandle()
+    if (!handle || handle.length < 4) return
+    smtcWindowHandle = Number(handle.readUIntLE(0, Math.min(handle.length, 6)))
+    smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
+    smtcPollTimer = setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      const requests = smtcBridge.poll_requests()
+      if (requests.shuffle !== null && requests.shuffle !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+      }
+      if (requests.repeat !== null && requests.repeat !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
+      }
+    }, 100)
+    console.log('[smtc] Windows shuffle/repeat bridge enabled')
+  } catch (e) {
+    console.warn('[smtc] Windows shuffle/repeat bridge unavailable:', e.message)
+  }
+}
+
+function updateWindowsSmtcState(state) {
+  if (!smtcBridge || !smtcWindowHandle) return
+  try {
+    smtcBridge.set_shuffle_state(Boolean(state?.shuffle), smtcWindowHandle)
+    const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
+    smtcBridge.set_repeat_state(repeat, smtcWindowHandle)
+  } catch (e) {
+    console.warn('[smtc] Failed to update shuffle/repeat state:', e.message)
+  }
+}
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
@@ -277,6 +316,7 @@ function createWindow() {
   mainWindow.on('restore', enforceMiniTop)
 
   updateThumbarButtons(mainWindow, {})
+  if (process.platform === 'win32') initWindowsSmtcBridge()
   
   
   if (!app.isPackaged) {
@@ -362,6 +402,7 @@ app.whenReady().then(() => {
   });
   ipcMain.on('remote:stateUpdate', (_, state) => {
     setRemoteState(state)
+    updateWindowsSmtcState(state)
   })
   setRemoteCommandHandler(async (command) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -532,6 +573,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  if (smtcPollTimer) clearInterval(smtcPollTimer)
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
 })
