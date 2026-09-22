@@ -740,7 +740,9 @@ export default function App() {
       if (action === 'setShuffle') return command.value ? state.enableShuffle() : state.disableShuffle()
       if (action === 'setRepeat') {
         const mode = Number(command.value)
-        return usePlayerStore.setState({ repeat: mode === 1 ? 'all' : mode === 2 ? 'one' : 'none' })
+        const target = mode === 1 ? 'all' : mode === 2 ? 'one' : 'none'
+        while (usePlayerStore.getState().repeat !== target) usePlayerStore.getState().toggleRepeat()
+        return
       }
       if (action === 'volume') {
         const value = Number(command?.value)
