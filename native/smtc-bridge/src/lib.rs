@@ -34,12 +34,6 @@ fn pending() -> &'static Mutex<Pending> {
 }
 
 
-use windows::Win32::Foundation::{BOOL, LPARAM, TRUE};
-use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-};
-
 #[napi(object)]
 pub struct WinInfo {
     pub hwnd: i64,
