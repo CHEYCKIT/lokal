@@ -26,8 +26,6 @@ static BOUND_HWND: OnceLock<isize> = OnceLock::new();
 struct Pending {
     shuffle: Option<bool>,
     repeat: Option<i32>,
-    button: Option<String>,
-    position: Option<f64>,
 }
 
 fn pending() -> &'static Mutex<Pending> {
@@ -164,40 +162,6 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
     ))
     .map_err(|e| napi::Error::from_reason(format!("Repeat handler failed: {e:?}")))?;
 
-    smtc.ButtonPressed(&TypedEventHandler::new(
-        move |_sender: &Option<SystemMediaTransportControls>,
-              args: &Option<SystemMediaTransportControlsButtonPressedEventArgs>| {
-            if let Some(args) = args {
-                let button = match args.Button()? {
-                    SystemMediaTransportControlsButton::Play => "play",
-                    SystemMediaTransportControlsButton::Pause => "pause",
-                    SystemMediaTransportControlsButton::Stop => "stop",
-                    SystemMediaTransportControlsButton::Next => "next",
-                    SystemMediaTransportControlsButton::Previous => "previous",
-                    SystemMediaTransportControlsButton::FastForward => "fastforward",
-                    SystemMediaTransportControlsButton::Rewind => "rewind",
-                    _ => "other",
-                };
-                pending().lock().unwrap().button = Some(button.to_string());
-            }
-            Ok(())
-        },
-    ))
-    .map_err(|e| napi::Error::from_reason(format!("Button handler failed: {e:?}")))?;
-
-    smtc.PlaybackPositionChangeRequested(&TypedEventHandler::new(
-        move |_sender: &Option<SystemMediaTransportControls>,
-              args: &Option<PlaybackPositionChangeRequestedEventArgs>| {
-            if let Some(args) = args {
-                let position = args.RequestedPlaybackPosition()?;
-                pending().lock().unwrap().position =
-                    Some(position.Duration as f64 / 10_000_000.0);
-            }
-            Ok(())
-        },
-    ))
-    .map_err(|e| napi::Error::from_reason(format!("Position handler failed: {e:?}")))?;
-
     let _ = BOUND_HWND.set(hwnd);
     Ok(())
 }
@@ -206,8 +170,6 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
 pub struct PendingRequests {
     pub shuffle: Option<bool>,
     pub repeat: Option<i32>,
-    pub button: Option<String>,
-    pub position: Option<f64>,
 }
 
 #[napi]
