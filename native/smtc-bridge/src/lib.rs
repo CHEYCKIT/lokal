@@ -9,7 +9,6 @@ use windows::Media::{
     AutoRepeatModeChangeRequestedEventArgs, MediaPlaybackAutoRepeatMode,
     ShuffleEnabledChangeRequestedEventArgs, SystemMediaTransportControls,
 };
-use windows::Storage::Streams::RandomAccessStreamReference;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
@@ -21,9 +20,7 @@ static BOUND_HWND: OnceLock<isize> = OnceLock::new();
 struct Pending {
     shuffle: Option<bool>,
     repeat: Option<i32>,
-    button: Option<String>,
-    position: Option<f64>,
-}
+    }
 
 fn pending() -> &'static Mutex<Pending> {
     static PENDING: OnceLock<Mutex<Pending>> = OnceLock::new();
@@ -90,5 +87,33 @@ fn repeat_to_i32(mode: MediaPlaybackAutoRepeatMode) -> i32 {
         _ => 0,
     }
 }
+fn i32_to_repeat(mode: i32) -> MediaPlaybackAutoRepeatMode {
+    match mode {
+        1 => MediaPlaybackAutoRepeatMode::List,
+        2 => MediaPlaybackAutoRepeatMode::Track,
+        _ => MediaPlaybackAutoRepeatMode::None,
+    }
+}
 
+#[napi]
+pub fn set_shuffle_state(enabled: bool) -> napi::Result<()> {
+    smtc_for(
+        *BOUND_HWND
+            .get()
+            .ok_or_else(|| napi::Error::from_reason("SMTC bridge is not armed"))?,
+    )
+    .and_then(|smtc| smtc.SetShuffleEnabled(enabled))
+    .map_err(|e| napi::Error::from_reason(format!("SetShuffleEnabled failed: {e:?}")))
+}
+
+#[napi]
+pub fn set_repeat_state(mode: i32) -> napi::Result<()> {
+    smtc_for(
+        *BOUND_HWND
+            .get()
+            .ok_or_else(|| napi::Error::from_reason("SMTC bridge is not armed"))?,
+    )
+    .and_then(|smtc| smtc.SetAutoRepeatMode(i32_to_repeat(mode)))
+    .map_err(|e| napi::Error::from_reason(format!("SetAutoRepeatMode failed: {e:?}")))
+}
 
