@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { X, Music, GripVertical, ListPlus, ListStart, FolderPlus } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
@@ -223,12 +223,11 @@ export default function QueuePanel() {
   const { showQueue, toggleQueue } = usePlayerStore()
 
   return (
-    <AnimatePresence>
+    <>
       {showQueue && (
         <motion.aside
           initial={{ width: 0 }}
           animate={{ width: 320 }}
-          exit={{ width: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
           className="overflow-hidden flex-shrink-0"
           style={{ minWidth: 320 }}
@@ -236,7 +235,6 @@ export default function QueuePanel() {
           <motion.div
             initial={{ x: 320 }}
             animate={{ x: 0 }}
-            exit={{ x: 320 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
             className="h-full flex flex-col border-l border-border"
             style={{ width: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
@@ -245,6 +243,6 @@ export default function QueuePanel() {
           </motion.div>
         </motion.aside>
       )}
-    </AnimatePresence>
+    </>
   )
 }
