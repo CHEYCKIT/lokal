@@ -35,9 +35,10 @@ function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
-    const handle = mainWindow?.getNativeWindowHandle()
-    if (!handle || handle.length < 4) throw new Error('Native window handle unavailable')
-    smtcWindowHandle = handle.readUInt32LE(0)
+    const win = smtcBridge.find_own_window()
+    if (!win || !win.hwnd) throw new Error('Native window handle unavailable')
+    smtcWindowHandle = Number(win.hwnd)
+    console.log('[smtc] Binding to native window:', smtcWindowHandle, win.title)
     smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
 
     smtcPollTimer = setInterval(() => {
@@ -255,7 +256,8 @@ if (!perfSettings.hardwareAcceleration) {
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
 
-// Native SMTC bridge owns the Windows media session, including shuffle/repeat.\napp.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
+// Native SMTC bridge owns the Windows media session, including shuffle/repeat.
+app.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
 
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
@@ -347,6 +349,11 @@ function createWindow() {
       mainWindow.webContents.send('player:openFile', pendingOpenFilePath)
       pendingOpenFilePath = ''
     }
+
+    // Arm the native SMTC session after the renderer is loaded.
+    if (process.platform === 'win32') {
+      initWindowsSmtcBridge()
+    }
   })
 
   mainWindow.on('focus', enforceMiniTop)
@@ -355,7 +362,6 @@ function createWindow() {
   mainWindow.on('restore', enforceMiniTop)
 
   updateThumbarButtons(mainWindow, {})
-  if (process.platform === 'win32') initWindowsSmtcBridge()
   
   
   if (!app.isPackaged) {
