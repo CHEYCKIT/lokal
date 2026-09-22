@@ -3,8 +3,8 @@
 use std::sync::{Mutex, OnceLock};
 
 use napi_derive::napi;
-use windows::core::{HSTRING, Result as WinResult, TypedEventHandler};
-use windows::Foundation::{TimeSpan, Uri};
+use windows::core::{HSTRING, Result as WinResult};
+use windows::Foundation::{TimeSpan, TypedEventHandler, Uri};
 use windows::Media::{
     AutoRepeatModeChangeRequestedEventArgs, MediaPlaybackAutoRepeatMode, MediaPlaybackStatus,
     MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
