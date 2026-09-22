@@ -25,13 +25,6 @@ const { registerPlaylistHandlers } = require('./ipc/playlists')
 const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
-
-// Use the native SMTC bridge as the sole Windows media session. Chromium's
-// MediaSessionService only exposes transport controls and otherwise creates a
-// competing session that FluentFlyout will prefer over the native one.
-if (process.platform === 'win32') {
-  app.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
-}
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 
 let smtcBridge = null
@@ -81,22 +74,6 @@ function updateWindowsSmtcState(state) {
     smtcBridge.set_shuffle_state(Boolean(state?.shuffle))
     const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
     smtcBridge.set_repeat_state(repeat)
-    smtcBridge.set_playing(Boolean(state?.isPlaying))
-    if (Number.isFinite(state?.duration) && state.duration > 0) {
-      smtcBridge.update_timeline(Number(state.progress) || 0, Number(state.duration) || 0)
-    }
-    const track = state?.currentTrack
-    const trackId = track?.id ?? null
-    if (trackId !== smtcLastTrackId) {
-      smtcLastTrackId = trackId
-      if (track) {
-        let artwork = track.artwork_path || ''
-        if (artwork && !/^(?:https?:|file:|data:)/i.test(artwork)) {
-          try { artwork = pathToFileURL(artwork).toString() } catch {}
-        }
-        smtcBridge.update_metadata(track.title || '', track.artist || '', track.album || '', artwork)
-      }
-    }
   } catch (e) {
     console.warn('[smtc] Failed to update native SMTC state:', e.message)
   }
