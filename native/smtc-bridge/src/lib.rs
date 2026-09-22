@@ -7,9 +7,7 @@ use windows::core::{HSTRING, Result as WinResult};
 use windows::Foundation::{TimeSpan, TypedEventHandler, Uri};
 use windows::Media::{
     AutoRepeatModeChangeRequestedEventArgs, MediaPlaybackAutoRepeatMode, MediaPlaybackStatus,
-    MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
-    ShuffleEnabledChangeRequestedEventArgs, SystemMediaTransportControls,
-    SystemMediaTransportControlsButton, SystemMediaTransportControlsButtonPressedEventArgs,
+    MediaPlaybackType, ShuffleEnabledChangeRequestedEventArgs, SystemMediaTransportControls,
     SystemMediaTransportControlsTimelineProperties,
 };
 use windows::Storage::Streams::RandomAccessStreamReference;
@@ -117,24 +115,8 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
     let smtc = smtc_for(hwnd)
         .map_err(|e| napi::Error::from_reason(format!("SMTC arm failed: {e:?}")))?;
 
-    // Lokal owns the Windows SMTC session. Chromium's MediaSessionService is
-    // disabled in the main process so this is the authoritative session.
-    smtc.SetIsEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsEnabled failed: {e:?}")))?;
-    smtc.SetIsPlayEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsPlayEnabled failed: {e:?}")))?;
-    smtc.SetIsPauseEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsPauseEnabled failed: {e:?}")))?;
-    smtc.SetIsNextEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsNextEnabled failed: {e:?}")))?;
-    smtc.SetIsPreviousEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsPreviousEnabled failed: {e:?}")))?;
-    smtc.SetIsStopEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsStopEnabled failed: {e:?}")))?;
-    smtc.SetIsFastForwardEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsFastForwardEnabled failed: {e:?}")))?;
-    smtc.SetIsRewindEnabled(true)
-        .map_err(|e| napi::Error::from_reason(format!("SetIsRewindEnabled failed: {e:?}")))?;
+    // Chromium owns the normal Windows SMTC transport controls.
+    // This bridge only initializes and handles the shuffle/repeat properties.
     smtc.SetShuffleEnabled(false)
         .map_err(|e| napi::Error::from_reason(format!("SetShuffleEnabled failed: {e:?}")))?;
     smtc.SetAutoRepeatMode(MediaPlaybackAutoRepeatMode::None)
@@ -178,8 +160,6 @@ pub fn poll_requests() -> PendingRequests {
     PendingRequests {
         shuffle: pending.shuffle.take(),
         repeat: pending.repeat.take(),
-        button: pending.button.take(),
-        position: pending.position.take(),
     }
 }
 
