@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { pathToFileURL } = require('url')
 const log = require('electron-log')
 
 const date = new Date().toISOString().replace(/[:.]/g, '-')
@@ -25,6 +26,83 @@ const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
+
+let smtcBridge = null
+let smtcPollTimer = null
+let smtcWindowHandle = 0
+
+function initWindowsSmtcBridge() {
+  if (process.platform !== 'win32') return
+  try {
+    smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
+    const handle = mainWindow?.getNativeWindowHandle()
+    if (!handle || handle.length < 4) throw new Error('Native window handle unavailable')
+    smtcWindowHandle = handle.readUInt32LE(0)
+    smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
+
+    smtcPollTimer = setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      const requests = smtcBridge.poll_requests()
+
+      if (requests.shuffle !== null && requests.shuffle !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+      }
+      if (requests.repeat !== null && requests.repeat !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
+      }
+      if (requests.button) {
+        const action = {
+          play: 'play',
+          pause: 'pause',
+          stop: 'pause',
+          next: 'next',
+          previous: 'prev',
+        }[requests.button]
+        if (action) mainWindow.webContents.send('remote:command', { action })
+      }
+      if (requests.position !== null && requests.position !== undefined) {
+        mainWindow.webContents.send('remote:command', { action: 'seek', value: requests.position })
+      }
+    }, 100)
+
+    console.log('[smtc] Native Windows SMTC bridge enabled')
+  } catch (e) {
+    smtcBridge = null
+    console.warn('[smtc] Windows SMTC bridge unavailable:', e.message)
+  }
+}
+
+function updateWindowsSmtcState(state) {
+  if (!smtcBridge) return
+  try {
+    smtcBridge.set_shuffle_state(Boolean(state?.shuffle))
+    const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
+    smtcBridge.set_repeat_state(repeat)
+    smtcBridge.set_playing(Boolean(state?.isPlaying))
+    if (Number.isFinite(state?.duration) && state.duration > 0) {
+      smtcBridge.update_timeline(
+        Number(state.progress) || 0,
+        Number(state.duration) || 0,
+      )
+    }
+
+    const track = state?.currentTrack
+    if (track) {
+      let artwork = track.artwork_path || ''
+      if (artwork && !/^(?:https?:|file:|data:)/i.test(artwork)) {
+        try { artwork = pathToFileURL(artwork).toString() } catch {}
+      }
+      smtcBridge.update_metadata(
+        track.title || '',
+        track.artist || '',
+        track.album || '',
+        artwork,
+      )
+    }
+  } catch (e) {
+    console.warn('[smtc] Failed to update native SMTC state:', e.message)
+  }
+}
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
@@ -277,6 +355,7 @@ function createWindow() {
   mainWindow.on('restore', enforceMiniTop)
 
   updateThumbarButtons(mainWindow, {})
+  if (process.platform === 'win32') initWindowsSmtcBridge()
   
   
   if (!app.isPackaged) {
@@ -362,6 +441,7 @@ app.whenReady().then(() => {
   });
   ipcMain.on('remote:stateUpdate', (_, state) => {
     setRemoteState(state)
+    updateWindowsSmtcState(state)
   })
   setRemoteCommandHandler(async (command) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -532,6 +612,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  if (smtcPollTimer) clearInterval(smtcPollTimer)
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
 })
