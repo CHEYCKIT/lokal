@@ -347,6 +347,12 @@ function createWindow() {
       mainWindow.webContents.send('player:openFile', pendingOpenFilePath)
       pendingOpenFilePath = ''
     }
+
+    // Arm SMTC only after Chromium has finished creating the window/renderer.
+    // GetForWindow must bind to the fully initialized top-level Electron window.
+    if (process.platform === 'win32') {
+      setTimeout(() => initWindowsSmtcBridge(), 500)
+    }
   })
 
   mainWindow.on('focus', enforceMiniTop)
@@ -355,7 +361,6 @@ function createWindow() {
   mainWindow.on('restore', enforceMiniTop)
 
   updateThumbarButtons(mainWindow, {})
-  if (process.platform === 'win32') initWindowsSmtcBridge()
   
   
   if (!app.isPackaged) {
