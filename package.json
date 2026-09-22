@@ -111,7 +111,7 @@
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "electron": "^29.1.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "24.13.1",
     "framer-motion": "^11.0.8",
     "lucide-react": "^0.344.0",
     "postcss": "^8.4.35",
