@@ -35,9 +35,10 @@ function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
-    const handle = mainWindow?.getNativeWindowHandle()
-    if (!handle || handle.length < 4) throw new Error('Native window handle unavailable')
-    smtcWindowHandle = handle.readUInt32LE(0)
+    const win = smtcBridge.find_own_window()
+    if (!win || !win.hwnd) throw new Error('Native window handle unavailable')
+    smtcWindowHandle = Number(win.hwnd)
+    console.log('[smtc] Binding to native window:', smtcWindowHandle, win.title)
     smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
 
     smtcPollTimer = setInterval(() => {
@@ -348,10 +349,9 @@ function createWindow() {
       pendingOpenFilePath = ''
     }
 
-    // Arm SMTC only after Chromium has finished creating the window/renderer.
-    // GetForWindow must bind to the fully initialized top-level Electron window.
+    // Arm the native SMTC session after the renderer is loaded.
     if (process.platform === 'win32') {
-      setTimeout(() => initWindowsSmtcBridge(), 500)
+      initWindowsSmtcBridge()
     }
   })
 
