@@ -133,8 +133,9 @@ export default function FullscreenPlayer() {
   const {
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
     progress, duration, volume, shuffle, repeat, showQueue,
+    showRightSidebar, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
-    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement, toggleQueue,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement, toggleQueueButton,
     playbackContext,
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
@@ -315,8 +316,8 @@ export default function FullscreenPlayer() {
                 className="text-white/35 hover:text-white/70 transition-colors text-xs font-display uppercase tracking-wider">
                 + Playlist
               </button>
-              <button onClick={toggleQueue}
-                className={`transition-colors ${showQueue ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}>
+              <button onClick={toggleQueueButton}
+                className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}>
                 <ListMusic size={18} />
               </button>
               <button 
