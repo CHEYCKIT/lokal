@@ -255,7 +255,7 @@ if (!perfSettings.hardwareAcceleration) {
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
 
-app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
+// Native SMTC bridge owns the Windows media session, including shuffle/repeat.\napp.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
 
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
