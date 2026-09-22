@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { pathToFileURL } = require('url')
 const log = require('electron-log')
 
 const date = new Date().toISOString().replace(/[:.]/g, '-')
@@ -29,7 +28,6 @@ const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar
 
 let smtcBridge = null
 let smtcPollTimer = null
-let smtcLastTrackId = null
 
 function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
@@ -51,13 +49,6 @@ function initWindowsSmtcBridge() {
       }
       if (requests.repeat !== null && requests.repeat !== undefined) {
         mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
-      }
-      if (requests.button) {
-        const action = { play: 'play', pause: 'pause', stop: 'pause', next: 'next', previous: 'prev' }[requests.button]
-        if (action) mainWindow.webContents.send('remote:command', { action })
-      }
-      if (requests.position !== null && requests.position !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'seek', value: requests.position })
       }
     }, 100)
 
