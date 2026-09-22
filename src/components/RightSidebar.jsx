@@ -56,27 +56,34 @@ export default function RightSidebar() {
     : null
 
   return (
-    <AnimatePresence>
+    <>
       {showRightSidebar && (
+        // No AnimatePresence wrapping this: entering still animates fine
+        // via initial->animate (that doesn't need AnimatePresence at all),
+        // but closing has no exit animation to wait on -- React unmounts
+        // this the instant showRightSidebar goes false, in the same
+        // commit, so there is no animation-library timing to depend on
+        // for "is the close actually instant" the way there would be with
+        // an exit={{...}} + duration:0 override. This is guaranteed by
+        // ordinary React unmount semantics, not by trusting Framer
+        // Motion's internal exit-completion timing, which isn't something
+        // I can verify without a live browser.
         <motion.aside
           initial={{ width: 0 }}
           animate={{ width: 300 }}
-          exit={{ width: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
           className="overflow-hidden flex-shrink-0"
           style={{ minWidth: 300 }}
         >
-          {/* Actual visual panel: fixed width, slides via transform instead
-              of the width above. Keeping backdrop-filter/background off the
-              width-animating element avoids a real Chromium rendering glitch
-              where blur-under-an-actively-resizing-box briefly paints as a
-              flat, undissolved rectangle -- what read as a "black box"
-              flashing during close. This element's own width never changes,
-              so nothing here can trigger that; sliding is purely x. */}
+          {/* Fixed width, slides via transform instead of the width above --
+              keeping backdrop-filter/background off the width-animating
+              element avoids the Chromium rendering glitch (blur resampling
+              a shape that's actively changing) that read as a black-box
+              flash. This element's own width never changes; sliding is
+              purely x, and closing is instant along with the parent. */}
           <motion.div
             initial={{ x: 300 }}
             animate={{ x: 0 }}
-            exit={{ x: 300 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
             className="h-full flex flex-col border-l border-border"
             style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
@@ -223,6 +230,6 @@ export default function RightSidebar() {
           </motion.div>
         </motion.aside>
       )}
-    </AnimatePresence>
+    </>
   )
 }
