@@ -65,17 +65,11 @@ function updateWindowsSmtcState(state) {
     smtcBridge.set_shuffle_state(Boolean(state?.shuffle))
     const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
     smtcBridge.set_repeat_state(repeat)
-      smtcBridge.update_metadata(
-        track.title || '',
-        track.artist || '',
-        track.album || '',
-        artwork,
-      )
-    }
   } catch (e) {
     console.warn('[smtc] Failed to update native SMTC state:', e.message)
   }
 }
+
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
