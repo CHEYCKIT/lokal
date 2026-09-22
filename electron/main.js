@@ -25,6 +25,13 @@ const { registerPlaylistHandlers } = require('./ipc/playlists')
 const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
+
+// Use the native SMTC bridge as the sole Windows media session. Chromium's
+// MediaSessionService only exposes transport controls and otherwise creates a
+// competing session that FluentFlyout will prefer over the native one.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
+}
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 
 let smtcBridge = null
