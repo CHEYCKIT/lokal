@@ -13,7 +13,9 @@ use windows::Media::{
     SystemMediaTransportControlsTimelineProperties,
 };
 use windows::Storage::Streams::RandomAccessStreamReference;
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
 use windows::Win32::System::WinRT::ISystemMediaTransportControlsInterop;
 
 static BOUND_HWND: OnceLock<isize> = OnceLock::new();
@@ -29,6 +31,57 @@ struct Pending {
 fn pending() -> &'static Mutex<Pending> {
     static PENDING: OnceLock<Mutex<Pending>> = OnceLock::new();
     PENDING.get_or_init(|| Mutex::new(Pending::default()))
+}
+
+
+use windows::Win32::Foundation::{BOOL, LPARAM, TRUE};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+};
+
+#[napi(object)]
+pub struct WinInfo {
+    pub hwnd: i64,
+    pub title: String,
+}
+
+struct FindCtx {
+    pid: u32,
+    hwnd: isize,
+    title: String,
+}
+
+unsafe extern "system" fn find_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let ctx = &mut *(lparam.0 as *mut FindCtx);
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == ctx.pid && IsWindowVisible(hwnd).as_bool() {
+        let len = GetWindowTextLengthW(hwnd);
+        if len > 0 {
+            let mut buf = vec![0u16; (len + 1) as usize];
+            let n = GetWindowTextW(hwnd, &mut buf);
+            if n > 0 {
+                ctx.hwnd = hwnd.0;
+                ctx.title = String::from_utf16_lossy(&buf[..n as usize]);
+                return BOOL(0);
+            }
+        }
+    }
+    TRUE
+}
+
+#[napi]
+pub fn find_own_window() -> WinInfo {
+    let mut ctx = FindCtx {
+        pid: unsafe { GetCurrentProcessId() },
+        hwnd: 0,
+        title: String::new(),
+    };
+    unsafe {
+        let _ = EnumWindows(Some(find_window_proc), LPARAM(&mut ctx as *mut _ as isize));
+    }
+    WinInfo { hwnd: ctx.hwnd as i64, title: ctx.title }
 }
 
 fn smtc_for(hwnd: isize) -> WinResult<SystemMediaTransportControls> {
