@@ -15,6 +15,7 @@ version = "0.52"
 features = [
   "Foundation",
   "Media",
+  "Storage_Streams",
   "Win32_Foundation",
   "Win32_System_WinRT",
 ]
