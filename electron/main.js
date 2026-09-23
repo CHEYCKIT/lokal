@@ -28,31 +28,60 @@ const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar
 
 let smtcBridge = null
 let smtcPollTimer = null
+let smtcArmTimer = null
+
+function startWindowsSmtcPolling() {
+  if (smtcPollTimer) return
+
+  smtcPollTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const requests = smtcBridge.poll_requests()
+
+    if (requests.shuffle !== null && requests.shuffle !== undefined) {
+      mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+    }
+    if (requests.repeat !== null && requests.repeat !== undefined) {
+      mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
+    }
+  }, 100)
+}
+
+function tryArmWindowsSmtcBridge() {
+  if (!smtcBridge) return false
+
+  const win = smtcBridge.find_chromium_smtc_window()
+  if (!win || !win.hwnd) return false
+
+  try {
+    const hwnd = Number(win.hwnd)
+    console.log('[smtc] Binding to Chromium SMTC singleton:', hwnd)
+    smtcBridge.arm_shuffle_repeat(hwnd)
+    startWindowsSmtcPolling()
+    console.log('[smtc] Native Windows SMTC shuffle/repeat bridge enabled')
+    return true
+  } catch (e) {
+    console.warn('[smtc] SMTC arm attempt failed:', e.message)
+    return false
+  }
+}
 
 function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
   if (smtcBridge) return
+
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
-    const win = smtcBridge.find_own_window()
-    if (!win || !win.hwnd) throw new Error('Native window handle unavailable')
-    const hwnd = Number(win.hwnd)
-    console.log('[smtc] Binding to native window:', hwnd, win.title)
-    smtcBridge.arm_shuffle_repeat(hwnd)
 
-    smtcPollTimer = setInterval(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return
-      const requests = smtcBridge.poll_requests()
+    if (tryArmWindowsSmtcBridge()) return
 
-      if (requests.shuffle !== null && requests.shuffle !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+    // Chromium creates/activates its SMTC session only once its media session
+    // is live. Retry until that existing session can be located.
+    smtcArmTimer = setInterval(() => {
+      if (tryArmWindowsSmtcBridge()) {
+        clearInterval(smtcArmTimer)
+        smtcArmTimer = null
       }
-      if (requests.repeat !== null && requests.repeat !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
-      }
-    }, 100)
-
-    console.log('[smtc] Native Windows SMTC bridge enabled')
+    }, 1000)
   } catch (e) {
     smtcBridge = null
     console.warn('[smtc] Windows SMTC bridge unavailable:', e.message)
@@ -582,6 +611,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   if (smtcPollTimer) clearInterval(smtcPollTimer)
+  if (smtcArmTimer) clearInterval(smtcArmTimer)
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
 })
