@@ -110,7 +110,6 @@ function AnimatedRoutes() {
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
-  const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
   const audioCtxRef = useRef(null)
@@ -188,7 +187,7 @@ export default function App() {
 
   const {
     currentTrack, isPlaying, progress, duration, volume, repeat,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, enableShuffle, disableShuffle,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -606,17 +605,6 @@ export default function App() {
   }, [isPlaying, currentTrack, likedIds])
 
   useEffect(() => {
-    //safety net for pesky SMTC.
-    const el = smtcKeepAliveRef.current
-    if (!el) return
-    if (isPlaying) {
-      el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
-    } else {
-      el.pause()
-    }
-  }, [isPlaying])
-
-  useEffect(() => {
     if (!('mediaSession' in navigator)) return
     if (!currentTrack) return
 
@@ -737,6 +725,13 @@ export default function App() {
       if (action === 'pause' && state.isPlaying) return state.togglePlay()
       if (action === 'next') return state.next()
       if (action === 'prev') return state.prev()
+      if (action === 'setShuffle') return command.value ? state.enableShuffle() : state.disableShuffle()
+      if (action === 'setRepeat') {
+        const mode = Number(command.value)
+        const target = mode === 1 ? 'all' : mode === 2 ? 'one' : 'none'
+        while (usePlayerStore.getState().repeat !== target) usePlayerStore.getState().toggleRepeat()
+        return
+      }
       if (action === 'volume') {
         const value = Number(command?.value)
         if (Number.isFinite(value)) state.setVolume(Math.max(0, Math.min(1, value)))
@@ -1563,10 +1558,6 @@ export default function App() {
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
         />
-        {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
-            it exists purely to keep a native, audible HTMLMediaElement "playing"
-            so Windows SMTC / OS media-session surfaces recognize Lokal. */}
-        <audio ref={smtcKeepAliveRef} src="silence.wav" loop preload="auto" />
       </div>
     </Router>
   )

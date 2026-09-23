@@ -7,12 +7,13 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:web": "concurrently \"vite\" \"node server/start.js\"",
-    "build": "vite build && electron-builder",
+    "build": "vite build && npm run native:prepare && electron-builder",
     "server": "node server/start.js",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "rebuild:electron": "electron-rebuild",
     "rebuild:web": "npm rebuild better-sqlite3",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps && npm run native:prepare",
+    "native:prepare": "node scripts/prepare-native.js"
   },
   "build": {
     "appId": "com.lokal.music",
@@ -51,7 +52,18 @@
       ],
       "fileAssociations": [
         {
-          "ext": ["mp3", "flac", "m4a", "ogg", "wav", "aac", "opus", "wma", "alac", "ape"],
+          "ext": [
+            "mp3",
+            "flac",
+            "m4a",
+            "ogg",
+            "wav",
+            "aac",
+            "opus",
+            "wma",
+            "alac",
+            "ape"
+          ],
           "name": "Audio File",
           "description": "Audio File",
           "role": "Viewer",
@@ -99,7 +111,7 @@
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "electron": "^29.1.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "24.13.1",
     "framer-motion": "^11.0.8",
     "lucide-react": "^0.344.0",
     "postcss": "^8.4.35",

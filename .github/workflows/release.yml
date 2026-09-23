@@ -26,6 +26,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup Rust (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
       - name: Install Dependencies
         run: npm install
 
