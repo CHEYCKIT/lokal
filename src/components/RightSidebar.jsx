@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -50,6 +50,21 @@ export default function RightSidebar() {
   // slides over -- so there's no extra state to track here: if the panel
   // isn't showing Queue, sidePanelView already *is* the active tab.
   const tab = sidePanelView === 'queue' ? 'info' : sidePanelView
+
+  // Cosmetic case: when the panel is closed and Queue is clicked,
+  // toggleQueueButton opens it straight to sidePanelView 'queue' in the
+  // same state update -- both go from closed/info to open/queue together.
+  // Playing the overlay's usual slide-up animation on top of the panel's
+  // own opening animation looks like two separate motions stacked back to
+  // back. Detect exactly that transition (was closed, is now open, and
+  // queue is what's showing) and skip *just* the overlay's entrance for
+  // it -- switching to Queue from an already-open panel is untouched and
+  // still slides up as before.
+  const wasSidebarOpenRef = useRef(showRightSidebar)
+  const openedFreshToQueue = !wasSidebarOpenRef.current && showRightSidebar && sidePanelView === 'queue'
+  useEffect(() => {
+    wasSidebarOpenRef.current = showRightSidebar
+  })
 
   const artSrc = currentTrack?.artwork_path
     ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
@@ -215,7 +230,7 @@ export default function RightSidebar() {
               {sidePanelView === 'queue' && (
                 <motion.div
                   key="queue-overlay"
-                  initial={{ y: '100%' }}
+                  initial={openedFreshToQueue ? false : { y: '100%' }}
                   animate={{ y: 0 }}
                   exit={{ y: '100%' }}
                   transition={{ type: 'spring', stiffness: 300, damping: 32 }}
