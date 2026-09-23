@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { pathToFileURL } = require('url')
 const log = require('electron-log')
 
 const date = new Date().toISOString().replace(/[:.]/g, '-')
@@ -29,44 +28,80 @@ const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar
 
 let smtcBridge = null
 let smtcPollTimer = null
-let smtcWindowHandle = 0
+let smtcArmTimer = null
+let smtcLastFireCount = 0
+
+function startWindowsSmtcPolling() {
+  if (smtcPollTimer) return
+
+  smtcPollTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const requests = smtcBridge.poll_requests()
+    // napi-rs's snake_case -> camelCase field conversion for #[napi(object)]
+    // is the documented default, but this can't be verified without an
+    // actual Windows build to run it against -- check both forms so a
+    // wrong assumption here doesn't silently break the one diagnostic that
+    // tells us whether the native handler fires at all.
+    const fireCount = requests.fireCount ?? requests.fire_count ?? 0
+
+    // fire_count is monotonic (see lib.rs) -- it only tells us whether
+    // either WinRT handler fired at all since the last poll, independent
+    // of whether the request below actually does anything. If a Shuffle/
+    // Repeat click in a native flyout never moves this number, the click
+    // isn't reaching this native module -- a WinRT/session-binding
+    // problem, not a bug in the IPC/renderer plumbing below it.
+    if (fireCount !== smtcLastFireCount) {
+      console.log('[smtc] native handler fired (fireCount', smtcLastFireCount, '->', fireCount, ') shuffle:', requests.shuffle, 'repeat:', requests.repeat)
+      smtcLastFireCount = fireCount
+    }
+
+    if (requests.shuffle !== null && requests.shuffle !== undefined) {
+      mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+    }
+    if (requests.repeat !== null && requests.repeat !== undefined) {
+      mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
+    }
+  }, 100)
+}
+
+function tryArmWindowsSmtcBridge() {
+  if (!smtcBridge) return false
+
+  const win = smtcBridge.find_chromium_smtc_window()
+  if (!win || !win.hwnd) return false
+
+  try {
+    const hwnd = Number(win.hwnd)
+    console.log('[smtc] Binding to Chromium SMTC singleton:', hwnd)
+    smtcBridge.arm_shuffle_repeat(hwnd)
+    const armed = typeof smtcBridge.is_armed === 'function' ? smtcBridge.is_armed() : 'unknown (is_armed not available)'
+    console.log('[smtc] arm_shuffle_repeat returned without error, is_armed():', armed)
+    startWindowsSmtcPolling()
+    console.log('[smtc] Native Windows SMTC shuffle/repeat bridge enabled')
+    return true
+  } catch (e) {
+    console.warn('[smtc] SMTC arm attempt failed:', e.message)
+    return false
+  }
+}
 
 function initWindowsSmtcBridge() {
   if (process.platform !== 'win32') return
+  if (smtcBridge) return
+
   try {
     smtcBridge = require('./native/smtc-bridge.win32-x64-msvc.node')
-    const win = smtcBridge.find_own_window()
-    if (!win || !win.hwnd) throw new Error('Native window handle unavailable')
-    smtcWindowHandle = Number(win.hwnd)
-    console.log('[smtc] Binding to native window:', smtcWindowHandle, win.title)
-    smtcBridge.arm_shuffle_repeat(smtcWindowHandle)
 
-    smtcPollTimer = setInterval(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return
-      const requests = smtcBridge.poll_requests()
+    if (tryArmWindowsSmtcBridge()) return
 
-      if (requests.shuffle !== null && requests.shuffle !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
+    // Chromium creates/activates its SMTC session only once its media session
+    // is live. Retry until that existing session can be located.
+    smtcArmTimer = setInterval(() => {
+      if (tryArmWindowsSmtcBridge()) {
+        clearInterval(smtcArmTimer)
+        smtcArmTimer = null
       }
-      if (requests.repeat !== null && requests.repeat !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'setRepeat', value: requests.repeat })
-      }
-      if (requests.button) {
-        const action = {
-          play: 'play',
-          pause: 'pause',
-          stop: 'pause',
-          next: 'next',
-          previous: 'prev',
-        }[requests.button]
-        if (action) mainWindow.webContents.send('remote:command', { action })
-      }
-      if (requests.position !== null && requests.position !== undefined) {
-        mainWindow.webContents.send('remote:command', { action: 'seek', value: requests.position })
-      }
-    }, 100)
-
-    console.log('[smtc] Native Windows SMTC bridge enabled')
+    }, 1000)
   } catch (e) {
     smtcBridge = null
     console.warn('[smtc] Windows SMTC bridge unavailable:', e.message)
@@ -79,31 +114,11 @@ function updateWindowsSmtcState(state) {
     smtcBridge.set_shuffle_state(Boolean(state?.shuffle))
     const repeat = state?.repeat === 'all' ? 1 : state?.repeat === 'one' ? 2 : 0
     smtcBridge.set_repeat_state(repeat)
-    smtcBridge.set_playing(Boolean(state?.isPlaying))
-    if (Number.isFinite(state?.duration) && state.duration > 0) {
-      smtcBridge.update_timeline(
-        Number(state.progress) || 0,
-        Number(state.duration) || 0,
-      )
-    }
-
-    const track = state?.currentTrack
-    if (track) {
-      let artwork = track.artwork_path || ''
-      if (artwork && !/^(?:https?:|file:|data:)/i.test(artwork)) {
-        try { artwork = pathToFileURL(artwork).toString() } catch {}
-      }
-      smtcBridge.update_metadata(
-        track.title || '',
-        track.artist || '',
-        track.album || '',
-        artwork,
-      )
-    }
   } catch (e) {
     console.warn('[smtc] Failed to update native SMTC state:', e.message)
   }
 }
+
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
@@ -255,8 +270,6 @@ if (!perfSettings.hardwareAcceleration) {
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
-
-// Native SMTC bridge owns the Windows media session, including shuffle/repeat.\napp.commandLine.appendSwitch('disable-features', 'MediaSessionService,HardwareMediaKeyHandling')
 
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
@@ -618,6 +631,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   if (smtcPollTimer) clearInterval(smtcPollTimer)
+  if (smtcArmTimer) clearInterval(smtcArmTimer)
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
 })

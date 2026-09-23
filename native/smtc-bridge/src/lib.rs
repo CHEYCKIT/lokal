@@ -7,16 +7,17 @@ use windows::core::{HSTRING, Result as WinResult};
 use windows::Foundation::{TimeSpan, TypedEventHandler, Uri};
 use windows::Media::{
     AutoRepeatModeChangeRequestedEventArgs, MediaPlaybackAutoRepeatMode, MediaPlaybackStatus,
-    MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
-    ShuffleEnabledChangeRequestedEventArgs, SystemMediaTransportControls,
-    SystemMediaTransportControlsButton, SystemMediaTransportControlsButtonPressedEventArgs,
+    MediaPlaybackType, ShuffleEnabledChangeRequestedEventArgs, SystemMediaTransportControls,
     SystemMediaTransportControlsTimelineProperties,
 };
 use windows::Storage::Streams::RandomAccessStreamReference;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
 use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible};
 use windows::Win32::System::WinRT::ISystemMediaTransportControlsInterop;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetClassNameW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsWindowVisible,
+};
 
 static BOUND_HWND: OnceLock<isize> = OnceLock::new();
 
@@ -24,21 +25,21 @@ static BOUND_HWND: OnceLock<isize> = OnceLock::new();
 struct Pending {
     shuffle: Option<bool>,
     repeat: Option<i32>,
-    button: Option<String>,
-    position: Option<f64>,
+    // Incremented every time either WinRT event handler below actually
+    // fires, regardless of the value it carried. Exposed through
+    // poll_requests() purely as a diagnostic: if this never increases while
+    // clicking Shuffle/Repeat in a native flyout, the click isn't reaching
+    // this native module at all (a WinRT/session-binding problem), as
+    // distinct from the handler firing but something downstream (the JS
+    // poll loop, the IPC message, the renderer's action) not reacting to
+    // it -- two very different bugs that look identical from the outside.
+    fire_count: u32,
 }
 
 fn pending() -> &'static Mutex<Pending> {
     static PENDING: OnceLock<Mutex<Pending>> = OnceLock::new();
     PENDING.get_or_init(|| Mutex::new(Pending::default()))
 }
-
-
-use windows::Win32::Foundation::{BOOL, LPARAM, TRUE};
-use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-};
 
 #[napi(object)]
 pub struct WinInfo {
@@ -52,36 +53,75 @@ struct FindCtx {
     title: String,
 }
 
-unsafe extern "system" fn find_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+unsafe extern "system" fn find_chromium_smtc_window_proc(
+    hwnd: HWND,
+    lparam: LPARAM,
+) -> BOOL {
     let ctx = &mut *(lparam.0 as *mut FindCtx);
+
     let mut pid = 0u32;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == ctx.pid && IsWindowVisible(hwnd).as_bool() {
-        let len = GetWindowTextLengthW(hwnd);
-        if len > 0 {
-            let mut buf = vec![0u16; (len + 1) as usize];
-            let n = GetWindowTextW(hwnd, &mut buf);
-            if n > 0 {
-                ctx.hwnd = hwnd.0;
-                ctx.title = String::from_utf16_lossy(&buf[..n as usize]);
-                return BOOL(0);
-            }
-        }
+    if pid != ctx.pid {
+        return TRUE;
     }
-    TRUE
+
+    // Chromium's Windows SMTC implementation binds to gfx::SingletonHwnd,
+    // which is a hidden WindowImpl with Chromium's Chrome_WidgetWin_* class,
+    // not the visible Electron BrowserWindow.
+    let mut class_buf = [0u16; 256];
+    let class_len = GetClassNameW(hwnd, &mut class_buf);
+    if class_len <= 0 {
+        return TRUE;
+    }
+    let class_name = String::from_utf16_lossy(&class_buf[..class_len as usize]);
+    if !class_name.starts_with("Chrome_WidgetWin_") {
+        return TRUE;
+    }
+
+    if IsWindowVisible(hwnd).as_bool() {
+        return TRUE;
+    }
+
+    let title_len = GetWindowTextLengthW(hwnd);
+    if title_len != 0 {
+        return TRUE;
+    }
+
+    // Only accept the hidden Chromium window that already owns an enabled
+    // SMTC session. This avoids accidentally creating a second session on
+    // some other hidden Electron/Chromium window.
+    let smtc = match smtc_for(hwnd.0 as isize) {
+        Ok(smtc) => smtc,
+        Err(_) => return TRUE,
+    };
+    if !smtc.IsEnabled().unwrap_or(false) {
+        return TRUE;
+    }
+
+    ctx.hwnd = hwnd.0;
+    ctx.title.clear();
+    BOOL(0)
 }
 
 #[napi]
-pub fn find_own_window() -> WinInfo {
+pub fn find_chromium_smtc_window() -> WinInfo {
     let mut ctx = FindCtx {
         pid: unsafe { GetCurrentProcessId() },
         hwnd: 0,
         title: String::new(),
     };
+
     unsafe {
-        let _ = EnumWindows(Some(find_window_proc), LPARAM(&mut ctx as *mut _ as isize));
+        let _ = EnumWindows(
+            Some(find_chromium_smtc_window_proc),
+            LPARAM(&mut ctx as *mut _ as isize),
+        );
     }
-    WinInfo { hwnd: ctx.hwnd as i64, title: ctx.title }
+
+    WinInfo {
+        hwnd: ctx.hwnd as i64,
+        title: ctx.title,
+    }
 }
 
 fn smtc_for(hwnd: isize) -> WinResult<SystemMediaTransportControls> {
@@ -108,94 +148,72 @@ fn i32_to_repeat(mode: i32) -> MediaPlaybackAutoRepeatMode {
     }
 }
 
-fn arm_inner(hwnd: i64) -> WinResult<()> {
+fn bound_hwnd() -> napi::Result<isize> {
+    BOUND_HWND
+        .get()
+        .copied()
+        .ok_or_else(|| napi::Error::from_reason("SMTC bridge is not armed"))
+}
+
+#[napi]
+pub fn is_armed() -> bool {
+    BOUND_HWND.get().is_some()
+}
+
+#[napi]
+pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
     let hwnd = hwnd as isize;
-    let smtc = smtc_for(hwnd)?;
+    let smtc = smtc_for(hwnd)
+        .map_err(|e| napi::Error::from_reason(format!("SMTC arm failed: {e:?}")))?;
 
-    smtc.SetIsEnabled(true)?;
-    smtc.SetIsPlayEnabled(true)?;
-    smtc.SetIsPauseEnabled(true)?;
-    smtc.SetIsNextEnabled(true)?;
-    smtc.SetIsPreviousEnabled(true)?;
-    smtc.SetIsStopEnabled(true)?;
-    smtc.SetIsFastForwardEnabled(true)?;
-    smtc.SetIsRewindEnabled(true)?;
-
-    // Initializing these properties makes the corresponding controls
-    // available to GSMTC consumers such as FluentFlyout.
-    smtc.SetShuffleEnabled(false)?;
-    smtc.SetAutoRepeatMode(MediaPlaybackAutoRepeatMode::None)?;
+    // This is Chromium's own SMTC session. Leave its transport controls alone;
+    // we only add shuffle/repeat support to the existing session.
+    smtc.SetIsEnabled(true)
+        .map_err(|e| napi::Error::from_reason(format!("SetIsEnabled failed: {e:?}")))?;
+    smtc.SetShuffleEnabled(false)
+        .map_err(|e| napi::Error::from_reason(format!("SetShuffleEnabled failed: {e:?}")))?;
+    smtc.SetAutoRepeatMode(MediaPlaybackAutoRepeatMode::None)
+        .map_err(|e| napi::Error::from_reason(format!("SetAutoRepeatMode failed: {e:?}")))?;
 
     smtc.ShuffleEnabledChangeRequested(&TypedEventHandler::new(
         move |_sender: &Option<SystemMediaTransportControls>,
               args: &Option<ShuffleEnabledChangeRequestedEventArgs>| {
             if let Some(args) = args {
-                let value = args.RequestedShuffleEnabled()?;
-                pending().lock().unwrap().shuffle = Some(value);
+                let mut p = pending().lock().unwrap();
+                p.shuffle = Some(args.RequestedShuffleEnabled()?);
+                p.fire_count = p.fire_count.wrapping_add(1);
             }
             Ok(())
         },
-    ))?;
+    ))
+    .map_err(|e| napi::Error::from_reason(format!("Shuffle handler failed: {e:?}")))?;
 
     smtc.AutoRepeatModeChangeRequested(&TypedEventHandler::new(
         move |_sender: &Option<SystemMediaTransportControls>,
               args: &Option<AutoRepeatModeChangeRequestedEventArgs>| {
             if let Some(args) = args {
-                let value = args.RequestedAutoRepeatMode()?;
-                pending().lock().unwrap().repeat = Some(repeat_to_i32(value));
+                let mut p = pending().lock().unwrap();
+                p.repeat = Some(repeat_to_i32(args.RequestedAutoRepeatMode()?));
+                p.fire_count = p.fire_count.wrapping_add(1);
             }
             Ok(())
         },
-    ))?;
-
-    smtc.ButtonPressed(&TypedEventHandler::new(
-        move |_sender: &Option<SystemMediaTransportControls>,
-              args: &Option<SystemMediaTransportControlsButtonPressedEventArgs>| {
-            if let Some(args) = args {
-                let button = match args.Button()? {
-                    SystemMediaTransportControlsButton::Play => "play",
-                    SystemMediaTransportControlsButton::Pause => "pause",
-                    SystemMediaTransportControlsButton::Stop => "stop",
-                    SystemMediaTransportControlsButton::Next => "next",
-                    SystemMediaTransportControlsButton::Previous => "previous",
-                    SystemMediaTransportControlsButton::FastForward => "fastforward",
-                    SystemMediaTransportControlsButton::Rewind => "rewind",
-                    _ => "other",
-                };
-                pending().lock().unwrap().button = Some(button.to_string());
-            }
-            Ok(())
-        },
-    ))?;
-
-    smtc.PlaybackPositionChangeRequested(&TypedEventHandler::new(
-        move |_sender: &Option<SystemMediaTransportControls>,
-              args: &Option<PlaybackPositionChangeRequestedEventArgs>| {
-            if let Some(args) = args {
-                let position = args.RequestedPlaybackPosition()?;
-                pending().lock().unwrap().position =
-                    Some(position.Duration as f64 / 10_000_000.0);
-            }
-            Ok(())
-        },
-    ))?;
+    ))
+    .map_err(|e| napi::Error::from_reason(format!("Repeat handler failed: {e:?}")))?;
 
     let _ = BOUND_HWND.set(hwnd);
     Ok(())
-}
-
-#[napi]
-pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
-    arm_inner(hwnd)
-        .map_err(|e| napi::Error::from_reason(format!("SMTC arm failed: {e:?}")))
 }
 
 #[napi(object)]
 pub struct PendingRequests {
     pub shuffle: Option<bool>,
     pub repeat: Option<i32>,
-    pub button: Option<String>,
-    pub position: Option<f64>,
+    // Monotonic -- not reset on read, unlike shuffle/repeat above. JS
+    // compares this against the value from its previous poll to tell
+    // whether either native handler fired since then, independent of
+    // whether the requested value actually changed anything.
+    pub fire_count: u32,
 }
 
 #[napi]
@@ -204,16 +222,8 @@ pub fn poll_requests() -> PendingRequests {
     PendingRequests {
         shuffle: pending.shuffle.take(),
         repeat: pending.repeat.take(),
-        button: pending.button.take(),
-        position: pending.position.take(),
+        fire_count: pending.fire_count,
     }
-}
-
-fn bound_hwnd() -> napi::Result<isize> {
-    BOUND_HWND
-        .get()
-        .copied()
-        .ok_or_else(|| napi::Error::from_reason("SMTC bridge is not armed"))
 }
 
 #[napi]
