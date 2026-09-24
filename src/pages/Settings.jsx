@@ -45,7 +45,7 @@ function Row({ label, desc, children }) {
     <div className="flex items-center justify-between gap-6">
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{label}</p>
-        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed">{desc}</p>}
+        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{desc}</p>}
       </div>
       <div className="flex-shrink-0">{children}</div>
     </div>
@@ -2158,7 +2158,7 @@ module.exports = {
       <Section title="Layout">
         <Row
           label="Side Panels"
-          desc="Merged: the Queue slides up over the Now Playing panel instead of opening a second one alongside it. Independent: Queue is its own separate panel and can stay open next to Now Playing, like before."
+          desc={"Merged: The Queue slides up over the Now Playing panel instead of opening a second one alongside it.\n\nIndependent: The Queue is its own separate panel and can stay open next to Now Playing, as before."}
         >
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {

@@ -544,16 +544,22 @@ export const usePlayerStore = create((set, get) => ({
   // own pattern, so reopening should land back on that base rather than
   // wherever it happened to be showing when last closed.
   toggleRightSidebar: () => set(s => {
-    const opening = !s.showRightSidebar
     if (!s.exclusiveSidePanels) {
       // Independent mode: exactly the original, fully separate behavior --
       // no interaction with the Queue panel at all.
-      return { showRightSidebar: opening }
+      return { showRightSidebar: !s.showRightSidebar }
     }
-    return {
-      showRightSidebar: opening,
-      sidePanelView: opening ? 'info' : s.sidePanelView,
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'info' }
     }
+    // Panel's already open. If it's currently showing Queue, "Now Playing"
+    // should switch back to the info view -- mirroring toggleQueueButton's
+    // own switch-not-close behavior for the reverse case -- rather than
+    // closing the whole panel out from under the Queue view.
+    if (s.sidePanelView !== 'info') {
+      return { sidePanelView: 'info' }
+    }
+    return { showRightSidebar: false }
   }),
   toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
   // Closes the *standalone* Queue panel (independent mode only -- that's
