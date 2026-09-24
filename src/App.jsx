@@ -8,6 +8,7 @@ import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
 import LyricsFullscreen from './components/LyricsFullscreen'
 import QueuePanel from './components/QueuePanel'
+import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
 import ProfileModal from './components/ProfileModal'
 import StatsModal from './components/StatsModal'
@@ -1520,6 +1521,7 @@ export default function App() {
               </main>
               <RightSidebar />
               {!exclusiveSidePanels && <QueuePanel />}
+              {!exclusiveSidePanels && <LyricsSidePanel />}
             </div>
             <PlayerBar />
             <FullscreenPlayer />
