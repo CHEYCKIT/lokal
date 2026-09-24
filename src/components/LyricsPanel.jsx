@@ -607,6 +607,14 @@ export default function LyricsPanel({
   const [lyricsStyle, setLyricsStyle] = useState(() => localStorage.getItem('lokal-lyrics-style') || 'classic')
   const containerRef = useRef(null)
   const lineRefs = useRef([])
+  // Skips the smooth scroll animation for the very first scroll position
+  // after this panel mounts fresh (e.g. opening the side panel/overlay, or
+  // switching tracks) -- activeIdx jumps from its initial -1 to the real
+  // current line right away, and without this the content visibly scrolls
+  // up from the top over ~420ms, reading as a stray slide-up animation on
+  // top of the panel's own entrance. Real line changes during playback
+  // still animate as before; only this first jump per mount is instant.
+  const hasScrolledOnceRef = useRef(false)
 
   const anchorRef = useRef({ audioTime: progress, wallTime: performance.now() })
   const liveProgressRef = useRef(progress)
@@ -762,6 +770,11 @@ export default function LyricsPanel({
       el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2,
       container.scrollHeight - container.clientHeight
     ))
+    if (!hasScrolledOnceRef.current) {
+      hasScrolledOnceRef.current = true
+      container.scrollTop = target
+      return
+    }
     let raf
     const start = performance.now()
     const from = container.scrollTop
