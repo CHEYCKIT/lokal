@@ -209,6 +209,8 @@ export default function Settings() {
   
   const { openAlbums, user, logout } = useAppStore()
   const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
+  const hydrateExclusiveSidePanels = usePlayerStore(s => s.hydrateExclusiveSidePanels)
+  const exclusiveSidePanels = usePlayerStore(s => s.exclusiveSidePanels)
   const fileInputRef = useRef(null)
   const artistOffsetRef = useRef(0)
   const artistRequestRef = useRef(0)
@@ -245,8 +247,12 @@ export default function Settings() {
       // backend-persisted value on load -- it was previously seeded only
       // from localStorage, so a value saved from another install/profile
       // (or a cleared localStorage) could silently disagree with what
-      // Settings displays here until the toggle was clicked again.
-      setExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+      // Settings displays here until the toggle was clicked again. Uses
+      // the hydrate (not set) action, which is a no-op once the user has
+      // already made their own live choice this session, so this response
+      // -- which can resolve after a selection the user already made
+      // while it was loading -- can never overwrite a fresher choice.
+      hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
     })
 
     api.getKeepCommaArtists().then(a => {
@@ -572,6 +578,11 @@ export default function Settings() {
     await api.setKeepCommaArtists(artists)
     setKeepCommaArtists(artists)
     setShowCommaModal(false)
+    // RightSidebar keeps its own copy of this list (loaded once at mount,
+    // since it stays mounted across normal route navigation) so its artist
+    // link can resolve comma-containing names the same way PlayerBar's
+    // does. Without this, the fix only takes effect after a remount/reload.
+    try { window.dispatchEvent(new CustomEvent('lokal:comma-artists-updated', { detail: artists })) } catch {}
   }
 
   const triggerDownload = (content, filename, type) => {
@@ -2162,7 +2173,14 @@ module.exports = {
         >
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
-              const current = settings.exclusive_side_panels !== '0' ? '1' : '0'
+              // Read from the live store, not `settings` -- a click applies
+              // the new mode to the store/localStorage immediately, but
+              // `settings.exclusive_side_panels` only changes once the
+              // backend save resolves (and reverts entirely if "Save
+              // Settings" is never clicked), so deriving the highlight from
+              // it could show the wrong button as active right after a
+              // click, or after a reload before the save round-trips.
+              const current = exclusiveSidePanels ? '1' : '0'
               return (
                 <button
                   key={value}
