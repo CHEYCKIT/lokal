@@ -192,7 +192,7 @@ export default function App() {
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
-    showMiniPlayer, likedIds, exclusiveSidePanels,
+    showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   } = usePlayerStore()
   const volumeRef = useRef(volume)
   const { user } = useAppStore()
@@ -767,6 +767,12 @@ export default function App() {
     setCfAudioRef(cfAudioRef)
     api.getSettings().then(s => {
       if (s?.crossfade_seconds) setCrossfade(parseFloat(s.crossfade_seconds) || 0)
+      // Sync the backend-persisted Side Panels mode at boot -- previously
+      // this only happened once the Settings page itself mounted, so a
+      // user who never opened Settings stayed on whatever
+      // localStorage/the hardcoded default said, even after saving a
+      // different mode from another install or profile.
+      hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
       if (api.isElectron && s?.discord_auto_connect === '1') {
         const clientId = s?.discord_use_default_app_id === '0'
           ? s?.discord_client_id

@@ -170,9 +170,14 @@ export default function Albums() {
   const [highlightTrackId, setHighlightTrackId] = useState(null)
   const highlightRowRef = useRef(null)
 
+  // True once the highlighted track's row actually exists to flash/scroll
+  // to. A plain boolean (not the track object/array) so the timer effect
+  // below only restarts when readiness itself flips, not on every
+  // unrelated albumTracks re-fetch.
+  const highlightTrackReady = !!highlightTrackId && albumTracks.some((track) => track.id === highlightTrackId)
+
   useEffect(() => {
-    if (!highlightTrackId || !albumTracks.length) return
-    if (!albumTracks.some((track) => track.id === highlightTrackId)) return
+    if (!highlightTrackReady) return
     const node = highlightRowRef.current
     if (!node) return
     requestAnimationFrame(() => {
@@ -182,14 +187,18 @@ export default function Albums() {
         node.scrollIntoView()
       }
     })
-  }, [highlightTrackId, albumTracks])
+  }, [highlightTrackReady, highlightTrackId])
 
-  // Kept separate so re-renders can't cancel the flash timer.
+  // Kept separate so re-renders can't cancel the flash timer. Gated on
+  // highlightTrackReady (not just highlightTrackId) so a slow
+  // api.getAlbumTracks() can't have this timer clear the highlight before
+  // the matching row ever renders -- if getAlbumTracks takes longer than
+  // 2s, the countdown now only starts once the row is actually there.
   useEffect(() => {
-    if (!highlightTrackId) return
+    if (!highlightTrackReady) return
     const timer = setTimeout(() => setHighlightTrackId(null), 2000)
     return () => clearTimeout(timer)
-  }, [highlightTrackId])
+  }, [highlightTrackReady, highlightTrackId])
 
   const loadAlbums = () => {
     setLoadingAlbums(true)

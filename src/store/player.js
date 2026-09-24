@@ -94,6 +94,13 @@ export const usePlayerStore = create((set, get) => ({
   // the setting changes, without needing a reload. Initialized from
   // localStorage so the choice persists across sessions.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
+  // True once the user has explicitly picked a Side Panels mode this
+  // session (via the Settings toggle). Lets hydrateExclusiveSidePanels
+  // (the backend-persisted value, fetched async at app boot and again on
+  // Settings mount) tell a fresher live choice apart from the stale
+  // localStorage-seeded default, so a slow response can never clobber a
+  // selection the user already made while it was in flight.
+  exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
   activeAudioElement: 'primary',
 
@@ -582,10 +589,50 @@ export const usePlayerStore = create((set, get) => ({
     return { sidePanelView: s.sidePanelView === 'queue' ? 'info' : 'queue' }
   }),
   setSidePanelView: (view) => set({ sidePanelView: view }),
+  // The user's own explicit mode choice (the Settings toggle). Carries
+  // over whichever panel is currently open instead of just dropping it:
+  // switching to merged mode folds a visible standalone Queue panel into
+  // the sidebar's Queue view; switching to independent mode reopens a
+  // visible merged Queue overlay as the standalone panel. Either way, a
+  // panel that's about to become unrenderable in the new mode never gets
+  // left stuck open in the old one.
   setExclusiveSidePanels: (value) => {
     try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
-    set({ exclusiveSidePanels: value })
+    set(s => {
+      if (value && s.showQueue) {
+        return {
+          exclusiveSidePanels: value,
+          exclusiveSidePanelsUserSet: true,
+          showQueue: false,
+          showRightSidebar: true,
+          sidePanelView: 'queue',
+        }
+      }
+      if (!value && s.showRightSidebar && s.sidePanelView === 'queue') {
+        return {
+          exclusiveSidePanels: value,
+          exclusiveSidePanelsUserSet: true,
+          showQueue: true,
+          sidePanelView: 'info',
+        }
+      }
+      return {
+        exclusiveSidePanels: value,
+        exclusiveSidePanelsUserSet: true,
+        // Any other stale 'queue' reference can't be shown as a closed
+        // panel in either mode -- fall back to info so neither renderer
+        // starts on a view it doesn't own.
+        sidePanelView: s.sidePanelView === 'queue' ? 'info' : s.sidePanelView,
+      }
+    })
   },
+  // Syncs the backend-persisted Side Panels setting in (called once at app
+  // boot, and again when Settings mounts). A no-op once the user has made
+  // their own live choice this session -- see exclusiveSidePanelsUserSet --
+  // so a fetch that resolves late can't overwrite a fresher selection.
+  hydrateExclusiveSidePanels: (value) => set(s => (
+    s.exclusiveSidePanelsUserSet ? {} : { exclusiveSidePanels: value }
+  )),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 
