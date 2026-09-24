@@ -61,22 +61,26 @@ export default function RightSidebar() {
 
   // Whichever of info/lyrics is showing beneath the Queue overlay. The
   // overlay fully covers this (opaque background, see below), and closing
-  // Queue always lands back on 'info' -- the persistent base the Queue
-  // slides over -- so there's no extra state to track here: if the panel
-  // isn't showing Queue, sidePanelView already *is* the active tab.
-  const tab = sidePanelView === 'queue' ? 'info' : sidePanelView
+  // The base content area always shows 'info' now -- Queue and Lyrics are
+  // both overlays that slide up over it (see below) and slide back down to
+  // reveal it, so there's nothing else the base itself needs to render.
+  // This is only used for the Details/Lyrics pill highlight: while the
+  // Queue overlay is open, "Details" stays highlighted (matching what's
+  // showing underneath it), same as before this was split into overlays.
+  const tab = sidePanelView === 'lyrics' ? 'lyrics' : 'info'
 
-  // Cosmetic case: when the panel is closed and Queue is clicked,
-  // toggleQueueButton opens it straight to sidePanelView 'queue' in the
-  // same state update -- both go from closed/info to open/queue together.
-  // Playing the overlay's usual slide-up animation on top of the panel's
-  // own opening animation looks like two separate motions stacked back to
-  // back. Detect exactly that transition (was closed, is now open, and
-  // queue is what's showing) and skip *just* the overlay's entrance for
-  // it -- switching to Queue from an already-open panel is untouched and
-  // still slides up as before.
+  // Cosmetic case: when the panel is closed and Queue/Lyrics is clicked,
+  // toggleQueueButton/toggleLyricsButton opens it straight to that
+  // sidePanelView in the same state update -- both go from closed/info to
+  // open/<view> together. Playing the overlay's usual slide-up animation
+  // on top of the panel's own opening animation looks like two separate
+  // motions stacked back to back. Detect exactly that transition (was
+  // closed, is now open, and this overlay is what's showing) and skip
+  // *just* the overlay's entrance for it -- switching to it from an
+  // already-open panel is untouched and still slides up as before.
   const wasSidebarOpenRef = useRef(showRightSidebar)
   const openedFreshToQueue = !wasSidebarOpenRef.current && showRightSidebar && sidePanelView === 'queue'
+  const openedFreshToLyrics = !wasSidebarOpenRef.current && showRightSidebar && sidePanelView === 'lyrics'
   useEffect(() => {
     wasSidebarOpenRef.current = showRightSidebar
   })
@@ -137,7 +141,6 @@ export default function RightSidebar() {
               second panel ever exists to overlap with. */}
           <div className="flex-1 overflow-hidden relative min-h-0">
             <div className="absolute inset-0 flex flex-col">
-              {tab === 'info' ? (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50">
                     <AnimatePresence mode="wait">
@@ -221,8 +224,24 @@ export default function RightSidebar() {
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex-1 flex flex-col overflow-hidden">
+            </div>
+
+            {/* Lyrics: slides up over the base view above, slides back down
+                to reveal it -- same overlay pattern as Queue below, so
+                switching to/from Lyrics from an already-open panel animates
+                identically, and opening fresh straight to Lyrics skips this
+                entrance the same way Queue does (see openedFreshToLyrics). */}
+            <AnimatePresence>
+              {sidePanelView === 'lyrics' && (
+                <motion.div
+                  key="lyrics-overlay"
+                  initial={openedFreshToLyrics ? false : { y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+                  className="absolute inset-0 flex flex-col"
+                  style={{ backgroundColor: 'rgb(var(--surface-rgb))' }}
+                >
                   <div className="flex-1 overflow-hidden min-h-0">
                     {currentTrack ? (
                       <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
@@ -235,9 +254,9 @@ export default function RightSidebar() {
                       <Maximize2 size={11} /> Expand Lyrics
                     </button>
                   </div>
-                </div>
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
 
             {/* Queue: slides up over the base view above, slides back down
                 to reveal it -- never a second panel, never a width change. */}
