@@ -97,21 +97,35 @@ jobs:
           const { chromium } = require("playwright");
 
           (async () => {
-            const browser = await chromium.launch();
-            const page = await browser.newPage({
-              viewport: { width: 1200, height: 600 }
-            });
+            let browser;
+            try {
+              browser = await chromium.launch();
+              const page = await browser.newPage({
+                viewport: { width: 1200, height: 600 }
+              });
 
-            await page.goto(
-              "https://sipbuu.me/lokalver/?v=${{ inputs.ref || 'main' }}&type=nightly&app=lokal",
-              { waitUntil: "networkidle" }
-            );
+              await page.goto(
+                "https://sipbuu.me/lokalver/?v=${{ inputs.ref || 'main' }}&type=nightly&app=lokal",
+                { waitUntil: "networkidle", timeout: 20000 }
+              );
 
-            await page.locator(".title-card").screenshot({
-              path: "release-banner.png"
-            });
-
-            await browser.close();
+              await page.locator(".title-card").screenshot({
+                path: "release-banner.png",
+                timeout: 15000
+              });
+            } catch (err) {
+              // sipbuu.me is a third-party site outside this repo's control --
+              // if it's down, slow, or its markup changed, that shouldn't block
+              // publishing the actual nightly binaries below. Log it and move
+              // on without a banner image instead of failing the whole job
+              // (the release step below already tolerates a missing banner:
+              // action-gh-release doesn't fail on an unmatched files entry,
+              // and a missing image in the release body markdown just renders
+              // as a broken image, not an error).
+              console.warn("[nightly-banner] Skipping banner, could not generate it:", err.message);
+            } finally {
+              if (browser) await browser.close();
+            }
           })();
           EOF
 
