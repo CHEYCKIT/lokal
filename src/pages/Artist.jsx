@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Play, Music, Settings, Camera } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -10,12 +10,24 @@ import { makeAlbumContext, makeArtistContext } from '../playbackContext'
 
 export default function Artist() {
   const { id } = useParams()
+  const nav = useNavigate()
+  const location = useLocation()
   const [artist, setArtist] = useState(null)
   const [allArtists, setAllArtists] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
   const [showManage, setShowManage] = useState(false)
   const { playQueue } = usePlayerStore()
   const artistContext = makeArtistContext(id, artist?.name)
+  // Set by the "playing from ..." shortcut so we can scroll to the playing track.
+  const [highlightTrackId, setHighlightTrackId] = useState(null)
+
+  useEffect(() => {
+    const incoming = location.state?.highlightTrackId
+    if (!incoming) return
+    setHighlightTrackId(incoming)
+    // Clear it so a later refresh or back-navigation doesn't re-trigger the scroll.
+    nav(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, nav])
 
   const load = () => {
     Promise.all([api.getArtist(id), api.getSettings()]).then(([data, appSettings]) => {
@@ -120,7 +132,7 @@ export default function Artist() {
         {artist.topTracks?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
-            <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} />
+            <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} />
           </section>
         )}
 
@@ -157,7 +169,7 @@ export default function Artist() {
           </section>
         )}
 
-        {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} />}
+        {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} />}
       </div>
 
       <ArtistManageModal
@@ -171,7 +183,7 @@ export default function Artist() {
   )
 }
 
-function AlbumTracks({ album, artistName = null }) {
+function AlbumTracks({ album, artistName = null, highlightTrackId = null }) {
   const [tracks, setTracks] = useState([])
   const { playQueue } = usePlayerStore()
   const albumContext = makeAlbumContext({ title: album, album_artist: artistName })
@@ -194,7 +206,7 @@ function AlbumTracks({ album, artistName = null }) {
         <h3 className="text-sm font-medium text-white">{album}</h3>
         <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
-      <TrackList tracks={tracks} showAlbum={false} context={albumContext} />
+      <TrackList tracks={tracks} showAlbum={false} context={albumContext} highlightTrackId={highlightTrackId} />
     </motion.div>
   )
 }
