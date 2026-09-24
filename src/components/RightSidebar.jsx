@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -37,12 +37,27 @@ export default function RightSidebar() {
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
     toggleFullscreen, toggleLyricsFullscreen, playbackContext,
-    sidePanelView, setSidePanelView, toggleQueueButton,
+    sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels,
   } = usePlayerStore()
   const nav = useNavigate()
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = localStorage.getItem('word-sync') === '1'
   const isAutoSynced = localStorage.getItem('unsynced_auto_sync') === '1'
+
+  // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
+  // Settings -- without this, navigateToTrackArtist falls back to its
+  // default empty list and mis-slugs/mis-splits any such artist here, even
+  // though PlayerBar's own artist link handles it correctly.
+  const [keepCommaArtists, setKeepCommaArtists] = useState([])
+  useEffect(() => {
+    api.getKeepCommaArtists().then(artists => {
+      if (Array.isArray(artists)) {
+        setKeepCommaArtists(artists)
+      } else if (artists?.value) {
+        try { setKeepCommaArtists(JSON.parse(artists.value)) } catch {}
+      }
+    }).catch(() => {})
+  }, [])
 
   // Whichever of info/lyrics is showing beneath the Queue overlay. The
   // overlay fully covers this (opaque background, see below), and closing
@@ -166,7 +181,7 @@ export default function RightSidebar() {
                       )}
                       {currentTrack?.artist ? (
                         <button
-                          onClick={() => navigateToTrackArtist(nav, currentTrack)}
+                          onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
                           title={`Go to artist: ${currentTrack.artist}`}
                           className="text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
                           {currentTrack.artist}
@@ -227,7 +242,7 @@ export default function RightSidebar() {
             {/* Queue: slides up over the base view above, slides back down
                 to reveal it -- never a second panel, never a width change. */}
             <AnimatePresence>
-              {sidePanelView === 'queue' && (
+              {exclusiveSidePanels && sidePanelView === 'queue' && (
                 <motion.div
                   key="queue-overlay"
                   initial={openedFreshToQueue ? false : { y: '100%' }}

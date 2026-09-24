@@ -10,7 +10,7 @@ import { api } from '../api'
 // presentations never drift out of sync with each other.
 export function QueueContent({ onClose }) {
   const {
-    queue, queueIndex, playQueue,
+    queue, queueIndex, playQueue, playbackContext,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
   } = usePlayerStore()
   const { openAddToPlaylist } = useAppStore()
@@ -139,7 +139,7 @@ export function QueueContent({ onClose }) {
 
                 <div
                   className="flex flex-1 items-center gap-2 min-w-0 cursor-pointer z-10"
-                  onClick={() => shuffle ? playQueue(shuffleQueue, i) : playQueue(queue, i)}
+                  onClick={() => shuffle ? playQueue(shuffleQueue, i, playbackContext) : playQueue(queue, i, playbackContext)}
                 >
                   <span className="text-xs text-muted w-5 text-center flex-shrink-0 font-display">
                     {isCurrent ? '▶' : i + 1}

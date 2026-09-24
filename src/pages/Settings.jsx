@@ -234,12 +234,20 @@ export default function Settings() {
 
   useEffect(() => {
 
-    api.getSettings().then(s => setSettings({
-      ...(s || {}),
-      discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
-      discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
-      discord_auto_connect: s?.discord_auto_connect ?? '0',
-    }))
+    api.getSettings().then(s => {
+      setSettings({
+        ...(s || {}),
+        discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
+        discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
+        discord_auto_connect: s?.discord_auto_connect ?? '0',
+      })
+      // Keep the player store's live `exclusiveSidePanels` in sync with the
+      // backend-persisted value on load -- it was previously seeded only
+      // from localStorage, so a value saved from another install/profile
+      // (or a cleared localStorage) could silently disagree with what
+      // Settings displays here until the toggle was clicked again.
+      setExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+    })
 
     api.getKeepCommaArtists().then(a => {
 
