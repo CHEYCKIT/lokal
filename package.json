@@ -26,6 +26,9 @@
       "server/**/*"
     ],
     "asar": true,
+    "asarUnpack": [
+      "electron/native/**/*.node"
+    ],
     "publish": {
       "provider": "github",
       "owner": "sipbuu",

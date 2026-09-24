@@ -29,6 +29,7 @@ const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar
 let smtcBridge = null
 let smtcPollTimer = null
 let smtcArmTimer = null
+let smtcLastFireCount = 0
 
 function startWindowsSmtcPolling() {
   if (smtcPollTimer) return
@@ -36,6 +37,23 @@ function startWindowsSmtcPolling() {
   smtcPollTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     const requests = smtcBridge.poll_requests()
+    // napi-rs's snake_case -> camelCase field conversion for #[napi(object)]
+    // is the documented default, but this can't be verified without an
+    // actual Windows build to run it against -- check both forms so a
+    // wrong assumption here doesn't silently break the one diagnostic that
+    // tells us whether the native handler fires at all.
+    const fireCount = requests.fireCount ?? requests.fire_count ?? 0
+
+    // fire_count is monotonic (see lib.rs) -- it only tells us whether
+    // either WinRT handler fired at all since the last poll, independent
+    // of whether the request below actually does anything. If a Shuffle/
+    // Repeat click in a native flyout never moves this number, the click
+    // isn't reaching this native module -- a WinRT/session-binding
+    // problem, not a bug in the IPC/renderer plumbing below it.
+    if (fireCount !== smtcLastFireCount) {
+      console.log('[smtc] native handler fired (fireCount', smtcLastFireCount, '->', fireCount, ') shuffle:', requests.shuffle, 'repeat:', requests.repeat)
+      smtcLastFireCount = fireCount
+    }
 
     if (requests.shuffle !== null && requests.shuffle !== undefined) {
       mainWindow.webContents.send('remote:command', { action: 'setShuffle', value: requests.shuffle })
@@ -56,6 +74,8 @@ function tryArmWindowsSmtcBridge() {
     const hwnd = Number(win.hwnd)
     console.log('[smtc] Binding to Chromium SMTC singleton:', hwnd)
     smtcBridge.arm_shuffle_repeat(hwnd)
+    const armed = typeof smtcBridge.is_armed === 'function' ? smtcBridge.is_armed() : 'unknown (is_armed not available)'
+    console.log('[smtc] arm_shuffle_repeat returned without error, is_armed():', armed)
     startWindowsSmtcPolling()
     console.log('[smtc] Native Windows SMTC shuffle/repeat bridge enabled')
     return true

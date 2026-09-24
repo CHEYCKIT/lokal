@@ -25,6 +25,15 @@ static BOUND_HWND: OnceLock<isize> = OnceLock::new();
 struct Pending {
     shuffle: Option<bool>,
     repeat: Option<i32>,
+    // Incremented every time either WinRT event handler below actually
+    // fires, regardless of the value it carried. Exposed through
+    // poll_requests() purely as a diagnostic: if this never increases while
+    // clicking Shuffle/Repeat in a native flyout, the click isn't reaching
+    // this native module at all (a WinRT/session-binding problem), as
+    // distinct from the handler firing but something downstream (the JS
+    // poll loop, the IPC message, the renderer's action) not reacting to
+    // it -- two very different bugs that look identical from the outside.
+    fire_count: u32,
 }
 
 fn pending() -> &'static Mutex<Pending> {
@@ -147,6 +156,11 @@ fn bound_hwnd() -> napi::Result<isize> {
 }
 
 #[napi]
+pub fn is_armed() -> bool {
+    BOUND_HWND.get().is_some()
+}
+
+#[napi]
 pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
     let hwnd = hwnd as isize;
     let smtc = smtc_for(hwnd)
@@ -165,7 +179,9 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
         move |_sender: &Option<SystemMediaTransportControls>,
               args: &Option<ShuffleEnabledChangeRequestedEventArgs>| {
             if let Some(args) = args {
-                pending().lock().unwrap().shuffle = Some(args.RequestedShuffleEnabled()?);
+                let mut p = pending().lock().unwrap();
+                p.shuffle = Some(args.RequestedShuffleEnabled()?);
+                p.fire_count = p.fire_count.wrapping_add(1);
             }
             Ok(())
         },
@@ -176,7 +192,9 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
         move |_sender: &Option<SystemMediaTransportControls>,
               args: &Option<AutoRepeatModeChangeRequestedEventArgs>| {
             if let Some(args) = args {
-                pending().lock().unwrap().repeat = Some(repeat_to_i32(args.RequestedAutoRepeatMode()?));
+                let mut p = pending().lock().unwrap();
+                p.repeat = Some(repeat_to_i32(args.RequestedAutoRepeatMode()?));
+                p.fire_count = p.fire_count.wrapping_add(1);
             }
             Ok(())
         },
@@ -191,6 +209,11 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
 pub struct PendingRequests {
     pub shuffle: Option<bool>,
     pub repeat: Option<i32>,
+    // Monotonic -- not reset on read, unlike shuffle/repeat above. JS
+    // compares this against the value from its previous poll to tell
+    // whether either native handler fired since then, independent of
+    // whether the requested value actually changed anything.
+    pub fire_count: u32,
 }
 
 #[napi]
@@ -199,6 +222,7 @@ pub fn poll_requests() -> PendingRequests {
     PendingRequests {
         shuffle: pending.shuffle.take(),
         repeat: pending.repeat.take(),
+        fire_count: pending.fire_count,
     }
 }
 
