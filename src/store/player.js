@@ -84,7 +84,7 @@ export const usePlayerStore = create((set, get) => ({
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
-  showRightSidebar: false, showFullscreen: false, showQueue: false,
+  showRightSidebar: false, showFullscreen: false, showQueue: false, showLyricsPanel: false,
   // Which content the right-hand panel shows. Only meaningful in merged
   // mode -- independent mode's Queue lives in its own separate panel and
   // never touches this.
@@ -587,6 +587,27 @@ export const usePlayerStore = create((set, get) => ({
       return { showRightSidebar: true, sidePanelView: 'queue' }
     }
     return { sidePanelView: s.sidePanelView === 'queue' ? 'info' : 'queue' }
+  }),
+  // Closes the *standalone* Lyrics panel (independent mode only -- mirrors
+  // toggleQueue exactly, for the same reason: that's the only mode where
+  // it's ever mounted as its own sibling).
+  toggleLyricsPanel: () => set(s => ({ showLyricsPanel: !s.showLyricsPanel })),
+  // Mode-aware Lyrics button (the player bar's mic icon). Previously jumped
+  // straight to the full-screen lyrics overlay (toggleLyricsFullscreen,
+  // which still exists -- it's what the "Expand Lyrics" button inside this
+  // same view opens); now mirrors toggleQueueButton instead. Independent
+  // mode: its own standalone panel. Merged mode: opens the single panel
+  // straight to the existing 'lyrics' tab if closed, switches to it if the
+  // panel's already open showing something else, or switches back to
+  // 'info' if Lyrics is already what's showing.
+  toggleLyricsButton: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      return { showLyricsPanel: !s.showLyricsPanel }
+    }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'lyrics' }
+    }
+    return { sidePanelView: s.sidePanelView === 'lyrics' ? 'info' : 'lyrics' }
   }),
   setSidePanelView: (view) => set({ sidePanelView: view }),
   // The user's own explicit mode choice (the Settings toggle). Carries
