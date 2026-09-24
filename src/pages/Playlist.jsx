@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Plus, Image as ImageIcon, AlertCircle, Search, Download } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -36,11 +36,19 @@ export default function Playlist() {
   )
   // Set by the "playing from ..." shortcut so we can scroll to the playing track.
   const [highlightTrackId, setHighlightTrackId] = useState(null)
+  // A per-request identity, distinct from the track ID itself, so a second
+  // shortcut to the *same* already-playing track still re-triggers the
+  // scroll/flash in TrackList instead of being silently deduped against
+  // the first request for that ID.
+  const highlightSeqRef = useRef(0)
+  const [highlightRequestKey, setHighlightRequestKey] = useState(null)
 
   useEffect(() => {
     const incoming = location.state?.highlightTrackId
     if (!incoming) return
+    highlightSeqRef.current += 1
     setHighlightTrackId(incoming)
+    setHighlightRequestKey(`${incoming}:${highlightSeqRef.current}`)
     // Clear it so a later refresh or back-navigation doesn't re-trigger the scroll.
     nav(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, nav])
@@ -418,6 +426,7 @@ export default function Playlist() {
         onReorder={!isLiked ? handleReorder : null}
         context={playbackContext}
         highlightTrackId={highlightTrackId}
+        highlightRequestKey={highlightRequestKey}
       />
 
       {!isLiked && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (
