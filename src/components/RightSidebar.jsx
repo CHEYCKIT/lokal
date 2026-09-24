@@ -53,6 +53,12 @@ export default function RightSidebar() {
         try { setKeepCommaArtists(JSON.parse(artists.value)) } catch {}
       }
     }).catch(() => {})
+    // RightSidebar stays mounted across normal route navigation, so a list
+    // loaded once at mount would otherwise go stale until a remount/reload
+    // if the user updates it in Settings mid-session.
+    const onUpdate = (e) => { if (Array.isArray(e.detail)) setKeepCommaArtists(e.detail) }
+    window.addEventListener('lokal:comma-artists-updated', onUpdate)
+    return () => window.removeEventListener('lokal:comma-artists-updated', onUpdate)
   }, [])
 
   const artSrc = currentTrack?.artwork_path

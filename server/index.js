@@ -88,7 +88,15 @@ app.get('/api/artist-image/:artistId', (req, res) => {
   // this, the client sees a truthy `image_path` for such artists (from the
   // fallback applied there) but this endpoint 404s, producing a broken
   // image instead of falling back to the generated avatar (issue #14).
-  const withFallback = artist ? artistsRouter.addArtistFallback(db, artist) : null
+  //
+  // addArtistFallback only falls back when image_path is empty -- it
+  // doesn't check the file still exists on disk. Clear a stale path first
+  // so a deleted/moved artist image doesn't shadow perfectly good track
+  // artwork underneath it.
+  const artistForFallback = artist && artist.image_path && !fs.existsSync(artist.image_path)
+    ? { ...artist, image_path: null }
+    : artist
+  const withFallback = artistForFallback ? artistsRouter.addArtistFallback(db, artistForFallback) : null
   if (withFallback?.image_path && fs.existsSync(withFallback.image_path)) {
     return res.sendFile(withFallback.image_path)
   }
