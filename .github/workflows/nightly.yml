@@ -217,6 +217,18 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
+          # DISCORD_WEBHOOK lives in the upstream repo's secrets, not every
+          # fork's -- an empty/unset secret makes curl's URL argument empty,
+          # which curl rejects outright ("URL rejected: Malformed input to a
+          # URL function", exit 3). By this point the actual release has
+          # already been created above, so a missing or unreachable webhook
+          # is a cosmetic notification failing, not a real problem -- don't
+          # let it fail the job.
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK secret is not set on this repo -- skipping Discord notification."
+            exit 0
+          fi
+
           BANNER_URL="https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png"
 
           PAYLOAD=$(jq -n \
@@ -238,4 +250,5 @@ jobs:
             }'
           )
 
-          curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
+          curl -sS -f -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
+            || echo "Discord webhook call failed (rejected or unreachable) -- not fatal, release already published above."
