@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Home, Search, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
-import { useAppStore, usePlayerStore } from '../store/player'
+import { useAppStore } from '../store/player'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
 
@@ -48,7 +48,6 @@ export default function Sidebar() {
   
   const { user, openAuth, logout, openStats } = useAppStore()
 
-  const { currentTrack } = usePlayerStore()
   const navItems = user
     ? [{ icon: User, label: 'Profile', path: '/profile' }, ...NAV]
     : NAV
@@ -329,13 +328,6 @@ export default function Sidebar() {
           </div>
         ))}
       </div>
-
-      {currentTrack && (
-        <div className="p-3 flex-shrink-0 border-t border-border">
-          <p className="text-xs text-white truncate font-medium">{currentTrack.title}</p>
-          <p className="text-xs text-muted truncate">{currentTrack.artist}</p>
-        </div>
-      )}
 
     </aside>
   )

@@ -12,6 +12,20 @@ function sanitizeSingleTrack(track) {
   return track?.id && !isGhostTrack(track) ? track : null
 }
 
+// Settings > Appearance > Layout > Side Panels. Defaults to merged/exclusive
+// (only one of the Now Playing sidebar / Queue open at a time) unless the
+// user has explicitly opted into the old independent (both-open) behavior.
+// Only used to seed initial store state -- once loaded, components read the
+// reactive `exclusiveSidePanels` field instead, so a live setting change
+// (no reload) is reflected everywhere immediately.
+function readExclusiveSidePanelsSetting() {
+  try {
+    return localStorage.getItem('lokal-exclusive-panels') !== '0'
+  } catch {
+    return true
+  }
+}
+
 function loadQueue() {
   try {
     const data = localStorage.getItem('lokal-queue')
@@ -29,6 +43,9 @@ function loadQueue() {
         shuffleQueue,
         originalQueue,
         currentTrack,
+        playbackContext: parsed.playbackContext && typeof parsed.playbackContext === 'object'
+          ? parsed.playbackContext
+          : null,
         queueIndex: currentTrack ? Math.max(queue.findIndex(track => track.id === currentTrack.id), 0) : -1,
         shuffleIndex: currentTrack ? Math.max(shuffleQueue.findIndex(track => track.id === currentTrack.id), 0) : -1,
         isPlaying: false,
@@ -62,11 +79,21 @@ const savedQueueState = loadQueue()
 
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
+  playbackContext: null,
   isPlaying: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
   showRightSidebar: false, showFullscreen: false, showQueue: false,
+  // Which content the right-hand panel shows. Only meaningful in merged
+  // mode -- independent mode's Queue lives in its own separate panel and
+  // never touches this.
+  sidePanelView: 'info',
+  // Settings > Appearance > Layout > Side Panels. Store state (not just a
+  // localStorage read inside actions) so components can react live when
+  // the setting changes, without needing a reload. Initialized from
+  // localStorage so the choice persists across sessions.
+  exclusiveSidePanels: readExclusiveSidePanelsSetting(),
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
   activeAudioElement: 'primary',
 
@@ -148,7 +175,9 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
-  playTrack: (track, queue = null) => {
+  setPlaybackContext: (context) => set({ playbackContext: context || null }),
+
+  playTrack: (track, queue = null, context = null) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return
     const q = sanitizeTrackList(queue || get().queue)
@@ -164,12 +193,13 @@ export const usePlayerStore = create((set, get) => ({
       queue: q, 
       queueIndex: idx, 
       isPlaying: true, 
+      playbackContext: context || null,
       playHistory: [playableTrack.id],
       futureHistory: []
     })
   },
 
-  playQueue: (tracks, startIndex = 0) => {
+  playQueue: (tracks, startIndex = 0, context = null) => {
     const sanitizedTracks = sanitizeTrackList(tracks)
     if (!sanitizedTracks.length) return
     
@@ -185,6 +215,7 @@ export const usePlayerStore = create((set, get) => ({
       queueIndex: safeIndex, 
       currentTrack: startTrack, 
       isPlaying: true,
+      playbackContext: context || null,
       playHistory: startTrack ? [startTrack.id] : [],
       futureHistory: []
     })
@@ -507,9 +538,48 @@ export const usePlayerStore = create((set, get) => ({
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
-  toggleRightSidebar: () => set(s => ({ showRightSidebar: !s.showRightSidebar })),
+  // Opens/closes the right-hand panel itself. In merged mode, reopening
+  // always resets to the base "info" view -- the panel's info/lyrics
+  // content is the persistent base that Queue slides up over, per Spotify's
+  // own pattern, so reopening should land back on that base rather than
+  // wherever it happened to be showing when last closed.
+  toggleRightSidebar: () => set(s => {
+    const opening = !s.showRightSidebar
+    if (!s.exclusiveSidePanels) {
+      // Independent mode: exactly the original, fully separate behavior --
+      // no interaction with the Queue panel at all.
+      return { showRightSidebar: opening }
+    }
+    return {
+      showRightSidebar: opening,
+      sidePanelView: opening ? 'info' : s.sidePanelView,
+    }
+  }),
   toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
+  // Closes the *standalone* Queue panel (independent mode only -- that's
+  // the only mode where it's ever mounted as its own sibling, so this
+  // never needs to know about the sidebar).
   toggleQueue: () => set(s => ({ showQueue: !s.showQueue })),
+  // Mode-aware Queue button. Independent mode: behaves exactly like the
+  // original, unmodified toggleQueue. Merged mode: opens the single panel
+  // straight to Queue if it's closed (the separate "Now Playing" button
+  // handles opening to info), slides Queue up over whatever's showing if
+  // the panel's already open, or slides back down to info if Queue is
+  // already what's showing.
+  toggleQueueButton: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      return { showQueue: !s.showQueue }
+    }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'queue' }
+    }
+    return { sidePanelView: s.sidePanelView === 'queue' ? 'info' : 'queue' }
+  }),
+  setSidePanelView: (view) => set({ sidePanelView: view }),
+  setExclusiveSidePanels: (value) => {
+    try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
+    set({ exclusiveSidePanels: value })
+  },
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 
@@ -623,11 +693,13 @@ usePlayerStore.subscribe((state) => {
   const {
     queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
     shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
+    playbackContext,
   } = state
 
   const dataToSave = {
     queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
     shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
+    playbackContext,
   }
 
   try {

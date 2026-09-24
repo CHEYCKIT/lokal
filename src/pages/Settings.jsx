@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
 import { api } from '../api'
-import { useAppStore } from '../store/player'
+import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
@@ -208,6 +208,7 @@ export default function Settings() {
 
   
   const { openAlbums, user, logout } = useAppStore()
+  const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
   const fileInputRef = useRef(null)
   const artistOffsetRef = useRef(0)
   const artistRequestRef = useRef(0)
@@ -233,12 +234,20 @@ export default function Settings() {
 
   useEffect(() => {
 
-    api.getSettings().then(s => setSettings({
-      ...(s || {}),
-      discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
-      discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
-      discord_auto_connect: s?.discord_auto_connect ?? '0',
-    }))
+    api.getSettings().then(s => {
+      setSettings({
+        ...(s || {}),
+        discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
+        discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
+        discord_auto_connect: s?.discord_auto_connect ?? '0',
+      })
+      // Keep the player store's live `exclusiveSidePanels` in sync with the
+      // backend-persisted value on load -- it was previously seeded only
+      // from localStorage, so a value saved from another install/profile
+      // (or a cleared localStorage) could silently disagree with what
+      // Settings displays here until the toggle was clicked again.
+      setExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+    })
 
     api.getKeepCommaArtists().then(a => {
 
@@ -2142,6 +2151,34 @@ module.exports = {
             </div>
           )}
         </div>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
+      <Section title="Layout">
+        <Row
+          label="Side Panels"
+          desc="Merged: the Queue slides up over the Now Playing panel instead of opening a second one alongside it. Independent: Queue is its own separate panel and can stay open next to Now Playing, like before."
+        >
+          <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
+            {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
+              const current = settings.exclusive_side_panels !== '0' ? '1' : '0'
+              return (
+                <button
+                  key={value}
+                  onClick={() => {
+                    set('exclusive_side_panels', value)
+                    try { localStorage.setItem('lokal-exclusive-panels', value) } catch {}
+                    setExclusiveSidePanels(value === '1')
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </Row>
       </Section>
       )}
 

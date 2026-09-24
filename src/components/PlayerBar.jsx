@@ -4,32 +4,20 @@ import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, 
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { navigateToTrackAlbum } from '../playbackContext'
+import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
 import Modal from './Modal'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
-function artistToSlug(artistName, keepCommaArtists = []) {
-  if (!artistName) return ''
-  const lowerName = artistName.toLowerCase().trim()
-  for (const keep of keepCommaArtists) {
-    const lowerKeep = keep.toLowerCase().trim()
-    if (lowerName === lowerKeep || lowerName.startsWith(lowerKeep + ' ') || lowerName.endsWith(' ' + lowerKeep)) {
-      const slug = keep.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      return slug
-    }
-  }
-  const firstPart = artistName.split(',')[0].trim()
-  return firstPart.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
 export default function PlayerBar() {
   const nav = useNavigate()
   const {
     currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
-    showRightSidebar, showQueue,
+    showRightSidebar, showQueue, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
-    toggleLyricsFullscreen, toggleRightSidebar, toggleFullscreen, toggleQueue,
+    toggleLyricsFullscreen, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
     toggleMiniPlayer,
@@ -118,6 +106,12 @@ export default function PlayerBar() {
     nav(`/artist/a-${slug}`)
   }
 
+  const hasAlbum = !!currentTrack?.album
+  const handleTitleClick = () => {
+    if (!hasAlbum) return
+    navigateToTrackAlbum(nav, currentTrack)
+  }
+
   return (
     <>
       <div className="h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
@@ -139,7 +133,16 @@ export default function PlayerBar() {
           <AnimatePresence mode="wait">
             <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
               <div className="flex items-center gap-2 min-w-0">
-                <p className="text-sm font-medium truncate text-white">{currentTrack?.title || '—'}</p>
+                {hasAlbum ? (
+                  <button
+                    onClick={handleTitleClick}
+                    title={`Go to album: ${currentTrack.album}`}
+                    className="text-sm font-medium truncate text-white hover:text-accent hover:underline transition-colors text-left min-w-0">
+                    {currentTrack.title}
+                  </button>
+                ) : (
+                  <p className="text-sm font-medium truncate text-white">{currentTrack?.title || '—'}</p>
+                )}
                 {!!currentTrack?.explicit && (
                   <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">
                     E
@@ -207,14 +210,14 @@ export default function PlayerBar() {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 w-52 justify-end">
+        <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
           {currentTrack && (
-            <div className="flex-shrink-0">
-              <Waveform isPlaying={isPlaying} />
+            <div className="min-w-0 shrink basis-[120px] overflow-hidden">
+              <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
           )}
           <button onClick={toggleLyricsFullscreen} className="text-subtle hover:text-accent transition-colors" title="Lyrics"><Mic2 size={16} /></button>
-          <button onClick={toggleQueue} className={`transition-colors ${showQueue ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
+          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
           <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Now Playing">< PanelRight size={16} /></button>
           <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-subtle hover:text-accent transition-colors disabled:opacity-30" title="Mini Player"><Radio size={15} /></button>
           <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-subtle hover:text-white transition-colors disabled:opacity-30" title="Fullscreen"><Maximize2 size={15} /></button>
