@@ -233,12 +233,21 @@ export default function Settings() {
 
   useEffect(() => {
 
-    api.getSettings().then(s => setSettings({
-      ...(s || {}),
-      discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
-      discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
-      discord_auto_connect: s?.discord_auto_connect ?? '0',
-    }))
+    api.getSettings().then(s => {
+      setSettings({
+        ...(s || {}),
+        discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
+        discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
+        discord_auto_connect: s?.discord_auto_connect ?? '0',
+      })
+      // Keep localStorage (what the player store's exclusiveSidePanels()
+      // actually reads) in sync with the backend-persisted value on load --
+      // it was previously only written when the toggle itself was clicked,
+      // so a value saved from another install/profile (or a cleared
+      // localStorage) could silently disagree with what this page displays
+      // as "current" until the toggle was clicked again.
+      try { localStorage.setItem('lokal-exclusive-panels', s?.exclusive_side_panels !== '0' ? '1' : '0') } catch {}
+    })
 
     api.getKeepCommaArtists().then(a => {
 
