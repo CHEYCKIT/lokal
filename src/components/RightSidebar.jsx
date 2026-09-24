@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -39,6 +39,21 @@ export default function RightSidebar() {
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = localStorage.getItem('word-sync') === '1'
   const isAutoSynced = localStorage.getItem('unsynced_auto_sync') === '1'
+
+  // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
+  // Settings -- without this, navigateToTrackArtist falls back to its
+  // default empty list and mis-slugs/mis-splits any such artist here, even
+  // though PlayerBar's own artist link handles it correctly.
+  const [keepCommaArtists, setKeepCommaArtists] = useState([])
+  useEffect(() => {
+    api.getKeepCommaArtists().then(artists => {
+      if (Array.isArray(artists)) {
+        setKeepCommaArtists(artists)
+      } else if (artists?.value) {
+        try { setKeepCommaArtists(JSON.parse(artists.value)) } catch {}
+      }
+    }).catch(() => {})
+  }, [])
 
   const artSrc = currentTrack?.artwork_path
     ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
@@ -112,7 +127,7 @@ export default function RightSidebar() {
                   )}
                   {currentTrack?.artist ? (
                     <button
-                      onClick={() => navigateToTrackArtist(nav, currentTrack)}
+                      onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
                       title={`Go to artist: ${currentTrack.artist}`}
                       className="text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
                       {currentTrack.artist}
