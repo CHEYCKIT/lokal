@@ -21,3 +21,5 @@ src/photos/
 *.db-journal
 *.log
 .vscode/
+electron/native/
+native/smtc-bridge/target/
