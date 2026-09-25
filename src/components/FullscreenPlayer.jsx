@@ -184,28 +184,57 @@ export default function FullscreenPlayer() {
   }, [showFullscreen])
 
   // Leaving fullscreen only fades the *outer* overlay out over its own
-  // 300ms exit animation -- fullscreenPanel (and isPanelVisible below) is
-  // separate local state that this never touched, so the side panel kept
-  // its own opacity-100/pointer-events-auto/420px-wide styling the whole
-  // time, fully clickable, independent of whatever the outer overlay was
-  // doing. Closing the panel via its own Queue/Lyrics button already
-  // clears it correctly (see isPanelVisible), but closing *fullscreen*
-  // with a panel still open never did. Normally that's masked by the
-  // outer overlay unmounting a moment later anyway -- but if that unmount
-  // is ever delayed (a Queue<->Lyrics switch right before closing tears
-  // down and remounts LyricsPanel, which is heavy: rAF-driven word-sync
-  // ticking, springs, selection/scroll listeners -- contending with the
-  // outer AnimatePresence exit at the same moment), the still-fully-
-  // interactive panel and its Search/Expand-lyrics buttons stay sitting
-  // on top of whatever the user navigates to underneath, swallowing or
-  // misdirecting clicks until the app is restarted. Resetting eagerly the
-  // instant showFullscreen flips, rather than only once the outer fade
-  // settles, means the panel can never outlive the overlay it's supposed
-  // to live inside.
+  // 300ms AnimatePresence exit. Confirmed live (Windows, DevTools attached
+  // to a real build) that this exit can get stuck indefinitely: the whole
+  // overlay -- side panel and all its buttons included -- stays mounted,
+  // faded to opacity 0 but with computed pointer-events still "auto",
+  // sitting at z-50 over the entire window and intercepting every click
+  // anywhere in the app until the process is restarted. Repeatedly
+  // switching Queue<->Lyrics right before closing (which tears down and
+  // remounts the heavy LyricsPanel -- rAF word-sync ticking, springs,
+  // selection/scroll listeners) right as the outer AnimatePresence exit
+  // starts made this reliable to reproduce, but the stuck exit itself is
+  // the bug; that's just what triggers it.
+  //
+  // Two things that look like fixes for this do NOT work, confirmed live:
+  //  1. A `style={{ pointerEvents: showFullscreen ? 'auto' : 'none' }}`
+  //     ternary on the overlay. It's dead code: that JSX only ever gets
+  //     (re-)created while `showFullscreen && (...)` is true, so the
+  //     'none' branch can never be reached at creation time. Once
+  //     showFullscreen flips false, this component stops including the
+  //     motion.div in its own return value at all -- AnimatePresence
+  //     keeps animating out a snapshot of the *last* element it was
+  //     given, frozen with whatever props/classes it had at that moment.
+  //  2. Resetting fullscreenPanel/showSearch React state (still done
+  //     below, for its own sake -- it's what makes reopening fullscreen
+  //     start from a clean panel-closed state). It runs fine, but can't
+  //     reach the frozen snapshot either, for the same reason: by the
+  //     time this component re-renders with the new state, showFullscreen
+  //     is already false, so it again contributes nothing for that slot.
+  //
+  // The only thing that actually worked, verified live: reaching the real
+  // DOM node directly, outside React, and hiding it. pointer-events alone
+  // isn't enough either -- the "Go to {context}" link a little further
+  // down explicitly opts back in with its own pointer-events-auto (by
+  // design, for while fullscreen is genuinely open), which would stay
+  // clickable through an ancestor's pointer-events: none. visibility is
+  // not overridden anywhere in this file, so visibility: hidden reliably
+  // takes every descendant out of hit-testing regardless of what pointer-
+  // events they set. This queries the DOM instead of using a single ref
+  // because if this happens more than once without a previous exit ever
+  // completing, more than one stuck copy can accumulate; a ref would only
+  // ever reach the most recently mounted one. data-fullscreen-player-
+  // overlay is a marker unique to this component -- Modal.jsx,
+  // AlbumsModal.jsx and LyricsFullscreen.jsx all reuse the same "fixed
+  // inset-0 z-50" classes, so matching on those instead risked hiding an
+  // unrelated, legitimately open overlay.
   useEffect(() => {
     if (showFullscreen) return
     setFullscreenPanel('none')
     setShowSearch(false)
+    document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
+      el.style.setProperty('visibility', 'hidden')
+    })
   }, [showFullscreen])
 
   const canOpenContext = isContextNavigable(playbackContext)
@@ -287,15 +316,11 @@ export default function FullscreenPlayer() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 flex overflow-hidden"
-          // pointerEvents keyed off the *current* showFullscreen (not just
-          // the animation state) so the whole overlay -- panel included --
-          // stops accepting clicks the instant closing starts, rather than
-          // only once its 300ms fade finishes and it actually unmounts.
-          // This is what actually closes the gap: whatever the cause of a
-          // delayed/stuck unmount turns out to be, an overlay that can't
-          // receive pointer events can't swallow or misdirect a click,
-          // full stop -- it doesn't depend on diagnosing that cause correctly.
-          style={{ WebkitAppRegion: 'no-drag', pointerEvents: showFullscreen ? 'auto' : 'none' }}
+          style={{ WebkitAppRegion: 'no-drag' }}
+          // Marks this exact DOM node so the useEffect above can reach and
+          // hide it (and any stuck earlier copies) directly if its exit
+          // animation never completes -- see that effect's comment.
+          data-fullscreen-player-overlay=""
         >
           <div className="absolute inset-0 bg-black">
             <AnimatePresence mode="wait">
