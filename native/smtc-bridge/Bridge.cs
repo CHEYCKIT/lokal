@@ -148,6 +148,15 @@ namespace SmtcBridge
             int hiddenNoTextMatches = 0;
             int getForWindowThrew = 0;
             int controlsDisabled = 0;
+            // Captured from the first GetForWindow throw this attempt, so the
+            // diagnostic event carries the concrete reason (HRESULT/message)
+            // instead of just a count -- getForWindowThrew alone can't tell us
+            // whether this is e.g. cross-process access being denied (which
+            // would mean this whole approach can never bind to a window owned
+            // by Electron's separate process) versus something transient.
+            string lastGetForWindowExceptionType = null;
+            string lastGetForWindowExceptionMessage = null;
+            int lastGetForWindowHResult = 0;
 
             NativeMethods.EnumWindows((hWnd, _) =>
             {
@@ -186,11 +195,19 @@ namespace SmtcBridge
                     }
                     if (controls != null) controlsDisabled++;
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Not every top-level window responds to GetForWindow; that's
-                    // expected and not an error worth surfacing per-window.
+                    // expected and not an error worth surfacing per-window. But
+                    // capture the first one's detail so the diagnostic event can
+                    // report *why*, not just that it happened.
                     getForWindowThrew++;
+                    if (lastGetForWindowExceptionType == null)
+                    {
+                        lastGetForWindowExceptionType = ex.GetType().FullName;
+                        lastGetForWindowExceptionMessage = ex.Message;
+                        lastGetForWindowHResult = ex.HResult;
+                    }
                 }
 
                 return true;
@@ -210,7 +227,10 @@ namespace SmtcBridge
                         ("classPrefixMatches", classPrefixMatches),
                         ("hiddenNoTextMatches", hiddenNoTextMatches),
                         ("getForWindowThrew", getForWindowThrew),
-                        ("controlsDisabled", controlsDisabled)));
+                        ("controlsDisabled", controlsDisabled),
+                        ("lastExceptionType", lastGetForWindowExceptionType ?? ""),
+                        ("lastExceptionMessage", lastGetForWindowExceptionMessage ?? ""),
+                        ("lastExceptionHResult", lastGetForWindowHResult)));
                 }
                 return;
             }
