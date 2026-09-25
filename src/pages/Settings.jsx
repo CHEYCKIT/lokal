@@ -452,6 +452,12 @@ export default function Settings() {
 
   const save = async () => {
     await api.saveSettings(settings)
+    // RightSidebar's Lyrics tab and the standalone LyricsSidePanel both cache
+    // unsynced_auto_sync in local state and stay mounted across navigation,
+    // so a save made while one of them is already open would otherwise go
+    // unnoticed until it happens to remount. Broadcast the save so they can
+    // refresh in place.
+    window.dispatchEvent(new Event('lokal:settings-saved'))
     localStorage.setItem('lokal-eq', JSON.stringify(eqGains))
     localStorage.setItem('lokal-eq-preset', eqPreset)
     setSaved(true)

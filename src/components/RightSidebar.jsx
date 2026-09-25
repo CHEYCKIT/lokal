@@ -52,7 +52,13 @@ export default function RightSidebar() {
   const [settings, setSettings] = useState({})
   useEffect(() => {
     if (sidePanelView !== 'lyrics') return
-    api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    const loadSettings = () => api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    loadSettings()
+    // Covers the case where the sidebar is *already* open to Lyrics when the
+    // user saves in Settings -- sidePanelView itself never changes then, so
+    // the effect above wouldn't otherwise refire.
+    window.addEventListener('lokal:settings-saved', loadSettings)
+    return () => window.removeEventListener('lokal:settings-saved', loadSettings)
   }, [sidePanelView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
 
