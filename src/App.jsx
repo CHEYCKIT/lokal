@@ -440,7 +440,260 @@ export default function App() {
       return f
     })
 
-    eqFilte   activeEl.addEventListener('timeupdate', update)
+    eqFiltersRef.current = { primary: nodes, cf: cfNodes }
+
+    const primarySource = ctx.createMediaElementSource(audioRef.current)
+    const cfSource = ctx.createMediaElementSource(cfAudioRef.current)
+
+    const primaryGain = ctx.createGain()
+    const cfGain = ctx.createGain()
+    gainNodeRef.current = primaryGain
+    cfGainNodeRef.current = cfGain
+
+    primaryGain.gain.value = volumeRef.current
+    cfGain.gain.value = 0
+
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.8
+    analyserRef.current = analyser
+    window.__lokalAnalyser = analyser
+    window.dispatchEvent(new CustomEvent('lokal:analyser-ready'))
+
+    if (isIOS) {
+      primarySource.connect(ctx.destination)
+      cfSource.connect(ctx.destination)
+    } else {
+      let prev = primarySource
+      for (const n of nodes) { prev.connect(n); prev = n }
+      prev.connect(primaryGain)
+      primaryGain.connect(analyser)
+      analyser.connect(ctx.destination)
+
+      let cfPrev = cfSource
+      for (const n of cfNodes) { cfPrev.connect(n); cfPrev = n }
+      cfPrev.connect(cfGain)
+      cfGain.connect(analyser)
+    }
+
+    try {
+      const stored = normalizeEqGains(JSON.parse(localStorage.getItem('lokal-eq') || '[]'))
+      stored.forEach((v, i) => {
+        const shaped = shapeEqGain(v)
+        if (nodes[i]) nodes[i].gain.value = shaped
+        if (cfNodes[i]) cfNodes[i].gain.value = shaped
+      })
+    } catch (err) {
+    }
+
+    window.__lokaleq = {
+      setGain: (i, v) => {
+        const shaped = shapeEqGain(v)
+        if (nodes[i]) nodes[i].gain.value = shaped
+        if (cfNodes[i]) cfNodes[i].gain.value = shaped
+      }
+    }
+
+    audioSourcesInitializedRef.current = true
+  } catch (e) {
+    console.error('Failed to initialize AudioContext:', e)
+  }
+}, [])
+
+  useEffect(() => {
+    window.__lokalInitAudio = initAudioCtx
+    return () => {
+      if (window.__lokalInitAudio === initAudioCtx) {
+        delete window.__lokalInitAudio
+      }
+    }
+  }, [initAudioCtx])
+
+  useEffect(() => {
+    const syncRecapStories = () => {
+      try {
+        setShowRecapStories(localStorage.getItem('lokal-dev-recap') === '1')
+      } catch {
+        setShowRecapStories(false)
+      }
+    }
+
+    window.__lokalRecap = {
+      open: () => {
+        try { localStorage.setItem('lokal-dev-recap', '1') } catch {}
+        syncRecapStories()
+      },
+      close: () => {
+        try { localStorage.removeItem('lokal-dev-recap') } catch {}
+        syncRecapStories()
+      },
+      toggle: () => {
+        try {
+          if (localStorage.getItem('lokal-dev-recap') === '1') localStorage.removeItem('lokal-dev-recap')
+          else localStorage.setItem('lokal-dev-recap', '1')
+        } catch {}
+        syncRecapStories()
+      },
+    }
+
+    window.addEventListener('storage', syncRecapStories)
+    window.addEventListener('lokal:recap-toggle', syncRecapStories)
+    return () => {
+      window.removeEventListener('storage', syncRecapStories)
+      window.removeEventListener('lokal:recap-toggle', syncRecapStories)
+      delete window.__lokalRecap
+    }
+  }, [])
+
+  useEffect(() => {
+    const resumeAudio = () => {
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {})
+      }
+    }
+
+    window.addEventListener('focus', resumeAudio)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resumeAudio()
+    })
+
+    return () => {
+      window.removeEventListener('focus', resumeAudio)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!api.isElectron) return
+    const off = api.onOpenFileRequest(async (filePath) => {
+      if (!filePath) return
+      try {
+        const result = await api.resolveFileToPlay(filePath)
+        if (result?.success && result.track) {
+          usePlayerStore.getState().playTrack(result.track, [result.track])
+        } else {
+          api.log('warn', `Failed to open file from Explorer: ${filePath} (${result?.error || 'unknown error'})`)
+        }
+      } catch (e) {
+        api.log('error', `Error opening file from Explorer: ${e.message}`)
+      }
+    })
+    return off
+  }, [])
+
+  useEffect(() => {
+    if (!api.isElectron) return
+    const off = api.onThumbarCommand((action) => {
+      const state = usePlayerStore.getState()
+      if (action === 'previous') state.prev()
+      else if (action === 'next') state.next()
+      else if (action === 'toggle-play') state.togglePlay()
+      else if (action === 'toggle-like') {
+        const track = state.currentTrack
+        if (!track) return
+        const userId = useAppStore.getState().user?.id
+        api.toggleLike(track.id, userId).then((r) => {
+          const liked = typeof r === 'boolean' ? r : r?.liked ?? false
+          usePlayerStore.getState().setLiked(track.id, liked)
+        })
+      }
+    })
+    return off
+  }, [])
+
+  useEffect(() => {
+    if (!api.isElectron) return
+    api.updateThumbarState({ isPlaying, isLiked: !!(currentTrack && likedIds.has(currentTrack.id)) })
+  }, [isPlaying, currentTrack, likedIds])
+
+  useEffect(() => {
+    //safety net for pesky SMTC.
+    const el = smtcKeepAliveRef.current
+    if (!el) return
+    if (isPlaying) {
+      el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
+    } else {
+      el.pause()
+    }
+  }, [isPlaying])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    if (!currentTrack) return
+
+    const updateMetadata = async () => {
+      let artworkSrc = 'fallback_nopfp.png'
+      if (currentTrack.artwork_path) {
+        const dataUrl = await getArtworkDataURL(currentTrack.artwork_path)
+        if (dataUrl) {
+          artworkSrc = dataUrl
+        }
+      }
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: currentTrack.title || '',
+        artist: currentTrack.artist || '',
+        album: currentTrack.album || '',
+        artwork: [{ src: artworkSrc, sizes: '512x512', type: 'image/png' }]
+      })
+    }
+
+    updateMetadata()
+    try {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'
+    } catch {}
+    
+    const getActiveAudio = () => {
+      const state = usePlayerStore.getState()
+      return state.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
+    }
+
+    if (audioRef.current && typeof navigator.mediaSession.setPositionState === 'function') {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: audioRef.current.duration || 0,
+          playbackRate: audioRef.current.playbackRate || 1,
+          position: audioRef.current.currentTime || 0
+        })
+      } catch {}
+    }
+    navigator.mediaSession.setActionHandler('play', () => { 
+      const activeEl = getActiveAudio()
+      activeEl?.play() 
+    })
+    navigator.mediaSession.setActionHandler('pause', () => { 
+      const activeEl = getActiveAudio()
+      activeEl?.pause() 
+    })
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      const activeEl = getActiveAudio()
+      if (activeEl && typeof details.seekTime === 'number') activeEl.currentTime = details.seekTime
+    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      usePlayerStore.getState().prev()
+    })
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      usePlayerStore.getState().next()
+    })
+  }, [currentTrack, isPlaying])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    
+    const activeEl = usePlayerStore.getState().activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
+    if (!activeEl) return
+
+    const update = () => {
+      if (typeof navigator.mediaSession.setPositionState === 'function') {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: activeEl.duration || 0,
+            playbackRate: activeEl.playbackRate || 1,
+            position: activeEl.currentTime || 0
+          })
+        } catch {}
+      }
+    }
+
+    activeEl.addEventListener('timeupdate', update)
     return () => activeEl.removeEventListener('timeupdate', update)
   }, [])
 
@@ -875,7 +1128,8 @@ export default function App() {
   }, [isPlaying])
 
   useEffect(() => {
-    const ctx = audioCtxRef.current   const primary = gainNodeRef.current?.gain
+    const ctx = audioCtxRef.current
+    const primary = gainNodeRef.current?.gain
     const secondary = cfGainNodeRef.current?.gain
     if (!ctx || !primary || !secondary) return
     try {
@@ -1083,7 +1337,8 @@ export default function App() {
                 </h4>
                 <p className="text-xs text-accent uppercase tracking-[0.2em] font-bold mt-1 opacity-80">
                   Lokal v{updateState.info?.version || '1.3.0'}
-                </p>   </div>
+                </p>
+              </div>
             </div>
             
             <button 
