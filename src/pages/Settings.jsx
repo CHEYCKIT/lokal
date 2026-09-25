@@ -2169,6 +2169,17 @@ module.exports = {
                   onClick={() => {
                     set('exclusive_side_panels', value)
                     try { localStorage.setItem('lokal-exclusive-panels', value) } catch {}
+                    // This takes effect instantly (localStorage above),
+                    // unlike most settings on this page which wait for the
+                    // "Save Settings" button -- but set() only updates this
+                    // component's own local `settings` copy, so without this
+                    // the backend's exclusive_side_panels stayed on the old
+                    // value until the user happened to click Save Settings
+                    // for some unrelated change. A fresh install, a browser
+                    // with no matching localStorage entry, or any other
+                    // consumer of the backend setting would then see the old
+                    // choice despite the UI already showing the new one.
+                    api.saveSettings({ exclusive_side_panels: value }).catch(() => {})
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
                 >
