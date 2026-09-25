@@ -9,176 +9,179 @@
 // flyouts like FluentFlyout that read `ShuffleEnabled`/`AutoRepeatMode` off the
 // OS session never see those buttons light up for Lokal.
 //
-// This module spawns a small separate Windows executable (native/smtc-bridge,
-// a .NET Framework 4.8 console app -- see that project for why it's a plain
-// child process and not a compiled Node native addon) that binds directly to
+// This module loads a small native Node addon (native/smtc-bridge, Rust +
+// napi-rs) directly into *this* process (Electron's main process) to bind to
 // Chromium's own SMTC session (by window handle, via the OS-sanctioned
 // ISystemMediaTransportControlsInterop.GetForWindow) purely to set
 // ShuffleEnabled/AutoRepeatMode and listen for the OS requesting a change to
 // either. It never touches play/pause/next/prev/metadata -- Chromium keeps
 // doing all of that exactly as it already does today.
 //
-// Wire protocol with the child process is one JSON object per line:
-//   -> (us to bridge)   {"shuffle":true,"repeat":"all"}
-//   <- (bridge to us)   {"event":"ready","hwnd":123456}
-//   <- (bridge to us)   {"event":"shuffleRequested","value":true}
-//   <- (bridge to us)   {"event":"repeatRequested","mode":"all"}
+// Why in-process, not a separate helper .exe: an earlier version of this
+// bridge spawned a standalone .NET executable as its own OS process. Adding
+// diagnostics to that version proved SystemMediaTransportControlsInterop
+// .GetForWindow() throws UnauthorizedAccessException (HRESULT 0x80070005,
+// E_ACCESSDENIED) on literally every call -- 1000+ attempts, across a process
+// restart -- for a window handle owned by a different process (see git
+// history for the full trail). That's a hard Windows security boundary on
+// this specific interop call, not a bug to retry past: GetForWindow only
+// succeeds when the caller and the window's owner are the same process. A
+// native addon loaded into Electron's own process satisfies that trivially.
+// See native/smtc-bridge/src/lib.rs for the addon itself, and its Cargo.toml
+// for why Rust + the official `windows` crate rather than hand-rolled COM.
 
 const path = require('path')
 const fs = require('fs')
-const { app } = require('electron')
-const { spawn } = require('child_process')
 // Log via electron-log's own API directly rather than the global `console`
 // patch main.js installs (`Object.assign(console, log.functions)`). That
 // patch is only verified to work for synchronous top-of-file code that runs
-// in the same tick as the patch itself (module-load-time console.log calls
-// elsewhere in this app); every line this module needs to log happens from
-// an asynchronous callback (a child_process event, a timer) minutes into a
-// running session, which is exactly the kind of call that went missing
-// during live testing -- calling `log` directly sidesteps that gap instead
-// of relying on the patch surviving into async contexts.
+// in the same tick as the patch itself; every line this module needs to log
+// happens from an asynchronous callback (a timer tick) which is exactly the
+// kind of call that went missing during live testing of the previous
+// (helper-process) version of this bridge.
 const log = require('electron-log')
 
-const MAX_RESTART_ATTEMPTS = 5
+const POLL_INTERVAL_MS = 100
+const ARM_RETRY_INTERVAL_MS = 1000
 
-let child = null
-let stdoutBuffer = ''
-let restartTimer = null
-let restartAttempts = 0
-let shuttingDown = false
+let addon = null
+let armed = false
+let pollTimer = null
+let armTimer = null
+let lastFireCount = 0
 
-function getBridgeExePath() {
+function getAddonPath() {
   if (process.platform !== 'win32') return null
-  const exeName = 'SmtcBridge.exe'
-  if (app.isPackaged) {
-    // Shipped as a real file via electron-builder's `extraResources`
-    // (package.json), NOT inside app.asar -- see native/smtc-bridge/SmtcBridge.csproj
-    // for why that matters.
-    return path.join(process.resourcesPath, 'smtc-bridge', exeName)
-  }
-  // Dev builds: `dotnet build` output for the project directly, so
-  // `npm run dev` picks up a freshly built bridge without any packaging step.
-  return path.join(__dirname, '..', '..', 'native', 'smtc-bridge', 'bin', 'Debug', 'net48', exeName)
+  // Built by scripts/prepare-native.js (runs via the `native:prepare` npm
+  // script, wired into both `postinstall` and `build`) into electron/native/,
+  // and shipped unpacked from app.asar via the `asarUnpack` entry in
+  // package.json -- a native .node file can't be loaded from inside the
+  // asar archive at all (the OS's dynamic library loader needs a real path
+  // on disk, which a read-only virtual archive can't provide). Electron
+  // transparently redirects fs/require access for unpacked paths to
+  // app.asar.unpacked at runtime, so this one relative path works
+  // unchanged in both dev and packaged builds.
+  return path.join(__dirname, '..', 'native', 'smtc-bridge.win32-x64-msvc.node')
 }
 
-function startSmtcBridge(getMainWindow) {
-  if (process.platform !== 'win32') return
-  if (child) return
-
-  const exePath = getBridgeExePath()
-  if (!exePath || !fs.existsSync(exePath)) {
-    log.warn('[smtc] bridge executable not found, shuffle/repeat SMTC sync disabled:', exePath)
-    return
+function loadAddon() {
+  const addonPath = getAddonPath()
+  if (!addonPath || !fs.existsSync(addonPath)) {
+    log.warn('[smtc] native addon not found, shuffle/repeat SMTC sync disabled:', addonPath)
+    return null
   }
-
-  shuttingDown = false
-  stdoutBuffer = ''
-
   try {
-    child = spawn(exePath, [String(process.pid)], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
+    return require(addonPath)
   } catch (e) {
-    log.warn('[smtc] failed to spawn bridge:', e.message)
-    child = null
-    return
+    log.warn('[smtc] failed to load native addon:', e.message)
+    return null
   }
-
-  child.stdout.on('data', (chunk) => {
-    stdoutBuffer += chunk.toString('utf8')
-    let idx
-    while ((idx = stdoutBuffer.indexOf('\n')) >= 0) {
-      const line = stdoutBuffer.slice(0, idx).trim()
-      stdoutBuffer = stdoutBuffer.slice(idx + 1)
-      if (line) handleBridgeMessage(line, getMainWindow)
-    }
-  })
-
-  child.stderr.on('data', (chunk) => {
-    const text = chunk.toString('utf8').trim()
-    if (text) log.warn('[smtc-bridge]', text)
-  })
-
-  child.on('error', (e) => {
-    log.warn('[smtc] bridge process error:', e.message)
-  })
-
-  child.on('exit', (code, signal) => {
-    child = null
-    if (shuttingDown) return
-    log.warn(`[smtc] bridge exited (code=${code}, signal=${signal})`)
-    if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
-      log.warn('[smtc] giving up on restarting bridge after repeated failures')
-      return
-    }
-    restartAttempts += 1
-    restartTimer = setTimeout(() => startSmtcBridge(getMainWindow), 2000 * restartAttempts)
-  })
 }
 
-function handleBridgeMessage(line, getMainWindow) {
-  let msg
+function pollRequests(getMainWindow) {
+  if (!addon) return
+
+  let requests
   try {
-    msg = JSON.parse(line)
-  } catch {
+    requests = addon.pollRequests()
+  } catch (e) {
+    log.warn('[smtc] pollRequests failed:', e.message)
     return
   }
 
-  if (msg.event === 'ready') {
-    restartAttempts = 0
-    log.info('[smtc] bridge bound to Chromium SMTC session (hwnd', msg.hwnd, ')')
-    return
-  }
-
-  if (msg.event === 'diag') {
-    // Temporary diagnostic: TryBind() has never once succeeded in live
-    // testing with zero visibility into why. See native/smtc-bridge/Bridge.cs.
-    log.info(
-      `[smtc] bind attempt #${msg.attempt}: targetPid=${msg.targetPid} ` +
-      `totalWindowsSeen=${msg.totalWindowsSeen} windowsForTargetPid=${msg.windowsForTargetPid} ` +
-      `classPrefixMatches=${msg.classPrefixMatches} hiddenNoTextMatches=${msg.hiddenNoTextMatches} ` +
-      `getForWindowThrew=${msg.getForWindowThrew} controlsDisabled=${msg.controlsDisabled}` +
-      (msg.lastExceptionType
-        ? ` lastException=${msg.lastExceptionType}(hresult=0x${(msg.lastExceptionHResult >>> 0).toString(16)}): ${msg.lastExceptionMessage}`
-        : '')
-    )
-    return
+  // napi-rs's snake_case -> camelCase field conversion for #[napi(object)]
+  // structs is its documented default; check both forms so a wrong
+  // assumption here doesn't silently break the one diagnostic that shows
+  // whether the native WinRT handler is firing at all.
+  const fireCount = requests.fireCount ?? requests.fire_count ?? 0
+  if (fireCount !== lastFireCount) {
+    log.info('[smtc] native handler fired (fireCount', lastFireCount, '->', fireCount, ') shuffle:', requests.shuffle, 'repeat:', requests.repeat)
+    lastFireCount = fireCount
   }
 
   const win = getMainWindow && getMainWindow()
   if (!win || win.isDestroyed()) return
 
-  if (msg.event === 'shuffleRequested') {
-    win.webContents.send('smtc:shuffleRequested', !!msg.value)
-  } else if (msg.event === 'repeatRequested') {
-    win.webContents.send('smtc:repeatRequested', msg.mode)
+  if (requests.shuffle !== null && requests.shuffle !== undefined) {
+    win.webContents.send('smtc:shuffleRequested', !!requests.shuffle)
+  }
+  if (requests.repeat !== null && requests.repeat !== undefined) {
+    const mode = requests.repeat === 1 ? 'all' : requests.repeat === 2 ? 'one' : 'none'
+    win.webContents.send('smtc:repeatRequested', mode)
   }
 }
 
-function updateSmtcState(state) {
-  if (!child || !child.stdin || child.stdin.destroyed) return
-  const payload = {
-    shuffle: !!state.shuffle,
-    repeat: state.repeat === 'all' || state.repeat === 'one' ? state.repeat : 'none',
-  }
+function startPolling(getMainWindow) {
+  if (pollTimer) return
+  pollTimer = setInterval(() => pollRequests(getMainWindow), POLL_INTERVAL_MS)
+}
+
+function tryArm() {
+  if (!addon || armed) return armed
+
+  let win
   try {
-    child.stdin.write(JSON.stringify(payload) + '\n')
+    win = addon.findChromiumSmtcWindow()
+  } catch (e) {
+    log.warn('[smtc] findChromiumSmtcWindow failed:', e.message)
+    return false
+  }
+  if (!win || !win.hwnd) return false
+
+  try {
+    const hwnd = Number(win.hwnd)
+    addon.armShuffleRepeat(hwnd)
+    armed = true
+    log.info('[smtc] bridge bound to Chromium SMTC session (hwnd', hwnd, ')')
+    return true
+  } catch (e) {
+    log.warn('[smtc] arm attempt failed:', e.message)
+    return false
+  }
+}
+
+function startSmtcBridge(getMainWindow) {
+  if (process.platform !== 'win32') return
+  if (addon) return
+
+  addon = loadAddon()
+  if (!addon) return
+
+  if (tryArm()) {
+    startPolling(getMainWindow)
+    return
+  }
+
+  // Chromium creates/activates its SMTC session only once its media session
+  // is live -- retry until that hidden window can actually be found.
+  armTimer = setInterval(() => {
+    if (tryArm()) {
+      clearInterval(armTimer)
+      armTimer = null
+      startPolling(getMainWindow)
+    }
+  }, ARM_RETRY_INTERVAL_MS)
+}
+
+function updateSmtcState(state) {
+  if (!addon || !armed) return
+  try {
+    addon.setShuffleState(!!state.shuffle)
+    const repeat = state.repeat === 'all' ? 1 : state.repeat === 'one' ? 2 : 0
+    addon.setRepeatState(repeat)
   } catch (e) {
     log.warn('[smtc] failed to write state to bridge:', e.message)
   }
 }
 
 function stopSmtcBridge() {
-  shuttingDown = true
-  if (restartTimer) {
-    clearTimeout(restartTimer)
-    restartTimer = null
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
-  if (child) {
-    try { child.stdin.end() } catch {}
-    try { child.kill() } catch {}
-    child = null
+  if (armTimer) {
+    clearInterval(armTimer)
+    armTimer = null
   }
 }
 
