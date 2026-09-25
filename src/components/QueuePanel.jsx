@@ -6,9 +6,13 @@ import { api } from '../api'
 
 // The actual queue list, with no opinion about how it's framed -- used both
 // by the standalone panel below (independent mode) and embedded directly
-// inside RightSidebar's sliding overlay (merged mode), so the two visual
-// presentations never drift out of sync with each other.
-export function QueueContent({ onClose }) {
+// inside RightSidebar's sliding overlay (merged mode) and FullscreenPlayer's
+// side panel, so all three presentations never drift out of sync with each
+// other. variant="fullscreen" swaps in a header that matches the fullscreen
+// Lyrics panel's header (same padding/type treatment) and drops the close
+// button -- in fullscreen, closing the queue is done by clicking the same
+// Queue button that opened it, not a button inside the panel.
+export function QueueContent({ onClose, variant = 'panel' }) {
   const {
     queue, queueIndex, playQueue, playbackContext,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
@@ -78,21 +82,35 @@ export function QueueContent({ onClose }) {
 
   return (
     <>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-        <div>
-          <p className="text-xs font-display text-muted uppercase tracking-widest">
-            {shuffle ? 'Up Next (Shuffled)' : 'Queue'} ({displayQueue.length})
-          </p>
-          {shuffle && (
-            <p className="text-[10px] text-accent/70">Drag disabled in shuffle mode</p>
+      {variant === 'fullscreen' ? (
+        <div className="px-8 pt-6 pb-3 flex-shrink-0 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-display text-white/30 uppercase tracking-[0.2em]">
+              {shuffle ? 'Up Next (Shuffled)' : 'Queue'}
+            </p>
+            <p className="text-xs text-white/20 mt-0.5 truncate">
+              {displayQueue.length} track{displayQueue.length === 1 ? '' : 's'}
+              {shuffle ? ' · drag disabled' : ''}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+          <div>
+            <p className="text-xs font-display text-muted uppercase tracking-widest">
+              {shuffle ? 'Up Next (Shuffled)' : 'Queue'} ({displayQueue.length})
+            </p>
+            {shuffle && (
+              <p className="text-[10px] text-accent/70">Drag disabled in shuffle mode</p>
+            )}
+          </div>
+          {onClose && (
+            <button onClick={onClose} className="text-muted hover:text-white transition-colors">
+              <X size={14} />
+            </button>
           )}
         </div>
-        {onClose && (
-          <button onClick={onClose} className="text-muted hover:text-white transition-colors">
-            <X size={14} />
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-2">
         {!displayQueue.length && (

@@ -159,6 +159,18 @@ export default function FullscreenPlayer() {
   // state, exactly like it already does in windowed mode).
   const [fullscreenPanel, setFullscreenPanel] = useState('none')
   const prevTrackId = useRef(null)
+  // The panel container fades/collapses out over 500ms after fullscreenPanel
+  // goes back to 'none' (see isPanelVisible below), but the ternary that picks
+  // Queue vs. Lyrics content only matched 'queue' -- everything else, 'none'
+  // included, fell through to the Lyrics branch. That swapped the panel's
+  // contents to Lyrics the instant Queue was closed, so users saw a flash of
+  // the Lyrics header/panel during the queue's own closing animation. Tracking
+  // the last non-'none' panel keeps showing that panel's content while it
+  // fades out, instead of switching to whatever the fallback branch was.
+  const lastPanelRef = useRef('lyrics')
+  useEffect(() => {
+    if (fullscreenPanel !== 'none') lastPanelRef.current = fullscreenPanel
+  }, [fullscreenPanel])
 
   // FullscreenPlayer stays mounted for the whole app session (App.jsx renders
   // it unconditionally and it just hides its own JSX), so a settings fetch
@@ -397,8 +409,8 @@ export default function FullscreenPlayer() {
                 className={`relative z-10 flex flex-col overflow-hidden transition-all duration-500 ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{ width: isPanelVisible ? '420px' : '0px' }}
               >
-                {fullscreenPanel === 'queue' ? (
-                  <QueueContent onClose={() => setFullscreenPanel('none')} />
+                {(fullscreenPanel !== 'none' ? fullscreenPanel : lastPanelRef.current) === 'queue' ? (
+                  <QueueContent variant="fullscreen" />
                 ) : (
                   <>
                     <div className="px-8 pt-6 pb-3 flex-shrink-0 flex items-center justify-between">
