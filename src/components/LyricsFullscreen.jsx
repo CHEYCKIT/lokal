@@ -25,6 +25,17 @@ export default function LyricsFullscreen() {
     api.getSettings().then(s => setSettings(s || {}))
   }, [showLyricsFullscreen])
 
+  // This overlay can now be reached from inside FullscreenPlayer (its Expand
+  // Lyrics button), where it renders on top of that other fullscreen view --
+  // without its own Escape handler, FullscreenPlayer's Escape listener (bound
+  // whenever *it's* open, regardless of what's stacked on top) was the only
+  // one that fired, closing the player underneath instead of just this panel.
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') toggleLyricsFullscreen() }
+    if (showLyricsFullscreen) document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [showLyricsFullscreen, toggleLyricsFullscreen])
+
   const importLyrics = async () => {
     if (!currentTrack || !api.isElectron) return
     const fp = await api.openFile([{ name: 'Lyrics', extensions: ['lrc', 'txt', 'ttml', 'xml'] }])
