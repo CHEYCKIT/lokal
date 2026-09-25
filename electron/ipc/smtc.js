@@ -138,7 +138,10 @@ function handleBridgeMessage(line, getMainWindow) {
       `[smtc] bind attempt #${msg.attempt}: targetPid=${msg.targetPid} ` +
       `totalWindowsSeen=${msg.totalWindowsSeen} windowsForTargetPid=${msg.windowsForTargetPid} ` +
       `classPrefixMatches=${msg.classPrefixMatches} hiddenNoTextMatches=${msg.hiddenNoTextMatches} ` +
-      `getForWindowThrew=${msg.getForWindowThrew} controlsDisabled=${msg.controlsDisabled}`
+      `getForWindowThrew=${msg.getForWindowThrew} controlsDisabled=${msg.controlsDisabled}` +
+      (msg.lastExceptionType
+        ? ` lastException=${msg.lastExceptionType}(hresult=0x${(msg.lastExceptionHResult >>> 0).toString(16)}): ${msg.lastExceptionMessage}`
+        : '')
     )
     return
   }
