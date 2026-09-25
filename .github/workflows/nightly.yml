@@ -32,9 +32,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
-
       - name: Setup Rust (for Windows SMTC bridge)
         # Must run before "Install Dependencies": this repo's postinstall
         # script (electron-builder install-app-deps && npm run
@@ -45,6 +42,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - name: Install Dependencies
+        run: npm install
 
       - name: Build Application
         run: npm run build -- --publish never
