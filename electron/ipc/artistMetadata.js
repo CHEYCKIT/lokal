@@ -310,7 +310,12 @@ function clearArtistImageOverride(db, artistId) {
   for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
     const p = path.join(getStorageDir(), 'artwork', `artist-${artistId}${ext}`)
     if (fs.existsSync(p)) {
-      try { fs.removeSync(p) } catch {}
+      // Swallowing this would let the DB update below mark the override
+      // "cleared" even when the file is still sitting on disk -- and since
+      // the endpoint checks that file before it ever looks at image_path,
+      // the stale image would keep being served despite the DB saying
+      // otherwise. Let a removal failure abort instead of masking it.
+      fs.removeSync(p)
     }
   }
   db.prepare(`
