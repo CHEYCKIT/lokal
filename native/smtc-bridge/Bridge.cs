@@ -21,6 +21,14 @@ namespace SmtcBridge
         private SystemMediaTransportControls _controls;
         private IntPtr _boundHwnd = IntPtr.Zero;
 
+        // Diagnostic-only: TryBind() has never once succeeded in live testing
+        // and we have zero visibility into why (no candidate windows found at
+        // all? found but wrong class name? found but IsEnabled false? GetForWindow
+        // throwing?). Report counts back to Electron on the first attempt and
+        // periodically after, rather than spamming every 1.5s forever.
+        private int _tryBindAttempts;
+        private const int DiagnosticLogInterval = 10; // ~every 15s (10 * 1.5s tick)
+
         // Desired state, updated as soon as a command arrives from Electron even if
         // we're not bound to a window yet -- applied immediately once binding
         // succeeds so the very first state push isn't lost while still searching
@@ -134,18 +142,30 @@ namespace SmtcBridge
             IntPtr found = IntPtr.Zero;
             SystemMediaTransportControls candidateControls = null;
 
+            int totalWindowsSeen = 0;
+            int windowsForTargetPid = 0;
+            int classPrefixMatches = 0;
+            int hiddenNoTextMatches = 0;
+            int getForWindowThrew = 0;
+            int controlsDisabled = 0;
+
             NativeMethods.EnumWindows((hWnd, _) =>
             {
+                totalWindowsSeen++;
+
                 NativeMethods.GetWindowThreadProcessId(hWnd, out uint pid);
                 if (pid != (uint)_targetPid) return true; // continue enumeration
+                windowsForTargetPid++;
 
                 var classBuf = new StringBuilder(256);
                 NativeMethods.GetClassName(hWnd, classBuf, classBuf.Capacity);
                 string className = classBuf.ToString();
                 if (!className.StartsWith(TargetClassPrefix, StringComparison.Ordinal)) return true;
+                classPrefixMatches++;
 
                 if (NativeMethods.IsWindowVisible(hWnd)) return true;
                 if (NativeMethods.GetWindowTextLength(hWnd) != 0) return true;
+                hiddenNoTextMatches++;
 
                 // Candidate hidden Chrome_WidgetWin_* window owned by Electron's
                 // browser process. Chromium creates this specifically for OS media
@@ -164,18 +184,36 @@ namespace SmtcBridge
                         candidateControls = controls;
                         return false; // stop enumeration
                     }
+                    if (controls != null) controlsDisabled++;
                 }
                 catch
                 {
                     // Not every top-level window responds to GetForWindow; that's
                     // expected and not an error worth surfacing per-window.
+                    getForWindowThrew++;
                 }
 
                 return true;
             }, IntPtr.Zero);
 
             if (found == IntPtr.Zero || candidateControls == null)
+            {
+                _tryBindAttempts++;
+                if (_tryBindAttempts == 1 || _tryBindAttempts % DiagnosticLogInterval == 0)
+                {
+                    Send(Json.WriteObject(
+                        ("event", "diag"),
+                        ("attempt", _tryBindAttempts),
+                        ("targetPid", _targetPid),
+                        ("totalWindowsSeen", totalWindowsSeen),
+                        ("windowsForTargetPid", windowsForTargetPid),
+                        ("classPrefixMatches", classPrefixMatches),
+                        ("hiddenNoTextMatches", hiddenNoTextMatches),
+                        ("getForWindowThrew", getForWindowThrew),
+                        ("controlsDisabled", controlsDisabled)));
+                }
                 return;
+            }
 
             Bind(found, candidateControls);
         }
