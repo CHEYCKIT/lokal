@@ -362,7 +362,7 @@ export default function Albums() {
   const playAlbumRelease = async (album) => {
     const tracks = await api.getAlbumTracks(album)
     if (Array.isArray(tracks) && tracks.length) {
-      playQueue(tracks, 0)
+      playQueue(tracks, 0, makeAlbumContext(album))
     }
   }
 
