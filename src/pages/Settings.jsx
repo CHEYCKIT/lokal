@@ -191,6 +191,17 @@ export default function Settings() {
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
   const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false })
   const [relaunchMsg, setRelaunchMsg] = useState('')
+  const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
+  // The Side Panels toggle saves on every click rather than waiting for the
+  // "Save Settings" button, so a quick double-click could otherwise fire two
+  // overlapping requests and let the first one's response land after the
+  // second's, leaving the backend on the stale value. Chaining each save
+  // onto the previous one's settled promise keeps them applied in click
+  // order; `sidePanelsSaveSeqRef` lets only the most recent attempt update
+  // the error indicator, so a failure that's since been superseded by a
+  // successful retry doesn't leave a stale error showing.
+  const sidePanelsSaveChainRef = useRef(Promise.resolve())
+  const sidePanelsSaveSeqRef = useRef(0)
   const [appVersion, setAppVersion] = useState('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
@@ -2166,6 +2177,7 @@ module.exports = {
           label="Side Panels"
           desc={"Merged: Queue and Lyrics open inside the Now Playing panel instead of opening extra panels alongside it.\n\nIndependent: Queue and Lyrics each open in their own separate panel next to Now Playing, as before."}
         >
+          <div className="flex flex-col items-end gap-1">
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
               const current = settings.exclusive_side_panels !== '0' ? '1' : '0'
@@ -2186,7 +2198,17 @@ module.exports = {
                     // browser with no localStorage entry yet, or any other
                     // consumer of the backend setting would then see the old
                     // choice despite the UI already showing the new one.
-                    api.saveSettings({ exclusive_side_panels: value }).catch(() => {})
+                    const seq = ++sidePanelsSaveSeqRef.current
+                    sidePanelsSaveChainRef.current = sidePanelsSaveChainRef.current
+                      .catch(() => {}) // a prior failure shouldn't block this attempt
+                      .then(() => api.saveSettings({ exclusive_side_panels: value }))
+                      .then(() => {
+                        if (seq === sidePanelsSaveSeqRef.current) setSidePanelsSaveError(false)
+                      })
+                      .catch((err) => {
+                        console.error('Failed to save Side Panels setting', err)
+                        if (seq === sidePanelsSaveSeqRef.current) setSidePanelsSaveError(true)
+                      })
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
                 >
@@ -2194,6 +2216,12 @@ module.exports = {
                 </button>
               )
             })}
+          </div>
+          {sidePanelsSaveError && (
+            <p className="text-[11px] text-red-400 flex items-center gap-1">
+              <AlertTriangle size={11} /> Couldn't save -- will retry on next change
+            </p>
+          )}
           </div>
         </Row>
       </Section>
