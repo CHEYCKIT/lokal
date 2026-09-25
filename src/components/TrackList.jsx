@@ -51,7 +51,7 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null }) {
+export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
   const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore()
   const { user, openAddToPlaylist, openAddMultipleToPlaylist } = useAppStore()
   const [hoveredId, setHoveredId] = useState(null)
@@ -75,7 +75,9 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const loaderRef = useRef(null)
   const highlightRowRef = useRef(null)
   const handledHighlightRef = useRef(null)
-  const [flashTrackId, setFlashTrackId] = useState(null)
+  // { id, key } rather than a bare track id -- see the flash-timer effect
+  // below for why the request key needs to be part of the state itself.
+  const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const isLargeList = mergedTracks.length > LARGE_LIST_STEP
@@ -96,6 +98,14 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     setVisibleCount(index >= 0 ? Math.max(LARGE_LIST_STEP, index + 1) : LARGE_LIST_STEP)
   }, [tracks.length, highlightTrackId])
 
+  // Dedup key for the effect below: a caller that passes highlightRequestKey
+  // (Playlist, Artist -- anywhere the same track can be re-requested by a
+  // second shortcut click) gets a per-request identity even when the track
+  // ID repeats, so the flash/scroll re-arms instead of silently no-op'ing
+  // the second time. Callers that don't pass it (unchanged behavior) still
+  // dedup on the track ID alone.
+  const highlightKey = highlightRequestKey ?? highlightTrackId
+
   // Issue #16: when we arrive from a "playing from ..." shortcut, make sure the
   // track is actually rendered (large lists are paginated), then scroll to it
   // and flash it so it is obvious which row is playing.
@@ -104,7 +114,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       handledHighlightRef.current = null
       return
     }
-    if (handledHighlightRef.current === highlightTrackId) return
+    if (handledHighlightRef.current === highlightKey) return
 
     const index = tracks.findIndex(track => track.id === highlightTrackId)
     if (index === -1) return
@@ -114,8 +124,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       return // re-runs once the row exists
     }
 
-    handledHighlightRef.current = highlightTrackId
-    setFlashTrackId(highlightTrackId)
+    handledHighlightRef.current = highlightKey
+    setFlash({ id: highlightTrackId, key: highlightKey })
 
     const node = highlightRowRef.current
     if (node) {
@@ -128,14 +138,21 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         }
       })
     }
-  }, [highlightTrackId, tracks, isLargeList, visibleCount])
+  }, [highlightTrackId, highlightKey, tracks, isLargeList, visibleCount])
 
   // Kept separate so re-renders of the list can't cancel the flash timer.
+  // Depending on the whole { id, key } object (not just the track id) matters
+  // for a repeated highlight request on the SAME track while it's still
+  // flashing: setFlash({ id, key }) above always creates a new object, even
+  // when id is unchanged, because key (the request key) differs. That object
+  // identity change is what restarts this timer for a full fresh 2 seconds --
+  // depending on flash.id alone wouldn't change on a repeat, so the original
+  // timer would keep running and could clear the second flash early.
   useEffect(() => {
-    if (!flashTrackId) return
-    const timer = setTimeout(() => setFlashTrackId(null), 2000)
+    if (!flash) return
+    const timer = setTimeout(() => setFlash(null), 2000)
     return () => clearTimeout(timer)
-  }, [flashTrackId])
+  }, [flash])
 
   useEffect(() => {
     if (!isLargeList || !loaderRef.current) return
@@ -495,7 +512,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       {visibleTracks.map((track, i) => {
         const isCurrent = currentTrack?.id === track.id
         const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
-        const isFlashing = !!flashTrackId && track.id === flashTrackId
+        const isFlashing = !!flash && track.id === flash.id
         const isHov = hoveredId === track.id
         const isSelected = selectedIds.has(track.id)
         const isDragging = draggedId === track.id
