@@ -82,8 +82,19 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const visibleTracks = isLargeList ? mergedTracks.slice(0, visibleCount) : mergedTracks
 
   useEffect(() => {
-    setVisibleCount(LARGE_LIST_STEP)
-  }, [tracks.length])
+    // A highlight the effect below has already handled won't re-run it (it
+    // dedupes on handledHighlightRef), so if something else changes
+    // tracks.length afterwards -- a refresh, a track removed elsewhere --
+    // this reset would otherwise quietly paginate that track's row back out
+    // of view with nothing left to bring it back. Keep enough of the list
+    // rendered to still include it.
+    if (!highlightTrackId) {
+      setVisibleCount(LARGE_LIST_STEP)
+      return
+    }
+    const index = tracks.findIndex(track => track.id === highlightTrackId)
+    setVisibleCount(index >= 0 ? Math.max(LARGE_LIST_STEP, index + 1) : LARGE_LIST_STEP)
+  }, [tracks.length, highlightTrackId])
 
   // Issue #16: when we arrive from a "playing from ..." shortcut, make sure the
   // track is actually rendered (large lists are paginated), then scroll to it
