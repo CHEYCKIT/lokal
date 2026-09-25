@@ -42,7 +42,16 @@ export default function RightSidebar() {
   const nav = useNavigate()
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = localStorage.getItem('word-sync') === '1'
-  const isAutoSynced = localStorage.getItem('unsynced_auto_sync') === '1'
+  // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
+  // toggle saves via api.saveSettings, never to localStorage), matching how
+  // FullscreenPlayer/LyricsFullscreen already read it -- reading a
+  // localStorage key here that's never written left this permanently false
+  // regardless of the actual saved choice.
+  const [settings, setSettings] = useState({})
+  useEffect(() => {
+    api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+  }, [])
+  const isAutoSynced = settings.unsynced_auto_sync === '1'
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
   // Settings -- without this, navigateToTrackArtist falls back to its
@@ -140,7 +149,7 @@ export default function RightSidebar() {
               never moves, so there's no brief "adds space" moment and no
               second panel ever exists to overlap with. */}
           <div className="flex-1 overflow-hidden relative min-h-0">
-            <div className="absolute inset-0 flex flex-col">
+            <div className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info'}>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50">
                     <AnimatePresence mode="wait">

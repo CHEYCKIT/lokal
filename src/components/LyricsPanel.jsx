@@ -608,13 +608,24 @@ export default function LyricsPanel({
   const containerRef = useRef(null)
   const lineRefs = useRef([])
   // Skips the smooth scroll animation for the very first scroll position
-  // after this panel mounts fresh (e.g. opening the side panel/overlay, or
-  // switching tracks) -- activeIdx jumps from its initial -1 to the real
-  // current line right away, and without this the content visibly scrolls
-  // up from the top over ~420ms, reading as a stray slide-up animation on
-  // top of the panel's own entrance. Real line changes during playback
-  // still animate as before; only this first jump per mount is instant.
+  // after this panel mounts fresh (e.g. opening the side panel/overlay) --
+  // activeIdx jumps from its initial -1 to the real current line right
+  // away, and without this the content visibly scrolls up from the top
+  // over ~420ms, reading as a stray slide-up animation on top of the
+  // panel's own entrance. Real line changes during playback still animate
+  // as before; only this first jump per mount (or per track, see below)
+  // is instant.
   const hasScrolledOnceRef = useRef(false)
+  // LyricsSidePanel (independent mode) never remounts LyricsPanel across
+  // track changes -- it's a single persistent standalone panel, unlike
+  // RightSidebar's merged-mode overlay which fully unmounts/remounts on
+  // open/close -- so without this, only the very first track ever played
+  // gets the instant jump above and every later track change would fall
+  // through to the smooth-scroll path instead. Reset it per track so each
+  // one gets its own instant first position, same as a fresh mount would.
+  useEffect(() => {
+    hasScrolledOnceRef.current = false
+  }, [track?.id])
 
   const anchorRef = useRef({ audioTime: progress, wallTime: performance.now() })
   const liveProgressRef = useRef(progress)

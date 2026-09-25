@@ -146,9 +146,9 @@ export default function Artist() {
                 return (
                   <motion.button
                     key={album.title}
-                    onClick={() => setSelectedAlbum(selectedAlbum === album.title ? null : album.title)}
+                    onClick={() => setSelectedAlbum(selectedAlbum?.title === album.title ? null : album)}
                     whileHover={{ scale: 1.02 }}
-                    className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
+                    className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
                     <div className="flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
                       {cover ? <img src={cover} className="h-full w-full object-cover" /> : <Music size={28} />}
@@ -169,7 +169,7 @@ export default function Artist() {
           </section>
         )}
 
-        {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} />}
+        {selectedAlbum && <AlbumTracks album={selectedAlbum} highlightTrackId={highlightTrackId} />}
       </div>
 
       <ArtistManageModal
@@ -183,10 +183,16 @@ export default function Artist() {
   )
 }
 
-function AlbumTracks({ album, artistName = null, highlightTrackId = null }) {
+function AlbumTracks({ album, highlightTrackId = null }) {
   const [tracks, setTracks] = useState([])
   const { playQueue } = usePlayerStore()
-  const albumContext = makeAlbumContext({ title: album, album_artist: artistName })
+  // album is now the full row (see the button's onClick above), not just
+  // its title -- this page's display artist name isn't necessarily the
+  // album's actual album_artist (e.g. a "Various Artists" compilation, or
+  // a feature/guest album), and using it here made getAlbumTracks below
+  // match tracks by the wrong artist whenever the two differ, sometimes
+  // turning up an empty tracklist.
+  const albumContext = makeAlbumContext(album)
 
   useEffect(() => {
     api.getAlbumTracks(album).then((result) => setTracks(result || []))
@@ -203,7 +209,7 @@ function AlbumTracks({ album, artistName = null, highlightTrackId = null }) {
   return (
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-white">{album}</h3>
+        <h3 className="text-sm font-medium text-white">{album.title}</h3>
         <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
       <TrackList tracks={tracks} showAlbum={false} context={albumContext} highlightTrackId={highlightTrackId} />
