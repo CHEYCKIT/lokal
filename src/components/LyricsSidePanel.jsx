@@ -20,7 +20,12 @@ export function LyricsContent({ onClose }) {
   // regardless of the actual saved choice.
   const [settings, setSettings] = useState({})
   useEffect(() => {
-    api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    const loadSettings = () => api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    loadSettings()
+    // Refresh in place if the setting is changed in Settings while this
+    // panel stays mounted, instead of only picking it up on next mount.
+    window.addEventListener('lokal:settings-saved', loadSettings)
+    return () => window.removeEventListener('lokal:settings-saved', loadSettings)
   }, [])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
 
