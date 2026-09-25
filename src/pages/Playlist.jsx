@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Plus, Image as ImageIcon, AlertCircle, Search, Download } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
@@ -7,6 +7,7 @@ import PlaylistCover from '../components/PlaylistCover'
 import AddTracksToPlaylistModal from '../components/AddTracksToPlaylistModal'
 import Modal from '../components/Modal'
 import { api } from '../api'
+import { makePlaylistContext } from '../playbackContext'
 
 export default function Playlist() {
   const { id } = useParams()
@@ -27,7 +28,39 @@ export default function Playlist() {
   const [ghostActionStatus, setGhostActionStatus] = useState('')
   const { playQueue } = usePlayerStore()
   const { user } = useAppStore()
+  const location = useLocation()
   const isLiked = id === 'liked'
+  // load() below re-fetches on every id change but doesn't clear `playlist`
+  // first, so right after navigating from one playlist to another, `playlist`
+  // still holds the PREVIOUS playlist's data for as long as the new fetch is
+  // in flight -- makePlaylistContext prefers playlist.id over the id fallback,
+  // so playing a track during that window stored a context pointing back at
+  // the playlist the user just navigated away from. Only trust `playlist`
+  // once its id actually matches the current route.
+  const playlistMatchesRoute = playlist && String(playlist.id) === String(id)
+  const playbackContext = useMemo(
+    () => makePlaylistContext(isLiked ? { id: 'liked', name: 'Liked Songs' } : (playlistMatchesRoute ? playlist : null), id),
+    [isLiked, playlistMatchesRoute, playlist, id],
+  )
+  // Set by the "playing from ..." shortcut so we can scroll to the playing track.
+  const [highlightTrackId, setHighlightTrackId] = useState(null)
+  // A per-request identity, distinct from the track ID itself, so a second
+  // shortcut to the *same* already-playing track still re-triggers the
+  // scroll/flash in TrackList instead of being silently deduped against
+  // the first request for that ID.
+  const highlightSeqRef = useRef(0)
+  const [highlightRequestKey, setHighlightRequestKey] = useState(null)
+
+  useEffect(() => {
+    const incoming = location.state?.highlightTrackId
+    if (!incoming) return
+    highlightSeqRef.current += 1
+    setHighlightTrackId(incoming)
+    setHighlightRequestKey(`${incoming}:${highlightSeqRef.current}`)
+    // Clear it so a later refresh or back-navigation doesn't re-trigger the scroll.
+    nav(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, nav])
+
   const playableTracks = useMemo(() => tracks.filter(track => !String(track.file_path || '').startsWith('ghost://')), [tracks])
   const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://')), [tracks])
   const getGhostKey = useCallback((track) => String(track?.playlist_track_id || track?.added_at || track?.id || ''), [])
@@ -169,7 +202,7 @@ export default function Playlist() {
   const shuffleTracks = () => {
     if (!playableTracks.length) return
     const shuffled = [...playableTracks].sort(() => Math.random() - 0.5)
-    playQueue(shuffled, 0)
+    playQueue(shuffled, 0, playbackContext)
   }
 
   const uploadPlaylistPhoto = async () => {
@@ -350,7 +383,7 @@ export default function Playlist() {
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <button
-          onClick={() => playQueue(playableTracks, 0)}
+          onClick={() => playQueue(playableTracks, 0, playbackContext)}
           disabled={!playableTracks.length}
           className="flex items-center gap-2 px-6 py-2.5 bg-accent text-base rounded-full font-medium text-sm hover:bg-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -399,6 +432,9 @@ export default function Playlist() {
         onRemove={!isLiked ? removeTrack : null}
         playlistId={!isLiked ? id : null}
         onReorder={!isLiked ? handleReorder : null}
+        context={playbackContext}
+        highlightTrackId={highlightTrackId}
+        highlightRequestKey={highlightRequestKey}
       />
 
       {!isLiked && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (

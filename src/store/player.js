@@ -29,6 +29,9 @@ function loadQueue() {
         shuffleQueue,
         originalQueue,
         currentTrack,
+        playbackContext: parsed.playbackContext && typeof parsed.playbackContext === 'object'
+          ? parsed.playbackContext
+          : null,
         queueIndex: currentTrack ? Math.max(queue.findIndex(track => track.id === currentTrack.id), 0) : -1,
         shuffleIndex: currentTrack ? Math.max(shuffleQueue.findIndex(track => track.id === currentTrack.id), 0) : -1,
         isPlaying: false,
@@ -62,6 +65,7 @@ const savedQueueState = loadQueue()
 
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
+  playbackContext: null,
   isPlaying: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
@@ -148,7 +152,9 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
-  playTrack: (track, queue = null) => {
+  setPlaybackContext: (context) => set({ playbackContext: context || null }),
+
+  playTrack: (track, queue = null, context = null) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return
     const q = sanitizeTrackList(queue || get().queue)
@@ -164,12 +170,13 @@ export const usePlayerStore = create((set, get) => ({
       queue: q, 
       queueIndex: idx, 
       isPlaying: true, 
+      playbackContext: context || null,
       playHistory: [playableTrack.id],
       futureHistory: []
     })
   },
 
-  playQueue: (tracks, startIndex = 0) => {
+  playQueue: (tracks, startIndex = 0, context = null) => {
     const sanitizedTracks = sanitizeTrackList(tracks)
     if (!sanitizedTracks.length) return
     
@@ -185,6 +192,7 @@ export const usePlayerStore = create((set, get) => ({
       queueIndex: safeIndex, 
       currentTrack: startTrack, 
       isPlaying: true,
+      playbackContext: context || null,
       playHistory: startTrack ? [startTrack.id] : [],
       futureHistory: []
     })
@@ -623,11 +631,13 @@ usePlayerStore.subscribe((state) => {
   const {
     queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
     shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
+    playbackContext,
   } = state
 
   const dataToSave = {
     queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
     shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
+    playbackContext,
   }
 
   try {

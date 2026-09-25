@@ -302,6 +302,22 @@ async function applyArtistMetadataSelection(db, artistId, selection, options = {
 }
 
 function clearArtistImageOverride(db, artistId) {
+  // Clearing image_path here doesn't remove the generated file itself, and
+  // /api/artist-image/:artistId (server/index.js) checks for that file on
+  // disk BEFORE it ever looks at image_path -- so a manually-set image kept
+  // being served after "clearing" it, since the stale artist-<id>.* file was
+  // still sitting in the artwork folder shadowing the DB update below.
+  for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+    const p = path.join(getStorageDir(), 'artwork', `artist-${artistId}${ext}`)
+    if (fs.existsSync(p)) {
+      // Swallowing this would let the DB update below mark the override
+      // "cleared" even when the file is still sitting on disk -- and since
+      // the endpoint checks that file before it ever looks at image_path,
+      // the stale image would keep being served despite the DB saying
+      // otherwise. Let a removal failure abort instead of masking it.
+      fs.removeSync(p)
+    }
+  }
   db.prepare(`
     UPDATE artists
     SET image_path = NULL, image_source = ?, image_fetched_at = ?

@@ -1,19 +1,60 @@
-import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import React, { useEffect, useState, useRef } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Play, Music, Settings, Camera } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
+import { makeAlbumContext, makeArtistContext } from '../playbackContext'
 
 export default function Artist() {
   const { id } = useParams()
+  const nav = useNavigate()
+  const location = useLocation()
   const [artist, setArtist] = useState(null)
   const [allArtists, setAllArtists] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
   const [showManage, setShowManage] = useState(false)
   const { playQueue } = usePlayerStore()
+  const artistContext = makeArtistContext(id, artist?.name)
+  // Set by the "playing from ..." shortcut so we can scroll to the playing track.
+  const [highlightTrackId, setHighlightTrackId] = useState(null)
+  // A per-request identity, distinct from the track ID itself, so a second
+  // shortcut to the *same* already-playing track still re-triggers the
+  // scroll/flash in TrackList instead of being silently deduped against
+  // the first request for that ID.
+  const highlightSeqRef = useRef(0)
+  const [highlightRequestKey, setHighlightRequestKey] = useState(null)
+
+  useEffect(() => {
+    const incoming = location.state?.highlightTrackId
+    if (!incoming) return
+    highlightSeqRef.current += 1
+    setHighlightTrackId(incoming)
+    setHighlightRequestKey(`${incoming}:${highlightSeqRef.current}`)
+    // Clear it so a later refresh or back-navigation doesn't re-trigger the scroll.
+    nav(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, nav])
+
+  // A highlighted track that isn't in "Popular" only lives inside a
+  // Releases card, which stays collapsed until clicked -- so AlbumTracks
+  // never mounts and the track can't be scrolled to or flashed. Once the
+  // artist has loaded, open whichever release actually contains it.
+  useEffect(() => {
+    if (!artist || !highlightTrackId) return
+    const inTopTracks = artist.topTracks?.some((item) => String(item.id) === String(highlightTrackId))
+    if (inTopTracks) return
+    const track = artist.tracks?.find((item) => String(item.id) === String(highlightTrackId))
+    if (!track?.album) return
+    setSelectedAlbum(track.album)
+    // highlightRequestKey (not just highlightTrackId) is in the deps: if the
+    // user collapsed this release card after the first "playing from ..."
+    // request and then re-triggers the shortcut for the SAME track, the
+    // track id alone wouldn't change, and this effect wouldn't re-run to
+    // reopen the card -- highlightRequestKey changes on every request, even
+    // repeats, so it does.
+  }, [artist, highlightTrackId, highlightRequestKey])
 
   const load = () => {
     Promise.all([api.getArtist(id), api.getSettings()]).then(([data, appSettings]) => {
@@ -103,7 +144,7 @@ export default function Artist() {
 
       <div className="space-y-7 px-8 py-5">
         <div className="flex items-center gap-3">
-          <button onClick={() => playQueue(artist.tracks, 0)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
+          <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
           </button>
         </div>
@@ -118,7 +159,7 @@ export default function Artist() {
         {artist.topTracks?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
-            <TrackList tracks={artist.topTracks} showAlbum={false} />
+            <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
 
@@ -155,7 +196,7 @@ export default function Artist() {
           </section>
         )}
 
-        {selectedAlbum && <AlbumTracks album={selectedAlbum} />}
+        {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />}
       </div>
 
       <ArtistManageModal
@@ -169,9 +210,10 @@ export default function Artist() {
   )
 }
 
-function AlbumTracks({ album }) {
+function AlbumTracks({ album, artistName = null, highlightTrackId = null, highlightRequestKey = null }) {
   const [tracks, setTracks] = useState([])
   const { playQueue } = usePlayerStore()
+  const albumContext = makeAlbumContext({ title: album, album_artist: artistName })
 
   useEffect(() => {
     api.getAlbumTracks(album).then((result) => setTracks(result || []))
@@ -189,9 +231,9 @@ function AlbumTracks({ album }) {
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-white">{album}</h3>
-        <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
+        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
-      <TrackList tracks={tracks} showAlbum={false} />
+      <TrackList tracks={tracks} showAlbum={false} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
     </motion.div>
   )
 }

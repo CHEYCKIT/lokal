@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Loader2, Play, Search } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
+import { makeAlbumContext } from '../playbackContext'
 
 const PAGE_SIZE = 48
 
@@ -164,6 +165,40 @@ export default function Albums() {
   const navigate = useNavigate()
   const location = useLocation()
   const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore()
+  const albumContext = useMemo(() => makeAlbumContext(selectedAlbum), [selectedAlbum])
+  // Set by the bottom-bar / now-playing shortcuts so we can flash the playing track.
+  const [highlightTrackId, setHighlightTrackId] = useState(null)
+  const highlightRowRef = useRef(null)
+
+  // True once the highlighted track's row actually exists to flash/scroll
+  // to. A plain boolean (not the track object/array) so the timer effect
+  // below only restarts when readiness itself flips, not on every
+  // unrelated albumTracks re-fetch.
+  const highlightTrackReady = !!highlightTrackId && albumTracks.some((track) => track.id === highlightTrackId)
+
+  useEffect(() => {
+    if (!highlightTrackReady) return
+    const node = highlightRowRef.current
+    if (!node) return
+    requestAnimationFrame(() => {
+      try {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } catch {
+        node.scrollIntoView()
+      }
+    })
+  }, [highlightTrackReady, highlightTrackId])
+
+  // Kept separate so re-renders can't cancel the flash timer. Gated on
+  // highlightTrackReady (not just highlightTrackId) so a slow
+  // api.getAlbumTracks() can't have this timer clear the highlight before
+  // the matching row ever renders -- if getAlbumTracks takes longer than
+  // 2s, the countdown now only starts once the row is actually there.
+  useEffect(() => {
+    if (!highlightTrackReady) return
+    const timer = setTimeout(() => setHighlightTrackId(null), 2000)
+    return () => clearTimeout(timer)
+  }, [highlightTrackReady, highlightTrackId])
 
   const loadAlbums = () => {
     setLoadingAlbums(true)
@@ -208,6 +243,7 @@ export default function Albums() {
     if (!incomingAlbum) return
     const match = albums.find((album) => album.title === incomingAlbum.title && (!incomingAlbum.album_artist || album.album_artist === incomingAlbum.album_artist))
     setSelectedAlbum(match || incomingAlbum)
+    setHighlightTrackId(location.state?.highlightTrackId || null)
     navigate(location.pathname, { replace: true, state: {} })
   }, [albums, location.pathname, location.state, navigate])
 
@@ -320,13 +356,13 @@ export default function Albums() {
       togglePlay()
       return
     }
-    playTrack(track, albumTracks)
+    playTrack(track, albumTracks, albumContext)
   }
 
   const playAlbumRelease = async (album) => {
     const tracks = await api.getAlbumTracks(album)
     if (Array.isArray(tracks) && tracks.length) {
-      playQueue(tracks, 0)
+      playQueue(tracks, 0, makeAlbumContext(album))
     }
   }
 
@@ -376,7 +412,7 @@ export default function Albums() {
               album={selectedAlbum}
               trackCount={albumTracks.length || selectedAlbum.track_count || 0}
               onBack={() => setSelectedAlbum(null)}
-              onPlay={() => albumTracks.length && playQueue(albumTracks, 0)}
+              onPlay={() => albumTracks.length && playQueue(albumTracks, 0, albumContext)}
             />
 
             <div className="overflow-hidden rounded-[1.75rem] border border-border bg-surface/80">
@@ -389,7 +425,7 @@ export default function Albums() {
                 </div>
                 {albumTracks.length > 0 && (
                   <button
-                    onClick={() => playQueue(albumTracks, 0)}
+                    onClick={() => playQueue(albumTracks, 0, albumContext)}
                     className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-white transition-colors hover:border-accent/40"
                   >
                     <Play size={14} fill="currentColor" />
@@ -409,15 +445,17 @@ export default function Albums() {
                   {albumTracks.map((track, index) => {
                     const isCurrent = currentTrack?.id === track.id
                     const isHovered = hoveredTrack === track.id
+                    const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
                     return (
                       <button
                         key={track.id}
+                        ref={isHighlighted ? highlightRowRef : undefined}
                         type="button"
                         onClick={(event) => handleTrackPlay(track, index, event)}
-                        onDoubleClick={() => playQueue(albumTracks, index)}
+                        onDoubleClick={() => playQueue(albumTracks, index, albumContext)}
                         onMouseEnter={() => setHoveredTrack(track.id)}
                         onMouseLeave={() => setHoveredTrack(null)}
-                        className={`flex w-full items-center gap-4 px-6 py-3 text-left transition-colors ${isCurrent ? 'bg-accent/10' : 'hover:bg-elevated/80'}`}
+                        className={`flex w-full items-center gap-4 px-6 py-3 text-left transition-colors ${isCurrent ? 'bg-accent/10' : 'hover:bg-elevated/80'} ${isHighlighted ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''}`}
                       >
                         <div className="flex w-8 items-center justify-center">
                           {isHovered || isCurrent ? (
