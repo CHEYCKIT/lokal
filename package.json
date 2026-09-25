@@ -35,6 +35,13 @@
     },
     "win": {
       "icon": "public/lokal-icon.ico",
+      "extraResources": [
+        {
+          "from": "native/smtc-bridge/bin/Release/net48",
+          "to": "smtc-bridge",
+          "filter": ["SmtcBridge.exe", "SmtcBridge.exe.config"]
+        }
+      ],
       "target": [
         {
           "target": "nsis",

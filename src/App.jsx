@@ -760,6 +760,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!api.isElectron || !window.electron?.onSmtcShuffleRequest) return
+    return window.electron.onSmtcShuffleRequest((value) => {
+      const state = usePlayerStore.getState()
+      if (value) state.enableShuffle()
+      else state.disableShuffle()
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!api.isElectron || !window.electron?.onSmtcRepeatRequest) return
+    return window.electron.onSmtcRepeatRequest((mode) => {
+      usePlayerStore.getState().setRepeat(mode)
+    })
+  }, [])
+
+  useEffect(() => {
     api.getLikedTracks(user?.id).then(t => initLiked((t || []).map(x => x.id)))
   }, [user?.id])
 

@@ -25,6 +25,7 @@ const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
+const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
@@ -348,6 +349,7 @@ app.whenReady().then(() => {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }
   }
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
+  try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
 
 
   ipcMain.on('relaunch-app', () => {
@@ -388,6 +390,7 @@ app.whenReady().then(() => {
   });
   ipcMain.on('remote:stateUpdate', (_, state) => {
     setRemoteState(state)
+    updateSmtcState(state || {})
   })
   setRemoteCommandHandler(async (command) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -590,6 +593,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
+  try { stopSmtcBridge() } catch {}
 })
 
 app.on('before-quit', () => {
