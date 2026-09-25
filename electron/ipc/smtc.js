@@ -28,6 +28,16 @@ const path = require('path')
 const fs = require('fs')
 const { app } = require('electron')
 const { spawn } = require('child_process')
+// Log via electron-log's own API directly rather than the global `console`
+// patch main.js installs (`Object.assign(console, log.functions)`). That
+// patch is only verified to work for synchronous top-of-file code that runs
+// in the same tick as the patch itself (module-load-time console.log calls
+// elsewhere in this app); every line this module needs to log happens from
+// an asynchronous callback (a child_process event, a timer) minutes into a
+// running session, which is exactly the kind of call that went missing
+// during live testing -- calling `log` directly sidesteps that gap instead
+// of relying on the patch surviving into async contexts.
+const log = require('electron-log')
 
 const MAX_RESTART_ATTEMPTS = 5
 
@@ -57,7 +67,7 @@ function startSmtcBridge(getMainWindow) {
 
   const exePath = getBridgeExePath()
   if (!exePath || !fs.existsSync(exePath)) {
-    console.warn('[smtc] bridge executable not found, shuffle/repeat SMTC sync disabled:', exePath)
+    log.warn('[smtc] bridge executable not found, shuffle/repeat SMTC sync disabled:', exePath)
     return
   }
 
@@ -70,7 +80,7 @@ function startSmtcBridge(getMainWindow) {
       windowsHide: true,
     })
   } catch (e) {
-    console.warn('[smtc] failed to spawn bridge:', e.message)
+    log.warn('[smtc] failed to spawn bridge:', e.message)
     child = null
     return
   }
@@ -87,19 +97,19 @@ function startSmtcBridge(getMainWindow) {
 
   child.stderr.on('data', (chunk) => {
     const text = chunk.toString('utf8').trim()
-    if (text) console.warn('[smtc-bridge]', text)
+    if (text) log.warn('[smtc-bridge]', text)
   })
 
   child.on('error', (e) => {
-    console.warn('[smtc] bridge process error:', e.message)
+    log.warn('[smtc] bridge process error:', e.message)
   })
 
   child.on('exit', (code, signal) => {
     child = null
     if (shuttingDown) return
-    console.warn(`[smtc] bridge exited (code=${code}, signal=${signal})`)
+    log.warn(`[smtc] bridge exited (code=${code}, signal=${signal})`)
     if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
-      console.warn('[smtc] giving up on restarting bridge after repeated failures')
+      log.warn('[smtc] giving up on restarting bridge after repeated failures')
       return
     }
     restartAttempts += 1
@@ -117,7 +127,19 @@ function handleBridgeMessage(line, getMainWindow) {
 
   if (msg.event === 'ready') {
     restartAttempts = 0
-    console.log('[smtc] bridge bound to Chromium SMTC session (hwnd', msg.hwnd, ')')
+    log.info('[smtc] bridge bound to Chromium SMTC session (hwnd', msg.hwnd, ')')
+    return
+  }
+
+  if (msg.event === 'diag') {
+    // Temporary diagnostic: TryBind() has never once succeeded in live
+    // testing with zero visibility into why. See native/smtc-bridge/Bridge.cs.
+    log.info(
+      `[smtc] bind attempt #${msg.attempt}: targetPid=${msg.targetPid} ` +
+      `totalWindowsSeen=${msg.totalWindowsSeen} windowsForTargetPid=${msg.windowsForTargetPid} ` +
+      `classPrefixMatches=${msg.classPrefixMatches} hiddenNoTextMatches=${msg.hiddenNoTextMatches} ` +
+      `getForWindowThrew=${msg.getForWindowThrew} controlsDisabled=${msg.controlsDisabled}`
+    )
     return
   }
 
@@ -140,7 +162,7 @@ function updateSmtcState(state) {
   try {
     child.stdin.write(JSON.stringify(payload) + '\n')
   } catch (e) {
-    console.warn('[smtc] failed to write state to bridge:', e.message)
+    log.warn('[smtc] failed to write state to bridge:', e.message)
   }
 }
 
