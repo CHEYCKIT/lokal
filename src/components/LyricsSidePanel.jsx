@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
+import { api } from '../api'
 
 // The actual lyrics view, with no opinion about how it's framed -- used both
 // by the standalone panel below (independent mode) and, via RightSidebar's
@@ -12,7 +13,16 @@ import LyricsPanel from './LyricsPanel'
 export function LyricsContent({ onClose }) {
   const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore()
   const wordSync = localStorage.getItem('word-sync') === '1'
-  const isAutoSynced = localStorage.getItem('unsynced_auto_sync') === '1'
+  // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
+  // toggle saves via api.saveSettings, never to localStorage), matching how
+  // FullscreenPlayer/LyricsFullscreen already read it -- reading a
+  // localStorage key here that's never written left this permanently false
+  // regardless of the actual saved choice.
+  const [settings, setSettings] = useState({})
+  useEffect(() => {
+    api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+  }, [])
+  const isAutoSynced = settings.unsynced_auto_sync === '1'
 
   return (
     <>

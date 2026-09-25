@@ -2169,7 +2169,7 @@ module.exports = {
       <Section title="Layout">
         <Row
           label="Side Panels"
-          desc={"Merged: The Queue slides up over the Now Playing panel instead of opening a second one alongside it.\n\nIndependent: The Queue is its own separate panel and can stay open next to Now Playing, as before."}
+          desc={"Merged: Queue and Lyrics open inside the Now Playing panel instead of opening extra panels alongside it.\n\nIndependent: Queue and Lyrics each open in their own separate panel next to Now Playing, as before."}
         >
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {

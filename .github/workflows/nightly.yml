@@ -92,6 +92,13 @@ jobs:
           echo "DATE=$COMMIT_DATE" >> $GITHUB_OUTPUT
 
       - name: Generate Nightly Banner
+        env:
+          # Passed through the environment and read via process.env below
+          # instead of interpolated straight into the JS source -- inputs.ref
+          # is a write-authorized but still user-controlled string, and a ref
+          # containing quote/statement syntax would otherwise land in this
+          # heredoc as executable code (CWE-94) rather than as data.
+          NIGHTLY_REF: ${{ inputs.ref || 'main' }}
         run: |
           node - <<'EOF'
           const { chromium } = require("playwright");
@@ -104,10 +111,16 @@ jobs:
                 viewport: { width: 1200, height: 600 }
               });
 
-              await page.goto(
-                "https://sipbuu.me/lokalver/?v=${{ inputs.ref || 'main' }}&type=nightly&app=lokal",
-                { waitUntil: "networkidle", timeout: 20000 }
-              );
+              const bannerUrl = new URL("https://sipbuu.me/lokalver/");
+              bannerUrl.search = new URLSearchParams({
+                v: process.env.NIGHTLY_REF || "main",
+                type: "nightly",
+                app: "lokal",
+              }).toString();
+
+              await page.goto(bannerUrl.toString(), {
+                waitUntil: "networkidle", timeout: 20000
+              });
 
               await page.locator(".title-card").screenshot({
                 path: "release-banner.png",
@@ -250,5 +263,5 @@ jobs:
             }'
           )
 
-          curl -sS -f -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
+          curl -sS -f --max-time 15 -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
             || echo "Discord webhook call failed (rejected or unreachable) -- not fatal, release already published above."

@@ -620,30 +620,39 @@ export const usePlayerStore = create((set, get) => ({
   setExclusiveSidePanels: (value) => {
     try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
     set(s => {
-      if (value && s.showQueue) {
+      // Switching to merged mode: fold whichever standalone panel is
+      // visible into the single panel instead of just dropping it. Queue
+      // and Lyrics can both be open at once in independent mode (they're
+      // fully separate panels there); the merged panel only has one slot,
+      // so prefer Queue if both happen to be open.
+      if (value && (s.showQueue || s.showLyricsPanel)) {
         return {
           exclusiveSidePanels: value,
           exclusiveSidePanelsUserSet: true,
           showQueue: false,
+          showLyricsPanel: false,
           showRightSidebar: true,
-          sidePanelView: 'queue',
+          sidePanelView: s.showQueue ? 'queue' : 'lyrics',
         }
       }
-      if (!value && s.showRightSidebar && s.sidePanelView === 'queue') {
+      // Switching to independent mode: reopen a visible merged Queue/Lyrics
+      // overlay as its own standalone panel instead of just dropping it.
+      if (!value && s.showRightSidebar && (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics')) {
         return {
           exclusiveSidePanels: value,
           exclusiveSidePanelsUserSet: true,
-          showQueue: true,
+          showQueue: s.sidePanelView === 'queue',
+          showLyricsPanel: s.sidePanelView === 'lyrics',
           sidePanelView: 'info',
         }
       }
       return {
         exclusiveSidePanels: value,
         exclusiveSidePanelsUserSet: true,
-        // Any other stale 'queue' reference can't be shown as a closed
-        // panel in either mode -- fall back to info so neither renderer
-        // starts on a view it doesn't own.
-        sidePanelView: s.sidePanelView === 'queue' ? 'info' : s.sidePanelView,
+        // Any other stale 'queue'/'lyrics' reference can't be shown as a
+        // closed panel in either mode -- fall back to info so neither
+        // renderer starts on a view it doesn't own.
+        sidePanelView: (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics') ? 'info' : s.sidePanelView,
       }
     })
   },
