@@ -56,9 +56,9 @@ export default function MiniPlayer({ windowed = false }) {
     } else {
       if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(true).catch(() => {})
       // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's setMiniMode
-      // handler -- the controls row needs ~400px and the stacked rows need
-      // ~240px, so a smaller size here clips the same way setMiniMode used to.
-      if (electron.setWindowSize) electron.setWindowSize(420, 260).catch(() => {})
+      // handler -- 300 (not 260) because that's also MINI_MIN_HEIGHT there,
+      // and a window can't be set shorter than its own minimum height.
+      if (electron.setWindowSize) electron.setWindowSize(420, 300).catch(() => {})
     }
     return () => {
       if (electron.setMiniMode) {
