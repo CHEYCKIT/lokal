@@ -496,7 +496,8 @@ export const usePlayerStore = create((set, get) => ({
       const idx = queue.findIndex(t => t.id === trackId)
       if (idx === queueIndex) return 
       const newQueue = queue.filter(t => t.id !== trackId)
-      const newQueueIndex = idx < queueIndex ? queueIndex - 1 : queueIndex     set({ queue: newQueue, queueIndex: newQueueIndex })
+      const newQueueIndex = idx < queueIndex ? queueIndex - 1 : queueIndex
+      set({ queue: newQueue, queueIndex: newQueueIndex })
     }
   },
 
