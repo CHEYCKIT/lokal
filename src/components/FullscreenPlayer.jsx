@@ -183,6 +183,31 @@ export default function FullscreenPlayer() {
     api.getSettings().then(s => setSettings(s || {}))
   }, [showFullscreen])
 
+  // Leaving fullscreen only fades the *outer* overlay out over its own
+  // 300ms exit animation -- fullscreenPanel (and isPanelVisible below) is
+  // separate local state that this never touched, so the side panel kept
+  // its own opacity-100/pointer-events-auto/420px-wide styling the whole
+  // time, fully clickable, independent of whatever the outer overlay was
+  // doing. Closing the panel via its own Queue/Lyrics button already
+  // clears it correctly (see isPanelVisible), but closing *fullscreen*
+  // with a panel still open never did. Normally that's masked by the
+  // outer overlay unmounting a moment later anyway -- but if that unmount
+  // is ever delayed (a Queue<->Lyrics switch right before closing tears
+  // down and remounts LyricsPanel, which is heavy: rAF-driven word-sync
+  // ticking, springs, selection/scroll listeners -- contending with the
+  // outer AnimatePresence exit at the same moment), the still-fully-
+  // interactive panel and its Search/Expand-lyrics buttons stay sitting
+  // on top of whatever the user navigates to underneath, swallowing or
+  // misdirecting clicks until the app is restarted. Resetting eagerly the
+  // instant showFullscreen flips, rather than only once the outer fade
+  // settles, means the panel can never outlive the overlay it's supposed
+  // to live inside.
+  useEffect(() => {
+    if (showFullscreen) return
+    setFullscreenPanel('none')
+    setShowSearch(false)
+  }, [showFullscreen])
+
   const canOpenContext = isContextNavigable(playbackContext)
   const openContext = () => {
     if (!canOpenContext) return
@@ -262,7 +287,15 @@ export default function FullscreenPlayer() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 flex overflow-hidden"
-          style={{ WebkitAppRegion: 'no-drag' }}
+          // pointerEvents keyed off the *current* showFullscreen (not just
+          // the animation state) so the whole overlay -- panel included --
+          // stops accepting clicks the instant closing starts, rather than
+          // only once its 300ms fade finishes and it actually unmounts.
+          // This is what actually closes the gap: whatever the cause of a
+          // delayed/stuck unmount turns out to be, an overlay that can't
+          // receive pointer events can't swallow or misdirect a click,
+          // full stop -- it doesn't depend on diagnosing that cause correctly.
+          style={{ WebkitAppRegion: 'no-drag', pointerEvents: showFullscreen ? 'auto' : 'none' }}
         >
           <div className="absolute inset-0 bg-black">
             <AnimatePresence mode="wait">
