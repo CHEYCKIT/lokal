@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -11,11 +11,10 @@ export default function MiniPlayer({ windowed = false }) {
   const {
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
-    showMiniPlayer, toggleMiniPlayer, likedIds, setLiked
+    toggleMiniPlayer, likedIds, setLiked
   } = usePlayerStore()
   const { user } = useAppStore()
 
-  const prevWindowSize = useRef(null)
   const [lyricsLines, setLyricsLines] = useState([])
   const [lyricsType, setLyricsType] = useState(null)
   const [lyricsCurrent, setLyricsCurrent] = useState('')
@@ -41,36 +40,15 @@ export default function MiniPlayer({ windowed = false }) {
 
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
 
-  useEffect(() => {
-    const electron = window.electron
-    if (!electron || !showMiniPlayer) {
-      return
-    }
-    if (electron.getWindowSize) {
-      electron.getWindowSize().then(size => {
-        prevWindowSize.current = size
-      }).catch(() => {})
-    }
-    if (electron.setMiniMode) {
-      electron.setMiniMode(true).catch(() => {})
-    } else {
-      if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(true).catch(() => {})
-      // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's setMiniMode
-      // handler -- 300 (not 260) because that's also MINI_MIN_HEIGHT there,
-      // and a window can't be set shorter than its own minimum height.
-      if (electron.setWindowSize) electron.setWindowSize(420, 300).catch(() => {})
-    }
-    return () => {
-      if (electron.setMiniMode) {
-        electron.setMiniMode(false).catch(() => {})
-      } else {
-        if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(false).catch(() => {})
-        if (prevWindowSize.current && electron.setWindowSize) {
-          electron.setWindowSize(prevWindowSize.current[0], prevWindowSize.current[1]).catch(() => {})
-        }
-      }
-    }
-  }, [showMiniPlayer])
+  // The native window resize/always-on-top toggle used to happen here, in a
+  // mount/unmount effect keyed on showMiniPlayer -- but that runs AFTER
+  // React has already committed and painted the swap between this component
+  // and the full app UI in App.jsx, and the resize itself is an async IPC
+  // round-trip on top of that. The result was a visible frame or two of the
+  // wrong-size window showing the wrong-size content on every transition.
+  // toggleMiniPlayer (src/store/player.js) now awaits the resize BEFORE
+  // flipping showMiniPlayer, so the window is already correctly sized by
+  // the time this component (or the full app UI) actually mounts.
 
   useEffect(() => {
     if (!currentTrack?.id) {

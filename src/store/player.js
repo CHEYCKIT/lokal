@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 
+// Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
+// below (when window.electron.setMiniMode isn't available), to remember the
+// window size to restore when leaving mini mode. A plain module-level
+// variable rather than component state, since the resize now happens here
+// in the store -- not in a component effect -- and needs to persist across
+// the enter/exit pair regardless of what's mounted at the time.
+let miniModeFallbackPrevSize = null
+
 function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
 }
@@ -670,7 +678,40 @@ export const usePlayerStore = create((set, get) => ({
   sleepTimerEndTime: null,
   sleepTimerInterval: null,
   showMiniPlayer: false,
-  toggleMiniPlayer: () => set(s => ({ showMiniPlayer: !s.showMiniPlayer })),
+  // Resizes (and awaits) the native window BEFORE flipping showMiniPlayer,
+  // rather than after -- App.jsx swaps between MiniPlayer and the full app
+  // UI the instant showMiniPlayer changes, so if that flip happens first,
+  // React mounts the new UI while the OS window is still the OLD size, and
+  // only catches up once the async setMiniMode IPC call resolves. That
+  // produced a visible flash of the wrong-size content in the wrong-size
+  // window on every transition. Awaiting the resize first means the window
+  // is already correct by the time the UI actually swaps.
+  toggleMiniPlayer: async () => {
+    const next = !get().showMiniPlayer
+    const electron = typeof window !== 'undefined' ? window.electron : null
+    if (electron) {
+      try {
+        if (electron.setMiniMode) {
+          await electron.setMiniMode(next)
+        } else if (next) {
+          if (electron.getWindowSize) {
+            miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
+          }
+          if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
+          // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
+          // setMiniMode handler.
+          if (electron.setWindowSize) await electron.setWindowSize(420, 300)
+        } else {
+          if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
+          if (miniModeFallbackPrevSize && electron.setWindowSize) {
+            await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
+          }
+          miniModeFallbackPrevSize = null
+        }
+      } catch {}
+    }
+    set({ showMiniPlayer: next })
+  },
   setSleepTimer: (minutes) => {
     const { sleepTimerInterval } = get()
     if (sleepTimerInterval) {
