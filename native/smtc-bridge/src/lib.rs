@@ -147,6 +147,7 @@ pub fn find_chromium_smtc_window() -> WinInfo {
         title: ctx.title,
     }
 }
+
 fn smtc_for(hwnd: isize) -> WinResult<SystemMediaTransportControls> {
     let interop = windows::core::factory::<
         SystemMediaTransportControls,
@@ -227,6 +228,7 @@ pub fn arm_shuffle_repeat(hwnd: i64) -> napi::Result<()> {
     let _ = BOUND_HWND.set(hwnd);
     Ok(())
 }
+
 #[napi(object)]
 pub struct PendingRequests {
     pub shuffle: Option<bool>,
