@@ -576,7 +576,20 @@ export const usePlayerStore = create((set, get) => ({
     // there's nothing left to reset here on the way out.
     return { showRightSidebar: false }
   }),
-  toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
+  toggleFullscreen: () => set(s => {
+    const next = !s.showFullscreen
+    if (!next && typeof window !== 'undefined' && window.electron?.refreshHitRegions) {
+      // Closing fullscreen with a side panel (Queue/Lyrics) still open
+      // unmounts a wide chunk of DOM at the same moment the whole overlay
+      // fades out -- on Windows that's been enough to leave the frameless
+      // window's native hit-test map stale, so clicks land offset from the
+      // cursor until the app is restarted. Nudge it back in sync once the
+      // overlay's own exit fade (FullscreenPlayer, 300ms) has settled.
+      // See electron/main.js's window:refreshHitRegions handler.
+      setTimeout(() => window.electron.refreshHitRegions(), 350)
+    }
+    return { showFullscreen: next }
+  }),
   // Closes the *standalone* Queue panel (independent mode only -- that's
   // the only mode where it's ever mounted as its own sibling, so this
   // never needs to know about the sidebar).

@@ -506,6 +506,23 @@ ipcMain.handle('window:getSize', () => {
   }
   return [1400, 860]
 })
+// Windows + frame:false + `-webkit-app-region: drag` (our custom titlebar)
+// is a known combination for the OS-level hit-test map going stale: after a
+// burst of overlapping layout/paint changes near the titlebar -- exactly
+// what closing the fullscreen player's Lyrics/Queue side panel does, since
+// that unmounts a wide subtree at the same time the whole overlay is fading
+// out -- Chromium can keep answering mouse input using a snapshot of the
+// old layout, so every click lands offset from the cursor until something
+// forces a recompute. A real restart fixes it by re-establishing the
+// window from scratch; a genuine (if imperceptible) bounds change forces
+// the same recompute without one. See e.g. electron/electron#7347 and
+// #51252 for the same class of bug.
+ipcMain.handle('window:refreshHitRegions', () => {
+  if (!mainWindow) return
+  const b = mainWindow.getBounds()
+  mainWindow.setBounds({ ...b, width: b.width + 1 })
+  mainWindow.setBounds(b)
+})
 
 createWindow()
 
