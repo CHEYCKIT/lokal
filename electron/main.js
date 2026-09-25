@@ -188,9 +188,22 @@ const NORMAL_MIN_HEIGHT = 640
 // -- 360x220 was narrower and shorter than the content it has to show,
 // so the right edge (volume slider) and bottom edge got clipped.
 const MINI_DEFAULT_WIDTH = 420
-const MINI_DEFAULT_HEIGHT = 260
 const MINI_MIN_WIDTH = 320
-const MINI_MIN_HEIGHT = 220
+// At the 320px minimum width, MiniPlayer.jsx's bottom controls row no longer
+// fits on one line and wraps (see the flex-wrap comment there), which makes
+// the whole mini player noticeably taller than at the default width. Measured
+// by actually rendering MiniPlayer's windowed layout at 320px (Tailwind
+// 3.4.1 output, Chromium via Playwright, worst case with both a current and
+// next lyric line showing): content needs ~275px, not 220px, so the
+// overflow-hidden container was clipping the wrapped second row of controls
+// at the minimum size. 300px leaves a small safety margin over that measured
+// value.
+const MINI_MIN_HEIGHT = 300
+// setSize below can't produce a window shorter than the minimum height set
+// just above it -- Electron clamps to the minimum -- so the default height
+// has to be at least MINI_MIN_HEIGHT or the mini player would silently open
+// taller than this constant says (300, not 260, despite the 420x260 request).
+const MINI_DEFAULT_HEIGHT = MINI_MIN_HEIGHT
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false
