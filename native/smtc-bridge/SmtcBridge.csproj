@@ -53,7 +53,7 @@
          System.Runtime.WindowsRuntime marshalling support are both pulled in by this
          single NuGet package, so the build is reproducible on any CI runner regardless
          of which exact Windows SDK version happens to be preinstalled. -->
-    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.755" />
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.26100.4948" />
   </ItemGroup>
 
 </Project>
