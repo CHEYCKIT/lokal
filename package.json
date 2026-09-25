@@ -7,12 +7,13 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:web": "concurrently \"vite\" \"node server/start.js\"",
-    "build": "vite build && electron-builder",
+    "build": "vite build && npm run native:prepare && electron-builder",
     "server": "node server/start.js",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "rebuild:electron": "electron-rebuild",
     "rebuild:web": "npm rebuild better-sqlite3",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps && npm run native:prepare",
+    "native:prepare": "node scripts/prepare-native.js"
   },
   "build": {
     "appId": "com.lokal.music",
@@ -25,6 +26,9 @@
       "server/**/*"
     ],
     "asar": true,
+    "asarUnpack": [
+      "electron/native/**/*.node"
+    ],
     "publish": {
       "provider": "github",
       "owner": "sipbuu",
@@ -35,13 +39,6 @@
     },
     "win": {
       "icon": "public/lokal-icon.ico",
-      "extraResources": [
-        {
-          "from": "native/smtc-bridge/bin/Release/net48",
-          "to": "smtc-bridge",
-          "filter": ["SmtcBridge.exe", "SmtcBridge.exe.config"]
-        }
-      ],
       "target": [
         {
           "target": "nsis",
