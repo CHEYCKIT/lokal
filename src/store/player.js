@@ -496,8 +496,7 @@ export const usePlayerStore = create((set, get) => ({
       const idx = queue.findIndex(t => t.id === trackId)
       if (idx === queueIndex) return 
       const newQueue = queue.filter(t => t.id !== trackId)
-      const newQueueIndex = idx < queueIndex ? queueIndex - 1 : queueIndex
-      set({ queue: newQueue, queueIndex: newQueueIndex })
+      const newQueueIndex = idx < queueIndex ? queueIndex - 1 : queueIndex     set({ queue: newQueue, queueIndex: newQueueIndex })
     }
   },
 
@@ -513,6 +512,11 @@ export const usePlayerStore = create((set, get) => ({
   setDuration: (v) => set({ duration: v }),
   setVolume: (v) => { localStorage.setItem('lokal-volume', String(v)); set({ volume: v }) },
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
+  // Direct setter, unlike toggleRepeat above: needed for the Windows SMTC
+  // bridge (electron/ipc/smtc.js), which reports the OS flyout's repeat
+  // button was set to an exact target mode ('none'|'all'|'one'), not "cycle
+  // to the next one".
+  setRepeat: (mode) => set({ repeat: mode === 'all' || mode === 'one' ? mode : 'none' }),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
   toggleRightSidebar: () => set(s => ({ showRightSidebar: !s.showRightSidebar })),
