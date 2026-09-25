@@ -30,9 +30,17 @@ export default function Playlist() {
   const { user } = useAppStore()
   const location = useLocation()
   const isLiked = id === 'liked'
+  // load() below re-fetches on every id change but doesn't clear `playlist`
+  // first, so right after navigating from one playlist to another, `playlist`
+  // still holds the PREVIOUS playlist's data for as long as the new fetch is
+  // in flight -- makePlaylistContext prefers playlist.id over the id fallback,
+  // so playing a track during that window stored a context pointing back at
+  // the playlist the user just navigated away from. Only trust `playlist`
+  // once its id actually matches the current route.
+  const playlistMatchesRoute = playlist && String(playlist.id) === String(id)
   const playbackContext = useMemo(
-    () => makePlaylistContext(isLiked ? { id: 'liked', name: 'Liked Songs' } : playlist, id),
-    [isLiked, playlist, id],
+    () => makePlaylistContext(isLiked ? { id: 'liked', name: 'Liked Songs' } : (playlistMatchesRoute ? playlist : null), id),
+    [isLiked, playlistMatchesRoute, playlist, id],
   )
   // Set by the "playing from ..." shortcut so we can scroll to the playing track.
   const [highlightTrackId, setHighlightTrackId] = useState(null)
