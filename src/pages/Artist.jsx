@@ -48,7 +48,13 @@ export default function Artist() {
     const track = artist.tracks?.find((item) => String(item.id) === String(highlightTrackId))
     if (!track?.album) return
     setSelectedAlbum(track.album)
-  }, [artist, highlightTrackId])
+    // highlightRequestKey (not just highlightTrackId) is in the deps: if the
+    // user collapsed this release card after the first "playing from ..."
+    // request and then re-triggers the shortcut for the SAME track, the
+    // track id alone wouldn't change, and this effect wouldn't re-run to
+    // reopen the card -- highlightRequestKey changes on every request, even
+    // repeats, so it does.
+  }, [artist, highlightTrackId, highlightRequestKey])
 
   const load = () => {
     Promise.all([api.getArtist(id), api.getSettings()]).then(([data, appSettings]) => {
