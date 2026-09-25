@@ -42,15 +42,18 @@ export default function RightSidebar() {
   const nav = useNavigate()
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = localStorage.getItem('word-sync') === '1'
-  // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
-  // toggle saves via api.saveSettings, never to localStorage), matching how
-  // FullscreenPlayer/LyricsFullscreen already read it -- reading a
+  // Backend-persisted setting (Settings' Unsynced Lyrics Auto-Sync toggle
+  // saves via api.saveSettings, never to localStorage) -- reading a
   // localStorage key here that's never written left this permanently false
-  // regardless of the actual saved choice.
+  // regardless of the actual saved choice. RightSidebar stays mounted for
+  // the whole session, so a mount-once fetch would go stale the same way
+  // FullscreenPlayer/LyricsFullscreen's did -- refetch whenever the Lyrics
+  // overlay is opened so a change made in Settings takes effect right away.
   const [settings, setSettings] = useState({})
   useEffect(() => {
+    if (sidePanelView !== 'lyrics') return
     api.getSettings().then(s => setSettings(s || {})).catch(() => {})
-  }, [])
+  }, [sidePanelView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
