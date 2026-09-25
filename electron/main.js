@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const log = require('electron-log')
@@ -187,23 +187,19 @@ const NORMAL_MIN_HEIGHT = 640
 // stacked rows (header, artwork/title, progress bar, controls) need ~240px
 // -- 360x220 was narrower and shorter than the content it has to show,
 // so the right edge (volume slider) and bottom edge got clipped.
+//
+// The mini player used to be resizable down to a minimum size, but
+// MiniPlayer.jsx's bottom controls row wraps onto two lines once the window
+// gets narrower than it can fit on one line (see the flex-wrap comment
+// there), and letting the window get short enough to also clip that wrapped
+// row (measured need: ~275px tall at the narrowest allowed width, vs. the
+// 220px minimum height that used to be set) made resizing it down look
+// broken. Rather than chase the right minimum size for every wrapped
+// combination, the mini player is now fixed at exactly its default size --
+// see setMiniMode below, which locks both the minimum AND maximum size to
+// this and turns resizing off entirely.
 const MINI_DEFAULT_WIDTH = 420
-const MINI_MIN_WIDTH = 320
-// At the 320px minimum width, MiniPlayer.jsx's bottom controls row no longer
-// fits on one line and wraps (see the flex-wrap comment there), which makes
-// the whole mini player noticeably taller than at the default width. Measured
-// by actually rendering MiniPlayer's windowed layout at 320px (Tailwind
-// 3.4.1 output, Chromium via Playwright, worst case with both a current and
-// next lyric line showing): content needs ~275px, not 220px, so the
-// overflow-hidden container was clipping the wrapped second row of controls
-// at the minimum size. 300px leaves a small safety margin over that measured
-// value.
-const MINI_MIN_HEIGHT = 300
-// setSize below can't produce a window shorter than the minimum height set
-// just above it -- Electron clamps to the minimum -- so the default height
-// has to be at least MINI_MIN_HEIGHT or the mini player would silently open
-// taller than this constant says (300, not 260, despite the 420x260 request).
-const MINI_DEFAULT_HEIGHT = MINI_MIN_HEIGHT
+const MINI_DEFAULT_HEIGHT = 300
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false
@@ -214,6 +210,18 @@ function enforceMiniTop() {
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   mainWindow.moveTop()
+}
+
+// Used when entering mini mode so the resize-to-mini-size and the
+// re-centering happen as a single setBounds call instead of a separate
+// setSize followed by a separate center() -- two native calls means two
+// relayouts (and, on some platforms, two visible steps) instead of one.
+function centeredBounds(width, height, referenceBounds) {
+  const display = screen.getDisplayMatching(referenceBounds || mainWindow.getBounds())
+  const area = display.workArea
+  const x = Math.round(area.x + (area.width - width) / 2)
+  const y = Math.round(area.y + (area.height - height) / 2)
+  return { x, y, width, height }
 }
 
 function emitPlayerCommand(action) {
@@ -462,18 +470,31 @@ ipcMain.handle('window:setMiniMode', (_, enabled) => {
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     mainWindow.show()
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    mainWindow.setMinimumSize(MINI_MIN_WIDTH, MINI_MIN_HEIGHT)
-    mainWindow.setSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
-    mainWindow.center()
+    // Fixed-size, not resizable: the mini player's layout was only ever
+    // designed for one size, and letting it be dragged to anything smaller
+    // wrapped its controls row onto a second line the window wasn't tall
+    // enough for (see the constants above). Locking min/max to the exact
+    // same size is a second layer under setResizable(false), since some
+    // window managers still allow a "non-resizable" window to be resized
+    // (e.g. via a keyboard shortcut) without both being set.
+    mainWindow.setResizable(false)
+    mainWindow.setMinimumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
+    mainWindow.setMaximumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
+    // One setBounds call instead of setSize + center(): each is a separate
+    // native resize/move, i.e. a separate relayout, and doing them back to
+    // back was part of what made this transition look janky.
+    mainWindow.setBounds(centeredBounds(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT, miniModeRestoreState.bounds), true)
     enforceMiniTop()
     return true
   }
   miniModeEnabled = false
   mainWindow.setAlwaysOnTop(false)
   mainWindow.setVisibleOnAllWorkspaces(false)
+  mainWindow.setResizable(true)
   mainWindow.setMinimumSize(NORMAL_MIN_WIDTH, NORMAL_MIN_HEIGHT)
+  mainWindow.setMaximumSize(0, 0) // 0 = no limit, undoes the mini-mode lock above
   if (miniModeRestoreState?.bounds) {
-    mainWindow.setBounds(miniModeRestoreState.bounds)
+    mainWindow.setBounds(miniModeRestoreState.bounds, true)
     if (miniModeRestoreState.wasMaximized) mainWindow.maximize()
   }
   miniModeRestoreState = null
