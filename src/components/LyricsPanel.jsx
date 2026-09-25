@@ -480,7 +480,7 @@ function RAFWordLine({ words, bgWords, liveProgressRef }) {
 }
 
 const Line = React.memo(function Line({
-  line, isActive, isPast, fullscreen, darkMode, wordSync, lyricsType, liveProgressRef, onRef, distanceFromActive, textScale = 1, index, progress = 0, hasNextLine = false, onSeek = null, lyricsStyle = 'classic',
+  line, isActive, isPast, fullscreen, darkMode, wordSync, lyricsType, liveProgressRef, onRef, distanceFromActive, textScale = 1, index, progress = 0, hasNextLine = false, onSeek = null, lyricsStyle = 'classic', plainUnsynced = false,
 }) {
   const useRAF = wordSync && lyricsType === 'synced' && isActive && line.words?.length > 0
   const useSpicy = useRAF && lyricsStyle !== 'classic'
@@ -531,7 +531,12 @@ const Line = React.memo(function Line({
       onClick={handleSeek}
       onKeyDown={handleKeyDown}
       animate={{
-        opacity: isActive ? 1 : isPast ? 0.18 : 0.35,
+        // Plain unsynced lyrics (no timing info, and auto-sync off) never
+        // get an activeIdx from the effect below -- there's no line to
+        // highlight against, so show the whole list at full brightness
+        // (like Spotify's static unsynced view) instead of leaving every
+        // line stuck in the dim "not active" state.
+        opacity: plainUnsynced ? 1 : (isActive ? 1 : isPast ? 0.18 : 0.35),
         scale: isActive ? (fullscreen ? 1 : 1.01) : 1,
       }}
       transition={{
@@ -540,7 +545,7 @@ const Line = React.memo(function Line({
       }}
       className={`text-center w-full max-w-2xl my-1.5 font-medium select-text rounded-2xl px-4 py-2 outline-none transition-colors ${seekable ? 'cursor-pointer hover:bg-white/6 focus-visible:bg-white/6' : 'cursor-default'}`}
       style={{
-        color: isActive ? (darkMode ? '#fff' : '#e8ff57') : '#666',
+        color: plainUnsynced ? (darkMode ? '#fff' : '#111') : (isActive ? (darkMode ? '#fff' : '#e8ff57') : '#666'),
         fontWeight: isActive ? 700 : 500,
         textShadow: isActive ? (fullscreen ? '0 0 40px rgba(232,255,87,0.2)' : '0 0 20px rgba(232,255,87,0.15)') : 'none',
         filter: isBlurred ? `blur(${blurAmount}px)` : 'none',
@@ -582,7 +587,8 @@ const Line = React.memo(function Line({
   prev.distanceFromActive === next.distanceFromActive &&
   prev.hasNextLine === next.hasNextLine &&
   prev.onSeek === next.onSeek &&
-  prev.lyricsStyle === next.lyricsStyle
+  prev.lyricsStyle === next.lyricsStyle &&
+  prev.plainUnsynced === next.plainUnsynced
 )
 
 export default function LyricsPanel({
@@ -801,6 +807,10 @@ export default function LyricsPanel({
 
   const hasSyncedLyrics = displayedLines.some(l => l.time != null)
   const showUnsyncedMessage = !hasSyncedLyrics && displayedLines.length > 0
+  // Mirrors the activeIdx effect above: when lyrics aren't synced and the
+  // rough auto-sync guess is off, activeIdx never leaves its initial -1, so
+  // no line would ever be marked active/past without this flag.
+  const plainUnsynced = lyricsType !== 'synced' && !isAutoSynced
   const updateSelectionState = useMemo(() => {
     return () => {
       const container = containerRef.current
@@ -995,6 +1005,7 @@ export default function LyricsPanel({
           hasNextLine={i < displayedLines.length - 1}
           onSeek={handleSeekToLine}
           lyricsStyle={lyricsStyle}
+          plainUnsynced={plainUnsynced}
         />
       ))}
 

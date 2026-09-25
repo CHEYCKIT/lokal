@@ -13,9 +13,17 @@ export default function LyricsFullscreen() {
   const [settings, setSettings] = useState({})
   const wordSync = localStorage.getItem('word-sync') === '1'
 
+  // LyricsFullscreen stays mounted for the whole app session (App.jsx renders
+  // it unconditionally and it just hides its own JSX), so a settings fetch
+  // tied to mount only ever ran once at startup -- toggling and saving
+  // Unsynced Lyrics Auto-Sync later in Settings never updated this component,
+  // and lyrics kept auto-syncing (or not) based on whatever was cached at
+  // launch. Re-fetching whenever the overlay actually opens picks up the
+  // current saved value.
   useEffect(() => {
+    if (!showLyricsFullscreen) return
     api.getSettings().then(s => setSettings(s || {}))
-  }, [])
+  }, [showLyricsFullscreen])
 
   const importLyrics = async () => {
     if (!currentTrack || !api.isElectron) return
