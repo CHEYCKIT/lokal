@@ -157,6 +157,8 @@ contextBridge.exposeInMainWorld('electron', {
   saveTheme: (theme, overrides) => invoke('settings:saveTheme', { theme, overrides }),
   reportRemoteState: (state) => ipcRenderer.send('remote:stateUpdate', state),
   onRemoteCommand: (fn) => on('remote:command', (_, payload) => fn(payload)),
+  onSmtcShuffleRequest: (fn) => on('smtc:shuffleRequested', (_, value) => fn(value)),
+  onSmtcRepeatRequest: (fn) => on('smtc:repeatRequested', (_, mode) => fn(mode)),
 
   
   register: (d) => invoke('user:register', d),
