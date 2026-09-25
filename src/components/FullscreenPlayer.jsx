@@ -242,6 +242,16 @@ export default function FullscreenPlayer() {
 
   const isAutoSynced = settings.unsynced_auto_sync === '1'
   const isPanelVisible = currentTrack && fullscreenPanel !== 'none'
+  // The two layout-affecting transitions below (main content re-centering,
+  // panel width collapsing) only need to animate while this view is
+  // actually staying open -- while it's closing, the whole overlay is
+  // already fading to invisible over its own 300ms exit transition, so
+  // nobody sees these settle anyway. Snapping them instantly on close
+  // avoids running three overlapping layout/paint transitions (this pair
+  // plus the overlay's own fade) at the exact moment a wide subtree
+  // (Queue/Lyrics) unmounts, which on Windows has been enough to leave the
+  // frameless window's native hit-test map stale -- see toggleFullscreen
+  // in store/player.js and window:refreshHitRegions in electron/main.js.
 
   return (
     <AnimatePresence>
@@ -252,6 +262,7 @@ export default function FullscreenPlayer() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 flex overflow-hidden"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
           <div className="absolute inset-0 bg-black">
             <AnimatePresence mode="wait">
@@ -301,7 +312,7 @@ export default function FullscreenPlayer() {
               )}
             </div>
           )}
-          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 transition-all duration-500 ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
+          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentTrack?.id || 'none'}
@@ -406,7 +417,7 @@ export default function FullscreenPlayer() {
               // were missing. The real flow is: open Lyrics, then use the
               // panel's own top-right search button, same as windowed mode.
               <div
-                className={`relative z-10 flex flex-col overflow-hidden transition-all duration-500 ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`relative z-10 flex flex-col overflow-hidden ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{ width: isPanelVisible ? '420px' : '0px' }}
               >
                 {(fullscreenPanel !== 'none' ? fullscreenPanel : lastPanelRef.current) === 'queue' ? (
