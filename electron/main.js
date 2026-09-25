@@ -182,10 +182,15 @@ app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaS
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
 const NORMAL_MIN_HEIGHT = 640
-const MINI_DEFAULT_WIDTH = 360
-const MINI_DEFAULT_HEIGHT = 220
-const MINI_MIN_WIDTH = 50
-const MINI_MIN_HEIGHT = 50
+// The mini player's controls row (icon buttons + transport controls +
+// waveform + volume slider, all fixed-width) needs ~400px, and the four
+// stacked rows (header, artwork/title, progress bar, controls) need ~240px
+// -- 360x220 was narrower and shorter than the content it has to show,
+// so the right edge (volume slider) and bottom edge got clipped.
+const MINI_DEFAULT_WIDTH = 420
+const MINI_DEFAULT_HEIGHT = 260
+const MINI_MIN_WIDTH = 320
+const MINI_MIN_HEIGHT = 220
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false

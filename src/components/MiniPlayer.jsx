@@ -55,7 +55,10 @@ export default function MiniPlayer({ windowed = false }) {
       electron.setMiniMode(true).catch(() => {})
     } else {
       if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(true).catch(() => {})
-      if (electron.setWindowSize) electron.setWindowSize(360, 220).catch(() => {})
+      // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's setMiniMode
+      // handler -- the controls row needs ~400px and the stacked rows need
+      // ~240px, so a smaller size here clips the same way setMiniMode used to.
+      if (electron.setWindowSize) electron.setWindowSize(420, 260).catch(() => {})
     }
     return () => {
       if (electron.setMiniMode) {
@@ -298,7 +301,10 @@ export default function MiniPlayer({ windowed = false }) {
         </div>
       </div>
 
-      <div className={`${windowed ? 'px-4 pb-4 pt-3' : 'px-3 pb-3 pt-2'} flex items-center justify-between gap-3`}>
+      {/* flex-wrap: if the mini window is resized narrower than this row's
+          content needs, the groups wrap onto a second line instead of
+          overflowing past the window's right edge and getting clipped. */}
+      <div className={`${windowed ? 'px-4 pb-4 pt-3' : 'px-3 pb-3 pt-2'} flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 0.8)}
