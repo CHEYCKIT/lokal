@@ -298,10 +298,12 @@ function createWindow() {
   mainWindow.on('show', enforceMiniTop)
   mainWindow.on('restore', enforceMiniTop)
 
-  mainWindow.on('app-command', (_, command) => {
+  mainWindow.on('app-command', (event, command) => {
     if (command === 'browser-backward') {
+      event.preventDefault()
       mainWindow.webContents.send('navigation:history', -1)
     } else if (command === 'browser-forward') {
+      event.preventDefault()
       mainWindow.webContents.send('navigation:history', 1)
     }
   })
