@@ -8,6 +8,12 @@ import { create } from 'zustand'
 // the enter/exit pair regardless of what's mounted at the time.
 let miniModeFallbackPrevSize = null
 
+// Serializes toggleMiniPlayer calls (below) so a fast double-click can't let
+// two overlapping calls both read showMiniPlayer via the same stale get()
+// before either one's IPC round-trip resolves -- each call now only reads
+// `next` after any prior toggle has actually finished.
+let miniModeToggleChain = Promise.resolve()
+
 function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
 }
@@ -699,31 +705,45 @@ export const usePlayerStore = create((set, get) => ({
   // produced a visible flash of the wrong-size content in the wrong-size
   // window on every transition. Awaiting the resize first means the window
   // is already correct by the time the UI actually swaps.
-  toggleMiniPlayer: async () => {
-    const next = !get().showMiniPlayer
-    const electron = typeof window !== 'undefined' ? window.electron : null
-    if (electron) {
-      try {
-        if (electron.setMiniMode) {
-          await electron.setMiniMode(next)
-        } else if (next) {
-          if (electron.getWindowSize) {
-            miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
+  toggleMiniPlayer: () => {
+    // Chain onto the previous call's settled promise (not just fire a new
+    // one) so overlapping calls run one at a time; `.catch(() => {})` keeps
+    // a prior failure from blocking this attempt.
+    miniModeToggleChain = miniModeToggleChain.catch(() => {}).then(async () => {
+      const next = !get().showMiniPlayer
+      const electron = typeof window !== 'undefined' ? window.electron : null
+      if (electron) {
+        try {
+          if (electron.setMiniMode) {
+            await electron.setMiniMode(next)
+          } else if (next) {
+            if (electron.getWindowSize) {
+              miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
+            }
+            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
+            // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
+            // setMiniMode handler.
+            if (electron.setWindowSize) await electron.setWindowSize(420, 300)
+          } else {
+            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
+            if (miniModeFallbackPrevSize && electron.setWindowSize) {
+              await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
+            }
+            miniModeFallbackPrevSize = null
           }
-          if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
-          // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
-          // setMiniMode handler.
-          if (electron.setWindowSize) await electron.setWindowSize(420, 300)
-        } else {
-          if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
-          if (miniModeFallbackPrevSize && electron.setWindowSize) {
-            await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
-          }
-          miniModeFallbackPrevSize = null
+        } catch (err) {
+          // The native resize/IPC call failed, so the OS window never
+          // actually changed size -- committing showMiniPlayer here would
+          // desync the UI (MiniPlayer vs. the full app layout) from the
+          // window's real size. Leave the store as it was; the swallowed
+          // catch here previously committed on failure too, silently.
+          console.error('Failed to toggle mini player', err)
+          return
         }
-      } catch {}
-    }
-    set({ showMiniPlayer: next })
+      }
+      set({ showMiniPlayer: next })
+    })
+    return miniModeToggleChain
   },
   setSleepTimer: (minutes) => {
     const { sleepTimerInterval } = get()
