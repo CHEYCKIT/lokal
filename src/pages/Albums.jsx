@@ -43,9 +43,9 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8">
+      <div className="relative grid gap-6 p-6 md:grid-cols-[280px_minmax(0,520px)] md:items-stretch md:justify-between md:p-8">
         <div className="justify-self-start">
-          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[220px] md:w-[220px]">
+          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[280px] md:w-[280px]">
             {artSrc ? (
               <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
             ) : (
