@@ -13,9 +13,9 @@ const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
 // fixed-height spacers standing in for everything above and below so the
 // scroll height (and scrollbar) still reflect the full list. Rows are a fixed
-// height (h-8 content + py-1.5), measured from the DOM once one renders;
-// this is only the value used before that first measurement.
-const DEFAULT_ROW_HEIGHT = 44
+// height, measured from the DOM once one renders; this is only the value used
+// before that first measurement (text-sm + text-xs lines = 36px, plus py-1.5).
+const DEFAULT_ROW_HEIGHT = 48
 // Rows kept mounted on each side of the visible band. The window is only
 // recomputed once the visible band gets within half of this of an edge, so
 // ordinary scrolling re-renders every ~50 rows rather than on every frame.
@@ -94,6 +94,15 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [ghostLocalLoading, setGhostLocalLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
   const rowsRef = useRef(null)
+  // State so a new measurement re-renders the spacers and intrinsic sizes;
+  // the ref mirrors it for updateWindowFromScroll, which reads it from
+  // scroll events outside render.
+  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT)
+  // contain-intrinsic-size sizes the content box, so a skipped
+  // (content-visibility: auto) row is this PLUS its vertical padding.
+  // Passing the full row height there made every off-screen row 12px taller
+  // than a rendered one, drifting all scroll offsets below it.
+  const [rowContentHeight, setRowContentHeight] = useState(DEFAULT_ROW_HEIGHT - 12)
   const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT)
   const highlightRowRef = useRef(null)
   const handledHighlightRef = useRef(null)
@@ -109,8 +118,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const windowStart = isLargeList ? Math.min(windowRange.start, Math.max(0, totalTracks - 1)) : 0
   const windowEnd = isLargeList ? Math.min(Math.max(windowRange.end, windowStart + 1), totalTracks) : totalTracks
   const visibleTracks = isLargeList ? mergedTracks.slice(windowStart, windowEnd) : mergedTracks
-  const topSpacerHeight = isLargeList ? windowStart * rowHeightRef.current : 0
-  const bottomSpacerHeight = isLargeList ? (totalTracks - windowEnd) * rowHeightRef.current : 0
+  const topSpacerHeight = isLargeList ? windowStart * rowHeight : 0
+  const bottomSpacerHeight = isLargeList ? (totalTracks - windowEnd) * rowHeight : 0
 
   // Recomputes the mounted window from where the list actually sits in its
   // scroll container. Being position-based (rather than "append the next
@@ -205,12 +214,26 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   // the drag-over border would otherwise skew every spacer mid-drag.
   const rowHeightMeasuredRef = useRef(false)
   useEffect(() => {
-    if (!isLargeList || rowHeightMeasuredRef.current || draggedId) return
-    const h = rowsRef.current?.querySelector('[data-track-row]')?.offsetHeight
+    if (!isLargeList || rowHeightMeasuredRef.current || draggedId || !rowsRef.current) return
+    // Only a row inside the viewport is guaranteed to be actually rendered;
+    // an off-screen one reports its placeholder size instead.
+    const root = getScrollParent(rowsRef.current)
+    const viewTop = root ? root.getBoundingClientRect().top : 0
+    const viewBottom = root ? viewTop + root.clientHeight : window.innerHeight
+    const row = Array.from(rowsRef.current.querySelectorAll('[data-track-row]')).find((el) => {
+      const r = el.getBoundingClientRect()
+      return r.top >= viewTop && r.bottom <= viewBottom
+    })
+    const h = row?.offsetHeight
     if (!h) return
     rowHeightMeasuredRef.current = true
+    const cs = window.getComputedStyle(row)
+    const chrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+      .reduce((sum, k) => sum + (parseFloat(cs[k]) || 0), 0)
+    setRowContentHeight(Math.max(0, h - chrome))
     if (Math.abs(h - rowHeightRef.current) > 0.5) {
       rowHeightRef.current = h
+      setRowHeight(h)
       updateWindowFromScroll()
     }
   })
@@ -625,7 +648,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onMouseLeave={() => setHoveredId(null)}
             onClick={(e) => handleTrackClick(track, e)}
             onDoubleClick={e => handlePlay(track, e)}
-            style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: '44px' }}
+            style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
             className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
           >
             {playlistId && (
