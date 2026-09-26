@@ -64,7 +64,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             <button
               type="button"
               onClick={onArtist}
-              className="mt-4 inline-flex max-w-full items-center rounded-md bg-white/5 px-2 py-1 text-left text-sm font-medium text-white/85 transition-colors hover:bg-white/10 hover:text-white md:text-base"
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm text-white transition-colors hover:text-accent md:text-base"
             >
               {artistName}
             </button>
@@ -256,7 +256,6 @@ export default function Albums() {
     setSelectedAlbum(match || incomingAlbum)
     setAlbumBackPath(location.state?.from || null)
     setHighlightTrackId(location.state?.highlightTrackId || null)
-    navigate(location.pathname, { replace: true, state: {} })
   }, [albums, location.pathname, location.state, navigate])
 
   const showSingles = settings.show_singles_in_albums !== '0'
@@ -401,10 +400,7 @@ export default function Albums() {
               <button
                 onClick={() => {
                   if (albumBackPath) {
-                    const path = albumBackPath
-                    setSelectedAlbum(null)
-                    setAlbumBackPath(null)
-                    navigate(path, { replace: true })
+                    navigate(-1)
                   } else {
                     setSelectedAlbum(null)
                     setAlbumBackPath(null)
