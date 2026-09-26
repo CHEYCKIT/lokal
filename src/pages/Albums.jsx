@@ -27,7 +27,7 @@ function artistPath(name) {
   return `/artist/a-${slug}`
 }
 
-function AlbumHero({ album, trackCount, onBack, onPlay, onArtist }) {
+function AlbumHero({ album, trackCount, onPlay, onArtist }) {
   const artSrc = getAlbumArtwork(album)
   const artistName = album.album_artist || album.artists || ''
 
@@ -43,13 +43,6 @@ function AlbumHero({ album, trackCount, onBack, onPlay, onArtist }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <button
-        onClick={onBack}
-        className="absolute left-6 top-6 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white md:left-8 md:top-8"
-      >
-        <ArrowLeft size={14} />
-        Back
-      </button>
       <div className="relative grid gap-6 p-6 pt-16 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8 md:pt-20">
         <div className="justify-self-start">
           <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[220px] md:w-[220px]">
@@ -170,6 +163,7 @@ function AlbumCard({ album, onClick, onPlay }) {
 export default function Albums() {
   const [albums, setAlbums] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
+  const [albumBackPath, setAlbumBackPath] = useState(null)
   const [albumTracks, setAlbumTracks] = useState([])
   const [loadingAlbums, setLoadingAlbums] = useState(true)
   const [loadingTracks, setLoadingTracks] = useState(false)
@@ -260,6 +254,7 @@ export default function Albums() {
     if (!incomingAlbum) return
     const match = albums.find((album) => album.title === incomingAlbum.title && (!incomingAlbum.album_artist || album.album_artist === incomingAlbum.album_artist))
     setSelectedAlbum(match || incomingAlbum)
+    setAlbumBackPath(location.state?.from || null)
     setHighlightTrackId(location.state?.highlightTrackId || null)
     navigate(location.pathname, { replace: true, state: {} })
   }, [albums, location.pathname, location.state, navigate])
@@ -395,6 +390,25 @@ export default function Albums() {
             </p>
           </div>
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            {selectedAlbum && (
+              <button
+                onClick={() => {
+                  if (albumBackPath) {
+                    const path = albumBackPath
+                    setSelectedAlbum(null)
+                    setAlbumBackPath(null)
+                    navigate(path)
+                  } else {
+                    setSelectedAlbum(null)
+                    setAlbumBackPath(null)
+                  }
+                }}
+                className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-elevated/90 px-3 py-2 text-sm text-white/80 transition-colors hover:border-accent/40 hover:text-white"
+              >
+                <ArrowLeft size={14} />
+                Back
+              </button>
+            )}
             <div className="relative w-full">
               <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -428,7 +442,6 @@ export default function Albums() {
             <AlbumHero
               album={selectedAlbum}
               trackCount={albumTracks.length || selectedAlbum.track_count || 0}
-              onBack={() => setSelectedAlbum(null)}
               onPlay={() => albumTracks.length && playQueue(albumTracks, 0, albumContext)}
               onArtist={() => navigate(artistPath(selectedAlbum.album_artist || selectedAlbum.artists))}
             />
