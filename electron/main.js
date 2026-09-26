@@ -297,6 +297,14 @@ function createWindow() {
   mainWindow.on('show', enforceMiniTop)
   mainWindow.on('restore', enforceMiniTop)
 
+  mainWindow.on('app-command', (_, command) => {
+    if (command === 'browser-backward') {
+      mainWindow.webContents.send('navigation:history', -1)
+    } else if (command === 'browser-forward') {
+      mainWindow.webContents.send('navigation:history', 1)
+    }
+  })
+
   updateThumbarButtons(mainWindow, {})
   
   
