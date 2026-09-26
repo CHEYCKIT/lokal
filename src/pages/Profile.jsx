@@ -601,7 +601,7 @@ export default function Profile() {
               ))}
             </div>
           </section>
-        )
+        )}
       </div>
     </div>
   )
