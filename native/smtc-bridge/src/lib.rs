@@ -114,7 +114,7 @@ unsafe extern "system" fn find_chromium_smtc_window_proc(
     // Only accept the hidden Chromium window that already owns an enabled
     // SMTC session. This avoids accidentally creating a second session on
     // some other hidden Electron/Chromium window.
-    let smtc = match smtc_for(hwnd.0 as isize) {
+    let smtc = match smtc_for(hwnd.0) {
         Ok(smtc) => smtc,
         Err(_) => return TRUE,
     };
@@ -331,6 +331,15 @@ pub fn update_metadata(
             .map_err(|e| napi::Error::from_reason(format!("CreateFromUri failed: {e:?}")))?;
         updater
             .SetThumbnail(&thumbnail)
+            .map_err(|e| napi::Error::from_reason(format!("SetThumbnail failed: {e:?}")))?;
+    } else {
+        // Without this, a track with no cover art keeps showing whatever
+        // thumbnail the previous track set -- DisplayUpdater doesn't clear
+        // fields on its own, it only applies whatever this call sets, so an
+        // empty cover_url has to explicitly null the thumbnail out instead
+        // of just skipping the call.
+        updater
+            .SetThumbnail(None)
             .map_err(|e| napi::Error::from_reason(format!("SetThumbnail failed: {e:?}")))?;
     }
 
