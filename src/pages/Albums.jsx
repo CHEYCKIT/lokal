@@ -97,7 +97,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             <button
               type="button"
               onClick={onArtist}
-              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent md:text-base"
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent hover:underline hover:decoration-accent hover:underline-offset-4 md:text-base"
             >
               {artistName}
             </button>
@@ -196,8 +196,6 @@ function AlbumCard({ album, onClick, onPlay }) {
 export default function Albums() {
   const [albums, setAlbums] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
-  const [albumBackPath, setAlbumBackPath] = useState(null)
-  const [albumNavigationOrigin, setAlbumNavigationOrigin] = useState('list')
   const [albumTracks, setAlbumTracks] = useState([])
   const [loadingAlbums, setLoadingAlbums] = useState(true)
   const [loadingTracks, setLoadingTracks] = useState(false)
@@ -285,13 +283,17 @@ export default function Albums() {
   useEffect(() => {
     if (!albums.length) return
     const incomingAlbum = location.state?.album
-    if (!incomingAlbum) return
+
+    if (!incomingAlbum) {
+      setSelectedAlbum(null)
+      setHighlightTrackId(null)
+      return
+    }
+
     const match = albums.find((album) => album.title === incomingAlbum.title && (!incomingAlbum.album_artist || album.album_artist === incomingAlbum.album_artist))
     setSelectedAlbum(match || incomingAlbum)
-    setAlbumBackPath(location.state?.from || null)
-    setAlbumNavigationOrigin(location.state?.from ? 'route' : 'list')
     setHighlightTrackId(location.state?.highlightTrackId || null)
-  }, [albums, location.pathname, location.state, navigate])
+  }, [albums, location.pathname, location.state])
 
   const showSingles = settings.show_singles_in_albums !== '0'
   const separateByType = settings.separate_album_types !== '0'
@@ -433,19 +435,7 @@ export default function Albums() {
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             {selectedAlbum && (
               <button
-                onClick={() => {
-                  if (albumNavigationOrigin === 'route' && albumBackPath) {
-                    navigate(albumBackPath)
-                    setSelectedAlbum(null)
-                    setAlbumBackPath(null)
-                    setAlbumNavigationOrigin('list')
-                    return
-                  }
-
-                  setSelectedAlbum(null)
-                  setAlbumBackPath(null)
-                  setAlbumNavigationOrigin('list')
-                }}
+                onClick={() => navigate(-1)}
                 className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-elevated/90 px-3 py-2 text-sm text-white/80 transition-colors hover:border-accent/40 hover:text-white"
               >
                 <ArrowLeft size={14} />
@@ -585,9 +575,7 @@ export default function Albums() {
                       key={`${group.key}-${album.title}-${album.album_artist || album.artists || 'release'}-${index}`}
                       album={album}
                       onClick={() => {
-                        setAlbumBackPath(null)
-                        setAlbumNavigationOrigin('list')
-                        setSelectedAlbum(album)
+                        navigate('/albums', { state: { album } })
                       }}
                       onPlay={() => playAlbumRelease(album)}
                     />
