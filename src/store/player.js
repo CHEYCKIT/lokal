@@ -557,6 +557,11 @@ export const usePlayerStore = create((set, get) => ({
   setDuration: (v) => set({ duration: v }),
   setVolume: (v) => { localStorage.setItem('lokal-volume', String(v)); set({ volume: v }) },
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
+  // Direct setter, unlike toggleRepeat above: needed for the Windows SMTC
+  // bridge (electron/ipc/smtc.js), which reports the OS flyout's repeat
+  // button was set to an exact target mode ('none'|'all'|'one'), not "cycle
+  // to the next one".
+  setRepeat: (mode) => set({ repeat: mode === 'all' || mode === 'one' ? mode : 'none' }),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
   // Opens/closes the right-hand panel itself. In merged mode, reopening

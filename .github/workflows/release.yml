@@ -26,6 +26,17 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup Rust (for Windows SMTC bridge)
+        # Must run before "Install Dependencies": this repo's postinstall
+        # script (electron-builder install-app-deps && npm run
+        # native:prepare) invokes `cargo build` for the SMTC bridge addon
+        # as part of `npm install` itself, so cargo has to already be on
+        # PATH by then, not just before a later separate build step.
+        if: matrix.os == 'windows-latest'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
       - name: Install Dependencies
         run: npm install
 
