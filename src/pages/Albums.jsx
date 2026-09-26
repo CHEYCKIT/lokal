@@ -30,6 +30,35 @@ function artistPath(name) {
 function AlbumHero({ album, trackCount, onPlay, onArtist }) {
   const artSrc = getAlbumArtwork(album)
   const artistName = album.album_artist || album.artists || ''
+  const titleRef = useRef(null)
+
+  useEffect(() => {
+    const node = titleRef.current
+    if (!node) return
+
+    const fitTitle = () => {
+      const desktop = window.matchMedia('(min-width: 768px)').matches
+      let size = desktop ? 48 : 30
+      const minSize = desktop ? 22 : 20
+      node.style.fontSize = `${size}px`
+
+      while (size > minSize && node.scrollWidth > node.clientWidth) {
+        size -= 1
+        node.style.fontSize = `${size}px`
+      }
+    }
+
+    fitTitle()
+    const container = node.parentElement
+    const observer = new ResizeObserver(fitTitle)
+    if (container) observer.observe(container)
+    window.addEventListener('resize', fitTitle)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', fitTitle)
+    }
+  }, [album.title])
 
   return (
     <div className="relative overflow-hidden rounded-[2.25rem] border border-border bg-surface/80">
@@ -43,7 +72,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 md:grid-cols-[280px_minmax(0,520px)] md:items-stretch md:justify-between md:p-8">
+      <div className="relative grid gap-6 p-6 md:grid-cols-[280px_minmax(0,1fr)] md:items-stretch md:p-8">
         <div className="justify-self-start">
           <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[280px] md:w-[280px]">
             {artSrc ? (
@@ -55,16 +84,20 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             )}
           </div>
         </div>
-        <div className="min-w-0 self-stretch rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl">
+        <div className="min-w-0 overflow-hidden rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl md:h-[280px]">
           <p className="text-[11px] font-display uppercase tracking-[0.34em] text-white/55">{releaseLabel(album.release_type)}</p>
-          <h1 className="mt-3 text-3xl font-display uppercase tracking-[0.08em] text-white md:text-5xl">
+          <h1
+            ref={titleRef}
+            className="mt-3 max-w-full truncate overflow-hidden font-display uppercase leading-[0.95] tracking-[0.08em] text-white"
+            style={{ fontSize: 'clamp(1.75rem, 4vw, 3rem)' }}
+          >
             {album.title}
           </h1>
           {artistName ? (
             <button
               type="button"
               onClick={onArtist}
-              className="mt-4 inline-flex max-w-full truncate text-left text-sm text-white transition-colors hover:text-accent md:text-base"
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent md:text-base"
             >
               {artistName}
             </button>
@@ -544,7 +577,10 @@ export default function Albums() {
                     <AlbumCard
                       key={`${group.key}-${album.title}-${album.album_artist || album.artists || 'release'}-${index}`}
                       album={album}
-                      onClick={() => setSelectedAlbum(album)}
+                      onClick={() => {
+                        setAlbumBackPath(null)
+                        setSelectedAlbum(album)
+                      }}
                       onPlay={() => playAlbumRelease(album)}
                     />
                   ))}
