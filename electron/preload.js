@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electron', {
   getWindowSize: () => invoke('window:getSize'),
   fitMiniHeight: (height) => invoke('window:fitMiniHeight', height),
   refreshHitRegions: () => invoke('window:refreshHitRegions'),
+  onNavigationHistory: (fn) => on('navigation:history', (_, direction) => fn(direction)),
   openExternal: (url) => invoke('shell:openExternal', url),
   openFolder: () => invoke('dialog:openFolder'),
   openFile: (f) => invoke('dialog:openFile', f),
