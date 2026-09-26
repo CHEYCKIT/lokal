@@ -197,6 +197,7 @@ export default function Albums() {
   const [albums, setAlbums] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
   const [albumBackPath, setAlbumBackPath] = useState(null)
+  const [albumNavigationOrigin, setAlbumNavigationOrigin] = useState('list')
   const [albumTracks, setAlbumTracks] = useState([])
   const [loadingAlbums, setLoadingAlbums] = useState(true)
   const [loadingTracks, setLoadingTracks] = useState(false)
@@ -288,6 +289,7 @@ export default function Albums() {
     const match = albums.find((album) => album.title === incomingAlbum.title && (!incomingAlbum.album_artist || album.album_artist === incomingAlbum.album_artist))
     setSelectedAlbum(match || incomingAlbum)
     setAlbumBackPath(location.state?.from || null)
+    setAlbumNavigationOrigin(location.state?.from ? 'route' : 'list')
     setHighlightTrackId(location.state?.highlightTrackId || null)
   }, [albums, location.pathname, location.state, navigate])
 
@@ -432,12 +434,17 @@ export default function Albums() {
             {selectedAlbum && (
               <button
                 onClick={() => {
-                  if (albumBackPath) {
-                    navigate(-1)
-                  } else {
+                  if (albumNavigationOrigin === 'route' && albumBackPath) {
+                    navigate(albumBackPath)
                     setSelectedAlbum(null)
                     setAlbumBackPath(null)
+                    setAlbumNavigationOrigin('list')
+                    return
                   }
+
+                  setSelectedAlbum(null)
+                  setAlbumBackPath(null)
+                  setAlbumNavigationOrigin('list')
                 }}
                 className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-elevated/90 px-3 py-2 text-sm text-white/80 transition-colors hover:border-accent/40 hover:text-white"
               >
@@ -579,6 +586,7 @@ export default function Albums() {
                       album={album}
                       onClick={() => {
                         setAlbumBackPath(null)
+                        setAlbumNavigationOrigin('list')
                         setSelectedAlbum(album)
                       }}
                       onPlay={() => playAlbumRelease(album)}
