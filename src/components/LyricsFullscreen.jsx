@@ -31,10 +31,17 @@ export default function LyricsFullscreen() {
   // whenever *it's* open, regardless of what's stacked on top) was the only
   // one that fired, closing the player underneath instead of just this panel.
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') toggleLyricsFullscreen() }
+    // The search drawer sits on top of this overlay, so Escape closes it
+    // first; otherwise showSearch stays true and the drawer reappears the
+    // next time the overlay opens.
+    const h = (e) => {
+      if (e.key !== 'Escape') return
+      if (showSearch) setShowSearch(false)
+      else toggleLyricsFullscreen()
+    }
     if (showLyricsFullscreen) document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  }, [showLyricsFullscreen, toggleLyricsFullscreen])
+  }, [showLyricsFullscreen, toggleLyricsFullscreen, showSearch])
 
   const importLyrics = async () => {
     if (!currentTrack || !api.isElectron) return

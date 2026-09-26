@@ -201,6 +201,12 @@ const NORMAL_MIN_HEIGHT = 640
 // this and turns resizing off entirely.
 const MINI_DEFAULT_WIDTH = 420
 const MINI_DEFAULT_HEIGHT = 300
+// Electron 29.1.0 has a macOS bug where setMaximumSize(0, 0) -- the
+// documented way to remove a maximum -- doesn't actually lift it, leaving
+// the window locked at whatever size it had when mini mode was toggled off.
+// An explicit size well past any real display works around it.
+const NORMAL_MAX_WIDTH = 100000
+const NORMAL_MAX_HEIGHT = 100000
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false
@@ -495,7 +501,7 @@ ipcMain.handle('window:setMiniMode', (_, enabled) => {
   mainWindow.setVisibleOnAllWorkspaces(false)
   mainWindow.setResizable(true)
   mainWindow.setMinimumSize(NORMAL_MIN_WIDTH, NORMAL_MIN_HEIGHT)
-  mainWindow.setMaximumSize(0, 0) // 0 = no limit, undoes the mini-mode lock above
+  mainWindow.setMaximumSize(NORMAL_MAX_WIDTH, NORMAL_MAX_HEIGHT) // undoes the mini-mode lock above
   if (miniModeRestoreState?.bounds) {
     mainWindow.setBounds(miniModeRestoreState.bounds, true)
     if (miniModeRestoreState.wasMaximized) mainWindow.maximize()

@@ -121,6 +121,25 @@ function getEqPresetKey(gains) {
   return match?.[0] || 'custom'
 }
 
+// The Side Panels toggle saves on every click rather than waiting for the
+// "Save Settings" button, so a quick double-click could otherwise fire two
+// overlapping requests and let the first one's response land after the
+// second's, leaving the backend on the stale value. Chaining each save onto
+// the previous one's settled promise keeps them applied in click order;
+// sidePanelsSaveSeq lets only the most recent attempt update the error
+// indicator, so a failure that's since been superseded by a successful
+// retry doesn't leave a stale error showing.
+//
+// Deliberately module scope, not useRef: Settings can unmount and remount
+// (it's a route, not a singleton), and a useRef resets on every mount --
+// which meant a save still in flight from before an unmount could land
+// after the remount initialized a fresh, unrelated chain/seq pair, letting
+// it race a save started post-remount exactly the way the chaining above is
+// meant to prevent. A module-level binding persists across mounts, so the
+// chain and sequence counter stay continuous for the life of the app.
+let sidePanelsSaveChain = Promise.resolve()
+let sidePanelsSaveSeq = 0
+
 export default function Settings() {
   const [settings, setSettings] = useState({})
   const [saved, setSaved] = useState(false)
@@ -192,16 +211,9 @@ export default function Settings() {
   const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false })
   const [relaunchMsg, setRelaunchMsg] = useState('')
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
-  // The Side Panels toggle saves on every click rather than waiting for the
-  // "Save Settings" button, so a quick double-click could otherwise fire two
-  // overlapping requests and let the first one's response land after the
-  // second's, leaving the backend on the stale value. Chaining each save
-  // onto the previous one's settled promise keeps them applied in click
-  // order; `sidePanelsSaveSeqRef` lets only the most recent attempt update
-  // the error indicator, so a failure that's since been superseded by a
-  // successful retry doesn't leave a stale error showing.
-  const sidePanelsSaveChainRef = useRef(Promise.resolve())
-  const sidePanelsSaveSeqRef = useRef(0)
+  // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
+  // the Side Panels toggle's saves -- see their declaration for why this
+  // can't be a useRef here.
   const [appVersion, setAppVersion] = useState('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
@@ -2216,16 +2228,16 @@ module.exports = {
                     // browser with no localStorage entry yet, or any other
                     // consumer of the backend setting would then see the old
                     // choice despite the UI already showing the new one.
-                    const seq = ++sidePanelsSaveSeqRef.current
-                    sidePanelsSaveChainRef.current = sidePanelsSaveChainRef.current
+                    const seq = ++sidePanelsSaveSeq
+                    sidePanelsSaveChain = sidePanelsSaveChain
                       .catch(() => {}) // a prior failure shouldn't block this attempt
                       .then(() => api.saveSettings({ exclusive_side_panels: value }))
                       .then(() => {
-                        if (seq === sidePanelsSaveSeqRef.current) setSidePanelsSaveError(false)
+                        if (seq === sidePanelsSaveSeq) setSidePanelsSaveError(false)
                       })
                       .catch((err) => {
                         console.error('Failed to save Side Panels setting', err)
-                        if (seq === sidePanelsSaveSeqRef.current) setSidePanelsSaveError(true)
+                        if (seq === sidePanelsSaveSeq) setSidePanelsSaveError(true)
                       })
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
