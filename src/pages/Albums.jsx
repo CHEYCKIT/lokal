@@ -397,7 +397,7 @@ export default function Albums() {
                     const path = albumBackPath
                     setSelectedAlbum(null)
                     setAlbumBackPath(null)
-                    navigate(path)
+                    navigate(path, { replace: true })
                   } else {
                     setSelectedAlbum(null)
                     setAlbumBackPath(null)
