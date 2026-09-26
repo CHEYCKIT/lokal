@@ -442,12 +442,12 @@ export default function Profile() {
                       key={artistName}
                       type="button"
                       onClick={() => navigateToTrackArtist(nav, { artist: artistName }, keepCommaArtists)}
-                      className="group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card"
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card"
                     >
                       <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="truncate text-sm text-white transition-colors group-hover:text-accent group-hover:underline group-hover:decoration-accent group-hover:underline-offset-4">{artistName}</span>
+                          <span className="truncate text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{artistName}</span>
                           <span className="flex-shrink-0 text-xs text-muted">{artist.plays} plays</span>
                         </div>
                         <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-border">
@@ -477,7 +477,7 @@ export default function Profile() {
               animate={{ opacity: 1, y: 0 }}
               onClick={() => topArtist && navigateToTrackArtist(nav, { artist: topArtist }, keepCommaArtists)}
               disabled={!stats?.topArtists?.[0]?.artist}
-              className="flex min-h-[132px] w-full items-center gap-4 rounded-2xl border border-border bg-elevated p-5 text-left transition-colors hover:border-accent/30 disabled:cursor-default"
+              className="flex min-h-[132px] w-full items-center gap-4 rounded-2xl border border-border bg-elevated p-5 text-left disabled:cursor-default"
             >
               <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
                 {topArtistImageSrc ? (
