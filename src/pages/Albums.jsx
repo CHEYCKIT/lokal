@@ -34,15 +34,15 @@ function AlbumHero({ album, trackCount, onBack, onPlay }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8">
-        <div className="justify-self-start space-y-4">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white"
-          >
-            <ArrowLeft size={14} />
-            Back
-          </button>
+      <button
+        onClick={onBack}
+        className="absolute left-6 top-6 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white md:left-8 md:top-8"
+      >
+        <ArrowLeft size={14} />
+        Back
+      </button>
+      <div className="relative grid gap-6 p-6 pt-16 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8 md:pt-20">
+        <div className="justify-self-start">
           <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[220px] md:w-[220px]">
             {artSrc ? (
               <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
