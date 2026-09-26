@@ -49,6 +49,17 @@ let armed = false
 let pollTimer = null
 let armTimer = null
 let lastFireCount = 0
+// Buffered so a request that arrives while the window is momentarily
+// unavailable (recreated during a resize, or torn down at shutdown) isn't
+// silently lost: addon.pollRequests() drains the native side's pending
+// value the instant it's read (see poll_requests()'s Option::take() in
+// native/smtc-bridge/src/lib.rs), whether or not this function ever manages
+// to deliver it anywhere. Holding the most recent request here until a live
+// window exists to receive it means recovery still gets the OS's last
+// desired state instead of nothing. null means "nothing undelivered" --
+// distinct from a real value of `false` (shuffle off) or `0` (repeat none).
+let pendingShuffle = null
+let pendingRepeat = null
 
 function getAddonPath() {
   if (process.platform !== 'win32') return null
@@ -99,15 +110,28 @@ function pollRequests(getMainWindow) {
     lastFireCount = fireCount
   }
 
+  // Latest request wins over anything still buffered from an earlier tick --
+  // these represent "what the OS wants right now", not a queue of discrete
+  // actions, so an unread older value is superseded rather than preserved
+  // alongside it.
+  if (requests.shuffle !== null && requests.shuffle !== undefined) {
+    pendingShuffle = requests.shuffle
+  }
+  if (requests.repeat !== null && requests.repeat !== undefined) {
+    pendingRepeat = requests.repeat
+  }
+
   const win = getMainWindow && getMainWindow()
   if (!win || win.isDestroyed()) return
 
-  if (requests.shuffle !== null && requests.shuffle !== undefined) {
-    win.webContents.send('smtc:shuffleRequested', !!requests.shuffle)
+  if (pendingShuffle !== null) {
+    win.webContents.send('smtc:shuffleRequested', !!pendingShuffle)
+    pendingShuffle = null
   }
-  if (requests.repeat !== null && requests.repeat !== undefined) {
-    const mode = requests.repeat === 1 ? 'all' : requests.repeat === 2 ? 'one' : 'none'
+  if (pendingRepeat !== null) {
+    const mode = pendingRepeat === 1 ? 'all' : pendingRepeat === 2 ? 'one' : 'none'
     win.webContents.send('smtc:repeatRequested', mode)
+    pendingRepeat = null
   }
 }
 
