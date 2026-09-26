@@ -89,12 +89,40 @@ function normalizeEqGains(input) {
 
 function NativeHistoryNavigation() {
   const navigate = useNavigate()
+  const lastNativeNavigationAtRef = useRef(0)
 
   useEffect(() => {
-    if (!window.electron?.onNavigationHistory) return
-    return window.electron.onNavigationHistory((direction) => {
+    const navigateOnce = (direction) => {
+      lastNativeNavigationAtRef.current = performance.now()
       navigate(direction)
+    }
+
+    const unsubscribeElectron = window.electron?.onNavigationHistory?.((direction) => {
+      // Some Windows mice surface as both an Electron app-command and a
+      // Chromium mouse-button event. Treat either as one navigation action.
+      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
+      navigateOnce(direction)
     })
+
+    const handleMouseButton = (event) => {
+      if (event.button !== 3 && event.button !== 4) return
+
+      // Chromium reports X1/X2 as mouse buttons 3/4. Prevent its default
+      // browser navigation and drive the MemoryRouter ourselves.
+      event.preventDefault()
+      event.stopPropagation()
+
+      const direction = event.button === 3 ? -1 : 1
+      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
+      navigateOnce(direction)
+    }
+
+    window.addEventListener('mouseup', handleMouseButton, true)
+
+    return () => {
+      unsubscribeElectron?.()
+      window.removeEventListener('mouseup', handleMouseButton, true)
+    }
   }, [navigate])
 
   return null
