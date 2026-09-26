@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { MemoryRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
@@ -85,6 +85,19 @@ function normalizeEqGains(input) {
     return [values[0], values[0], values[1], values[1], values[2], values[2], values[3], values[3], values[4], values[4]]
   }
   return EQ_AUDIO_BANDS.map((_, i) => values[i] || 0)
+}
+
+function NativeHistoryNavigation() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!window.electron?.onNavigationHistory) return
+    return window.electron.onNavigationHistory((direction) => {
+      navigate(direction)
+    })
+  }, [navigate])
+
+  return null
 }
 
 function AnimatedRoutes() {
@@ -1499,6 +1512,7 @@ export default function App() {
 
   return (
     <Router>
+      <NativeHistoryNavigation />
       <div className="flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx}>
         {showMiniPlayer ? (
           <MiniPlayer windowed />
