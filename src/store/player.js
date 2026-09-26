@@ -734,8 +734,9 @@ export const usePlayerStore = create((set, get) => ({
             }
             if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
             // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
-            // setMiniMode handler.
-            if (electron.setWindowSize) await electron.setWindowSize(420, 300)
+            // setMiniMode handler; MiniPlayer will report the final content
+            // height after it mounts.
+            if (electron.setWindowSize) await electron.setWindowSize(420, 246)
           } else {
             if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
             if (miniModeFallbackPrevSize && electron.setWindowSize) {
