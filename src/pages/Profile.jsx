@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
+import { navigateToTrackAlbum } from '../playbackContext'
+import { navigateToTrackArtist } from '../artistLink'
 import PlaylistCover from '../components/PlaylistCover'
 
 function StatTile({ icon: Icon, label, value }) {
@@ -47,6 +49,7 @@ export default function Profile() {
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
   const [savingBio, setSavingBio] = useState(false)
+  const [keepCommaArtists, setKeepCommaArtists] = useState([])
 
   useEffect(() => {
     if (!user?.id) {
@@ -113,6 +116,20 @@ export default function Profile() {
   useEffect(() => {
     setBioDraft(user?.bio || '')
   }, [user?.bio])
+
+  useEffect(() => {
+    api.getKeepCommaArtists().then((artists) => {
+      if (Array.isArray(artists)) {
+        setKeepCommaArtists(artists)
+      } else if (artists?.value) {
+        try {
+          setKeepCommaArtists(JSON.parse(artists.value))
+        } catch {
+          setKeepCommaArtists([])
+        }
+      }
+    }).catch(() => setKeepCommaArtists([]))
+  }, [])
 
   useEffect(() => {
     if (editingBio) bioInputRef.current?.focus()
@@ -461,6 +478,82 @@ export default function Profile() {
           </div>
 
           <div className="space-y-6">
+            {(stats?.topArtists?.length > 0 || stats?.topTracks?.length > 0) && (
+              <section>
+                <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Listening</h2>
+                <div className="space-y-4">
+                  {stats?.topArtists?.length > 0 && (
+                    <div className="rounded-2xl border border-border bg-elevated p-5">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Artists</p>
+                        <BarChart2 size={14} className="text-accent/70" />
+                      </div>
+                      <div className="space-y-1">
+                        {stats.topArtists.map((artist, index) => {
+                          const artistName = String(artist?.artist || '').trim()
+                          if (!artistName) return null
+                          return (
+                            <button
+                              key={artistName}
+                              type="button"
+                              onClick={() => navigateToTrackArtist(nav, { artist: artistName }, keepCommaArtists)}
+                              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-card"
+                            >
+                              <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
+                              <span className="min-w-0 flex-1 truncate text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{artistName}</span>
+                              <span className="flex-shrink-0 text-xs text-muted">{artist.plays} plays</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {stats?.topTracks?.length > 0 && (
+                    <div className="rounded-2xl border border-border bg-elevated p-5">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Tracks</p>
+                        <Disc3 size={14} className="text-accent/70" />
+                      </div>
+                      <div className="space-y-1">
+                        {stats.topTracks.map((track, index) => {
+                          const trackTitle = String(track?.title || '').trim()
+                          const trackArtist = String(track?.artist || '').trim()
+                          if (!trackTitle) return null
+                          return (
+                            <div key={track.id} className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-card">
+                              <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
+                              <div className="min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  onClick={() => navigateToTrackAlbum(nav, track)}
+                                  className="block max-w-full truncate text-left text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
+                                  title="Open album"
+                                >
+                                  {trackTitle}
+                                </button>
+                                {trackArtist && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigateToTrackArtist(nav, track, keepCommaArtists)}
+                                    className="block max-w-full truncate text-left text-xs text-muted transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
+                                    title="Open artist"
+                                  >
+                                    {trackArtist}
+                                  </button>
+                                )}
+                              </div>
+                              <span className="flex-shrink-0 text-xs text-muted">{track.plays}×</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
             {!!playlists.length && (
               <section>
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Playlists</h2>
