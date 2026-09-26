@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
+import { navigateToTrackAlbum } from '../playbackContext'
+import { navigateToTrackArtist } from '../artistLink'
 import PlaylistCover from '../components/PlaylistCover'
 
 function StatTile({ icon: Icon, label, value }) {
@@ -47,6 +49,7 @@ export default function Profile() {
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
   const [savingBio, setSavingBio] = useState(false)
+  const [keepCommaArtists, setKeepCommaArtists] = useState([])
 
   useEffect(() => {
     if (!user?.id) {
@@ -113,6 +116,20 @@ export default function Profile() {
   useEffect(() => {
     setBioDraft(user?.bio || '')
   }, [user?.bio])
+
+  useEffect(() => {
+    api.getKeepCommaArtists().then((artists) => {
+      if (Array.isArray(artists)) {
+        setKeepCommaArtists(artists)
+      } else if (artists?.value) {
+        try {
+          setKeepCommaArtists(JSON.parse(artists.value))
+        } catch {
+          setKeepCommaArtists([])
+        }
+      }
+    }).catch(() => setKeepCommaArtists([]))
+  }, [])
 
   useEffect(() => {
     if (editingBio) bioInputRef.current?.focus()
@@ -398,94 +415,193 @@ export default function Profile() {
           )}
         </section>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,0.48fr)_minmax(0,0.52fr)] gap-6 items-start max-w-6xl">
-          <div className="space-y-6">
-            <section className="bg-elevated border border-border rounded-2xl p-5">
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-4">Snapshot</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <StatTile icon={Music4} label="Total Plays" value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
-                <StatTile icon={Clock3} label="Hours Listened" value={statsLoading ? '...' : `${hours}h`} />
-                <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
-                <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 max-w-6xl items-stretch">
+          <section className="rounded-2xl border border-border bg-elevated p-5">
+            <h2 className="mb-4 text-xs font-display uppercase tracking-widest text-muted">Snapshot</h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StatTile icon={Music4} label="Total Plays" value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
+              <StatTile icon={Clock3} label="Hours Listened" value={statsLoading ? '...' : `${hours}h`} />
+              <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
+              <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
+            </div>
+          </section>
+
+          {stats?.topArtists?.length > 0 ? (
+            <section className="rounded-2xl border border-border bg-elevated p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Artists</h2>
+                <BarChart2 size={14} className="text-accent/70" />
               </div>
-            </section>
-
-            <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Highlights</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-elevated border border-border rounded-xl p-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-card border border-border flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {topArtistImageSrc ? (
-                        <img src={topArtistImageSrc} alt={topArtist} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-xl font-display text-accent">{topArtist?.[0]?.toUpperCase() || 'A'}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-white">Top Artist</p>
-                      <p className="text-xs text-muted">{topArtistSupport}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-white mt-4 truncate">{topArtist}</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.06 }}
-                  className="bg-elevated border border-border rounded-xl p-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-card border border-border overflow-hidden flex items-center justify-center flex-shrink-0">
-                      {topTrackArt ? (
-                        <img src={topTrackArt} alt="Top track" className="w-full h-full object-cover" />
-                      ) : (
-                        <Music4 size={20} className="text-accent" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-white">Top Track</p>
-                      <p className="text-xs text-muted">{topTrackSupport}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-white mt-4 truncate">{topTrackData?.title || 'No top track yet'}</p>
-                  <p className="text-xs text-muted truncate mt-1">{topTrackData?.artist || ''}</p>
-                </motion.div>
-              </div>
-            </section>
-          </div>
-
-          <div className="space-y-6">
-            {!!playlists.length && (
-              <section>
-                <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Playlists</h2>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  {playlists.map((playlist) => (
-                    <motion.button
-                      key={playlist.id}
-                      onClick={() => nav(`/playlist/${playlist.id}`)}
-                      whileHover={{ scale: 1.02 }}
-                      className="rounded-xl border bg-elevated border-border hover:border-accent/30 transition-all text-left overflow-hidden"
+              <div className="space-y-1">
+                {stats.topArtists.map((artist, index) => {
+                  const artistName = String(artist?.artist || '').trim()
+                  if (!artistName) return null
+                  const maxPlays = stats.topArtists[0]?.plays || 1
+                  return (
+                    <button
+                      key={artistName}
+                      type="button"
+                      onClick={() => navigateToTrackArtist(nav, { artist: artistName }, keepCommaArtists)}
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card"
                     >
-                      <div className="p-3">
-                        <PlaylistCover playlistId={playlist.id} size={128} className="rounded-lg w-32 h-32 mx-auto" />
+                      <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{artistName}</span>
+                          <span className="flex-shrink-0 text-xs text-muted">{artist.plays} plays</span>
+                        </div>
+                        <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-border">
+                          <motion.div
+                            className="h-full rounded-full bg-accent"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(artist.plays / maxPlays) * 100}%` }}
+                            transition={{ delay: index * 0.05, duration: 0.45 }}
+                          />
+                        </div>
                       </div>
-                      <div className="px-3 pb-3">
-                        <p className="text-sm font-medium text-white truncate">{playlist.name}</p>
-                        <p className="text-xs text-muted truncate mt-1">{playlist.description || 'Local playlist'}</p>
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </section>
-            )}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ) : (
+            <section className="flex min-h-full items-center justify-center rounded-2xl border border-border bg-elevated p-5">
+              <p className="text-sm text-muted">No artist listening data yet.</p>
+            </section>
+          )}
+
+          <div className="grid min-h-0 grid-rows-2 gap-6">
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => topArtist && navigateToTrackArtist(nav, { artist: topArtist }, keepCommaArtists)}
+              disabled={!stats?.topArtists?.[0]?.artist}
+              className="flex min-h-[132px] w-full items-center gap-4 rounded-2xl border border-border bg-elevated p-5 text-left disabled:cursor-default"
+            >
+              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
+                {topArtistImageSrc ? (
+                  <img src={topArtistImageSrc} alt={topArtist} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xl font-display text-accent">{topArtist?.[0]?.toUpperCase() || 'A'}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Artist</p>
+                <p className="mt-2 truncate text-base text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{topArtist}</p>
+                <p className="mt-1 text-xs text-muted">{topArtistSupport}</p>
+              </div>
+            </motion.button>
+
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.06 }}
+              className="flex min-h-[132px] items-center gap-4 rounded-2xl border border-border bg-elevated p-5"
+            >
+              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
+                {topTrackArt ? (
+                  <img src={topTrackArt} alt="Top track" className="h-full w-full object-cover" />
+                ) : (
+                  <Music4 size={20} className="text-accent" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Track</p>
+                <button
+                  type="button"
+                  onClick={() => topTrackData && navigateToTrackAlbum(nav, topTrackData)}
+                  disabled={!topTrackData}
+                  className="mt-2 block max-w-full truncate text-left text-base text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4 disabled:cursor-default"
+                  title="Open album"
+                >
+                  {topTrackData?.title || 'No top track yet'}
+                </button>
+                {topTrackData?.artist && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTrackArtist(nav, topTrackData, keepCommaArtists)}
+                    className="mt-1 block max-w-full truncate text-left text-xs text-muted transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
+                    title="Open artist"
+                  >
+                    {topTrackData.artist}
+                  </button>
+                )}
+                <p className="mt-1 text-xs text-muted">{topTrackSupport}</p>
+              </div>
+            </motion.div>
           </div>
+
+          {stats?.topTracks?.length > 0 ? (
+            <section className="rounded-2xl border border-border bg-elevated p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
+                <Disc3 size={14} className="text-accent/70" />
+              </div>
+              <div className="space-y-1">
+                {stats.topTracks.map((track, index) => {
+                  const trackTitle = String(track?.title || '').trim()
+                  const trackArtist = String(track?.artist || '').trim()
+                  if (!trackTitle) return null
+                  return (
+                    <div key={track.id} className="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-card">
+                      <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => navigateToTrackAlbum(nav, track)}
+                          className="block max-w-full truncate text-left text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
+                          title="Open album"
+                        >
+                          {trackTitle}
+                        </button>
+                        {trackArtist && (
+                          <button
+                            type="button"
+                            onClick={() => navigateToTrackArtist(nav, track, keepCommaArtists)}
+                            className="block max-w-full truncate text-left text-xs text-muted transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
+                            title="Open artist"
+                          >
+                            {trackArtist}
+                          </button>
+                        )}
+                      </div>
+                      <span className="flex-shrink-0 text-xs text-muted">{track.plays}×</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          ) : (
+            <section className="flex items-center justify-center rounded-2xl border border-border bg-elevated p-5">
+              <p className="text-sm text-muted">No track listening data yet.</p>
+            </section>
+          )}
         </div>
+
+        {!!playlists.length && (
+          <section className="mt-6 max-w-6xl">
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Playlists</h2>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {playlists.map((playlist) => (
+                <motion.button
+                  key={playlist.id}
+                  onClick={() => nav(`/playlist/${playlist.id}`)}
+                  whileHover={{ scale: 1.02 }}
+                  className="overflow-hidden rounded-xl border border-border bg-elevated text-left transition-all hover:border-accent/30"
+                >
+                  <div className="p-3">
+                    <PlaylistCover playlistId={playlist.id} size={128} className="mx-auto h-32 w-32 rounded-lg" />
+                  </div>
+                  <div className="px-3 pb-3">
+                    <p className="truncate text-sm font-medium text-white">{playlist.name}</p>
+                    <p className="mt-1 truncate text-xs text-muted">{playlist.description || 'Local playlist'}</p>
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )

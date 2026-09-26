@@ -15,9 +15,9 @@ export default function PlayerBar() {
   const nav = useNavigate()
   const {
     currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
-    showRightSidebar, showQueue,
+    showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
-    toggleLyricsFullscreen, toggleRightSidebar, toggleFullscreen, toggleQueue,
+    toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
     toggleMiniPlayer,
@@ -210,14 +210,14 @@ export default function PlayerBar() {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 w-52 justify-end">
+        <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
           {currentTrack && (
-            <div className="flex-shrink-0">
-              <Waveform isPlaying={isPlaying} />
+            <div className="min-w-0 shrink basis-[120px] overflow-hidden">
+              <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
           )}
-          <button onClick={toggleLyricsFullscreen} className="text-subtle hover:text-accent transition-colors" title="Lyrics"><Mic2 size={16} /></button>
-          <button onClick={toggleQueue} className={`transition-colors ${showQueue ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
+          <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-subtle hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
+          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
           <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Now Playing">< PanelRight size={16} /></button>
           <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-subtle hover:text-accent transition-colors disabled:opacity-30" title="Mini Player"><Radio size={15} /></button>
           <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-subtle hover:text-white transition-colors disabled:opacity-30" title="Fullscreen"><Maximize2 size={15} /></button>

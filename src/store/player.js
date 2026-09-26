@@ -1,5 +1,19 @@
 import { create } from 'zustand'
 
+// Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
+// below (when window.electron.setMiniMode isn't available), to remember the
+// window size to restore when leaving mini mode. A plain module-level
+// variable rather than component state, since the resize now happens here
+// in the store -- not in a component effect -- and needs to persist across
+// the enter/exit pair regardless of what's mounted at the time.
+let miniModeFallbackPrevSize = null
+
+// Serializes toggleMiniPlayer calls (below) so a fast double-click can't let
+// two overlapping calls both read showMiniPlayer via the same stale get()
+// before either one's IPC round-trip resolves -- each call now only reads
+// `next` after any prior toggle has actually finished.
+let miniModeToggleChain = Promise.resolve()
+
 function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
 }
@@ -10,6 +24,20 @@ function sanitizeTrackList(tracks) {
 
 function sanitizeSingleTrack(track) {
   return track?.id && !isGhostTrack(track) ? track : null
+}
+
+// Settings > Appearance > Layout > Side Panels. Defaults to merged/exclusive
+// (only one of the Now Playing sidebar / Queue open at a time) unless the
+// user has explicitly opted into the old independent (both-open) behavior.
+// Only used to seed initial store state -- once loaded, components read the
+// reactive `exclusiveSidePanels` field instead, so a live setting change
+// (no reload) is reflected everywhere immediately.
+function readExclusiveSidePanelsSetting() {
+  try {
+    return localStorage.getItem('lokal-exclusive-panels') !== '0'
+  } catch {
+    return true
+  }
 }
 
 function loadQueue() {
@@ -70,7 +98,23 @@ export const usePlayerStore = create((set, get) => ({
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
-  showRightSidebar: false, showFullscreen: false, showQueue: false,
+  showRightSidebar: false, showFullscreen: false, showQueue: false, showLyricsPanel: false,
+  // Which content the right-hand panel shows. Only meaningful in merged
+  // mode -- independent mode's Queue lives in its own separate panel and
+  // never touches this.
+  sidePanelView: 'info',
+  // Settings > Appearance > Layout > Side Panels. Store state (not just a
+  // localStorage read inside actions) so components can react live when
+  // the setting changes, without needing a reload. Initialized from
+  // localStorage so the choice persists across sessions.
+  exclusiveSidePanels: readExclusiveSidePanelsSetting(),
+  // True once the user has explicitly picked a Side Panels mode this
+  // session (via the Settings toggle). Lets hydrateExclusiveSidePanels
+  // (the backend-persisted value, fetched async at app boot and again on
+  // Settings mount) tell a fresher live choice apart from the stale
+  // localStorage-seeded default, so a slow response can never clobber a
+  // selection the user already made while it was in flight.
+  exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
   activeAudioElement: 'primary',
 
@@ -515,9 +559,137 @@ export const usePlayerStore = create((set, get) => ({
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
-  toggleRightSidebar: () => set(s => ({ showRightSidebar: !s.showRightSidebar })),
-  toggleFullscreen: () => set(s => ({ showFullscreen: !s.showFullscreen })),
+  // Opens/closes the right-hand panel itself. In merged mode, reopening
+  // always resets to the base "info" view -- the panel's info/lyrics
+  // content is the persistent base that Queue slides up over, per Spotify's
+  // own pattern, so reopening should land back on that base rather than
+  // wherever it happened to be showing when last closed.
+  toggleRightSidebar: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      // Independent mode: exactly the original, fully separate behavior --
+      // no interaction with the Queue panel at all.
+      return { showRightSidebar: !s.showRightSidebar }
+    }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'info' }
+    }
+    // Panel's already open, whatever it's currently showing (info, Queue,
+    // or Lyrics). This is the sidebar's own collapse button (the chevron in
+    // its header, which stays visible above the Queue/Lyrics overlays), so
+    // it always collapses the whole panel in one click rather than first
+    // sliding the Queue/Lyrics overlay back down to info and only closing
+    // on a second click -- reopening already resets to 'info' above, so
+    // there's nothing left to reset here on the way out.
+    return { showRightSidebar: false }
+  }),
+  toggleFullscreen: () => set(s => {
+    const next = !s.showFullscreen
+    if (!next && typeof window !== 'undefined' && window.electron?.refreshHitRegions) {
+      // Closing fullscreen with a side panel (Queue/Lyrics) still open
+      // unmounts a wide chunk of DOM at the same moment the whole overlay
+      // fades out -- on Windows that's been enough to leave the frameless
+      // window's native hit-test map stale, so clicks land offset from the
+      // cursor until the app is restarted. Nudge it back in sync once the
+      // overlay's own exit fade (FullscreenPlayer, 300ms) has settled.
+      // See electron/main.js's window:refreshHitRegions handler.
+      setTimeout(() => window.electron.refreshHitRegions(), 350)
+    }
+    return { showFullscreen: next }
+  }),
+  // Closes the *standalone* Queue panel (independent mode only -- that's
+  // the only mode where it's ever mounted as its own sibling, so this
+  // never needs to know about the sidebar).
   toggleQueue: () => set(s => ({ showQueue: !s.showQueue })),
+  // Mode-aware Queue button. Independent mode: behaves exactly like the
+  // original, unmodified toggleQueue. Merged mode: opens the single panel
+  // straight to Queue if it's closed (the separate "Now Playing" button
+  // handles opening to info), slides Queue up over whatever's showing if
+  // the panel's already open, or slides back down to info if Queue is
+  // already what's showing.
+  toggleQueueButton: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      return { showQueue: !s.showQueue }
+    }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'queue' }
+    }
+    return { sidePanelView: s.sidePanelView === 'queue' ? 'info' : 'queue' }
+  }),
+  // Closes the *standalone* Lyrics panel (independent mode only -- mirrors
+  // toggleQueue exactly, for the same reason: that's the only mode where
+  // it's ever mounted as its own sibling).
+  toggleLyricsPanel: () => set(s => ({ showLyricsPanel: !s.showLyricsPanel })),
+  // Mode-aware Lyrics button (the player bar's mic icon). Previously jumped
+  // straight to the full-screen lyrics overlay (toggleLyricsFullscreen,
+  // which still exists -- it's what the "Expand Lyrics" button inside this
+  // same view opens); now mirrors toggleQueueButton instead. Independent
+  // mode: its own standalone panel. Merged mode: opens the single panel
+  // straight to the existing 'lyrics' tab if closed, switches to it if the
+  // panel's already open showing something else, or switches back to
+  // 'info' if Lyrics is already what's showing.
+  toggleLyricsButton: () => set(s => {
+    if (!s.exclusiveSidePanels) {
+      return { showLyricsPanel: !s.showLyricsPanel }
+    }
+    if (!s.showRightSidebar) {
+      return { showRightSidebar: true, sidePanelView: 'lyrics' }
+    }
+    return { sidePanelView: s.sidePanelView === 'lyrics' ? 'info' : 'lyrics' }
+  }),
+  setSidePanelView: (view) => set({ sidePanelView: view }),
+  // The user's own explicit mode choice (the Settings toggle). Carries
+  // over whichever panel is currently open instead of just dropping it:
+  // switching to merged mode folds a visible standalone Queue panel into
+  // the sidebar's Queue view; switching to independent mode reopens a
+  // visible merged Queue overlay as the standalone panel. Either way, a
+  // panel that's about to become unrenderable in the new mode never gets
+  // left stuck open in the old one.
+  setExclusiveSidePanels: (value) => {
+    try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
+    set(s => {
+      // Switching to merged mode: fold whichever standalone panel is
+      // visible into the single panel instead of just dropping it. Queue
+      // and Lyrics can both be open at once in independent mode (they're
+      // fully separate panels there); the merged panel only has one slot,
+      // so prefer Queue if both happen to be open.
+      if (value && (s.showQueue || s.showLyricsPanel)) {
+        return {
+          exclusiveSidePanels: value,
+          exclusiveSidePanelsUserSet: true,
+          showQueue: false,
+          showLyricsPanel: false,
+          showRightSidebar: true,
+          sidePanelView: s.showQueue ? 'queue' : 'lyrics',
+        }
+      }
+      // Switching to independent mode: reopen a visible merged Queue/Lyrics
+      // overlay as its own standalone panel instead of just dropping it.
+      if (!value && s.showRightSidebar && (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics')) {
+        return {
+          exclusiveSidePanels: value,
+          exclusiveSidePanelsUserSet: true,
+          showQueue: s.sidePanelView === 'queue',
+          showLyricsPanel: s.sidePanelView === 'lyrics',
+          sidePanelView: 'info',
+        }
+      }
+      return {
+        exclusiveSidePanels: value,
+        exclusiveSidePanelsUserSet: true,
+        // Any other stale 'queue'/'lyrics' reference can't be shown as a
+        // closed panel in either mode -- fall back to info so neither
+        // renderer starts on a view it doesn't own.
+        sidePanelView: (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics') ? 'info' : s.sidePanelView,
+      }
+    })
+  },
+  // Syncs the backend-persisted Side Panels setting in (called once at app
+  // boot, and again when Settings mounts). A no-op once the user has made
+  // their own live choice this session -- see exclusiveSidePanelsUserSet --
+  // so a fetch that resolves late can't overwrite a fresher selection.
+  hydrateExclusiveSidePanels: (value) => set(s => (
+    s.exclusiveSidePanelsUserSet ? {} : { exclusiveSidePanels: value }
+  )),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 
@@ -525,7 +697,62 @@ export const usePlayerStore = create((set, get) => ({
   sleepTimerEndTime: null,
   sleepTimerInterval: null,
   showMiniPlayer: false,
-  toggleMiniPlayer: () => set(s => ({ showMiniPlayer: !s.showMiniPlayer })),
+  // Resizes (and awaits) the native window BEFORE flipping showMiniPlayer,
+  // rather than after -- App.jsx swaps between MiniPlayer and the full app
+  // UI the instant showMiniPlayer changes, so if that flip happens first,
+  // React mounts the new UI while the OS window is still the OLD size, and
+  // only catches up once the async setMiniMode IPC call resolves. That
+  // produced a visible flash of the wrong-size content in the wrong-size
+  // window on every transition. Awaiting the resize first means the window
+  // is already correct by the time the UI actually swaps.
+  toggleMiniPlayer: () => {
+    // Chain onto the previous call's settled promise (not just fire a new
+    // one) so overlapping calls run one at a time; `.catch(() => {})` keeps
+    // a prior failure from blocking this attempt.
+    miniModeToggleChain = miniModeToggleChain.catch(() => {}).then(async () => {
+      const next = !get().showMiniPlayer
+      const electron = typeof window !== 'undefined' ? window.electron : null
+      if (electron) {
+        try {
+          if (electron.setMiniMode) {
+            // The main-process handler resolves false (rather than
+            // rejecting) when there's no window to apply it to -- the
+            // native mode didn't change, so don't commit it to the store.
+            const applied = await electron.setMiniMode(next)
+            if (applied === false) {
+              console.error('Failed to toggle mini player: setMiniMode returned false')
+              return
+            }
+          } else if (next) {
+            if (electron.getWindowSize) {
+              miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
+            }
+            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
+            // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
+            // setMiniMode handler; MiniPlayer will report the final content
+            // height after it mounts.
+            if (electron.setWindowSize) await electron.setWindowSize(420, 246)
+          } else {
+            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
+            if (miniModeFallbackPrevSize && electron.setWindowSize) {
+              await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
+            }
+            miniModeFallbackPrevSize = null
+          }
+        } catch (err) {
+          // The native resize/IPC call failed, so the OS window never
+          // actually changed size -- committing showMiniPlayer here would
+          // desync the UI (MiniPlayer vs. the full app layout) from the
+          // window's real size. Leave the store as it was; the swallowed
+          // catch here previously committed on failure too, silently.
+          console.error('Failed to toggle mini player', err)
+          return
+        }
+      }
+      set({ showMiniPlayer: next })
+    })
+    return miniModeToggleChain
+  },
   setSleepTimer: (minutes) => {
     const { sleepTimerInterval } = get()
     if (sleepTimerInterval) {

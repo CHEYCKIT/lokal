@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
 import { api } from '../api'
-import { useAppStore } from '../store/player'
+import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
@@ -45,7 +45,7 @@ function Row({ label, desc, children }) {
     <div className="flex items-center justify-between gap-6">
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{label}</p>
-        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed">{desc}</p>}
+        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{desc}</p>}
       </div>
       <div className="flex-shrink-0">{children}</div>
     </div>
@@ -121,6 +121,25 @@ function getEqPresetKey(gains) {
   return match?.[0] || 'custom'
 }
 
+// The Side Panels toggle saves on every click rather than waiting for the
+// "Save Settings" button, so a quick double-click could otherwise fire two
+// overlapping requests and let the first one's response land after the
+// second's, leaving the backend on the stale value. Chaining each save onto
+// the previous one's settled promise keeps them applied in click order;
+// sidePanelsSaveSeq lets only the most recent attempt update the error
+// indicator, so a failure that's since been superseded by a successful
+// retry doesn't leave a stale error showing.
+//
+// Deliberately module scope, not useRef: Settings can unmount and remount
+// (it's a route, not a singleton), and a useRef resets on every mount --
+// which meant a save still in flight from before an unmount could land
+// after the remount initialized a fresh, unrelated chain/seq pair, letting
+// it race a save started post-remount exactly the way the chaining above is
+// meant to prevent. A module-level binding persists across mounts, so the
+// chain and sequence counter stay continuous for the life of the app.
+let sidePanelsSaveChain = Promise.resolve()
+let sidePanelsSaveSeq = 0
+
 export default function Settings() {
   const [settings, setSettings] = useState({})
   const [saved, setSaved] = useState(false)
@@ -191,6 +210,10 @@ export default function Settings() {
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
   const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false })
   const [relaunchMsg, setRelaunchMsg] = useState('')
+  const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
+  // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
+  // the Side Panels toggle's saves -- see their declaration for why this
+  // can't be a useRef here.
   const [appVersion, setAppVersion] = useState('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
@@ -208,6 +231,9 @@ export default function Settings() {
 
   
   const { openAlbums, user, logout } = useAppStore()
+  const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
+  const hydrateExclusiveSidePanels = usePlayerStore(s => s.hydrateExclusiveSidePanels)
+  const exclusiveSidePanels = usePlayerStore(s => s.exclusiveSidePanels)
   const fileInputRef = useRef(null)
   const artistOffsetRef = useRef(0)
   const artistRequestRef = useRef(0)
@@ -233,12 +259,24 @@ export default function Settings() {
 
   useEffect(() => {
 
-    api.getSettings().then(s => setSettings({
-      ...(s || {}),
-      discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
-      discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
-      discord_auto_connect: s?.discord_auto_connect ?? '0',
-    }))
+    api.getSettings().then(s => {
+      setSettings({
+        ...(s || {}),
+        discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
+        discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
+        discord_auto_connect: s?.discord_auto_connect ?? '0',
+      })
+      // Keep the player store's live `exclusiveSidePanels` in sync with the
+      // backend-persisted value on load -- it was previously seeded only
+      // from localStorage, so a value saved from another install/profile
+      // (or a cleared localStorage) could silently disagree with what
+      // Settings displays here until the toggle was clicked again. Uses
+      // the hydrate (not set) action, which is a no-op once the user has
+      // already made their own live choice this session, so this response
+      // -- which can resolve after a selection the user already made
+      // while it was loading -- can never overwrite a fresher choice.
+      hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+    })
 
     api.getKeepCommaArtists().then(a => {
 
@@ -443,6 +481,12 @@ export default function Settings() {
 
   const save = async () => {
     await api.saveSettings(settings)
+    // RightSidebar's Lyrics tab and the standalone LyricsSidePanel both cache
+    // unsynced_auto_sync in local state and stay mounted across navigation,
+    // so a save made while one of them is already open would otherwise go
+    // unnoticed until it happens to remount. Broadcast the save so they can
+    // refresh in place.
+    window.dispatchEvent(new Event('lokal:settings-saved'))
     localStorage.setItem('lokal-eq', JSON.stringify(eqGains))
     localStorage.setItem('lokal-eq-preset', eqPreset)
     setSaved(true)
@@ -563,6 +607,11 @@ export default function Settings() {
     await api.setKeepCommaArtists(artists)
     setKeepCommaArtists(artists)
     setShowCommaModal(false)
+    // RightSidebar keeps its own copy of this list (loaded once at mount,
+    // since it stays mounted across normal route navigation) so its artist
+    // link can resolve comma-containing names the same way PlayerBar's
+    // does. Without this, the fix only takes effect after a remount/reload.
+    try { window.dispatchEvent(new CustomEvent('lokal:comma-artists-updated', { detail: artists })) } catch {}
   }
 
   const triggerDownload = (content, filename, type) => {
@@ -2142,6 +2191,69 @@ module.exports = {
             </div>
           )}
         </div>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
+      <Section title="Layout">
+        <Row
+          label="Side Panels"
+          desc={"Merged: Queue and Lyrics open inside the Now Playing panel instead of opening extra panels alongside it.\n\nIndependent: Queue and Lyrics each open in their own separate panel next to Now Playing, as before."}
+        >
+          <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
+            {[['1', 'Merged'], ['0', 'Independent']].map(([value, label]) => {
+              // Read from the live store, not `settings` -- a click applies
+              // the new mode to the store/localStorage immediately, but
+              // `settings.exclusive_side_panels` only changes once the
+              // backend save resolves (and reverts entirely if "Save
+              // Settings" is never clicked), so deriving the highlight from
+              // it could show the wrong button as active right after a
+              // click, or after a reload before the save round-trips.
+              const current = exclusiveSidePanels ? '1' : '0'
+              return (
+                <button
+                  key={value}
+                  onClick={() => {
+                    set('exclusive_side_panels', value)
+                    try { localStorage.setItem('lokal-exclusive-panels', value) } catch {}
+                    setExclusiveSidePanels(value === '1')
+                    // This takes effect instantly (localStorage + the live
+                    // store above), unlike most settings on this page which
+                    // wait for the "Save Settings" button -- but set() only
+                    // updates this component's own local `settings` copy, so
+                    // without this the backend's exclusive_side_panels stayed
+                    // on the old value until the user happened to click Save
+                    // Settings for some unrelated change. A fresh install, a
+                    // browser with no localStorage entry yet, or any other
+                    // consumer of the backend setting would then see the old
+                    // choice despite the UI already showing the new one.
+                    const seq = ++sidePanelsSaveSeq
+                    sidePanelsSaveChain = sidePanelsSaveChain
+                      .catch(() => {}) // a prior failure shouldn't block this attempt
+                      .then(() => api.saveSettings({ exclusive_side_panels: value }))
+                      .then(() => {
+                        if (seq === sidePanelsSaveSeq) setSidePanelsSaveError(false)
+                      })
+                      .catch((err) => {
+                        console.error('Failed to save Side Panels setting', err)
+                        if (seq === sidePanelsSaveSeq) setSidePanelsSaveError(true)
+                      })
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {sidePanelsSaveError && (
+            <p className="text-[11px] text-red-400 flex items-center gap-1">
+              <AlertTriangle size={11} /> Couldn't save -- will retry on next change
+            </p>
+          )}
+          </div>
+        </Row>
       </Section>
       )}
 

@@ -13,9 +13,35 @@ export default function LyricsFullscreen() {
   const [settings, setSettings] = useState({})
   const wordSync = localStorage.getItem('word-sync') === '1'
 
+  // LyricsFullscreen stays mounted for the whole app session (App.jsx renders
+  // it unconditionally and it just hides its own JSX), so a settings fetch
+  // tied to mount only ever ran once at startup -- toggling and saving
+  // Unsynced Lyrics Auto-Sync later in Settings never updated this component,
+  // and lyrics kept auto-syncing (or not) based on whatever was cached at
+  // launch. Re-fetching whenever the overlay actually opens picks up the
+  // current saved value.
   useEffect(() => {
+    if (!showLyricsFullscreen) return
     api.getSettings().then(s => setSettings(s || {}))
-  }, [])
+  }, [showLyricsFullscreen])
+
+  // This overlay can now be reached from inside FullscreenPlayer (its Expand
+  // Lyrics button), where it renders on top of that other fullscreen view --
+  // without its own Escape handler, FullscreenPlayer's Escape listener (bound
+  // whenever *it's* open, regardless of what's stacked on top) was the only
+  // one that fired, closing the player underneath instead of just this panel.
+  useEffect(() => {
+    // The search drawer sits on top of this overlay, so Escape closes it
+    // first; otherwise showSearch stays true and the drawer reappears the
+    // next time the overlay opens.
+    const h = (e) => {
+      if (e.key !== 'Escape') return
+      if (showSearch) setShowSearch(false)
+      else toggleLyricsFullscreen()
+    }
+    if (showLyricsFullscreen) document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [showLyricsFullscreen, toggleLyricsFullscreen, showSearch])
 
   const importLyrics = async () => {
     if (!currentTrack || !api.isElectron) return

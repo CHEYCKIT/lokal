@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const log = require('electron-log')
@@ -182,10 +182,19 @@ app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaS
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
 const NORMAL_MIN_HEIGHT = 640
-const MINI_DEFAULT_WIDTH = 360
-const MINI_DEFAULT_HEIGHT = 220
-const MINI_MIN_WIDTH = 50
-const MINI_MIN_HEIGHT = 50
+// Mini-player width stays fixed, while height starts at the measured
+// default-scale content height and is then adjusted by MiniPlayer whenever
+// its actual content size changes (for example from text scaling/wrapping).
+const MINI_DEFAULT_WIDTH = 420
+const MINI_DEFAULT_HEIGHT = 246
+const MINI_MIN_HEIGHT = 120
+const MINI_MAX_HEIGHT = 800
+// Electron 29.1.0 has a macOS bug where setMaximumSize(0, 0) -- the
+// documented way to remove a maximum -- doesn't actually lift it, leaving
+// the window locked at whatever size it had when mini mode was toggled off.
+// An explicit size well past any real display works around it.
+const NORMAL_MAX_WIDTH = 100000
+const NORMAL_MAX_HEIGHT = 100000
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false
@@ -196,6 +205,18 @@ function enforceMiniTop() {
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   mainWindow.moveTop()
+}
+
+// Used when entering mini mode so the resize-to-mini-size and the
+// re-centering happen as a single setBounds call instead of a separate
+// setSize followed by a separate center() -- two native calls means two
+// relayouts (and, on some platforms, two visible steps) instead of one.
+function centeredBounds(width, height, referenceBounds) {
+  const display = screen.getDisplayMatching(referenceBounds || mainWindow.getBounds())
+  const area = display.workArea
+  const x = Math.round(area.x + (area.width - width) / 2)
+  const y = Math.round(area.y + (area.height - height) / 2)
+  return { x, y, width, height }
 }
 
 function emitPlayerCommand(action) {
@@ -275,6 +296,16 @@ function createWindow() {
   mainWindow.on('blur', enforceMiniTop)
   mainWindow.on('show', enforceMiniTop)
   mainWindow.on('restore', enforceMiniTop)
+
+  mainWindow.on('app-command', (event, command) => {
+    if (command === 'browser-backward') {
+      event.preventDefault()
+      mainWindow.webContents.send('navigation:history', -1)
+    } else if (command === 'browser-forward') {
+      event.preventDefault()
+      mainWindow.webContents.send('navigation:history', 1)
+    }
+  })
 
   updateThumbarButtons(mainWindow, {})
   
@@ -444,21 +475,50 @@ ipcMain.handle('window:setMiniMode', (_, enabled) => {
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     mainWindow.show()
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    mainWindow.setMinimumSize(MINI_MIN_WIDTH, MINI_MIN_HEIGHT)
-    mainWindow.setSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
-    mainWindow.center()
+    // Keep the width fixed and seed the height with the measured default
+    // content height. MiniPlayer reports its actual content height after
+    // mounting and whenever its layout changes; window:fitMiniHeight then
+    // adjusts only the height while keeping the current position.
+    mainWindow.setResizable(false)
+    mainWindow.setMinimumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
+    mainWindow.setMaximumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
+    // One setBounds call instead of setSize + center(): each is a separate
+    // native resize/move, i.e. a separate relayout, and doing them back to
+    // back was part of what made this transition look janky.
+    mainWindow.setBounds(centeredBounds(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT, miniModeRestoreState.bounds), true)
     enforceMiniTop()
     return true
   }
   miniModeEnabled = false
   mainWindow.setAlwaysOnTop(false)
   mainWindow.setVisibleOnAllWorkspaces(false)
+  mainWindow.setResizable(true)
   mainWindow.setMinimumSize(NORMAL_MIN_WIDTH, NORMAL_MIN_HEIGHT)
+  mainWindow.setMaximumSize(NORMAL_MAX_WIDTH, NORMAL_MAX_HEIGHT) // undoes the mini-mode lock above
   if (miniModeRestoreState?.bounds) {
-    mainWindow.setBounds(miniModeRestoreState.bounds)
+    mainWindow.setBounds(miniModeRestoreState.bounds, true)
     if (miniModeRestoreState.wasMaximized) mainWindow.maximize()
   }
   miniModeRestoreState = null
+  return true
+})
+ipcMain.handle('window:fitMiniHeight', (_, rawHeight) => {
+  if (!mainWindow || !miniModeEnabled) return false
+  const numericHeight = Number(rawHeight)
+  if (!Number.isFinite(numericHeight)) return false
+
+  const height = Math.round(Math.max(MINI_MIN_HEIGHT, Math.min(MINI_MAX_HEIGHT, numericHeight)))
+  const bounds = mainWindow.getBounds()
+  if (bounds.width === MINI_DEFAULT_WIDTH && bounds.height === height) return true
+
+  mainWindow.setMinimumSize(MINI_DEFAULT_WIDTH, height)
+  mainWindow.setMaximumSize(MINI_DEFAULT_WIDTH, height)
+  mainWindow.setBounds({
+    ...bounds,
+    width: MINI_DEFAULT_WIDTH,
+    height,
+  }, true)
+  enforceMiniTop()
   return true
 })
 ipcMain.handle('window:getSize', () => {
@@ -466,6 +526,23 @@ ipcMain.handle('window:getSize', () => {
     return mainWindow.getSize()
   }
   return [1400, 860]
+})
+// Windows + frame:false + `-webkit-app-region: drag` (our custom titlebar)
+// is a known combination for the OS-level hit-test map going stale: after a
+// burst of overlapping layout/paint changes near the titlebar -- exactly
+// what closing the fullscreen player's Lyrics/Queue side panel does, since
+// that unmounts a wide subtree at the same time the whole overlay is fading
+// out -- Chromium can keep answering mouse input using a snapshot of the
+// old layout, so every click lands offset from the cursor until something
+// forces a recompute. A real restart fixes it by re-establishing the
+// window from scratch; a genuine (if imperceptible) bounds change forces
+// the same recompute without one. See e.g. electron/electron#7347 and
+// #51252 for the same class of bug.
+ipcMain.handle('window:refreshHitRegions', () => {
+  if (!mainWindow) return
+  const b = mainWindow.getBounds()
+  mainWindow.setBounds({ ...b, width: b.width + 1 })
+  mainWindow.setBounds(b)
 })
 
 createWindow()

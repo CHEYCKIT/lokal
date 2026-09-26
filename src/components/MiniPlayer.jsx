@@ -11,11 +11,10 @@ export default function MiniPlayer({ windowed = false }) {
   const {
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
-    showMiniPlayer, toggleMiniPlayer, likedIds, setLiked
+    toggleMiniPlayer, likedIds, setLiked
   } = usePlayerStore()
   const { user } = useAppStore()
 
-  const prevWindowSize = useRef(null)
   const [lyricsLines, setLyricsLines] = useState([])
   const [lyricsType, setLyricsType] = useState(null)
   const [lyricsCurrent, setLyricsCurrent] = useState('')
@@ -40,34 +39,46 @@ export default function MiniPlayer({ windowed = false }) {
   }, [])
 
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
+  const miniRootRef = useRef(null)
+
+  // The native window resize/always-on-top toggle used to happen here, in a
+  // mount/unmount effect keyed on showMiniPlayer -- but that runs AFTER
+  // React has already committed and painted the swap between this component
+  // and the full app UI in App.jsx, and the resize itself is an async IPC
+  // round-trip on top of that. The result was a visible frame or two of the
+  // wrong-size window showing the wrong-size content on every transition.
+  // toggleMiniPlayer (src/store/player.js) now awaits the resize BEFORE
+  // flipping showMiniPlayer, so the window is already correctly sized by
+  // the time this component (or the full app UI) actually mounts.
 
   useEffect(() => {
-    const electron = window.electron
-    if (!electron || !showMiniPlayer) {
-      return
+    if (!windowed || !api.isElectron || !window.electron?.fitMiniHeight || !miniRootRef.current) return
+
+    const root = miniRootRef.current
+    let frame = 0
+    let lastHeight = 0
+
+    const measure = () => {
+      frame = 0
+      const height = Math.ceil(root.getBoundingClientRect().height)
+      if (!height || height === lastHeight) return
+      lastHeight = height
+      window.electron.fitMiniHeight(height).catch(() => {})
     }
-    if (electron.getWindowSize) {
-      electron.getWindowSize().then(size => {
-        prevWindowSize.current = size
-      }).catch(() => {})
-    }
-    if (electron.setMiniMode) {
-      electron.setMiniMode(true).catch(() => {})
-    } else {
-      if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(true).catch(() => {})
-      if (electron.setWindowSize) electron.setWindowSize(360, 220).catch(() => {})
-    }
+
+    const observer = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    })
+
+    observer.observe(root)
+    measure()
+
     return () => {
-      if (electron.setMiniMode) {
-        electron.setMiniMode(false).catch(() => {})
-      } else {
-        if (electron.setAlwaysOnTop) electron.setAlwaysOnTop(false).catch(() => {})
-        if (prevWindowSize.current && electron.setWindowSize) {
-          electron.setWindowSize(prevWindowSize.current[0], prevWindowSize.current[1]).catch(() => {})
-        }
-      }
+      observer.disconnect()
+      if (frame) cancelAnimationFrame(frame)
     }
-  }, [showMiniPlayer])
+  }, [windowed])
 
   useEffect(() => {
     if (!currentTrack?.id) {
@@ -211,8 +222,9 @@ export default function MiniPlayer({ windowed = false }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
+      ref={miniRootRef}
       className={windowed
-        ? 'relative h-full w-full bg-transparent border border-border rounded-none shadow-none overflow-hidden'
+        ? 'relative w-full bg-transparent border border-border rounded-none shadow-none overflow-hidden'
         : 'fixed bottom-4 right-4 w-72 bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden z-50'}
     >
       {windowed && (
@@ -298,7 +310,10 @@ export default function MiniPlayer({ windowed = false }) {
         </div>
       </div>
 
-      <div className={`${windowed ? 'px-4 pb-4 pt-3' : 'px-3 pb-3 pt-2'} flex items-center justify-between gap-3`}>
+      {/* flex-wrap: if the mini window is resized narrower than this row's
+          content needs, the groups wrap onto a second line instead of
+          overflowing past the window's right edge and getting clipped. */}
+      <div className={`${windowed ? 'px-4 pb-4 pt-3' : 'px-3 pb-3 pt-2'} flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 0.8)}

@@ -480,7 +480,7 @@ function RAFWordLine({ words, bgWords, liveProgressRef }) {
 }
 
 const Line = React.memo(function Line({
-  line, isActive, isPast, fullscreen, darkMode, wordSync, lyricsType, liveProgressRef, onRef, distanceFromActive, textScale = 1, index, progress = 0, hasNextLine = false, onSeek = null, lyricsStyle = 'classic',
+  line, isActive, isPast, fullscreen, darkMode, wordSync, lyricsType, liveProgressRef, onRef, distanceFromActive, textScale = 1, index, progress = 0, hasNextLine = false, onSeek = null, lyricsStyle = 'classic', plainUnsynced = false,
 }) {
   const useRAF = wordSync && lyricsType === 'synced' && isActive && line.words?.length > 0
   const useSpicy = useRAF && lyricsStyle !== 'classic'
@@ -531,7 +531,12 @@ const Line = React.memo(function Line({
       onClick={handleSeek}
       onKeyDown={handleKeyDown}
       animate={{
-        opacity: isActive ? 1 : isPast ? 0.18 : 0.35,
+        // Plain unsynced lyrics (no timing info, and auto-sync off) never
+        // get an activeIdx from the effect below -- there's no line to
+        // highlight against, so show the whole list at full brightness
+        // (like Spotify's static unsynced view) instead of leaving every
+        // line stuck in the dim "not active" state.
+        opacity: plainUnsynced ? 1 : (isActive ? 1 : isPast ? 0.18 : 0.35),
         scale: isActive ? (fullscreen ? 1 : 1.01) : 1,
       }}
       transition={{
@@ -540,7 +545,7 @@ const Line = React.memo(function Line({
       }}
       className={`text-center w-full max-w-2xl my-1.5 font-medium select-text rounded-2xl px-4 py-2 outline-none transition-colors ${seekable ? 'cursor-pointer hover:bg-white/6 focus-visible:bg-white/6' : 'cursor-default'}`}
       style={{
-        color: isActive ? (darkMode ? '#fff' : '#e8ff57') : '#666',
+        color: plainUnsynced ? (darkMode ? '#fff' : '#111') : (isActive ? (darkMode ? '#fff' : '#e8ff57') : '#666'),
         fontWeight: isActive ? 700 : 500,
         textShadow: isActive ? (fullscreen ? '0 0 40px rgba(232,255,87,0.2)' : '0 0 20px rgba(232,255,87,0.15)') : 'none',
         filter: isBlurred ? `blur(${blurAmount}px)` : 'none',
@@ -582,7 +587,8 @@ const Line = React.memo(function Line({
   prev.distanceFromActive === next.distanceFromActive &&
   prev.hasNextLine === next.hasNextLine &&
   prev.onSeek === next.onSeek &&
-  prev.lyricsStyle === next.lyricsStyle
+  prev.lyricsStyle === next.lyricsStyle &&
+  prev.plainUnsynced === next.plainUnsynced
 )
 
 export default function LyricsPanel({
@@ -607,6 +613,25 @@ export default function LyricsPanel({
   const [lyricsStyle, setLyricsStyle] = useState(() => localStorage.getItem('lokal-lyrics-style') || 'classic')
   const containerRef = useRef(null)
   const lineRefs = useRef([])
+  // Skips the smooth scroll animation for the very first scroll position
+  // after this panel mounts fresh (e.g. opening the side panel/overlay) --
+  // activeIdx jumps from its initial -1 to the real current line right
+  // away, and without this the content visibly scrolls up from the top
+  // over ~420ms, reading as a stray slide-up animation on top of the
+  // panel's own entrance. Real line changes during playback still animate
+  // as before; only this first jump per mount (or per track, see below)
+  // is instant.
+  const hasScrolledOnceRef = useRef(false)
+  // LyricsSidePanel (independent mode) never remounts LyricsPanel across
+  // track changes -- it's a single persistent standalone panel, unlike
+  // RightSidebar's merged-mode overlay which fully unmounts/remounts on
+  // open/close -- so without this, only the very first track ever played
+  // gets the instant jump above and every later track change would fall
+  // through to the smooth-scroll path instead. Reset it per track so each
+  // one gets its own instant first position, same as a fresh mount would.
+  useEffect(() => {
+    hasScrolledOnceRef.current = false
+  }, [track?.id])
 
   const anchorRef = useRef({ audioTime: progress, wallTime: performance.now() })
   const liveProgressRef = useRef(progress)
@@ -762,6 +787,11 @@ export default function LyricsPanel({
       el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2,
       container.scrollHeight - container.clientHeight
     ))
+    if (!hasScrolledOnceRef.current) {
+      hasScrolledOnceRef.current = true
+      container.scrollTop = target
+      return
+    }
     let raf
     const start = performance.now()
     const from = container.scrollTop
@@ -777,6 +807,10 @@ export default function LyricsPanel({
 
   const hasSyncedLyrics = displayedLines.some(l => l.time != null)
   const showUnsyncedMessage = !hasSyncedLyrics && displayedLines.length > 0
+  // Mirrors the activeIdx effect above: when lyrics aren't synced and the
+  // rough auto-sync guess is off, activeIdx never leaves its initial -1, so
+  // no line would ever be marked active/past without this flag.
+  const plainUnsynced = lyricsType !== 'synced' && !isAutoSynced
   const updateSelectionState = useMemo(() => {
     return () => {
       const container = containerRef.current
@@ -896,7 +930,7 @@ export default function LyricsPanel({
 
       {displayedLines.length > 0 && (
         <>
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             {wordSync && lyricsType === 'synced' && (
               <button
                 onClick={toggleLyricsStyle}
@@ -971,6 +1005,7 @@ export default function LyricsPanel({
           hasNextLine={i < displayedLines.length - 1}
           onSeek={handleSeekToLine}
           lyricsStyle={lyricsStyle}
+          plainUnsynced={plainUnsynced}
         />
       ))}
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Play, Music, Settings, Camera } from 'lucide-react'
+import { ArrowLeft, Play, Music, Settings, Camera } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -15,6 +15,11 @@ export default function Artist() {
   const [artist, setArtist] = useState(null)
   const [allArtists, setAllArtists] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
+  // A highlighted track that has no album AND isn't in "Popular" -- e.g. a
+  // loose single -- has no Releases card to open and no Popular row to
+  // scroll to, so there's nothing for the effect below to select. Without
+  // this, that track silently fails to highlight with no visible fallback.
+  const [standaloneTrack, setStandaloneTrack] = useState(null)
   const [showManage, setShowManage] = useState(false)
   const { playQueue } = usePlayerStore()
   const artistContext = makeArtistContext(id, artist?.name)
@@ -44,10 +49,25 @@ export default function Artist() {
   useEffect(() => {
     if (!artist || !highlightTrackId) return
     const inTopTracks = artist.topTracks?.some((item) => String(item.id) === String(highlightTrackId))
-    if (inTopTracks) return
+    if (inTopTracks) {
+      // The Popular row owns this highlight -- drop any Track section left
+      // over from an earlier albumless-track request.
+      setStandaloneTrack(null)
+      return
+    }
     const track = artist.tracks?.find((item) => String(item.id) === String(highlightTrackId))
-    if (!track?.album) return
-    setSelectedAlbum(track.album)
+    if (!track?.album) {
+      // No Releases card owns this track either, so render it in its own
+      // ad-hoc section instead of leaving the highlight request with
+      // nowhere to land.
+      setStandaloneTrack(track || null)
+      return
+    }
+    setStandaloneTrack(null)
+    // Carry the track's own album_artist along (falling back to its artist,
+    // same as the backend's own COALESCE), not this page's display artist --
+    // see the AlbumTracks fix below for why that distinction matters.
+    setSelectedAlbum({ title: track.album, album_artist: track.album_artist || track.artist })
     // highlightRequestKey (not just highlightTrackId) is in the deps: if the
     // user collapsed this release card after the first "playing from ..."
     // request and then re-triggers the shortcut for the SAME track, the
@@ -122,6 +142,13 @@ export default function Artist() {
   return (
     <div className="pb-8">
       <div className="relative h-56 overflow-hidden">
+        <button
+          onClick={() => nav(-1)}
+          className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white md:left-8 md:top-5"
+        >
+          <ArrowLeft size={14} />
+          Back
+        </button>
         {imgSrc ? <img src={imgSrc} className="h-full w-full object-cover opacity-40" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
         <div className="absolute bottom-5 left-8 flex items-end gap-5">
@@ -163,6 +190,13 @@ export default function Artist() {
           </section>
         )}
 
+        {standaloneTrack && (
+          <section>
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Track</h2>
+            <TrackList tracks={[standaloneTrack]} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+          </section>
+        )}
+
         {artist.albums?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
@@ -173,9 +207,9 @@ export default function Artist() {
                 return (
                   <motion.button
                     key={album.title}
-                    onClick={() => setSelectedAlbum(selectedAlbum === album.title ? null : album.title)}
+                    onClick={() => nav('/albums', { state: { album, from: location.pathname } })}
                     whileHover={{ scale: 1.02 }}
-                    className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
+                    className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
                     <div className="flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
                       {cover ? <img src={cover} className="h-full w-full object-cover" /> : <Music size={28} />}
@@ -213,7 +247,13 @@ export default function Artist() {
 function AlbumTracks({ album, artistName = null, highlightTrackId = null, highlightRequestKey = null }) {
   const [tracks, setTracks] = useState([])
   const { playQueue } = usePlayerStore()
-  const albumContext = makeAlbumContext({ title: album, album_artist: artistName })
+  // album now carries its own album_artist (see the two setSelectedAlbum
+  // call sites above) -- this page's display artist name isn't necessarily
+  // the album's actual album_artist (e.g. a "Various Artists" compilation,
+  // or a feature/guest album), and using it here made getAlbumTracks below
+  // match tracks by the wrong artist whenever the two differ, sometimes
+  // turning up an empty tracklist.
+  const albumContext = makeAlbumContext(album)
 
   useEffect(() => {
     api.getAlbumTracks(album).then((result) => setTracks(result || []))
@@ -230,7 +270,7 @@ function AlbumTracks({ album, artistName = null, highlightTrackId = null, highli
   return (
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-white">{album}</h3>
+        <h3 className="text-sm font-medium text-white">{album.title}</h3>
         <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
       <TrackList tracks={tracks} showAlbum={false} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />

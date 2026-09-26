@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { MemoryRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
@@ -8,6 +8,7 @@ import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
 import LyricsFullscreen from './components/LyricsFullscreen'
 import QueuePanel from './components/QueuePanel'
+import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
 import ProfileModal from './components/ProfileModal'
 import StatsModal from './components/StatsModal'
@@ -84,6 +85,47 @@ function normalizeEqGains(input) {
     return [values[0], values[0], values[1], values[1], values[2], values[2], values[3], values[3], values[4], values[4]]
   }
   return EQ_AUDIO_BANDS.map((_, i) => values[i] || 0)
+}
+
+function NativeHistoryNavigation() {
+  const navigate = useNavigate()
+  const lastNativeNavigationAtRef = useRef(0)
+
+  useEffect(() => {
+    const navigateOnce = (direction) => {
+      lastNativeNavigationAtRef.current = performance.now()
+      navigate(direction)
+    }
+
+    const unsubscribeElectron = window.electron?.onNavigationHistory?.((direction) => {
+      // Some Windows mice surface as both an Electron app-command and a
+      // Chromium mouse-button event. Treat either as one navigation action.
+      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
+      navigateOnce(direction)
+    })
+
+    const handleMouseButton = (event) => {
+      if (event.button !== 3 && event.button !== 4) return
+
+      // Chromium reports X1/X2 as mouse buttons 3/4. Prevent its default
+      // browser navigation and drive the MemoryRouter ourselves.
+      event.preventDefault()
+      event.stopPropagation()
+
+      const direction = event.button === 3 ? -1 : 1
+      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
+      navigateOnce(direction)
+    }
+
+    window.addEventListener('mouseup', handleMouseButton, true)
+
+    return () => {
+      unsubscribeElectron?.()
+      window.removeEventListener('mouseup', handleMouseButton, true)
+    }
+  }, [navigate])
+
+  return null
 }
 
 function AnimatedRoutes() {
@@ -192,7 +234,7 @@ export default function App() {
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
-    showMiniPlayer, likedIds,
+    showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   } = usePlayerStore()
   const volumeRef = useRef(volume)
   const { user } = useAppStore()
@@ -767,6 +809,12 @@ export default function App() {
     setCfAudioRef(cfAudioRef)
     api.getSettings().then(s => {
       if (s?.crossfade_seconds) setCrossfade(parseFloat(s.crossfade_seconds) || 0)
+      // Sync the backend-persisted Side Panels mode at boot -- previously
+      // this only happened once the Settings page itself mounted, so a
+      // user who never opened Settings stayed on whatever
+      // localStorage/the hardcoded default said, even after saving a
+      // different mode from another install or profile.
+      hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
       if (api.isElectron && s?.discord_auto_connect === '1') {
         const clientId = s?.discord_use_default_app_id === '0'
           ? s?.discord_client_id
@@ -1492,6 +1540,7 @@ export default function App() {
 
   return (
     <Router>
+      <NativeHistoryNavigation />
       <div className="flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx}>
         {showMiniPlayer ? (
           <MiniPlayer windowed />
@@ -1519,7 +1568,8 @@ export default function App() {
                 <AnimatedRoutes />
               </main>
               <RightSidebar />
-              <QueuePanel />
+              {!exclusiveSidePanels && <QueuePanel />}
+              {!exclusiveSidePanels && <LyricsSidePanel />}
             </div>
             <PlayerBar />
             <FullscreenPlayer />

@@ -92,26 +92,53 @@ jobs:
           echo "DATE=$COMMIT_DATE" >> $GITHUB_OUTPUT
 
       - name: Generate Nightly Banner
+        env:
+          # Passed through the environment and read via process.env below
+          # instead of interpolated straight into the JS source -- inputs.ref
+          # is a write-authorized but still user-controlled string, and a ref
+          # containing quote/statement syntax would otherwise land in this
+          # heredoc as executable code (CWE-94) rather than as data.
+          NIGHTLY_REF: ${{ inputs.ref || 'main' }}
         run: |
           node - <<'EOF'
           const { chromium } = require("playwright");
 
           (async () => {
-            const browser = await chromium.launch();
-            const page = await browser.newPage({
-              viewport: { width: 1200, height: 600 }
-            });
+            let browser;
+            try {
+              browser = await chromium.launch();
+              const page = await browser.newPage({
+                viewport: { width: 1200, height: 600 }
+              });
 
-            await page.goto(
-              "https://sipbuu.me/lokalver/?v=${{ inputs.ref || 'main' }}&type=nightly&app=lokal",
-              { waitUntil: "networkidle" }
-            );
+              const bannerUrl = new URL("https://sipbuu.me/lokalver/");
+              bannerUrl.search = new URLSearchParams({
+                v: process.env.NIGHTLY_REF || "main",
+                type: "nightly",
+                app: "lokal",
+              }).toString();
 
-            await page.locator(".title-card").screenshot({
-              path: "release-banner.png"
-            });
+              await page.goto(bannerUrl.toString(), {
+                waitUntil: "networkidle", timeout: 20000
+              });
 
-            await browser.close();
+              await page.locator(".title-card").screenshot({
+                path: "release-banner.png",
+                timeout: 15000
+              });
+            } catch (err) {
+              // sipbuu.me is a third-party site outside this repo's control --
+              // if it's down, slow, or its markup changed, that shouldn't block
+              // publishing the actual nightly binaries below. Log it and move
+              // on without a banner image instead of failing the whole job
+              // (the release step below already tolerates a missing banner:
+              // action-gh-release doesn't fail on an unmatched files entry,
+              // and a missing image in the release body markdown just renders
+              // as a broken image, not an error).
+              console.warn("[nightly-banner] Skipping banner, could not generate it:", err.message);
+            } finally {
+              if (browser) await browser.close();
+            }
           })();
           EOF
 
@@ -203,6 +230,18 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
+          # DISCORD_WEBHOOK lives in the upstream repo's secrets, not every
+          # fork's -- an empty/unset secret makes curl's URL argument empty,
+          # which curl rejects outright ("URL rejected: Malformed input to a
+          # URL function", exit 3). By this point the actual release has
+          # already been created above, so a missing or unreachable webhook
+          # is a cosmetic notification failing, not a real problem -- don't
+          # let it fail the job.
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK secret is not set on this repo -- skipping Discord notification."
+            exit 0
+          fi
+
           BANNER_URL="https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png"
 
           PAYLOAD=$(jq -n \
@@ -224,4 +263,5 @@ jobs:
             }'
           )
 
-          curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
+          curl -sS -f --max-time 15 -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
+            || echo "Discord webhook call failed (rejected or unreachable) -- not fatal, release already published above."

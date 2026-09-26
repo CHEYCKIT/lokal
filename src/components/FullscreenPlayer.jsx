@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search, Maximize2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
+import { QueueContent } from './QueuePanel'
 import { api } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 
@@ -60,12 +61,16 @@ function SearchDrawer({ track, onClose, onSelect }) {
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className="absolute top-0 right-0 h-full w-[420px] bg-black/95 backdrop-blur-xl border-l border-white/10 z-30 flex flex-col"
     >
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <button onClick={onClose} className="p-1 text-white/40 hover:text-white transition-colors">
-          <X size={18} />
+      {/* The close button is sized/positioned to match the main fullscreen
+          exit button exactly (top-5, w-9 h-9, same circle style) -- it used
+          to be a small p-1 icon sitting inside a p-4 row, which put it a
+          few pixels lower than the exit button it sits right below. */}
+      <div className="relative flex items-center justify-center px-4 py-4 border-b border-white/10">
+        <button onClick={onClose}
+          className="absolute top-5 left-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+          <X size={15} />
         </button>
         <h3 className="text-sm font-medium text-white">Search Lyrics</h3>
-        <div className="w-5" />
       </div>
 
       <div className="p-4 space-y-3 border-b border-white/10">
@@ -132,9 +137,10 @@ function SearchDrawer({ track, onClose, onSelect }) {
 export default function FullscreenPlayer() {
   const {
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
-    progress, duration, volume, shuffle, repeat, showQueue,
+    progress, duration, volume, shuffle, repeat,
+    showLyricsFullscreen, toggleLyricsFullscreen,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
-    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement, toggleQueue,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     playbackContext,
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
@@ -142,16 +148,102 @@ export default function FullscreenPlayer() {
   const wordSync = localStorage.getItem('word-sync') === '1'
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
-  const [hasLyrics, setHasLyrics] = useState(false)
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [userWantsLyrics, setUserWantsLyrics] = useState(true)
+  // Which side panel is open, driven purely by the two buttons below -- not
+  // by whether the current track actually has lyrics. It used to require
+  // hasLyrics to become true before the panel would show at all, so on a
+  // track with no lyrics the Lyrics button looked completely broken (LyricsPanel
+  // never even got a chance to render its own "no lyrics found" + search
+  // state, exactly like it already does in windowed mode).
+  const [fullscreenPanel, setFullscreenPanel] = useState('none')
   const prevTrackId = useRef(null)
-
+  // The panel container fades/collapses out over 500ms after fullscreenPanel
+  // goes back to 'none' (see isPanelVisible below), but the ternary that picks
+  // Queue vs. Lyrics content only matched 'queue' -- everything else, 'none'
+  // included, fell through to the Lyrics branch. That swapped the panel's
+  // contents to Lyrics the instant Queue was closed, so users saw a flash of
+  // the Lyrics header/panel during the queue's own closing animation. Tracking
+  // the last non-'none' panel keeps showing that panel's content while it
+  // fades out, instead of switching to whatever the fallback branch was.
+  const lastPanelRef = useRef('lyrics')
   useEffect(() => {
+    if (fullscreenPanel !== 'none') lastPanelRef.current = fullscreenPanel
+  }, [fullscreenPanel])
+
+  // FullscreenPlayer stays mounted for the whole app session (App.jsx renders
+  // it unconditionally and it just hides its own JSX), so a settings fetch
+  // tied to mount only ever ran once at startup -- toggling and saving
+  // Unsynced Lyrics Auto-Sync later in Settings never updated this component,
+  // and lyrics kept using whatever value was cached at launch. Re-fetching
+  // whenever the overlay actually opens picks up the current saved value.
+  useEffect(() => {
+    if (!showFullscreen) return
     api.getSettings().then(s => setSettings(s || {}))
-  }, [])
+  }, [showFullscreen])
+
+  // Leaving fullscreen only fades the *outer* overlay out over its own
+  // 300ms AnimatePresence exit. Confirmed live (Windows, DevTools attached
+  // to a real build) that this exit can get stuck indefinitely: the whole
+  // overlay -- side panel and all its buttons included -- stays mounted,
+  // faded to opacity 0 but with computed pointer-events still "auto",
+  // sitting at z-50 over the entire window and intercepting every click
+  // anywhere in the app until the process is restarted. Repeatedly
+  // switching Queue<->Lyrics right before closing (which tears down and
+  // remounts the heavy LyricsPanel -- rAF word-sync ticking, springs,
+  // selection/scroll listeners) right as the outer AnimatePresence exit
+  // starts made this reliable to reproduce, but the stuck exit itself is
+  // the bug; that's just what triggers it.
+  //
+  // Two things that look like fixes for this do NOT work, confirmed live:
+  //  1. A `style={{ pointerEvents: showFullscreen ? 'auto' : 'none' }}`
+  //     ternary on the overlay. It's dead code: that JSX only ever gets
+  //     (re-)created while `showFullscreen && (...)` is true, so the
+  //     'none' branch can never be reached at creation time. Once
+  //     showFullscreen flips false, this component stops including the
+  //     motion.div in its own return value at all -- AnimatePresence
+  //     keeps animating out a snapshot of the *last* element it was
+  //     given, frozen with whatever props/classes it had at that moment.
+  //  2. Resetting fullscreenPanel/showSearch React state (still done
+  //     below, for its own sake -- it's what makes reopening fullscreen
+  //     start from a clean panel-closed state). It runs fine, but can't
+  //     reach the frozen snapshot either, for the same reason: by the
+  //     time this component re-renders with the new state, showFullscreen
+  //     is already false, so it again contributes nothing for that slot.
+  //
+  // The only thing that actually worked, verified live: reaching the real
+  // DOM node directly, outside React, and hiding it. pointer-events alone
+  // isn't enough either -- the "Go to {context}" link a little further
+  // down explicitly opts back in with its own pointer-events-auto (by
+  // design, for while fullscreen is genuinely open), which would stay
+  // clickable through an ancestor's pointer-events: none. visibility is
+  // not overridden anywhere in this file, so visibility: hidden reliably
+  // takes every descendant out of hit-testing regardless of what pointer-
+  // events they set. This queries the DOM instead of using a single ref
+  // because if this happens more than once without a previous exit ever
+  // completing, more than one stuck copy can accumulate; a ref would only
+  // ever reach the most recently mounted one. data-fullscreen-player-
+  // overlay is a marker unique to this component -- Modal.jsx,
+  // AlbumsModal.jsx and LyricsFullscreen.jsx all reuse the same "fixed
+  // inset-0 z-50" classes, so matching on those instead risked hiding an
+  // unrelated, legitimately open overlay.
+  useEffect(() => {
+    if (showFullscreen) {
+      // Reopening before the exit animation finishes can make Framer Motion
+      // reuse the same overlay DOM node, and React doesn't manage the inline
+      // visibility set below -- clear it or the player reopens invisible.
+      document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
+        el.style.removeProperty('visibility')
+      })
+      return
+    }
+    setFullscreenPanel('none')
+    setShowSearch(false)
+    document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
+      el.style.setProperty('visibility', 'hidden')
+    })
+  }, [showFullscreen])
 
   const canOpenContext = isContextNavigable(playbackContext)
   const openContext = () => {
@@ -162,15 +254,18 @@ export default function FullscreenPlayer() {
   }
 
   useEffect(() => {
+    // LyricsFullscreen renders on top of this overlay when both are open
+    // (see the Expand Lyrics button below), so while it's showing, Escape
+    // should close *that* first instead of also tearing down this whole
+    // fullscreen view underneath it.
     const h = (e) => { if (e.key === 'Escape') toggleFullscreen() }
-    if (showFullscreen) document.addEventListener('keydown', h)
+    if (showFullscreen && !showLyricsFullscreen) document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  }, [showFullscreen])
+  }, [showFullscreen, showLyricsFullscreen])
 
   useEffect(() => {
     if (currentTrack?.id !== prevTrackId.current) {
       setBgLoaded(false)
-      setHasLyrics(false) 
       prevTrackId.current = currentTrack?.id
     }
   }, [currentTrack?.id])
@@ -208,7 +303,17 @@ export default function FullscreenPlayer() {
   }
 
   const isAutoSynced = settings.unsynced_auto_sync === '1'
-  const isLyricsVisible = hasLyrics && currentTrack && userWantsLyrics
+  const isPanelVisible = currentTrack && fullscreenPanel !== 'none'
+  // The two layout-affecting transitions below (main content re-centering,
+  // panel width collapsing) only need to animate while this view is
+  // actually staying open -- while it's closing, the whole overlay is
+  // already fading to invisible over its own 300ms exit transition, so
+  // nobody sees these settle anyway. Snapping them instantly on close
+  // avoids running three overlapping layout/paint transitions (this pair
+  // plus the overlay's own fade) at the exact moment a wide subtree
+  // (Queue/Lyrics) unmounts, which on Windows has been enough to leave the
+  // frameless window's native hit-test map stale -- see toggleFullscreen
+  // in store/player.js and window:refreshHitRegions in electron/main.js.
 
   return (
     <AnimatePresence>
@@ -219,6 +324,11 @@ export default function FullscreenPlayer() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 flex overflow-hidden"
+          style={{ WebkitAppRegion: 'no-drag' }}
+          // Marks this exact DOM node so the useEffect above can reach and
+          // hide it (and any stuck earlier copies) directly if its exit
+          // animation never completes -- see that effect's comment.
+          data-fullscreen-player-overlay=""
         >
           <div className="absolute inset-0 bg-black">
             <AnimatePresence mode="wait">
@@ -268,7 +378,7 @@ export default function FullscreenPlayer() {
               )}
             </div>
           )}
-          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 transition-all duration-500 ${isLyricsVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
+          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentTrack?.id || 'none'}
@@ -276,7 +386,7 @@ export default function FullscreenPlayer() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-                className={`rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center ${isLyricsVisible ? 'w-80 h-80' : 'w-80 h-80'}`}
+                className="rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center w-80 h-80"
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
@@ -315,14 +425,17 @@ export default function FullscreenPlayer() {
                 className="text-white/35 hover:text-white/70 transition-colors text-xs font-display uppercase tracking-wider">
                 + Playlist
               </button>
-              <button onClick={toggleQueue}
-                className={`transition-colors ${showQueue ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}>
+              <button
+                onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')}
+                className={`transition-colors ${fullscreenPanel === 'queue' ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}
+                title={fullscreenPanel === 'queue' ? 'Hide Queue' : 'Show Queue'}
+              >
                 <ListMusic size={18} />
               </button>
-              <button 
-                onClick={() => setUserWantsLyrics(!userWantsLyrics)} 
-                className={`transition-colors ${userWantsLyrics ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}
-                title={userWantsLyrics ? "Hide Lyrics" : "Show Lyrics"}
+              <button
+                onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')}
+                className={`transition-colors ${fullscreenPanel === 'lyrics' ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}
+                title={fullscreenPanel === 'lyrics' ? 'Hide Lyrics' : 'Show Lyrics'}
               >
                 <Mic2 size={18} />
               </button>
@@ -359,50 +472,62 @@ export default function FullscreenPlayer() {
               </button>
             </div>
 
-            {!isLyricsVisible && currentTrack && (
-              <button 
-                onClick={() => setShowSearch(true)}
-                className="mt-6 flex items-center gap-2 px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-xs text-white/60 hover:text-white hover:bg-white/20 transition-colors"
-              >
-                <Search size={14} />
-                Search for lyrics
-              </button>
-            )}
           </div>
 
           {currentTrack && (
-              <div 
-                className={`relative z-10 flex flex-col overflow-hidden transition-all duration-500 ${isLyricsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
-                style={{ width: isLyricsVisible ? '420px' : '0px' }}
+              // Panel visibility (and which panel) is driven entirely by the
+              // Queue/Lyrics buttons above, not by whether lyrics happen to
+              // exist -- Search for lyrics used to live down here as its own
+              // separate button, but that was a second, redundant way to get
+              // to search that only showed up once you already knew lyrics
+              // were missing. The real flow is: open Lyrics, then use the
+              // panel's own top-right search button, same as windowed mode.
+              <div
+                className={`relative z-10 flex flex-col overflow-hidden ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                style={{ width: isPanelVisible ? '420px' : '0px' }}
               >
-                <div className="px-8 pt-6 pb-3 flex-shrink-0 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-display text-white/30 uppercase tracking-[0.2em]">Lyrics</p>
-                    <p className="text-xs text-white/20 mt-0.5 truncate">{currentTrack.title} — {currentTrack.artist}</p>
-                  </div>
-                  <button 
-                    onClick={() => setShowSearch(true)}
-                    className="p-2 text-white/30 hover:text-white transition-colors"
-                    title="Search lyrics"
-                  >
-                    <Search size={14} />
-                  </button>
-                </div>
+                {(fullscreenPanel !== 'none' ? fullscreenPanel : lastPanelRef.current) === 'queue' ? (
+                  <QueueContent variant="fullscreen" />
+                ) : (
+                  <>
+                    <div className="px-8 pt-6 pb-3 flex-shrink-0 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-display text-white/30 uppercase tracking-[0.2em]">Lyrics</p>
+                        <p className="text-xs text-white/20 mt-0.5 truncate">{currentTrack.title} — {currentTrack.artist}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={toggleLyricsFullscreen}
+                          className="p-2 text-white/30 hover:text-white transition-colors"
+                          title="Expand lyrics"
+                        >
+                          <Maximize2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => setShowSearch(true)}
+                          className="p-2 text-white/30 hover:text-white transition-colors"
+                          title="Search lyrics"
+                        >
+                          <Search size={14} />
+                        </button>
+                      </div>
+                    </div>
 
-                <div className="flex-1 min-h-0">
-                  <LyricsPanel 
-                    key={`${currentTrack?.id}-${refreshKey}`}
-                    track={currentTrack} 
-                    progress={progress} 
-                    darkMode 
-                    fullscreen 
-                    wordSync={wordSync} 
-                    onLyricsAvailable={setHasLyrics} 
-                    onSearchRequest={() => setShowSearch(true)}
-                    textScale={1.15}
-                    isAutoSynced={isAutoSynced}
-                  />
-                </div>
+                    <div className="flex-1 min-h-0">
+                      <LyricsPanel
+                        key={`${currentTrack?.id}-${refreshKey}`}
+                        track={currentTrack}
+                        progress={progress}
+                        darkMode
+                        fullscreen
+                        wordSync={wordSync}
+                        onSearchRequest={() => setShowSearch(true)}
+                        textScale={1.15}
+                        isAutoSynced={isAutoSynced}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -10,6 +10,26 @@ import Modal from './Modal'
 const RECENT_ITEMS_KEY = 'lokal-recent-items'
 const MAX_RECENT = 5
 const LARGE_LIST_STEP = 200
+// Large lists are windowed: only the rows near the viewport are mounted, with
+// fixed-height spacers standing in for everything above and below so the
+// scroll height (and scrollbar) still reflect the full list. Rows are a fixed
+// height, measured from the DOM once one renders; this is only the value used
+// before that first measurement (text-sm + text-xs lines = 36px, plus py-1.5).
+const DEFAULT_ROW_HEIGHT = 48
+// Rows kept mounted on each side of the visible band. The window is only
+// recomputed once the visible band gets within half of this of an edge, so
+// ordinary scrolling re-renders every ~50 rows rather than on every frame.
+const WINDOW_OVERSCAN = 100
+
+function getScrollParent(node) {
+  let el = node?.parentElement
+  while (el && el !== document.body && el !== document.documentElement) {
+    const { overflowY } = window.getComputedStyle(el)
+    if (/(auto|scroll|overlay)/.test(overflowY)) return el
+    el = el.parentElement
+  }
+  return null // the document itself scrolls
+}
 
 function getRecentItems() {
   try {
@@ -64,7 +84,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [showBatchEdit, setShowBatchEdit] = useState(false)
   const [trackToDelete, setTrackToDelete] = useState(null)
   const [trackOverrides, setTrackOverrides] = useState({})
-  const [visibleCount, setVisibleCount] = useState(LARGE_LIST_STEP)
+  // [start, end) slice of mergedTracks currently mounted (large lists only).
+  const [windowRange, setWindowRange] = useState({ start: 0, end: LARGE_LIST_STEP })
   const [ghostTrack, setGhostTrack] = useState(null)
   const [ghostQuery, setGhostQuery] = useState('')
   const [ghostSearchResults, setGhostSearchResults] = useState([])
@@ -72,7 +93,17 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [ghostLocalResults, setGhostLocalResults] = useState([])
   const [ghostLocalLoading, setGhostLocalLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
-  const loaderRef = useRef(null)
+  const rowsRef = useRef(null)
+  // State so a new measurement re-renders the spacers and intrinsic sizes;
+  // the ref mirrors it for updateWindowFromScroll, which reads it from
+  // scroll events outside render.
+  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT)
+  // contain-intrinsic-size sizes the content box, so a skipped
+  // (content-visibility: auto) row is this PLUS its vertical padding.
+  // Passing the full row height there made every off-screen row 12px taller
+  // than a rendered one, drifting all scroll offsets below it.
+  const [rowContentHeight, setRowContentHeight] = useState(DEFAULT_ROW_HEIGHT - 12)
+  const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT)
   const highlightRowRef = useRef(null)
   const handledHighlightRef = useRef(null)
   // { id, key } rather than a bare track id -- see the flash-timer effect
@@ -80,23 +111,41 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
-  const isLargeList = mergedTracks.length > LARGE_LIST_STEP
-  const visibleTracks = isLargeList ? mergedTracks.slice(0, visibleCount) : mergedTracks
+  const totalTracks = mergedTracks.length
+  const isLargeList = totalTracks > LARGE_LIST_STEP
+  // Clamp against the current length: the stored range can outlive a list
+  // that shrank (refresh, removal) until the next scroll recomputes it.
+  const windowStart = isLargeList ? Math.min(windowRange.start, Math.max(0, totalTracks - 1)) : 0
+  const windowEnd = isLargeList ? Math.min(Math.max(windowRange.end, windowStart + 1), totalTracks) : totalTracks
+  const visibleTracks = isLargeList ? mergedTracks.slice(windowStart, windowEnd) : mergedTracks
+  const topSpacerHeight = isLargeList ? windowStart * rowHeight : 0
+  const bottomSpacerHeight = isLargeList ? (totalTracks - windowEnd) * rowHeight : 0
 
-  useEffect(() => {
-    // A highlight the effect below has already handled won't re-run it (it
-    // dedupes on handledHighlightRef), so if something else changes
-    // tracks.length afterwards -- a refresh, a track removed elsewhere --
-    // this reset would otherwise quietly paginate that track's row back out
-    // of view with nothing left to bring it back. Keep enough of the list
-    // rendered to still include it.
-    if (!highlightTrackId) {
-      setVisibleCount(LARGE_LIST_STEP)
-      return
-    }
-    const index = tracks.findIndex(track => track.id === highlightTrackId)
-    setVisibleCount(index >= 0 ? Math.max(LARGE_LIST_STEP, index + 1) : LARGE_LIST_STEP)
-  }, [tracks.length, highlightTrackId])
+  // Recomputes the mounted window from where the list actually sits in its
+  // scroll container. Being position-based (rather than "append the next
+  // page when a sentinel comes into view") is what lets a scrollbar drag or
+  // a jump deep into the list land on real rows instead of blank spacer.
+  const updateWindowFromScroll = useCallback(() => {
+    const el = rowsRef.current
+    if (!el || !isLargeList) return
+    const root = getScrollParent(el)
+    const listTop = el.getBoundingClientRect().top
+    const viewTop = root ? root.getBoundingClientRect().top : 0
+    const viewBottom = root ? viewTop + root.clientHeight : window.innerHeight
+    const rowHeight = rowHeightRef.current
+    const first = Math.min(totalTracks, Math.max(0, Math.floor((viewTop - listTop) / rowHeight)))
+    const last = Math.min(totalTracks, Math.max(first, Math.ceil((viewBottom - listTop) / rowHeight)))
+    setWindowRange(prev => {
+      const margin = WINDOW_OVERSCAN / 2
+      const nearTop = prev.start > 0 && first - prev.start < margin
+      const nearBottom = prev.end < totalTracks && prev.end - last < margin
+      if (!nearTop && !nearBottom) return prev
+      return {
+        start: Math.max(0, first - WINDOW_OVERSCAN),
+        end: Math.min(totalTracks, Math.max(last + WINDOW_OVERSCAN, LARGE_LIST_STEP)),
+      }
+    })
+  }, [isLargeList, totalTracks])
 
   // Dedup key for the effect below: a caller that passes highlightRequestKey
   // (Playlist, Artist -- anywhere the same track can be re-requested by a
@@ -107,7 +156,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const highlightKey = highlightRequestKey ?? highlightTrackId
 
   // Issue #16: when we arrive from a "playing from ..." shortcut, make sure the
-  // track is actually rendered (large lists are paginated), then scroll to it
+  // track is actually rendered (large lists are windowed), then scroll to it
   // and flash it so it is obvious which row is playing.
   useEffect(() => {
     if (!highlightTrackId) {
@@ -119,8 +168,14 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     const index = tracks.findIndex(track => track.id === highlightTrackId)
     if (index === -1) return
 
-    if (isLargeList && index >= visibleCount) {
-      setVisibleCount(Math.min(index + LARGE_LIST_STEP, tracks.length))
+    if (isLargeList && (index < windowStart || index >= windowEnd)) {
+      // Mount a window centered on the target rather than every row from 0
+      // up to it -- the spacer above keeps it at its true scroll offset, so
+      // the scrollIntoView below lands in the right place.
+      setWindowRange({
+        start: Math.max(0, index - WINDOW_OVERSCAN),
+        end: Math.min(tracks.length, index + WINDOW_OVERSCAN),
+      })
       return // re-runs once the row exists
     }
 
@@ -138,7 +193,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         }
       })
     }
-  }, [highlightTrackId, highlightKey, tracks, isLargeList, visibleCount])
+  }, [highlightTrackId, highlightKey, tracks, isLargeList, windowStart, windowEnd])
 
   // Kept separate so re-renders of the list can't cancel the flash timer.
   // Depending on the whole { id, key } object (not just the track id) matters
@@ -154,18 +209,64 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     return () => clearTimeout(timer)
   }, [flash])
 
+  // Measure the real row height once rows exist, so spacer math matches the
+  // layout even if row styling changes. Once only: a transient state like
+  // the drag-over border would otherwise skew every spacer mid-drag.
+  const rowHeightMeasuredRef = useRef(false)
   useEffect(() => {
-    if (!isLargeList || !loaderRef.current) return
-    const node = loaderRef.current
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries[0]
-      if (entry?.isIntersecting) {
-        setVisibleCount(v => Math.min(v + LARGE_LIST_STEP, mergedTracks.length))
-      }
-    }, { rootMargin: '600px 0px' })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [isLargeList, mergedTracks.length, visibleCount])
+    if (!isLargeList || rowHeightMeasuredRef.current || draggedId || !rowsRef.current) return
+    // Only a row inside the viewport is guaranteed to be actually rendered;
+    // an off-screen one reports its placeholder size instead.
+    const root = getScrollParent(rowsRef.current)
+    const viewTop = root ? root.getBoundingClientRect().top : 0
+    const viewBottom = root ? viewTop + root.clientHeight : window.innerHeight
+    const row = Array.from(rowsRef.current.querySelectorAll('[data-track-row]')).find((el) => {
+      const r = el.getBoundingClientRect()
+      return r.top >= viewTop && r.bottom <= viewBottom
+    })
+    const h = row?.offsetHeight
+    if (!h) return
+    rowHeightMeasuredRef.current = true
+    const cs = window.getComputedStyle(row)
+    const chrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+      .reduce((sum, k) => sum + (parseFloat(cs[k]) || 0), 0)
+    setRowContentHeight(Math.max(0, h - chrome))
+    if (Math.abs(h - rowHeightRef.current) > 0.5) {
+      rowHeightRef.current = h
+      setRowHeight(h)
+      updateWindowFromScroll()
+    }
+  })
+
+  useEffect(() => {
+    if (!isLargeList || !rowsRef.current) return
+    const root = getScrollParent(rowsRef.current)
+    const target = root || window
+    let frame = 0
+    const onScroll = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        updateWindowFromScroll()
+      })
+    }
+    target.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    // Sync to the current position on mount and whenever the list length
+    // changes -- unless a highlight is still pending, whose effect above owns
+    // the window until it has scrolled its row into view.
+    if (!highlightTrackId || handledHighlightRef.current === highlightKey) {
+      updateWindowFromScroll()
+    }
+    return () => {
+      target.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      if (frame) cancelAnimationFrame(frame)
+    }
+    // highlight deps intentionally omitted: only re-subscribe when the list
+    // itself changes, not on every highlight request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLargeList, updateWindowFromScroll])
 
   useEffect(() => {
     if (!ghostTrack) {
@@ -509,7 +610,12 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         <span className="text-right">Time</span>
       </div>
 
+      <div ref={rowsRef}>
+      {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: topSpacerHeight }} />}
       {visibleTracks.map((track, i) => {
+        // Position in the full list -- differs from `i` once the window
+        // doesn't start at 0, and is what the row number and key must use.
+        const trackIndex = windowStart + i
         const isCurrent = currentTrack?.id === track.id
         const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
         const isFlashing = !!flash && track.id === flash.id
@@ -528,8 +634,9 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         } : {}
 
         return (
-          <RowComponent key={`${track.id}-${i}`}
+          <RowComponent key={`${track.id}-${trackIndex}`}
             {...motionProps}
+            data-track-row
             ref={isHighlighted ? highlightRowRef : undefined}
             draggable={!!playlistId}
             onDragStart={(e) => handleDragStart(e, track)}
@@ -541,7 +648,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onMouseLeave={() => setHoveredId(null)}
             onClick={(e) => handleTrackClick(track, e)}
             onDoubleClick={e => handlePlay(track, e)}
-            style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: '44px' }}
+            style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
             className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
           >
             {playlistId && (
@@ -559,7 +666,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 <button onClick={e => handlePlay(track, e)} className={isCurrent ? 'text-accent' : 'text-white'}>
                   {isCurrent && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
                 </button>
-              ) : <span className={isCurrent ? 'text-accent' : ''}>{i + 1}</span>}
+              ) : <span className={isCurrent ? 'text-accent' : ''}>{trackIndex + 1}</span>}
             </div>
 
             <div className="min-w-0 flex items-center gap-2.5">
@@ -663,16 +770,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         )
       })}
 
-      {isLargeList && visibleCount < mergedTracks.length && (
-        <div ref={loaderRef} className="flex justify-center pt-4">
-          <button
-            onClick={() => setVisibleCount(v => Math.min(v + LARGE_LIST_STEP, mergedTracks.length))}
-            className="px-4 py-2 rounded-xl bg-card border border-border text-sm text-muted hover:text-white hover:border-accent/30 transition-colors"
-          >
-            Show More ({mergedTracks.length - visibleCount} left)
-          </button>
-        </div>
-      )}
+      {bottomSpacerHeight > 0 && <div aria-hidden="true" style={{ height: bottomSpacerHeight }} />}
+      </div>
       
       <TrackEditModal 
         track={editingTrack} 

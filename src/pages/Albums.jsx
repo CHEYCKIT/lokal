@@ -19,8 +19,46 @@ function releaseLabel(type) {
   return 'Album'
 }
 
-function AlbumHero({ album, trackCount, onBack, onPlay }) {
+function artistPath(name) {
+  const slug = String(name || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'unknown'
+  return `/artist/a-${slug}`
+}
+
+function AlbumHero({ album, trackCount, onPlay, onArtist }) {
   const artSrc = getAlbumArtwork(album)
+  const artistName = album.album_artist || album.artists || ''
+  const titleRef = useRef(null)
+
+  useEffect(() => {
+    const node = titleRef.current
+    if (!node) return
+
+    const fitTitle = () => {
+      const desktop = window.matchMedia('(min-width: 768px)').matches
+      let size = desktop ? 48 : 30
+      const minSize = desktop ? 22 : 20
+      node.style.fontSize = `${size}px`
+
+      while (size > minSize && node.scrollWidth > node.clientWidth) {
+        size -= 1
+        node.style.fontSize = `${size}px`
+      }
+    }
+
+    fitTitle()
+    const container = node.parentElement
+    const observer = new ResizeObserver(fitTitle)
+    if (container) observer.observe(container)
+    window.addEventListener('resize', fitTitle)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', fitTitle)
+    }
+  }, [album.title])
 
   return (
     <div className="relative overflow-hidden rounded-[2.25rem] border border-border bg-surface/80">
@@ -34,16 +72,9 @@ function AlbumHero({ album, trackCount, onBack, onPlay }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8">
-        <div className="justify-self-start space-y-4">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white"
-          >
-            <ArrowLeft size={14} />
-            Back
-          </button>
-          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[220px] md:w-[220px]">
+      <div className="relative grid gap-6 p-6 md:grid-cols-[280px_minmax(0,1fr)] md:items-stretch md:p-8">
+        <div className="justify-self-start">
+          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[280px] md:w-[280px]">
             {artSrc ? (
               <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
             ) : (
@@ -53,14 +84,26 @@ function AlbumHero({ album, trackCount, onBack, onPlay }) {
             )}
           </div>
         </div>
-        <div className="min-w-0 self-stretch rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl">
+        <div className="min-w-0 overflow-hidden rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl md:h-[280px]">
           <p className="text-[11px] font-display uppercase tracking-[0.34em] text-white/55">{releaseLabel(album.release_type)}</p>
-          <h1 className="mt-3 text-3xl font-display uppercase tracking-[0.08em] text-white md:text-5xl">
+          <h1
+            ref={titleRef}
+            className="mt-3 max-w-full truncate overflow-hidden font-display uppercase leading-[0.95] tracking-[0.08em] text-white"
+            style={{ fontSize: 'clamp(1.75rem, 4vw, 3rem)' }}
+          >
             {album.title}
           </h1>
-          <p className="mt-4 truncate text-sm text-white/75 md:text-base">
-            {album.artists || album.album_artist || 'Unknown Artist'}
-          </p>
+          {artistName ? (
+            <button
+              type="button"
+              onClick={onArtist}
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent hover:underline hover:decoration-accent hover:underline-offset-4 md:text-base"
+            >
+              {artistName}
+            </button>
+          ) : (
+            <p className="mt-4 truncate text-sm text-white/45 md:text-base">Unknown Artist</p>
+          )}
           <p className="mt-3 text-xs uppercase tracking-[0.24em] text-white/45">
             {trackCount} tracks{album.year ? ` • ${album.year}` : ''}
           </p>
@@ -240,12 +283,17 @@ export default function Albums() {
   useEffect(() => {
     if (!albums.length) return
     const incomingAlbum = location.state?.album
-    if (!incomingAlbum) return
+
+    if (!incomingAlbum) {
+      setSelectedAlbum(null)
+      setHighlightTrackId(null)
+      return
+    }
+
     const match = albums.find((album) => album.title === incomingAlbum.title && (!incomingAlbum.album_artist || album.album_artist === incomingAlbum.album_artist))
     setSelectedAlbum(match || incomingAlbum)
     setHighlightTrackId(location.state?.highlightTrackId || null)
-    navigate(location.pathname, { replace: true, state: {} })
-  }, [albums, location.pathname, location.state, navigate])
+  }, [albums, location.pathname, location.state])
 
   const showSingles = settings.show_singles_in_albums !== '0'
   const separateByType = settings.separate_album_types !== '0'
@@ -334,6 +382,13 @@ export default function Albums() {
   }, [hasMore, loadingMore, sectionSource])
 
   useEffect(() => {
+    if (!selectedAlbum?.title) return
+    const root = document.querySelector('main.flex-1.overflow-y-auto')
+    if (!root) return
+    root.scrollTop = 0
+  }, [selectedAlbum?.title])
+
+  useEffect(() => {
     if (!selectedAlbum?.title) {
       setAlbumTracks([])
       return
@@ -378,6 +433,15 @@ export default function Albums() {
             </p>
           </div>
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            {selectedAlbum && (
+              <button
+                onClick={() => navigate(-1)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-elevated/90 px-3 py-2 text-sm text-white/80 transition-colors hover:border-accent/40 hover:text-white"
+              >
+                <ArrowLeft size={14} />
+                Back
+              </button>
+            )}
             <div className="relative w-full">
               <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -411,8 +475,8 @@ export default function Albums() {
             <AlbumHero
               album={selectedAlbum}
               trackCount={albumTracks.length || selectedAlbum.track_count || 0}
-              onBack={() => setSelectedAlbum(null)}
               onPlay={() => albumTracks.length && playQueue(albumTracks, 0, albumContext)}
+              onArtist={() => navigate(artistPath(selectedAlbum.album_artist || selectedAlbum.artists))}
             />
 
             <div className="overflow-hidden rounded-[1.75rem] border border-border bg-surface/80">
@@ -510,7 +574,9 @@ export default function Albums() {
                     <AlbumCard
                       key={`${group.key}-${album.title}-${album.album_artist || album.artists || 'release'}-${index}`}
                       album={album}
-                      onClick={() => setSelectedAlbum(album)}
+                      onClick={() => {
+                        navigate('/albums', { state: { album } })
+                      }}
                       onPlay={() => playAlbumRelease(album)}
                     />
                   ))}
