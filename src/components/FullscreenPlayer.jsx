@@ -229,7 +229,15 @@ export default function FullscreenPlayer() {
   // inset-0 z-50" classes, so matching on those instead risked hiding an
   // unrelated, legitimately open overlay.
   useEffect(() => {
-    if (showFullscreen) return
+    if (showFullscreen) {
+      // Reopening before the exit animation finishes can make Framer Motion
+      // reuse the same overlay DOM node, and React doesn't manage the inline
+      // visibility set below -- clear it or the player reopens invisible.
+      document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
+        el.style.removeProperty('visibility')
+      })
+      return
+    }
     setFullscreenPanel('none')
     setShowSearch(false)
     document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
