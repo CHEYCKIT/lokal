@@ -278,7 +278,7 @@ export default function Sidebar() {
         <button 
           data-tour="artists"
           onClick={() => nav('/artists')}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${loc.pathname === '/artists' ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive('/artists') ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
           <Users size={15} /> Artists
         </button>
       </nav>
