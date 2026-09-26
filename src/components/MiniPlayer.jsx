@@ -224,7 +224,7 @@ export default function MiniPlayer({ windowed = false }) {
       exit={{ opacity: 0, y: 20 }}
       ref={miniRootRef}
       className={windowed
-        ? 'relative w-full bg-transparent border border-border rounded-none shadow-none overflow-hidden'
+        ? 'relative w-full shrink-0 bg-transparent border border-border rounded-none shadow-none overflow-hidden'
         : 'fixed bottom-4 right-4 w-72 bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden z-50'}
     >
       {windowed && (

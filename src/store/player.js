@@ -14,6 +14,44 @@ let miniModeFallbackPrevSize = null
 // `next` after any prior toggle has actually finished.
 let miniModeToggleChain = Promise.resolve()
 
+// Shared by setExclusiveSidePanels (the user's Settings toggle) and
+// hydrateExclusiveSidePanels (the backend value at boot): the panel
+// visibility to apply when switching Side Panels mode to `value`. Carries
+// over whichever panel is currently open instead of just dropping it.
+function sidePanelModeTransition(s, value) {
+  // Switching to merged mode: fold whichever standalone panel is visible
+  // into the single panel instead of just dropping it. Queue and Lyrics can
+  // both be open at once in independent mode (they're fully separate panels
+  // there); the merged panel only has one slot, so prefer Queue if both
+  // happen to be open.
+  if (value && (s.showQueue || s.showLyricsPanel)) {
+    return {
+      exclusiveSidePanels: value,
+      showQueue: false,
+      showLyricsPanel: false,
+      showRightSidebar: true,
+      sidePanelView: s.showQueue ? 'queue' : 'lyrics',
+    }
+  }
+  // Switching to independent mode: reopen a visible merged Queue/Lyrics
+  // overlay as its own standalone panel instead of just dropping it.
+  if (!value && s.showRightSidebar && (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics')) {
+    return {
+      exclusiveSidePanels: value,
+      showQueue: s.sidePanelView === 'queue',
+      showLyricsPanel: s.sidePanelView === 'lyrics',
+      sidePanelView: 'info',
+    }
+  }
+  return {
+    exclusiveSidePanels: value,
+    // Any other stale 'queue'/'lyrics' reference can't be shown as a closed
+    // panel in either mode -- fall back to info so neither renderer starts
+    // on a view it doesn't own.
+    sidePanelView: (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics') ? 'info' : s.sidePanelView,
+  }
+}
+
 function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
 }
@@ -651,50 +689,24 @@ export const usePlayerStore = create((set, get) => ({
   // left stuck open in the old one.
   setExclusiveSidePanels: (value) => {
     try { localStorage.setItem('lokal-exclusive-panels', value ? '1' : '0') } catch {}
-    set(s => {
-      // Switching to merged mode: fold whichever standalone panel is
-      // visible into the single panel instead of just dropping it. Queue
-      // and Lyrics can both be open at once in independent mode (they're
-      // fully separate panels there); the merged panel only has one slot,
-      // so prefer Queue if both happen to be open.
-      if (value && (s.showQueue || s.showLyricsPanel)) {
-        return {
-          exclusiveSidePanels: value,
-          exclusiveSidePanelsUserSet: true,
-          showQueue: false,
-          showLyricsPanel: false,
-          showRightSidebar: true,
-          sidePanelView: s.showQueue ? 'queue' : 'lyrics',
-        }
-      }
-      // Switching to independent mode: reopen a visible merged Queue/Lyrics
-      // overlay as its own standalone panel instead of just dropping it.
-      if (!value && s.showRightSidebar && (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics')) {
-        return {
-          exclusiveSidePanels: value,
-          exclusiveSidePanelsUserSet: true,
-          showQueue: s.sidePanelView === 'queue',
-          showLyricsPanel: s.sidePanelView === 'lyrics',
-          sidePanelView: 'info',
-        }
-      }
-      return {
-        exclusiveSidePanels: value,
-        exclusiveSidePanelsUserSet: true,
-        // Any other stale 'queue'/'lyrics' reference can't be shown as a
-        // closed panel in either mode -- fall back to info so neither
-        // renderer starts on a view it doesn't own.
-        sidePanelView: (s.sidePanelView === 'queue' || s.sidePanelView === 'lyrics') ? 'info' : s.sidePanelView,
-      }
-    })
+    set(s => ({
+      ...sidePanelModeTransition(s, value),
+      exclusiveSidePanelsUserSet: true,
+    }))
   },
   // Syncs the backend-persisted Side Panels setting in (called once at app
   // boot, and again when Settings mounts). A no-op once the user has made
   // their own live choice this session -- see exclusiveSidePanelsUserSet --
   // so a fetch that resolves late can't overwrite a fresher selection.
-  hydrateExclusiveSidePanels: (value) => set(s => (
-    s.exclusiveSidePanelsUserSet ? {} : { exclusiveSidePanels: value }
-  )),
+  // When it does change the mode, it carries open panels over exactly like
+  // the Settings toggle does: the boot-time mode (seeded from localStorage)
+  // can differ from the backend's, and a Queue/Lyrics panel restored or
+  // opened before the fetch resolves would otherwise be left open in a
+  // mode that can't render it.
+  hydrateExclusiveSidePanels: (value) => set(s => {
+    if (s.exclusiveSidePanelsUserSet || s.exclusiveSidePanels === value) return {}
+    return sidePanelModeTransition(s, value)
+  }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setCrossfade: (v) => set({ crossfadeSeconds: v }),
 
