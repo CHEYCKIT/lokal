@@ -715,7 +715,14 @@ export const usePlayerStore = create((set, get) => ({
       if (electron) {
         try {
           if (electron.setMiniMode) {
-            await electron.setMiniMode(next)
+            // The main-process handler resolves false (rather than
+            // rejecting) when there's no window to apply it to -- the
+            // native mode didn't change, so don't commit it to the store.
+            const applied = await electron.setMiniMode(next)
+            if (applied === false) {
+              console.error('Failed to toggle mini player: setMiniMode returned false')
+              return
+            }
           } else if (next) {
             if (electron.getWindowSize) {
               miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
