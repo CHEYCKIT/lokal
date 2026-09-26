@@ -207,7 +207,7 @@ export default function Artist() {
                 return (
                   <motion.button
                     key={album.title}
-                    onClick={() => nav('/albums', { state: { album } })}
+                    onClick={() => nav('/albums', { state: { album, from: location.pathname } })}
                     whileHover={{ scale: 1.02 }}
                     className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
