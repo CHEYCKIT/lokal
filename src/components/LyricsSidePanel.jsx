@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -19,8 +19,18 @@ export function LyricsContent({ onClose }) {
   // localStorage key here that's never written left this permanently false
   // regardless of the actual saved choice.
   const [settings, setSettings] = useState({})
+  // Guards against an in-flight getSettings() from an earlier call
+  // resolving AFTER a later one (this panel can stay mounted across several
+  // 'lokal:settings-saved' events) and overwriting newer settings with
+  // stale ones -- same fix as RightSidebar's own lyrics-settings load.
+  const settingsSeqRef = useRef(0)
   useEffect(() => {
-    const loadSettings = () => api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    const loadSettings = () => {
+      const seq = ++settingsSeqRef.current
+      api.getSettings()
+        .then(s => { if (seq === settingsSeqRef.current) setSettings(s || {}) })
+        .catch(() => {})
+    }
     loadSettings()
     // Refresh in place if the setting is changed in Settings while this
     // panel stays mounted, instead of only picking it up on next mount.
