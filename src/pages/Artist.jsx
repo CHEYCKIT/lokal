@@ -49,7 +49,12 @@ export default function Artist() {
   useEffect(() => {
     if (!artist || !highlightTrackId) return
     const inTopTracks = artist.topTracks?.some((item) => String(item.id) === String(highlightTrackId))
-    if (inTopTracks) return
+    if (inTopTracks) {
+      // The Popular row owns this highlight -- drop any Track section left
+      // over from an earlier albumless-track request.
+      setStandaloneTrack(null)
+      return
+    }
     const track = artist.tracks?.find((item) => String(item.id) === String(highlightTrackId))
     if (!track?.album) {
       // No Releases card owns this track either, so render it in its own
