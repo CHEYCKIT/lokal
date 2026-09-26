@@ -50,9 +50,19 @@ export default function RightSidebar() {
   // FullscreenPlayer/LyricsFullscreen's did -- refetch whenever the Lyrics
   // overlay is opened so a change made in Settings takes effect right away.
   const [settings, setSettings] = useState({})
+  // Guards against an in-flight getSettings() from an earlier call
+  // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
+  // 'lokal:settings-saved' fires again, while the first request is still
+  // pending) and overwriting the newer settings with stale ones.
+  const settingsSeqRef = useRef(0)
   useEffect(() => {
     if (sidePanelView !== 'lyrics') return
-    const loadSettings = () => api.getSettings().then(s => setSettings(s || {})).catch(() => {})
+    const loadSettings = () => {
+      const seq = ++settingsSeqRef.current
+      api.getSettings()
+        .then(s => { if (seq === settingsSeqRef.current) setSettings(s || {}) })
+        .catch(() => {})
+    }
     loadSettings()
     // Covers the case where the sidebar is *already* open to Lyrics when the
     // user saves in Settings -- sidePanelView itself never changes then, so
