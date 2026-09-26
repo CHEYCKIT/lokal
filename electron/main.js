@@ -182,24 +182,13 @@ app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaS
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
 const NORMAL_MIN_HEIGHT = 640
-// The mini player's controls row (icon buttons + transport controls +
-// waveform + volume slider, all fixed-width) needs ~400px, and the four
-// stacked rows (header, artwork/title, progress bar, controls) need ~240px
-// -- 360x220 was narrower and shorter than the content it has to show,
-// so the right edge (volume slider) and bottom edge got clipped.
-//
-// The mini player used to be resizable down to a minimum size, but
-// MiniPlayer.jsx's bottom controls row wraps onto two lines once the window
-// gets narrower than it can fit on one line (see the flex-wrap comment
-// there), and letting the window get short enough to also clip that wrapped
-// row (measured need: ~275px tall at the narrowest allowed width, vs. the
-// 220px minimum height that used to be set) made resizing it down look
-// broken. Rather than chase the right minimum size for every wrapped
-// combination, the mini player is now fixed at exactly its default size --
-// see setMiniMode below, which locks both the minimum AND maximum size to
-// this and turns resizing off entirely.
+// Mini-player width stays fixed, while height starts at the measured
+// default-scale content height and is then adjusted by MiniPlayer whenever
+// its actual content size changes (for example from text scaling/wrapping).
 const MINI_DEFAULT_WIDTH = 420
-const MINI_DEFAULT_HEIGHT = 300
+const MINI_DEFAULT_HEIGHT = 246
+const MINI_MIN_HEIGHT = 120
+const MINI_MAX_HEIGHT = 800
 // Electron 29.1.0 has a macOS bug where setMaximumSize(0, 0) -- the
 // documented way to remove a maximum -- doesn't actually lift it, leaving
 // the window locked at whatever size it had when mini mode was toggled off.
@@ -476,13 +465,10 @@ ipcMain.handle('window:setMiniMode', (_, enabled) => {
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     mainWindow.show()
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    // Fixed-size, not resizable: the mini player's layout was only ever
-    // designed for one size, and letting it be dragged to anything smaller
-    // wrapped its controls row onto a second line the window wasn't tall
-    // enough for (see the constants above). Locking min/max to the exact
-    // same size is a second layer under setResizable(false), since some
-    // window managers still allow a "non-resizable" window to be resized
-    // (e.g. via a keyboard shortcut) without both being set.
+    // Keep the width fixed and seed the height with the measured default
+    // content height. MiniPlayer reports its actual content height after
+    // mounting and whenever its layout changes; window:fitMiniHeight then
+    // adjusts only the height while keeping the current position.
     mainWindow.setResizable(false)
     mainWindow.setMinimumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
     mainWindow.setMaximumSize(MINI_DEFAULT_WIDTH, MINI_DEFAULT_HEIGHT)
@@ -504,6 +490,25 @@ ipcMain.handle('window:setMiniMode', (_, enabled) => {
     if (miniModeRestoreState.wasMaximized) mainWindow.maximize()
   }
   miniModeRestoreState = null
+  return true
+})
+ipcMain.handle('window:fitMiniHeight', (_, rawHeight) => {
+  if (!mainWindow || !miniModeEnabled) return false
+  const numericHeight = Number(rawHeight)
+  if (!Number.isFinite(numericHeight)) return false
+
+  const height = Math.round(Math.max(MINI_MIN_HEIGHT, Math.min(MINI_MAX_HEIGHT, numericHeight)))
+  const bounds = mainWindow.getBounds()
+  if (bounds.width === MINI_DEFAULT_WIDTH && bounds.height === height) return true
+
+  mainWindow.setMinimumSize(MINI_DEFAULT_WIDTH, height)
+  mainWindow.setMaximumSize(MINI_DEFAULT_WIDTH, height)
+  mainWindow.setBounds({
+    ...bounds,
+    width: MINI_DEFAULT_WIDTH,
+    height,
+  }, true)
+  enforceMiniTop()
   return true
 })
 ipcMain.handle('window:getSize', () => {
