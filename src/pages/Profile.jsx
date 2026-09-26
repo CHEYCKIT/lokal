@@ -475,8 +475,8 @@ export default function Profile() {
               type="button"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              onClick={() => topArtistProfile?.id && nav(`/artist/a-${String(topArtistProfile.name || topArtist).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')`)}
-              disabled={!topArtistProfile?.id && !topArtist}
+              onClick={() => topArtist && navigateToTrackArtist(nav, { artist: topArtist }, keepCommaArtists)}
+              disabled={!stats?.topArtists?.[0]?.artist}
               className="flex min-h-[132px] w-full items-center gap-4 rounded-2xl border border-border bg-elevated p-5 text-left transition-colors hover:border-accent/30 disabled:cursor-default"
             >
               <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
