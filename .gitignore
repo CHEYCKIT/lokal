@@ -12,7 +12,6 @@ yarn-error.log*
 /data/
 data
 bin/
-obj/
 src/photos/
 *.exe
 *.msi
