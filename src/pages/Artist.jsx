@@ -15,6 +15,11 @@ export default function Artist() {
   const [artist, setArtist] = useState(null)
   const [allArtists, setAllArtists] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
+  // A highlighted track that has no album AND isn't in "Popular" -- e.g. a
+  // loose single -- has no Releases card to open and no Popular row to
+  // scroll to, so there's nothing for the effect below to select. Without
+  // this, that track silently fails to highlight with no visible fallback.
+  const [standaloneTrack, setStandaloneTrack] = useState(null)
   const [showManage, setShowManage] = useState(false)
   const { playQueue } = usePlayerStore()
   const artistContext = makeArtistContext(id, artist?.name)
@@ -46,7 +51,14 @@ export default function Artist() {
     const inTopTracks = artist.topTracks?.some((item) => String(item.id) === String(highlightTrackId))
     if (inTopTracks) return
     const track = artist.tracks?.find((item) => String(item.id) === String(highlightTrackId))
-    if (!track?.album) return
+    if (!track?.album) {
+      // No Releases card owns this track either, so render it in its own
+      // ad-hoc section instead of leaving the highlight request with
+      // nowhere to land.
+      setStandaloneTrack(track || null)
+      return
+    }
+    setStandaloneTrack(null)
     // Carry the track's own album_artist along (falling back to its artist,
     // same as the backend's own COALESCE), not this page's display artist --
     // see the AlbumTracks fix below for why that distinction matters.
@@ -163,6 +175,13 @@ export default function Artist() {
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
             <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+          </section>
+        )}
+
+        {standaloneTrack && (
+          <section>
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Track</h2>
+            <TrackList tracks={[standaloneTrack]} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
 
