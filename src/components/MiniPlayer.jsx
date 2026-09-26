@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -39,6 +39,7 @@ export default function MiniPlayer({ windowed = false }) {
   }, [])
 
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
+  const miniRootRef = useRef(null)
 
   // The native window resize/always-on-top toggle used to happen here, in a
   // mount/unmount effect keyed on showMiniPlayer -- but that runs AFTER
@@ -49,6 +50,35 @@ export default function MiniPlayer({ windowed = false }) {
   // toggleMiniPlayer (src/store/player.js) now awaits the resize BEFORE
   // flipping showMiniPlayer, so the window is already correctly sized by
   // the time this component (or the full app UI) actually mounts.
+
+  useEffect(() => {
+    if (!windowed || !api.isElectron || !window.electron?.fitMiniHeight || !miniRootRef.current) return
+
+    const root = miniRootRef.current
+    let frame = 0
+    let lastHeight = 0
+
+    const measure = () => {
+      frame = 0
+      const height = Math.ceil(root.getBoundingClientRect().height)
+      if (!height || height === lastHeight) return
+      lastHeight = height
+      window.electron.fitMiniHeight(height).catch(() => {})
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    })
+
+    observer.observe(root)
+    measure()
+
+    return () => {
+      observer.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [windowed])
 
   useEffect(() => {
     if (!currentTrack?.id) {
@@ -192,8 +222,9 @@ export default function MiniPlayer({ windowed = false }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
+      ref={miniRootRef}
       className={windowed
-        ? 'relative h-full w-full bg-transparent border border-border rounded-none shadow-none overflow-hidden'
+        ? 'relative w-full bg-transparent border border-border rounded-none shadow-none overflow-hidden'
         : 'fixed bottom-4 right-4 w-72 bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden z-50'}
     >
       {windowed && (
