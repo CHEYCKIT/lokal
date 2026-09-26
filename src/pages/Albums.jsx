@@ -19,8 +19,17 @@ function releaseLabel(type) {
   return 'Album'
 }
 
-function AlbumHero({ album, trackCount, onBack, onPlay }) {
+function artistPath(name) {
+  const slug = String(name || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'unknown'
+  return `/artist/a-${slug}`
+}
+
+function AlbumHero({ album, trackCount, onBack, onPlay, onArtist }) {
   const artSrc = getAlbumArtwork(album)
+  const artistName = album.album_artist || album.artists || ''
 
   return (
     <div className="relative overflow-hidden rounded-[2.25rem] border border-border bg-surface/80">
@@ -58,9 +67,17 @@ function AlbumHero({ album, trackCount, onBack, onPlay }) {
           <h1 className="mt-3 text-3xl font-display uppercase tracking-[0.08em] text-white md:text-5xl">
             {album.title}
           </h1>
-          <p className="mt-4 truncate text-sm text-white/75 md:text-base">
-            {album.artists || album.album_artist || 'Unknown Artist'}
-          </p>
+          {artistName ? (
+            <button
+              type="button"
+              onClick={onArtist}
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm text-white/75 transition-colors hover:text-white hover:underline md:text-base"
+            >
+              {artistName}
+            </button>
+          ) : (
+            <p className="mt-4 truncate text-sm text-white/45 md:text-base">Unknown Artist</p>
+          )}
           <p className="mt-3 text-xs uppercase tracking-[0.24em] text-white/45">
             {trackCount} tracks{album.year ? ` • ${album.year}` : ''}
           </p>
@@ -413,6 +430,7 @@ export default function Albums() {
               trackCount={albumTracks.length || selectedAlbum.track_count || 0}
               onBack={() => setSelectedAlbum(null)}
               onPlay={() => albumTracks.length && playQueue(albumTracks, 0, albumContext)}
+              onArtist={() => navigate(artistPath(selectedAlbum.album_artist || selectedAlbum.artists))}
             />
 
             <div className="overflow-hidden rounded-[1.75rem] border border-border bg-surface/80">
