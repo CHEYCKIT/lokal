@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Play, Music, Settings, Camera } from 'lucide-react'
+import { ArrowLeft, Play, Music, Settings, Camera } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -142,6 +142,13 @@ export default function Artist() {
   return (
     <div className="pb-8">
       <div className="relative h-56 overflow-hidden">
+        <button
+          onClick={() => nav(-1)}
+          className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white md:left-8 md:top-5"
+        >
+          <ArrowLeft size={14} />
+          Back
+        </button>
         {imgSrc ? <img src={imgSrc} className="h-full w-full object-cover opacity-40" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
         <div className="absolute bottom-5 left-8 flex items-end gap-5">
