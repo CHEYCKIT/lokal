@@ -43,7 +43,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 pt-16 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8 md:pt-20">
+      <div className="relative grid gap-6 p-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-end md:p-8">
         <div className="justify-self-start">
           <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[220px] md:w-[220px]">
             {artSrc ? (
@@ -64,7 +64,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             <button
               type="button"
               onClick={onArtist}
-              className="mt-4 inline-flex max-w-full truncate text-left text-sm text-white/75 transition-colors hover:text-white hover:underline md:text-base"
+              className="mt-4 inline-flex max-w-full items-center rounded-md bg-white/5 px-2 py-1 text-left text-sm font-medium text-white/85 transition-colors hover:bg-white/10 hover:text-white md:text-base"
             >
               {artistName}
             </button>
