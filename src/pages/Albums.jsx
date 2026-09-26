@@ -346,6 +346,13 @@ export default function Albums() {
   }, [hasMore, loadingMore, sectionSource])
 
   useEffect(() => {
+    if (!selectedAlbum?.title) return
+    const root = document.querySelector('main.flex-1.overflow-y-auto')
+    if (!root) return
+    root.scrollTop = 0
+  }, [selectedAlbum?.title])
+
+  useEffect(() => {
     if (!selectedAlbum?.title) {
       setAlbumTracks([])
       return
