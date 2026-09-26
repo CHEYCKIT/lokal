@@ -52,6 +52,13 @@ export default function Sidebar() {
     ? [{ icon: User, label: 'Profile', path: '/profile' }, ...NAV]
     : NAV
 
+  const isNavItemActive = (path) => {
+    if (path === '/artists') {
+      return loc.pathname === '/artists' || loc.pathname.startsWith('/artist/')
+    }
+    return loc.pathname === path
+  }
+
   const loadPlaylists = () => {
     api.getPlaylists(user?.id).then(p => setPlaylists(Array.isArray(p) ? p : []))
   }
@@ -253,7 +260,7 @@ export default function Sidebar() {
             key={path} 
             data-tour={path === '/search' ? 'search' : path === '/library' ? 'library' : path === '/downloader' ? 'downloader' : path === '/settings' ? 'settings' : null}
             onClick={() => nav(path)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${loc.pathname === path ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive(path) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
             <Icon size={15} />
             <span className="flex-1 text-left">{label}</span>
             {path === '/recap' && showRecapBadge && (
