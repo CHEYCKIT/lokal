@@ -1187,7 +1187,7 @@ export default function Settings() {
   const usingDefaultDiscordId = settings.discord_use_default_app_id !== '0'
 
   return (
-    <div ref={rootRef} className="p-6 max-w-2xl space-y-6 pb-10">
+    <div ref={rootRef} className="p-6 space-y-6 pb-10">
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
