@@ -59,6 +59,7 @@ export default function Search() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const [isSearchStarted, setIsSearchStarted] = useState(false)
   const searchInputRef = useRef(null)
+  const recentTrackSelectionRef = useRef(0)
   const nav = useNavigate()
   const { playQueue, queue, playTrack } = usePlayerStore()
 
@@ -155,13 +156,23 @@ export default function Search() {
     if (item.type === 'artist') {
       nav(`/artist/${item.id}`)
     } else if (item.type === 'track') {
+      const selectionId = ++recentTrackSelectionRef.current
       const trackIndex = queue.findIndex(t => t.id === item.id)
       if (trackIndex >= 0) {
         playQueue(queue, trackIndex)
         return
       }
 
-      const matches = await api.getTracks({ id: item.id, limit: 1 })
+      let matches
+      try {
+        matches = await api.getTracks({ id: item.id, limit: 1 })
+      } catch (error) {
+        console.error('Failed to load recent track', error)
+        return
+      }
+
+      if (selectionId !== recentTrackSelectionRef.current) return
+
       const track = Array.isArray(matches) ? matches[0] : null
       if (track) {
         playTrack(track, [track])
