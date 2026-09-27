@@ -50,6 +50,12 @@ function readInfo(filePath) {
   }
 }
 
+/** The front cover if the file says which picture that is, else the first one. */
+function frontCover(T, file) {
+  const pictures = file.tag.pictures || []
+  return pictures.find(p => p?.type === T.PictureType.FrontCover) || pictures[0] || null
+}
+
 function setPrivateField(T, file, name, value) {
   const types = T.TagTypes
   const path = String(file.name || '').toLowerCase()
@@ -79,7 +85,7 @@ function setPrivateField(T, file, name, value) {
 
 async function squareCover(T, file) {
   const s = sharp()
-  const picture = file.tag.pictures?.[0]
+  const picture = frontCover(T, file)
   if (!s || !picture?.data) return false
   const bytes = Buffer.from(picture.data.toByteArray ? picture.data.toByteArray() : picture.data)
   const meta = await s(bytes).metadata()
@@ -166,7 +172,7 @@ async function coverThumbnail(filePath, size = 96) {
   let bytes = null
   try {
     file = T.File.createFromPath(filePath)
-    const picture = file.tag.pictures?.[0]
+    const picture = frontCover(T, file)
     if (picture?.data) bytes = Buffer.from(picture.data.toByteArray ? picture.data.toByteArray() : picture.data)
   } catch { return null } finally {
     try { file?.dispose() } catch {}
