@@ -23,7 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
-const { readInfo } = require('./tagger')
+const { readInfo, coverThumbnail } = require('./tagger')
 
 const ACTIVE = new Set(['queued', 'downloading'])
 const RETRY_DELAYS_MS = [5000, 20000]
@@ -765,6 +765,13 @@ class DownloadManager {
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
         if (done.lyrics) job.lyricsCount = (job.lyricsCount || 0) + 1
+        // The row's picture: the first finished file's own (square) cover.
+        // Soulseek and playlist downloads have nothing else to show, and it
+        // beats a 16:9 video frame for singles too.
+        if (!String(job.thumbnail || '').startsWith('data:')) {
+          const thumb = await coverThumbnail(finalPath)
+          if (thumb) job.thumbnail = thumb
+        }
         job.outputLines.push(done.lyrics
           ? `[Lokal] Lyrics added (${done.lyrics === 'syllable' ? 'word by word' : done.lyrics === 'line' ? 'line by line' : 'plain text'}, ${done.lyricsSource}): ${name}`
           : `[Lokal] No lyrics found for ${name}`)

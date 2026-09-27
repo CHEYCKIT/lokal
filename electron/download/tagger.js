@@ -153,4 +153,29 @@ async function applyTags(filePath, changes = {}) {
   return done
 }
 
-module.exports = { readInfo, applyTags, stripArtistPrefix }
+/**
+ * A small square picture of the file's cover, as a data: URL, for the
+ * download list (works the same on desktop and in a browser). Null when the
+ * file has no cover.
+ */
+async function coverThumbnail(filePath, size = 96) {
+  const T = lib()
+  const s = sharp()
+  if (!T || !s) return null
+  let file
+  let bytes = null
+  try {
+    file = T.File.createFromPath(filePath)
+    const picture = file.tag.pictures?.[0]
+    if (picture?.data) bytes = Buffer.from(picture.data.toByteArray ? picture.data.toByteArray() : picture.data)
+  } catch { return null } finally {
+    try { file?.dispose() } catch {}
+  }
+  if (!bytes?.length) return null
+  try {
+    const jpeg = await s(bytes).resize(size, size, { fit: 'cover' }).jpeg({ quality: 78 }).toBuffer()
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`
+  } catch { return null }
+}
+
+module.exports = { readInfo, applyTags, stripArtistPrefix, coverThumbnail }
