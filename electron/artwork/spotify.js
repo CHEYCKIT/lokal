@@ -269,6 +269,13 @@ function parseCanvases(buf, uri) {
   return pick && /^https:\/\//.test(pick.url) && /\.mp4(?:[?#]|$)/i.test(pick.url) ? pick.url : null
 }
 
+/** Printable hints of what a canvas answer held (URLs' hosts/extensions), without dumping it. */
+function summarize(buf) {
+  const text = buf.toString('latin1')
+  const urls = [...new Set((text.match(/https:\/\/[^"'\s\x00-\x1F]+/g) || []).map(u => { try { const x = new URL(u); return x.host + (x.pathname.match(/\.[a-z0-9]{2,5}$/i)?.[0] || '') } catch { return '?' } }))]
+  return urls.length ? urls.slice(0, 5).join(', ') : 'no links'
+}
+
 // ---------------------------------------------------------------- lookup
 
 async function request(url, opts, timeoutMs = 12000) {
@@ -282,24 +289,62 @@ function authFailed(status) {
   return status === 401 || status === 429 || status >= 500
 }
 
-async function findTrackUri(t, { title, artist, album }, { norm, cleanTitle, artistsMatch, splitFirstArtist }) {
+const PATHFINDER_HASH = 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428' // searchTracks, as BitChord uses it
+
+function pickTrack(items, { title, artist, album }, { norm, cleanTitle, artistsMatch }) {
   const wantTitle = norm(cleanTitle(title))
+  // Spotify appends " - Remastered 2011" etc. to titles; compare without it.
+  const bare = s => norm(String(s || '').replace(/\s+-\s+.*$/, ''))
+  const candidates = items.filter(it => (norm(it.name) === wantTitle || bare(it.name) === wantTitle) && artistsMatch(artist, it.artists))
+  const wantAlbum = norm(album)
+  const exact = wantAlbum ? candidates.find(it => norm(it.album) === wantAlbum) : null
+  // Canvases belong to the track, and the single and the album cut usually
+  // share one -- so a title+artist match on another release still counts.
+  return (exact || candidates[0]) || null
+}
+
+/** The Web API search (what the public API offers). */
+async function searchRest(t, { title, artist }, { cleanTitle, splitFirstArtist }) {
   const q = `track:${cleanTitle(title)} artist:${splitFirstArtist(artist)}`
   const res = await request(`https://api.spotify.com/v1/search?type=track&limit=10&q=${encodeURIComponent(q)}`, {
     headers: { Authorization: `Bearer ${t.accessToken}`, Accept: 'application/json', 'User-Agent': UA },
-  })
-  if (!res.ok) { if (authFailed(res.status)) throw new TransientError(`Spotify search HTTP ${res.status}`); return null }
+  }).catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
+  if (!res.ok) { console.log(`[spotify-canvas] search (Web API) HTTP ${res.status}`); if (res.status === 401) tokens = null; return null }
   const items = (await res.json())?.tracks?.items || []
-  // Spotify appends " - Remastered 2011" etc. to titles; compare without it.
-  const bare = s => norm(String(s || '').replace(/\s+-\s+.*$/, ''))
-  const candidates = items.filter(it =>
-    (norm(it.name) === wantTitle || bare(it.name) === wantTitle)
-    && artistsMatch(artist, (it.artists || []).map(a => a.name)))
-  const wantAlbum = norm(album)
-  const exact = wantAlbum ? candidates.find(it => norm(it.album?.name) === wantAlbum) : null
-  // Canvases belong to the track, and the single and the album cut usually
-  // share one -- so a title+artist match on another release still counts.
-  return (exact || candidates[0])?.uri || null
+  return items.map(it => ({ uri: it.uri, name: it.name, artists: (it.artists || []).map(a => a.name), album: it.album?.name }))
+}
+
+/** The web player's own search (Pathfinder), which BitChord tries first. */
+async function searchPathfinder(t, { title, artist, album }, { cleanTitle }) {
+  const variables = { searchTerm: [cleanTitle(title), artist, album].filter(Boolean).join(' '), offset: 0, limit: 10, numberOfTopResults: 5, includeAudiobooks: false, includePreReleases: false }
+  const extensions = { persistedQuery: { version: 1, sha256Hash: PATHFINDER_HASH } }
+  const url = `https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchTracks&variables=${encodeURIComponent(JSON.stringify(variables))}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`
+  const headers = { Authorization: `Bearer ${t.accessToken}`, Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
+  if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
+  const res = await request(url, { headers }).catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
+  if (!res.ok) { console.log(`[spotify-canvas] search (web player) HTTP ${res.status}`); return null }
+  const json = await res.json().catch(() => null)
+  const items = json?.data?.searchV2?.tracksV2?.items || []
+  return items.map(x => x?.item?.data).filter(Boolean).map(d => ({
+    uri: d.uri, name: d.name,
+    artists: (d.artists?.items || []).map(a => a?.profile?.name).filter(Boolean),
+    album: d.albumOfTrack?.name,
+  }))
+}
+
+async function findTrackUri(t, track, helpers) {
+  const label = `"${track.title}" by ${track.artist}`
+  let sawResults = false
+  for (const [name, search] of [['Web API', searchRest], ['web player', searchPathfinder]]) {
+    const items = await search(t, track, helpers)
+    if (!items) continue
+    sawResults = true
+    const hit = pickTrack(items, track, helpers)
+    console.log(`[spotify-canvas] search (${name}) for ${label}: ${items.length} results, ${hit ? `matched ${hit.uri} ("${hit.name}" on ${hit.album || '?'})` : `no exact match (top: ${items.slice(0, 3).map(i => `"${i.name}" by ${i.artists.join(', ')}`).join('; ') || 'none'})`}`)
+    if (hit) return hit.uri
+  }
+  if (!sawResults) throw new TransientError('Spotify search failed')
+  return null
 }
 
 async function canvasFor(t, uri) {
@@ -309,8 +354,15 @@ async function canvasFor(t, uri) {
   }
   if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
   const res = await request(CANVAS_URL, { method: 'POST', headers, body: lenField(1, lenField(1, Buffer.from(uri))) })
-  if (!res.ok) { if (authFailed(res.status)) throw new TransientError(`Spotify canvas HTTP ${res.status}`); return null }
-  return parseCanvases(Buffer.from(await res.arrayBuffer()), uri)
+  if (!res.ok) {
+    console.log(`[spotify-canvas] canvas request for ${uri}: HTTP ${res.status}`)
+    if (authFailed(res.status)) throw new TransientError(`Spotify canvas HTTP ${res.status}`)
+    return null
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  const url = parseCanvases(buf, uri)
+  console.log(`[spotify-canvas] canvas for ${uri}: ${url ? 'found a clip' : `none (${buf.length}-byte answer${buf.length && !url ? `, contains: ${summarize(buf)}` : ''})`}`)
+  return url
 }
 
 // One lookup at a time: they share the tokens, and it keeps us polite.
