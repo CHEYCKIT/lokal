@@ -1512,7 +1512,7 @@ export default function App() {
               {!isDownloading && !isReady && (
                 <button
                   onClick={handleStartDownload}
-                  className="flex-1 py-4 bg-accent text-white text-sm font-bold rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
+                  className="flex-1 py-4 bg-accent text-base text-sm font-bold rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
                 >
                   Download Update
                 </button>
