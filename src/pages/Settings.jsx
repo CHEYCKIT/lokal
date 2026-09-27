@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
-import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
+import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
@@ -148,9 +148,69 @@ function getEqPresetKey(gains) {
 let sidePanelsSaveChain = Promise.resolve()
 let sidePanelsSaveSeq = 0
 
+// Settings save as they change. Each change saves only its own keys (saving
+// the whole page's copy used to write back stale values -- e.g. the theme it
+// loaded when opened, undoing a theme picked since). Changes within a short
+// pause are batched, so typing isn't a save per keystroke, and saves are
+// chained so they land in order. Module scope, like the chain above, so a
+// save still pending when Settings closes isn't lost or reordered.
+let settingsSaveChain = Promise.resolve()
+let pendingSettings = {}
+let pendingSettingsTimer = null
+const settingsSaveListeners = new Set()
+const notifySettingsSave = (state) => settingsSaveListeners.forEach(fn => fn(state))
+
+function flushSettings() {
+  clearTimeout(pendingSettingsTimer)
+  pendingSettingsTimer = null
+  const patch = pendingSettings
+  if (!Object.keys(patch).length) return settingsSaveChain
+  pendingSettings = {}
+  notifySettingsSave('saving')
+  settingsSaveChain = settingsSaveChain
+    .catch(() => {})
+    .then(() => api.saveSettings(patch))
+    .then(r => {
+      if (r?.error) throw new Error(r.error)
+      // Mounted panels (sidebar lyrics, now playing...) re-read their settings.
+      window.dispatchEvent(new Event('lokal:settings-saved'))
+      if (!Object.keys(pendingSettings).length) notifySettingsSave('saved')
+    })
+    .catch(e => {
+      // Keep what failed so "Retry" (or the next change) sends it again,
+      // without overwriting anything changed since.
+      pendingSettings = { ...patch, ...pendingSettings }
+      notifySettingsSave({ error: e?.message || 'Save failed' })
+    })
+  return settingsSaveChain
+}
+
+function queueSettings(patch, delay = 400) {
+  pendingSettings = { ...pendingSettings, ...patch }
+  clearTimeout(pendingSettingsTimer)
+  pendingSettingsTimer = setTimeout(flushSettings, delay)
+}
+
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', () => { flushSettings() })
+
 export default function Settings() {
   const [settings, setSettings] = useState({})
-  const [saved, setSaved] = useState(false)
+  // null | 'saving' | 'saved' | { error }
+  const [saveState, setSaveState] = useState(null)
+  useEffect(() => {
+    let hide = null
+    const listener = (state) => {
+      clearTimeout(hide)
+      setSaveState(state)
+      if (state === 'saved') hide = setTimeout(() => setSaveState(null), 1800)
+    }
+    settingsSaveListeners.add(listener)
+    return () => {
+      settingsSaveListeners.delete(listener)
+      clearTimeout(hide)
+      flushSettings() // leaving Settings: send anything still waiting now
+    }
+  }, [])
   const [scanning, setScanning] = useState(false)
   const [showGenreModal, setShowGenreModal] = useState(false)
   const [eqGains, setEqGains] = useState(EQ_PRESETS[DEFAULT_EQ_PRESET].gains)
@@ -536,20 +596,10 @@ export default function Settings() {
     }
   }
 
-  const set = (k, v) => setSettings(s => ({ ...s, [k]: v }))
-
-  const save = async () => {
-    await api.saveSettings(settings)
-    // RightSidebar's Lyrics tab and the standalone LyricsSidePanel both cache
-    // unsynced_auto_sync in local state and stay mounted across navigation,
-    // so a save made while one of them is already open would otherwise go
-    // unnoticed until it happens to remount. Broadcast the save so they can
-    // refresh in place.
-    window.dispatchEvent(new Event('lokal:settings-saved'))
-    localStorage.setItem('lokal-eq', JSON.stringify(eqGains))
-    localStorage.setItem('lokal-eq-preset', eqPreset)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  // Every change saves itself (see queueSettings above).
+  const set = (k, v) => {
+    setSettings(s => ({ ...s, [k]: v }))
+    queueSettings({ [k]: v })
   }
 
   const openLastfmPage = async (url) => {
@@ -560,6 +610,10 @@ export default function Settings() {
     const normalized = normalizeEqGains(nextGains)
     setEqGains(normalized)
     setEqPreset(presetKey)
+    try {
+      localStorage.setItem('lokal-eq', JSON.stringify(normalized))
+      localStorage.setItem('lokal-eq-preset', presetKey)
+    } catch {}
     window.__lokalInitAudio?.()
     normalized.forEach((gain, index) => {
       window.__lokaleq?.setGain(index, gain)
@@ -1138,16 +1192,25 @@ export default function Settings() {
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
           <div className="flex items-center gap-3">
-            <button onClick={save}
-              className="flex items-center gap-2 px-5 py-2.5 bg-accent text-base rounded-xl text-sm font-medium hover:bg-accent/80 transition-colors">
-              <Save size={14} /> Save Settings
-            </button>
-            <AnimatePresence>
-              {saved && (
-                <motion.span initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+            {/* No Save button: changes save as they're made. */}
+            <AnimatePresence mode="wait">
+              {saveState?.error ? (
+                <motion.span key="error" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+                  className="text-xs text-red-400 flex items-center gap-2">
+                  <AlertTriangle size={12} /> Couldn't save ({saveState.error})
+                  <button onClick={() => flushSettings()} className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-400/10">Retry</button>
+                </motion.span>
+              ) : saveState === 'saving' ? (
+                <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="text-xs text-muted">Saving...</motion.span>
+              ) : saveState === 'saved' ? (
+                <motion.span key="saved" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-accent flex items-center gap-1">
                   <CheckCircle size={12} /> Saved
                 </motion.span>
+              ) : (
+                <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="text-xs text-muted">Changes save automatically</motion.span>
               )}
             </AnimatePresence>
           </div>
