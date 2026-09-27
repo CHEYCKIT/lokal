@@ -146,15 +146,28 @@ function flatten(responses = []) {
   return out.sort((a, b) => b.score - a.score)
 }
 
+/**
+ * Soulseek matches words, and a word starting with "-" means "without": in
+ * "Artist - Song" the lone dash is noise at best. Punctuation goes, words stay.
+ */
+function cleanQuery(text) {
+  return String(text || '')
+    .replace(/[()[\]{}"“”«»,;:!?]+/g, ' ')
+    .replace(/(^|\s)[-–—_/]+(?=\s|$)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function startSearch(settings, text) {
-  const q = String(text || '').trim()
+  const q = cleanQuery(text)
   if (!q) throw new SlskdError('Type something to search for.', 400)
+  // No searchTimeout: slskd documents it in seconds but hands it to
+  // Soulseek.NET, which reads milliseconds -- "15" ended every search after
+  // 15 ms with nothing found. The default (15 s after the last reply) is right.
   const search = await request(settings, 'POST', '/searches', {
     searchText: q,
-    searchTimeout: 15,
     responseLimit: 200,
     fileLimit: 5000,
-    filterResponses: true,
   })
   return { id: search?.id, text: q }
 }
@@ -251,5 +264,5 @@ function locateDownload(downloadsDir, filename, size, since = 0) {
 
 module.exports = {
   config, status, startSearch, searchResults, stopSearch, enqueue, findTransfer, cancelTransfer,
-  describeState, locateDownload, splitRemote, flatten, SlskdError, AUDIO_EXT, LOSSLESS_EXT,
+  describeState, locateDownload, splitRemote, flatten, cleanQuery, SlskdError, AUDIO_EXT, LOSSLESS_EXT,
 }

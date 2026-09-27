@@ -54,8 +54,11 @@ export default function SoulseekSearch({ onQueued }) {
     const started = await api.soulseekSearch(text)
     if (started?.error || !started?.id) { setError(started?.error || 'slskd did not start the search.'); setSearch(null); return }
     setSearch({ id: started.id, complete: false, results: [] })
+    const startedAt = Date.now()
     const poll = async () => {
       const r = await api.soulseekResults(started.id)
+      // slskd ends a search 15 s after the last reply; never wait forever.
+      if (r && !r.error && !r.complete && Date.now() - startedAt > 60000) { r.complete = true; api.soulseekStopSearch(started.id) }
       if (r?.error) { setError(r.error); setSearch(s => (s?.id === started.id ? { ...s, complete: true } : s)); return }
       setSearch(s => (s?.id === started.id ? { ...s, ...r } : s))
       if (!r.complete) pollRef.current = setTimeout(poll, 1000)
