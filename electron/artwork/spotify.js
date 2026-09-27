@@ -97,8 +97,15 @@ async function mintTokensInner(cookie, state) {
   const watched = new Map() // requestId -> 'token' | 'client'
   const dbg = win.webContents.debugger
   try {
+    // The DevTools protocol only answers once the window has a page: on a
+    // fresh window Network.enable never returned (the check sat "opening
+    // open.spotify.com" until the deadline). Give it a blank page first.
+    state.stage = 'preparing the hidden window'
+    await within(win.loadURL('about:blank').catch(() => {}), 5000)
     dbg.attach('1.3')
-    await dbg.sendCommand('Network.enable')
+    state.stage = 'starting network monitoring'
+    const enabled = await within(dbg.sendCommand('Network.enable').then(() => true, () => false), 5000, false)
+    if (!enabled) throw new TransientError('Couldn\'t watch the hidden Spotify window (DevTools protocol didn\'t answer).')
     const done = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new TransientError('Spotify took too long to answer')), TOKEN_TIMEOUT)
       dbg.on('message', async (_e, method, params) => {
