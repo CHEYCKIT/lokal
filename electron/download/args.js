@@ -40,7 +40,7 @@ function metadataArgs(settings) {
   return [
     // One clean artist: the channel ("Artist - Topic" / "ArtistVEVO" trimmed below)
     // rather than every contributor YouTube Music lists.
-    '--parse-metadata', '%(uploader,artist,creator)s:%(artist)s',
+    '--parse-metadata', '%(uploader,artist,creator|Unknown Artist)s:%(artist)s',
     '--replace-in-metadata', 'artist', String.raw`\s+-\s+Topic$`, '',
     '--replace-in-metadata', 'artist', 'VEVO$', '',
     '--replace-in-metadata', 'title', TITLE_NOISE, '',
@@ -66,7 +66,6 @@ function isYouTube(url) {
 function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [] }) {
   const cookies = cookieArgs(settings, { withoutCookies })
   const args = [
-    url,
     ...audioArgs(format),
     '--embed-thumbnail',
     '--embed-metadata',
@@ -90,6 +89,9 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
   if (isYouTube(url)) args.push('--convert-thumbnail', 'jpg')
   if (ffmpeg && (ffmpeg.includes('/') || ffmpeg.includes('\\'))) args.push('--ffmpeg-location', path.dirname(ffmpeg))
   args.push(...extraArgs)
+  // The URL goes last, after "--", so a "URL" that starts with "-" can never be
+  // read as a yt-dlp option (argument injection, CWE-88).
+  args.push('--', url)
   return { args, cookies }
 }
 

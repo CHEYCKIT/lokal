@@ -57,10 +57,18 @@ router.get('/artist-search', async (req, res) => {
   res.status(fallback.error ? 500 : 200).json(fallback)
 })
 
+// Only what a browser needs to say. Anything that decides where files go
+// (outputDir) or which archive file is used stays server-side (CWE-22).
+const PLAYLIST_ID = /^[\w.-]{1,120}$/
 function enqueue(kind) {
   return (req, res) => {
-    const { url, ...opts } = req.body || {}
-    if (!url) return res.status(400).json({ error: 'URL is required' })
+    const { url, format, quality, title, thumbnail, from, playlistId } = req.body || {}
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
+    if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
+      return res.status(400).json({ error: 'Invalid playlistId' })
+    }
+    const text = (v, max = 300) => (typeof v === 'string' ? v.slice(0, max) : undefined)
+    const opts = { format: text(format, 12), quality: text(String(quality ?? ''), 4) || undefined, title: text(title), thumbnail: text(thumbnail, 1000), from: text(from, 120), playlistId: playlistId ?? undefined }
     const result = manager().enqueue(kind, url, opts)
     res.status(result.error ? 500 : 200).json(result)
   }
@@ -95,8 +103,9 @@ router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager()
 router.put('/soulseek/search/:id', soulseek(req => slskd.finishSearch(manager().settings(), req.params.id)))
 router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
 router.post('/soulseek/download', (req, res) => {
-  const { file = {}, ...opts } = req.body || {}
-  if (!file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
+  const { file = {}, title, from } = req.body || {}
+  const opts = { title: typeof title === 'string' ? title.slice(0, 300) : undefined, from: typeof from === 'string' ? from.slice(0, 120) : undefined }
+  if (typeof file.username !== 'string' || typeof file.filename !== 'string' || !file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
   const { name } = slskd.splitRemote(file.filename)
   const result = manager().enqueue('soulseek', `soulseek://${encodeURIComponent(file.username)}/${encodeURIComponent(file.filename)}`, {
     username: file.username, filename: file.filename, size: file.size,

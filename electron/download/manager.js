@@ -74,6 +74,19 @@ function playlistIdOf(url) {
   return match ? match[1] : null
 }
 
+function isHttpUrl(url) {
+  try {
+    const u = new URL(url)
+    return (u.protocol === 'https:' || u.protocol === 'http:') && !!u.hostname
+  } catch { return false }
+}
+
+/** Playlist ids end up in a file name (the download archive): keep them tame. */
+function safePlaylistId(id) {
+  const value = String(id || '')
+  return /^[\w.-]{1,120}$/.test(value) && !/^\.+$/.test(value) ? value : null
+}
+
 function sourceLabel(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '')
@@ -255,7 +268,7 @@ class DownloadManager {
       lyricsCount: 0,
       totalTracks: null,
       currentTrack: null,
-      playlistId: kind === 'playlist' ? (opts.playlistId || playlistIdOf(url) || `pl-${Date.now()}`) : null,
+      playlistId: kind === 'playlist' ? (safePlaylistId(opts.playlistId) || safePlaylistId(playlistIdOf(url)) || `pl-${Date.now()}`) : null,
       attempt: 0,
       createdAt: createdAt || Date.now(),
       startedAt: null,
@@ -342,6 +355,7 @@ class DownloadManager {
   enqueue(kind, url, opts = {}) {
     this.init()
     if (!url || typeof url !== 'string') return { error: 'URL is required' }
+    if (kind !== 'soulseek' && !isHttpUrl(url)) return { error: 'Only http(s) links can be downloaded.' }
     // Soulseek downloads go through slskd, not yt-dlp.
     const check = kind === 'soulseek' ? { tools: {} } : this.checkTools()
     if (check.error) return check
@@ -360,7 +374,7 @@ class DownloadManager {
   }
 
   lookUpTitle(job, ytdlp) {
-    const proc = spawn(ytdlp, [job.url, '--dump-single-json', '--flat-playlist', '--playlist-items', '1', '--quiet', '--no-warnings'], { windowsHide: true })
+    const proc = spawn(ytdlp, ['--dump-single-json', '--flat-playlist', '--playlist-items', '1', '--quiet', '--no-warnings', '--', job.url], { windowsHide: true })
     this.looseProcs.add(proc)
     let stdout = ''
     proc.stdout.on('data', d => { stdout += d.toString() })
@@ -447,8 +461,10 @@ class DownloadManager {
     const job = this.jobs.get(id)
     if (!job) return { error: 'Download not found' }
     if (ACTIVE.has(job.status)) return { downloadId: job.id }
-    const check = this.checkTools()
-    if (check.error) return check
+    if (job.kind !== 'soulseek') {
+      const check = this.checkTools()
+      if (check.error) return check
+    }
     this.update(job, {
       status: 'queued', message: 'Queued', error: null, progress: 0, speed: null, eta: null,
       attempt: 0, finishedAt: null, retryAt: null, withoutCookies: false, stop: null, seen: false,
@@ -636,43 +652,50 @@ class DownloadManager {
 
   async startSoulseek(job) {
     const settings = this.settings()
-    Object.assign(job, { settings, startedAt: Date.now(), stop: null, exited: false, exitCode: null, post: Promise.resolve(), errorLines: [], pollErrors: 0 })
+    // Each run gets a token: a poll loop from an earlier run (cancel, then
+    // Retry) sees a newer token and stops instead of racing this one.
+    const runId = (job.runId || 0) + 1
+    Object.assign(job, { runId, settings, startedAt: Date.now(), stop: null, exited: false, exitCode: null, post: Promise.resolve(), errorLines: [], pollErrors: 0 })
     this.update(job, { status: 'downloading', message: 'Asking slskd...', error: null, retryAt: null, progress: 0, seen: false }, { persist: true })
     const { username, filename, size } = job.opts
     try {
       await slskd.enqueue(settings, username, filename, size)
     } catch (e) {
-      this.fail(job, e.message)
+      if (job.runId === runId && !job.stop) this.fail(job, e.message)
       return
     }
+    if (job.runId !== runId || job.stop) return
     job.outputLines.push(`[Lokal] Asked slskd for ${filename} from ${username}`)
-    this.pollSoulseek(job)
+    this.pollSoulseek(job, 1200, runId)
   }
 
-  pollSoulseek(job, delay = 1200) {
+  pollSoulseek(job, delay = 1200, runId = job.runId) {
+    const current = () => this.jobs.get(job.id) === job && job.runId === runId && job.status === 'downloading' && !job.stop
     setTimeout(async () => {
-      if (this.jobs.get(job.id) !== job || job.status !== 'downloading' || job.stop) return
+      if (!current()) return
       const { username, filename, size } = job.opts
       let transfer
       try {
         transfer = await slskd.findTransfer(job.settings, username, filename)
+        if (!current()) return
         job.pollErrors = 0
       } catch (e) {
+        if (!current()) return
         job.pollErrors = (job.pollErrors || 0) + 1
         if (job.pollErrors > 20) { this.fail(job, e.message); return }
         this.update(job, { message: `slskd not answering (${e.message}), still trying...` })
-        this.pollSoulseek(job, 3000)
+        this.pollSoulseek(job, 3000, runId)
         return
       }
       if (!transfer) {
         if (Date.now() - job.startedAt > 90000) { this.fail(job, `slskd has no transfer for this file any more. Try again or pick another user.`); return }
-        this.pollSoulseek(job)
+        this.pollSoulseek(job, 1200, runId)
         return
       }
       job.transferId = transfer.id
       const state = slskd.describeState(transfer.state)
       if (state.done) {
-        if (state.ok) { this.finishSoulseek(job, transfer).catch(e => this.fail(job, e.message)); return }
+        if (state.ok) { this.finishSoulseek(job, transfer, runId).catch(e => { if (job.runId === runId) this.fail(job, e.message) }); return }
         const why = state.reason === 'Rejected'
           ? `${username} declined the download (they may only share with some users). Try another result.`
           : state.reason === 'Cancelled'
@@ -688,16 +711,17 @@ class DownloadManager {
         const place = transfer.placeInQueue ? ` (#${transfer.placeInQueue})` : ''
         this.update(job, { progress: 0, speed: null, message: state.remote ? `Waiting in ${username}'s queue${place}` : 'Queued in slskd' })
       }
-      this.pollSoulseek(job, state.active ? 1000 : 2500)
+      this.pollSoulseek(job, state.active ? 1000 : 2500, runId)
     }, delay)
   }
 
   /** Picks the finished file up from slskd's folder and files it like any download. */
-  async finishSoulseek(job, transfer) {
+  async finishSoulseek(job, transfer, runId = job.runId) {
     let downloadsDir = slskd.config(job.settings).downloadsDir
     if (!downloadsDir) {
       try { downloadsDir = (await slskd.status(job.settings)).downloadsDir } catch {}
     }
+    if (job.runId !== runId || job.stop || this.jobs.get(job.id) !== job) return
     const found = slskd.locateDownload(downloadsDir, job.opts.filename, transfer.size || job.opts.size, job.startedAt)
     if (!found) {
       this.fail(job, `slskd finished the download, but Lokal can't find it in ${downloadsDir || "slskd's downloads folder"}. If slskd runs in Docker or on another machine, set the folder as this computer sees it in Settings → Soulseek.`)

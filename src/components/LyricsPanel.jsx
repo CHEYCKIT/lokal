@@ -458,11 +458,15 @@ export default function LyricsPanel({
   // anywhere else -- the sidebar -- the panel opens one over itself.
   const [searchOpen, setSearchOpen] = useState(false)
   const requestSearch = onSearchRequest || (() => setSearchOpen(true))
+  const currentTrackId = useRef(track?.id)
+  currentTrackId.current = track?.id
   const pickSearchResult = async (lyrics, type) => {
     setSearchOpen(false)
-    if (!track?.id) return
-    try { await api.importLyrics(track.id, lyrics, type) } catch {}
-    load()
+    const trackId = track?.id
+    if (!trackId) return
+    try { await api.importLyrics(trackId, lyrics, type) } catch {}
+    // The song may have changed while saving; its own load already ran.
+    if (currentTrackId.current === trackId) load()
   }
 
   useEffect(() => {

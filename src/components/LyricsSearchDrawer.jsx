@@ -6,7 +6,7 @@
 // variant="side": a 20rem drawer from the right edge (fullscreen views)
 // variant="fill": covers the whole panel (the narrow sidebar)
 
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Search } from 'lucide-react'
 
@@ -26,16 +26,26 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
   const loading = session?.loading || false
   const error = session?.error || null
 
+  // Only the newest search may fill the list, and only while the fields
+  // still say what it searched for: an older, slower answer is dropped.
+  const requestSeq = useRef(0)
+  const latest = useRef({ title, artist })
+  latest.current = { title, artist }
+
   const handleSearch = async () => {
-    if (!title || !artist) return
+    if (!title || !artist || loading) return
+    const seq = ++requestSeq.current
+    const query = { title, artist }
+    const stillCurrent = () => seq === requestSeq.current && latest.current.title === query.title && latest.current.artist === query.artist
     onSessionChange({ loading: true, error: null, results: [] })
     try {
-      const url = `https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`
+      const url = `https://lrclib.net/api/search?track_name=${encodeURIComponent(query.title)}&artist_name=${encodeURIComponent(query.artist)}`
       const res = await fetch(url)
       const data = await res.json()
-      onSessionChange({ results: Array.isArray(data) ? data : [], loading: false, searched: true })
+      if (stillCurrent()) onSessionChange({ results: Array.isArray(data) ? data : [], loading: false, searched: true })
+      else if (seq === requestSeq.current) onSessionChange({ loading: false })
     } catch (e) {
-      onSessionChange({ error: e.message, loading: false })
+      if (seq === requestSeq.current) onSessionChange({ error: stillCurrent() ? e.message : null, loading: false })
     }
   }
 

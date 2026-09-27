@@ -322,8 +322,11 @@ export default function Downloader() {
             )}
           </div>
           <p className="mt-3 text-xs text-muted">{FORMATS.find(f => f.id === format)?.hint}</p>
-          {queueError && <p className="mt-2 text-xs text-red-400">{queueError}</p>}
         </section>
+      )}
+
+      {queueError && (
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{queueError}</p>
       )}
 
       {tab === 'soulseek' && <SoulseekSearch />}
