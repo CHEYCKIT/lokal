@@ -103,9 +103,15 @@ function manager() {
       let status = null
       try { status = await getYtDlpVersionStatus() } catch {}
       if (status?.upToDate === true) return { updated: false, upToDate: true, version: status.installedVersion }
-      await downloadYtDlp(progress => broadcast('tools:downloadProgress', { tool: 'yt-dlp', ...progress }))
+      try {
+        await downloadYtDlp(progress => broadcast('tools:downloadProgress', { tool: 'yt-dlp', ...progress }))
+      } catch (e) {
+        broadcast('tools:downloadProgress', { tool: 'yt-dlp', status: 'error', message: e.message })
+        throw e
+      }
       let after = null
       try { after = await getYtDlpVersionStatus() } catch {}
+      broadcast('tools:downloadProgress', { tool: 'yt-dlp', status: 'done', message: `yt-dlp updated${after?.installedVersion ? ` to ${after.installedVersion}` : ''}. Retrying your downloads.` })
       return { updated: true, version: after?.installedVersion || null }
     },
     emit: (snapshot) => broadcast('downloader:progress', snapshot),

@@ -383,11 +383,19 @@ export default function App() {
     refreshYtDlpVersionStatus()
     const unsubscribe = api.onToolsDownloadProgress((_, payload) => {
       if (payload?.tool !== 'yt-dlp') return
+      // Sent when the download queue updated yt-dlp by itself (YouTube 403s).
+      if (payload.status === 'done') {
+        setYtDlpVersionState(prev => ({ ...prev, visible: true, downloadState: 'done', downloadMessage: payload.message || 'yt-dlp updated.', downloadPercent: null }))
+        refreshYtDlpVersionStatus()
+        setTimeout(() => setYtDlpVersionState(prev => ({ ...prev, visible: prev.upToDate === false && prev.downloadState !== 'done' ? true : false, downloadState: 'idle', downloadMessage: '' })), 2200)
+        return
+      }
       setYtDlpVersionState(prev => ({
         ...prev,
         visible: true,
         downloadState: payload.status === 'error' ? 'error' : 'downloading',
         downloadMessage: payload.message || '',
+        downloadPercent: Number.isFinite(payload.percent) ? payload.percent : (payload.status === 'installing' ? 100 : prev.downloadPercent ?? null),
       }))
     })
     const interval = setInterval(() => {
@@ -431,6 +439,7 @@ export default function App() {
       visible: true,
       downloadState: 'downloading',
       downloadMessage: 'Starting yt-dlp update...',
+      downloadPercent: null,
       error: null,
     }))
     try {
@@ -1544,6 +1553,15 @@ export default function App() {
             {ytDlpVersionState.downloadMessage && (
               <div className={`rounded-2xl border px-4 py-3 text-sm ${isDone ? 'border-green-500/20 bg-green-500/10 text-green-200' : 'border-white/10 bg-white/5 text-muted'}`}>
                 {ytDlpVersionState.downloadMessage}
+                {isDownloading && (
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    {Number.isFinite(ytDlpVersionState.downloadPercent) ? (
+                      <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${Math.max(3, ytDlpVersionState.downloadPercent)}%` }} />
+                    ) : (
+                      <div className="h-full w-1/3 rounded-full bg-accent/70 animate-pulse" />
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1552,9 +1570,11 @@ export default function App() {
                 <button
                   onClick={handleUpdateYtDlp}
                   disabled={isDownloading}
-                  className="flex-1 rounded-2xl bg-accent py-4 text-sm font-bold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-2xl bg-accent py-4 text-sm font-bold text-[rgb(var(--bg-rgb))] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isDownloading ? 'Updating yt-dlp...' : 'Update yt-dlp'}
+                  {isDownloading
+                    ? `Updating yt-dlp${Number.isFinite(ytDlpVersionState.downloadPercent) ? ` · ${ytDlpVersionState.downloadPercent}%` : '...'}`
+                    : 'Update yt-dlp'}
                 </button>
               )}
               <button

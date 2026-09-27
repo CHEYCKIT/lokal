@@ -198,6 +198,18 @@ export default function Settings() {
   const [factoryResetting, setFactoryResetting] = useState(false)
   const [toolsStatus, setToolsStatus] = useState(null)
   const [toolsLoading, setToolsLoading] = useState(false)
+  // Live progress of a yt-dlp / ffmpeg download, so the button doesn't look stuck.
+  const [toolProgress, setToolProgress] = useState({})
+  useEffect(() => api.onToolsDownloadProgress((_, p) => {
+    if (!p?.tool) return
+    setToolProgress(prev => ({ ...prev, [p.tool]: p.status === 'done' || p.status === 'error' ? null : p }))
+  }), [])
+  const progressLabel = (tool) => {
+    const p = toolProgress[tool]
+    if (!p) return 'Downloading...'
+    if (p.status === 'installing') return 'Installing...'
+    return Number.isFinite(p.percent) ? `Downloading ${p.percent}%` : 'Downloading...'
+  }
   const [toolsError, setToolsError] = useState('')
   const [toolsErrorTool, setToolsErrorTool] = useState(null)
   const [showPlaylistImportModal, setShowPlaylistImportModal] = useState(false)
@@ -789,6 +801,7 @@ export default function Settings() {
       setToolsErrorTool('yt-dlp')
     }
     setToolsLoading(false)
+    setToolProgress(prev => ({ ...prev, 'yt-dlp': null }))
     api.getToolsStatus().then(setToolsStatus)
   }
 
@@ -1519,7 +1532,7 @@ export default function Settings() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadYtDlpTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? 'Downloading...' : toolsStatus?.ytdlp?.found ? 'Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('yt-dlp') : toolsStatus?.ytdlp?.found ? 'Update / Re-download' : 'Download'}
                 </button>
                 <button onClick={() => setCustomToolPath('yt-dlp')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
               </div>
@@ -1538,7 +1551,7 @@ export default function Settings() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadFfmpegTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? 'Downloading...' : toolsStatus?.ffmpeg?.found ? 'Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('ffmpeg') : toolsStatus?.ffmpeg?.found ? 'Re-download' : 'Download'}
                 </button>
                 <button onClick={() => setCustomToolPath('ffmpeg')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
               </div>
