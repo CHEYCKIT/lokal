@@ -4,6 +4,7 @@ import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserR
 import { api } from '../api'
 import { useDownloads, startDownloadSync, isActive } from '../store/downloads'
 import { DownloadList } from '../components/DownloadManager'
+import SoulseekSearch from '../components/SoulseekSearch'
 
 const DISCLAIMER_KEY = 'lokal-dl-accepted'
 
@@ -268,7 +269,7 @@ export default function Downloader() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">Downloader</h1>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            {[['search', 'Search'], ['artist', 'Artist'], ['playlist', 'Playlist / Album'], ['library', 'Library']].map(([id, label]) => (
+            {[['search', 'Search'], ['artist', 'Artist'], ['playlist', 'Playlist / Album'], ['soulseek', 'Soulseek'], ['library', 'Library']].map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => {
@@ -288,39 +289,44 @@ export default function Downloader() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-display uppercase tracking-[0.26em] text-muted">Format</span>
-            {FORMATS.map(option => (
-              <button
-                key={option.id}
-                onClick={() => setFormat(option.id)}
-                title={option.hint}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${format === option.id ? 'bg-accent text-base' : 'border border-border text-muted hover:text-white'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {format === 'mp3' && (
+      {/* Soulseek files arrive as the uploader shared them; formats are for YouTube & co. */}
+      {tab !== 'soulseek' && tab !== 'library' && (
+        <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-display uppercase tracking-[0.26em] text-muted">Bitrate</span>
-              {['128', '192', '320'].map(option => (
+              <span className="text-xs font-display uppercase tracking-[0.26em] text-muted">Format</span>
+              {FORMATS.map(option => (
                 <button
-                  key={option}
-                  onClick={() => setQuality(option)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${quality === option ? 'border border-accent/30 bg-accent/15 text-accent' : 'border border-border text-muted hover:text-white'}`}
+                  key={option.id}
+                  onClick={() => setFormat(option.id)}
+                  title={option.hint}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${format === option.id ? 'bg-accent text-base' : 'border border-border text-muted hover:text-white'}`}
                 >
-                  {option}k
+                  {option.label}
                 </button>
               ))}
             </div>
-          )}
-        </div>
-        <p className="mt-3 text-xs text-muted">{FORMATS.find(f => f.id === format)?.hint}</p>
-        {queueError && <p className="mt-2 text-xs text-red-400">{queueError}</p>}
-      </section>
+            {format === 'mp3' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-display uppercase tracking-[0.26em] text-muted">Bitrate</span>
+                {['128', '192', '320'].map(option => (
+                  <button
+                    key={option}
+                    onClick={() => setQuality(option)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${quality === option ? 'border border-accent/30 bg-accent/15 text-accent' : 'border border-border text-muted hover:text-white'}`}
+                  >
+                    {option}k
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-muted">{FORMATS.find(f => f.id === format)?.hint}</p>
+          {queueError && <p className="mt-2 text-xs text-red-400">{queueError}</p>}
+        </section>
+      )}
+
+      {tab === 'soulseek' && <SoulseekSearch />}
 
       {tab === 'search' && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">

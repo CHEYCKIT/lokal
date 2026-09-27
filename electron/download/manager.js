@@ -22,6 +22,8 @@ const fs = require('fs-extra')
 const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
+const slskd = require('./slskd')
+const { readInfo } = require('./tagger')
 
 const ACTIVE = new Set(['queued', 'downloading'])
 const RETRY_DELAYS_MS = [5000, 20000]
@@ -236,7 +238,7 @@ class DownloadManager {
       url,
       opts: { ...opts, id: undefined },
       title: opts.title || url,
-      from: opts.from || (kind === 'playlist' ? `${sourceLabel(url)} playlist` : sourceLabel(url)),
+      from: opts.from || (kind === 'soulseek' ? `Soulseek · ${opts.username || 'user'}` : kind === 'playlist' ? `${sourceLabel(url)} playlist` : sourceLabel(url)),
       thumbnail: opts.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null),
       status: 'queued',
       progress: 0,
@@ -340,8 +342,10 @@ class DownloadManager {
   enqueue(kind, url, opts = {}) {
     this.init()
     if (!url || typeof url !== 'string') return { error: 'URL is required' }
-    const check = this.checkTools()
+    // Soulseek downloads go through slskd, not yt-dlp.
+    const check = kind === 'soulseek' ? { tools: {} } : this.checkTools()
     if (check.error) return check
+    if (kind === 'soulseek' && (!opts.username || !opts.filename)) return { error: 'Pick a file from the Soulseek results.' }
     const duplicate = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.url === url && j.kind === kind)
     if (duplicate) return { downloadId: duplicate.id, playlistId: duplicate.playlistId, duplicate: true }
     const existing = opts.id ? this.jobs.get(opts.id) : null
@@ -382,7 +386,10 @@ class DownloadManager {
       .filter(j => j.status === 'queued' && !j.retryTimer && !j.waitingForTools)
       .sort((a, b) => a.createdAt - b.createdAt)
     for (const job of waiting) {
-      if (this.running >= limit) break
+      // slskd queues Soulseek transfers itself (often in the uploader's queue
+      // for a while), so they don't take one of yt-dlp's slots.
+      if (job.kind === 'soulseek') { this.startSoulseek(job); continue }
+      if (this.running >= limit) continue
       this.start(job)
     }
   }
@@ -397,6 +404,12 @@ class DownloadManager {
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
     if (job.status !== 'downloading') return Promise.resolve({ success: true, status: job.status })
+    if (job.kind === 'soulseek' && !job.exited) {
+      job.stop = 'cancelled'
+      if (job.transferId) slskd.cancelTransfer(job.settings || this.settings(), job.opts.username, job.transferId)
+      this.update(job, { status: 'cancelled', message: 'Cancelled', speed: null, eta: null, finishedAt: Date.now() }, { persist: true })
+      return Promise.resolve({ success: true, status: 'cancelled' })
+    }
     // yt-dlp already finished; only the file's lyrics/indexing are left. Let it end as it really did.
     if (job.exited) return Promise.resolve({ success: true, status: 'finishing' })
     job.stop = job.kind === 'playlist' ? 'incomplete' : 'cancelled'
@@ -612,6 +625,103 @@ class DownloadManager {
     }
   }
 
+  // ------------------------------------------------------------- soulseek
+
+  async startSoulseek(job) {
+    const settings = this.settings()
+    Object.assign(job, { settings, startedAt: Date.now(), stop: null, exited: false, exitCode: null, post: Promise.resolve(), errorLines: [], pollErrors: 0 })
+    this.update(job, { status: 'downloading', message: 'Asking slskd...', error: null, retryAt: null, progress: 0, seen: false }, { persist: true })
+    const { username, filename, size } = job.opts
+    try {
+      await slskd.enqueue(settings, username, filename, size)
+    } catch (e) {
+      this.fail(job, e.message)
+      return
+    }
+    job.outputLines.push(`[Lokal] Asked slskd for ${filename} from ${username}`)
+    this.pollSoulseek(job)
+  }
+
+  pollSoulseek(job, delay = 1200) {
+    setTimeout(async () => {
+      if (this.jobs.get(job.id) !== job || job.status !== 'downloading' || job.stop) return
+      const { username, filename, size } = job.opts
+      let transfer
+      try {
+        transfer = await slskd.findTransfer(job.settings, username, filename)
+        job.pollErrors = 0
+      } catch (e) {
+        job.pollErrors = (job.pollErrors || 0) + 1
+        if (job.pollErrors > 20) { this.fail(job, e.message); return }
+        this.update(job, { message: `slskd not answering (${e.message}), still trying...` })
+        this.pollSoulseek(job, 3000)
+        return
+      }
+      if (!transfer) {
+        if (Date.now() - job.startedAt > 90000) { this.fail(job, `slskd has no transfer for this file any more. Try again or pick another user.`); return }
+        this.pollSoulseek(job)
+        return
+      }
+      job.transferId = transfer.id
+      const state = slskd.describeState(transfer.state)
+      if (state.done) {
+        if (state.ok) { this.finishSoulseek(job, transfer).catch(e => this.fail(job, e.message)); return }
+        const why = state.reason === 'Rejected'
+          ? `${username} declined the download (they may only share with some users). Try another result.`
+          : state.reason === 'Cancelled'
+            ? 'The transfer was cancelled in slskd.'
+            : `The transfer from ${username} failed (${state.reason || 'error'}${transfer.exception ? `: ${transfer.exception}` : ''}). Retry, or pick another result.`
+        this.fail(job, why)
+        return
+      }
+      if (state.active) {
+        const speed = transfer.averageSpeed ? `${(transfer.averageSpeed / (1024 * 1024)).toFixed(1)}MiB/s` : null
+        this.update(job, { progress: Math.max(0, Math.min(99, Math.round(transfer.percentComplete || 0))), speed, message: 'Downloading from Soulseek...' })
+      } else {
+        const place = transfer.placeInQueue ? ` (#${transfer.placeInQueue})` : ''
+        this.update(job, { progress: 0, speed: null, message: state.remote ? `Waiting in ${username}'s queue${place}` : 'Queued in slskd' })
+      }
+      this.pollSoulseek(job, state.active ? 1000 : 2500)
+    }, delay)
+  }
+
+  /** Picks the finished file up from slskd's folder and files it like any download. */
+  async finishSoulseek(job, transfer) {
+    let downloadsDir = slskd.config(job.settings).downloadsDir
+    if (!downloadsDir) {
+      try { downloadsDir = (await slskd.status(job.settings)).downloadsDir } catch {}
+    }
+    const found = slskd.locateDownload(downloadsDir, job.opts.filename, transfer.size || job.opts.size, job.startedAt)
+    if (!found) {
+      this.fail(job, `slskd finished the download, but Lokal can't find it in ${downloadsDir || "slskd's downloads folder"}. If slskd runs in Docker or on another machine, set the folder as this computer sees it in Settings → Soulseek.`)
+      return
+    }
+    const clean = (s) => String(s || '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 120)
+    const info = readInfo(found) || {}
+    const musicDir = job.opts.outputDir || job.settings.music_folder || path.join(os.homedir(), 'Music')
+    const artist = clean(String(info.artist || '').split(/;|\s\/\s/)[0]) || 'Unknown Artist'
+    const album = clean(info.album) || clean(slskd.splitRemote(job.opts.filename).folder) || 'Singles'
+    const base = path.basename(found)
+    let dest = path.join(musicDir, artist, album, base)
+    for (let n = 1; fs.existsSync(dest) && n < 50; n++) {
+      dest = path.join(musicDir, artist, album, `${path.basename(base, path.extname(base))} (${n})${path.extname(base)}`)
+    }
+    try {
+      fs.moveSync(found, dest)
+    } catch (e) {
+      this.fail(job, `Couldn't move the file into your music folder: ${e.message}`)
+      return
+    }
+    job.outputLines.push(`[Lokal] Moved to ${dest}`)
+    job.filepaths.push(dest)
+    job.exited = true
+    job.exitCode = 0
+    this.update(job, { progress: 100, speed: null, song: dest, message: `Saved: ${base}` }, { force: true })
+    this.afterFile(job, dest)
+    await this.onExit(job, 0)
+    this.pump()
+  }
+
   /** Finishes and indexes one file, in the background, one at a time per job. */
   afterFile(job, filepath) {
     job.post = job.post.then(async () => {
@@ -631,7 +741,7 @@ class DownloadManager {
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
       }
       const index = this.deps.index
-      if (index && (job.settings?.index_while_downloading === '1' || job.kind === 'single')) {
+      if (index && (job.settings?.index_while_downloading === '1' || job.kind === 'single' || job.kind === 'soulseek')) {
         await this.indexOne(job, finalPath)
       } else {
         job.pendingIndex = [...(job.pendingIndex || []), finalPath]
@@ -802,7 +912,7 @@ class DownloadManager {
   /** Stops running downloads so yt-dlp can be replaced; they go back in line. */
   async suspend() {
     this.suspended = true
-    const running = [...this.jobs.values()].filter(j => j.status === 'downloading' && !j.exited)
+    const running = [...this.jobs.values()].filter(j => j.status === 'downloading' && !j.exited && j.kind !== 'soulseek')
     for (const job of running) job.stop = 'suspend'
     await Promise.all(running.map(j => terminate(j.proc)))
     await Promise.all([...this.looseProcs].map(p => terminate(p)))

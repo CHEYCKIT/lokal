@@ -198,6 +198,17 @@ export default function Settings() {
   const [factoryResetting, setFactoryResetting] = useState(false)
   const [toolsStatus, setToolsStatus] = useState(null)
   const [toolsLoading, setToolsLoading] = useState(false)
+  const [soulseekCheck, setSoulseekCheck] = useState(null)
+  const testSoulseek = async () => {
+    setSoulseekCheck({ loading: true })
+    await api.saveSettings({
+      soulseek_url: settings.soulseek_url || 'http://localhost:5030',
+      soulseek_api_key: settings.soulseek_api_key || '',
+      soulseek_downloads_dir: settings.soulseek_downloads_dir || '',
+    })
+    const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
+    setSoulseekCheck(status || { error: 'No answer' })
+  }
   // Live progress of a yt-dlp / ffmpeg download, so the button doesn't look stuck.
   const [toolProgress, setToolProgress] = useState({})
   useEffect(() => api.onToolsDownloadProgress((_, p) => {
@@ -1671,6 +1682,54 @@ export default function Settings() {
           <p className="text-xs text-muted mt-3 text-center opacity-50">Click anywhere in app once to activate EQ</p>
         </div>
       </Section>
+      )}
+
+      {inCategory('integrations') && (
+        <Section title="Soulseek">
+          <p className="text-xs text-muted leading-relaxed">
+            Search and download from Soulseek, where lossless (FLAC) copies are common. Lokal talks to{' '}
+            <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
+            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). Soulseek is a sharing network: slskd shares folders back by default, and most of what's on it is copyrighted, so only download what you're allowed to.
+          </p>
+          <Row label="slskd Address" desc="Where slskd's web interface runs.">
+            <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
+              placeholder="http://localhost:5030" spellCheck={false}
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="API Key">
+            <input type="password" value={settings.soulseek_api_key || ''} onChange={e => set('soulseek_api_key', e.target.value)}
+              placeholder="From slskd.yml" spellCheck={false} autoComplete="off"
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="slskd Downloads Folder" desc="Leave empty to use the folder slskd reports. Set it when slskd runs in Docker or on another machine, as this computer sees that folder. Finished files are moved from there into your music folder.">
+            <div className="flex items-center gap-2">
+              <input value={settings.soulseek_downloads_dir || ''} onChange={e => set('soulseek_downloads_dir', e.target.value)}
+                placeholder="Automatic" spellCheck={false}
+                className="w-48 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {api.isElectron && (
+                <button onClick={async () => { const f = await api.openFolder(); if (f) set('soulseek_downloads_dir', f) }}
+                  className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
+                  <FolderOpen size={14} />
+                </button>
+              )}
+            </div>
+          </Row>
+          <div className="flex items-center gap-3">
+            <button onClick={testSoulseek} disabled={soulseekCheck?.loading}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+              {soulseekCheck?.loading ? 'Checking...' : 'Save & Test'}
+            </button>
+            {soulseekCheck && !soulseekCheck.loading && (
+              soulseekCheck.error
+                ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
+                : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
+                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : 'slskd is running but not logged in to Soulseek'}
+                    {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
+                    {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
+                  </p>
+            )}
+          </div>
+        </Section>
       )}
 
       {inCategory('integrations') && (

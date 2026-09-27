@@ -84,6 +84,27 @@ router.post('/clear-finished', (req, res) => res.json(manager().clearFinished())
 router.post('/seen', (req, res) => res.json(manager().markSeen()))
 router.get('/queue', (req, res) => res.json(manager().list()))
 
+// Soulseek, through slskd.
+const slskd = require('../../electron/download/slskd')
+const soulseek = (fn) => async (req, res) => {
+  try { res.json(await fn(req)) } catch (e) { res.status(e.status && e.status >= 400 ? e.status : 502).json({ error: e.message }) }
+}
+router.get('/soulseek/status', soulseek(() => slskd.status(manager().settings())))
+router.post('/soulseek/search', soulseek(req => slskd.startSearch(manager().settings(), req.body?.text)))
+router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager().settings(), req.params.id)))
+router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
+router.post('/soulseek/download', (req, res) => {
+  const { file = {}, ...opts } = req.body || {}
+  if (!file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
+  const { name } = slskd.splitRemote(file.filename)
+  const result = manager().enqueue('soulseek', `soulseek://${encodeURIComponent(file.username)}/${encodeURIComponent(file.filename)}`, {
+    username: file.username, filename: file.filename, size: file.size,
+    title: opts.title || name.replace(/\.[^.]+$/, ''),
+    from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+  })
+  res.status(result.error ? 500 : 200).json(result)
+})
+
 router.get('/playlists', (req, res) => {
   const db = getDB()
   res.json(db.prepare('SELECT * FROM downloaded_playlists ORDER BY COALESCE(last_downloaded_at, created_at) DESC').all())

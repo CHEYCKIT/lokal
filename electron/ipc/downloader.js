@@ -8,6 +8,7 @@ const { getDB, getStorageDir } = require('./db')
 const { findYtDlp, findFfmpeg, findFfprobe } = require('./tools')
 const { getDownloadManager } = require('../download/manager')
 const { runJsonSearch, mapSearchResult, mapArtistResult } = require('../download/search')
+const slskd = require('../download/slskd')
 
 const searchProcesses = new Set()
 
@@ -145,6 +146,28 @@ function registerDownloaderHandlers(ipcMain) {
   ipcMain.handle('downloader:clearFinished', () => manager().clearFinished())
   ipcMain.handle('downloader:markSeen', () => manager().markSeen())
   ipcMain.handle('downloader:queue', () => manager().list())
+
+  // Soulseek, through slskd.
+  const slskdSettings = () => manager().settings()
+  const wrap = (fn) => async (...args) => { try { return await fn(...args) } catch (e) { return { error: e.message } } }
+  ipcMain.handle('soulseek:status', wrap(() => slskd.status(slskdSettings())))
+  ipcMain.handle('soulseek:search', wrap((_, text) => slskd.startSearch(slskdSettings(), text)))
+  ipcMain.handle('soulseek:results', wrap((_, id) => slskd.searchResults(slskdSettings(), id)))
+  ipcMain.handle('soulseek:stopSearch', wrap((_, id) => slskd.stopSearch(slskdSettings(), id)))
+  ipcMain.handle('soulseek:download', (_, file = {}, opts = {}) => enqueueSoulseek(file, opts))
+}
+
+/** One job per file; the url only identifies it (and stops double clicks). */
+function enqueueSoulseek(file = {}, opts = {}) {
+  if (!file.username || !file.filename) return { error: 'Pick a file from the Soulseek results.' }
+  const { name } = slskd.splitRemote(file.filename)
+  return manager().enqueue('soulseek', `soulseek://${encodeURIComponent(file.username)}/${encodeURIComponent(file.filename)}`, {
+    username: file.username,
+    filename: file.filename,
+    size: file.size,
+    title: opts.title || name.replace(/\.[^.]+$/, ''),
+    from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+  })
 }
 
 function registerExtraDownloaderHandlers(ipcMain) {
@@ -205,6 +228,7 @@ function registerPlaylistArchiveHandlers(ipcMain) {
 
 module.exports = {
   registerDownloaderHandlers,
+  enqueueSoulseek,
   registerExtraDownloaderHandlers,
   registerPlaylistArchiveHandlers,
   terminateProcessTree,
