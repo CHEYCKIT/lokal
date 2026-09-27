@@ -179,16 +179,31 @@ export default function App() {
     const src = el.getAttribute('src') || ''
     if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
     el.dataset.fallbackFor = src
-    let filePath = src.slice('file://'.length)
-    try { filePath = decodeURIComponent(filePath) } catch {}
-    const copy = await api.playableFile?.(filePath).catch(() => null)
-    if (!copy || el.getAttribute('src') !== src) return
-    const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
-    el.dataset.fallbackSrc = next
-    el.src = next
-    el.load()
-    if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
+    // While the copy is being made and swapped in, pause events from this
+    // element aren't the user pausing (see ignoreElementPause).
+    el.dataset.fallbackPending = '1'
+    try {
+      let filePath = src.slice('file://'.length)
+      try { filePath = decodeURIComponent(filePath) } catch {}
+      const copy = await api.playableFile?.(filePath).catch(() => null)
+      if (!copy || el.getAttribute('src') !== src) return
+      const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
+      el.dataset.fallbackSrc = next
+      el.src = next
+      el.load()
+      if (usePlayerStore.getState().isPlaying) await el.play().catch(() => {})
+    } finally {
+      el.dataset.fallbackPending = ''
+    }
   }, [])
+
+  // A pause event that doesn't mean "the user paused": the file failed to
+  // decode (the failed first attempt at an Apple Lossless .m4a fires one), it
+  // never got as far as loading, or it's being swapped for a playable copy.
+  // Treating those as pauses flipped the player to paused, so the converted
+  // copy never started and play had to be clicked a second time. The user's
+  // own pauses go through the store, not through these events.
+  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1'
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
@@ -1681,7 +1696,7 @@ export default function App() {
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
+          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
           ref={cfAudioRef}
@@ -1690,7 +1705,7 @@ export default function App() {
           onEnded={handleCfEnded}
           onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
+          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
             it exists purely to keep a native, audible HTMLMediaElement "playing"
