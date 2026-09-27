@@ -348,7 +348,10 @@ function enabledSources(settings) {
   const chosen = Array.isArray(list) ? list : DEFAULT_SOURCES
   // Always in the same order, whatever order they were switched on in --
   // except that Spotify can be asked first ("Prioritize Spotify Canvas").
-  const order = SOURCES.filter(s => chosen.includes(s) && (s !== 'spotify' || settings.spotify_sp_dc))
+  // Spotify needs Electron (a hidden browser window mints its token), so a
+  // standalone web server skips it and keeps the other sources.
+  const spotifyOk = !!settings.spotify_sp_dc && !!process.versions.electron
+  const order = SOURCES.filter(s => chosen.includes(s) && (s !== 'spotify' || spotifyOk))
   if (settings.spotify_canvas_first === '1' && order.includes('spotify')) return ['spotify', ...order.filter(s => s !== 'spotify')]
   return order
 }

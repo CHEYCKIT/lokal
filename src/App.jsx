@@ -765,6 +765,10 @@ export default function App() {
     navigator.mediaSession.setActionHandler('pause', () => { 
       const activeEl = getActiveAudio()
       activeEl?.pause() 
+      // An explicit pause: record it in the store directly, since the element's
+      // own pause event is ignored while a file is failing or being swapped
+      // for its playable copy (ignoreElementPause).
+      usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       const activeEl = getActiveAudio()

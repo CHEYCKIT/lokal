@@ -213,7 +213,8 @@ export default function Settings() {
   const testSpotifyCanvas = async () => {
     setSpotifyCheck({ loading: true })
     try {
-      await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
+      const saved = await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
+      if (saved?.error) { setSpotifyCheck({ error: `Couldn't save the cookie: ${saved.error}` }); return }
       const status = await api.spotifyCanvasCheck()
       setSpotifyCheck(status || { error: 'No answer' })
       window.dispatchEvent(new Event('lokal:settings-saved'))
@@ -2399,7 +2400,12 @@ module.exports = {
                     {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
                   </button>
                   {settings.spotify_sp_dc && (
-                    <button onClick={async () => { set('spotify_sp_dc', ''); setSpotifyCheck(null); await api.saveSettings({ spotify_sp_dc: '' }).catch(() => {}); window.dispatchEvent(new Event('lokal:settings-saved')) }}
+                    <button onClick={async () => {
+                      const saved = await api.saveSettings({ spotify_sp_dc: '' }).catch(e => ({ error: e?.message || 'Save failed' }))
+                      if (saved?.error) { setSpotifyCheck({ error: `Couldn't remove the cookie: ${saved.error}` }); return }
+                      set('spotify_sp_dc', ''); setSpotifyCheck(null)
+                      window.dispatchEvent(new Event('lokal:settings-saved'))
+                    }}
                       className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
                       Remove
                     </button>

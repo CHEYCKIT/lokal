@@ -20,6 +20,11 @@ router.get('/motion/:trackId', async (req, res) => {
 })
 
 router.post('/spotify-check', async (req, res) => {
+  // Getting a Spotify token needs the desktop app's hidden browser window; a
+  // standalone web server can't, so say so instead of trying.
+  if (!process.versions.electron) {
+    return res.json({ error: 'Spotify Canvas needs the Lokal desktop app (it isn\'t available on a standalone web server).', unsupported: true })
+  }
   res.json(await spotifyCheck().catch(e => ({ error: e.message })))
 })
 
