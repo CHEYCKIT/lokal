@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
+import LyricsSearchDrawer from './LyricsSearchDrawer'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
 import {
@@ -300,7 +301,7 @@ const Row = React.memo(function Row({
 
 const SYNC_LABEL = { syllable: 'Syllable synced', line: 'Line synced', none: 'Not synced' }
 
-function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh }) {
+function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSearch }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -350,6 +351,11 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh }) {
             <button onClick={() => { setOpen(false); onRefresh() }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-white/70 hover:bg-white/[0.08]">
               <RotateCcw size={12} /> Search all sources again
             </button>
+            {onSearch && (
+              <button onClick={() => { setOpen(false); onSearch() }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-white/70 hover:bg-white/[0.08]">
+                <Search size={12} /> Search manually...
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -448,7 +454,23 @@ export default function LyricsPanel({
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
   }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
 
+  // Manual search. The fullscreen views bring their own drawer (onSearchRequest);
+  // anywhere else -- the sidebar -- the panel opens one over itself.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const requestSearch = onSearchRequest || (() => setSearchOpen(true))
+  const currentTrackId = useRef(track?.id)
+  currentTrackId.current = track?.id
+  const pickSearchResult = async (lyrics, type) => {
+    setSearchOpen(false)
+    const trackId = track?.id
+    if (!trackId) return
+    try { await api.importLyrics(trackId, lyrics, type) } catch {}
+    // The song may have changed while saving; its own load already ran.
+    if (currentTrackId.current === trackId) load()
+  }
+
   useEffect(() => {
+    setSearchOpen(false)
     setResult(null); setFocusIdx(-1); lastScrollIdx.current = -1
     setTranslation({ state: 'idle', lines: null }); setRomanization({ state: 'idle', lines: null })
     load()
@@ -735,6 +757,7 @@ export default function LyricsPanel({
                 busy={sourceBusy}
                 onPick={pickSource}
                 onRefresh={() => load({ refresh: true })}
+                onSearch={requestSearch}
               />
             )}
           </div>
@@ -787,11 +810,9 @@ export default function LyricsPanel({
                 <>
                   <p className={fullscreen ? 'text-sm' : 'text-xs'}>No lyrics found</p>
                   <div className="flex items-center gap-3">
-                    {onSearchRequest && (
-                      <button onClick={onSearchRequest} className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
-                        <Search size={12} /> Search manually
-                      </button>
-                    )}
+                    <button onClick={requestSearch} className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
+                      <Search size={12} /> Search manually
+                    </button>
                     <button onClick={() => load({ refresh: true })} className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors">
                       <RotateCcw size={12} /> Try again
                     </button>
@@ -839,6 +860,12 @@ export default function LyricsPanel({
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {searchOpen && track && (
+          <LyricsSearchDrawer track={track} variant={fullscreen ? 'side' : 'fill'} onClose={() => setSearchOpen(false)} onSelect={pickSearchResult} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

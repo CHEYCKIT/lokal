@@ -1,7 +1,7 @@
-﻿import React, { useEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
-import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
+import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
@@ -148,9 +148,69 @@ function getEqPresetKey(gains) {
 let sidePanelsSaveChain = Promise.resolve()
 let sidePanelsSaveSeq = 0
 
+// Settings save as they change. Each change saves only its own keys (saving
+// the whole page's copy used to write back stale values -- e.g. the theme it
+// loaded when opened, undoing a theme picked since). Changes within a short
+// pause are batched, so typing isn't a save per keystroke, and saves are
+// chained so they land in order. Module scope, like the chain above, so a
+// save still pending when Settings closes isn't lost or reordered.
+let settingsSaveChain = Promise.resolve()
+let pendingSettings = {}
+let pendingSettingsTimer = null
+const settingsSaveListeners = new Set()
+const notifySettingsSave = (state) => settingsSaveListeners.forEach(fn => fn(state))
+
+function flushSettings() {
+  clearTimeout(pendingSettingsTimer)
+  pendingSettingsTimer = null
+  const patch = pendingSettings
+  if (!Object.keys(patch).length) return settingsSaveChain
+  pendingSettings = {}
+  notifySettingsSave('saving')
+  settingsSaveChain = settingsSaveChain
+    .catch(() => {})
+    .then(() => api.saveSettings(patch))
+    .then(r => {
+      if (r?.error) throw new Error(r.error)
+      // Mounted panels (sidebar lyrics, now playing...) re-read their settings.
+      window.dispatchEvent(new Event('lokal:settings-saved'))
+      if (!Object.keys(pendingSettings).length) notifySettingsSave('saved')
+    })
+    .catch(e => {
+      // Keep what failed so "Retry" (or the next change) sends it again,
+      // without overwriting anything changed since.
+      pendingSettings = { ...patch, ...pendingSettings }
+      notifySettingsSave({ error: e?.message || 'Save failed' })
+    })
+  return settingsSaveChain
+}
+
+function queueSettings(patch, delay = 400) {
+  pendingSettings = { ...pendingSettings, ...patch }
+  clearTimeout(pendingSettingsTimer)
+  pendingSettingsTimer = setTimeout(flushSettings, delay)
+}
+
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', () => { flushSettings() })
+
 export default function Settings() {
   const [settings, setSettings] = useState({})
-  const [saved, setSaved] = useState(false)
+  // null | 'saving' | 'saved' | { error }
+  const [saveState, setSaveState] = useState(null)
+  useEffect(() => {
+    let hide = null
+    const listener = (state) => {
+      clearTimeout(hide)
+      setSaveState(state)
+      if (state === 'saved') hide = setTimeout(() => setSaveState(null), 1800)
+    }
+    settingsSaveListeners.add(listener)
+    return () => {
+      settingsSaveListeners.delete(listener)
+      clearTimeout(hide)
+      flushSettings() // leaving Settings: send anything still waiting now
+    }
+  }, [])
   const [scanning, setScanning] = useState(false)
   const [showGenreModal, setShowGenreModal] = useState(false)
   const [eqGains, setEqGains] = useState(EQ_PRESETS[DEFAULT_EQ_PRESET].gains)
@@ -198,6 +258,46 @@ export default function Settings() {
   const [factoryResetting, setFactoryResetting] = useState(false)
   const [toolsStatus, setToolsStatus] = useState(null)
   const [toolsLoading, setToolsLoading] = useState(false)
+  const [soulseekCheck, setSoulseekCheck] = useState(null)
+  const testSoulseek = async () => {
+    setSoulseekCheck({ loading: true })
+    await api.saveSettings({
+      soulseek_url: settings.soulseek_url || 'http://localhost:5030',
+      soulseek_api_key: settings.soulseek_api_key || '',
+      soulseek_downloads_dir: settings.soulseek_downloads_dir || '',
+    })
+    const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
+    setSoulseekCheck(status || { error: 'No answer' })
+  }
+  const [spotifyCheck, setSpotifyCheck] = useState(null)
+  const testSpotifyCanvas = async () => {
+    setSpotifyCheck({ loading: true })
+    try {
+      const saved = await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
+      if (saved?.error) { setSpotifyCheck({ error: `Couldn't save the cookie: ${saved.error}` }); return }
+      // Never leave the button on "Checking...": give up after a minute.
+      const status = await Promise.race([
+        api.spotifyCanvasCheck(),
+        new Promise(resolve => setTimeout(() => resolve({ error: 'No answer from Spotify after a minute. Try again, or check your connection.' }), 60000)),
+      ])
+      setSpotifyCheck(status || { error: 'No answer' })
+      window.dispatchEvent(new Event('lokal:settings-saved'))
+    } catch (e) {
+      setSpotifyCheck({ error: e.message || 'Could not reach Spotify' })
+    }
+  }
+  // Live progress of a yt-dlp / ffmpeg download, so the button doesn't look stuck.
+  const [toolProgress, setToolProgress] = useState({})
+  useEffect(() => api.onToolsDownloadProgress((_, p) => {
+    if (!p?.tool) return
+    setToolProgress(prev => ({ ...prev, [p.tool]: p.status === 'done' || p.status === 'error' ? null : p }))
+  }), [])
+  const progressLabel = (tool) => {
+    const p = toolProgress[tool]
+    if (!p) return 'Downloading...'
+    if (p.status === 'installing') return 'Installing...'
+    return Number.isFinite(p.percent) ? `Downloading ${p.percent}%` : 'Downloading...'
+  }
   const [toolsError, setToolsError] = useState('')
   const [toolsErrorTool, setToolsErrorTool] = useState(null)
   const [showPlaylistImportModal, setShowPlaylistImportModal] = useState(false)
@@ -236,6 +336,17 @@ export default function Settings() {
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState('library')
+  // Every category shares the page's one scroll container (App's <main>), so
+  // switching from halfway down a long category used to land halfway down
+  // the next one. Start each category at the top; layout effect so the new
+  // content never paints at the old offset first.
+  const rootRef = useRef(null)
+  const firstCategoryRef = useRef(true)
+  useLayoutEffect(() => {
+    if (firstCategoryRef.current) { firstCategoryRef.current = false; return }
+    const scroller = rootRef.current?.closest('main')
+    if (scroller) scroller.scrollTop = 0
+  }, [activeCategory])
 
   
   const { openAlbums, user, logout } = useAppStore()
@@ -485,20 +596,10 @@ export default function Settings() {
     }
   }
 
-  const set = (k, v) => setSettings(s => ({ ...s, [k]: v }))
-
-  const save = async () => {
-    await api.saveSettings(settings)
-    // RightSidebar's Lyrics tab and the standalone LyricsSidePanel both cache
-    // unsynced_auto_sync in local state and stay mounted across navigation,
-    // so a save made while one of them is already open would otherwise go
-    // unnoticed until it happens to remount. Broadcast the save so they can
-    // refresh in place.
-    window.dispatchEvent(new Event('lokal:settings-saved'))
-    localStorage.setItem('lokal-eq', JSON.stringify(eqGains))
-    localStorage.setItem('lokal-eq-preset', eqPreset)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  // Every change saves itself (see queueSettings above).
+  const set = (k, v) => {
+    setSettings(s => ({ ...s, [k]: v }))
+    queueSettings({ [k]: v })
   }
 
   const openLastfmPage = async (url) => {
@@ -509,6 +610,10 @@ export default function Settings() {
     const normalized = normalizeEqGains(nextGains)
     setEqGains(normalized)
     setEqPreset(presetKey)
+    try {
+      localStorage.setItem('lokal-eq', JSON.stringify(normalized))
+      localStorage.setItem('lokal-eq-preset', presetKey)
+    } catch {}
     window.__lokalInitAudio?.()
     normalized.forEach((gain, index) => {
       window.__lokaleq?.setGain(index, gain)
@@ -789,6 +894,7 @@ export default function Settings() {
       setToolsErrorTool('yt-dlp')
     }
     setToolsLoading(false)
+    setToolProgress(prev => ({ ...prev, 'yt-dlp': null }))
     api.getToolsStatus().then(setToolsStatus)
   }
 
@@ -1081,21 +1187,30 @@ export default function Settings() {
   const usingDefaultDiscordId = settings.discord_use_default_app_id !== '0'
 
   return (
-    <div className="p-6 max-w-2xl space-y-6 pb-10">
+    <div ref={rootRef} className="p-6 max-w-2xl space-y-6 pb-10">
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
           <div className="flex items-center gap-3">
-            <button onClick={save}
-              className="flex items-center gap-2 px-5 py-2.5 bg-accent text-base rounded-xl text-sm font-medium hover:bg-accent/80 transition-colors">
-              <Save size={14} /> Save Settings
-            </button>
-            <AnimatePresence>
-              {saved && (
-                <motion.span initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+            {/* No Save button: changes save as they're made. */}
+            <AnimatePresence mode="wait">
+              {saveState?.error ? (
+                <motion.span key="error" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+                  className="text-xs text-red-400 flex items-center gap-2">
+                  <AlertTriangle size={12} /> Couldn't save ({saveState.error})
+                  <button onClick={() => flushSettings()} className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-400/10">Retry</button>
+                </motion.span>
+              ) : saveState === 'saving' ? (
+                <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="text-xs text-muted">Saving...</motion.span>
+              ) : saveState === 'saved' ? (
+                <motion.span key="saved" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-accent flex items-center gap-1">
                   <CheckCircle size={12} /> Saved
                 </motion.span>
+              ) : (
+                <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="text-xs text-muted">Changes save automatically</motion.span>
               )}
             </AnimatePresence>
           </div>
@@ -1249,6 +1364,21 @@ export default function Settings() {
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.clean_download_metadata !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {settings.clean_download_metadata !== '0' ? 'Yes' : 'No'}
           </button>
+        </Row>
+        <Row label="Add Lyrics to Downloads" desc="Look up each downloaded track in your lyrics sources and write the lyrics into the file: synced LRC any player can show, plus word-by-word timing Lokal reads back.">
+          <button
+            onClick={() => set('download_embed_lyrics', settings.download_embed_lyrics === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.download_embed_lyrics !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.download_embed_lyrics !== '0' ? 'Yes' : 'No'}
+          </button>
+        </Row>
+        <Row label="Simultaneous Downloads" desc="How many downloads run at once. The rest wait in the queue. A playlist counts as one.">
+          <select
+            value={settings.download_concurrency || '3'}
+            onChange={e => set('download_concurrency', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
         </Row>
         <Row label="Skip Drum-kit Pattern" desc="Skip tracks with drum-kit/loop/sample keywords in title (for producers with sample packs in their music folder)">
           <button
@@ -1504,7 +1634,7 @@ export default function Settings() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadYtDlpTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? 'Downloading...' : toolsStatus?.ytdlp?.found ? 'Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('yt-dlp') : toolsStatus?.ytdlp?.found ? 'Update / Re-download' : 'Download'}
                 </button>
                 <button onClick={() => setCustomToolPath('yt-dlp')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
               </div>
@@ -1523,7 +1653,7 @@ export default function Settings() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadFfmpegTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? 'Downloading...' : toolsStatus?.ffmpeg?.found ? 'Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('ffmpeg') : toolsStatus?.ffmpeg?.found ? 'Re-download' : 'Download'}
                 </button>
                 <button onClick={() => setCustomToolPath('ffmpeg')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
               </div>
@@ -1643,6 +1773,54 @@ export default function Settings() {
           <p className="text-xs text-muted mt-3 text-center opacity-50">Click anywhere in app once to activate EQ</p>
         </div>
       </Section>
+      )}
+
+      {inCategory('integrations') && (
+        <Section title="Soulseek">
+          <p className="text-xs text-muted leading-relaxed">
+            Search and download from Soulseek, where lossless (FLAC) copies are common. Lokal talks to{' '}
+            <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
+            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). Soulseek is a sharing network: slskd shares folders back by default, and most of what's on it is copyrighted, so only download what you're allowed to.
+          </p>
+          <Row label="slskd Address" desc="Where slskd's web interface runs.">
+            <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
+              placeholder="http://localhost:5030" spellCheck={false}
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="API Key">
+            <input type="password" value={settings.soulseek_api_key || ''} onChange={e => set('soulseek_api_key', e.target.value)}
+              placeholder="From slskd.yml" spellCheck={false} autoComplete="off"
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="slskd Downloads Folder" desc="Leave empty to use the folder slskd reports. Set it when slskd runs in Docker or on another machine, as this computer sees that folder. Finished files are moved from there into your music folder.">
+            <div className="flex items-center gap-2">
+              <input value={settings.soulseek_downloads_dir || ''} onChange={e => set('soulseek_downloads_dir', e.target.value)}
+                placeholder="Automatic" spellCheck={false}
+                className="w-48 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {api.isElectron && (
+                <button onClick={async () => { const f = await api.openFolder(); if (f) set('soulseek_downloads_dir', f) }}
+                  className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
+                  <FolderOpen size={14} />
+                </button>
+              )}
+            </div>
+          </Row>
+          <div className="flex items-center gap-3">
+            <button onClick={testSoulseek} disabled={soulseekCheck?.loading}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+              {soulseekCheck?.loading ? 'Checking...' : 'Save & Test'}
+            </button>
+            {soulseekCheck && !soulseekCheck.loading && (
+              soulseekCheck.error
+                ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
+                : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
+                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : `The API key works, but slskd isn't logged in to Soulseek${soulseekCheck.serverState ? ` (${soulseekCheck.serverState})` : ''}. Check the soulseek: username and password in slskd.yml, and slskd's own page.`}
+                    {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
+                    {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
+                  </p>
+            )}
+          </div>
+        </Section>
       )}
 
       {inCategory('integrations') && (
@@ -2233,6 +2411,83 @@ module.exports = {
             </div>
           )}
         </div>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
+      <Section title="Now Playing">
+        <Row label="Colour Background" desc="Fill the Details sidebar and the full screen player with colours taken from the cover, Apple Music style. Off: the classic dark sidebar and a blurred cover behind the full screen player.">
+          <button
+            onClick={() => set('artwork_backdrop', settings.artwork_backdrop === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.artwork_backdrop !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.artwork_backdrop !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Moving Covers" desc="Play an album's animated cover (like Apple Music's) in the Details sidebar and the full screen player, when one can be found. Clips are downloaded once and kept in a cache.">
+          <button
+            onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.motion_covers !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.motion_covers !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        {settings.motion_covers !== '0' && (() => {
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips collected by the BitChord community'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
+          let chosen = ['apple', 'tidal', 'community']
+          try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
+          const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
+          return (
+            <>
+            <Row label="Where to Look" desc="Tried in this order (Spotify first if you prioritize it below); the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
+              <div className="flex flex-col items-end gap-1.5">
+                {all.map(([id, label, hint]) => (
+                  <button key={id} onClick={() => toggle(id)} title={hint}
+                    className={`px-3 py-1 rounded-lg text-xs border transition-colors ${chosen.includes(id) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            {chosen.includes('spotify') && (
+              <>
+                <Row label="Spotify Cookie" desc={"Spotify only shares canvases with a signed-in account, so this uses your own session cookie (sp_dc). To get it: sign in on open.spotify.com in your browser, open the developer tools (F12) > Application (Storage in Firefox) > Cookies > https://open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify. This uses Spotify's private web player endpoints, like BitChord does -- it can stop working at any time, and it's your real account."}>
+                  <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
+                    placeholder="sp_dc value" spellCheck={false} autoComplete="off"
+                    className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                </Row>
+                <Row label="Prioritize Spotify Canvas" desc="Ask Spotify first and use Apple Music, Tidal and the community list only when it has nothing. Spotify has canvases for far more songs, but they're vertical, so they're cropped to a square here.">
+                  <button
+                    onClick={() => set('spotify_canvas_first', settings.spotify_canvas_first === '1' ? '0' : '1')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.spotify_canvas_first === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                    {settings.spotify_canvas_first === '1' ? 'On' : 'Off'}
+                  </button>
+                </Row>
+                <div className="flex items-center gap-3">
+                  <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading}
+                    className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+                    {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+                  </button>
+                  {settings.spotify_sp_dc && (
+                    <button onClick={async () => {
+                      const saved = await api.saveSettings({ spotify_sp_dc: '' }).catch(e => ({ error: e?.message || 'Save failed' }))
+                      if (saved?.error) { setSpotifyCheck({ error: `Couldn't remove the cookie: ${saved.error}` }); return }
+                      set('spotify_sp_dc', ''); setSpotifyCheck(null)
+                      window.dispatchEvent(new Event('lokal:settings-saved'))
+                    }}
+                      className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
+                      Remove
+                    </button>
+                  )}
+                  {spotifyCheck && !spotifyCheck.loading && (
+                    spotifyCheck.error
+                      ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                      : <p className="text-xs text-green-400">Signed in -- canvases will be looked up.</p>
+                  )}
+                </div>
+              </>
+            )}
+            </>
+          )
+        })()}
       </Section>
       )}
 

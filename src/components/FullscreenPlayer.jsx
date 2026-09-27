@@ -4,6 +4,8 @@ import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1,
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
+import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
+import MotionCover from './MotionCover'
 import { QueueContent } from './QueuePanel'
 import { api } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
@@ -148,6 +150,8 @@ export default function FullscreenPlayer() {
   const wordSync = localStorage.getItem('word-sync') !== '0'
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
+  const backdropFx = useArtworkBackdropEnabled()
+  const [fsCanvas, setFsCanvas] = useState(false)
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -331,28 +335,34 @@ export default function FullscreenPlayer() {
           data-fullscreen-player-overlay=""
         >
           <div className="absolute inset-0 bg-black">
-            <AnimatePresence mode="wait">
-              {artSrc ? (
-                <motion.img
-                  key={currentTrack?.id}
-                  src={artSrc}
-                  onLoad={() => setBgLoaded(true)}
-                  initial={{ opacity: 0, scale: 1.15 }}
-                  animate={{ opacity: bgLoaded ? 0.45 : 0, scale: 1.08 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.8 }}
-                  className="w-full h-full object-cover"
-                  style={{ filter: 'blur(72px) saturate(1.6) brightness(0.5)' }}
-                />
-              ) : (
-                <motion.div
-                  key="no-art"
-                  className="w-full h-full bg-gradient-to-br from-neutral-900 to-black"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                />
-              )}
-            </AnimatePresence>
+            {/* Colours taken from the cover (see ArtworkBackdrop), or -- with
+                that switched off in Settings -- the plain blurred cover. */}
+            {backdropFx ? (
+              <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
+            ) : (
+              <AnimatePresence mode="wait">
+                {artSrc ? (
+                  <motion.img
+                    key={currentTrack?.id}
+                    src={artSrc}
+                    onLoad={() => setBgLoaded(true)}
+                    initial={{ opacity: 0, scale: 1.15 }}
+                    animate={{ opacity: bgLoaded ? 0.45 : 0, scale: 1.08 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.8 }}
+                    className="w-full h-full object-cover"
+                    style={{ filter: 'blur(72px) saturate(1.6) brightness(0.5)' }}
+                  />
+                ) : (
+                  <motion.div
+                    key="no-art"
+                    className="w-full h-full bg-gradient-to-br from-neutral-900 to-black"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  />
+                )}
+              </AnimatePresence>
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
           </div>
 
@@ -386,12 +396,21 @@ export default function FullscreenPlayer() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-                className="rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center w-80 h-80"
+                className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center"
+                // A tall (9:16) canvas plays in the card itself, which grows to
+                // its shape. (It used to fill the whole screen behind the
+                // lyrics panel, whose blur then had to be redone every video
+                // frame -- slow, especially while the panel slid open.)
+                style={fsCanvas
+                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
+                  : { width: '20rem', height: '20rem' }}
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} />}
               </motion.div>
             </AnimatePresence>
 

@@ -4,6 +4,7 @@ import { Home, Search, Library, Download, Plus, Music, Heart, Settings, LogIn, L
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
+import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
@@ -263,6 +264,7 @@ export default function Sidebar() {
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive(path) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
             <Icon size={15} />
             <span className="flex-1 text-left">{label}</span>
+            {path === '/downloader' && <DownloadIndicator />}
             {path === '/recap' && showRecapBadge && (
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-base">!</span>
             )}
@@ -282,6 +284,7 @@ export default function Sidebar() {
           <Users size={15} /> Artists
         </button>
       </nav>
+      <DownloadManagerPanel />
 
       <div className="mx-4 my-2 border-t border-border flex-shrink-0" />
 

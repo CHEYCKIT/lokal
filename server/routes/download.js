@@ -1,707 +1,136 @@
+// Web-mode download routes. The queue is electron/download/manager.js, the
+// same one the desktop app uses (in the desktop app both run in one process
+// and share it); standalone, the server configures it with plain PATH tools.
+
 const router = require('express').Router()
-const { spawn } = require('child_process')
-const path = require('path')
-const os = require('os')
 const fs = require('fs-extra')
+const { execFileSync } = require('child_process')
 const { getDB, getStorageDir } = require('../../electron/ipc/db')
-const { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../../electron/ipc/ytCookies')
+const { getDownloadManager } = require('../../electron/download/manager')
+const { runJsonSearch, mapSearchResult, mapArtistResult } = require('../../electron/download/search')
 
-const activeDownloads = new Map()
-
-function findBinary(name) {
+const found = new Map()
+function findBinary(name, versionFlag = '--version') {
+  if (found.has(name)) return found.get(name)
   const candidates = process.platform === 'win32' ? [`${name}.exe`, name] : [name]
+  let hit = null
   for (const candidate of candidates) {
     try {
-      require('child_process').execSync(`${candidate} --version`, { stdio: 'ignore' })
-      return candidate
+      execFileSync(candidate, [versionFlag], { stdio: 'ignore', windowsHide: true, timeout: 15000 })
+      hit = candidate
+      break
     } catch {}
   }
-  return null
+  // Only a hit is remembered, so installing yt-dlp later works without a restart.
+  if (hit) found.set(name, hit)
+  return hit
 }
 
-function getPlaylistId(url) {
-  try {
-    const parsed = new URL(url)
-    return parsed.searchParams.get('list') || null
-  } catch {
-    const match = String(url || '').match(/[?&]list=([a-zA-Z0-9_-]+)/)
-    return match ? match[1] : null
-  }
-}
-
-function resolveAudioQuality(format, quality) {
-  if (format === 'mp3' && quality) return `${quality}K`
-  return '0'
-}
-
-function snapshot(entry) {
-  return {
-    id: entry.id,
-    url: entry.url,
-    title: entry.title,
-    kind: entry.kind,
-    status: entry.status,
-    progress: entry.progress ?? 0,
-    speed: entry.speed || null,
-    eta: entry.eta || null,
-    message: entry.message || null,
-    song: entry.song || null,
-    output: entry.output || '',
-    downloadedTracks: Array.isArray(entry.downloadedTracks) ? entry.downloadedTracks : [],
-    indexedTracks: Array.isArray(entry.indexedTracks) ? entry.indexedTracks : [],
-    totalTracks: entry.totalTracks ?? null,
-    currentTrack: entry.currentTrack ?? null,
-    error: entry.error || null,
-  }
-}
-
-function setActiveEntry(id, patch = {}) {
-  const current = activeDownloads.get(id)
-  if (!current) return null
-  const next = {
-    ...current,
-    ...patch,
-    downloadedTracks: Array.isArray(patch.downloadedTracks) ? patch.downloadedTracks : current.downloadedTracks,
-    indexedTracks: Array.isArray(patch.indexedTracks) ? patch.indexedTracks : current.indexedTracks,
-  }
-  activeDownloads.set(id, next)
-  return next
-}
-
-function trimOutput(lines, limit = 50) {
-  return lines.slice(-limit).join('\n')
-}
-
-function collectFilepath(line, filepaths, downloadedTracks) {
-  if (!line.startsWith('filepath:')) return null
-  const filepath = line.slice('filepath:'.length).trim()
-  if (!filepath) return null
-  if (!filepaths.includes(filepath)) filepaths.push(filepath)
-  const basename = path.basename(filepath)
-  if (!downloadedTracks.includes(basename)) downloadedTracks.push(basename)
-  return filepath
-}
-
-function getSettingsMap() {
-  const db = getDB()
-  return Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value]))
-}
-
-function buildBaseArgs(settings, cookies = cookieArgs(settings)) {
-  return [...cookies.args]
-}
-
-async function cleanupLeftovers(filepaths, outputDir) {
-  const audioExts = new Set(['.mp3', '.flac', '.m4a', '.ogg', '.wav', '.aac', '.opus'])
-  const junkExts = new Set(['.webp', '.webm', '.ytdl', '.part', '.jpg.part', '.temp', '.mhtml', '.info.json'])
-
-  for (const fp of filepaths) {
-    const dir = path.dirname(fp)
-    const base = path.basename(fp, path.extname(fp))
-    try {
-      const siblings = fs.readdirSync(dir)
-      for (const file of siblings) {
-        const ext = path.extname(file).toLowerCase()
-        const fullPath = path.join(dir, file)
-        if (!file.startsWith(base)) continue
-        if (audioExts.has(ext)) continue
-        if (junkExts.has(ext)) {
-          try { fs.unlinkSync(fullPath) } catch {}
-          continue
-        }
-        if (ext === '.jpg') {
-          try {
-            const stat = fs.statSync(fullPath)
-            if (stat.size < 51200) fs.unlinkSync(fullPath)
-          } catch {}
-        }
-      }
-    } catch {}
-  }
-
-  try {
-    const topLevel = fs.readdirSync(outputDir)
-    for (const file of topLevel) {
-      if (path.extname(file).toLowerCase() === '.webp') {
-        try { fs.unlinkSync(path.join(outputDir, file)) } catch {}
-      }
-    }
-  } catch {}
-}
-
-function mapSearchResult(entry) {
-  return {
-    id: entry.id,
-    title: entry.title,
-    channel: entry.channel || entry.uploader,
-    duration: entry.duration,
-    thumbnail: entry.thumbnail,
-    url: entry.webpage_url || (entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : entry.url),
-  }
-}
-
-function mapArtistResult(entry) {
-  const channelId = entry.channel_id || entry.id
-  const type = entry.playlist_id ? 'playlist' : 'channel'
-  let url = entry.webpage_url || entry.url || null
-  if (!url && type === 'channel' && channelId) {
-    url = `https://www.youtube.com/channel/${channelId}`
-  }
-  return {
-    id: entry.playlist_id || channelId || entry.id,
-    title: entry.title || entry.uploader || entry.channel,
-    channel: entry.uploader || entry.channel,
-    type,
-    thumbnail: entry.thumbnail,
-    url,
-    playlistId: entry.playlist_id || null,
-    videoCount: entry.playlist_count || entry.channel_item_count || null,
-  }
-}
-
-function clampActiveProgress(value) {
-  const rounded = Math.round(value || 0)
-  if (rounded >= 100) return 99
-  if (rounded < 0) return 0
-  return rounded
-}
-
-function resolveSourceLabel(url) {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '')
-    if (host.includes('youtube') || host === 'youtu.be') return 'YouTube'
-    if (host.includes('soundcloud')) return 'SoundCloud'
-    if (host.includes('bandcamp')) return 'Bandcamp'
-    if (host.includes('mixcloud')) return 'Mixcloud'
-    return host
-  } catch {
-    return 'Source'
-  }
-}
-
-function fetchMediaTitle(ytdlp, url) {
-  return new Promise(resolve => {
-    const args = [
-      url,
-      '--dump-single-json',
-      '--flat-playlist',
-      '--playlist-items', '1',
-      '--quiet',
-      '--no-warnings',
-    ]
-    const proc = spawn(ytdlp, args, { windowsHide: true })
-    let stdout = ''
-
-    proc.stdout.on('data', data => {
-      stdout += data.toString()
-    })
-
-    proc.on('close', () => {
-      try {
-        const parsed = JSON.parse(stdout)
-        resolve(parsed?.title || parsed?.playlist_title || parsed?.uploader || null)
-      } catch {
-        resolve(null)
-      }
-    })
-
-    proc.on('error', () => resolve(null))
-  })
-}
-
-function getFriendlyDownloadError(outputLines, fallback) {
-  const text = Array.isArray(outputLines) ? outputLines.join('\n') : String(outputLines || '')
-  if (isCookieError(text)) return COOKIE_FAILURE_MESSAGE
-  if (/Requested format is not available/i.test(text)) {
-    return 'yt-dlp could not fetch the requested format. Try updating or re-downloading yt-dlp in Settings and then retry.'
-  }
-  return fallback
-}
-
-function runJsonSearch(searchTerm, mapper, page = 1, limit = 10) {
-  const ytdlp = findBinary('yt-dlp')
-  if (!ytdlp) {
-    return Promise.resolve({ error: 'yt-dlp not found', results: [], page: 1, hasMore: false })
-  }
-
-  const safePage = Math.max(1, parseInt(page, 10) || 1)
-  const fetchCount = safePage * limit + 1
-  const args = [
-    `ytsearch${fetchCount}:${searchTerm}`,
-    '--dump-json',
-    '--flat-playlist',
-    '--skip-download',
-    '--quiet',
-    '--no-warnings',
-  ]
-
-  return new Promise(resolve => {
-    const proc = spawn(ytdlp, args, { windowsHide: true })
-    let stdout = ''
-
-    proc.stdout.on('data', data => {
-      stdout += data.toString()
-    })
-
-    proc.on('close', () => {
-      const rows = stdout
-        .trim()
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map(line => {
-          try {
-            return JSON.parse(line)
-          } catch {
-            return null
-          }
-        })
-        .filter(Boolean)
-
-      const mapped = []
-      const seen = new Set()
-
-      for (const row of rows) {
-        const item = mapper(row)
-        if (!item?.id || !item?.url) continue
-        const key = `${item.type || 'item'}:${item.id}:${item.url}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        mapped.push(item)
-      }
-
-      const start = (safePage - 1) * limit
-      const end = start + limit
-      resolve({
-        results: mapped.slice(start, end),
-        page: safePage,
-        hasMore: mapped.length > end,
-      })
-    })
-
-    proc.on('error', () => resolve({ error: 'yt-dlp not found', results: [], page: safePage, hasMore: false }))
-  })
-}
-
-function startSingleDownload(url, opts = {}) {
-  const ytdlp = findBinary('yt-dlp')
-  if (!ytdlp) return { error: 'yt-dlp not found' }
-
-  const settings = getSettingsMap()
-  const outDir = settings.music_folder || path.join(os.homedir(), 'Music')
-  fs.ensureDirSync(outDir)
-
-  const id = opts.id || `dl-${Date.now()}`
-  const format = opts.format || 'mp3'
-  const outputTemplate = path.join(outDir, '%(artist)s', '%(album)s', '%(title)s.%(ext)s')
-  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
-  const args = [
-    url,
-    '-x',
-    '--audio-format', format,
-    '--audio-quality', resolveAudioQuality(format, opts.quality),
-    '--embed-thumbnail',
-    '--add-metadata',
-    '--embed-metadata',
-    '--print', 'after_move:filepath:%(filepath)s',
-    '--output', outputTemplate,
-    '--newline',
-    '--progress',
-    '--no-warnings',
-    ...buildBaseArgs(settings, cookies),
-  ]
-
-  const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
-  const filepaths = []
-  const downloadedTracks = []
-  const proc = spawn(ytdlp, args, { windowsHide: true })
-
-  activeDownloads.set(id, {
-    id,
-    url,
-    title: opts.title || url,
-    kind: 'single',
-    status: 'downloading',
-    progress: 0,
-    message: 'Starting...',
-    song: null,
-    output: '',
-    downloadedTracks: [],
-    indexedTracks: [],
-    proc,
-  })
-
-  proc.stdout.on('data', data => {
-    const lines = data.toString().split(/\r?\n/)
-    for (const line of lines) {
-      if (!line.trim()) continue
-      outputLines.push(line)
-
-      const filepath = collectFilepath(line, filepaths, downloadedTracks)
-      if (filepath) {
-        setActiveEntry(id, {
-          song: filepath,
-          message: `Saved: ${path.basename(filepath)}`,
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      const pctMatch = line.match(/(\d+(?:\.\d+)?)%/)
-      if (pctMatch) {
-        const speedMatch = line.match(/at\s+([^\s]+\/s)/i) || line.match(/([0-9.]+[KMG]iB\/s)/)
-        const etaMatch = line.match(/ETA\s+([0-9:]+)/i)
-        setActiveEntry(id, {
-          progress: clampActiveProgress(parseFloat(pctMatch[1])),
-          speed: speedMatch?.[1] || null,
-          eta: etaMatch?.[1] || null,
-          message: downloadedTracks.length ? `Downloading: ${downloadedTracks[downloadedTracks.length - 1]}` : 'Downloading...',
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      if (/^\[(download|ffmpeg|ExtractAudio|Metadata|EmbedThumbnail)\]/.test(line)) {
-        setActiveEntry(id, {
-          message: line.replace(/^\[[^\]]+\]\s*/, '').trim(),
-          output: trimOutput(outputLines),
-        })
-      }
-    }
-  })
-
-  proc.stderr.on('data', data => {
-    const lines = data.toString().split(/\r?\n/)
-    for (const line of lines) {
-      if (!line.trim()) continue
-      outputLines.push(line)
-    }
-    setActiveEntry(id, { output: trimOutput(outputLines) })
-  })
-
-  proc.on('close', async code => {
-    if (!activeDownloads.has(id)) return
-
-    if (code === 0) {
-      try {
-        await cleanupLeftovers(filepaths, outDir)
-      } catch {}
-      setActiveEntry(id, {
-        status: 'done',
-        progress: 100,
-        message: downloadedTracks.length ? `Downloaded ${downloadedTracks.length} track(s)` : 'Download complete',
-        downloadedTracks: [...downloadedTracks],
-        output: trimOutput(outputLines),
-      })
-      return
-    }
-
-    // Browser cookies unreadable (Chrome/Edge on Windows, DPAPI): retry once without them.
-    if (code !== null && cookies.usedBrowser && isCookieError(outputLines)) {
-      outputLines.push(markUnreadable(cookies.usedBrowser))
-      startSingleDownload(url, { ...opts, id, withoutCookies: true, carryOutput: outputLines.slice(-50) })
-      return
-    }
-
-    const friendlyError = getFriendlyDownloadError(outputLines, code === null ? 'Cancelled' : 'Download failed')
-    setActiveEntry(id, {
-      status: 'error',
-      error: friendlyError,
-      message: friendlyError,
-      output: trimOutput(outputLines),
-    })
-  })
-
-  proc.on('error', err => {
-    setActiveEntry(id, {
-      status: 'error',
-      error: err.message,
-      message: err.message,
-      output: trimOutput(outputLines),
-    })
-  })
-
-  return { downloadId: id }
-}
-
-function startPlaylistDownload(url, opts = {}) {
-  const ytdlp = findBinary('yt-dlp')
-  if (!ytdlp) return { error: 'yt-dlp not found' }
-
-  const resolvedTitlePromise = fetchMediaTitle(ytdlp, url)
-  const db = getDB()
-  const settings = getSettingsMap()
-  const outDir = settings.music_folder || path.join(os.homedir(), 'Music')
-  fs.ensureDirSync(outDir)
-
-  const id = opts.id || `pl-${Date.now()}`
-  const format = opts.format || 'mp3'
-  const outputTemplate = path.join(outDir, '%(playlist)s', '%(artist)s', '%(title)s.%(ext)s')
-  const playlistDbId = opts.playlistId || getPlaylistId(url) || `pl-${Date.now()}`
-  const archivePath = path.join(getStorageDir(), `archive-${playlistDbId}.txt`)
-  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
-
-  const args = [
-    url,
-    '--download-archive', archivePath,
-    '-x',
-    '--audio-format', format,
-    '--audio-quality', resolveAudioQuality(format, opts.quality),
-    '--embed-thumbnail',
-    '--add-metadata',
-    '--embed-metadata',
-    '--print', 'after_move:filepath:%(filepath)s',
-    '--output', outputTemplate,
-    '--newline',
-    '--progress',
-    '--yes-playlist',
-    '--ignore-errors',
-    '--no-warnings',
-    ...buildBaseArgs(settings, cookies),
-  ]
-
-  const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
-  const errorLines = []
-  const filepaths = []
-  const downloadedTracks = []
-  let totalTracks = 0
-  let currentTrack = 0
-  let currentSong = null
-  const proc = spawn(ytdlp, args, { windowsHide: true })
-
-  activeDownloads.set(id, {
-    id,
-    url,
-    title: opts.title || `${resolveSourceLabel(url)} Playlist`,
-    kind: 'playlist',
-    status: 'downloading',
-    progress: 0,
-    message: 'Starting...',
-    song: null,
-    output: '',
-    downloadedTracks: [],
-    indexedTracks: [],
-    totalTracks: null,
-    currentTrack: null,
-    proc,
-  })
-
-  resolvedTitlePromise.then(resolvedTitle => {
-    const finalTitle = opts.title || resolvedTitle || `${resolveSourceLabel(url)} Playlist`
-    db.prepare(`INSERT OR REPLACE INTO downloaded_playlists (id, url, title, archive_path, status, downloaded_count, last_downloaded_at) VALUES (?, ?, ?, ?, 'downloading', 0, ?)`)
-      .run(playlistDbId, url, finalTitle, archivePath, Date.now())
-    setActiveEntry(id, { title: finalTitle })
-  })
-
-  proc.stdout.on('data', data => {
-    const lines = data.toString().split(/\r?\n/)
-    for (const line of lines) {
-      if (!line.trim()) continue
-      outputLines.push(line)
-
-      const filepath = collectFilepath(line, filepaths, downloadedTracks)
-      if (filepath) {
-        currentSong = filepath
-        setActiveEntry(id, {
-          song: filepath,
-          message: `Saved: ${path.basename(filepath)}`,
-          downloadedTracks: [...downloadedTracks],
-          totalTracks: totalTracks || null,
-          currentTrack: currentTrack || null,
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      const videoMatch = line.match(/\[download\]\s+Downloading video\s+(\d+)\s+of\s+(\d+)/i)
-      if (videoMatch) {
-        currentTrack = parseInt(videoMatch[1], 10)
-        totalTracks = parseInt(videoMatch[2], 10)
-        const progress = totalTracks > 0 ? clampActiveProgress(((currentTrack - 1) / totalTracks) * 100) : 0
-        setActiveEntry(id, {
-          progress,
-          message: `Track ${currentTrack} of ${totalTracks}`,
-          totalTracks,
-          currentTrack,
-          song: currentSong,
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      if (line.includes('has already been recorded in the archive')) {
-        setActiveEntry(id, {
-          message: line.replace(/^\[[^\]]+\]\s*/, '').trim(),
-          totalTracks: totalTracks || null,
-          currentTrack: currentTrack || null,
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      const pctMatch = line.match(/(\d+(?:\.\d+)?)%/)
-      if (pctMatch) {
-        const raw = parseFloat(pctMatch[1])
-        const progress = totalTracks > 0 && currentTrack > 0
-          ? clampActiveProgress((((currentTrack - 1) + raw / 100) / totalTracks) * 100)
-          : clampActiveProgress(raw)
-        const speedMatch = line.match(/at\s+([^\s]+\/s)/i) || line.match(/([0-9.]+[KMG]iB\/s)/)
-        const etaMatch = line.match(/ETA\s+([0-9:]+)/i)
-        setActiveEntry(id, {
-          progress,
-          speed: speedMatch?.[1] || null,
-          eta: etaMatch?.[1] || null,
-          message: currentSong ? `Downloading: ${path.basename(currentSong)}` : 'Downloading...',
-          song: currentSong,
-          totalTracks: totalTracks || null,
-          currentTrack: currentTrack || null,
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-        continue
-      }
-
-      if (/error/i.test(line)) {
-        errorLines.push(line)
-      } else if (/^\[(download|ffmpeg|ExtractAudio|Metadata|EmbedThumbnail)\]/.test(line)) {
-        setActiveEntry(id, {
-          message: line.replace(/^\[[^\]]+\]\s*/, '').trim(),
-          song: currentSong,
-          totalTracks: totalTracks || null,
-          currentTrack: currentTrack || null,
-          downloadedTracks: [...downloadedTracks],
-          output: trimOutput(outputLines),
-        })
-      }
-    }
-  })
-
-  proc.stderr.on('data', data => {
-    const lines = data.toString().split(/\r?\n/)
-    for (const line of lines) {
-      if (!line.trim()) continue
-      outputLines.push(line)
-      if (/error/i.test(line) && !line.includes('Deleting original file')) {
-        errorLines.push(line)
-      }
-    }
-    setActiveEntry(id, {
-      output: trimOutput(outputLines),
-      message: currentSong ? `Downloading: ${path.basename(currentSong)}` : 'Preparing download...',
-    })
-  })
-
-  proc.on('close', async code => {
-    if (!activeDownloads.has(id)) return
-
-    if (code === 0) {
-      try {
-        await cleanupLeftovers(filepaths, outDir)
-      } catch {}
-
-      db.prepare('UPDATE downloaded_playlists SET status = ?, downloaded_count = ?, total_tracks = ?, last_downloaded_at = ? WHERE id = ?')
-        .run('completed', downloadedTracks.length, totalTracks || downloadedTracks.length, Date.now(), playlistDbId)
-
-      setActiveEntry(id, {
-        status: 'done',
-        progress: 100,
-        message: `Downloaded ${downloadedTracks.length} track(s)`,
-        downloadedTracks: [...downloadedTracks],
-        totalTracks: totalTracks || downloadedTracks.length,
-        currentTrack: totalTracks || downloadedTracks.length,
-        output: trimOutput(outputLines),
-      })
-      return
-    }
-
-    // Browser cookies unreadable before anything downloaded: retry once without them.
-    if (code !== null && cookies.usedBrowser && !downloadedTracks.length && isCookieError(errorLines.length ? errorLines : outputLines)) {
-      outputLines.push(markUnreadable(cookies.usedBrowser))
-      startPlaylistDownload(url, { ...opts, id, playlistId: playlistDbId, withoutCookies: true, carryOutput: outputLines.slice(-50) })
-      return
-    }
-
-    db.prepare('UPDATE downloaded_playlists SET status = ?, downloaded_count = ?, total_tracks = ?, last_downloaded_at = ? WHERE id = ?')
-      .run(code === null ? 'incomplete' : 'failed', downloadedTracks.length, totalTracks || downloadedTracks.length, Date.now(), playlistDbId)
-
-    const friendlyError = getFriendlyDownloadError(errorLines.length ? errorLines : outputLines, code === null ? 'Cancelled' : `Failed (exit ${code})`)
-    setActiveEntry(id, {
-      status: 'error',
-      error: friendlyError,
-      message: friendlyError,
-      downloadedTracks: [...downloadedTracks],
-      totalTracks: totalTracks || null,
-      currentTrack: currentTrack || null,
-      output: trimOutput(outputLines),
-    })
-  })
-
-  proc.on('error', err => {
-    db.prepare('UPDATE downloaded_playlists SET status = ?, last_downloaded_at = ? WHERE id = ?')
-      .run('failed', Date.now(), playlistDbId)
-
-    setActiveEntry(id, {
-      status: 'error',
-      error: err.message,
-      message: err.message,
-      output: trimOutput(outputLines),
-    })
-  })
-
-  return { downloadId: id, playlistId: playlistDbId }
+function manager() {
+  return getDownloadManager().configure({
+    getDB,
+    getStorageDir,
+    findTools: () => ({ ytdlp: findBinary('yt-dlp'), ffmpeg: null, ffprobe: null }),
+    requireFfmpeg: false,
+    index: null,
+    emit: () => {},
+  }, 0)
 }
 
 router.get('/search', async (req, res) => {
   const { q, page = 1 } = req.query
   if (!q) return res.json({ results: [], page: 1, hasMore: false })
-  const result = await runJsonSearch(q, mapSearchResult, page, 10)
+  const ytdlp = findBinary('yt-dlp')
+  if (!ytdlp) return res.status(500).json({ error: 'yt-dlp not found', results: [], page: 1, hasMore: false })
+  const result = await runJsonSearch(ytdlp, q, mapSearchResult, page, 10)
   res.status(result.error ? 500 : 200).json(result)
 })
 
 router.get('/artist-search', async (req, res) => {
   const { q, page = 1 } = req.query
   if (!q) return res.json({ results: [], page: 1, hasMore: false })
-  const primary = await runJsonSearch(`${q} official artist channel`, mapArtistResult, page, 10)
-  if (primary.results.length > 0 || primary.error) {
-    return res.status(primary.error ? 500 : 200).json(primary)
-  }
-  const fallback = await runJsonSearch(`${q} artist profile`, mapArtistResult, page, 10)
+  const ytdlp = findBinary('yt-dlp')
+  if (!ytdlp) return res.status(500).json({ error: 'yt-dlp not found', results: [], page: 1, hasMore: false })
+  const primary = await runJsonSearch(ytdlp, `${q} official artist channel`, mapArtistResult, page, 10)
+  if (primary.results.length > 0 || primary.error) return res.status(primary.error ? 500 : 200).json(primary)
+  const fallback = await runJsonSearch(ytdlp, `${q} artist profile`, mapArtistResult, page, 10)
   res.status(fallback.error ? 500 : 200).json(fallback)
 })
 
-router.post('/', (req, res) => {
-  const { url, ...opts } = req.body || {}
-  if (!url) return res.status(400).json({ error: 'URL is required' })
-  const result = startSingleDownload(url, opts)
-  if (result.error) return res.status(500).json(result)
-  res.json(result)
-})
+// Only what a browser needs to say. Anything that decides where files go
+// (outputDir) or which archive file is used stays server-side (CWE-22).
+const PLAYLIST_ID = /^[\w.-]{1,120}$/
+function enqueue(kind) {
+  return (req, res) => {
+    const { url, format, quality, title, thumbnail, from, playlistId } = req.body || {}
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
+    if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
+      return res.status(400).json({ error: 'Invalid playlistId' })
+    }
+    const text = (v, max = 300) => (typeof v === 'string' ? v.slice(0, max) : undefined)
+    const opts = { format: text(format, 12), quality: text(String(quality ?? ''), 4) || undefined, title: text(title), thumbnail: text(thumbnail, 1000), from: text(from, 120), playlistId: playlistId ?? undefined }
+    const result = manager().enqueue(kind, url, opts)
+    res.status(result.error ? 500 : 200).json(result)
+  }
+}
 
-router.post('/playlist', (req, res) => {
-  const { url, ...opts } = req.body || {}
-  if (!url) return res.status(400).json({ error: 'URL is required' })
-  const result = startPlaylistDownload(url, opts)
-  if (result.error) return res.status(500).json(result)
-  res.json(result)
-})
+router.post('/', enqueue('single'))
+router.post('/playlist', enqueue('playlist'))
 
-router.post('/cancel', (req, res) => {
+const byId = (action) => async (req, res) => {
   const { id } = req.body || {}
   if (!id) return res.status(400).json({ error: 'id is required' })
-  const entry = activeDownloads.get(id)
-  if (!entry) return res.json({ success: false })
-  try {
-    entry.proc?.kill()
-  } catch {}
-  activeDownloads.delete(id)
-  res.json({ success: true })
+  const result = await manager()[action](id)
+  res.status(result?.error ? 404 : 200).json(result)
+}
+
+router.post('/cancel', byId('cancel'))
+router.post('/remove', byId('remove'))
+router.post('/retry', byId('retry'))
+router.post('/cancel-all', async (req, res) => res.json(await manager().cancelAll()))
+router.post('/clear-finished', (req, res) => res.json(manager().clearFinished()))
+router.post('/seen', (req, res) => res.json(manager().markSeen()))
+router.get('/queue', (req, res) => res.json(manager().list()))
+
+// Soulseek, through slskd. These act with the slskd API key saved in
+// Settings, and the web API has no accounts, so they only answer this machine
+// and the local network, never a request coming in from the internet.
+const slskd = require('../../electron/download/slskd')
+
+function isLocalAddress(address) {
+  const a = String(address || '').replace(/^::ffff:/i, '').toLowerCase()
+  if (a === '::1' || a === 'localhost') return true
+  if (/^fe80:|^f[cd][0-9a-f]{2}:/.test(a)) return true // IPv6 link-local / unique-local
+  const m = a.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return false
+  const [x, y] = [Number(m[1]), Number(m[2])]
+  return x === 127 || x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254)
+}
+
+router.use('/soulseek', (req, res, next) => {
+  if (isLocalAddress(req.socket?.remoteAddress)) return next()
+  res.status(403).json({ error: 'Soulseek is only available from this computer or your local network.' })
 })
 
-router.get('/queue', (req, res) => {
-  res.json(Array.from(activeDownloads.values()).map(snapshot))
+const soulseek = (fn) => async (req, res) => {
+  try { res.json(await fn(req)) } catch (e) { res.status(e.status && e.status >= 400 ? e.status : 502).json({ error: e.message }) }
+}
+router.get('/soulseek/status', soulseek(() => slskd.status(manager().settings())))
+router.post('/soulseek/search', soulseek(req => slskd.startSearch(manager().settings(), req.body?.text)))
+router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager().settings(), req.params.id)))
+router.put('/soulseek/search/:id', soulseek(req => slskd.finishSearch(manager().settings(), req.params.id)))
+router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
+router.post('/soulseek/download', (req, res) => {
+  const { file = {}, title, from } = req.body || {}
+  const opts = { title: typeof title === 'string' ? title.slice(0, 300) : undefined, from: typeof from === 'string' ? from.slice(0, 120) : undefined }
+  if (typeof file.username !== 'string' || typeof file.filename !== 'string' || !file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
+  const { name } = slskd.splitRemote(file.filename)
+  const result = manager().enqueue('soulseek', `soulseek://${encodeURIComponent(file.username)}/${encodeURIComponent(file.filename)}`, {
+    username: file.username, filename: file.filename, size: file.size,
+    title: opts.title || name.replace(/\.[^.]+$/, ''),
+    from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+  })
+  res.status(result.error ? 500 : 200).json(result)
 })
 
 router.get('/playlists', (req, res) => {
@@ -721,25 +150,20 @@ router.delete('/playlist', (req, res) => {
   res.json({ success: true })
 })
 
-router.post('/playlist/redownload', (req, res) => {
+router.post('/playlist/redownload', async (req, res) => {
   const { playlistId } = req.body || {}
   if (!playlistId) return res.status(400).json({ error: 'playlistId is required' })
   const db = getDB()
   const playlist = db.prepare('SELECT * FROM downloaded_playlists WHERE id = ?').get(playlistId)
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
-
+  const running = manager().hasPlaylistRunning(playlistId, playlist.url)
+  if (running) await manager().remove(running.id)
   if (playlist.archive_path && fs.existsSync(playlist.archive_path)) {
     try { fs.unlinkSync(playlist.archive_path) } catch {}
   }
-
   db.prepare('DELETE FROM downloaded_playlists WHERE id = ?').run(playlistId)
-  const result = startPlaylistDownload(playlist.url, {
-    id: `pl-redownload-${Date.now()}`,
-    playlistId,
-    title: playlist.title,
-  })
-  if (result.error) return res.status(500).json(result)
-  res.json(result)
+  const result = manager().enqueue('playlist', playlist.url, { playlistId, title: playlist.title, from: 'Re-download' })
+  res.status(result.error ? 500 : 200).json(result)
 })
 
 router.get('/playlist/archive-ids', (req, res) => {

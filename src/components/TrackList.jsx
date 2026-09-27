@@ -548,7 +548,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     if (!item?.url) return
     setGhostActionStatus('Starting download...')
     try {
-      const result = await api.downloadYT(item.url, {})
+      const result = await api.downloadYT(item.url, { title: item.title, thumbnail: item.thumbnail || undefined, from: 'Ghost track' })
       if (result?.error) {
         setGhostActionStatus('Download failed: ' + result.error)
         return

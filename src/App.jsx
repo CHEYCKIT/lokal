@@ -178,6 +178,42 @@ function AnimatedRoutes() {
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
+
+  // A file the player can't decode (Apple Lossless .m4a, WMA, APE...): ask the
+  // main process for a playable copy (converted once, cached) and switch to it.
+  // Web mode needs nothing here: the server's stream route does the same.
+  const handleAudioError = useCallback(async (event) => {
+    const el = event.currentTarget
+    const code = el?.error?.code
+    if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
+    const src = el.getAttribute('src') || ''
+    if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
+    el.dataset.fallbackFor = src
+    // While the copy is being made and swapped in, pause events from this
+    // element aren't the user pausing (see ignoreElementPause).
+    el.dataset.fallbackPending = '1'
+    try {
+      let filePath = src.slice('file://'.length)
+      try { filePath = decodeURIComponent(filePath) } catch {}
+      const copy = await api.playableFile?.(filePath).catch(() => null)
+      if (!copy || el.getAttribute('src') !== src) return
+      const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
+      el.dataset.fallbackSrc = next
+      el.src = next
+      el.load()
+      if (usePlayerStore.getState().isPlaying) await el.play().catch(() => {})
+    } finally {
+      el.dataset.fallbackPending = ''
+    }
+  }, [])
+
+  // A pause event that doesn't mean "the user paused": the file failed to
+  // decode (the failed first attempt at an Apple Lossless .m4a fires one), it
+  // never got as far as loading, or it's being swapped for a playable copy.
+  // Treating those as pauses flipped the player to paused, so the converted
+  // copy never started and play had to be clicked a second time. The user's
+  // own pauses go through the store, not through these events.
+  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1'
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
@@ -393,11 +429,19 @@ export default function App() {
     refreshYtDlpVersionStatus()
     const unsubscribe = api.onToolsDownloadProgress((_, payload) => {
       if (payload?.tool !== 'yt-dlp') return
+      // Sent when the download queue updated yt-dlp by itself (YouTube 403s).
+      if (payload.status === 'done') {
+        setYtDlpVersionState(prev => ({ ...prev, visible: true, downloadState: 'done', downloadMessage: payload.message || 'yt-dlp updated.', downloadPercent: null }))
+        refreshYtDlpVersionStatus()
+        setTimeout(() => setYtDlpVersionState(prev => ({ ...prev, visible: prev.upToDate === false && prev.downloadState !== 'done' ? true : false, downloadState: 'idle', downloadMessage: '' })), 2200)
+        return
+      }
       setYtDlpVersionState(prev => ({
         ...prev,
         visible: true,
         downloadState: payload.status === 'error' ? 'error' : 'downloading',
         downloadMessage: payload.message || '',
+        downloadPercent: Number.isFinite(payload.percent) ? payload.percent : (payload.status === 'installing' ? 100 : prev.downloadPercent ?? null),
       }))
     })
     const interval = setInterval(() => {
@@ -441,6 +485,7 @@ export default function App() {
       visible: true,
       downloadState: 'downloading',
       downloadMessage: 'Starting yt-dlp update...',
+      downloadPercent: null,
       error: null,
     }))
     try {
@@ -730,6 +775,10 @@ export default function App() {
     navigator.mediaSession.setActionHandler('pause', () => { 
       const activeEl = getActiveAudio()
       activeEl?.pause() 
+      // An explicit pause: record it in the store directly, since the element's
+      // own pause event is ignored while a file is failing or being swapped
+      // for its playable copy (ignoreElementPause).
+      usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       const activeEl = getActiveAudio()
@@ -1066,6 +1115,8 @@ export default function App() {
     const encodedPath = nextTrack.file_path.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')
     const encodedSrc = api.isElectron ? `file://${encodedPath}` : api.streamURL(nextTrack)
     
+    fadeInEl.dataset.fallbackFor = ''
+    fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
     fadeInEl.load()
 
@@ -1177,6 +1228,8 @@ export default function App() {
     const src = api.isElectron 
       ? `file://${currentTrack.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
       : api.streamURL(currentTrack);
+    audioRef.current.dataset.fallbackFor = ''
+    audioRef.current.dataset.fallbackSrc = ''
     audioRef.current.src = src
     beginLastfmPlayback(currentTrack)
     if (isPlaying) audioRef.current.play().catch(() => {})
@@ -1554,6 +1607,15 @@ export default function App() {
             {ytDlpVersionState.downloadMessage && (
               <div className={`rounded-2xl border px-4 py-3 text-sm ${isDone ? 'border-green-500/20 bg-green-500/10 text-green-200' : 'border-white/10 bg-white/5 text-muted'}`}>
                 {ytDlpVersionState.downloadMessage}
+                {isDownloading && (
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    {Number.isFinite(ytDlpVersionState.downloadPercent) ? (
+                      <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${Math.max(3, ytDlpVersionState.downloadPercent)}%` }} />
+                    ) : (
+                      <div className="h-full w-1/3 rounded-full bg-accent/70 animate-pulse" />
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1562,9 +1624,11 @@ export default function App() {
                 <button
                   onClick={handleUpdateYtDlp}
                   disabled={isDownloading}
-                  className="flex-1 rounded-2xl bg-accent py-4 text-sm font-bold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-2xl bg-accent py-4 text-sm font-bold text-[rgb(var(--bg-rgb))] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isDownloading ? 'Updating yt-dlp...' : 'Update yt-dlp'}
+                  {isDownloading
+                    ? `Updating yt-dlp${Number.isFinite(ytDlpVersionState.downloadPercent) ? ` · ${ytDlpVersionState.downloadPercent}%` : '...'}`
+                    : 'Update yt-dlp'}
                 </button>
               )}
               <button
@@ -1644,16 +1708,18 @@ export default function App() {
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
+          onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
+          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
           ref={cfAudioRef}
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
+          onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
+          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
             it exists purely to keep a native, audible HTMLMediaElement "playing"

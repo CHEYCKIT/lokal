@@ -368,7 +368,7 @@ async function getYtDlpVersionStatus() {
 }
 
 
-function downloadFile(url, dest) {
+function downloadFile(url, dest, onProgress) {
   return new Promise((resolve, reject) => {
     fs.ensureDirSync(path.dirname(dest))
 
@@ -420,7 +420,7 @@ function downloadFile(url, dest) {
         file.off('finish', onFinish)
         file.close(() => {
           try { fs.unlinkSync(dest) } catch {}
-          downloadFile(redirectUrl, dest).then(resolve).catch(reject)
+          downloadFile(redirectUrl, dest, onProgress).then(resolve).catch(reject)
         })
         return
       }
@@ -433,7 +433,15 @@ function downloadFile(url, dest) {
       }
 
       expectedLength = Number(response.headers['content-length']) || 0
-      response.on('data', (chunk) => { receivedLength += chunk.length })
+      let lastReport = 0
+      response.on('data', (chunk) => {
+        receivedLength += chunk.length
+        const now = Date.now()
+        if (onProgress && now - lastReport > 150) {
+          lastReport = now
+          onProgress(receivedLength, expectedLength)
+        }
+      })
       response.on('error', fail)
       response.pipe(file)
     })
@@ -442,11 +450,22 @@ function downloadFile(url, dest) {
   })
 }
 
-async function downloadFileWithRetry(url, dest, progressCallback, retries = 2) {
+const mb = (bytes) => (bytes / (1024 * 1024)).toFixed(1)
+
+async function downloadFileWithRetry(url, dest, progressCallback, retries = 2, label = 'Downloading') {
   let lastErr = null
+  // Bytes as they arrive, so the UI shows a moving bar instead of looking stuck.
+  const onProgress = progressCallback ? (received, total) => {
+    const percent = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : null
+    progressCallback({
+      status: 'downloading',
+      percent,
+      message: total > 0 ? `${label}... ${percent}% (${mb(received)} of ${mb(total)} MB)` : `${label}... ${mb(received)} MB`,
+    })
+  } : null
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      await downloadFile(url, dest)
+      await downloadFile(url, dest, onProgress)
       return
     } catch (err) {
       lastErr = err
@@ -605,7 +624,7 @@ async function downloadYtDlp(progressCallback) {
 
       if (progressCallback) progressCallback({ status: 'downloading', message: 'Downloading yt-dlp...' })
 
-      await downloadFileWithRetry(url, tempDest, progressCallback)
+      await downloadFileWithRetry(url, tempDest, progressCallback, 2, 'Downloading yt-dlp')
       const downloadedSize = validateDownloadedExecutable(tempDest)
       console.log(`[Tools] yt-dlp download validated: ${downloadedSize} bytes`)
 
@@ -630,6 +649,8 @@ async function downloadYtDlp(progressCallback) {
     } finally {
       try { fs.removeSync(tempDest) } catch {}
       ytDlpInstallPromise = null
+      // Downloads paused for the swap go back to work (with the new yt-dlp).
+      try { require('./downloader').resumeDownloadsAfterToolUpdate?.() } catch {}
     }
   })()
 
@@ -681,7 +702,7 @@ async function downloadFfmpeg(progressCallback) {
 
     try {
       console.log(`[Tools] Downloading ffmpeg from: ${url}`)
-      await downloadFileWithRetry(url, archivePath, progressCallback)
+      await downloadFileWithRetry(url, archivePath, progressCallback, 2, 'Downloading ffmpeg')
 
       const stat = fs.statSync(archivePath)
       if (!stat || stat.size === 0) {

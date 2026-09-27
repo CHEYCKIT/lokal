@@ -28,6 +28,7 @@ app.use('/api/playlists', require('./routes/playlists'))
 app.use('/api/lyrics', require('./routes/lyrics'))
 app.use('/api/users', require('./routes/users'))
 app.use('/api/download', require('./routes/download'))
+app.use('/api/artwork-fx', require('./routes/artworkFx'))
 app.use('/api/settings', require('./routes/settings'))
 app.use('/api/mixes', require('./routes/mixes'))
 app.use('/api/albums', require('./routes/albums'))
@@ -36,10 +37,20 @@ app.use('/api/remote', require('./routes/remote'))
 app.use('/api/plugins', require('./routes/plugins'))
 app.use('/api/recaps', require('./routes/recaps'))
 
-app.get('/api/stream/:trackId', (req, res) => {
+const AUDIO_TYPES = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.webm': 'audio/webm' }
+
+app.get('/api/stream/:trackId', async (req, res) => {
   const track = getDB().prepare('SELECT file_path FROM tracks WHERE id = ?').get(req.params.trackId)
   if (!track || !fs.existsSync(track.file_path)) return res.status(404).send('Not found')
-  const stat = fs.statSync(track.file_path)
+  // Browsers can't decode Apple Lossless (and a few others): stream a cached
+  // FLAC/AAC copy instead, made once with ffmpeg.
+  let filePath = track.file_path
+  try {
+    const { playableCopy } = require('../electron/download/convert')
+    filePath = (await playableCopy(filePath, { cacheDir: path.join(getStorageDir(), 'playback-cache') })) || filePath
+  } catch {}
+  const type = AUDIO_TYPES[path.extname(filePath).toLowerCase()] || 'audio/mpeg'
+  const stat = fs.statSync(filePath)
   const range = req.headers.range
   if (range) {
     const [s, e] = range.replace(/bytes=/, '').split('-')
@@ -48,12 +59,12 @@ app.get('/api/stream/:trackId', (req, res) => {
       'Content-Range': `bytes ${start}-${end}/${stat.size}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': end - start + 1,
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': type,
     })
-    fs.createReadStream(track.file_path, { start, end }).pipe(res)
+    fs.createReadStream(filePath, { start, end }).pipe(res)
   } else {
-    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': 'audio/mpeg' })
-    fs.createReadStream(track.file_path).pipe(res)
+    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': type, 'Accept-Ranges': 'bytes' })
+    fs.createReadStream(filePath).pipe(res)
   }
 })
 

@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
+import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
+import MotionCover from './MotionCover'
 import { api } from '../api'
 import {
   contextLabel,
@@ -14,11 +16,11 @@ import {
 } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
 
-function InfoRow({ label, value, onClick = null, title = null }) {
+function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
   if (!value) return null
   return (
-    <div className="flex items-start gap-3 py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-xs font-display text-muted uppercase tracking-wider w-20 flex-shrink-0 pt-0.5">{label}</span>
+    <div className={`flex items-start gap-3 py-1.5 border-b last:border-0 ${fx ? 'border-white/10' : 'border-border/30'}`}>
+      <span className={`text-xs font-display uppercase tracking-wider w-20 flex-shrink-0 pt-0.5 ${fx ? 'text-white/45' : 'text-muted'}`}>{label}</span>
       {onClick ? (
         <button
           onClick={onClick}
@@ -119,9 +121,47 @@ export default function RightSidebar() {
     wasSidebarOpenRef.current = showRightSidebar
   })
 
+  // Colour background + full-bleed cover (default), or the classic dark panel.
+  const fx = useArtworkBackdropEnabled()
+  // A tall (9:16) canvas gets a taller hero area -- about 60% of the panel's
+  // height -- instead of being cropped into the square cover.
+  const [canvasOn, setCanvasOn] = useState(false)
+  const infoRef = useRef(null)
+  const [infoHeight, setInfoHeight] = useState(0)
+  useEffect(() => {
+    const el = infoRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    const ro = new ResizeObserver(([entry]) => setInfoHeight(Math.round(entry.contentRect.height)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showRightSidebar])
+  const canvasHero = canvasOn && infoHeight > 0
+  const heroHeight = canvasHero ? Math.max(300, Math.round(infoHeight * 0.6)) : 300
+
   const artSrc = currentTrack?.artwork_path
     ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
     : null
+
+  const btnFx = 'flex-1 py-2 bg-white/10 border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/15 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5 backdrop-blur-md'
+  const btnClassic = 'flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5'
+
+  const contextBlock = currentTrack && playbackContext?.name ? (
+    <div className="min-w-0">
+      <p className={`text-[10px] font-display uppercase tracking-[0.22em] ${fx ? 'text-white/50' : 'text-muted'}`}>
+        {contextLabel(playbackContext)}
+      </p>
+      {canOpenContext ? (
+        <button
+          onClick={() => navigateToContext(nav, playbackContext, currentTrack?.id)}
+          title={`Go to ${playbackContext.name}`}
+          className={`mt-0.5 block max-w-full truncate text-xs hover:underline text-left ${fx ? 'text-white/85 hover:text-white' : 'text-accent'}`}>
+          {playbackContext.name}
+        </button>
+      ) : (
+        <p className="mt-0.5 truncate text-xs text-white/70">{playbackContext.name}</p>
+      )}
+    </div>
+  ) : null
 
   return (
     <>
@@ -181,35 +221,37 @@ export default function RightSidebar() {
                 made this inert toggle a silent no-op: the hidden Info/Lyrics
                 pane stayed focusable and reachable by assistive tech even
                 while covered by the other tab's overlay. */}
-            <div className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50">
-                    <AnimatePresence mode="wait">
-                      {artSrc ? (
-                        <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-subtle"><Music size={52} /></div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+            <div ref={infoRef} className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
+              {/* Apple Music-style: the cover runs edge to edge and dissolves
+                  into colours taken from it; a moving cover plays over the
+                  still one when there is one. */}
+              {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? heroHeight : 0} />}
+              <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'}`}>
+                <div
+                  className={fx ? 'relative w-full overflow-hidden' : 'relative w-full rounded-xl overflow-hidden bg-card border border-border/50'}
+                  style={{
+                    // Square cover normally; a tall canvas grows it to ~60% of the panel.
+                    height: fx ? heroHeight : (canvasHero ? heroHeight - 32 : 268),
+                    transition: 'height 420ms cubic-bezier(0.4, 0, 0.2, 1)',
+                    ...(fx && artSrc ? {
+                      WebkitMaskImage: `linear-gradient(to bottom, black ${canvasHero ? 72 : 55}%, transparent 100%)`,
+                      maskImage: `linear-gradient(to bottom, black ${canvasHero ? 72 : 55}%, transparent 100%)`,
+                    } : null),
+                  }}
+                >
+                  <AnimatePresence mode="wait">
+                    {artSrc ? (
+                      <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
+                    )}
+                  </AnimatePresence>
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} />}
+                </div>
 
-                  {currentTrack && playbackContext?.name && (
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-display uppercase tracking-[0.22em] text-muted">
-                        {contextLabel(playbackContext)}
-                      </p>
-                      {canOpenContext ? (
-                        <button
-                          onClick={() => navigateToContext(nav, playbackContext, currentTrack?.id)}
-                          title={`Go to ${playbackContext.name}`}
-                          className="mt-0.5 block max-w-full truncate text-xs text-accent hover:underline text-left">
-                          {playbackContext.name}
-                        </button>
-                      ) : (
-                        <p className="mt-0.5 truncate text-xs text-white/70">{playbackContext.name}</p>
-                      )}
-                    </div>
-                  )}
+                <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>
+                  {!fx && contextBlock}
 
                   <AnimatePresence mode="wait">
                     <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
@@ -217,54 +259,58 @@ export default function RightSidebar() {
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
                           title={`Go to album: ${currentTrack.album}`}
-                          className="font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
+                          className={fx ? 'text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack?.title || 'Nothing playing'}
                         </button>
                       ) : (
-                        <p className="font-display text-white text-sm leading-tight">{currentTrack?.title || 'Nothing playing'}</p>
+                        <p className={fx ? 'text-lg font-semibold text-white leading-tight drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight'}>{currentTrack?.title || 'Nothing playing'}</p>
                       )}
                       {currentTrack?.artist ? (
                         <button
                           onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
                           title={`Go to artist: ${currentTrack.artist}`}
-                          className="text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
+                          className={fx ? 'text-sm text-white/70 mt-0.5 text-left hover:text-white hover:underline transition-colors truncate max-w-full block' : 'text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack.artist}
                         </button>
                       ) : (
-                        <p className="text-xs text-muted mt-0.5">{currentTrack?.artist}</p>
+                        <p className={fx ? 'text-sm text-white/70 mt-0.5' : 'text-xs text-muted mt-0.5'}>{currentTrack?.artist}</p>
                       )}
                     </motion.div>
                   </AnimatePresence>
 
+                  {fx && contextBlock}
+
                   {currentTrack && (
                     <div className="flex gap-2">
-                      <button onClick={toggleFullscreen} className="flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
+                      <button onClick={toggleFullscreen} className={fx ? btnFx : btnClassic}>
                         <Disc3 size={11} /> Full Screen
                       </button>
-                      <button onClick={toggleLyricsFullscreen} className="flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
+                      <button onClick={toggleLyricsFullscreen} className={fx ? btnFx : btnClassic}>
                         <Mic2 size={11} /> Lyrics
                       </button>
                     </div>
                   )}
 
                   {currentTrack && (
-                    <div className="bg-card rounded-xl border border-border px-4 py-1">
-                      <InfoRow label="Artist" value={currentTrack.artist} />
+                    <div className={fx ? 'bg-black/20 rounded-xl border border-white/10 px-4 py-1 backdrop-blur-md' : 'bg-card rounded-xl border border-border px-4 py-1'}>
+                      <InfoRow fx={fx} label="Artist" value={currentTrack.artist} />
                       <InfoRow
+                        fx={fx}
                         label="Album"
                         value={currentTrack.album}
                         title={currentTrack.album ? `Go to album: ${currentTrack.album}` : null}
                         onClick={currentTrack.album ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
-                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow label="Alb. Artist" value={currentTrack.album_artist} />}
-                      <InfoRow label="Year" value={currentTrack.year} />
-                      <InfoRow label="Genre" value={currentTrack.genre} />
-                      <InfoRow label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
-                      <InfoRow label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
-                      <InfoRow label="Plays" value={currentTrack.play_count > 0 ? `${currentTrack.play_count}` : null} />
+                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label="Alb. Artist" value={currentTrack.album_artist} />}
+                      <InfoRow fx={fx} label="Year" value={currentTrack.year} />
+                      <InfoRow fx={fx} label="Genre" value={currentTrack.genre} />
+                      <InfoRow fx={fx} label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
+                      <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
+                      <InfoRow fx={fx} label="Plays" value={currentTrack.play_count > 0 ? `${currentTrack.play_count}` : null} />
                     </div>
                   )}
                 </div>
+              </div>
             </div>
 
             {/* Lyrics: slides up over the base view above, slides back down
