@@ -68,6 +68,24 @@ export function activeRows(lines, t) {
 }
 
 /**
+ * Lines that should stay fully lit next to the focused one: only those whose
+ * singing genuinely hasn't finished yet -- a backing vocal running past the
+ * next line's start, overlapping voices. No settle tail, and never a line
+ * with no known end (line-synced LRC): those hand over the instant focus
+ * moves, in one movement, rather than holding on and then fading.
+ */
+export function stillSinging(lines, t, focus) {
+  const out = []
+  for (let i = Math.max(0, focus - 6); i < focus; i++) {
+    const line = lines[i]
+    if (!line || line.gap || line.time == null || line.time > t) continue
+    const hasEnd = (line.words?.length || line.bgWords?.length || line.endStated)
+    if (hasEnd && t < lineEndOf(line)) out.push(i)
+  }
+  return out
+}
+
+/**
  * Consecutive units that make one word are kept together so a line never
  * wraps mid-word. CJK has no spaces, so there every unit may break on its own.
  */

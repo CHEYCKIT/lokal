@@ -4,7 +4,7 @@ import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
 import {
-  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, lineEndOf, hasNonLatin, groupUnits,
+  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits,
 } from '../lyrics/timing'
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,7 @@ const SCROLL_MS = 560
 const STAGGER_STEPS = 3
 const STAGGER_FRACTION = 0.07
 const EASE = 'cubic-bezier(0.41, 0, 0.12, 0.99)'
+const HANDOVER_MS = 420
 
 // Falloff either side of the focused line, indexed by distance. Subtle close in
 // (so you can read ahead and behind), letting go further out.
@@ -236,7 +237,10 @@ const Row = React.memo(function Row({
           filter: blur > 0.05 ? `blur(${blur}px)` : 'none',
           transform: synced && near > 0 && !browsing ? 'scale(0.975)' : 'scale(1)',
           transformOrigin: alignEnd ? 'right center' : 'left center',
-          transition: `opacity 420ms ${EASE}, filter 420ms ${EASE}, transform 420ms ${EASE}`,
+          // Colour, fade, blur and scale share one duration and curve so a
+          // handover reads as one movement: the new line brightens exactly as
+          // the old one recedes.
+          transition: `opacity ${HANDOVER_MS}ms ${EASE}, filter ${HANDOVER_MS}ms ${EASE}, transform ${HANDOVER_MS}ms ${EASE}`,
         }}
       >
         <div
@@ -255,7 +259,7 @@ const Row = React.memo(function Row({
             <span
               ref={leadRef}
               data-voice="plain"
-              style={{ color: !synced ? SUNG : isFocused ? SUNG : UNSUNG, transition: `color 300ms ${EASE}` }}
+              style={{ color: !synced ? SUNG : isFocused ? SUNG : UNSUNG, transition: `color ${HANDOVER_MS}ms ${EASE}` }}
             >
               {line.text}
             </span>
@@ -266,7 +270,7 @@ const Row = React.memo(function Row({
             {synced && wordSync && bgUnits.length ? (
               <Voice voiceRef={bgRef} units={bgUnits} text={line.bgText} wordSync />
             ) : (
-              <span ref={bgRef} data-voice="plain" style={{ color: !synced || isFocused ? SUNG : UNSUNG }}>{line.bgText}</span>
+              <span ref={bgRef} data-voice="plain" style={{ color: !synced || isFocused ? SUNG : UNSUNG, transition: `color ${HANDOVER_MS}ms ${EASE}` }}>{line.bgText}</span>
             )}
           </div>
         )}
@@ -506,8 +510,9 @@ export default function LyricsPanel({
     if (!lines.length) return
     if (synced) {
       const t = now()
-      setFocusIdx(focusRow(lines, t + FOCUS_LEAD_S))
-      setLiveKey(activeRows(lines, t).join(','))
+      const focus = focusRow(lines, t + FOCUS_LEAD_S)
+      setFocusIdx(focus)
+      setLiveKey(stillSinging(lines, t, focus).join(','))
     } else if (isAutoSynced && track?.duration) {
       setFocusIdx(Math.min(lines.length - 1, Math.floor((progress / track.duration) * lines.length)))
     } else {
