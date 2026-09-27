@@ -704,7 +704,7 @@ export const usePlayerStore = create((set, get) => ({
   // opened before the fetch resolves would otherwise be left open in a
   // mode that can't render it.
   hydrateExclusiveSidePanels: (value) => set(s => {
-    if (s.exclusiveSidePanelsUserSet || s.exclusiveSidePanels === value) return {}
+    if (s.exclusiveSidePanelsUserSet || s.exclusiveSidePanels === value) return s
     return sidePanelModeTransition(s, value)
   }),
   setIsPlaying: (v) => set({ isPlaying: v }),
