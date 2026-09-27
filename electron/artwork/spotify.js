@@ -108,25 +108,54 @@ async function mintTokensInner(cookie, state) {
     if (!enabled) throw new TransientError('Couldn\'t watch the hidden Spotify window (DevTools protocol didn\'t answer).')
     const done = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new TransientError('Spotify took too long to answer')), TOKEN_TIMEOUT)
+      const ready = () => { if ((found.token || found.bearer) && found.client) { clearTimeout(timer); resolve() } }
       dbg.on('message', async (_e, method, params) => {
+        // Backup route: the web player sends its access token with every API
+        // call, so take it from there if the token response itself can't be
+        // read. (Checked against /v1/me below, since it may be anonymous.)
+        if (method === 'Network.requestWillBeSent' && !found.bearer) {
+          const url = params.request?.url || ''
+          const headers = params.request?.headers || {}
+          const auth = headers.Authorization || headers.authorization || ''
+          if (/^Bearer\s+\S+/.test(auth) && /^https:\/\/[^/]*spotify\.com\//.test(url) && !/clienttoken\.spotify\.com/.test(url)) {
+            found.bearer = auth.replace(/^Bearer\s+/, '')
+            console.log(`[spotify-canvas] saw the web player's access token on a request to ${new URL(url).host}`)
+            ready()
+          }
+          return
+        }
+        let kind = null
         try {
           if (method === 'Network.responseReceived') {
             const url = params.response?.url || ''
             if (/open\.spotify\.com\/api\/token|\/get_access_token/.test(url)) watched.set(params.requestId, 'token')
             else if (/clienttoken\.spotify\.com\/v1\/clienttoken/.test(url)) watched.set(params.requestId, 'client')
-          } else if (method === 'Network.loadingFinished' && watched.has(params.requestId)) {
-            const kind = watched.get(params.requestId)
+            if (watched.get(params.requestId) === 'token') console.log(`[spotify-canvas] token request answered HTTP ${params.response?.status}`)
+          } else if ((method === 'Network.loadingFinished' || method === 'Network.loadingFailed') && watched.has(params.requestId)) {
+            kind = watched.get(params.requestId)
+            watched.delete(params.requestId)
+            if (method === 'Network.loadingFailed') { console.log(`[spotify-canvas] ${kind} request failed: ${params.errorText || 'unknown'}`); return }
             const { body, base64Encoded } = await dbg.sendCommand('Network.getResponseBody', { requestId: params.requestId })
             const json = JSON.parse(base64Encoded ? Buffer.from(body, 'base64').toString() : body)
-            console.log(`[spotify-canvas] got ${kind === 'token' ? `access token (anonymous: ${!!json?.isAnonymous})` : `client token (${json?.response_type || 'no type'})`}`)
-            if (kind === 'token' && json?.accessToken) {
+            if (kind === 'token') {
+              if (!json?.accessToken) {
+                // Field names and any error text only -- never token values.
+                console.log(`[spotify-canvas] token response had no accessToken (fields: ${Object.keys(json || {}).join(', ') || 'none'}${json?.error ? `; error: ${JSON.stringify(json.error).slice(0, 200)}` : ''})`)
+                return
+              }
+              console.log(`[spotify-canvas] got access token (anonymous: ${!!json.isAnonymous})`)
               if (json.isAnonymous) { clearTimeout(timer); reject(new Error('Spotify didn\'t accept the cookie (it may have expired). Copy a fresh sp_dc.')); return }
               found.token = json
             }
-            if (kind === 'client' && json?.response_type === 'RESPONSE_GRANTED_TOKEN_RESPONSE') found.client = json.granted_token
-            if (found.token && found.client) { clearTimeout(timer); resolve() }
+            if (kind === 'client') {
+              console.log(`[spotify-canvas] got client token (${json?.response_type || 'no type'})`)
+              if (json?.response_type === 'RESPONSE_GRANTED_TOKEN_RESPONSE') found.client = json.granted_token
+            }
+            ready()
           }
-        } catch {}
+        } catch (e) {
+          if (kind) console.log(`[spotify-canvas] couldn't read the ${kind} response: ${e.message}`)
+        }
       })
     })
     // Not awaited: the web player may never report "finished loading" (it
@@ -138,7 +167,7 @@ async function mintTokensInner(cookie, state) {
     } catch (e) {
       // The access token is what matters; the client token helps but isn't
       // always requested by the page right away.
-      if (!found.token) throw e
+      if (!found.token && !found.bearer) throw e
     }
   } finally {
     try { dbg.detach() } catch {}
@@ -146,7 +175,15 @@ async function mintTokensInner(cookie, state) {
     within(part.clearStorageData().catch(() => {}), 3000)
   }
 
-  const t = found.token
+  let t = found.token
+  if (!t) {
+    // Only the token seen on a request: make sure it's a signed-in one.
+    state.stage = 'checking the token is signed in'
+    const me = await request('https://api.spotify.com/v1/me', { headers: { Authorization: `Bearer ${found.bearer}`, Accept: 'application/json', 'User-Agent': UA } }).catch(() => null)
+    console.log(`[spotify-canvas] /v1/me answered ${me ? `HTTP ${me.status}` : 'nothing'}`)
+    if (me && (me.status === 401 || me.status === 403)) throw new Error('Spotify didn\'t accept the cookie (it may have expired). Copy a fresh sp_dc.')
+    t = { accessToken: found.bearer, accessTokenExpirationTimestampMs: Date.now() + 45 * 60 * 1000 }
+  }
   return {
     cookie,
     accessToken: t.accessToken,
