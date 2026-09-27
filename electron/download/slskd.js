@@ -63,9 +63,14 @@ async function status(settings) {
       downloadsDir = options?.directories?.downloads || null
     } catch {}
   }
-  const server = state?.server || {}
+  let server = state?.server || {}
+  // Older slskd versions keep the connection state only under /server.
+  if (server.isLoggedIn === undefined && !server.state) {
+    try { server = (await request(settings, 'GET', '/server', undefined, { timeoutMs: 6000 })) || {} } catch {}
+  }
   return {
     ok: true,
+    serverState: server.state || null,
     loggedIn: !!(server.isLoggedIn ?? /LoggedIn/.test(String(server.state || ''))),
     username: state?.user?.username || null,
     version: state?.version?.current || state?.version?.full || null,

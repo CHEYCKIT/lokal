@@ -1723,7 +1723,7 @@ export default function Settings() {
               soulseekCheck.error
                 ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
                 : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
-                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : 'slskd is running but not logged in to Soulseek'}
+                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : `The API key works, but slskd isn't logged in to Soulseek${soulseekCheck.serverState ? ` (${soulseekCheck.serverState})` : ''}. Check the soulseek: username and password in slskd.yml, and slskd's own page.`}
                     {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
                     {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
                   </p>
