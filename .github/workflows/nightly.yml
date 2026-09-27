@@ -260,8 +260,12 @@ jobs:
           NIGHTLY_TAG: nightly-${{ inputs.ref || 'main' }}
         shell: bash
         run: |
-          keep=$( { find release_all -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name 'latest*.yml' \) -printf '%f\n'; [ -f release-banner.png ] && echo release-banner.png; } | sort -u )
-          if [ -z "$keep" ]; then
+          # The banner is always kept: when this run couldn't make one, the
+          # previous banner stays rather than leaving a broken image. (Written
+          # for the runner's `bash -e -o pipefail`: a bare `[ -f ... ] && ...`
+          # for the banner returned 1 and stopped the whole step.)
+          keep=$( { find release_all -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name 'latest*.yml' \) -printf '%f\n'; echo release-banner.png; } | sort -u )
+          if [ "$keep" = "release-banner.png" ]; then
             echo "No files from this run; leaving the release as it is."
             exit 0
           fi
