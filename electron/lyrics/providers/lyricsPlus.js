@@ -56,7 +56,10 @@ function parse(response) {
     const element = line.element
     const singer = element && typeof element === 'object' && !Array.isArray(element) ? element.singer : null
     if (singer) built.agent = singer
-    else if (Array.isArray(element) && element.some(t => t === 'opposite' || t === 'right')) built.agent = 'v2'
+    // Older API shape: a tag list where only the answering voice is marked.
+    // The other lines are the lead, and need a voice of their own or the song
+    // never registers as having two singers.
+    else if (Array.isArray(element)) built.agent = element.some(t => t === 'opposite' || t === 'right') ? 'v2' : 'v1'
     if (built.text || built.bgText) lines.push(built)
   }
   return {

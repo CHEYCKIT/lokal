@@ -435,7 +435,15 @@ export default function LyricsPanel({
     setLoading(true)
     setNotice('')
     api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path, opts)
-      .then(r => { if (seq === requestSeq.current) setResult(r && (r.lines?.length || r.instrumental) ? r : null) })
+      .then(r => {
+        if (seq !== requestSeq.current) return
+        setResult(r && (r.lines?.length || r.instrumental) ? r : null)
+        // A refreshed result has different lines: drop translations and the
+        // scroll position that belonged to the previous one.
+        setTranslation({ state: 'idle', lines: null })
+        setRomanization({ state: 'idle', lines: null })
+        lastScrollIdx.current = -1
+      })
       .catch(() => { if (seq === requestSeq.current) setResult(null) })
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
   }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
