@@ -4,7 +4,7 @@ import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1,
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
-import ArtworkBackdrop from './ArtworkBackdrop'
+import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
 import { QueueContent } from './QueuePanel'
 import { api } from '../api'
@@ -149,6 +149,8 @@ export default function FullscreenPlayer() {
   const nav = useNavigate()
   const wordSync = localStorage.getItem('word-sync') !== '0'
   const [likeAnim, setLikeAnim] = useState(false)
+  const [bgLoaded, setBgLoaded] = useState(false)
+  const backdropFx = useArtworkBackdropEnabled()
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -266,6 +268,7 @@ export default function FullscreenPlayer() {
 
   useEffect(() => {
     if (currentTrack?.id !== prevTrackId.current) {
+      setBgLoaded(false)
       prevTrackId.current = currentTrack?.id
     }
   }, [currentTrack?.id])
@@ -331,9 +334,34 @@ export default function FullscreenPlayer() {
           data-fullscreen-player-overlay=""
         >
           <div className="absolute inset-0 bg-black">
-            {/* Colours taken from the cover (see ArtworkBackdrop), in place of
-                the blurred cover this used to be. */}
-            <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
+            {/* Colours taken from the cover (see ArtworkBackdrop), or -- with
+                that switched off in Settings -- the plain blurred cover. */}
+            {backdropFx ? (
+              <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
+            ) : (
+              <AnimatePresence mode="wait">
+                {artSrc ? (
+                  <motion.img
+                    key={currentTrack?.id}
+                    src={artSrc}
+                    onLoad={() => setBgLoaded(true)}
+                    initial={{ opacity: 0, scale: 1.15 }}
+                    animate={{ opacity: bgLoaded ? 0.45 : 0, scale: 1.08 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.8 }}
+                    className="w-full h-full object-cover"
+                    style={{ filter: 'blur(72px) saturate(1.6) brightness(0.5)' }}
+                  />
+                ) : (
+                  <motion.div
+                    key="no-art"
+                    className="w-full h-full bg-gradient-to-br from-neutral-900 to-black"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  />
+                )}
+              </AnimatePresence>
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
           </div>
 

@@ -12,6 +12,33 @@ import { api } from '../api'
 const SIZE = 32
 const meshCache = new Map() // trackId -> grid | null
 
+// Settings > Appearance > Now Playing > "Colour Background". Read once and
+// shared; re-read whenever settings are saved, so switching it applies
+// straight away to the (always mounted) sidebar and the fullscreen player.
+let backdropOn = true
+let backdropLoad = null
+const backdropListeners = new Set()
+function refreshBackdropSetting() {
+  backdropLoad = Promise.resolve(api.getSettings?.())
+    .then(s => { backdropOn = s?.artwork_backdrop !== '0' })
+    .catch(() => {})
+    .then(() => backdropListeners.forEach(fn => fn(backdropOn)))
+  return backdropLoad
+}
+if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved', refreshBackdropSetting)
+
+/** true unless the colour background has been switched off in Settings. */
+export function useArtworkBackdropEnabled() {
+  const [on, setOn] = useState(backdropOn)
+  useEffect(() => {
+    backdropListeners.add(setOn)
+    if (!backdropLoad) refreshBackdropSetting()
+    else backdropLoad.then(() => setOn(backdropOn))
+    return () => { backdropListeners.delete(setOn) }
+  }, [])
+  return on
+}
+
 export function loadMesh(trackId) {
   if (!trackId) return Promise.resolve(null)
   if (meshCache.has(trackId)) return Promise.resolve(meshCache.get(trackId))

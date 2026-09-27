@@ -2325,6 +2325,13 @@ module.exports = {
 
       {inCategory('appearance') && (
       <Section title="Now Playing">
+        <Row label="Colour Background" desc="Fill the Details sidebar and the full screen player with colours taken from the cover, Apple Music style. Off: the classic dark sidebar and a blurred cover behind the full screen player.">
+          <button
+            onClick={() => set('artwork_backdrop', settings.artwork_backdrop === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.artwork_backdrop !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.artwork_backdrop !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
         <Row label="Moving Covers" desc="Play an album's animated cover (like Apple Music's) in the Details sidebar and the full screen player, when one can be found. Clips are downloaded once and kept in a cache.">
           <button
             onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
