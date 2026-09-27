@@ -578,19 +578,29 @@ export default function LyricsPanel({
     const container = containerRef.current
     const refs = rowsRef.current.get(focusIdx)
     if (!container || !refs?.rowEl) return
-    const target = Math.max(0, refs.rowEl.offsetTop - container.clientHeight * anchorFraction)
-    const delta = target - container.scrollTop
-    if (Math.abs(delta) < 1) return
-    if (instant || Math.abs(delta) > container.clientHeight * 1.5) {
+    // Near the end of a song the list can't scroll far enough to put the line
+    // at the anchor (the sidebar keeps no empty space after the last line), so
+    // clamp to how far it can actually go. The last lines then simply light up
+    // lower down the panel instead of the list trying to move.
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const target = Math.min(maxScroll, Math.max(0, refs.rowEl.offsetTop - container.clientHeight * anchorFraction))
+    const before = container.scrollTop
+    if (Math.abs(target - before) < 1) return
+    if (instant || Math.abs(target - before) > container.clientHeight * 1.5) {
       container.scrollTop = target
       return
     }
     // FLIP: jump the scroll position, then let each row glide the difference
     // back to zero -- rows below the focus leave a beat later than the one
     // above, so the spacing opens and closes like the list is handing over.
+    // The glide uses the distance the scroll really moved; gliding by the
+    // intended distance when the scroll was clamped made every row jump and
+    // settle back to where it already was (the end-of-song jitter).
     container.scrollTop = target
-    const top = target
-    const bottom = target + container.clientHeight
+    const delta = container.scrollTop - before
+    if (Math.abs(delta) < 1) return
+    const top = container.scrollTop
+    const bottom = top + container.clientHeight
     rowsRef.current.forEach(({ rowEl }, i) => {
       if (!rowEl) return
       const y = rowEl.offsetTop
@@ -716,8 +726,11 @@ export default function LyricsPanel({
         style={{
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
-          maskImage: 'linear-gradient(to bottom, transparent 0, black 9%, black 82%, transparent 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, black 9%, black 82%, transparent 100%)',
+          // The sidebar has no empty space after the last line, so its closing
+          // lines light up near the bottom edge -- keep the fade there short
+          // enough not to dim them.
+          maskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
+          WebkitMaskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
         }}
       >
         <div className={`w-full ${fullscreen ? 'max-w-3xl mx-auto px-6' : 'px-3'}`}>
@@ -776,7 +789,7 @@ export default function LyricsPanel({
                   registerRow={registerRow}
                 />
               ))}
-              <div style={{ height: fullscreen ? '55vh' : '65%' }} />
+              <div style={{ height: fullscreen ? '55vh' : 0 }} />
               {sourceLabel && (
                 <p className="px-3 pb-10 text-[11px] text-white/30">
                   Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
