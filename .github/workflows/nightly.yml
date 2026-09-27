@@ -249,6 +249,29 @@ jobs:
 
             ${{ steps.checksums.outputs.HASHES }}
 
+      - name: Remove older nightly files
+        # Nightly file names carry the build number (2.0.3-nightly.84), so a new
+        # run no longer overwrites the previous one's files. Once this run's
+        # files are up, delete every other file on the nightly release, so it
+        # always holds exactly one build (and never none, since this runs after
+        # the upload).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_TAG: nightly-${{ inputs.ref || 'main' }}
+        shell: bash
+        run: |
+          keep=$( { find release_all -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name 'latest*.yml' \) -printf '%f\n'; [ -f release-banner.png ] && echo release-banner.png; } | sort -u )
+          if [ -z "$keep" ]; then
+            echo "No files from this run; leaving the release as it is."
+            exit 0
+          fi
+          gh api "repos/${{ github.repository }}/releases/tags/$NIGHTLY_TAG" --jq '.assets[] | "\(.id)\t\(.name)"' |
+          while IFS=$'\t' read -r id name; do
+            if ! grep -qxF -- "$name" <<< "$keep"; then
+              echo "Deleting older nightly file: $name"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id" || true
+            fi
+          done
       - name: Discord Notification (Build Complete)
         shell: bash
         env:
