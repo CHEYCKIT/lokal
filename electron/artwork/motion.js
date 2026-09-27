@@ -365,8 +365,8 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   const sources = enabledSources(settings)
   if (!sources.length) return null
   ensureTable(db)
-  // "|s2": Spotify lookups from before its search/logging fixes are ignored.
-  const key = keyFor(track) + `|${sources.join(',')}` + (sources.includes('spotify') ? '|s2' : '')
+  // "|s3": Spotify lookups from before the canvas-query switch are ignored.
+  const key = keyFor(track) + `|${sources.join(',')}` + (sources.includes('spotify') ? '|s3' : '')
   const row = db.prepare('SELECT data, fetched_at FROM motion_covers WHERE key = ?').get(key)
   let found
   if (row) {

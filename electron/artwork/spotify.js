@@ -17,6 +17,17 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const CANVAS_UA = 'Spotify/9.0.34.593 iOS/18.4 (iPhone15,3)'
 const CANVAS_URL = 'https://spclient.wg.spotify.com/canvaz-cache/v0/canvases'
 const PARTITION = 'lokal-spotify-canvas' // no "persist:" -- nothing is written to disk
+// The web player's GraphQL ("Pathfinder") queries are identified by a hash
+// that changes with its releases. These are known-good values; the hidden
+// window reads the current ones out of the web player's own scripts.
+const KNOWN_HASHES = {
+  canvas: '575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f', // Jan 2026
+  searchTracks: 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428',
+}
+let liveHashes = {}
+const hashFor = (op) => liveHashes[op] || KNOWN_HASHES[op]
+const HASH_PATTERN = /["'](canvas|searchTracks)["']\s*,\s*["']query["']\s*,\s*["']([0-9a-f]{64})["']/g
+
 const TOKEN_TIMEOUT = 25000   // waiting for the page's token requests
 const MINT_DEADLINE = 40000   // the whole sign-in step, whatever gets stuck
 
@@ -93,8 +104,9 @@ async function mintTokensInner(cookie, state) {
   win.webContents.setUserAgent(UA)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
-  const found = {}
-  const watched = new Map() // requestId -> 'token' | 'client'
+  const found = { hashes: {} }
+  const watched = new Map() // requestId -> 'token' | 'client' | 'script'
+  let scriptsSeen = 0
   const dbg = win.webContents.debugger
   try {
     // The DevTools protocol only answers once the window has a page: on a
@@ -126,6 +138,21 @@ async function mintTokensInner(cookie, state) {
         }
         let kind = null
         try {
+          if (method === 'Network.responseReceived' && params.type === 'Script' && scriptsSeen < 60) {
+            scriptsSeen++
+            watched.set(params.requestId, 'script')
+            return
+          }
+          if (method === 'Network.loadingFinished' && watched.get(params.requestId) === 'script') {
+            watched.delete(params.requestId)
+            const { body, base64Encoded } = await dbg.sendCommand('Network.getResponseBody', { requestId: params.requestId })
+            const js = base64Encoded ? Buffer.from(body, 'base64').toString() : body
+            for (const m of js.matchAll(HASH_PATTERN)) {
+              if (found.hashes[m[1]] !== m[2]) console.log(`[spotify-canvas] web player's ${m[1]} query: ${m[2].slice(0, 12)}...${m[2] === KNOWN_HASHES[m[1]] ? ' (same as known)' : ' (newer than known)'}`)
+              found.hashes[m[1]] = m[2]
+            }
+            return
+          }
           if (method === 'Network.responseReceived') {
             const url = params.response?.url || ''
             if (/open\.spotify\.com\/api\/token|\/get_access_token/.test(url)) watched.set(params.requestId, 'token')
@@ -169,6 +196,11 @@ async function mintTokensInner(cookie, state) {
       // always requested by the page right away.
       if (!found.token && !found.bearer) throw e
     }
+    // Give the player's scripts a moment to show the current canvas query.
+    state.stage = 'reading the web player\'s queries'
+    for (let i = 0; i < 20 && !found.hashes.canvas; i++) await new Promise(r => setTimeout(r, 200))
+    if (!found.hashes.canvas) console.log('[spotify-canvas] canvas query not seen in the web player; using the known one')
+    liveHashes = { ...liveHashes, ...found.hashes }
   } finally {
     try { dbg.detach() } catch {}
     try { win.destroy() } catch {}
@@ -289,7 +321,6 @@ function authFailed(status) {
   return status === 401 || status === 429 || status >= 500
 }
 
-const PATHFINDER_HASH = 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428' // searchTracks, as BitChord uses it
 
 function pickTrack(items, { title, artist, album }, { norm, cleanTitle, artistsMatch }) {
   const wantTitle = norm(cleanTitle(title))
@@ -320,7 +351,7 @@ async function searchRest(t, { title, artist }, { cleanTitle, splitFirstArtist }
 /** The web player's own search (Pathfinder), which BitChord tries first. */
 async function searchPathfinder(t, { title, artist, album }, { cleanTitle }) {
   const variables = { searchTerm: [cleanTitle(title), artist, album].filter(Boolean).join(' '), offset: 0, limit: 10, numberOfTopResults: 5, includeAudiobooks: false, includePreReleases: false }
-  const extensions = { persistedQuery: { version: 1, sha256Hash: PATHFINDER_HASH } }
+  const extensions = { persistedQuery: { version: 1, sha256Hash: hashFor('searchTracks') } }
   const url = `https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchTracks&variables=${encodeURIComponent(JSON.stringify(variables))}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`
   const headers = { Authorization: `Bearer ${t.accessToken}`, Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
   if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
@@ -350,7 +381,36 @@ async function findTrackUri(t, track, helpers) {
   return null
 }
 
+/** How the web player gets a canvas now: the "canvas" GraphQL query. */
+async function canvasFromGraphql(t, uri) {
+  const headers = { Authorization: `Bearer ${t.accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
+  if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
+  const body = JSON.stringify({ operationName: 'canvas', variables: { trackUri: uri }, extensions: { persistedQuery: { version: 1, sha256Hash: hashFor('canvas') } } })
+  const res = await request('https://api-partner.spotify.com/pathfinder/v2/query', { method: 'POST', headers, body })
+    .catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
+  if (!res.ok) {
+    console.log(`[spotify-canvas] canvas query for ${uri}: HTTP ${res.status}`)
+    if (res.status === 401) tokens = null
+    return { failed: true }
+  }
+  const json = await res.json().catch(() => null)
+  const canvas = json?.data?.trackUnion?.canvas
+  const url = canvas?.url
+  if (json?.errors?.length) console.log(`[spotify-canvas] canvas query errors: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}`)
+  console.log(`[spotify-canvas] canvas query for ${uri}: ${url ? `found a clip (${canvas.type || 'no type'})` : canvas ? `canvas without a link (${canvas.type || 'no type'})` : 'no canvas'}`)
+  return { url: url && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url) ? url : null, failed: !json?.data }
+}
+
 async function canvasFor(t, uri) {
+  const viaGraphql = await canvasFromGraphql(t, uri)
+  if (viaGraphql.url) return viaGraphql.url
+  if (!viaGraphql.failed) return null
+  // The query itself failed (e.g. its hash went stale): try the older
+  // canvas service BitChord uses.
+  return canvasFromCanvaz(t, uri)
+}
+
+async function canvasFromCanvaz(t, uri) {
   const headers = {
     'Content-Type': 'application/protobuf', Accept: 'application/protobuf', 'Accept-Language': 'en',
     Authorization: `Bearer ${t.accessToken}`, 'User-Agent': CANVAS_UA,
