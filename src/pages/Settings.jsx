@@ -1191,8 +1191,11 @@ export default function Settings() {
 
   return (
     <div ref={rootRef} className="p-6 space-y-6 pb-10">
+      {/* The bar itself spans the page (so it still covers content scrolling
+          under it). The title lines up with the cards' centred column (see
+          Section); the category buttons use the full width, centred. */}
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
-        <div className="flex items-center justify-between gap-3">
+        <div className="w-full max-w-2xl mx-auto flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
           <div className="flex items-center gap-3">
             {/* No Save button: changes save as they're made. */}
@@ -1218,7 +1221,7 @@ export default function Settings() {
             </AnimatePresence>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           {SETTINGS_CATEGORIES.map((item) => {
             const Icon = item.icon
             const active = activeCategory === item.key
