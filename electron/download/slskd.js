@@ -91,12 +91,24 @@ function splitRemote(filename) {
   return { name: parts[parts.length - 1] || filename, folder: parts.length > 1 ? parts[parts.length - 2] : '', directory: parts.slice(0, -1).join('\\') }
 }
 
+/**
+ * .m4a can be AAC (lossy) or Apple Lossless. Soulseek clients report a bit
+ * depth only for lossless audio, and ALAC runs far above any AAC bitrate.
+ */
+function isAlac(file, ext = extOf(file.filename)) {
+  return (ext === 'm4a' || ext === 'mp4') && (!!file.bitDepth || (file.bitRate || 0) > 500)
+}
+
+function isLossless(file, ext = extOf(file.filename)) {
+  return LOSSLESS_EXT.has(ext) || isAlac(file, ext)
+}
+
 function qualityLabel(file) {
   const ext = extOf(file.filename)
-  if (LOSSLESS_EXT.has(ext)) {
+  if (isLossless(file, ext)) {
     const depth = file.bitDepth ? `${file.bitDepth}-bit` : ''
     const rate = file.sampleRate ? `${+(file.sampleRate / 1000).toFixed(1)} kHz` : ''
-    return [ext.toUpperCase(), [depth, rate].filter(Boolean).join(' / ')].filter(Boolean).join(' ')
+    return [isAlac(file, ext) ? 'ALAC' : ext.toUpperCase(), [depth, rate].filter(Boolean).join(' / ')].filter(Boolean).join(' ')
   }
   return `${ext.toUpperCase()}${file.bitRate ? ` ${file.bitRate}${file.isVariableBitRate ? ' VBR' : ''}` : ''}`
 }
@@ -107,7 +119,7 @@ function qualityLabel(file) {
  */
 function score(file, response) {
   const ext = extOf(file.filename)
-  let s = LOSSLESS_EXT.has(ext) ? 1000 + (file.bitDepth === 24 ? 20 : 0) : Math.min(320, file.bitRate || 128) * 2
+  let s = isLossless(file, ext) ? 1000 + (file.bitDepth === 24 ? 20 : 0) : Math.min(320, file.bitRate || 128) * 2
   if (response.hasFreeUploadSlot) s += 150
   s += Math.min(100, (response.uploadSpeed || 0) / 20000)
   s -= Math.min(200, (response.queueLength || 0) * 5)
@@ -130,7 +142,7 @@ function flatten(responses = []) {
         directory,
         size: file.size,
         extension: ext,
-        lossless: LOSSLESS_EXT.has(ext),
+        lossless: isLossless(file, ext),
         bitRate: file.bitRate || null,
         bitDepth: file.bitDepth || null,
         sampleRate: file.sampleRate || null,
