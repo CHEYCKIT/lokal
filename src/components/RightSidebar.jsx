@@ -123,9 +123,20 @@ export default function RightSidebar() {
 
   // Colour background + full-bleed cover (default), or the classic dark panel.
   const fx = useArtworkBackdropEnabled()
-  // A tall (9:16) canvas plays behind the whole panel, Spotify style, rather
-  // than being cropped into the square cover.
+  // A tall (9:16) canvas gets a taller hero area -- about 60% of the panel's
+  // height -- instead of being cropped into the square cover.
   const [canvasOn, setCanvasOn] = useState(false)
+  const infoRef = useRef(null)
+  const [infoHeight, setInfoHeight] = useState(0)
+  useEffect(() => {
+    const el = infoRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    const ro = new ResizeObserver(([entry]) => setInfoHeight(Math.round(entry.contentRect.height)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showRightSidebar])
+  const canvasHero = canvasOn && infoHeight > 0
+  const heroHeight = canvasHero ? Math.max(300, Math.round(infoHeight * 0.6)) : 300
 
   const artSrc = currentTrack?.artwork_path
     ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
@@ -210,23 +221,23 @@ export default function RightSidebar() {
                 made this inert toggle a silent no-op: the hidden Info/Lyrics
                 pane stayed focusable and reachable by assistive tech even
                 while covered by the other tab's overlay. */}
-            <div className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
+            <div ref={infoRef} className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
               {/* Apple Music-style: the cover runs edge to edge and dissolves
                   into colours taken from it; a moving cover plays over the
                   still one when there is one. */}
-              {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? 300 : 0} />}
-              {artSrc && (
-                <>
-                  <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} />
-                  {/* Keeps the text readable over the video. */}
-                  <div className="absolute inset-0 pointer-events-none transition-opacity duration-300"
-                    style={{ opacity: canvasOn ? 1 : 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.8) 100%)' }} />
-                </>
-              )}
+              {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? heroHeight : 0} />}
               <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'}`}>
                 <div
-                  className={`${fx ? 'relative w-full aspect-square overflow-hidden' : 'relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50'} transition-opacity duration-300 ${canvasOn ? 'opacity-0' : 'opacity-100'}`}
-                  style={fx && artSrc ? { WebkitMaskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)', maskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)' } : undefined}
+                  className={fx ? 'relative w-full overflow-hidden' : 'relative w-full rounded-xl overflow-hidden bg-card border border-border/50'}
+                  style={{
+                    // Square cover normally; a tall canvas grows it to ~60% of the panel.
+                    height: fx ? heroHeight : (canvasHero ? heroHeight - 32 : 268),
+                    transition: 'height 420ms cubic-bezier(0.4, 0, 0.2, 1)',
+                    ...(fx && artSrc ? {
+                      WebkitMaskImage: `linear-gradient(to bottom, black ${canvasHero ? 72 : 55}%, transparent 100%)`,
+                      maskImage: `linear-gradient(to bottom, black ${canvasHero ? 72 : 55}%, transparent 100%)`,
+                    } : null),
+                  }}
                 >
                   <AnimatePresence mode="wait">
                     {artSrc ? (
@@ -236,6 +247,7 @@ export default function RightSidebar() {
                     )}
                   </AnimatePresence>
                   {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} />}
                 </div>
 
                 <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>

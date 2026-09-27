@@ -151,6 +151,7 @@ export default function FullscreenPlayer() {
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()
+  const [fsCanvas, setFsCanvas] = useState(false)
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -362,13 +363,6 @@ export default function FullscreenPlayer() {
                 )}
               </AnimatePresence>
             )}
-            {/* A tall canvas fills the screen behind everything (the scrim below
-                keeps it readable); square clips play in the cover card. */}
-            {artSrc && (
-              <div className="absolute inset-0 opacity-70">
-                <MotionCover trackId={currentTrack?.id} only="tall" />
-              </div>
-            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
           </div>
 
@@ -402,13 +396,21 @@ export default function FullscreenPlayer() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-                className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center w-80 h-80"
+                className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center"
+                // A tall (9:16) canvas plays in the card itself, which grows to
+                // its shape. (It used to fill the whole screen behind the
+                // lyrics panel, whose blur then had to be redone every video
+                // frame -- slow, especially while the panel slid open.)
+                style={fsCanvas
+                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
+                  : { width: '20rem', height: '20rem' }}
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} />}
               </motion.div>
             </AnimatePresence>
 
