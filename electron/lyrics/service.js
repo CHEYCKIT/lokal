@@ -147,6 +147,23 @@ function upgradeLegacy(row) {
   return result.type ? result : null
 }
 
+// ---------------------------------------------------------------- trusted paths
+
+/**
+ * The file a track actually lives at, from the library -- never from the
+ * caller. The web server is reachable over the network, and the local-file
+ * source reads sidecar files and tags next to whatever path it's given; a
+ * client-supplied path would let any client read arbitrary .txt/.lrc/.ttml
+ * files off the host (CWE-22). Callers' filePath arguments are ignored.
+ */
+function trustedFilePath(db, trackId) {
+  if (!trackId) return null
+  try {
+    const row = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)
+    return row?.file_path || null
+  } catch { return null }
+}
+
 // ---------------------------------------------------------------- public API
 
 function instrumentalResult(db, trackId) {
@@ -164,7 +181,8 @@ function instrumentalResult(db, trackId) {
  */
 async function getLyrics(db, args) {
   ensureSchema(db)
-  const { trackId, title, artist, album, duration, filePath } = args
+  const { trackId, title, artist, album, duration } = args
+  const filePath = trustedFilePath(db, trackId)
   const instrumental = instrumentalResult(db, trackId)
   if (instrumental) return instrumental
   const settings = readSettings(db)
@@ -210,23 +228,25 @@ async function getLyrics(db, args) {
 async function getLyricsFrom(db, args, providerId) {
   ensureSchema(db)
   const settings = readSettings(db)
+  const filePath = trustedFilePath(db, args.trackId)
   const { result, attempts } = await lookup(
-    { title: args.title, artist: args.artist, album: args.album, duration: Number(args.duration) || 0, filePath: args.filePath, keepCommaArtists: settings.keepCommaArtists },
+    { title: args.title, artist: args.artist, album: args.album, duration: Number(args.duration) || 0, filePath, keepCommaArtists: settings.keepCommaArtists },
     { only: providerId },
   )
   if (result && !result.instrumental && args.trackId) {
     // Merge this attempt into what the row already knew about the other sources.
-    const previous = parseMeta(readRow(db, args.trackId, args.filePath) || {})
+    const previous = parseMeta(readRow(db, args.trackId, filePath) || {})
     const merged = { ...(previous?.attempts || {}), ...attempts }
-    writeRow(db, args.trackId, args.filePath, result, { attempts: merged, pinned: true })
+    writeRow(db, args.trackId, filePath, result, { attempts: merged, pinned: true })
     return { ...result, attempts: merged, pinned: true }
   }
   return result ? { ...result, attempts } : { type: null, lines: [], source: providerId, attempts, miss: true }
 }
 
-function importLyrics(db, trackId, content, type, filePath) {
+function importLyrics(db, trackId, content, type) {
   ensureSchema(db)
   if (!trackId) return null
+  const filePath = trustedFilePath(db, trackId)
   const text = typeof content === 'string' ? content : Array.isArray(content) ? content.join('\n') : String(content ?? '')
   const result = parseImported(text.replace(/\r\n/g, '\n'), type)
   if (!result) return null

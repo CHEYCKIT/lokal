@@ -45,7 +45,7 @@ function embeddedText(meta) {
 /** The file's own ISRC tag, if it has one. Cheap: skips covers. */
 async function readIsrc(filePath) {
   const lib = metadata()
-  if (!lib || !filePath || !fs.existsSync(filePath)) return null
+  if (!lib || !isAudioFile(filePath)) return null
   try {
     const meta = await lib.parseFile(filePath, { duration: false, skipCovers: true })
     const isrc = meta?.common?.isrc
@@ -54,9 +54,18 @@ async function readIsrc(filePath) {
   } catch { return null }
 }
 
+const AUDIO_EXT = /\.(mp3|flac|m4a|mp4|aac|ogg|oga|opus|wav|wma|aiff?|alac|ape|wv|dsf|dff)$/i
+
+/** Only an absolute path to an existing audio file is ever read. */
+function isAudioFile(filePath) {
+  if (typeof filePath !== 'string' || !filePath || filePath.includes('\0')) return false
+  if (/^(ghost|https?):/i.test(filePath) || !path.isAbsolute(filePath) || !AUDIO_EXT.test(filePath)) return false
+  try { return fs.statSync(filePath).isFile() } catch { return false }
+}
+
 async function fetch(query) {
   const filePath = query.filePath
-  if (!filePath || /^(ghost|https?):/i.test(filePath) || !fs.existsSync(filePath)) return null
+  if (!isAudioFile(filePath)) return null
   const sidecar = readSidecar(filePath)
   if (sidecar) return { raw: sidecar }
   const lib = metadata()

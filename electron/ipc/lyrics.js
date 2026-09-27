@@ -7,16 +7,18 @@ const service = require('../lyrics/service')
 function registerLyricsHandlers(ipcMain) {
   const db = getDB()
 
-  ipcMain.handle('lyrics:get', (_, trackId, title, artist, album, duration, filePath, options = {}) =>
-    service.getLyrics(db, { trackId, title, artist, album, duration, filePath, refresh: !!options?.refresh }))
+  // filePath arguments are accepted for compatibility but ignored: the
+  // service resolves the file from the library by track id.
+  ipcMain.handle('lyrics:get', (_, trackId, title, artist, album, duration, _filePath, options = {}) =>
+    service.getLyrics(db, { trackId, title, artist, album, duration, refresh: !!options?.refresh }))
 
-  ipcMain.handle('lyrics:getFrom', (_, providerId, trackId, title, artist, album, duration, filePath) =>
-    service.getLyricsFrom(db, { trackId, title, artist, album, duration, filePath }, providerId))
+  ipcMain.handle('lyrics:getFrom', (_, providerId, trackId, title, artist, album, duration) =>
+    service.getLyricsFrom(db, { trackId, title, artist, album, duration }, providerId))
 
   ipcMain.handle('lyrics:sources', () => service.sources(db))
 
-  ipcMain.handle('lyrics:import', (_, trackId, content, type, filePath) =>
-    service.importLyrics(db, trackId, content, type, filePath))
+  ipcMain.handle('lyrics:import', (_, trackId, content, type) =>
+    service.importLyrics(db, trackId, content, type))
 
   ipcMain.handle('lyrics:clearCache', (_, trackId) => service.clearCache(db, trackId))
 

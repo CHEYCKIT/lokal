@@ -1522,7 +1522,7 @@ export default function Settings() {
 
       {inCategory('playback') && (
       <Section title="Lyrics">
-        <LyricsSourcesSettings />
+        <LyricsSourcesSettings onPersist={(patch) => setSettings(s => ({ ...s, ...patch }))} />
         <Row label="Word-by-Word Sync" desc="Sweep each syllable as it's sung, Apple Music style (syllable-synced lyrics only)">
           <button
             onClick={() => { const v = settings.word_sync === '0'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}

@@ -20,7 +20,7 @@ function artistForSearch(artist, keepCommaArtists = []) {
   const a = String(artist || '').trim()
   if (!a) return a
   if (keepCommaArtists.some(k => k && k.toLowerCase() === a.toLowerCase())) return a
-  return a.split(/\s*(?:,|;|&|\bx\b|\/|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b)\s*/i)[0].trim() || a
+  return a.split(/\s*(?:,|;|&|\s+x\s+|\/|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b)\s*/i)[0].trim() || a
 }
 
 module.exports = { forLyricsSearch, artistForSearch }

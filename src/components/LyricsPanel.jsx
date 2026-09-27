@@ -420,14 +420,24 @@ export default function LyricsPanel({
 
   // ---- data
   const trackKey = track?.id
+  // Async answers are only applied if they're still for what's on screen.
+  // The sidebar and side panel keep this component mounted across track
+  // changes, so a slow lookup for the previous song could otherwise land after
+  // the next song's and replace its lyrics (same for translations, romanization
+  // and the source picker).
+  const requestSeq = useRef(0)
+  const resultRef = useRef(null)
+  resultRef.current = result
+
   const load = useCallback((opts = {}) => {
     if (!track?.id) return
+    const seq = ++requestSeq.current
     setLoading(true)
     setNotice('')
     api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path, opts)
-      .then(r => { setResult(r && (r.lines?.length || r.instrumental) ? r : null) })
-      .catch(() => setResult(null))
-      .finally(() => setLoading(false))
+      .then(r => { if (seq === requestSeq.current) setResult(r && (r.lines?.length || r.instrumental) ? r : null) })
+      .catch(() => { if (seq === requestSeq.current) setResult(null) })
+      .finally(() => { if (seq === requestSeq.current) setLoading(false) })
   }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
 
   useEffect(() => {
@@ -440,10 +450,19 @@ export default function LyricsPanel({
 
   useEffect(() => {
     api.getLyricsSources?.().then(s => setSources(s?.providers || [])).catch(() => {})
-    api.getSettings().then(s => {
-      setAutoTranslate(s?.lyrics_auto_translate === '1')
-      if (s?.lyrics_translate_target) setTranslateTarget(String(s.lyrics_translate_target))
-    }).catch(() => {})
+    // Re-read on every Settings save: this panel stays mounted in the sidebar,
+    // so a new translation language or Auto-Translate choice must apply live.
+    let settingsSeq = 0
+    const loadSettings = () => {
+      const seq = ++settingsSeq
+      api.getSettings().then(s => {
+        if (seq !== settingsSeq) return
+        setAutoTranslate(s?.lyrics_auto_translate === '1')
+        setTranslateTarget(String(s?.lyrics_translate_target || 'en'))
+      }).catch(() => {})
+    }
+    loadSettings()
+    window.addEventListener('lokal:settings-saved', loadSettings)
     const onSub = (e) => setSubline(e.detail)
     const on = () => setIsOnline(true)
     const off = () => setIsOnline(false)
@@ -451,6 +470,7 @@ export default function LyricsPanel({
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
     return () => {
+      window.removeEventListener('lokal:settings-saved', loadSettings)
       window.removeEventListener('lokal:lyrics-subline', onSub)
       window.removeEventListener('online', on)
       window.removeEventListener('offline', off)
@@ -471,21 +491,30 @@ export default function LyricsPanel({
     lines.some(l => l.romanization?.text && l.romanization.text.trim() !== l.text.trim()) ? lines.map(l => l.romanization || null) : null
   ), [lines])
 
+  // A different target language invalidates whatever was translated before.
+  useEffect(() => {
+    setTranslation(t => (t.state === 'idle' || t.target === translateTarget ? t : { state: 'idle', lines: null }))
+  }, [translateTarget])
+
   const wantTranslation = subline === 'translation' || (autoTranslate && subline === 'original' && result?.language && !result.language.toLowerCase().startsWith(translateTarget.split('-')[0].toLowerCase()))
   useEffect(() => {
     if (!wantTranslation || !lines.length || embeddedTranslation || translation.state !== 'idle' || !track?.id) return
-    setTranslation({ state: 'loading', lines: null })
+    setTranslation({ state: 'loading', lines: null, target: translateTarget })
+    const forResult = resultRef.current
+    const forTarget = translateTarget
+    const stale = () => resultRef.current !== forResult
     api.translateLyrics(track.id, compactLines, translateTarget)
-      .then(r => setTranslation(r?.status === 'translated' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }))
-      .catch(() => setTranslation({ state: 'unavailable', lines: null }))
+      .then(r => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : r?.status === 'translated' ? { state: 'ready', lines: r.lines, target: forTarget } : { state: r?.status || 'unavailable', lines: null, target: forTarget })) })
+      .catch(() => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : { state: 'unavailable', lines: null, target: forTarget })) })
   }, [wantTranslation, lines.length, embeddedTranslation, translation.state, track?.id, compactLines, translateTarget])
 
   useEffect(() => {
     if (subline !== 'romanization' || !lines.length || embeddedRomanization || romanization.state !== 'idle' || !track?.id || !nonLatin) return
     setRomanization({ state: 'loading', lines: null })
+    const forResult = resultRef.current
     api.romanizeLyrics?.(track.id, compactLines)
-      .then(r => setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }))
-      .catch(() => setRomanization({ state: 'unavailable', lines: null }))
+      .then(r => { if (resultRef.current === forResult) setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }) })
+      .catch(() => { if (resultRef.current === forResult) setRomanization({ state: 'unavailable', lines: null }) })
   }, [subline, lines.length, embeddedRomanization, romanization.state, track?.id, nonLatin, compactLines])
 
   const subLines = useMemo(() => {
@@ -639,9 +668,11 @@ export default function LyricsPanel({
 
   const pickSource = (id) => {
     if (!track?.id) return
+    const seq = ++requestSeq.current
     setSourceBusy(true)
     api.getLyricsFrom(id, track.id, track.title, track.artist, track.album, track.duration, track.file_path)
       .then(r => {
+        if (seq !== requestSeq.current) return
         if (r?.lines?.length) {
           setResult(r)
           setTranslation({ state: 'idle', lines: null })
@@ -655,7 +686,7 @@ export default function LyricsPanel({
         }
       })
       .catch(() => {})
-      .finally(() => setSourceBusy(false))
+      .finally(() => { if (seq === requestSeq.current) setSourceBusy(false) })
   }
 
   // ---- render

@@ -10,7 +10,8 @@ const argsFrom = (req) => ({
   artist: req.query.artist,
   album: req.query.album,
   duration: req.query.duration,
-  filePath: req.query.filePath,
+  // No filePath: the service resolves it from the library by track id, so a
+  // client can't point the local-file source at arbitrary paths.
   refresh: req.query.refresh === '1',
 })
 
@@ -42,7 +43,7 @@ router.get('/:trackId/from/:providerId', async (req, res) => {
 })
 
 router.post('/:trackId/import', (req, res) => {
-  res.json(service.importLyrics(getDB(), req.params.trackId, req.body?.content, req.body?.type, req.body?.filePath))
+  res.json(service.importLyrics(getDB(), req.params.trackId, req.body?.content, req.body?.type))
 })
 
 router.delete('/:trackId', (req, res) => {

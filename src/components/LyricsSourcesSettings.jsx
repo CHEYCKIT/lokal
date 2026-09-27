@@ -10,7 +10,7 @@ import { api } from '../api'
 //   lyrics_prioritize_syllable '1' = keep searching past a line-synced match
 //                              for a syllable-synced one
 
-export default function LyricsSourcesSettings() {
+export default function LyricsSourcesSettings({ onPersist } = {}) {
   const [providers, setProviders] = useState([])
   const [order, setOrder] = useState([])
   const [enabled, setEnabled] = useState([])
@@ -34,6 +34,10 @@ export default function LyricsSourcesSettings() {
   }, [])
 
   const persist = (patch) => {
+    // Settings holds every key in its own state and writes all of them on
+    // "Save Settings"; keep it in step, or a later save would restore the
+    // old source order over this one.
+    onPersist?.(patch)
     api.saveSettings(patch).then(() => {
       setSaved(true)
       clearTimeout(savedTimer.current)
@@ -54,14 +58,22 @@ export default function LyricsSourcesSettings() {
     saveOrder(next)
   }
   const toggle = (id) => {
-    const next = enabled.includes(id) ? enabled.filter(x => x !== id) : [...enabled, id]
+    const turningOff = enabled.includes(id)
+    // At least one source must stay on: an empty list isn't "no lyrics" to the
+    // lookup, it falls back to every source -- the opposite of what the
+    // switches would show.
+    if (turningOff && enabled.filter(x => rows.includes(x)).length <= 1) return
+    const next = turningOff ? enabled.filter(x => x !== id) : [...enabled, id]
     setEnabled(next)
     persist({ lyrics_sources_enabled: JSON.stringify(next) })
   }
   const drop = (targetId) => {
     if (!dragId || dragId === targetId) return
+    // Dropped on a row below it: land after that row; above it: before it.
+    // (Always inserting before made a one-row drag downwards do nothing.)
+    const movingDown = rows.indexOf(dragId) < rows.indexOf(targetId)
     const next = rows.filter(id => id !== dragId)
-    next.splice(next.indexOf(targetId), 0, dragId)
+    next.splice(next.indexOf(targetId) + (movingDown ? 1 : 0), 0, dragId)
     saveOrder(next)
   }
   const reset = () => {
@@ -110,8 +122,10 @@ export default function LyricsSourcesSettings() {
               <button
                 role="switch"
                 aria-checked={on}
+                disabled={on && enabled.filter(x => rows.includes(x)).length <= 1}
+                title={on && enabled.filter(x => rows.includes(x)).length <= 1 ? 'At least one source has to stay on' : undefined}
                 onClick={() => toggle(id)}
-                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-white/15'}`}
+                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'bg-accent' : 'bg-white/15'}`}
                 aria-label={`${on ? 'Disable' : 'Enable'} ${p.label}`}
               >
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
