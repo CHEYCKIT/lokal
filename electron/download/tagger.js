@@ -128,6 +128,11 @@ async function applyTags(filePath, changes = {}) {
     if (changes.squareCover) {
       try { if (await squareCover(T, file)) { done.cover = true; dirty = true } } catch {}
     }
+    if (changes.title || changes.artist) {
+      if (changes.title && changes.title !== file.tag.title) { file.tag.title = changes.title; done.title = changes.title }
+      if (changes.artist) { file.tag.performers = [changes.artist]; done.artist = changes.artist }
+      dirty = true
+    }
     if (changes.cleanTitle) {
       const artist = file.tag.performers?.[0] || ''
       const title = file.tag.title || ''

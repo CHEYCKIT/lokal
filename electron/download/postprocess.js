@@ -31,6 +31,56 @@ async function findLyrics(db, info, signal) {
   return result && !result.instrumental && result.lines?.length ? result : null
 }
 
+// ---------------------------------------------------------------- who sang it
+// A YouTube video's channel is often not the artist: labels, VEVO accounts,
+// fan uploads. The title usually is: "Artist - Song (Official Video)". The
+// catalogue itself (YouTube Music, "Artist - Topic" channels) is trusted as-is:
+// its titles are just the song, and a dash there belongs to the song
+// ("Song - Remastered 2011").
+
+const DASH = /^(.{1,80}?)\s+[-–—|]\s+(.+)$/
+const NOT_AN_ARTIST = /^(?:official|lyrics?|audio|video|full album|live|remix|remastered|\d{4})$/i
+
+function unquote(s) {
+  return String(s || '').trim().replace(/^["'“”‘’«]+|["'“”‘’»]+$/g, '').trim()
+}
+
+/** { artist, title } from the video, or null to keep what the tags say. */
+function artistAndTitle(meta, tags) {
+  if (!meta) return null
+  const channel = String(meta.channel || meta.uploader || '')
+  if (meta.track || /\s-\sTopic$/i.test(channel)) return null
+  const title = String(tags.title || meta.title || '').trim()
+  const m = title.match(DASH)
+  if (!m) return null
+  const artist = unquote(m[1])
+  const song = unquote(m[2])
+  if (!artist || !song || NOT_AN_ARTIST.test(artist)) return null
+  return { artist, title: song }
+}
+
+function safeName(s) {
+  return String(s || '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 120)
+}
+
+/** Singles live in Music/Artist/Album; move one whose artist changed. */
+function refile(filePath, { artist, title, album, outputDir }) {
+  const ext = path.extname(filePath)
+  const dir = outputDir && artist ? path.join(outputDir, safeName(artist), safeName(album) || 'Singles') : path.dirname(filePath)
+  let target = path.join(dir, `${safeName(title) || path.basename(filePath, ext)}${ext}`)
+  if (target === filePath) return filePath
+  for (let n = 1; fs.existsSync(target) && n < 50; n++) target = path.join(dir, `${safeName(title)} (${n})${ext}`)
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.renameSync(filePath, target)
+    // Leave no empty "Channel/Singles" folders behind.
+    for (let d = path.dirname(filePath), i = 0; i < 2 && d !== outputDir; i++, d = path.dirname(d)) {
+      try { if (!fs.readdirSync(d).length) fs.rmdirSync(d); else break } catch { break }
+    }
+    return target
+  } catch { return filePath }
+}
+
 function renameWithoutArtist(filePath, artist) {
   const ext = path.extname(filePath)
   const base = path.basename(filePath, ext)
@@ -47,12 +97,16 @@ function renameWithoutArtist(filePath, artist) {
 /**
  * @returns {{ filePath: string, lyrics: string|null, lyricsSource: string|null, cover: boolean }}
  */
-async function finishFile(filePath, { db, settings = {}, url }) {
+async function finishFile(filePath, { db, settings = {}, url, meta = null, kind = 'single', outputDir = null }) {
   const out = { filePath, lyrics: null, lyricsSource: null, cover: false }
   const info = readInfo(filePath)
   if (!info) return out
   const clean = settings.clean_download_metadata !== '0'
-  const lookupInfo = { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
+  // "Artist - Song" videos: the artist is in the title, not the channel.
+  const fromTitle = clean && isYouTube(url) ? artistAndTitle(meta, info) : null
+  const lookupInfo = fromTitle
+    ? { ...info, ...fromTitle }
+    : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
 
   let lyrics = null
   if (settings.download_embed_lyrics !== '0' && !info.hasLyrics && lookupInfo.title && lookupInfo.artist && db) {
@@ -61,7 +115,8 @@ async function finishFile(filePath, { db, settings = {}, url }) {
     controller.abort()
   }
 
-  const changes = { cleanTitle: clean, squareCover: isYouTube(url) }
+  const changes = { cleanTitle: clean && !fromTitle, squareCover: isYouTube(url) }
+  if (fromTitle) { changes.title = fromTitle.title; changes.artist = fromTitle.artist }
   if (lyrics) {
     changes.lyrics = toPortableLyrics(lyrics)
     changes.privateLyrics = toPrivateTag(lyrics)
@@ -69,8 +124,13 @@ async function finishFile(filePath, { db, settings = {}, url }) {
   const done = await applyTags(filePath, changes)
   if (done.lyrics) { out.lyrics = lyrics.sync; out.lyricsSource = lyrics.source }
   out.cover = done.cover
-  if (clean) out.filePath = renameWithoutArtist(filePath, info.artist)
+  if (fromTitle && (done.title || done.artist)) {
+    out.artist = fromTitle.artist
+    out.filePath = kind === 'single'
+      ? refile(filePath, { ...fromTitle, album: info.album, outputDir })
+      : refile(filePath, { title: fromTitle.title }) // playlists keep their folder
+  } else if (clean) out.filePath = renameWithoutArtist(filePath, info.artist)
   return out
 }
 
-module.exports = { finishFile, findLyrics }
+module.exports = { finishFile, findLyrics, artistAndTitle }

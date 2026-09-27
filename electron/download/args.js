@@ -70,6 +70,9 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
     ...audioArgs(format),
     '--embed-thumbnail',
     '--embed-metadata',
+    // What the video said about itself, before our metadata rewrites, printed
+    // just ahead of the path so each file can be matched to its own details.
+    '--print', 'after_move:lokalmeta:%(.{channel,uploader,track,artist,creator,title,fulltitle,album})j',
     '--print', 'after_move:filepath:%(filepath)s',
     '--output', outputTemplate(kind, outputDir),
     '--trim-filenames', '180',

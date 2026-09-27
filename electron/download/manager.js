@@ -567,12 +567,19 @@ class DownloadManager {
       return
     }
 
+    if (line.startsWith('lokalmeta:')) {
+      try { job.nextMeta = JSON.parse(line.slice('lokalmeta:'.length)) } catch { job.nextMeta = null }
+      return
+    }
+
     if (line.startsWith('filepath:')) {
       const filepath = line.slice('filepath:'.length).trim()
+      const meta = job.nextMeta || null
+      job.nextMeta = null
       if (filepath && !job.filepaths.includes(filepath)) {
         job.filepaths.push(filepath)
         this.update(job, { song: filepath, message: `Saved: ${path.basename(filepath)}` }, { force: true })
-        this.afterFile(job, filepath)
+        this.afterFile(job, filepath, meta)
       }
       return
     }
@@ -723,12 +730,13 @@ class DownloadManager {
   }
 
   /** Finishes and indexes one file, in the background, one at a time per job. */
-  afterFile(job, filepath) {
+  afterFile(job, filepath, meta = null) {
     job.post = job.post.then(async () => {
       let finalPath = filepath
       try {
         this.update(job, { message: `Adding lyrics: ${path.basename(filepath)}` })
-        const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url })
+        const outputDir = job.opts.outputDir || job.settings?.music_folder || path.join(os.homedir(), 'Music')
+        const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir })
         finalPath = done.filePath
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
