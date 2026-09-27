@@ -232,7 +232,16 @@ function fromSpotifyCanvas(track, settings) {
     .catch(e => { const err = e instanceof Error ? e : new Error(String(e)); err.transient = true; throw err })
 }
 
-const PROVIDERS = { apple: fromApple, tidal: fromTidal, community: fromCommunity, spotify: fromSpotifyCanvas }
+// Every provider is called as (track, settings). Apple's and Tidal's second
+// parameter is their storefront/country, so they're wrapped: passing the
+// settings object straight through made them search "/catalog/[object
+// Object]" and "countryCode=[object Object]", so they never found anything.
+const PROVIDERS = {
+  apple: (track) => fromApple(track),
+  tidal: (track) => fromTidal(track),
+  community: (track) => fromCommunity(track),
+  spotify: fromSpotifyCanvas,
+}
 
 // ---------------------------------------------------------------- clip cache
 
@@ -366,7 +375,9 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   if (!sources.length) return null
   ensureTable(db)
   // "|s3": Spotify lookups from before the canvas-query switch are ignored.
-  const key = keyFor(track) + `|${sources.join(',')}` + (sources.includes('spotify') ? '|s3' : '')
+  // "|v2": lookups from before the provider-call fix above are ignored (they
+  // were cached as "no moving cover" for days).
+  const key = keyFor(track) + `|${sources.join(',')}|v2` + (sources.includes('spotify') ? '|s3' : '')
   const row = db.prepare('SELECT data, fetched_at FROM motion_covers WHERE key = ?').get(key)
   let found
   if (row) {
