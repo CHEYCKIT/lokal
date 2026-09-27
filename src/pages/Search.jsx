@@ -115,6 +115,7 @@ export default function Search() {
   const albumArt = (a) => a.artwork_path ? (api.isElectron ? `file://${a.artwork_path}` : api.artworkURL(a.id)) : null
 
   const playRandom = async () => {
+    ++recentTrackSelectionRef.current
     setRandomLoading(true)
     const track = await api.getRandomTrack()
     if (track) {
