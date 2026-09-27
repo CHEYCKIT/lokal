@@ -180,6 +180,7 @@ export const api = {
   cancelAllDownloads: () => isE() ? el().cancelAllDownloads() : apiFetch('/download/cancel-all', { method:'POST', body:{} }),
   clearFinishedDownloads: () => isE() ? el().clearFinishedDownloads() : apiFetch('/download/clear-finished', { method:'POST', body:{} }),
   markDownloadsSeen: () => isE() ? el().markDownloadsSeen() : apiFetch('/download/seen', { method:'POST', body:{} }),
+  playableFile: (fp) => isE() ? el().playableFile(fp) : Promise.resolve(null),
   soulseekStatus: () => isE() ? el().soulseekStatus() : apiFetch('/download/soulseek/status'),
   soulseekSearch: (text) => isE() ? el().soulseekSearch(text) : apiFetch('/download/soulseek/search', { method:'POST', body:{ text } }),
   soulseekResults: (id) => isE() ? el().soulseekResults(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`),

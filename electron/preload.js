@@ -130,6 +130,7 @@ contextBridge.exposeInMainWorld('electron', {
   cancelAllDownloads: () => invoke('downloader:cancelAll'),
   clearFinishedDownloads: () => invoke('downloader:clearFinished'),
   markDownloadsSeen: () => invoke('downloader:markSeen'),
+  playableFile: (filePath) => invoke('media:playableFile', filePath),
   soulseekStatus: () => invoke('soulseek:status'),
   soulseekSearch: (text) => invoke('soulseek:search', text),
   soulseekResults: (id) => invoke('soulseek:results', id),

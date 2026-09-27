@@ -9,6 +9,7 @@ const { findYtDlp, findFfmpeg, findFfprobe } = require('./tools')
 const { getDownloadManager } = require('../download/manager')
 const { runJsonSearch, mapSearchResult, mapArtistResult } = require('../download/search')
 const slskd = require('../download/slskd')
+const { playableCopy } = require('../download/convert')
 
 const searchProcesses = new Set()
 
@@ -146,6 +147,17 @@ function registerDownloaderHandlers(ipcMain) {
   ipcMain.handle('downloader:clearFinished', () => manager().clearFinished())
   ipcMain.handle('downloader:markSeen', () => manager().markSeen())
   ipcMain.handle('downloader:queue', () => manager().list())
+
+  // Files the player can't decode (ALAC...): a cached playable copy. Only for
+  // files that are in the library.
+  ipcMain.handle('media:playableFile', async (_, filePath) => {
+    if (typeof filePath !== 'string' || !filePath) return null
+    const norm = (p) => String(p).replace(/\\/g, '/').toLowerCase()
+    let known = null
+    try { known = getDB().prepare('SELECT file_path FROM tracks WHERE file_path = ? OR REPLACE(file_path, char(92), \'/\') = ?').get(filePath, filePath.replace(/\\/g, '/')) } catch {}
+    if (!known || norm(known.file_path) !== norm(filePath)) return null
+    return playableCopy(known.file_path, { ffmpeg: findFfmpeg(), cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+  })
 
   // Soulseek, through slskd.
   const slskdSettings = () => manager().settings()

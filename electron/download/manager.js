@@ -24,6 +24,7 @@ const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
 const { readInfo, coverThumbnail } = require('./tagger')
+const { makePlayable } = require('./convert')
 
 const ACTIVE = new Set(['queued', 'downloading'])
 const RETRY_DELAYS_MS = [5000, 20000]
@@ -760,6 +761,9 @@ class DownloadManager {
       try {
         this.update(job, { message: `Adding lyrics: ${path.basename(filepath)}` })
         const outputDir = job.opts.outputDir || job.settings?.music_folder || path.join(os.homedir(), 'Music')
+        // Apple Lossless and other codecs the player can't decode: FLAC (or AAC) first.
+        const playable = await makePlayable(filepath, { ffmpeg: this.deps.findTools?.()?.ffmpeg })
+        if (playable !== filepath) { job.outputLines.push(`[Lokal] Converted ${path.basename(filepath)} to ${path.extname(playable).slice(1).toUpperCase()} so it plays in Lokal`); filepath = playable; finalPath = playable }
         const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir })
         finalPath = done.filePath
         const name = path.basename(finalPath)

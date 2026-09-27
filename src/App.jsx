@@ -168,6 +168,27 @@ function AnimatedRoutes() {
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
+
+  // A file the player can't decode (Apple Lossless .m4a, WMA, APE...): ask the
+  // main process for a playable copy (converted once, cached) and switch to it.
+  // Web mode needs nothing here: the server's stream route does the same.
+  const handleAudioError = useCallback(async (event) => {
+    const el = event.currentTarget
+    const code = el?.error?.code
+    if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
+    const src = el.getAttribute('src') || ''
+    if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
+    el.dataset.fallbackFor = src
+    let filePath = src.slice('file://'.length)
+    try { filePath = decodeURIComponent(filePath) } catch {}
+    const copy = await api.playableFile?.(filePath).catch(() => null)
+    if (!copy || el.getAttribute('src') !== src) return
+    const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
+    el.dataset.fallbackSrc = next
+    el.src = next
+    el.load()
+    if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
+  }, [])
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
@@ -1654,6 +1675,7 @@ export default function App() {
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
+          onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
         />
@@ -1662,6 +1684,7 @@ export default function App() {
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
+          onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; setIsPlaying(false); stopTimer() }}
         />
