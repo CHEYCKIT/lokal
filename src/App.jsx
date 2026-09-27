@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
@@ -140,8 +140,24 @@ function NativeHistoryNavigation() {
 
 function AnimatedRoutes() {
   const location = useLocation()
+  const navigationType = useNavigationType()
+  // Every page scrolls inside the same <main>, so without this a page opened
+  // from a scrolled-down one (e.g. Settings from the middle of Home) inherited
+  // that scroll position. Reset once the old page has faded out -- resetting
+  // immediately would visibly jump the outgoing page -- and only for new
+  // navigations: Back/Forward (POP, incl. mouse side buttons) is left as is.
+  const resetOnEnter = useRef(false)
+  useEffect(() => {
+    resetOnEnter.current = navigationType !== 'POP'
+  }, [location.pathname, navigationType])
+  const handleExitComplete = () => {
+    if (!resetOnEnter.current) return
+    resetOnEnter.current = false
+    const main = document.querySelector('main.flex-1.overflow-y-auto')
+    if (main) main.scrollTop = 0
+  }
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence mode="wait" onExitComplete={handleExitComplete}>
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Home /></motion.div>} />
         <Route path="/albums" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Albums /></motion.div>} />

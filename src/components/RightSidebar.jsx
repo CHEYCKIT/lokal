@@ -41,7 +41,7 @@ export default function RightSidebar() {
   } = usePlayerStore()
   const nav = useNavigate()
   const canOpenContext = isContextNavigable(playbackContext)
-  const wordSync = localStorage.getItem('word-sync') === '1'
+  const wordSync = localStorage.getItem('word-sync') !== '0'
   // Backend-persisted setting (Settings' Unsynced Lyrics Auto-Sync toggle
   // saves via api.saveSettings, never to localStorage) -- reading a
   // localStorage key here that's never written left this permanently false

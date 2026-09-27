@@ -32,7 +32,7 @@ export default function MiniPlayer({ windowed = false }) {
 
   const wordSyncEnabled = useMemo(() => {
     try {
-      return localStorage.getItem('word-sync') === '1'
+      return localStorage.getItem('word-sync') !== '0'
     } catch {
       return false
     }
@@ -272,7 +272,8 @@ export default function MiniPlayer({ windowed = false }) {
             <p className={`${windowed ? 'text-xs mt-1' : 'text-[10px] mt-0.5'} truncate`}>
               {lyricsWords.map((w, i) => (
                 <span key={`${w.word}-${i}`} className={i <= activeWordIdx ? 'text-white/85 italic' : 'text-white/35 italic'}>
-                  {i > 0 ? ' ' : ''}
+                  {/* Syllables of one word carry space:false and must stay joined. */}
+                  {i > 0 && lyricsWords[i - 1]?.space !== false ? ' ' : ''}
                   {i === activeWordIdx
                     ? w.word.split('').map((ch, ci) => (
                         <span key={`${w.word}-${ci}`} className={ci < activeCharCount ? 'text-white/95' : 'text-white/45'}>

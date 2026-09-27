@@ -4,6 +4,7 @@ const path = require('path')
 const os = require('os')
 const fs = require('fs-extra')
 const { getDB, getStorageDir } = require('../../electron/ipc/db')
+const { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../../electron/ipc/ytCookies')
 
 const activeDownloads = new Map()
 
@@ -86,12 +87,8 @@ function getSettingsMap() {
   return Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value]))
 }
 
-function buildBaseArgs(settings) {
-  const args = []
-  if (settings.yt_cookies === '1') {
-    args.push('--cookies-from-browser', settings.yt_cookie_browser || 'firefox')
-  }
-  return args
+function buildBaseArgs(settings, cookies = cookieArgs(settings)) {
+  return [...cookies.args]
 }
 
 async function cleanupLeftovers(filepaths, outputDir) {
@@ -214,6 +211,7 @@ function fetchMediaTitle(ytdlp, url) {
 
 function getFriendlyDownloadError(outputLines, fallback) {
   const text = Array.isArray(outputLines) ? outputLines.join('\n') : String(outputLines || '')
+  if (isCookieError(text)) return COOKIE_FAILURE_MESSAGE
   if (/Requested format is not available/i.test(text)) {
     return 'yt-dlp could not fetch the requested format. Try updating or re-downloading yt-dlp in Settings and then retry.'
   }
@@ -295,6 +293,7 @@ function startSingleDownload(url, opts = {}) {
   const id = opts.id || `dl-${Date.now()}`
   const format = opts.format || 'mp3'
   const outputTemplate = path.join(outDir, '%(artist)s', '%(album)s', '%(title)s.%(ext)s')
+  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
   const args = [
     url,
     '-x',
@@ -308,10 +307,10 @@ function startSingleDownload(url, opts = {}) {
     '--newline',
     '--progress',
     '--no-warnings',
-    ...buildBaseArgs(settings),
+    ...buildBaseArgs(settings, cookies),
   ]
 
-  const outputLines = []
+  const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
   const filepaths = []
   const downloadedTracks = []
   const proc = spawn(ytdlp, args, { windowsHide: true })
@@ -398,6 +397,13 @@ function startSingleDownload(url, opts = {}) {
       return
     }
 
+    // Browser cookies unreadable (Chrome/Edge on Windows, DPAPI): retry once without them.
+    if (code !== null && cookies.usedBrowser && isCookieError(outputLines)) {
+      outputLines.push(markUnreadable(cookies.usedBrowser))
+      startSingleDownload(url, { ...opts, id, withoutCookies: true, carryOutput: outputLines.slice(-50) })
+      return
+    }
+
     const friendlyError = getFriendlyDownloadError(outputLines, code === null ? 'Cancelled' : 'Download failed')
     setActiveEntry(id, {
       status: 'error',
@@ -434,6 +440,7 @@ function startPlaylistDownload(url, opts = {}) {
   const outputTemplate = path.join(outDir, '%(playlist)s', '%(artist)s', '%(title)s.%(ext)s')
   const playlistDbId = opts.playlistId || getPlaylistId(url) || `pl-${Date.now()}`
   const archivePath = path.join(getStorageDir(), `archive-${playlistDbId}.txt`)
+  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
 
   const args = [
     url,
@@ -451,10 +458,10 @@ function startPlaylistDownload(url, opts = {}) {
     '--yes-playlist',
     '--ignore-errors',
     '--no-warnings',
-    ...buildBaseArgs(settings),
+    ...buildBaseArgs(settings, cookies),
   ]
 
-  const outputLines = []
+  const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
   const errorLines = []
   const filepaths = []
   const downloadedTracks = []
@@ -607,6 +614,13 @@ function startPlaylistDownload(url, opts = {}) {
         currentTrack: totalTracks || downloadedTracks.length,
         output: trimOutput(outputLines),
       })
+      return
+    }
+
+    // Browser cookies unreadable before anything downloaded: retry once without them.
+    if (code !== null && cookies.usedBrowser && !downloadedTracks.length && isCookieError(errorLines.length ? errorLines : outputLines)) {
+      outputLines.push(markUnreadable(cookies.usedBrowser))
+      startPlaylistDownload(url, { ...opts, id, playlistId: playlistDbId, withoutCookies: true, carryOutput: outputLines.slice(-50) })
       return
     }
 

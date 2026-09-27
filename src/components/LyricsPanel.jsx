@@ -1,1037 +1,844 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic2, Search, Languages } from 'lucide-react'
+import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
+import {
+  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits,
+} from '../lyrics/timing'
 
-function WaveLoader() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 h-40">
-      <div className="flex gap-1 items-end">
-        {[0,1,2,3,4].map(i => (
-          <motion.div key={i} className="w-0.5 bg-accent/50 rounded-full"
-            animate={{ height: ['8px','20px','8px'] }}
-            transition={{ duration: 0.8, repeat: Infinity, delay: i*0.12 }} />
-        ))}
-      </div>
-      <p className="text-xs text-muted">Fetching lyrics…</p>
-    </div>
-  )
+// ---------------------------------------------------------------------------
+// Apple Music-style lyrics.
+//
+// Everything that moves every frame (the sweep across each syllable, the lift
+// of the word being sung, the swell and glow of a held note, the interlude
+// dots) is written straight to the DOM from one requestAnimationFrame loop, for
+// only the lines actually being sung. React renders the list and re-renders
+// only when the focused line changes.
+// ---------------------------------------------------------------------------
+
+const SUBLINE_KEY = 'lokal-lyrics-subline' // 'original' | 'translation' | 'romanization'
+const BROWSE_IDLE_MS = 3200
+const FOCUS_LEAD_S = 0.3 // the panel starts moving to a line slightly before it lands
+const SCROLL_MS = 560
+const STAGGER_STEPS = 3
+const STAGGER_FRACTION = 0.07
+const EASE = 'cubic-bezier(0.41, 0, 0.12, 0.99)'
+const HANDOVER_MS = 420
+
+// Falloff either side of the focused line, indexed by distance. Subtle close in
+// (so you can read ahead and behind), letting go further out.
+const FALLOFF_ALPHA = [1, 0.62, 0.5, 0.42, 0.34]
+const FALLOFF_BLUR = [0, 0.8, 1.2, 1.8, 2.4]
+const UNSUNG = 'rgba(255,255,255,0.42)'
+const SUNG = 'rgba(255,255,255,1)'
+
+function readSubline() {
+  try { return localStorage.getItem(SUBLINE_KEY) || 'original' } catch { return 'original' }
+}
+function writeSubline(v) {
+  try { localStorage.setItem(SUBLINE_KEY, v) } catch {}
+  window.dispatchEvent(new CustomEvent('lokal:lyrics-subline', { detail: v }))
 }
 
-function WaveDots({ duration = 3, isActive = false, id = 0, phase = 0, hasNextLine = false }) {
-  if (!isActive) return null;
-  const baseDelay = -(Math.max(0, Math.min(1, phase)) * duration)
-  const waveTimes = hasNextLine ? [0, 0.18, 0.42, 0.72, 1] : [0, 0.22, 0.46, 0.72, 1]
-  const dotOffsets = [0, 0.09, 0.18]
-  const groupX = hasNextLine ? [0, 5, 10, 12, 12] : [0, 6, 12, 6, 0]
-  const groupOpacity = hasNextLine ? [0.45, 0.82, 1, 0.92, 0.86] : [0.45, 0.8, 1, 0.7, 0.45]
-  const dotY = hasNextLine ? [0, -2, -14, -8, -5] : [0, -3, -14, -5, 0]
-  const dotScale = hasNextLine ? [0.94, 1.1, 1.58, 1.28, 1.16] : [0.92, 1.08, 1.58, 1.1, 0.92]
-  const dotOpacity = hasNextLine ? [0.24, 0.66, 1, 0.92, 0.82] : [0.24, 0.62, 1, 0.66, 0.24]
-  const dotGlow = hasNextLine
-    ? [
-        "0 0 0px rgba(255,255,255,0)",
-        "0 0 10px rgba(255,255,255,0.28)",
-        "0 0 22px rgba(255,255,255,0.9)",
-        "0 0 16px rgba(255,255,255,0.62)",
-        "0 0 13px rgba(255,255,255,0.56)",
-      ]
-    : [
-        "0 0 0px rgba(255,255,255,0)",
-        "0 0 10px rgba(255,255,255,0.24)",
-        "0 0 22px rgba(255,255,255,0.88)",
-        "0 0 10px rgba(255,255,255,0.32)",
-        "0 0 0px rgba(255,255,255,0)",
-      ]
-
-  return (
-    <motion.div
-      className="flex items-center justify-center gap-4 h-12 my-4"
-      initial={{ x: 20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{
-        x: -52,
-        opacity: 0,
-        scale: 0.92,
-        filter: "blur(1px)",
-        transition: { duration: 0.55, ease: "easeIn" },
-      }}
-    >
-      <motion.div className="flex items-center justify-center gap-4"
-        animate={{
-          x: groupX,
-          opacity: groupOpacity,
-        }}
-        transition={{
-          duration,
-          repeat: Infinity,
-          ease: [0.4, 0, 0.2, 1],
-          times: waveTimes,
-          delay: baseDelay,
-        }}
-        style={{ willChange: "transform, opacity" }}
-      >
-        {[0, 1, 2].map((i) => (
-          <motion.span
-            key={`wavedot-${id}-${i}`}
-            className="w-3 h-3 bg-white rounded-full"
-            animate={{
-              y: dotY,
-              scale: dotScale,
-              opacity: dotOpacity,
-              boxShadow: dotGlow,
-            }}
-            transition={{
-              duration,
-              repeat: Infinity,
-              ease: [0.4, 0, 0.2, 1],
-              times: waveTimes,
-              delay: baseDelay + dotOffsets[i] * duration,
-            }}
-            style={{ willChange: "transform, opacity, box-shadow" }}
-          />
-        ))}
-      </motion.div>
-    </motion.div>
-  );
+// Where the player actually is, read from the audio element every frame when
+// possible (the store's `progress` only updates a few times a second).
+function useLyricClock(progress) {
+  const anchor = useRef({ t: progress, at: performance.now() })
+  useEffect(() => { anchor.current = { t: progress, at: performance.now() } }, [progress])
+  return useCallback(() => {
+    const s = usePlayerStore.getState()
+    const el = s.activeAudioElement === 'cf' ? s.cfAudioRef?.current : s.audioRef?.current
+    if (el && Number.isFinite(el.currentTime) && el.currentTime > 0) return el.currentTime
+    const { t, at } = anchor.current
+    return t + (s.isPlaying ? Math.min((performance.now() - at) / 1000, 0.6) : 0)
+  }, [])
 }
 
-const isLetter = ch => /[A-Za-z0-9]/.test(ch)
-const charWeight = ch => isLetter(ch) ? 1.0 : 0.35
+// ---------------------------------------------------------------- word markup
 
-// --- Spicy-style (Apple Music-esque) word/letter sync engine ---
-// Ported from the Lokal TTML editor's "apple" preview mode: word-level gradient
-// sweep + spring-driven scale/lift, falling back to per-letter splitting only
-// for long-held words (>=1s across >1 char).
-const SPICY_HELD_THRESHOLD = 1.0
-const SPICY_LETTER_END_TRIM = 0.25
-
-class AmSpring {
-  constructor(value, frequencyHz, dampingRatio) {
-    this.p = value; this.v = 0; this.g = value
-    this.f = frequencyHz; this.d = Math.min(dampingRatio, 0.999)
-  }
-  setGoal(goal) { this.g = goal }
-  step(dt) {
-    const f = this.f * 2 * Math.PI, d = this.d, g = this.g, o = this.p - g
-    const c = Math.sqrt(1 - d * d)
-    const q = Math.exp(-d * f * dt)
-    const i = Math.cos(dt * f * c), j = Math.sin(dt * f * c)
-    const z = c > 1e-6 ? j / c : dt * f
-    const y = f * c > 1e-6 ? j / (f * c) : dt
-    this.p = (o * (i + z * d) + this.v * y) * q + g
-    this.v = (this.v * (i - z * d) - o * (z * f)) * q
-    return this.p
-  }
-}
-
-class AmSpline {
-  constructor(points) {
-    this.xs = points.map(p => p[0]); this.ys = points.map(p => p[1])
-    const n = this.xs.length
-    this.k = new Array(n).fill(0)
-    if (n < 2) return
-    const a = new Array(n).fill(0), b = new Array(n).fill(0), c = new Array(n).fill(0), d = new Array(n).fill(0)
-    for (let i = 1; i < n - 1; i++) {
-      const dxPrev = this.xs[i] - this.xs[i - 1], dxNext = this.xs[i + 1] - this.xs[i]
-      a[i] = 1 / dxPrev; c[i] = 1 / dxNext; b[i] = 2 * (a[i] + c[i])
-      d[i] = 3 * ((this.ys[i] - this.ys[i - 1]) / (dxPrev * dxPrev) + (this.ys[i + 1] - this.ys[i]) / (dxNext * dxNext))
-    }
-    const dx0 = this.xs[1] - this.xs[0]
-    b[0] = 2 / dx0; c[0] = 1 / dx0; d[0] = 3 * (this.ys[1] - this.ys[0]) / (dx0 * dx0)
-    const dxN = this.xs[n - 1] - this.xs[n - 2]
-    a[n - 1] = 1 / dxN; b[n - 1] = 2 / dxN; d[n - 1] = 3 * (this.ys[n - 1] - this.ys[n - 2]) / (dxN * dxN)
-    const cp = new Array(n).fill(0), dp = new Array(n).fill(0)
-    cp[0] = c[0] / b[0]; dp[0] = d[0] / b[0]
-    for (let i = 1; i < n; i++) {
-      const m = b[i] - a[i] * cp[i - 1]
-      cp[i] = c[i] / m; dp[i] = (d[i] - a[i] * dp[i - 1]) / m
-    }
-    this.k[n - 1] = dp[n - 1]
-    for (let i = n - 2; i >= 0; i--) this.k[i] = dp[i] - cp[i] * this.k[i + 1]
-  }
-  at(t) {
-    const xs = this.xs, ys = this.ys, k = this.k, n = xs.length
-    if (n === 1) return ys[0]
-    const clamped = Math.max(xs[0], Math.min(t, xs[n - 1]))
-    let i = 0
-    while (i < n - 2 && clamped > xs[i + 1]) i++
-    const x0 = xs[i], x1 = xs[i + 1], y0 = ys[i], y1 = ys[i + 1], dx = x1 - x0
-    const s = dx === 0 ? 0 : (clamped - x0) / dx
-    const a = k[i] * dx - (y1 - y0), b = -k[i + 1] * dx + (y1 - y0)
-    return (1 - s) * y0 + s * y1 + s * (1 - s) * ((1 - s) * a + s * b)
-  }
-}
-
-const SPICY_WORD_SCALE = new AmSpline([[0, 0.95], [0.7, 1.0505], [1, 1]])
-const SPICY_WORD_Y = new AmSpline([[0, 0.01], [0.9, -1 / 60], [1, 0]])
-const SPICY_LETTER_SCALE = new AmSpline([[0, 0.95], [0.7, 1.175], [1, 1]])
-const SPICY_LETTER_Y = new AmSpline([[0, 0.01], [0.9, -1 / 56], [1, 0]])
-const SPICY_GLOW = new AmSpline([[0, 0], [0.15, 1], [0.6, 1], [1, 0]])
-
-function spicyState(t, start, end) {
-  if (t < start) return 'NotSung'
-  if (t >= end) return 'Sung'
-  return 'Active'
-}
-function spicyProgress(t, start, end) {
-  if (t <= start) return 0
-  if (t >= end) return 1
-  return (t - start) / Math.max(0.0001, end - start)
-}
-function spicyEaseSinOut(t) { return Math.sin((t * Math.PI) / 2) }
-
-// Splits a word like "yeah-ah" into tight-joined pieces ["yeah", "-ah"], mirroring
-// the ttml editor's "\" split convention (where "yeah\-ah" -> yeah / -ah) so
-// hyphenated syllable breaks animate as independently-timed chunks instead of
-// one solid gradient sweep across the whole compound word.
-function splitDashPieces(wordText) {
-  if (!wordText || !wordText.includes('-')) return [wordText || '']
-  const raw = wordText.split('-')
-  const pieces = []
-  raw.forEach((p, i) => {
-    if (i === 0) { pieces.push(p); return }
-    if (!p) return
-    pieces.push(`-${p}`)
-  })
-  const cleaned = pieces.filter(Boolean)
-  return cleaned.length > 1 ? cleaned : [wordText]
-}
-
-function buildSpicyWordUnit(text, start, end, tight) {
-  const dur = start != null && end != null ? Math.max(0, end - start) : 0
-  const chars = Array.from(text || '')
-  const held = dur >= SPICY_HELD_THRESHOLD && chars.length > 1
-  let letters = null
-  if (held) {
-    const trimEnd = Math.max(start + 0.05, end - SPICY_LETTER_END_TRIM)
-    const letterDur = Math.max(0.04, (trimEnd - start) / chars.length)
-    letters = chars.map((ch, ci) => ({
-      ch,
-      start: start + ci * letterDur,
-      end: start + (ci + 1) * letterDur,
-    }))
-  }
-  return { word: text, time: start, end, held, letters, tight: !!tight }
-}
-
-function buildSpicyWordUnits(word) {
-  const start = word?.time
-  const end = word?.end
-  const total = start != null && end != null && end > start ? end - start : 0
-  const pieces = splitDashPieces(word?.word || '')
-  if (pieces.length <= 1) return [buildSpicyWordUnit(word?.word || '', start, end, false)]
-
-  const totalChars = pieces.reduce((sum, p) => sum + p.length, 0) || 1
-  let cursor = start
-  return pieces.map((p, i) => {
-    const isLast = i === pieces.length - 1
-    const share = total * (p.length / totalChars)
-    const pStart = cursor
-    const pEnd = isLast ? end : cursor + share
-    cursor = pEnd
-    return buildSpicyWordUnit(p, pStart, pEnd, i > 0)
-  })
-}
-
-function spicyWordSpanStyle(extra) {
+function sweepStyle() {
   return {
     display: 'inline-block',
     whiteSpace: 'pre',
-    willChange: 'transform',
-    backgroundImage: 'linear-gradient(90deg, #fff 0%, #fff var(--gradient-position, -20%), rgba(255,255,255,0.36) calc(var(--gradient-position, -20%) + 18%), rgba(255,255,255,0.36) 100%)',
+    backgroundImage: `linear-gradient(90deg, ${SUNG} var(--lo, -0.6em), ${UNSUNG} var(--hi, 0em))`,
     WebkitBackgroundClip: 'text',
     backgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     color: 'transparent',
-    ...extra,
+    willChange: 'transform, background',
+    // A touch of room so the glow and the lift aren't clipped by the line box.
+    paddingBlock: '0.06em',
+    marginBlock: '-0.06em',
   }
 }
 
-function newSpicySprings() {
-  return {
-    scale: new AmSpring(0.95, 0.88, 0.64),
-    y: new AmSpring(0.01, 1.45, 0.4),
-    glow: new AmSpring(0, 1.18, 0.56),
+/** One vocal (lead or background): units grouped into unbreakable words. */
+function Voice({ units, text, wordSync, className, style, voiceRef }) {
+  if (!wordSync || !units?.length) {
+    return <span ref={voiceRef} data-voice="plain" dir="auto" className={className} style={style}>{text}</span>
   }
-}
-
-function SpicyWordLine({ words, bgWords, liveProgressRef }) {
-  const containerRef = useRef(null)
-  const rafRef = useRef(null)
-  const wordDataRef = useRef([])
-
-  const builtWords = useMemo(() => (words || []).flatMap(buildSpicyWordUnits), [words])
-  const builtBgWords = useMemo(() => (bgWords || []).flatMap(buildSpicyWordUnits), [bgWords])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const wordSpans = Array.from(container.querySelectorAll('[data-spicy-word]'))
-    wordDataRef.current = wordSpans.map(el => {
-      const wi = parseInt(el.dataset.wi, 10)
-      const isBg = el.dataset.spicyWord === 'bg'
-      const data = isBg ? builtBgWords[wi] : builtWords[wi]
-      const letterSpans = data?.held ? Array.from(el.querySelectorAll('[data-spicy-letter]')) : null
-      return {
-        el,
-        data,
-        springs: newSpicySprings(),
-        letterSpans,
-        letterSprings: letterSpans ? letterSpans.map(() => newSpicySprings()) : null,
-      }
-    })
-
-    let lastTs = performance.now()
-    function tick() {
-      rafRef.current = requestAnimationFrame(tick)
-      const now = performance.now()
-      const dt = Math.min(Math.max((now - lastTs) / 1000, 0.001), 0.05)
-      lastTs = now
-      const t = liveProgressRef.current
-
-      for (const item of wordDataRef.current) {
-        const { el, data } = item
-        if (!data || data.time == null) continue
-        const start = data.time
-        const end = data.end != null && data.end > start ? data.end : start + 0.12
-
-        if (data.held && item.letterSpans) {
-          item.letterSpans.forEach((lEl, li) => {
-            const letter = data.letters[li]
-            if (!letter) return
-            const springs = item.letterSprings[li]
-            const state = spicyState(t, letter.start, letter.end)
-            const pct = spicyProgress(t, letter.start, letter.end)
-            const shaped = state === 'NotSung' ? 0 : state === 'Sung' ? 1 : pct
-            springs.scale.setGoal(SPICY_LETTER_SCALE.at(shaped))
-            springs.y.setGoal(SPICY_LETTER_Y.at(shaped))
-            springs.glow.setGoal(SPICY_GLOW.at(shaped))
-            const scale = springs.scale.step(dt)
-            const y = springs.y.step(dt)
-            const glow = springs.glow.step(dt)
-            const gradient = state === 'NotSung' ? -20 : state === 'Sung' ? 100 : -20 + 120 * spicyEaseSinOut(pct)
-            lEl.style.setProperty('--gradient-position', `${gradient}%`)
-            lEl.style.transform = `translate3d(0, ${(y * 2 * 100).toFixed(2)}%, 0) scale(${scale.toFixed(4)})`
-            lEl.style.textShadow = `0 0 ${(4 + 12 * glow).toFixed(1)}px rgba(255,255,255,${Math.min(glow * 0.55, 0.9).toFixed(2)})`
-          })
-        } else {
-          const springs = item.springs
-          const state = spicyState(t, start, end)
-          const pct = spicyProgress(t, start, end)
-          const shaped = state === 'NotSung' ? 0 : state === 'Sung' ? 1 : pct
-          springs.scale.setGoal(SPICY_WORD_SCALE.at(shaped))
-          springs.y.setGoal(SPICY_WORD_Y.at(shaped))
-          springs.glow.setGoal(SPICY_GLOW.at(shaped))
-          const scale = springs.scale.step(dt)
-          const y = springs.y.step(dt)
-          const glow = springs.glow.step(dt)
-          const gradient = state === 'NotSung' ? -20 : state === 'Sung' ? 100 : -20 + 120 * spicyEaseSinOut(pct)
-          el.style.setProperty('--gradient-position', `${gradient}%`)
-          el.style.transform = `translate3d(0, ${(y * 100).toFixed(2)}%, 0) scale(${scale.toFixed(4)})`
-          el.style.textShadow = `0 0 ${(4 + 2 * glow).toFixed(1)}px rgba(255,255,255,${Math.min(glow * 0.4, 0.7).toFixed(2)})`
-        }
-      }
-    }
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [builtWords, builtBgWords, liveProgressRef])
-
+  const groups = groupUnits(units)
   return (
-    <span ref={containerRef} style={{ display: 'inline' }}>
-      {builtWords.map((w, wi) => {
-        const nextTight = !!builtWords[wi + 1]?.tight
+    <span ref={voiceRef} data-voice="timed" dir="auto" className={className} style={style}>
+      {groups.map((group, gi) => {
+        const grow = group.units.length === 1 && canGrow(group.units[0].unit)
         return (
-          <span key={wi} data-spicy-word="main" data-wi={wi}
-            style={spicyWordSpanStyle({ marginRight: nextTight ? 0 : '0.28em' })}>
-            {w.held
-              ? w.letters.map((l, li) => (
-                <span key={li} data-spicy-letter="1" style={spicyWordSpanStyle({})}>{l.ch}</span>
-              ))
-              : (w.word || '')}
-          </span>
+          <React.Fragment key={gi}>
+            {/* One unbreakable box per word; the space sits between boxes so
+                the line can still wrap there (a space inside an inline-block
+                would be collapsed away). */}
+            <span style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
+              {group.units.map(({ unit, index }) => (
+                grow ? (
+                  <span key={index} data-u={index} data-grow="1" style={{ display: 'inline-block', whiteSpace: 'pre' }}>
+                    {Array.from(unit.word).map((ch, ci) => (
+                      <span key={ci} data-l={ci} style={sweepStyle()}>{ch}</span>
+                    ))}
+                  </span>
+                ) : (
+                  <span key={index} data-u={index} style={sweepStyle()}>{unit.word}</span>
+                )
+              ))}
+            </span>
+            {group.space ? ' ' : null}
+          </React.Fragment>
         )
       })}
-      {builtBgWords.length > 0 && (
-        <div className="text-sm mt-1 italic opacity-80">
-          {builtBgWords.map((w, wi) => {
-            const nextTight = !!builtBgWords[wi + 1]?.tight
-            return (
-              <span key={wi} data-spicy-word="bg" data-wi={wi}
-                style={spicyWordSpanStyle({ marginRight: nextTight ? 0 : '0.22em', fontSize: '0.9em' })}>
-                {w.word || ''}
-              </span>
-            )
-          })}
-        </div>
-      )}
     </span>
   )
 }
 
-function buildCharTimeline(wordText, start, end) {
-  const chars = Array.from(wordText)
-  const n = chars.length
-  if (n === 0) return []
-  const wordDur = Math.max(0.05, end - start)
-  const staggerWindow = wordDur * 0.65
-  const charAnimDur = Math.min(0.18, wordDur * 0.45)
-  return chars.map((ch, i) => {
-    const staggerT = n > 1 ? i / (n - 1) : 0
-    const chStart = start + staggerT * staggerWindow
-    const chEnd = chStart + charAnimDur
-    return { ch, start: chStart, end: chEnd }
+// ---------------------------------------------------------------- per-frame painter
+
+function paintVoice(voiceEl, units, t, live) {
+  if (!voiceEl || !units?.length) return
+  const els = voiceEl.querySelectorAll('[data-u]')
+  els.forEach((el) => {
+    const u = units[Number(el.dataset.u)]
+    if (!u) return
+    if (el.dataset.grow) {
+      const letters = el.querySelectorAll('[data-l]')
+      const plan = growLetters(u)
+      letters.forEach((lEl, li) => {
+        const s = plan.sample(li, t)
+        const p = live ? s.lit : (t >= u.end ? 1 : 0)
+        // Feather sits wholly outside the letter at 0 and 1, so an unsung
+        // narrow letter ("i", "l") is never caught half-lit.
+        lEl.style.setProperty('--lo', `calc(${(p * 100).toFixed(2)}% + ${(p * 0.5 - 0.5).toFixed(3)}em)`)
+        lEl.style.setProperty('--hi', `calc(${(p * 100).toFixed(2)}% + ${(p * 0.5).toFixed(3)}em)`)
+        if (live) {
+          lEl.style.transform = `translate3d(${s.shift.toFixed(3)}em, ${(-s.rise).toFixed(3)}em, 0) scale(${s.scale.toFixed(4)})`
+          lEl.style.filter = s.bloom > 0.01 ? `drop-shadow(0 0 ${(0.12 + 0.3 * s.bloom).toFixed(3)}em rgba(255,255,255,${(0.55 * s.bloom).toFixed(3)}))` : ''
+        } else {
+          lEl.style.transform = ''
+          lEl.style.filter = ''
+        }
+      })
+      return
+    }
+    const p = live ? unitProgress(u, t) : (t >= u.end ? 1 : 0)
+    // Feathered edge: the lit region runs to p, fading over ~1.2em around it.
+    el.style.setProperty('--lo', `calc(${(p * 100).toFixed(2)}% + ${(p * 1.2 - 0.6).toFixed(3)}em - 0.6em)`)
+    el.style.setProperty('--hi', `calc(${(p * 100).toFixed(2)}% + ${(p * 1.2 - 0.6).toFixed(3)}em + 0.6em)`)
+    el.style.transform = live ? `translate3d(0, ${(-0.06 * unitLift(u, t)).toFixed(4)}em, 0)` : ''
   })
 }
 
+function paintGap(dotsEl, line, until, t) {
+  if (!dotsEl) return
+  const span = Math.max(0.001, until - line.time)
+  const through = Math.min(1, Math.max(0, (t - line.time) / span))
+  const dots = dotsEl.children
+  for (let i = 0; i < dots.length; i++) {
+    const lit = Math.min(1, Math.max(0, through * dots.length - i))
+    dots[i].style.opacity = String(0.28 + 0.72 * lit)
+  }
+  // A gentle breath while it waits; it gathers itself just before the vocal returns.
+  const remaining = until - t
+  const breath = 1 + 0.06 * Math.sin((t - line.time) * Math.PI * 1.4)
+  const gather = remaining < 0.5 ? 1 - 0.25 * (1 - remaining / 0.5) : 1
+  dotsEl.style.transform = `scale(${(breath * gather).toFixed(4)})`
+}
 
-function RAFWordLine({ words, bgWords, liveProgressRef }) {
-  const containerRef = useRef(null)
-  const rafRef = useRef(null)
-  const charDataRef = useRef([])
-  const bgCharDataRef = useRef([])
+// ---------------------------------------------------------------- rows
+
+const Row = React.memo(function Row({
+  line, index, until, distance, isFocused, isLive, isPast, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
+}) {
+  const rowRef = useRef(null)
+  const leadRef = useRef(null)
+  const bgRef = useRef(null)
+  const subRef = useRef(null)
+  const dotsRef = useRef(null)
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    registerRow(index, { rowEl: rowRef.current, leadEl: leadRef.current, bgEl: bgRef.current, subEl: subRef.current, dotsEl: dotsRef.current })
+    return () => registerRow(index, null)
+  })
 
-    const spans = container.querySelectorAll('[data-char]')
-    const bgSpans = container.querySelectorAll('[data-bgchar]')
-    charDataRef.current = Array.from(spans).map(el => ({
-      el,
-      start: parseFloat(el.dataset.start),
-      end: parseFloat(el.dataset.end),
-    }))
-    bgCharDataRef.current = Array.from(bgSpans).map(el => ({
-      el,
-      start: parseFloat(el.dataset.start),
-      end: parseFloat(el.dataset.end),
-    }))
+  const alignEnd = duet && line.side === 'end'
+  const baseSize = (fullscreen ? 1.85 : 0.98) * textScale
+  // A line still being sung (its backing vocal running past the next line's
+  // start, overlapping voices) stays lit alongside the focused one.
+  const near = isFocused || isLive ? 0 : distance
+  const falloff = browsing ? 0.8 : FALLOFF_ALPHA[Math.min(near, FALLOFF_ALPHA.length - 1)]
+  const blur = browsing || !synced ? 0 : FALLOFF_BLUR[Math.min(near, FALLOFF_BLUR.length - 1)]
+  const lineOpacity = !synced ? 1 : near === 0 ? 1 : falloff
+  const seekable = synced && Number.isFinite(line.time)
 
-    let prev = -1
-    function tick() {
-      rafRef.current = requestAnimationFrame(tick)
-      const p = liveProgressRef.current
-      if (Math.abs(p - prev) < 0.0005) return
-      prev = p
+  if (line.gap) {
+    const open = isFocused && synced
+    return (
+      <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
+        <div
+          style={{
+            height: open ? `${baseSize * 1.35}rem` : 0,
+            opacity: open ? 1 : 0,
+            transition: `height 420ms ${EASE}, opacity 360ms ${EASE}`,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: alignEnd ? 'flex-end' : 'flex-start',
+            paddingInline: '0.75rem',
+          }}
+          aria-label="Instrumental"
+        >
+          <div ref={dotsRef} className="flex items-center" style={{ gap: `${baseSize * 0.2}rem`, transformOrigin: 'left center' }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} className="rounded-full bg-white" style={{ width: `${baseSize * 0.36}rem`, height: `${baseSize * 0.36}rem`, opacity: 0.28 }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
-      for (const { el, start, end } of charDataRef.current) {
-        const raw = Math.max(0, Math.min(1, (p - start) / Math.max(0.01, end - start)))
-        const t = raw < 1 ? 1 - Math.pow(1 - raw, 2.2) : 1
-        const bounce = raw < 1 ? Math.sin(raw * Math.PI) * 1.5 : 0
-        const y = (1 - t) * 7 - bounce
-        const scale = 0.94 + 0.09 * t - (raw < 1 ? Math.sin(raw * Math.PI) * 0.02 : 0)
-        el.style.transform = `translate3d(0,${y}px,0) scale(${scale})`
-        el.style.opacity = String(Math.max(0.35, 0.35 + 0.65 * t))
-        el.style.color = raw > 0.05 ? '#fff' : '#9ca3af'
-      }
-      for (const { el, start, end } of bgCharDataRef.current) {
-        const raw = Math.max(0, Math.min(1, (p - start) / Math.max(0.01, end - start)))
-        const t = raw < 1 ? 1 - Math.pow(1 - raw, 2.2) : 1
-        const bounce = raw < 1 ? Math.sin(raw * Math.PI) * 1.0 : 0
-        const y = (1 - t) * 5 - bounce
-        el.style.transform = `translate3d(0,${y}px,0) scale(${0.95 + 0.05 * t})`
-        el.style.opacity = String(Math.max(0.2, 0.2 + 0.8 * t))
-        el.style.color = raw > 0.05 ? '#fff' : '#9ca3af'
-      }
-    }
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [words, bgWords, liveProgressRef])
+  const hasBg = !!line.bgText
+  const subText = sub?.text && sub.text !== line.text ? sub.text : null
+  const subBg = sub?.bgText && sub.bgText !== line.bgText ? sub.bgText : null
+  const subUnits = sub?.words?.length ? sub.words : null
+  const bgUnits = line.bgWords || []
 
   return (
-    <span ref={containerRef} style={{ display: 'inline' }}>
-      {(words || []).map((w, wi) => {
-        const merged = wi > 0 && words[wi-1]?.word?.endsWith('-')
-        return (
-          <span key={wi} style={{ display: 'inline-block', whiteSpace: 'nowrap', marginRight: merged ? 0 : '0.35em' }}>
-            {(w.chars || []).map((c, ci) => (
-              <span key={ci}
-                data-char="1"
-                data-start={c.start}
-                data-end={c.end}
-                style={{ display: 'inline-block', whiteSpace: 'pre', willChange: 'transform,opacity', color: '#9ca3af', opacity: 0.4 }}>
-                {c.ch}
-              </span>
-            ))}
-          </span>
-        )
-      })}
-      {bgWords?.length > 0 && (
-        <div className="text-sm mt-1 italic">
-          {bgWords.map((bw, bi) => (
-            <span key={bi} style={{ display: 'inline-block', whiteSpace: 'nowrap', marginRight: bw.word.endsWith('-') ? 0 : '0.25em' }}>
-              {(bw.chars || []).map((c, ci) => (
-                <span key={ci}
-                  data-bgchar="1"
-                  data-start={c.start}
-                  data-end={c.end}
-                  style={{ display: 'inline-block', whiteSpace: 'pre', willChange: 'transform,opacity', color: '#9ca3af', opacity: 0.2 }}>
-                  {c.ch}
-                </span>
-              ))}
+    <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
+      <div
+        role={seekable ? 'button' : undefined}
+        tabIndex={seekable ? 0 : undefined}
+        onClick={() => { if (!seekable) return; const sel = window.getSelection?.(); if (sel && !sel.isCollapsed && sel.toString().trim()) return; onSeek(line.time) }}
+        onKeyDown={(e) => { if (seekable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSeek(line.time) } }}
+        className={`group rounded-2xl outline-none select-text ${seekable ? 'cursor-pointer hover:bg-white/[0.06] focus-visible:bg-white/[0.06]' : 'cursor-default'}`}
+        style={{
+          padding: `${baseSize * 0.28}rem 0.75rem`,
+          textAlign: alignEnd ? 'right' : 'left',
+          marginLeft: duet && alignEnd ? '12%' : 0,
+          marginRight: duet && !alignEnd ? '12%' : 0,
+          opacity: lineOpacity,
+          filter: blur > 0.05 ? `blur(${blur}px)` : 'none',
+          transform: synced && near > 0 && !browsing ? 'scale(0.975)' : 'scale(1)',
+          transformOrigin: alignEnd ? 'right center' : 'left center',
+          // Colour, fade, blur and scale share one duration and curve so a
+          // handover reads as one movement: the new line brightens exactly as
+          // the old one recedes.
+          transition: `opacity ${HANDOVER_MS}ms ${EASE}, filter ${HANDOVER_MS}ms ${EASE}, transform ${HANDOVER_MS}ms ${EASE}`,
+        }}
+      >
+        <div
+          dir="auto"
+          style={{
+            fontSize: `${baseSize}rem`,
+            lineHeight: 1.22,
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+            color: synced ? (isFocused || isPast ? undefined : UNSUNG) : SUNG,
+          }}
+        >
+          {synced && wordSync && line.words?.length ? (
+            <Voice voiceRef={leadRef} units={line.words} text={line.text} wordSync />
+          ) : (
+            <span
+              ref={leadRef}
+              data-voice="plain"
+              style={{ color: !synced ? SUNG : isFocused ? SUNG : UNSUNG, transition: `color ${HANDOVER_MS}ms ${EASE}` }}
+            >
+              {line.text}
             </span>
-          ))}
+          )}
         </div>
-      )}
-    </span>
+        {hasBg && (
+          <div style={{ fontSize: `${baseSize * 0.68}rem`, lineHeight: 1.25, fontWeight: 600, marginTop: '0.15em', opacity: 0.78 }}>
+            {synced && wordSync && bgUnits.length ? (
+              <Voice voiceRef={bgRef} units={bgUnits} text={line.bgText} wordSync />
+            ) : (
+              <span ref={bgRef} data-voice="plain" style={{ color: !synced || isFocused ? SUNG : UNSUNG, transition: `color ${HANDOVER_MS}ms ${EASE}` }}>{line.bgText}</span>
+            )}
+          </div>
+        )}
+        <AnimatePresence initial={false}>
+          {(subText || subBg) && (
+            <motion.div
+              key="sub"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.42, ease: [0.41, 0, 0.12, 0.99] }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div ref={subRef} dir="auto" style={{ fontSize: `${baseSize * 0.56}rem`, lineHeight: 1.3, fontWeight: 600, marginTop: '0.2em', color: 'rgba(255,255,255,0.72)' }}>
+                {subText && (synced && wordSync && subUnits ? <Voice units={subUnits} text={subText} wordSync /> : <span>{subText}</span>)}
+                {subBg && <div style={{ fontSize: '0.85em', opacity: 0.8 }}>{subBg}</div>}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+})
+
+// ---------------------------------------------------------------- toolbar
+
+const SYNC_LABEL = { syllable: 'Syllable synced', line: 'Line synced', none: 'Not synced' }
+
+function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false) }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  const label = sources.find(s => s.id === current)?.label || current
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md transition-colors"
+        title="Lyrics source"
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+        <span className="max-w-[9rem] truncate">{label || 'Source'}</span>
+        <ChevronDown size={11} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-full mt-1.5 z-30 w-64 rounded-xl border border-white/10 bg-[#161616]/95 backdrop-blur-xl shadow-2xl p-1"
+          >
+            <p className="px-2.5 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-white/35">Try another source</p>
+            {sources.map(s => {
+              const status = attempts?.[s.id]
+              const note = status === 'syllable' ? 'Syllable' : status === 'line' ? 'Line' : status === 'none' ? 'Plain' : status === 'miss' ? 'Not found' : ''
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => { setOpen(false); onPick(s.id) }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-white/80 hover:bg-white/[0.08]"
+                >
+                  <span className="w-3.5">{s.id === current ? <Check size={12} className="text-accent" /> : null}</span>
+                  <span className="flex-1 truncate">{s.label}</span>
+                  {note && <span className={`text-[10px] ${status === 'miss' ? 'text-white/25' : 'text-white/45'}`}>{note}</span>}
+                </button>
+              )
+            })}
+            <div className="h-px bg-white/10 my-1" />
+            <button onClick={() => { setOpen(false); onRefresh() }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-white/70 hover:bg-white/[0.08]">
+              <RotateCcw size={12} /> Search all sources again
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
-const Line = React.memo(function Line({
-  line, isActive, isPast, fullscreen, darkMode, wordSync, lyricsType, liveProgressRef, onRef, distanceFromActive, textScale = 1, index, progress = 0, hasNextLine = false, onSeek = null, lyricsStyle = 'classic', plainUnsynced = false,
-}) {
-  const useRAF = wordSync && lyricsType === 'synced' && isActive && line.words?.length > 0
-  const useSpicy = useRAF && lyricsStyle !== 'classic'
-  const seekTime = typeof line.time === 'number' ? line.time : null
-  const seekable = seekTime !== null && Number.isFinite(seekTime)
-
-  const blurAmount = Math.min(distanceFromActive * 1, 8)
-  const isBlurred = blurAmount > 0.1
-
-  const baseNormalSize = fullscreen ? 1.2 : 0.875
-  const baseActiveSize = fullscreen ? 1.9 : 1.125
-  const normalSize = baseNormalSize * textScale
-  const activeSize = baseActiveSize * textScale
-
-  const lineDuration = useMemo(() => {
-    if (line.end && line.time) return Math.max(1, line.end - line.time)
-    return 3 
-  }, [line.end, line.time])
-  const waveDuration = useMemo(() => {
-    return lineDuration
-  }, [lineDuration])
-  const wavePhase = useMemo(() => {
-    if (!line.end || line.time == null) return 0
-    const total = Math.max(0.01, line.end - line.time)
-    const ratio = (progress - line.time) / total
-    return Math.max(0, Math.min(1, ratio))
-  }, [line.end, line.time, progress])
-
-  const handleSeek = () => {
-    if (!seekable || !onSeek) return
-    const selection = window.getSelection?.()
-    if (selection && !selection.isCollapsed && selection.toString().trim()) return
-    onSeek(seekTime)
-  }
-
-  const handleKeyDown = (event) => {
-    if (!seekable || !onSeek) return
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    onSeek(seekTime)
-  }
-
+function Pill({ active, onClick, children, title, disabled }) {
   return (
-    <motion.div
-      ref={onRef}
-      role={seekable ? 'button' : undefined}
-      tabIndex={seekable ? 0 : undefined}
-      onClick={handleSeek}
-      onKeyDown={handleKeyDown}
-      animate={{
-        // Plain unsynced lyrics (no timing info, and auto-sync off) never
-        // get an activeIdx from the effect below -- there's no line to
-        // highlight against, so show the whole list at full brightness
-        // (like Spotify's static unsynced view) instead of leaving every
-        // line stuck in the dim "not active" state.
-        opacity: plainUnsynced ? 1 : (isActive ? 1 : isPast ? 0.18 : 0.35),
-        scale: isActive ? (fullscreen ? 1 : 1.01) : 1,
-      }}
-      transition={{
-        duration: 0.5,
-        ease: [0.16, 1, 0.3, 1]
-      }}
-      className={`text-center w-full max-w-2xl my-1.5 font-medium select-text rounded-2xl px-4 py-2 outline-none transition-colors ${seekable ? 'cursor-pointer hover:bg-white/6 focus-visible:bg-white/6' : 'cursor-default'}`}
-      style={{
-        color: plainUnsynced ? (darkMode ? '#fff' : '#111') : (isActive ? (darkMode ? '#fff' : '#e8ff57') : '#666'),
-        fontWeight: isActive ? 700 : 500,
-        textShadow: isActive ? (fullscreen ? '0 0 40px rgba(232,255,87,0.2)' : '0 0 20px rgba(232,255,87,0.15)') : 'none',
-        filter: isBlurred ? `blur(${blurAmount}px)` : 'none',
-        transform: `scale(${textScale})`,
-        fontSize: isActive ? `${activeSize}rem` : `${normalSize}rem`,
-        lineHeight: isActive ? '1.2' : '1.5',
-        transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), filter 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), color 0.4s ease, text-shadow 0.5s ease',
-      }}
+    <button
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors disabled:opacity-40 ${active ? 'bg-white text-black' : 'text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md'}`}
     >
-      {useSpicy ? (
-        <SpicyWordLine words={line.words} bgWords={line.bgWords} liveProgressRef={liveProgressRef} />
-      ) : useRAF ? (
-        <RAFWordLine words={line.words} bgWords={line.bgWords} liveProgressRef={liveProgressRef} />
-      ) : line.text ? (
-        line.text
-      ) : (
-        <AnimatePresence initial={false} mode="wait">
-          {isActive && (
-            <WaveDots
-              key={`wavedots-line-${index}`}
-              id={index}
-              duration={waveDuration}
-              phase={wavePhase}
-              hasNextLine={hasNextLine}
-              isActive={isActive}
-            />
-          )}
-        </AnimatePresence>
-      )}
-    </motion.div>
+      {children}
+    </button>
   )
-}, (prev, next) =>
-  prev.isActive === next.isActive &&
-  prev.isPast === next.isPast &&
-  prev.fullscreen === next.fullscreen &&
-  prev.darkMode === next.darkMode &&
-  prev.wordSync === next.wordSync &&
-  prev.lyricsType === next.lyricsType &&
-  prev.distanceFromActive === next.distanceFromActive &&
-  prev.hasNextLine === next.hasNextLine &&
-  prev.onSeek === next.onSeek &&
-  prev.lyricsStyle === next.lyricsStyle &&
-  prev.plainUnsynced === next.plainUnsynced
-)
+}
+
+// ---------------------------------------------------------------- panel
+
+function Loading() {
+  return (
+    <div className="w-full flex flex-col gap-5 px-3 pt-4">
+      {[0.92, 0.6, 0.8, 0.45, 0.7].map((w, i) => (
+        <motion.div
+          key={i}
+          className="h-6 rounded-lg bg-white/[0.08]"
+          style={{ width: `${w * 100}%` }}
+          animate={{ opacity: [0.35, 0.8, 0.35] }}
+          transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.1 }}
+        />
+      ))}
+    </div>
+  )
+}
 
 export default function LyricsPanel({
-  track, progress, darkMode = false, fullscreen = false, wordSync = false, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
+  track, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
 }) {
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
-  const [lines, setLines] = useState([])
-  const [lyricsType, setLyricsType] = useState(null)
-  const [source, setSource] = useState(null)
+  const now = useLyricClock(progress)
+  const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [activeIdx, setActiveIdx] = useState(-1)
-  const [instrumentalTrack, setInstrumentalTrack] = useState(false)
+  const [sourceBusy, setSourceBusy] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [sources, setSources] = useState([])
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  const [subline, setSubline] = useState(readSubline)
+  const [translateTarget, setTranslateTarget] = useState('en')
   const [autoTranslate, setAutoTranslate] = useState(false)
-  const [targetLang, setTargetLang] = useState('en')
-  const [detectedLang, setDetectedLang] = useState('unknown')
-  const [translatedLines, setTranslatedLines] = useState([])
-  const [translationView, setTranslationView] = useState('original')
-  const [translating, setTranslating] = useState(false)
-  const [selectionText, setSelectionText] = useState('')
-  const [selectionPos, setSelectionPos] = useState(null)
-  const [lyricsStyle, setLyricsStyle] = useState(() => localStorage.getItem('lokal-lyrics-style') || 'classic')
+  const [translation, setTranslation] = useState({ state: 'idle', lines: null })
+  const [romanization, setRomanization] = useState({ state: 'idle', lines: null })
+  const [focusIdx, setFocusIdx] = useState(-1)
+  const [liveKey, setLiveKey] = useState('')
+  const [browsing, setBrowsing] = useState(false)
+
   const containerRef = useRef(null)
-  const lineRefs = useRef([])
-  // Skips the smooth scroll animation for the very first scroll position
-  // after this panel mounts fresh (e.g. opening the side panel/overlay) --
-  // activeIdx jumps from its initial -1 to the real current line right
-  // away, and without this the content visibly scrolls up from the top
-  // over ~420ms, reading as a stray slide-up animation on top of the
-  // panel's own entrance. Real line changes during playback still animate
-  // as before; only this first jump per mount (or per track, see below)
-  // is instant.
-  const hasScrolledOnceRef = useRef(false)
-  // LyricsSidePanel (independent mode) never remounts LyricsPanel across
-  // track changes -- it's a single persistent standalone panel, unlike
-  // RightSidebar's merged-mode overlay which fully unmounts/remounts on
-  // open/close -- so without this, only the very first track ever played
-  // gets the instant jump above and every later track change would fall
-  // through to the smooth-scroll path instead. Reset it per track so each
-  // one gets its own instant first position, same as a fresh mount would.
-  useEffect(() => {
-    hasScrolledOnceRef.current = false
-  }, [track?.id])
+  const rowsRef = useRef(new Map())
+  const browseTimer = useRef(null)
+  const lastScrollIdx = useRef(-1)
+  const paintedRows = useRef(new Set())
 
-  const anchorRef = useRef({ audioTime: progress, wallTime: performance.now() })
-  const liveProgressRef = useRef(progress)
+  const lines = result?.lines || []
+  const synced = result?.type === 'synced'
+  const nonLatin = useMemo(() => hasNonLatin(lines), [lines])
+
+  // ---- data
+  const trackKey = track?.id
+  // Async answers are only applied if they're still for what's on screen.
+  // The sidebar and side panel keep this component mounted across track
+  // changes, so a slow lookup for the previous song could otherwise land after
+  // the next song's and replace its lyrics (same for translations, romanization
+  // and the source picker).
+  const requestSeq = useRef(0)
+  const resultRef = useRef(null)
+  resultRef.current = result
+
+  const load = useCallback((opts = {}) => {
+    if (!track?.id) return
+    const seq = ++requestSeq.current
+    setLoading(true)
+    setNotice('')
+    api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path, opts)
+      .then(r => {
+        if (seq !== requestSeq.current) return
+        setResult(r && (r.lines?.length || r.instrumental) ? r : null)
+        // A refreshed result has different lines: drop translations and the
+        // scroll position that belonged to the previous one.
+        setTranslation({ state: 'idle', lines: null })
+        setRomanization({ state: 'idle', lines: null })
+        lastScrollIdx.current = -1
+      })
+      .catch(() => { if (seq === requestSeq.current) setResult(null) })
+      .finally(() => { if (seq === requestSeq.current) setLoading(false) })
+  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
 
   useEffect(() => {
-    anchorRef.current = { audioTime: progress, wallTime: performance.now() }
-  }, [progress])
+    setResult(null); setFocusIdx(-1); lastScrollIdx.current = -1
+    setTranslation({ state: 'idle', lines: null }); setRomanization({ state: 'idle', lines: null })
+    load()
+  }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (!loading) onLyricsAvailable?.(lines.length > 0) }, [loading, lines.length, onLyricsAvailable])
 
   useEffect(() => {
+    api.getLyricsSources?.().then(s => setSources(s?.providers || [])).catch(() => {})
+    // Re-read on every Settings save: this panel stays mounted in the sidebar,
+    // so a new translation language or Auto-Translate choice must apply live.
+    let settingsSeq = 0
+    const loadSettings = () => {
+      const seq = ++settingsSeq
+      api.getSettings().then(s => {
+        if (seq !== settingsSeq) return
+        setAutoTranslate(s?.lyrics_auto_translate === '1')
+        setTranslateTarget(String(s?.lyrics_translate_target || 'en'))
+      }).catch(() => {})
+    }
+    loadSettings()
+    window.addEventListener('lokal:settings-saved', loadSettings)
+    const onSub = (e) => setSubline(e.detail)
+    const on = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('lokal:lyrics-subline', onSub)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('lokal:settings-saved', loadSettings)
+      window.removeEventListener('lokal:lyrics-subline', onSub)
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+
+  // ---- translation / romanization (source-embedded first, then on demand)
+  const compactLines = useMemo(() => lines.map(l => (l.gap ? { gap: true } : { text: l.text, bgText: l.bgText || null })), [lines])
+  const embeddedTranslation = useMemo(() => {
+    if (!result?.translationLang) return null
+    const want = translateTarget.split('-')[0].toLowerCase()
+    if (result.translationLang.split('-')[0].toLowerCase() !== want) return null
+    return lines.map(l => l.translation || null)
+  }, [result, lines, translateTarget])
+  // Apple ships a romanization track for e.g. K-pop even when a line is
+  // already in English; only offer it when it actually differs somewhere.
+  const embeddedRomanization = useMemo(() => (
+    lines.some(l => l.romanization?.text && l.romanization.text.trim() !== l.text.trim()) ? lines.map(l => l.romanization || null) : null
+  ), [lines])
+
+  // A different target language invalidates whatever was translated before.
+  useEffect(() => {
+    setTranslation(t => (t.state === 'idle' || t.target === translateTarget ? t : { state: 'idle', lines: null }))
+  }, [translateTarget])
+
+  const wantTranslation = subline === 'translation' || (autoTranslate && subline === 'original' && result?.language && !result.language.toLowerCase().startsWith(translateTarget.split('-')[0].toLowerCase()))
+  useEffect(() => {
+    if (!wantTranslation || !lines.length || embeddedTranslation || translation.state !== 'idle' || !track?.id) return
+    setTranslation({ state: 'loading', lines: null, target: translateTarget })
+    const forResult = resultRef.current
+    const forTarget = translateTarget
+    const stale = () => resultRef.current !== forResult
+    api.translateLyrics(track.id, compactLines, translateTarget)
+      .then(r => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : r?.status === 'translated' ? { state: 'ready', lines: r.lines, target: forTarget } : { state: r?.status || 'unavailable', lines: null, target: forTarget })) })
+      .catch(() => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : { state: 'unavailable', lines: null, target: forTarget })) })
+  }, [wantTranslation, lines.length, embeddedTranslation, translation.state, track?.id, compactLines, translateTarget])
+
+  useEffect(() => {
+    if (subline !== 'romanization' || !lines.length || embeddedRomanization || romanization.state !== 'idle' || !track?.id || !nonLatin) return
+    setRomanization({ state: 'loading', lines: null })
+    const forResult = resultRef.current
+    api.romanizeLyrics?.(track.id, compactLines)
+      .then(r => { if (resultRef.current === forResult) setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }) })
+      .catch(() => { if (resultRef.current === forResult) setRomanization({ state: 'unavailable', lines: null }) })
+  }, [subline, lines.length, embeddedRomanization, romanization.state, track?.id, nonLatin, compactLines])
+
+  const subLines = useMemo(() => {
+    if (wantTranslation) return embeddedTranslation || translation.lines
+    if (subline === 'romanization') return embeddedRomanization || romanization.lines
+    return null
+  }, [wantTranslation, subline, embeddedTranslation, translation.lines, embeddedRomanization, romanization.lines])
+
+  const toggleSub = (mode) => {
+    const next = subline === mode ? 'original' : mode
+    setSubline(next)
+    writeSubline(next)
+  }
+
+  // ---- focus (which line the panel is centred on)
+  const nextTimes = useMemo(() => lines.map((l, i) => {
+    const n = lines.slice(i + 1).find(x => x.time != null)
+    return n ? n.time : (track?.duration || (l.time ?? 0) + 4)
+  }), [lines, track?.duration])
+
+  useEffect(() => {
+    if (!lines.length) return
+    if (synced) {
+      const t = now()
+      const focus = focusRow(lines, t + FOCUS_LEAD_S)
+      setFocusIdx(focus)
+      setLiveKey(stillSinging(lines, t, focus).join(','))
+    } else if (isAutoSynced && track?.duration) {
+      setFocusIdx(Math.min(lines.length - 1, Math.floor((progress / track.duration) * lines.length)))
+    } else {
+      setFocusIdx(-1)
+    }
+  }, [progress, lines, synced, isAutoSynced, track?.duration, now])
+
+  // ---- per-frame painting of what is actually being sung
+  const registerRow = useCallback((index, refs) => {
+    if (refs) rowsRef.current.set(index, refs)
+    else rowsRef.current.delete(index)
+  }, [])
+
+  useEffect(() => {
+    if (!synced || !lines.length) return
     let raf
-    function tick() {
+    const tick = () => {
       raf = requestAnimationFrame(tick)
-      const { audioTime, wallTime } = anchorRef.current
-      const elapsed = Math.min((performance.now() - wallTime) / 1000, 0.5)
-      liveProgressRef.current = audioTime + elapsed
+      const t = now()
+      const live = new Set(activeRows(lines, t))
+      // Lines that just stopped being sung get settled into their final state once.
+      for (const i of paintedRows.current) {
+        if (live.has(i)) continue
+        const refs = rowsRef.current.get(i)
+        const line = lines[i]
+        if (refs && line && wordSync) {
+          paintVoice(refs.leadEl, line.words, t, false)
+          paintVoice(refs.bgEl, line.bgWords, t, false)
+        }
+      }
+      for (const i of live) {
+        const refs = rowsRef.current.get(i)
+        const line = lines[i]
+        if (!refs || !line) continue
+        if (line.gap) { paintGap(refs.dotsEl, line, nextTimes[i], t); continue }
+        if (!wordSync) continue
+        paintVoice(refs.leadEl, line.words, t, true)
+        paintVoice(refs.bgEl, line.bgWords, t, true)
+        const sub = subLines?.[i]
+        if (sub?.words?.length && refs.subEl) paintVoice(refs.subEl.querySelector('[data-voice="timed"]'), sub.words, t, true)
+      }
+      paintedRows.current = live
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [])
+  }, [synced, lines, nextTimes, now, wordSync, subLines])
 
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
-
-  useEffect(() => {
-    api.getSettings().then(s => {
-      setAutoTranslate(s?.lyrics_auto_translate === '1')
-      if (s?.lyrics_translate_target) setTargetLang(String(s.lyrics_translate_target).toLowerCase())
-    }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!track?.id) return
-    setLoading(true); setLines([]); setActiveIdx(-1); setLyricsType(null); setSource(null); setDetectedLang('unknown'); setTranslatedLines([]); setTranslationView('original'); setTranslating(false); setInstrumentalTrack(false)
-    api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path).then(r => {
-      setInstrumentalTrack(!!r?.instrumental)
-      if (r?.lines) {
-        setLines(r.lines);
-        setLyricsType(r.type);
-        setSource(r.source)
-      }
-      setLoading(false)
-    }).catch(() => {
-      setLoading(false)
+  // When the list re-renders, bring every timed line to its correct resting state.
+  useLayoutEffect(() => {
+    if (!synced || !wordSync) return
+    const t = now()
+    rowsRef.current.forEach((refs, i) => {
+      const line = lines[i]
+      if (!line || line.gap) return
+      paintVoice(refs.leadEl, line.words, t, false)
+      paintVoice(refs.bgEl, line.bgWords, t, false)
     })
-  }, [track?.id])
+  }, [lines, synced, wordSync, focusIdx, subLines, now])
 
-  useEffect(() => {
-    if (!loading) {
-      onLyricsAvailable?.(lines.length > 0);
-    }
-  }, [loading, lines.length, onLyricsAvailable])
-
-  const processedLines = useMemo(() => {
-    if (!lines.length) return []
-    return lines.map((line, li, arr) => {
-      const nextLine = arr[li + 1]
-      const lineEnd = line.end ?? (nextLine ? nextLine.time : (track?.duration || (line.time ?? 0) + 3.0))
-
-      const words = line.words?.length
-        ? line.words.map((w, wi) => {
-            const nextW = line.words[wi + 1]
-            const wStart = w.time ?? (line.time ?? 0) + wi * ((lineEnd - (line.time ?? 0)) / line.words.length)
-            const wEnd = w.end ?? (nextW ? nextW.time : lineEnd)
-            return { ...w, time: wStart, end: wEnd, chars: buildCharTimeline(w.word, wStart, Math.max(wEnd, wStart + 0.01)) }
-          })
-        : (line.text || '').split(' ').filter(Boolean).map((w, wi, arr) => {
-            const lineDur = Math.max(0.01, lineEnd - (line.time ?? 0))
-            const wStart = (line.time ?? 0) + wi * (lineDur / arr.length)
-            const wEnd = (line.time ?? 0) + (wi + 1) * (lineDur / arr.length)
-            return { word: w, time: wStart, end: wEnd, chars: buildCharTimeline(w, wStart, Math.max(wEnd, wStart + 0.01)) }
-          })
-
-      const bgWords = line.bgWords?.map((bw, bi) => {
-        const nextBW = line.bgWords[bi + 1]
-        const bwStart = bw.time ?? (line.time ?? 0) + bi * 0.5
-        const bwEnd = bw.end ?? (nextBW ? nextBW.time : bwStart + 0.8)
-        return { ...bw, time: bwStart, end: bwEnd, chars: buildCharTimeline(bw.word, bwStart, Math.max(bwEnd, bwStart + 0.01)) }
-      })
-
-      return { ...line, end: lineEnd, words, bgWords }
-    })
-  }, [lines, track?.duration])
-
-  const translationInputLines = useMemo(() => {
-    return processedLines.map(line => ({
-      text: line.text || '',
-      time: line.time,
-      end: line.end,
-      words: line.words || undefined,
-      bgText: line.bgText,
-      bgWords: line.bgWords,
-    }))
-  }, [processedLines])
-
-  useEffect(() => {
-    if (!track?.id || !translationInputLines.length) return
-    let cancelled = false
-    api.detectLyricsLanguage(track.id, translationInputLines).then(result => {
-      if (cancelled) return
-      const lang = String(result?.lang || 'unknown').toLowerCase()
-      setDetectedLang(lang)
-      if (autoTranslate && lang !== 'unknown' && lang !== targetLang) {
-        setTranslating(true)
-        api.translateLyrics(track.id, translationInputLines, targetLang).then(t => {
-          if (cancelled) return
-          if (Array.isArray(t?.lines) && t.lines.length) {
-            setTranslatedLines(t.lines)
-            setTranslationView('translated')
-          }
-          if (t?.detectedLang) setDetectedLang(String(t.detectedLang).toLowerCase())
-          setTranslating(false)
-        }).catch(() => {
-          if (!cancelled) setTranslating(false)
-        })
-      }
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [track?.id, translationInputLines, autoTranslate, targetLang])
-
-  const displayedLines = useMemo(() => {
-    if (translationView === 'translated' && translatedLines.length === processedLines.length) return translatedLines
-    return processedLines
-  }, [translationView, translatedLines, processedLines])
-
-  const effectiveWordSync = translationView === 'translated' ? false : wordSync
-
-  useEffect(() => {
-    if (!displayedLines.length) return
-    if (lyricsType === 'synced') {
-      let idx = 0
-      for (let i = 0; i < displayedLines.length; i++) {
-        if ((displayedLines[i].time ?? 0) <= progress) idx = i; else break
-      }
-      setActiveIdx(idx)
-    } else if (isAutoSynced) {
-      setActiveIdx(Math.min(Math.floor(progress / 4), displayedLines.length - 1))
-    }
-  }, [progress, displayedLines, lyricsType, isAutoSynced])
-
-  useEffect(() => {
-    const el = lineRefs.current[activeIdx]
+  // ---- scrolling: native scroll for browsing, a staggered glide for following
+  const anchorFraction = fullscreen ? 0.3 : 0.26
+  const scrollToFocus = useCallback((instant) => {
     const container = containerRef.current
-    if (!el || !container) return
-    const target = Math.max(0, Math.min(
-      el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2,
-      container.scrollHeight - container.clientHeight
-    ))
-    if (!hasScrolledOnceRef.current) {
-      hasScrolledOnceRef.current = true
+    const refs = rowsRef.current.get(focusIdx)
+    if (!container || !refs?.rowEl) return
+    // Near the end of a song the list can't scroll far enough to put the line
+    // at the anchor (the sidebar keeps no empty space after the last line), so
+    // clamp to how far it can actually go. The last lines then simply light up
+    // lower down the panel instead of the list trying to move.
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const target = Math.min(maxScroll, Math.max(0, refs.rowEl.offsetTop - container.clientHeight * anchorFraction))
+    const before = container.scrollTop
+    if (Math.abs(target - before) < 1) return
+    if (instant || Math.abs(target - before) > container.clientHeight * 1.5) {
       container.scrollTop = target
       return
     }
-    let raf
-    const start = performance.now()
-    const from = container.scrollTop
-    const ease = t => 1 - Math.pow(1 - t, 3)
-    function step(now) {
-      const t = Math.min(1, (now - start) / 420)
-      container.scrollTop = from + (target - from) * ease(t)
-      if (t < 1) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [activeIdx])
-
-  const hasSyncedLyrics = displayedLines.some(l => l.time != null)
-  const showUnsyncedMessage = !hasSyncedLyrics && displayedLines.length > 0
-  // Mirrors the activeIdx effect above: when lyrics aren't synced and the
-  // rough auto-sync guess is off, activeIdx never leaves its initial -1, so
-  // no line would ever be marked active/past without this flag.
-  const plainUnsynced = lyricsType !== 'synced' && !isAutoSynced
-  const updateSelectionState = useMemo(() => {
-    return () => {
-      const container = containerRef.current
-      if (!container) return
-      const selection = window.getSelection?.()
-      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-        setSelectionText('')
-        setSelectionPos(null)
-        return
-      }
-      const selected = selection.toString().trim()
-      if (!selected) {
-        setSelectionText('')
-        setSelectionPos(null)
-        return
-      }
-      const range = selection.getRangeAt(0)
-      const common = range.commonAncestorContainer
-      const node = common?.nodeType === 3 ? common.parentNode : common
-      if (!node || !container.contains(node)) {
-        setSelectionText('')
-        setSelectionPos(null)
-        return
-      }
-      const rect = range.getBoundingClientRect()
-      setSelectionText(selected.slice(0, 400))
-      setSelectionPos({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10,
-      })
-    }
-  }, [])
-
-  useEffect(() => {
-    const onSelectionChange = () => updateSelectionState()
-    const onScroll = () => {
-      if (selectionText) updateSelectionState()
-    }
-    document.addEventListener('selectionchange', onSelectionChange)
-    window.addEventListener('scroll', onScroll, true)
-    return () => {
-      document.removeEventListener('selectionchange', onSelectionChange)
-      window.removeEventListener('scroll', onScroll, true)
-    }
-  }, [selectionText, updateSelectionState])
-
-  useEffect(() => {
-    setSelectionText('')
-    setSelectionPos(null)
-  }, [track?.id])
-
-  const translateSelection = () => {
-    if (!selectionText) return
-    const url = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(selectionText)}&op=translate`
-    if (api.isElectron && window.electron?.openExternal) {
-      window.electron.openExternal(url)
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
-  }
-
-  const toggleLyricsStyle = () => {
-    setLyricsStyle(prev => {
-      const next = prev === 'classic' ? 'spicy' : 'classic'
-      localStorage.setItem('lokal-lyrics-style', next)
-      return next
+    // FLIP: jump the scroll position, then let each row glide the difference
+    // back to zero -- rows below the focus leave a beat later than the one
+    // above, so the spacing opens and closes like the list is handing over.
+    // The glide uses the distance the scroll really moved; gliding by the
+    // intended distance when the scroll was clamped made every row jump and
+    // settle back to where it already was (the end-of-song jitter).
+    container.scrollTop = target
+    const delta = container.scrollTop - before
+    if (Math.abs(delta) < 1) return
+    const top = container.scrollTop
+    const bottom = top + container.clientHeight
+    rowsRef.current.forEach(({ rowEl }, i) => {
+      if (!rowEl) return
+      const y = rowEl.offsetTop
+      if (y + rowEl.offsetHeight < top - 200 || y > bottom + 200) return
+      const steps = i > focusIdx ? Math.min(i - focusIdx, STAGGER_STEPS) : 0
+      rowEl.style.transition = 'none'
+      rowEl.style.transform = `translate3d(0, ${delta}px, 0)`
+      // Force the start frame, then release.
+      void rowEl.offsetHeight
+      rowEl.style.transition = `transform ${SCROLL_MS}ms ${EASE} ${Math.round(steps * STAGGER_FRACTION * SCROLL_MS)}ms`
+      rowEl.style.transform = ''
     })
-  }
+  }, [focusIdx, anchorFraction])
 
-  const toggleAutoTranslate = () => {
-    setAutoTranslate(prev => {
-      const next = !prev
-      api.saveSettings({ lyrics_auto_translate: next ? '1' : '0' }).catch(() => {})
-      return next
-    })
-  }
+  useLayoutEffect(() => {
+    if (focusIdx < 0 || browsing) return
+    const first = lastScrollIdx.current < 0
+    lastScrollIdx.current = focusIdx
+    scrollToFocus(first)
+  }, [focusIdx, browsing, scrollToFocus])
 
-  const handleSeekToLine = (time) => {
+  const startBrowsing = useCallback(() => {
+    if (!synced && !isAutoSynced) return
+    setBrowsing(true)
+    clearTimeout(browseTimer.current)
+    browseTimer.current = setTimeout(() => setBrowsing(false), BROWSE_IDLE_MS)
+  }, [synced, isAutoSynced])
+  useEffect(() => () => clearTimeout(browseTimer.current), [])
+
+  // ---- actions
+  const seek = useCallback((time) => {
     if (!Number.isFinite(time)) return
+    setBrowsing(false)
     setProgressWithAudioUpdate(Math.max(0, time))
+  }, [setProgressWithAudioUpdate])
+
+  const pickSource = (id) => {
+    if (!track?.id) return
+    const seq = ++requestSeq.current
+    setSourceBusy(true)
+    api.getLyricsFrom(id, track.id, track.title, track.artist, track.album, track.duration, track.file_path)
+      .then(r => {
+        if (seq !== requestSeq.current) return
+        if (r?.lines?.length) {
+          setResult(r)
+          setTranslation({ state: 'idle', lines: null })
+          setRomanization({ state: 'idle', lines: null })
+          lastScrollIdx.current = -1
+        } else {
+          const label = sources.find(s => s.id === id)?.label || id
+          setNotice(`${label} doesn't have this song`)
+          setResult(prev => (prev ? { ...prev, attempts: { ...(prev.attempts || {}), ...(r?.attempts || {}) } } : prev))
+          setTimeout(() => setNotice(''), 3500)
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (seq === requestSeq.current) setSourceBusy(false) })
   }
+
+  // ---- render
+  const liveSet = useMemo(() => new Set(liveKey ? liveKey.split(',').map(Number) : []), [liveKey])
+  const sourceLabel = sources.find(s => s.id === result?.source)?.label || result?.source
+  const translationBusy = wantTranslation && !embeddedTranslation && translation.state === 'loading'
+  const romanizationBusy = subline === 'romanization' && !embeddedRomanization && romanization.state === 'loading'
+  const showToolbar = lines.length > 0
 
   return (
-    <div ref={containerRef}
-      className="w-full h-full overflow-y-auto flex flex-col items-center py-8 px-6"
-      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+    <div className="relative w-full h-full">
+      {showToolbar && (
+        <div
+          className={`absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none ${fullscreen ? '' : 'pb-6'}`}
+          // The sidebar keeps its soft shade behind the buttons; the fullscreen
+          // views already have their own header there, so they go without.
+          style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
+        >
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
+              {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
+              Translate
+            </Pill>
+            {(nonLatin || embeddedRomanization) && (
+              <Pill active={subline === 'romanization'} onClick={() => toggleSub('romanization')} title="Show pronunciation in Latin letters">
+                {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">Aa</span>}
+                Romanize
+              </Pill>
+            )}
+          </div>
+          <div className="flex-1" />
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            {sources.length > 0 && result?.source && (
+              <SourceMenu
+                sources={sources}
+                current={result.source}
+                attempts={result.attempts}
+                busy={sourceBusy}
+                onPick={pickSource}
+                onRefresh={() => load({ refresh: true })}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
-      {loading && <WaveLoader />}
+      <AnimatePresence>
+        {(notice || (wantTranslation && translation.state === 'same-language') || (wantTranslation && translation.state === 'unavailable') || (subline === 'romanization' && romanization.state === 'unavailable')) && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18 }}
+            // Right-aligned under the source menu (that's what it answers), and
+            // allowed to wrap: a fixed-width, centred pill overflowed the narrow
+            // sidebar, and framer's own transform overrode the centring.
+            className="absolute top-11 right-4 z-30 max-w-[calc(100%-2rem)] w-max px-3 py-1.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/10 text-[11px] leading-snug text-white/85 text-right"
+          >
+            {notice || (translation.state === 'same-language' ? 'Already in your language' : translation.state === 'unavailable' && wantTranslation ? 'Translation unavailable right now' : 'Romanization unavailable right now')}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {!loading && !displayedLines.length && (
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 opacity-30 select-none">
-          <Mic2 size={fullscreen ? 40 : 28} />
-          {instrumentalTrack ? (
-            <p className={fullscreen ? 'text-sm' : 'text-xs'}>
-              Instrumental track. Lyrics search is skipped for this one.
-            </p>
-          ) : !isOnline ? (
-            <p className={fullscreen ? 'text-sm' : 'text-xs'}>
-              Hey. You're currently offline.. lyrics will pull once online.
-            </p>
-          ) : (
+      <div
+        ref={containerRef}
+        onWheel={startBrowsing}
+        onTouchMove={startBrowsing}
+        onKeyDown={(e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) startBrowsing() }}
+        className="w-full h-full overflow-y-auto overflow-x-hidden"
+        style={{
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          // The sidebar has no empty space after the last line, so its closing
+          // lines light up near the bottom edge -- keep the fade there short
+          // enough not to dim them.
+          maskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
+          WebkitMaskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
+        }}
+      >
+        <div className={`w-full ${fullscreen ? 'max-w-3xl mx-auto px-6' : 'px-3'}`}>
+          {loading && <div style={{ height: fullscreen ? '26vh' : '18%' }} />}
+          {loading && <Loading />}
+
+          {!loading && !lines.length && (
+            <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-3 text-white/35 select-none pt-24">
+              <Mic2 size={fullscreen ? 40 : 28} />
+              {result?.instrumental ? (
+                <p className={fullscreen ? 'text-sm' : 'text-xs'}>Instrumental — nothing to sing along to.</p>
+              ) : !isOnline ? (
+                <p className={fullscreen ? 'text-sm' : 'text-xs'}>You're offline. Lyrics will load once you're back online.</p>
+              ) : (
+                <>
+                  <p className={fullscreen ? 'text-sm' : 'text-xs'}>No lyrics found</p>
+                  <div className="flex items-center gap-3">
+                    {onSearchRequest && (
+                      <button onClick={onSearchRequest} className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
+                        <Search size={12} /> Search manually
+                      </button>
+                    )}
+                    <button onClick={() => load({ refresh: true })} className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors">
+                      <RotateCcw size={12} /> Try again
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!loading && lines.length > 0 && (
             <>
-              <p className={fullscreen ? 'text-sm' : 'text-xs'}>No lyrics found</p>
-              {onSearchRequest && (
-                <button
-                  onClick={onSearchRequest}
-                  className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
-                >
-                  <Search size={12} />
-                  Search manually
-                </button>
+              <div style={{ height: synced || isAutoSynced ? `${anchorFraction * 100}%` : '3.5rem', minHeight: synced ? (fullscreen ? '24vh' : '5rem') : undefined }} />
+              {!synced && (
+                <p className="px-3 pb-3 text-[11px] text-white/35">These lyrics aren't time-synced{isAutoSynced ? ' — following along roughly' : ''}.</p>
+              )}
+              {lines.map((line, i) => (
+                <Row
+                  key={i}
+                  line={line}
+                  index={i}
+                  until={nextTimes[i]}
+                  distance={focusIdx >= 0 ? Math.abs(i - focusIdx) : i + 1}
+                  isFocused={i === focusIdx}
+                  isLive={liveSet.has(i)}
+                  isPast={focusIdx >= 0 && i < focusIdx}
+                  synced={synced}
+                  browsing={browsing}
+                  wordSync={wordSync}
+                  fullscreen={fullscreen}
+                  textScale={textScale}
+                  duet={!!result?.duet}
+                  sub={subLines?.[i] || null}
+                  onSeek={seek}
+                  registerRow={registerRow}
+                />
+              ))}
+              <div style={{ height: fullscreen ? '55vh' : 0 }} />
+              {sourceLabel && (
+                <p className="px-3 pb-10 text-[11px] text-white/30">
+                  Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
+                  {wantTranslation && (embeddedTranslation || translation.lines) ? ` · ${embeddedTranslation ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
+                </p>
               )}
             </>
           )}
         </div>
-      )}
-
-      {displayedLines.length > 0 && (
-        <>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            {wordSync && lyricsType === 'synced' && (
-              <button
-                onClick={toggleLyricsStyle}
-                title="Switch the word-sync animation style"
-                className="text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border border-accent/50 text-accent bg-accent/10 transition-colors hover:bg-accent/20"
-              >
-                {lyricsStyle === 'classic' ? 'Classic Sync' : 'Spicy Sync'}
-              </button>
-            )}
-            <button
-              onClick={toggleAutoTranslate}
-              className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${autoTranslate ? 'border-accent/50 text-accent bg-accent/10' : 'border-border text-muted hover:text-white'}`}
-            >
-              Auto Translate {autoTranslate ? 'On' : 'Off'}
-            </button>
-            <button
-              onClick={() => setTranslationView('original')}
-              className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${translationView === 'original' ? 'border-accent/50 text-accent bg-accent/10' : 'border-border text-muted hover:text-white'}`}
-            >
-              Original
-            </button>
-            <button
-              onClick={() => {
-                if (translatedLines.length === processedLines.length) {
-                  setTranslationView('translated')
-                  return
-                }
-                if (!track?.id || !translationInputLines.length) return
-                setTranslating(true)
-                api.translateLyrics(track.id, translationInputLines, targetLang).then(t => {
-                  if (Array.isArray(t?.lines) && t.lines.length) {
-                    setTranslatedLines(t.lines)
-                    setTranslationView('translated')
-                  }
-                  if (t?.detectedLang) setDetectedLang(String(t.detectedLang).toLowerCase())
-                  setTranslating(false)
-                }).catch(() => setTranslating(false))
-              }}
-              className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${(translationView === 'translated' && translatedLines.length === processedLines.length) ? 'border-accent/50 text-accent bg-accent/10' : 'border-border text-muted hover:text-white'}`}
-            >
-              {translating ? 'Translating...' : 'Translated'}
-            </button>
-            {detectedLang !== 'unknown' && (
-              <span className="text-[10px] text-white/35 uppercase tracking-wider">Detected: {detectedLang}</span>
-            )}
-          </div>
-          {showUnsyncedMessage && (
-            <p className="text-[10px] text-white/25 italic mb-4 mt-2">
-              these lyrics are unsynced! :3
-            </p>
-          )}
-          <div style={{ height: fullscreen ? '30vh' : '40%', flexShrink: 0 }} />
-        </>
-      )}
-
-      {displayedLines.map((line, i) => (
-        <Line
-          key={`line-${i}`}
-          index={i}
-          line={line}
-          isActive={i === activeIdx}
-          isPast={i < activeIdx}
-          fullscreen={fullscreen}
-          darkMode={darkMode}
-          wordSync={effectiveWordSync}
-          lyricsType={lyricsType}
-          liveProgressRef={liveProgressRef}
-          onRef={el => lineRefs.current[i] = el}
-          distanceFromActive={activeIdx >= 0 ? Math.abs(i - activeIdx) : 0}
-          textScale={textScale}
-          progress={progress}
-          hasNextLine={i < displayedLines.length - 1}
-          onSeek={handleSeekToLine}
-          lyricsStyle={lyricsStyle}
-          plainUnsynced={plainUnsynced}
-        />
-      ))}
-
-      {displayedLines.length > 0 && <div style={{ height: fullscreen ? '40vh' : '40%', flexShrink: 0 }} />}
-      {source && displayedLines.length > 0 && (
-        <p className="text-xs opacity-20 mt-2 mb-8">
-          via {source}{translationView === 'translated' ? ` · translated to ${targetLang}` : ''}
-        </p>
-      )}
-
-      <AnimatePresence>
-        {selectionText && selectionPos && (
-          <motion.button
-            initial={{ opacity: 0, y: 6, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            transition={{ duration: 0.14 }}
-            onClick={translateSelection}
-            className="fixed z-50 px-3 py-1.5 rounded-full bg-card border border-border text-white text-xs hover:border-accent/50 hover:text-accent transition-colors flex items-center gap-1.5"
-            style={{ left: selectionPos.x, top: selectionPos.y, transform: 'translate(-50%, -100%)' }}
-          >
-            <Languages size={12} />
-            Translate selection
-          </motion.button>
-        )}
-      </AnimatePresence>
+      </div>
     </div>
   )
 }

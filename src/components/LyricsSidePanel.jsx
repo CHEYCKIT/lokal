@@ -12,7 +12,7 @@ import { api } from '../api'
 // QueuePanel's QueueContent/QueuePanel split for the same reason.
 export function LyricsContent({ onClose }) {
   const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore()
-  const wordSync = localStorage.getItem('word-sync') === '1'
+  const wordSync = localStorage.getItem('word-sync') !== '0'
   // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
   // toggle saves via api.saveSettings, never to localStorage), matching how
   // FullscreenPlayer/LyricsFullscreen already read it -- reading a

@@ -130,14 +130,17 @@ export const api = {
   resolveGhostTrack: (ghostTrackId, targetTrackId) => isE() ? el().resolveGhostTrack(ghostTrackId, targetTrackId) : apiFetch('/playlists/resolve-ghost', { method:'POST', body:{ ghostTrackId, targetTrackId } }),
   reorderPlaylist: (pl, trackIds) => isE() ? el().reorderPlaylist(pl, trackIds) : apiFetch(`/playlists/${pl}/reorder`, { method:'PUT', body:{trackIds} }),
   getMixes: (uid) => isE() ? el().getMixes(uid) : apiFetch(`/mixes?userId=${uid||'guest'}`),
-  getLyrics: (tid, ti, ar, al, dur, fp) => isE() ? el().getLyrics(tid, ti, ar, al, dur, fp) : apiFetch(`/lyrics/${tid}?${new URLSearchParams({title:ti||'',artist:ar||'',album:al||'',duration:dur||'',filePath:fp||''})}`),
+  getLyrics: (tid, ti, ar, al, dur, fp, opts = {}) => isE() ? el().getLyrics(tid, ti, ar, al, dur, fp, opts) : apiFetch(`/lyrics/${tid}?${new URLSearchParams({title:ti||'',artist:ar||'',album:al||'',duration:dur||'',filePath:fp||'',refresh:opts.refresh?'1':''})}`),
+  getLyricsFrom: (providerId, tid, ti, ar, al, dur, fp) => isE() ? el().getLyricsFrom(providerId, tid, ti, ar, al, dur, fp) : apiFetch(`/lyrics/${tid}/from/${encodeURIComponent(providerId)}?${new URLSearchParams({title:ti||'',artist:ar||'',album:al||'',duration:dur||'',filePath:fp||''})}`),
+  getLyricsSources: () => isE() ? el().getLyricsSources() : apiFetch('/lyrics/sources'),
+  romanizeLyrics: (tid, lines) => isE() ? el().romanizeLyrics(tid, lines) : apiFetch(`/lyrics/${tid}/romanize`, { method:'POST', body:{ lines } }),
   detectLyricsLanguage: (tid, lines) => (isE() && typeof el().detectLyricsLanguage === 'function')
     ? el().detectLyricsLanguage(tid, lines)
     : apiFetch(`/lyrics/${tid}/detect-language`, { method:'POST', body:{ lines } }),
   translateLyrics: (tid, lines, targetLang = 'en') => (isE() && typeof el().translateLyrics === 'function')
     ? el().translateLyrics(tid, lines, targetLang)
     : apiFetch(`/lyrics/${tid}/translate`, { method:'POST', body:{ lines, targetLang } }),
-  importLyrics: (tid, c, t) => isE() ? el().importLyrics(tid, c, t) : apiFetch(`/lyrics/${tid}/import`, { method:'POST', body:{content:c,type:t} }),
+  importLyrics: (tid, c, t, fp) => isE() ? el().importLyrics(tid, c, t, fp) : apiFetch(`/lyrics/${tid}/import`, { method:'POST', body:{content:c,type:t,filePath:fp} }),
   clearLyricsCache: (tid) => isE() ? el().clearLyricsCache(tid) : apiFetch(`/lyrics/${tid}`, { method:'DELETE' }),
   clearLyricsDb: () => isE() ? el().clearLyricsDb() : apiFetch('/lyrics/clear-all', { method:'POST' }),
   clearSongCache: () => isE() ? el().clearSongCache() : Promise.resolve({ ok: false, error: 'Electron only' }),
