@@ -182,6 +182,7 @@ export const api = {
   markDownloadsSeen: () => isE() ? el().markDownloadsSeen() : apiFetch('/download/seen', { method:'POST', body:{} }),
   artworkMesh: (trackId) => isE() ? el().artworkMesh(trackId) : apiFetch(`/artwork-fx/mesh/${encodeURIComponent(trackId)}`).then(r => (Array.isArray(r) ? r : null)),
   // { src, source } -- src is something a <video> can play in this mode.
+  spotifyCanvasCheck: () => isE() ? el().spotifyCanvasCheck() : apiFetch('/artwork-fx/spotify-check', { method: 'POST' }),
   motionCover: (trackId) => isE()
     ? el().motionCover(trackId).then(r => (r?.file ? { ...r, src: `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}` } : null))
     : apiFetch(`/artwork-fx/motion/${encodeURIComponent(trackId)}`).then(r => (r?.src ? r : null)),

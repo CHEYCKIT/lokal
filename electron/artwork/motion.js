@@ -1,6 +1,7 @@
 // Moving covers: the looping clips Apple Music shows instead of a still album
 // cover. Ported from BitChord's canvas pipeline (Apple first, then Tidal,
-// then a community list), minus Spotify.
+// then a community list, then -- opt-in, with your own cookie -- Spotify
+// Canvas; see spotify.js).
 //
 // None of these are official public APIs:
 //   - Apple: the web player's own token, read from music.apple.com's script
@@ -26,7 +27,8 @@ const { spawn } = require('child_process')
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 const TIDAL_TOKEN = 'vNVdglQOjFJJGG2U'
 const COMMUNITY_URL = 'https://vivimusicanvas.mkmdevilmi.workers.dev/canvas.json'
-const SOURCES = ['apple', 'tidal', 'community']
+const SOURCES = ['apple', 'tidal', 'community', 'spotify']
+const DEFAULT_SOURCES = ['apple', 'tidal', 'community'] // Spotify needs a cookie, so it's opt-in
 const HIT_TTL = 30 * 24 * 3600 * 1000
 const MISS_TTL = 3 * 24 * 3600 * 1000
 const CACHE_LIMIT_BYTES = 600 * 1024 * 1024
@@ -217,7 +219,20 @@ async function fromCommunity({ title, artist, album }) {
   return null
 }
 
-const PROVIDERS = { apple: fromApple, tidal: fromTidal, community: fromCommunity }
+function firstArtist(s) {
+  return String(s || '').split(/\s*(?:,|&|×|\bx\b|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b|;|\/)\s*/i)[0].trim()
+}
+
+function fromSpotifyCanvas(track, settings) {
+  if (!settings.spotify_sp_dc) return null
+  // Any failure here is Spotify's (cookie, token, rate limit), not proof the
+  // song has no canvas -- so never let it be remembered as a miss.
+  return Promise.resolve()
+    .then(() => require('./spotify').fromSpotify(track, settings, { norm, cleanTitle, artistsMatch, splitFirstArtist: firstArtist }))
+    .catch(e => { const err = e instanceof Error ? e : new Error(String(e)); err.transient = true; throw err })
+}
+
+const PROVIDERS = { apple: fromApple, tidal: fromTidal, community: fromCommunity, spotify: fromSpotifyCanvas }
 
 // ---------------------------------------------------------------- clip cache
 
@@ -322,7 +337,9 @@ function keyFor({ title, artist, album }) {
 function enabledSources(settings) {
   let list = null
   try { list = JSON.parse(settings.motion_cover_sources || 'null') } catch {}
-  return (Array.isArray(list) ? list : SOURCES).filter(s => SOURCES.includes(s))
+  const chosen = Array.isArray(list) ? list : DEFAULT_SOURCES
+  // Always in the same order, whatever order they were switched on in.
+  return SOURCES.filter(s => chosen.includes(s) && (s !== 'spotify' || settings.spotify_sp_dc))
 }
 
 /**
@@ -344,15 +361,16 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   }
   if (found === undefined) {
     found = null
+    let unsure = false // a source failed on its end: don't remember this as "none"
     for (const id of sources) {
-      try { found = await PROVIDERS[id](track) } catch { found = null }
+      try { found = await PROVIDERS[id](track, settings) } catch (e) { found = null; if (e?.transient) unsure = true }
       if (found) break
     }
-    db.prepare('INSERT OR REPLACE INTO motion_covers (key, data, fetched_at) VALUES (?, ?, ?)').run(key, found ? JSON.stringify(found) : null, Date.now())
+    if (found || !unsure) db.prepare('INSERT OR REPLACE INTO motion_covers (key, data, fetched_at) VALUES (?, ?, ?)').run(key, found ? JSON.stringify(found) : null, Date.now())
   }
   if (!found) return null
   const file = await cachedClip(found, { cacheDir, ffmpeg })
   return file ? { file, source: found.source, tall: !!found.tall } : null
 }
 
-module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES }
+module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }

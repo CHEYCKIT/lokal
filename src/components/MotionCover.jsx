@@ -73,7 +73,7 @@ export default function MotionCover({ trackId, className = '', onActive }) {
       onError={() => { setClip(null); onActive?.(false) }}
       className={`absolute inset-0 h-full w-full object-cover ${className}`}
       style={{ opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
-      title={clip.source === 'apple' ? 'Moving cover from Apple Music' : clip.source === 'tidal' ? 'Moving cover from Tidal' : 'Moving cover'}
+      title={{ apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'}
     />
   )
 }

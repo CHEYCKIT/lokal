@@ -209,6 +209,18 @@ export default function Settings() {
     const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
     setSoulseekCheck(status || { error: 'No answer' })
   }
+  const [spotifyCheck, setSpotifyCheck] = useState(null)
+  const testSpotifyCanvas = async () => {
+    setSpotifyCheck({ loading: true })
+    try {
+      await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
+      const status = await api.spotifyCanvasCheck()
+      setSpotifyCheck(status || { error: 'No answer' })
+      window.dispatchEvent(new Event('lokal:settings-saved'))
+    } catch (e) {
+      setSpotifyCheck({ error: e.message || 'Could not reach Spotify' })
+    }
+  }
   // Live progress of a yt-dlp / ffmpeg download, so the button doesn't look stuck.
   const [toolProgress, setToolProgress] = useState({})
   useEffect(() => api.onToolsDownloadProgress((_, p) => {
@@ -2351,11 +2363,12 @@ module.exports = {
           </button>
         </Row>
         {settings.motion_covers !== '0' && (() => {
-          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips collected by the BitChord community']]
-          let chosen = all.map(([id]) => id)
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips collected by the BitChord community'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
+          let chosen = ['apple', 'tidal', 'community']
           try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
           return (
+            <>
             <Row label="Where to Look" desc="Tried in this order; the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
               <div className="flex flex-col items-end gap-1.5">
                 {all.map(([id, label, hint]) => (
@@ -2366,6 +2379,33 @@ module.exports = {
                 ))}
               </div>
             </Row>
+            {chosen.includes('spotify') && (
+              <>
+                <Row label="Spotify Cookie" desc={"Spotify only shares canvases with a signed-in account, so this uses your own session cookie (sp_dc). To get it: sign in on open.spotify.com in your browser, open the developer tools (F12) > Application (Storage in Firefox) > Cookies > https://open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify. This uses Spotify's private web player endpoints, like BitChord does -- it can stop working at any time, and it's your real account."}>
+                  <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
+                    placeholder="sp_dc value" spellCheck={false} autoComplete="off"
+                    className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                </Row>
+                <div className="flex items-center gap-3">
+                  <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading}
+                    className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+                    {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+                  </button>
+                  {settings.spotify_sp_dc && (
+                    <button onClick={async () => { set('spotify_sp_dc', ''); setSpotifyCheck(null); await api.saveSettings({ spotify_sp_dc: '' }).catch(() => {}); window.dispatchEvent(new Event('lokal:settings-saved')) }}
+                      className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
+                      Remove
+                    </button>
+                  )}
+                  {spotifyCheck && !spotifyCheck.loading && (
+                    spotifyCheck.error
+                      ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                      : <p className="text-xs text-green-400">Signed in -- canvases will be looked up.</p>
+                  )}
+                </div>
+              </>
+            )}
+            </>
           )
         })()}
       </Section>

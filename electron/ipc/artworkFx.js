@@ -35,10 +35,17 @@ async function motionForTrack(trackId, ffmpeg) {
   return motionCoverFor(getDB(), track, { settings: settingsMap(), cacheDir: motionCacheDir(), ffmpeg })
 }
 
+/** Settings' Spotify "Save & Test", with the cookie as saved. */
+function spotifyCheck() {
+  const { checkSpotify } = require('../artwork/spotify')
+  return checkSpotify(settingsMap().spotify_sp_dc)
+}
+
 function registerArtworkFxHandlers(ipcMain) {
   const { findFfmpeg } = require('./tools')
   ipcMain.handle('artwork:mesh', (_, trackId) => meshForTrack(trackId).catch(() => null))
   ipcMain.handle('artwork:motion', (_, trackId) => motionForTrack(trackId, findFfmpeg()).catch(() => null))
+  ipcMain.handle('artwork:spotifyCheck', () => spotifyCheck())
 }
 
-module.exports = { registerArtworkFxHandlers, meshForTrack, motionForTrack, motionCacheDir }
+module.exports = { registerArtworkFxHandlers, meshForTrack, motionForTrack, motionCacheDir, spotifyCheck }
