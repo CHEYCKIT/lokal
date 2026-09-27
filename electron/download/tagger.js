@@ -184,4 +184,14 @@ async function coverThumbnail(filePath, size = 96) {
   } catch { return null }
 }
 
-module.exports = { readInfo, applyTags, stripArtistPrefix, coverThumbnail }
+/** The same kind of thumbnail from an image file (e.g. the library's artwork for a track). */
+async function imageThumbnail(imagePath, size = 96) {
+  const s = sharp()
+  if (!s || !imagePath) return null
+  try {
+    const jpeg = await s(imagePath).resize(size, size, { fit: 'cover' }).jpeg({ quality: 78 }).toBuffer()
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`
+  } catch { return null }
+}
+
+module.exports = { readInfo, applyTags, stripArtistPrefix, coverThumbnail, imageThumbnail }
