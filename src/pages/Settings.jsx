@@ -2369,7 +2369,7 @@ module.exports = {
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
           return (
             <>
-            <Row label="Where to Look" desc="Tried in this order; the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
+            <Row label="Where to Look" desc="Tried in this order (Spotify first if you prioritize it below); the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
               <div className="flex flex-col items-end gap-1.5">
                 {all.map(([id, label, hint]) => (
                   <button key={id} onClick={() => toggle(id)} title={hint}
@@ -2385,6 +2385,13 @@ module.exports = {
                   <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
                     placeholder="sp_dc value" spellCheck={false} autoComplete="off"
                     className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                </Row>
+                <Row label="Prioritize Spotify Canvas" desc="Ask Spotify first and use Apple Music, Tidal and the community list only when it has nothing. Spotify has canvases for far more songs, but they're vertical, so they're cropped to a square here.">
+                  <button
+                    onClick={() => set('spotify_canvas_first', settings.spotify_canvas_first === '1' ? '0' : '1')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.spotify_canvas_first === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                    {settings.spotify_canvas_first === '1' ? 'On' : 'Off'}
+                  </button>
                 </Row>
                 <div className="flex items-center gap-3">
                   <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading}
