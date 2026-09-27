@@ -108,7 +108,10 @@ contextBridge.exposeInMainWorld('electron', {
   importPhotosDir: (dir) => invoke('artist:importPhotosDir', dir),
 
   
-  getLyrics: (id, ti, ar, al, d, fp) => invoke('lyrics:get', id, ti, ar, al, d, fp),
+  getLyrics: (id, ti, ar, al, d, fp, opts) => invoke('lyrics:get', id, ti, ar, al, d, fp, opts),
+  getLyricsFrom: (providerId, id, ti, ar, al, d, fp) => invoke('lyrics:getFrom', providerId, id, ti, ar, al, d, fp),
+  getLyricsSources: () => invoke('lyrics:sources'),
+  romanizeLyrics: (id, lines) => invoke('lyrics:romanize', id, lines),
   detectLyricsLanguage: (id, lines) => invoke('lyrics:detectLanguage', id, lines),
   translateLyrics: (id, lines, targetLang) => invoke('lyrics:translate', id, lines, targetLang),
   clearLyricsCache: (id) => invoke('lyrics:clearCache', id),
