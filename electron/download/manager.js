@@ -23,7 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
-const { readInfo, coverThumbnail } = require('./tagger')
+const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
 const { makePlayable } = require('./convert')
 
 const ACTIVE = new Set(['queued', 'downloading'])
@@ -812,6 +812,17 @@ class DownloadManager {
       if (result?.id) {
         job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
         this.update(job, { message: `Added to library: ${path.basename(filepath)}` })
+        // No cover inside the file (common on Soulseek, where the art is a
+        // separate cover.jpg in the uploader's folder): use the one the
+        // library just found for the track (online artwork), so the row in
+        // the download list isn't left blank.
+        if (!String(job.thumbnail || '').startsWith('data:')) {
+          try {
+            const row = this.db().prepare('SELECT artwork_path FROM tracks WHERE id = ?').get(result.id)
+            const thumb = row?.artwork_path ? await imageThumbnail(row.artwork_path) : null
+            if (thumb) this.update(job, { thumbnail: thumb }, { persist: true })
+          } catch {}
+        }
         try { this.deps.onLibraryUpdated?.(result) } catch {}
       }
     } catch {}
