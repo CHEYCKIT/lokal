@@ -2705,7 +2705,7 @@ module.exports = {
                   setTimeout(() => setShowGenreModal(false), 1500);
                 }
               }} 
-              className="flex-1 py-2.5 bg-accent text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
+              className="flex-1 py-2.5 bg-accent text-base rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
             >
               Apply Mapping
             </button>

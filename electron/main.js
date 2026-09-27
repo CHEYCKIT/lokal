@@ -131,6 +131,14 @@ if (!gotTheLock) {
 }
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
+// Only ever offer stable releases. Nightlies are versioned like
+// 2.0.3-nightly.42, and for a pre-release version electron-updater switches to
+// looking for the newest release on the same "nightly" channel. There is none,
+// so every check on a nightly failed (and the app showed that failure as an
+// "Update Available" popup). With this off, a nightly is compared with the
+// Latest release: 2.0.2 is older than 2.0.3-nightly.N (no prompt), and the
+// official 2.0.3 is newer (prompt).
+autoUpdater.allowPrerelease = false
 
 autoUpdater.on('update-available', (info) => {
   if (mainWindow) {
