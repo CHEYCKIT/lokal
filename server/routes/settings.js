@@ -45,14 +45,22 @@ function exportAppData() {
   }
 }
 
+// Secrets never leave the server: the web settings page gets a placeholder,
+// and saving the placeholder back leaves the stored value alone.
+const SECRET_KEYS = new Set(['soulseek_api_key'])
+const SECRET_PLACEHOLDER = '••••••••'
+
 router.get('/', (req, res) => {
   const rows = getDB().prepare('SELECT key, value FROM settings').all()
-  res.json(Object.fromEntries(rows.map(r => [r.key, r.value])))
+  res.json(Object.fromEntries(rows.map(r => [r.key, SECRET_KEYS.has(r.key) && r.value ? SECRET_PLACEHOLDER : r.value])))
 })
 
 router.put('/', (req, res) => {
   const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
-  for (const [k, v] of Object.entries(req.body)) stmt.run(k, String(v))
+  for (const [k, v] of Object.entries(req.body || {})) {
+    if (SECRET_KEYS.has(k) && String(v) === SECRET_PLACEHOLDER) continue
+    stmt.run(k, String(v))
+  }
   res.json({ ok: true })
 })
 

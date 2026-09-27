@@ -92,8 +92,26 @@ router.post('/clear-finished', (req, res) => res.json(manager().clearFinished())
 router.post('/seen', (req, res) => res.json(manager().markSeen()))
 router.get('/queue', (req, res) => res.json(manager().list()))
 
-// Soulseek, through slskd.
+// Soulseek, through slskd. These act with the slskd API key saved in
+// Settings, and the web API has no accounts, so they only answer this machine
+// and the local network, never a request coming in from the internet.
 const slskd = require('../../electron/download/slskd')
+
+function isLocalAddress(address) {
+  const a = String(address || '').replace(/^::ffff:/i, '').toLowerCase()
+  if (a === '::1' || a === 'localhost') return true
+  if (/^fe80:|^f[cd][0-9a-f]{2}:/.test(a)) return true // IPv6 link-local / unique-local
+  const m = a.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return false
+  const [x, y] = [Number(m[1]), Number(m[2])]
+  return x === 127 || x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254)
+}
+
+router.use('/soulseek', (req, res, next) => {
+  if (isLocalAddress(req.socket?.remoteAddress)) return next()
+  res.status(403).json({ error: 'Soulseek is only available from this computer or your local network.' })
+})
+
 const soulseek = (fn) => async (req, res) => {
   try { res.json(await fn(req)) } catch (e) { res.status(e.status && e.status >= 400 ? e.status : 502).json({ error: e.message }) }
 }
