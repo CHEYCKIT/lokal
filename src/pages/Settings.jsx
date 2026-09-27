@@ -1250,6 +1250,21 @@ export default function Settings() {
             {settings.clean_download_metadata !== '0' ? 'Yes' : 'No'}
           </button>
         </Row>
+        <Row label="Add Lyrics to Downloads" desc="Look up each downloaded track in your lyrics sources and write the lyrics into the file: synced LRC any player can show, plus word-by-word timing Lokal reads back.">
+          <button
+            onClick={() => set('download_embed_lyrics', settings.download_embed_lyrics === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.download_embed_lyrics !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.download_embed_lyrics !== '0' ? 'Yes' : 'No'}
+          </button>
+        </Row>
+        <Row label="Simultaneous Downloads" desc="How many downloads run at once. The rest wait in the queue. A playlist counts as one.">
+          <select
+            value={settings.download_concurrency || '3'}
+            onChange={e => set('download_concurrency', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </Row>
         <Row label="Skip Drum-kit Pattern" desc="Skip tracks with drum-kit/loop/sample keywords in title (for producers with sample packs in their music folder)">
           <button
             onClick={() => set('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1')}

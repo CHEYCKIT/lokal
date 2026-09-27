@@ -74,12 +74,17 @@ function toResult(providerId, output, names = {}) {
 
 /**
  * @param query   { title, artist, album, duration, filePath, isrc?, keepCommaArtists? }
- * @param options { order?, enabled?, prioritizeSyllable?, only?: providerId }
+ * @param options { order?, enabled?, prioritizeSyllable?, only?: providerId, signal? }
  * @returns { result, attempts } -- result may be null; attempts lists what each source said.
  */
 async function lookup(query, options = {}) {
   const controller = new AbortController()
   const signal = controller.signal
+  // A caller that gives up (the downloader's timeout) stops the requests too.
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort()
+    else options.signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
   const q = {
     ...query,
     searchTitle: forLyricsSearch(query.title),

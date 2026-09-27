@@ -69,9 +69,9 @@ function markUnreadable(browser) {
   const why = CHROMIUM.has(browser) && process.platform === 'win32'
     ? `${label(browser)} encrypts its cookies in a way yt-dlp can't read on Windows (Chrome 127+).`
     : `${label(browser)}'s cookies couldn't be read (the browser may need to be closed).`
-  return `${why} Retrying without cookies. To use cookies, pick Firefox or a cookies.txt file in Settings → Downloads.`
+  return `${why} Retrying without cookies. To use cookies, pick Firefox or a cookies.txt file in Settings → Library.`
 }
 
-const COOKIE_FAILURE_MESSAGE = "Couldn't read the browser's cookies. Pick Firefox or a cookies.txt file in Settings → Downloads, or turn YouTube cookies off."
+const COOKIE_FAILURE_MESSAGE = "Couldn't read the browser's cookies. Pick Firefox or a cookies.txt file in Settings → Library, or turn YouTube cookies off."
 
 module.exports = { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE }

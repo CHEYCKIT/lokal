@@ -630,6 +630,8 @@ async function downloadYtDlp(progressCallback) {
     } finally {
       try { fs.removeSync(tempDest) } catch {}
       ytDlpInstallPromise = null
+      // Downloads paused for the swap go back to work (with the new yt-dlp).
+      try { require('./downloader').resumeDownloadsAfterToolUpdate?.() } catch {}
     }
   })()
 
