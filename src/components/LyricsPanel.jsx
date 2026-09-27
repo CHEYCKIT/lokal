@@ -310,7 +310,7 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/55 hover:text-white bg-white/[0.06] hover:bg-white/[0.12] transition-colors"
+        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md transition-colors"
         title="Lyrics source"
       >
         {busy ? <Loader2 size={11} className="animate-spin" /> : null}
@@ -359,7 +359,7 @@ function Pill({ active, onClick, children, title, disabled }) {
       onClick={onClick}
       title={title}
       disabled={disabled}
-      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors disabled:opacity-40 ${active ? 'bg-white text-black' : 'text-white/55 hover:text-white bg-white/[0.06] hover:bg-white/[0.12]'}`}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors disabled:opacity-40 ${active ? 'bg-white text-black' : 'text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md'}`}
     >
       {children}
     </button>
@@ -653,8 +653,7 @@ export default function LyricsPanel({
   return (
     <div className="relative w-full h-full">
       {showToolbar && (
-        <div className="absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pb-6 pointer-events-none"
-          style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}>
+        <div className="absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none">
           <div className="flex items-center gap-1.5 pointer-events-auto">
             <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
@@ -669,11 +668,6 @@ export default function LyricsPanel({
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1.5 pointer-events-auto">
-            {onSearchRequest && (
-              <button onClick={onSearchRequest} className="p-1.5 rounded-full text-white/45 hover:text-white bg-white/[0.06] hover:bg-white/[0.12]" title="Search lyrics manually">
-                <Search size={11} />
-              </button>
-            )}
             {sources.length > 0 && result?.source && (
               <SourceMenu
                 sources={sources}
@@ -692,7 +686,11 @@ export default function LyricsPanel({
         {(notice || (wantTranslation && translation.state === 'same-language') || (wantTranslation && translation.state === 'unavailable') || (subline === 'romanization' && romanization.state === 'unavailable')) && (
           <motion.div
             initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-            className="absolute top-12 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur text-[11px] text-white/80 whitespace-nowrap"
+            transition={{ duration: 0.18 }}
+            // Right-aligned under the source menu (that's what it answers), and
+            // allowed to wrap: a fixed-width, centred pill overflowed the narrow
+            // sidebar, and framer's own transform overrode the centring.
+            className="absolute top-11 right-4 z-30 max-w-[calc(100%-2rem)] w-max px-3 py-1.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/10 text-[11px] leading-snug text-white/85 text-right"
           >
             {notice || (translation.state === 'same-language' ? 'Already in your language' : translation.state === 'unavailable' && wantTranslation ? 'Translation unavailable right now' : 'Romanization unavailable right now')}
           </motion.div>
