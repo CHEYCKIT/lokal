@@ -5,6 +5,7 @@ import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCi
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
+import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
 import { useTheme } from '../themeHooks'
@@ -30,6 +31,13 @@ const SETTINGS_CATEGORIES = [
   { key: 'plugins', label: 'Plugins', icon: Puzzle },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
+]
+
+const TRANSLATION_LANGUAGES = [
+  ['en', 'English'], ['fr', 'Français'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'], ['pt', 'Português'],
+  ['nl', 'Nederlands'], ['pl', 'Polski'], ['tr', 'Türkçe'], ['ru', 'Русский'], ['uk', 'Українська'], ['ar', 'العربية'],
+  ['hi', 'हिन्दी'], ['id', 'Bahasa Indonesia'], ['vi', 'Tiếng Việt'], ['th', 'ไทย'], ['ja', '日本語'], ['ko', '한국어'],
+  ['zh-CN', '中文（简体）'], ['zh-TW', '中文（繁體）'], ['sv', 'Svenska'], ['el', 'Ελληνικά'], ['he', 'עברית'], ['sw', 'Kiswahili'],
 ]
 
 function Section({ title, children }) {
@@ -1514,19 +1522,25 @@ export default function Settings() {
 
       {inCategory('playback') && (
       <Section title="Lyrics">
-        <Row label="Source">
-          <select value={settings.lyrics_source || 'lrclib'} onChange={e => set('lyrics_source', e.target.value)}
+        <LyricsSourcesSettings />
+        <Row label="Word-by-Word Sync" desc="Sweep each syllable as it's sung, Apple Music style (syllable-synced lyrics only)">
+          <button
+            onClick={() => { const v = settings.word_sync === '0'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.word_sync !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.word_sync !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Translation Language" desc="What the Translate button in the lyrics view translates into. Apple Music's own translation is used when the song has one.">
+          <select value={settings.lyrics_translate_target || 'en'} onChange={e => set('lyrics_translate_target', e.target.value)}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-accent/50">
-            <option value="lrclib">LRCLIB (synced)</option>
-            <option value="lyricsovh">lyrics.ovh (plain)</option>
-            <option value="both">Both (LRCLIB first)</option>
+            {TRANSLATION_LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
           </select>
         </Row>
-        <Row label="Word-by-Word Sync" desc="Animate individual words (synced lyrics only)">
+        <Row label="Auto-Translate" desc="Show the translation under each line automatically when a song isn't in your translation language">
           <button
-            onClick={() => { const v = settings.word_sync !== '1'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.word_sync === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.word_sync === '1' ? 'On' : 'Off'}
+            onClick={() => set('lyrics_auto_translate', settings.lyrics_auto_translate === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lyrics_auto_translate === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.lyrics_auto_translate === '1' ? 'On' : 'Off'}
           </button>
         </Row>
         <Row label="Unsynced Lyrics Auto-Sync" desc="Rough estimation to sync plain lyrics">

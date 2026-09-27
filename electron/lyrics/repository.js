@@ -27,29 +27,7 @@ const { finish } = require('./postprocess')
 const IDENTIFY_TIMEOUT_MS = 2500
 const LAZY = new Set(['lyricsovh'])
 
-// ---------------------------------------------------------------- search names
-
-const NOISE_PATTERNS = [
-  /\s*[(\[](?:feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]/gi,
-  /\s*[(\[][^)\]]*(?:official|video|audio|lyrics?|visuali[sz]er|music video|mv|hd|hq|4k)[^)\]]*[)\]]/gi,
-  /\s*[(\[][^)\]]*(?:remaster(?:ed)?|re-?recorded|explicit|clean|radio edit|single version|album version|mono|stereo)[^)\]]*[)\]]/gi,
-  /\s+-\s+(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?(?:\s+version)?$/i,
-  /\s+-\s+(?:single|radio edit|album version|explicit|clean)$/i,
-  /\s+(?:feat\.?|ft\.?)\s.*$/i,
-]
-
-function forLyricsSearch(title) {
-  let t = String(title || '')
-  for (const re of NOISE_PATTERNS) t = t.replace(re, '')
-  return t.replace(/\s{2,}/g, ' ').trim() || String(title || '').trim()
-}
-
-function artistForSearch(artist, keepCommaArtists = []) {
-  const a = String(artist || '').trim()
-  if (!a) return a
-  if (keepCommaArtists.some(k => k && k.toLowerCase() === a.toLowerCase())) return a
-  return a.split(/\s*(?:,|;|&|\bx\b|\/|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b)\s*/i)[0].trim() || a
-}
+const { forLyricsSearch, artistForSearch } = require('./names')
 
 // ---------------------------------------------------------------- helpers
 
@@ -69,7 +47,7 @@ function sequenceFor(order, enabled) {
 }
 
 /** Provider output -> finished result, or null. */
-function toResult(providerId, output) {
+function toResult(providerId, output, names = {}) {
   if (!output) return null
   if (output.instrumental) return { type: 'instrumental', sync: 'none', lines: [], source: providerId, instrumental: true }
   let lines = output.lines
@@ -86,6 +64,8 @@ function toResult(providerId, output) {
     doc,
     isrc: output.isrc || null,
     language: output.language || doc?.language || null,
+    title: names.title,
+    artist: names.artist,
   })
   return result.type ? result : null
 }
@@ -125,7 +105,7 @@ async function lookup(query, options = {}) {
       if (id !== 'local' && !canQueryOnline) return null
       try {
         const output = await provider.fetch(q, { signal, hit: id === 'binilyrics' ? hit : null })
-        return toResult(id, output)
+        return toResult(id, output, { title: q.searchTitle, artist: q.searchArtist })
       } catch {
         return null
       }

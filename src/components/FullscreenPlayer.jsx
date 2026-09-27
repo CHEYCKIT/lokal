@@ -145,7 +145,7 @@ export default function FullscreenPlayer() {
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
   const nav = useNavigate()
-  const wordSync = localStorage.getItem('word-sync') === '1'
+  const wordSync = localStorage.getItem('word-sync') !== '0'
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
   const [settings, setSettings] = useState({})

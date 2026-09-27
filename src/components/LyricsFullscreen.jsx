@@ -11,7 +11,7 @@ export default function LyricsFullscreen() {
   const [showSearch, setShowSearch] = useState(false)
   const [searchSessions, setSearchSessions] = useState({})
   const [settings, setSettings] = useState({})
-  const wordSync = localStorage.getItem('word-sync') === '1'
+  const wordSync = localStorage.getItem('word-sync') !== '0'
 
   // LyricsFullscreen stays mounted for the whole app session (App.jsx renders
   // it unconditionally and it just hides its own JSX), so a settings fetch

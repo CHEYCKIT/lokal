@@ -98,6 +98,7 @@ function assignSides(lines, agentTypes = {}) {
 // Line-synced sources don't, so they only ever get the intro break.
 
 function withInstrumentalGaps(lines) {
+  const explicit = lines.filter(l => l.gap)
   const sung = lines.filter(l => !l.gap)
   if (!sung.length || sung[0].time == null) return sung
   const out = []
@@ -105,7 +106,11 @@ function withInstrumentalGaps(lines) {
   sung.forEach((line, i) => {
     out.push(line)
     const next = sung[i + 1]
-    if (!next || !hasKnownEnd(line)) return
+    if (!next) return
+    // A break the source marked itself (LRC bare stamp) is kept as given.
+    const marked = explicit.find(g => g.time >= line.time && g.time < next.time && g.time > 0)
+    if (marked) { out.push(marked); return }
+    if (!hasKnownEnd(line)) return
     const end = lineEnd(line)
     if (next.time - end >= MIN_GAP_SECONDS && end > line.time) {
       out.push({ time: round3(end), end: next.time, text: '', words: [], gap: true })
@@ -131,6 +136,34 @@ function attachEmbedded(lines, { translations = {}, transliterations = {} } = {}
   return { translationLang: trLang || null, romanizationLang: tlLang || null }
 }
 
+// ---------------------------------------------------------------- credits
+// Several catalogues (QQ, KuGou, some LRC uploads) open with credit lines
+// stamped as if sung: "Lyrics by：…", "作曲：…", "Title - Artist". They're
+// dropped from the head of the song only -- a lyric can legitimately contain a
+// colon later on.
+
+const CREDIT_LINE = /^(?:lyrics?|lyricist|written|words|music|composed?r?|composition|arranged?r?|arrangement|produced?r?|producer|vocals?|mix(?:ed|ing)?|master(?:ed|ing)?|recorded|作词|作詞|作曲|编曲|編曲|制作|製作|监制|混音|录音|演唱|詞|曲|词)(?:\s*by)?\s*[:：]/i
+
+function normalizeName(s) {
+  return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+function dropCredits(lines, { title, artist } = {}) {
+  const t = normalizeName(title)
+  const a = normalizeName(artist)
+  let sungSeen = 0
+  return lines.filter(line => {
+    if (sungSeen >= 6 || !line.text) return true
+    const text = line.text.trim()
+    const n = normalizeName(text)
+    const isCredit = CREDIT_LINE.test(text) ||
+      (t && /\s[-–—]\s/.test(text) && n.includes(t) && (!a || n.includes(a.split(' ')[0])))
+    if (isCredit) return false
+    sungSeen++
+    return true
+  })
+}
+
 // ---------------------------------------------------------------- finish
 
 function classify(lines) {
@@ -145,10 +178,32 @@ function classify(lines) {
  * Turns a parser's raw output into a finished result.
  * `doc` is the optional TTML extras ({ agents, translations, transliterations }).
  */
-function finish(rawLines, { source, doc = null, isrc = null, language = null } = {}) {
-  let lines = (rawLines || [])
-    .filter(l => l && (l.text || l.bgText))
+// An LRC file marks an instrumental break with a bare timestamp: "[01:23.45]"
+// and nothing after it. That stamp says two things -- the line before it has
+// stopped being sung, and silence runs until the next line -- so it becomes
+// the previous line's stated end, and a break of its own if it's long enough.
+function readEmptyStamps(raw) {
+  const sorted = (raw || []).filter(Boolean).slice().sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+  const out = []
+  sorted.forEach((line, i) => {
+    const empty = !String(line.text || '').trim() && !line.bgText && !(line.words?.length)
+    if (!empty || line.time == null) { out.push(line); return }
+    const prev = out[out.length - 1]
+    if (prev && !prev.words?.length && !prev.endStated && line.time > prev.time) {
+      prev.end = line.time
+      prev.endStated = true
+    }
+    const next = sorted.slice(i + 1).find(l => String(l.text || '').trim())
+    if (next && next.time - line.time >= MIN_GAP_SECONDS) out.push({ time: line.time, end: next.time, text: '', words: [], gap: true })
+  })
+  return out
+}
+
+function finish(rawLines, { source, doc = null, isrc = null, language = null, title = null, artist = null } = {}) {
+  let lines = readEmptyStamps(rawLines)
+    .filter(l => l && (l.gap || l.text || l.bgText))
     .map(l => ({ ...l, text: String(l.text || '').trim() }))
+  lines = dropCredits(lines, { title, artist })
   const sync = classify(lines)
   if (sync === 'none') {
     lines = lines.map(l => ({ text: l.text, time: null, end: null, words: [] }))
@@ -172,4 +227,4 @@ function finish(rawLines, { source, doc = null, isrc = null, language = null } =
   }
 }
 
-module.exports = { finish, splitTrailingBracket, assignSides, withInstrumentalGaps, attachEmbedded, MIN_GAP_SECONDS }
+module.exports = { finish, dropCredits, splitTrailingBracket, assignSides, withInstrumentalGaps, attachEmbedded, MIN_GAP_SECONDS }
