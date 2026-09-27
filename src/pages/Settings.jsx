@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Save, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
@@ -259,6 +259,17 @@ export default function Settings() {
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState('library')
+  // Every category shares the page's one scroll container (App's <main>), so
+  // switching from halfway down a long category used to land halfway down
+  // the next one. Start each category at the top; layout effect so the new
+  // content never paints at the old offset first.
+  const rootRef = useRef(null)
+  const firstCategoryRef = useRef(true)
+  useLayoutEffect(() => {
+    if (firstCategoryRef.current) { firstCategoryRef.current = false; return }
+    const scroller = rootRef.current?.closest('main')
+    if (scroller) scroller.scrollTop = 0
+  }, [activeCategory])
 
   
   const { openAlbums, user, logout } = useAppStore()
@@ -1105,7 +1116,7 @@ export default function Settings() {
   const usingDefaultDiscordId = settings.discord_use_default_app_id !== '0'
 
   return (
-    <div className="p-6 max-w-2xl space-y-6 pb-10">
+    <div ref={rootRef} className="p-6 max-w-2xl space-y-6 pb-10">
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
