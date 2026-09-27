@@ -97,6 +97,17 @@ function manager() {
       return null
     },
     onLibraryUpdated: (result) => broadcast('library:updated', result),
+    // YouTube refused a download: get the latest yt-dlp (unless we already have it).
+    updateTools: async () => {
+      const { getYtDlpVersionStatus, downloadYtDlp } = require('./tools')
+      let status = null
+      try { status = await getYtDlpVersionStatus() } catch {}
+      if (status?.upToDate === true) return { updated: false, upToDate: true, version: status.installedVersion }
+      await downloadYtDlp(progress => broadcast('tools:downloadProgress', { tool: 'yt-dlp', ...progress }))
+      let after = null
+      try { after = await getYtDlpVersionStatus() } catch {}
+      return { updated: true, version: after?.installedVersion || null }
+    },
     emit: (snapshot) => broadcast('downloader:progress', snapshot),
   }, 10)
 }

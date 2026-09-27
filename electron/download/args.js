@@ -63,7 +63,7 @@ function isYouTube(url) {
 /**
  * @returns {{ args: string[], cookies: { args, notes, usedBrowser } }}
  */
-function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies }) {
+function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [] }) {
   const cookies = cookieArgs(settings, { withoutCookies })
   const args = [
     url,
@@ -86,6 +86,7 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
   ]
   if (isYouTube(url)) args.push('--convert-thumbnail', 'jpg')
   if (ffmpeg && (ffmpeg.includes('/') || ffmpeg.includes('\\'))) args.push('--ffmpeg-location', path.dirname(ffmpeg))
+  args.push(...extraArgs)
   return { args, cookies }
 }
 

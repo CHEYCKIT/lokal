@@ -30,13 +30,22 @@ const EMIT_INTERVAL_MS = 200
 
 // Worth another go.
 const TRANSIENT = /HTTP Error (?:429|5\d\d)|Too Many Requests|timed? ?out|Connection (?:reset|aborted|refused)|Remote end closed|Temporary failure in name resolution|getaddrinfo|ECONNRESET|ETIMEDOUT|EAI_AGAIN|IncompleteRead|Unable to download (?:webpage|API page|JSON metadata|video data)|fragment \d+ not found|The read operation timed out|SSL: /i
+// YouTube refusing this yt-dlp (it changes its player every few weeks and
+// yt-dlp follows): a newer yt-dlp, or another player client, usually fixes it.
+const YOUTUBE_BLOCKED = /HTTP Error 403|Requested format is not available|nsig extraction failed|Signature extraction failed|n challenge solving failed|Only images are available/i
+// Player clients that have been getting through when the default ones are refused.
+const FALLBACK_CLIENTS = ['--extractor-args', 'youtube:player_client=default,visionos,web_embedded,mweb']
+const TOOL_UPDATE_COOLDOWN_MS = 6 * 60 * 60 * 1000
+
 // Retrying won't change anything.
 const PERMANENT = /Video unavailable|Private video|members[- ]only|Sign in to confirm your age|confirm you.re not a bot|copyright|not available in your country|has been removed|account .* terminated|Unsupported URL|is not a valid URL|Requested format is not available|No video formats found|Premieres in|live event will begin/i
 
 function friendlyError(lines, fallback) {
   const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '')
   if (isCookieError(text)) return COOKIE_FAILURE_MESSAGE
-  if (/Requested format is not available/i.test(text)) return 'yt-dlp could not fetch the requested format. Try updating yt-dlp in Settings and retry.'
+  if (/HTTP Error 403|Requested format is not available|nsig extraction failed|Signature extraction failed|n challenge solving failed/i.test(text)) {
+    return 'YouTube refused the download (it blocks older yt-dlp versions). Update yt-dlp in Settings → External Tools, then retry.'
+  }
   if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Turn on YouTube cookies (Firefox or a cookies.txt file) in Settings → Library.'
   if (/Sign in to confirm your age/i.test(text)) return 'This video is age-restricted. Turn on YouTube cookies in Settings → Library to download it.'
   if (/Private video/i.test(text)) return 'This video is private.'
@@ -370,7 +379,7 @@ class DownloadManager {
     if (this.suspended) return
     const limit = this.concurrency()
     const waiting = [...this.jobs.values()]
-      .filter(j => j.status === 'queued' && !j.retryTimer)
+      .filter(j => j.status === 'queued' && !j.retryTimer && !j.waitingForTools)
       .sort((a, b) => a.createdAt - b.createdAt)
     for (const job of waiting) {
       if (this.running >= limit) break
@@ -430,6 +439,7 @@ class DownloadManager {
     this.update(job, {
       status: 'queued', message: 'Queued', error: null, progress: 0, speed: null, eta: null,
       attempt: 0, finishedAt: null, retryAt: null, withoutCookies: false, stop: null, seen: false,
+      triedToolUpdate: false, triedClients: false, extraArgs: null, waitingForTools: false,
     }, { persist: true })
     this.pump()
     return { downloadId: job.id, queued: true }
@@ -480,7 +490,7 @@ class DownloadManager {
       } catch {}
     }
 
-    const { args, cookies } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies })
+    const { args, cookies } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [] })
     job.cookies = cookies
     job.errorLines = []
     job.outputLines.push(...cookies.notes)
@@ -709,6 +719,26 @@ class DownloadManager {
     }
 
     const text = lines.join('\n')
+
+    // YouTube refused this yt-dlp: update yt-dlp once (desktop), then try other
+    // player clients, before giving up.
+    if (!err && !partial && isYouTube(job.url) && YOUTUBE_BLOCKED.test(text)) {
+      if (!job.triedToolUpdate && this.deps.updateTools && Date.now() - (this.toolsUpdatedAt || 0) > TOOL_UPDATE_COOLDOWN_MS) {
+        job.triedToolUpdate = true
+        job.waitingForTools = true
+        this.update(job, { status: 'queued', message: 'YouTube refused this yt-dlp. Updating yt-dlp...', speed: null, eta: null }, { persist: true })
+        this.refreshTools()
+        return
+      }
+      if (!job.triedClients) {
+        job.triedClients = true
+        job.extraArgs = FALLBACK_CLIENTS
+        job.outputLines.push('[Lokal] YouTube refused the download; retrying with other YouTube player clients.')
+        this.update(job, { status: 'queued', message: 'Retrying with another YouTube client...', speed: null, eta: null }, { persist: true })
+        return
+      }
+    }
+
     if (!err && job.attempt < RETRY_DELAYS_MS.length && TRANSIENT.test(text) && !PERMANENT.test(text)) {
       const delay = RETRY_DELAYS_MS[job.attempt]
       job.attempt++
@@ -744,6 +774,27 @@ class DownloadManager {
         }
       }
     }
+  }
+
+  /** Updates yt-dlp once for everything that's waiting on it, then lets them run. */
+  refreshTools() {
+    if (this.toolUpdate) return this.toolUpdate
+    this.toolUpdate = (async () => {
+      let outcome = null
+      try { outcome = await this.deps.updateTools() } catch (e) { outcome = { error: e.message } }
+      this.toolsUpdatedAt = Date.now()
+      const note = outcome?.updated
+        ? `[Lokal] Updated yt-dlp${outcome.version ? ` to ${outcome.version}` : ''}; retrying.`
+        : outcome?.upToDate ? '[Lokal] yt-dlp is already the latest version; retrying.'
+          : `[Lokal] Couldn't update yt-dlp${outcome?.error ? ` (${outcome.error})` : ''}; retrying anyway.`
+      for (const job of this.jobs.values()) {
+        if (!job.waitingForTools) continue
+        job.waitingForTools = false
+        job.outputLines.push(note)
+        this.update(job, { message: 'Queued' }, { persist: true })
+      }
+    })().finally(() => { this.toolUpdate = null; this.pump() })
+    return this.toolUpdate
   }
 
   // ------------------------------------------------------------- lifecycle
