@@ -2324,6 +2324,36 @@ module.exports = {
       )}
 
       {inCategory('appearance') && (
+      <Section title="Now Playing">
+        <Row label="Moving Covers" desc="Play an album's animated cover (like Apple Music's) in the Details sidebar and the full screen player, when one can be found. Clips are downloaded once and kept in a cache.">
+          <button
+            onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.motion_covers !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.motion_covers !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        {settings.motion_covers !== '0' && (() => {
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips collected by the BitChord community']]
+          let chosen = all.map(([id]) => id)
+          try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
+          const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
+          return (
+            <Row label="Where to Look" desc="Tried in this order; the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
+              <div className="flex flex-col items-end gap-1.5">
+                {all.map(([id, label, hint]) => (
+                  <button key={id} onClick={() => toggle(id)} title={hint}
+                    className={`px-3 py-1 rounded-lg text-xs border transition-colors ${chosen.includes(id) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Row>
+          )
+        })()}
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
       <Section title="Layout">
         <Row
           label="Side Panels"

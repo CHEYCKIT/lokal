@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
+import ArtworkBackdrop from './ArtworkBackdrop'
+import MotionCover from './MotionCover'
 import { api } from '../api'
 import {
   contextLabel,
@@ -17,8 +19,8 @@ import { navigateToTrackArtist } from '../artistLink'
 function InfoRow({ label, value, onClick = null, title = null }) {
   if (!value) return null
   return (
-    <div className="flex items-start gap-3 py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-xs font-display text-muted uppercase tracking-wider w-20 flex-shrink-0 pt-0.5">{label}</span>
+    <div className="flex items-start gap-3 py-1.5 border-b border-white/10 last:border-0">
+      <span className="text-xs font-display text-white/45 uppercase tracking-wider w-20 flex-shrink-0 pt-0.5">{label}</span>
       {onClick ? (
         <button
           onClick={onClick}
@@ -182,27 +184,61 @@ export default function RightSidebar() {
                 pane stayed focusable and reachable by assistive tech even
                 while covered by the other tab's overlay. */}
             <div className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50">
-                    <AnimatePresence mode="wait">
-                      {artSrc ? (
-                        <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="w-full h-full object-cover" />
+              {/* Apple Music-style: the cover runs edge to edge and dissolves
+                  into colours taken from it; a moving cover plays over the
+                  still one when there is one. */}
+              <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? 300 : 0} />
+              <div className="relative flex-1 overflow-y-auto">
+                <div
+                  className="relative w-full aspect-square overflow-hidden"
+                  style={artSrc ? { WebkitMaskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)', maskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)' } : undefined}
+                >
+                  <AnimatePresence mode="wait">
+                    {artSrc ? (
+                      <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-white/25"><Music size={52} /></div>
+                    )}
+                  </AnimatePresence>
+                  {artSrc && <MotionCover trackId={currentTrack?.id} />}
+                </div>
+
+                <div className="relative -mt-16 px-4 pb-4 space-y-4">
+                  <AnimatePresence mode="wait">
+                    <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                      {currentTrack?.album ? (
+                        <button
+                          onClick={() => navigateToTrackAlbum(nav, currentTrack)}
+                          title={`Go to album: ${currentTrack.album}`}
+                          className="text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]">
+                          {currentTrack?.title || 'Nothing playing'}
+                        </button>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-subtle"><Music size={52} /></div>
+                        <p className="text-lg font-semibold text-white leading-tight drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]">{currentTrack?.title || 'Nothing playing'}</p>
                       )}
-                    </AnimatePresence>
-                  </div>
+                      {currentTrack?.artist ? (
+                        <button
+                          onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
+                          title={`Go to artist: ${currentTrack.artist}`}
+                          className="text-sm text-white/70 mt-0.5 text-left hover:text-white hover:underline transition-colors truncate max-w-full block">
+                          {currentTrack.artist}
+                        </button>
+                      ) : (
+                        <p className="text-sm text-white/70 mt-0.5">{currentTrack?.artist}</p>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
 
                   {currentTrack && playbackContext?.name && (
                     <div className="min-w-0">
-                      <p className="text-[10px] font-display uppercase tracking-[0.22em] text-muted">
+                      <p className="text-[10px] font-display uppercase tracking-[0.22em] text-white/50">
                         {contextLabel(playbackContext)}
                       </p>
                       {canOpenContext ? (
                         <button
                           onClick={() => navigateToContext(nav, playbackContext, currentTrack?.id)}
                           title={`Go to ${playbackContext.name}`}
-                          className="mt-0.5 block max-w-full truncate text-xs text-accent hover:underline text-left">
+                          className="mt-0.5 block max-w-full truncate text-xs text-white/85 hover:text-white hover:underline text-left">
                           {playbackContext.name}
                         </button>
                       ) : (
@@ -211,44 +247,19 @@ export default function RightSidebar() {
                     </div>
                   )}
 
-                  <AnimatePresence mode="wait">
-                    <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                      {currentTrack?.album ? (
-                        <button
-                          onClick={() => navigateToTrackAlbum(nav, currentTrack)}
-                          title={`Go to album: ${currentTrack.album}`}
-                          className="font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
-                          {currentTrack?.title || 'Nothing playing'}
-                        </button>
-                      ) : (
-                        <p className="font-display text-white text-sm leading-tight">{currentTrack?.title || 'Nothing playing'}</p>
-                      )}
-                      {currentTrack?.artist ? (
-                        <button
-                          onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
-                          title={`Go to artist: ${currentTrack.artist}`}
-                          className="text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block">
-                          {currentTrack.artist}
-                        </button>
-                      ) : (
-                        <p className="text-xs text-muted mt-0.5">{currentTrack?.artist}</p>
-                      )}
-                    </motion.div>
-                  </AnimatePresence>
-
                   {currentTrack && (
                     <div className="flex gap-2">
-                      <button onClick={toggleFullscreen} className="flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
+                      <button onClick={toggleFullscreen} className="flex-1 py-2 bg-white/10 border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/15 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5 backdrop-blur-md">
                         <Disc3 size={11} /> Full Screen
                       </button>
-                      <button onClick={toggleLyricsFullscreen} className="flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
+                      <button onClick={toggleLyricsFullscreen} className="flex-1 py-2 bg-white/10 border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/15 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5 backdrop-blur-md">
                         <Mic2 size={11} /> Lyrics
                       </button>
                     </div>
                   )}
 
                   {currentTrack && (
-                    <div className="bg-card rounded-xl border border-border px-4 py-1">
+                    <div className="bg-black/20 rounded-xl border border-white/10 px-4 py-1 backdrop-blur-md">
                       <InfoRow label="Artist" value={currentTrack.artist} />
                       <InfoRow
                         label="Album"
@@ -265,6 +276,7 @@ export default function RightSidebar() {
                     </div>
                   )}
                 </div>
+              </div>
             </div>
 
             {/* Lyrics: slides up over the base view above, slides back down

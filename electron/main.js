@@ -16,6 +16,7 @@ const { registerMixesHandlers } = require('./ipc/mixes')
 const { registerPlayerHandlers } = require('./ipc/player')
 const { registerDownloaderHandlers, registerExtraDownloaderHandlers, registerPlaylistArchiveHandlers, markInterruptedPlaylistsIncomplete, shutdownActiveDownloads } = require('./ipc/downloader')
 const { registerLyricsHandlers } = require('./ipc/lyrics')
+const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
 const { registerUserHandlers } = require('./ipc/users')
 const { registerDiscordHandlers } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
@@ -355,6 +356,7 @@ app.whenReady().then(() => {
   }
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
+  try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
 
 
   ipcMain.on('relaunch-app', () => {
