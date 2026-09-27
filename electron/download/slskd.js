@@ -96,7 +96,9 @@ function splitRemote(filename) {
  * depth only for lossless audio, and ALAC runs far above any AAC bitrate.
  */
 function isAlac(file, ext = extOf(file.filename)) {
-  return (ext === 'm4a' || ext === 'mp4') && (!!file.bitDepth || (file.bitRate || 0) > 500)
+  if (ext === 'm4a') return !!file.bitDepth || (file.bitRate || 0) > 500
+  // .mp4 is usually video; only a reported bit depth says it's lossless audio.
+  return ext === 'mp4' && !!file.bitDepth
 }
 
 function isLossless(file, ext = extOf(file.filename)) {
