@@ -215,7 +215,11 @@ export default function Settings() {
     try {
       const saved = await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
       if (saved?.error) { setSpotifyCheck({ error: `Couldn't save the cookie: ${saved.error}` }); return }
-      const status = await api.spotifyCanvasCheck()
+      // Never leave the button on "Checking...": give up after a minute.
+      const status = await Promise.race([
+        api.spotifyCanvasCheck(),
+        new Promise(resolve => setTimeout(() => resolve({ error: 'No answer from Spotify after a minute. Try again, or check your connection.' }), 60000)),
+      ])
       setSpotifyCheck(status || { error: 'No answer' })
       window.dispatchEvent(new Event('lokal:settings-saved'))
     } catch (e) {

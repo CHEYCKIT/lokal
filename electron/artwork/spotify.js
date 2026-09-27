@@ -17,7 +17,14 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const CANVAS_UA = 'Spotify/9.0.34.593 iOS/18.4 (iPhone15,3)'
 const CANVAS_URL = 'https://spclient.wg.spotify.com/canvaz-cache/v0/canvases'
 const PARTITION = 'lokal-spotify-canvas' // no "persist:" -- nothing is written to disk
-const TOKEN_TIMEOUT = 25000
+const TOKEN_TIMEOUT = 25000   // waiting for the page's token requests
+const MINT_DEADLINE = 40000   // the whole sign-in step, whatever gets stuck
+
+/** `promise`, or `fallback` after `ms` -- for Electron calls that can stall. */
+function within(promise, ms, fallback) {
+  let timer
+  return Promise.race([promise, new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms) })]).finally(() => clearTimeout(timer))
+}
 
 class TransientError extends Error {
   constructor(message) { super(message); this.transient = true }
@@ -36,18 +43,49 @@ function cookieValue(raw) {
   return (m ? m[1] : s).trim()
 }
 
-async function mintTokens(cookie) {
+/**
+ * Runs mintTokensInner with a hard deadline: whichever step stalls (clearing
+ * storage, the page never finishing, no token request), the caller gets an
+ * error naming that step instead of waiting forever.
+ */
+function mintTokens(cookie) {
+  // Each step is logged (never the cookie or tokens) so a stall can be traced.
+  let stage = 'starting'
+  const state = {
+    win: null,
+    get stage() { return stage },
+    set stage(v) { stage = v; console.log(`[spotify-canvas] ${v}`) },
+  }
+  console.log('[spotify-canvas] starting')
+  let timer
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      try { state.win?.destroy() } catch {}
+      reject(new TransientError(`Spotify didn't answer in time (stuck ${state.stage}).`))
+    }, MINT_DEADLINE)
+  })
+  return Promise.race([mintTokensInner(cookie, state), deadline])
+    .then(t => { console.log('[spotify-canvas] signed in'); return t }, e => { console.log(`[spotify-canvas] failed: ${e.message}`); throw e })
+    .finally(() => clearTimeout(timer))
+}
+
+async function mintTokensInner(cookie, state) {
   const { BrowserWindow, session, app } = require('electron')
   if (!app.isReady()) await app.whenReady()
   const part = session.fromPartition(PARTITION)
-  // A clean session each time so the page mints a fresh token for this cookie.
-  await part.clearStorageData().catch(() => {})
+  // A clean session each time so the page mints a fresh token for this
+  // cookie. clearStorageData can stall in some Electron builds: don't wait
+  // on it for long -- the partition is in-memory anyway.
+  state.stage = 'clearing the old session'
+  await within(part.clearStorageData().catch(() => {}), 3000)
+  state.stage = 'setting the cookie'
   await part.cookies.set({
     url: 'https://open.spotify.com', domain: '.spotify.com', path: '/', name: 'sp_dc', value: cookie,
     secure: true, httpOnly: true, sameSite: 'no_restriction', expirationDate: Math.floor(Date.now() / 1000) + 3600,
   })
 
-  const win = new BrowserWindow({
+  state.stage = 'opening open.spotify.com'
+  const win = state.win = new BrowserWindow({
     show: false, width: 800, height: 600,
     webPreferences: { session: part, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, images: false },
   })
@@ -73,6 +111,7 @@ async function mintTokens(cookie) {
             const kind = watched.get(params.requestId)
             const { body, base64Encoded } = await dbg.sendCommand('Network.getResponseBody', { requestId: params.requestId })
             const json = JSON.parse(base64Encoded ? Buffer.from(body, 'base64').toString() : body)
+            console.log(`[spotify-canvas] got ${kind === 'token' ? `access token (anonymous: ${!!json?.isAnonymous})` : `client token (${json?.response_type || 'no type'})`}`)
             if (kind === 'token' && json?.accessToken) {
               if (json.isAnonymous) { clearTimeout(timer); reject(new Error('Spotify didn\'t accept the cookie (it may have expired). Copy a fresh sp_dc.')); return }
               found.token = json
@@ -83,7 +122,10 @@ async function mintTokens(cookie) {
         } catch {}
       })
     })
-    await win.loadURL('https://open.spotify.com/').catch(() => {})
+    // Not awaited: the web player may never report "finished loading" (it
+    // keeps connections open), and the token requests come in regardless.
+    state.stage = 'waiting for the web player to sign in'
+    win.loadURL('https://open.spotify.com/').catch(() => {})
     try {
       await done
     } catch (e) {
@@ -94,7 +136,7 @@ async function mintTokens(cookie) {
   } finally {
     try { dbg.detach() } catch {}
     try { win.destroy() } catch {}
-    part.clearStorageData().catch(() => {})
+    within(part.clearStorageData().catch(() => {}), 3000)
   }
 
   const t = found.token
