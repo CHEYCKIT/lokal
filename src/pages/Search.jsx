@@ -158,6 +158,13 @@ export default function Search() {
       const trackIndex = queue.findIndex(t => t.id === item.id)
       if (trackIndex >= 0) {
         playQueue(queue, trackIndex)
+        return
+      }
+
+      const matches = await api.getTracks({ id: item.id, limit: 1 })
+      const track = Array.isArray(matches) ? matches[0] : null
+      if (track) {
+        playTrack(track, [track])
       }
     } else if (item.type === 'album') {
       nav('/albums', { state: { album: item } })
