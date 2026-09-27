@@ -27,9 +27,11 @@ if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved
 
 /**
  * Renders only the clip layer; put it over the still <img>.
+ * @param only      'square' (album-style clips, for the cover spot) or 'tall'
+ *                  (9:16 canvases, for a full-panel background); both if unset
  * @param onActive  called with true while a clip is showing
  */
-export default function MotionCover({ trackId, className = '', onActive }) {
+export default function MotionCover({ trackId, className = '', onActive, only, style }) {
   const [clip, setClip] = useState(null)
   const [ready, setReady] = useState(false)
   const videoRef = useRef(null)
@@ -41,9 +43,14 @@ export default function MotionCover({ trackId, className = '', onActive }) {
     onActive?.(false)
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
     if (!trackId || reduced) return undefined
-    loadMotionCover(trackId).then(found => { if (!cancelled && found?.src) setClip(found) })
+    loadMotionCover(trackId).then(found => {
+      if (cancelled || !found?.src) return
+      if (only === 'square' && found.tall) return
+      if (only === 'tall' && !found.tall) return
+      setClip(found)
+    })
     return () => { cancelled = true }
-  }, [trackId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, only]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Don't spend the GPU on a clip nobody can see.
   useEffect(() => {
@@ -72,7 +79,7 @@ export default function MotionCover({ trackId, className = '', onActive }) {
       onPlaying={() => { if (!ready) { setReady(true); onActive?.(true) } }}
       onError={() => { setClip(null); onActive?.(false) }}
       className={`absolute inset-0 h-full w-full object-cover ${className}`}
-      style={{ opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
+      style={{ ...style, opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
       title={{ apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'}
     />
   )

@@ -362,6 +362,13 @@ export default function FullscreenPlayer() {
                 )}
               </AnimatePresence>
             )}
+            {/* A tall canvas fills the screen behind everything (the scrim below
+                keeps it readable); square clips play in the cover card. */}
+            {artSrc && (
+              <div className="absolute inset-0 opacity-70">
+                <MotionCover trackId={currentTrack?.id} only="tall" />
+              </div>
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
           </div>
 
@@ -401,7 +408,7 @@ export default function FullscreenPlayer() {
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
-                {artSrc && <MotionCover trackId={currentTrack?.id} />}
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
               </motion.div>
             </AnimatePresence>
 

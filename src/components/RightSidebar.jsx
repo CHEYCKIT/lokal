@@ -123,6 +123,9 @@ export default function RightSidebar() {
 
   // Colour background + full-bleed cover (default), or the classic dark panel.
   const fx = useArtworkBackdropEnabled()
+  // A tall (9:16) canvas plays behind the whole panel, Spotify style, rather
+  // than being cropped into the square cover.
+  const [canvasOn, setCanvasOn] = useState(false)
 
   const artSrc = currentTrack?.artwork_path
     ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
@@ -212,9 +215,17 @@ export default function RightSidebar() {
                   into colours taken from it; a moving cover plays over the
                   still one when there is one. */}
               {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? 300 : 0} />}
+              {artSrc && (
+                <>
+                  <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} />
+                  {/* Keeps the text readable over the video. */}
+                  <div className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                    style={{ opacity: canvasOn ? 1 : 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.8) 100%)' }} />
+                </>
+              )}
               <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'}`}>
                 <div
-                  className={fx ? 'relative w-full aspect-square overflow-hidden' : 'relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50'}
+                  className={`${fx ? 'relative w-full aspect-square overflow-hidden' : 'relative w-full aspect-square rounded-xl overflow-hidden bg-card border border-border/50'} transition-opacity duration-300 ${canvasOn ? 'opacity-0' : 'opacity-100'}`}
                   style={fx && artSrc ? { WebkitMaskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)', maskImage: 'linear-gradient(to bottom, black 55%, transparent 100%)' } : undefined}
                 >
                   <AnimatePresence mode="wait">
@@ -224,7 +235,7 @@ export default function RightSidebar() {
                       <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
                     )}
                   </AnimatePresence>
-                  {artSrc && <MotionCover trackId={currentTrack?.id} />}
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
                 </div>
 
                 <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>
