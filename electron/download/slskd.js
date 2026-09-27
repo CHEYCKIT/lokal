@@ -131,7 +131,7 @@ function flatten(responses = []) {
   for (const response of responses) {
     for (const file of response.files || []) {
       const ext = extOf(file.filename)
-      if (!AUDIO_EXT.has(ext)) continue
+      if (!AUDIO_EXT.has(ext) && !isAlac(file, ext)) continue
       const { name, folder, directory } = splitRemote(file.filename)
       out.push({
         key: `${response.username}\u0000${file.filename}`,

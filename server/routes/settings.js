@@ -97,12 +97,16 @@ router.get('/export-all', (req, res) => {
 
 router.post('/import-all', (req, res) => {
   try {
+    const settings = req.body?.settings
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return res.status(400).json({ error: 'Invalid settings payload' })
+    }
     // Web exports leave secrets out, and an import replaces every setting:
     // keep the ones this server already has unless the backup brings its own.
     const db = getDB()
     const kept = db.prepare('SELECT key, value FROM settings').all().filter(r => SECRET_KEYS.has(r.key))
     const result = importAppData(req.body)
-    const incoming = req.body?.settings || {}
+    const incoming = settings
     const restore = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     for (const row of kept) if (!(row.key in incoming) || incoming[row.key] === SECRET_PLACEHOLDER) restore.run(row.key, row.value)
     res.json(result)

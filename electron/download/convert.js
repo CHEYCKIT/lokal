@@ -75,14 +75,35 @@ async function makePlayable(filePath, { ffmpeg } = {}) {
   const ext = info.lossless ? '.flac' : '.m4a'
   let dest = filePath.replace(/\.[^./\\]+$/, '') + ext
   if (dest === filePath) dest = filePath.replace(/\.[^./\\]+$/, '') + '.converted' + ext
-  const temp = `${dest}.part${ext}`
+  let temp = null
+  let claimedDest = false
+  const claimDestination = (preferredPath) => {
+    let candidate = preferredPath
+    let suffix = 1
+    while (true) {
+      try {
+        const fd = fs.openSync(candidate, 'wx')
+        fs.closeSync(fd)
+        return candidate
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e
+        const ext = path.extname(preferredPath)
+        const stem = ext ? preferredPath.slice(0, -ext.length) : preferredPath
+        candidate = `${stem} (${suffix++})${ext}`
+      }
+    }
+  }
   try {
+    dest = claimDestination(dest)
+    claimedDest = true
+    temp = `${dest}.part${ext}`
     await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
     fs.renameSync(temp, dest)
     fs.unlinkSync(filePath)
     return dest
   } catch {
-    try { fs.unlinkSync(temp) } catch {}
+    if (temp) { try { fs.unlinkSync(temp) } catch {} }
+    if (claimedDest) { try { fs.unlinkSync(dest) } catch {} }
     return filePath
   }
 }
@@ -140,7 +161,7 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
     try {
       await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
       fs.renameSync(temp, dest)
-      trimCache(cacheDir)
+      trimCache(cacheDir, dest)
       return dest
     } catch {
       try { fs.unlinkSync(temp) } catch {}

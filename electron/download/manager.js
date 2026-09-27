@@ -763,7 +763,17 @@ class DownloadManager {
         const outputDir = job.opts.outputDir || job.settings?.music_folder || path.join(os.homedir(), 'Music')
         // Apple Lossless and other codecs the player can't decode: FLAC (or AAC) first.
         const playable = await makePlayable(filepath, { ffmpeg: this.deps.findTools?.()?.ffmpeg })
-        if (playable !== filepath) { job.outputLines.push(`[Lokal] Converted ${path.basename(filepath)} to ${path.extname(playable).slice(1).toUpperCase()} so it plays in Lokal`); filepath = playable; finalPath = playable }
+        if (playable !== filepath) {
+          job.outputLines.push(`[Lokal] Converted ${path.basename(filepath)} to ${path.extname(playable).slice(1).toUpperCase()} so it plays in Lokal`)
+          const fileIndex = job.filepaths.indexOf(filepath)
+          if (fileIndex >= 0) job.filepaths[fileIndex] = playable
+          if ((job.pendingIndex || []).includes(filepath)) {
+            job.pendingIndex = job.pendingIndex.map(fp => fp === filepath ? playable : fp)
+            this.persist(job)
+          }
+          filepath = playable
+          finalPath = playable
+        }
         const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir })
         finalPath = done.filePath
         const name = path.basename(finalPath)

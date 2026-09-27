@@ -1086,6 +1086,8 @@ export default function App() {
     const encodedPath = nextTrack.file_path.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')
     const encodedSrc = api.isElectron ? `file://${encodedPath}` : api.streamURL(nextTrack)
     
+    fadeInEl.dataset.fallbackFor = ''
+    fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
     fadeInEl.load()
 
@@ -1197,6 +1199,8 @@ export default function App() {
     const src = api.isElectron 
       ? `file://${currentTrack.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
       : api.streamURL(currentTrack);
+    audioRef.current.dataset.fallbackFor = ''
+    audioRef.current.dataset.fallbackSrc = ''
     audioRef.current.src = src
     beginLastfmPlayback(currentTrack)
     if (isPlaying) audioRef.current.play().catch(() => {})
