@@ -4,6 +4,7 @@ const os = require('os')
 const fs = require('fs-extra')
 const { getDB, getStorageDir } = require('./db')
 const { findYtDlp, findFfmpeg, findFfprobe } = require('./tools')
+const { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('./ytCookies')
 
 const downloadQueue = new Map()
 const activeYtDlpProcesses = new Map()
@@ -200,11 +201,8 @@ function getSettingsMap() {
   return Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value]))
 }
 
-function buildYtDlpBaseArgs(settings, ffmpeg) {
-  const args = []
-  if (settings.yt_cookies === '1') {
-    args.push('--cookies-from-browser', settings.yt_cookie_browser || 'firefox')
-  }
+function buildYtDlpBaseArgs(settings, ffmpeg, cookies = cookieArgs(settings)) {
+  const args = [...cookies.args]
   if (ffmpeg && (ffmpeg.includes('/') || ffmpeg.includes('\\'))) {
     args.push('--ffmpeg-location', path.dirname(ffmpeg))
   }
@@ -298,6 +296,7 @@ function fetchMediaTitle(ytdlp, url) {
 
 function getFriendlyDownloadError(outputLines, fallback) {
   const text = Array.isArray(outputLines) ? outputLines.join('\n') : String(outputLines || '')
+  if (isCookieError(text)) return COOKIE_FAILURE_MESSAGE
   if (/Requested format is not available/i.test(text)) {
     return 'yt-dlp could not fetch the requested format. Try updating or re-downloading yt-dlp in Settings and then retry.'
   }
@@ -533,6 +532,7 @@ async function runSingleDownload(window, url, opts = {}) {
   const outputTemplate = path.join(outputDir, '%(artist)s', '%(album)s', '%(title)s.%(ext)s')
   const videoId = getYouTubeId(url)
   const thumbnailUrl = opts.thumbnailUrl || (videoId ? getYouTubeThumbnail(videoId) : null)
+  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
 
   const args = [
     url,
@@ -547,7 +547,7 @@ async function runSingleDownload(window, url, opts = {}) {
     '--newline',
     '--progress',
     '--no-warnings',
-    ...buildYtDlpBaseArgs(settings, ffmpeg),
+    ...buildYtDlpBaseArgs(settings, ffmpeg, cookies),
   ]
 
   if (videoId) {
@@ -555,7 +555,7 @@ async function runSingleDownload(window, url, opts = {}) {
   }
 
   return new Promise((resolve) => {
-    const outputLines = []
+    const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
     const filepaths = []
     const downloadedTracks = []
     const indexedTracks = []
@@ -718,6 +718,13 @@ async function runSingleDownload(window, url, opts = {}) {
         return
       }
 
+      // Browser cookies unreadable (Chrome/Edge on Windows, DPAPI): retry once without them.
+      if (code !== null && cookies.usedBrowser && isCookieError(outputLines)) {
+        outputLines.push(markUnreadable(cookies.usedBrowser))
+        settle(await runSingleDownload(window, url, { ...opts, id: downloadId, withoutCookies: true, carryOutput: outputLines.slice(-50) }))
+        return
+      }
+
       const friendlyError = getFriendlyDownloadError(outputLines, code === null ? 'Download cancelled' : 'Download failed')
       setQueueEntry(downloadId, {
         status: 'error',
@@ -769,6 +776,7 @@ async function runPlaylistDownload(window, url, opts = {}) {
   const outputTemplate = path.join(outputDir, '%(playlist)s', '%(artist)s', '%(title)s.%(ext)s')
   const playlistDbId = opts.playlistId || getPlaylistId(url) || `pl-${Date.now()}`
   const archivePath = path.join(getStorageDir(), `archive-${playlistDbId}.txt`)
+  const cookies = cookieArgs(settings, { withoutCookies: opts.withoutCookies })
 
   db.prepare(`INSERT OR REPLACE INTO downloaded_playlists (id, url, title, archive_path, status, downloaded_count, last_downloaded_at) VALUES (?, ?, ?, ?, 'downloading', 0, ?)`)
     .run(playlistDbId, url, resolvedTitle, archivePath, Date.now())
@@ -789,11 +797,11 @@ async function runPlaylistDownload(window, url, opts = {}) {
     '--yes-playlist',
     '--ignore-errors',
     '--no-warnings',
-    ...buildYtDlpBaseArgs(settings, ffmpeg),
+    ...buildYtDlpBaseArgs(settings, ffmpeg, cookies),
   ]
 
   return new Promise((resolve) => {
-    const outputLines = []
+    const outputLines = [...(opts.carryOutput || []), ...cookies.notes]
     const errorLines = []
     const filepaths = []
     const indexedTracks = []
@@ -1047,6 +1055,13 @@ async function runPlaylistDownload(window, url, opts = {}) {
         })
         emitProgress(dlId, snapshotQueueEntry(downloadQueue.get(dlId)))
         settle({ success: true, count: downloadedTracks.length, indexedTracks: [...indexedTracks] })
+        return
+      }
+
+      // Browser cookies unreadable before anything downloaded: retry once without them.
+      if (code !== null && cookies.usedBrowser && !downloadedTracks.length && isCookieError(errorLines.length ? errorLines : outputLines)) {
+        outputLines.push(markUnreadable(cookies.usedBrowser))
+        settle(await runPlaylistDownload(window, url, { ...opts, id: dlId, title: resolvedTitle, playlistId: playlistDbId, withoutCookies: true, carryOutput: outputLines.slice(-50) }))
         return
       }
 

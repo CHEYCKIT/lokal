@@ -1204,10 +1204,38 @@ export default function Settings() {
                 <option value="edge">Edge</option>
                 <option value="brave">Brave</option>
                 <option value="opera">Opera</option>
+                <option value="file">cookies.txt file</option>
               </select>
             )}
           </div>
         </Row>
+        {settings.yt_cookies === '1' && settings.yt_cookie_browser === 'file' && (
+          <Row label="Cookies File" desc="A Netscape-format cookies.txt exported from a browser where you're signed in to YouTube (e.g. with a “Get cookies.txt” extension).">
+            <div className="flex items-center gap-2">
+              <input
+                value={settings.yt_cookie_file || ''}
+                onChange={e => set('yt_cookie_file', e.target.value)}
+                placeholder="Path to cookies.txt"
+                spellCheck={false}
+                className="w-56 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {typeof api.openFile === 'function' && (
+                <button
+                  onClick={async () => {
+                    const fp = await api.openFile([{ name: 'Cookies', extensions: ['txt'] }])
+                    if (typeof fp === 'string' && fp) set('yt_cookie_file', fp)
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white transition-colors">
+                  Browse
+                </button>
+              )}
+            </div>
+          </Row>
+        )}
+        {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
+          <p className="text-[11px] text-muted -mt-1 mb-2">
+            On Windows, Chrome-based browsers encrypt their cookies in a way yt-dlp can't read (“Failed to decrypt with DPAPI”). Lokal will download without cookies when that happens. Use Firefox or a cookies.txt file instead.
+          </p>
+        )}
         <Row label="Index While Downloading" desc="Index tracks as soon as they finish downloading. Makes them appear in the library faster.">
           <button
             onClick={() => set('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1')}
