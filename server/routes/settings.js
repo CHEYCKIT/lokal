@@ -4,6 +4,12 @@ const { scanFolder, DEFAULT_MUSIC_PATH } = require('../../electron/ipc/scanner')
 const fs = require('fs-extra')
 const path = require('path')
 
+// Secrets never leave the server: the web settings page gets a placeholder,
+// saving the placeholder back leaves the stored value alone, and web exports
+// leave them out.
+const SECRET_KEYS = new Set(['soulseek_api_key'])
+const SECRET_PLACEHOLDER = '••••••••'
+
 function toDataUrl(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null
   const ext = path.extname(filePath).toLowerCase()
@@ -28,7 +34,8 @@ function exportAppData() {
     version: 1,
     theme,
     theme_overrides: themeOverrides,
-    settings: Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value])),
+    // Secrets stay on the server: a web export is downloaded by a browser.
+    settings: Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().filter(row => !SECRET_KEYS.has(row.key)).map(row => [row.key, row.value])),
     users,
     user_settings: db.prepare('SELECT user_id, key, value FROM user_settings ORDER BY user_id, key').all(),
     playlists: db.prepare('SELECT * FROM playlists ORDER BY created_at DESC').all().map((playlist) => ({
@@ -45,10 +52,6 @@ function exportAppData() {
   }
 }
 
-// Secrets never leave the server: the web settings page gets a placeholder,
-// and saving the placeholder back leaves the stored value alone.
-const SECRET_KEYS = new Set(['soulseek_api_key'])
-const SECRET_PLACEHOLDER = '••••••••'
 
 router.get('/', (req, res) => {
   const rows = getDB().prepare('SELECT key, value FROM settings').all()
@@ -94,7 +97,15 @@ router.get('/export-all', (req, res) => {
 
 router.post('/import-all', (req, res) => {
   try {
-    res.json(importAppData(req.body))
+    // Web exports leave secrets out, and an import replaces every setting:
+    // keep the ones this server already has unless the backup brings its own.
+    const db = getDB()
+    const kept = db.prepare('SELECT key, value FROM settings').all().filter(r => SECRET_KEYS.has(r.key))
+    const result = importAppData(req.body)
+    const incoming = req.body?.settings || {}
+    const restore = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    for (const row of kept) if (!(row.key in incoming) || incoming[row.key] === SECRET_PLACEHOLDER) restore.run(row.key, row.value)
+    res.json(result)
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
