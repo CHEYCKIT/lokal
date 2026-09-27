@@ -39,6 +39,13 @@ export default function SoulseekSearch({ onQueued }) {
   const [losslessOnly, setLosslessOnly] = useState(false)
   const [error, setError] = useState('')
   const pollRef = useRef(null)
+  const finishing = useRef(false)
+  const showNow = () => {
+    if (!search?.id || search.complete || finishing.current) return
+    finishing.current = true
+    setSearch(s => ({ ...s, finishing: true }))
+    api.soulseekFinishSearch(search.id)
+  }
 
   useEffect(() => {
     api.soulseekStatus().then(setStatus).catch(e => setStatus({ error: e.message }))
@@ -53,12 +60,14 @@ export default function SoulseekSearch({ onQueued }) {
     setError('')
     const started = await api.soulseekSearch(text)
     if (started?.error || !started?.id) { setError(started?.error || 'slskd did not start the search.'); setSearch(null); return }
-    setSearch({ id: started.id, complete: false, results: [] })
+    finishing.current = false
+    setSearch({ id: started.id, complete: false, results: [], fileCount: 0, responseCount: 0 })
     const startedAt = Date.now()
     const poll = async () => {
       const r = await api.soulseekResults(started.id)
       // slskd ends a search 15 s after the last reply; never wait forever.
-      if (r && !r.error && !r.complete && Date.now() - startedAt > 60000) { r.complete = true; api.soulseekStopSearch(started.id) }
+      // (Ending it rather than deleting it: slskd then hands over its results.)
+      if (r && !r.error && !r.complete && Date.now() - startedAt > 60000 && !finishing.current) { finishing.current = true; api.soulseekFinishSearch(started.id) }
       if (r?.error) { setError(r.error); setSearch(s => (s?.id === started.id ? { ...s, complete: true } : s)); return }
       setSearch(s => (s?.id === started.id ? { ...s, ...r } : s))
       if (!r.complete) pollRef.current = setTimeout(poll, 1000)
@@ -121,7 +130,21 @@ export default function SoulseekSearch({ onQueued }) {
         <button onClick={() => setLosslessOnly(v => !v)} className={`rounded-full px-3 py-1 font-semibold transition-colors ${losslessOnly ? 'bg-accent/15 text-accent border border-accent/30' : 'border border-border hover:text-white'}`}>
           Lossless only
         </button>
-        {search && !search.complete && <span className="flex items-center gap-1.5"><RefreshCw size={12} className="animate-spin" /> Searching... {search.results?.length || 0} files so far</span>}
+        {search && !search.complete && (
+          <>
+            <span className="flex items-center gap-1.5">
+              <RefreshCw size={12} className="animate-spin" />
+              {search.finishing
+                ? 'Collecting results...'
+                : search.responseCount
+                  ? `Searching... ${Number(search.fileCount || 0).toLocaleString()} files from ${search.responseCount} users so far`
+                  : 'Searching...'}
+            </span>
+            {search.responseCount > 0 && !search.finishing && (
+              <button onClick={showNow} className="rounded-full border border-border px-3 py-1 font-semibold text-white/80 transition-colors hover:text-white">Show results now</button>
+            )}
+          </>
+        )}
         {search?.complete && <span>{search.results?.length || 0} audio files from {search.responseCount ?? '?'} users</span>}
       </div>
 

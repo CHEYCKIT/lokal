@@ -153,6 +153,7 @@ function registerDownloaderHandlers(ipcMain) {
   ipcMain.handle('soulseek:status', wrap(() => slskd.status(slskdSettings())))
   ipcMain.handle('soulseek:search', wrap((_, text) => slskd.startSearch(slskdSettings(), text)))
   ipcMain.handle('soulseek:results', wrap((_, id) => slskd.searchResults(slskdSettings(), id)))
+  ipcMain.handle('soulseek:finishSearch', wrap((_, id) => slskd.finishSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:stopSearch', wrap((_, id) => slskd.stopSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:download', (_, file = {}, opts = {}) => enqueueSoulseek(file, opts))
 }

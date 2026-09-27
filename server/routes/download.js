@@ -92,6 +92,7 @@ const soulseek = (fn) => async (req, res) => {
 router.get('/soulseek/status', soulseek(() => slskd.status(manager().settings())))
 router.post('/soulseek/search', soulseek(req => slskd.startSearch(manager().settings(), req.body?.text)))
 router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager().settings(), req.params.id)))
+router.put('/soulseek/search/:id', soulseek(req => slskd.finishSearch(manager().settings(), req.params.id)))
 router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
 router.post('/soulseek/download', (req, res) => {
   const { file = {}, ...opts } = req.body || {}

@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('electron', {
   soulseekSearch: (text) => invoke('soulseek:search', text),
   soulseekResults: (id) => invoke('soulseek:results', id),
   soulseekStopSearch: (id) => invoke('soulseek:stopSearch', id),
+  soulseekFinishSearch: (id) => invoke('soulseek:finishSearch', id),
   soulseekDownload: (file, opts) => invoke('soulseek:download', file, opts),
   onDownloadProgress: (fn) => on('downloader:progress', fn),
   getDownloadedPlaylists: () => invoke('downloader:getDownloadedPlaylists'),

@@ -183,6 +183,7 @@ export const api = {
   soulseekStatus: () => isE() ? el().soulseekStatus() : apiFetch('/download/soulseek/status'),
   soulseekSearch: (text) => isE() ? el().soulseekSearch(text) : apiFetch('/download/soulseek/search', { method:'POST', body:{ text } }),
   soulseekResults: (id) => isE() ? el().soulseekResults(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`),
+  soulseekFinishSearch: (id) => isE() ? el().soulseekFinishSearch(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`, { method:'PUT' }),
   soulseekStopSearch: (id) => isE() ? el().soulseekStopSearch(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`, { method:'DELETE' }),
   soulseekDownload: (file, opts = {}) => isE() ? el().soulseekDownload(file, opts) : apiFetch('/download/soulseek/download', { method:'POST', body:{ file, ...opts } }),
   updaterDownload: () => isE() ? el().updaterDownload() : Promise.resolve({ error: 'Electron only' }),

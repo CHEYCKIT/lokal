@@ -172,12 +172,25 @@ async function startSearch(settings, text) {
   return { id: search?.id, text: q }
 }
 
+/**
+ * slskd only stores a search's replies once the search is over; while it runs
+ * it keeps counts. So: counts while searching, the files at the end.
+ */
 async function searchResults(settings, id) {
-  const search = await request(settings, 'GET', `/searches/${encodeURIComponent(id)}?includeResponses=true`)
-  const complete = !!(search?.isComplete ?? /Completed/.test(String(search?.state || '')))
-  const results = flatten(search?.responses || [])
-  if (complete) request(settings, 'DELETE', `/searches/${encodeURIComponent(id)}`).catch(() => {})
-  return { id, complete, state: search?.state || null, responseCount: search?.responseCount ?? null, results: results.slice(0, 400) }
+  const route = `/searches/${encodeURIComponent(id)}`
+  const head = await request(settings, 'GET', route)
+  const complete = !!(head?.isComplete ?? /Completed/.test(String(head?.state || '')))
+  const counts = { responseCount: head?.responseCount ?? 0, fileCount: head?.fileCount ?? 0, lockedFileCount: head?.lockedFileCount ?? 0 }
+  if (!complete) return { id, complete: false, state: head?.state || null, ...counts, results: [] }
+  const full = await request(settings, 'GET', `${route}?includeResponses=true`)
+  const results = flatten(full?.responses || [])
+  request(settings, 'DELETE', route).catch(() => {})
+  return { id, complete: true, state: full?.state || head?.state || null, ...counts, results: results.slice(0, 400) }
+}
+
+/** Ends a running search now; slskd then hands over what it has. */
+function finishSearch(settings, id) {
+  return request(settings, 'PUT', `/searches/${encodeURIComponent(id)}`).catch(() => null)
 }
 
 function stopSearch(settings, id) {
@@ -263,6 +276,6 @@ function locateDownload(downloadsDir, filename, size, since = 0) {
 }
 
 module.exports = {
-  config, status, startSearch, searchResults, stopSearch, enqueue, findTransfer, cancelTransfer,
+  config, status, startSearch, searchResults, finishSearch, stopSearch, enqueue, findTransfer, cancelTransfer,
   describeState, locateDownload, splitRemote, flatten, cleanQuery, SlskdError, AUDIO_EXT, LOSSLESS_EXT,
 }
