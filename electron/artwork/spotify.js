@@ -295,7 +295,10 @@ function pickTrack(items, { title, artist, album }, { norm, cleanTitle, artistsM
   const wantTitle = norm(cleanTitle(title))
   // Spotify appends " - Remastered 2011" etc. to titles; compare without it.
   const bare = s => norm(String(s || '').replace(/\s+-\s+.*$/, ''))
-  const candidates = items.filter(it => (norm(it.name) === wantTitle || bare(it.name) === wantTitle) && artistsMatch(artist, it.artists))
+  const candidates = items
+    .filter(it => (norm(it.name) === wantTitle || bare(it.name) === wantTitle) && artistsMatch(artist, it.artists))
+    // The plain title before "- Sped Up", "- Remastered"... versions.
+    .sort((a, b) => (norm(a.name) === wantTitle ? 0 : 1) - (norm(b.name) === wantTitle ? 0 : 1))
   const wantAlbum = norm(album)
   const exact = wantAlbum ? candidates.find(it => norm(it.album) === wantAlbum) : null
   // Canvases belong to the track, and the single and the album cut usually
