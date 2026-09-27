@@ -10,7 +10,11 @@ router.get('/mesh/:trackId', async (req, res) => {
 })
 
 router.get('/motion/:trackId', async (req, res) => {
-  const found = await motionForTrack(req.params.trackId, null).catch(() => null)
+  // The app-managed ffmpeg (Apple's clips are HLS and need remuxing), not
+  // whatever happens to be on PATH.
+  let ffmpeg = null
+  try { ffmpeg = require('../../electron/ipc/tools').findFfmpeg() } catch {}
+  const found = await motionForTrack(req.params.trackId, ffmpeg).catch(() => null)
   if (!found?.file) return res.json(null)
   res.json({ source: found.source, tall: found.tall, src: `/api/artwork-fx/clip/${path.basename(found.file)}` })
 })

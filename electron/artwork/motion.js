@@ -268,12 +268,20 @@ async function chooseVariant(masterUrl, target = 768) {
   return (big[0] || variants.sort((a, b) => b.width * b.height - a.width * a.height)[0]).uri
 }
 
-async function download(url, dest) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.length < 1024) throw new Error('empty clip')
-  fs.writeFileSync(dest, buf)
+async function download(url, dest, timeoutMs = 60000) {
+  // The timer covers the body too, so a stalled transfer can't leave the
+  // clip's in-flight promise hanging forever.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: controller.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length < 1024) throw new Error('empty clip')
+    fs.writeFileSync(dest, buf)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function trimCache(dir, keep) {
