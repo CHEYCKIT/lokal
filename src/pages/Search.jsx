@@ -151,7 +151,7 @@ export default function Search() {
     setShowSearchDropdown(false)
   }
 
-  const handleRecentItemClick = (item) => {
+  const handleRecentItemClick = async (item) => {
     if (item.type === 'artist') {
       nav(`/artist/${item.id}`)
     } else if (item.type === 'track') {
