@@ -58,6 +58,24 @@ Search and download from YouTube via yt-dlp. Auto-indexes the track immediately 
 
 ---
 
+**Soulseek/slskd**
+
+<img width="1620" height="1265" alt="image" src="https://github.com/user-attachments/assets/6954fd9e-9f14-45fb-bc4f-c1475bc8300c" />
+
+Search and download from Soulseek via slskd where lossless FLAC files are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
+
+(*slskd not included on install*)
+
+---
+
+**Canvas Covers**
+
+<img width="525" height="1324" alt="image" src="https://github.com/user-attachments/assets/5ff9f978-a77f-4ef8-a821-46fdf679aa63" />
+
+Display track canvas from multiple sources: Apple Music, Tidal, Community lists or Spotify Canvas (requires personal cookie)
+
+---
+
 **Artist & Album Pages**
 
 ![artist page screenshot](https://i.imgur.com/Wab0iFI.png)
