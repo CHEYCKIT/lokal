@@ -89,19 +89,30 @@ function normalizeEqGains(input) {
 
 function NativeHistoryNavigation() {
   const navigate = useNavigate()
-  const lastNativeNavigationAtRef = useRef(0)
+  // { at, source, direction } of the last navigation actually performed.
+  const lastNativeNavigationAtRef = useRef({ at: 0, source: null, direction: 0 })
 
   useEffect(() => {
-    const navigateOnce = (direction) => {
-      lastNativeNavigationAtRef.current = performance.now()
+    // Some Windows mice surface ONE press as both an Electron app-command
+    // and a Chromium mouse-button event. Only that cross-source echo is a
+    // duplicate: a second event from the SAME source is a real second press
+    // (e.g. clicking Back twice quickly) and must go through.
+    const isCrossSourceDuplicate = (source, direction) => {
+      const last = lastNativeNavigationAtRef.current
+      return last.source !== null &&
+        last.source !== source &&
+        last.direction === direction &&
+        performance.now() - last.at < 250
+    }
+
+    const navigateOnce = (source, direction) => {
+      if (isCrossSourceDuplicate(source, direction)) return
+      lastNativeNavigationAtRef.current = { at: performance.now(), source, direction }
       navigate(direction)
     }
 
     const unsubscribeElectron = window.electron?.onNavigationHistory?.((direction) => {
-      // Some Windows mice surface as both an Electron app-command and a
-      // Chromium mouse-button event. Treat either as one navigation action.
-      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
-      navigateOnce(direction)
+      navigateOnce('electron', direction)
     })
 
     const handleMouseButton = (event) => {
@@ -113,8 +124,7 @@ function NativeHistoryNavigation() {
       event.stopPropagation()
 
       const direction = event.button === 3 ? -1 : 1
-      if (performance.now() - lastNativeNavigationAtRef.current < 250) return
-      navigateOnce(direction)
+      navigateOnce('mouse', direction)
     }
 
     window.addEventListener('mouseup', handleMouseButton, true)

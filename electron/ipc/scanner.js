@@ -1013,6 +1013,7 @@ function registerScannerHandlers(ipcMain) {
     where.push("file_path NOT LIKE 'ghost://%'")
     const limit = Math.max(1, Math.min(500, parseInt(opts.limit, 10) || 500))
     const offset = Math.max(0, parseInt(opts.offset, 10) || 0)
+    if (opts.id) { where.push('id = ?'); params.push(opts.id) }
     if (opts.artistName) { where.push('artist = ?'); params.push(opts.artistName) }
     if (opts.artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(opts.artistId) }
     if (where.length) sql += ' WHERE ' + where.join(' AND ')
