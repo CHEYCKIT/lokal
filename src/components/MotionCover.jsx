@@ -52,6 +52,14 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
     return () => { cancelled = true }
   }, [trackId, only]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Unmounting (e.g. the next track has no artwork, so the parent stops
+  // rendering this) must also clear the parent's "clip showing" state -- the
+  // track-change reset above never runs then. Latest callback via a ref, and
+  // an empty dependency list, so this fires on unmount only.
+  const onActiveRef = useRef(onActive)
+  onActiveRef.current = onActive
+  useEffect(() => () => { onActiveRef.current?.(false) }, [])
+
   // Don't spend the GPU on a clip nobody can see.
   useEffect(() => {
     const onVisibility = () => {
