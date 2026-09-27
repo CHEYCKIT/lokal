@@ -1440,6 +1440,10 @@ export default function App() {
 
   const renderUpdateToast = () => {
     if (updateState.status === 'idle') return null;
+    // A failed check with no update found (offline, GitHub hiccup...) is not
+    // an update: don't open the "Update Available" dialog for it. Errors while
+    // downloading a real update still show, since `info` is set then.
+    if (updateState.status === 'error' && !updateState.info?.version) return null;
 
     const isReady = updateState.status === 'ready';
     const isDownloading = updateState.status === 'downloading';
@@ -1463,7 +1467,7 @@ export default function App() {
                   {isReady ? 'Update Ready' : isDownloading ? 'Downloading...' : 'Update Available'}
                 </h4>
                 <p className="text-xs text-accent uppercase tracking-[0.2em] font-bold mt-1 opacity-80">
-                  Lokal v{updateState.info?.version || '1.3.0'}
+                  Lokal v{updateState.info?.version}
                 </p>
               </div>
             </div>
