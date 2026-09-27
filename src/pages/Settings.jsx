@@ -40,9 +40,12 @@ const TRANSLATION_LANGUAGES = [
   ['zh-CN', '中文（简体）'], ['zh-TW', '中文（繁體）'], ['sv', 'Svenska'], ['el', 'Ελληνικά'], ['he', 'עברית'], ['sw', 'Kiswahili'],
 ]
 
+// Each section (heading + card) keeps a readable width and sits centred in
+// the page, so on a wide or full-screen window the cards don't stretch edge
+// to edge. The page header and category tabs above still span the width.
 function Section({ title, children }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full max-w-2xl mx-auto">
       <h2 className="text-xs font-display text-muted uppercase tracking-widest">{title}</h2>
       <div className="bg-elevated border border-border rounded-xl p-5 space-y-5">{children}</div>
     </div>
