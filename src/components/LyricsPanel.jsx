@@ -658,7 +658,12 @@ export default function LyricsPanel({
   return (
     <div className="relative w-full h-full">
       {showToolbar && (
-        <div className="absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none">
+        <div
+          className={`absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none ${fullscreen ? '' : 'pb-6'}`}
+          // The sidebar keeps its soft shade behind the buttons; the fullscreen
+          // views already have their own header there, so they go without.
+          style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
+        >
           <div className="flex items-center gap-1.5 pointer-events-auto">
             <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
