@@ -1301,6 +1301,12 @@ export default function App() {
       setActiveAudioElement(nextSide)
       activeElementRef.current = nextSide
 
+      // The next track is the current one from here on: set the ref now, not
+      // when React re-renders, so the fading-in element's "play" (ListenBrainz
+      // now playing, scrobble ticks) already reads the new track.
+      prevTrackIdRef.current = currentTrackRef.current?.id || null
+      currentTrackRef.current = nextTrack
+
       const state = usePlayerStore.getState()
       const nextIdx = state.shuffle ? state.shuffleIndex + 1 : state.queueIndex + 1
       const nextHistory = [...(state.playHistory || []), nextTrack.id]

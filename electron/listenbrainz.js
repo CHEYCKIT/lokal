@@ -212,10 +212,8 @@ function flushQueue(db, token) {
 async function connect(db, token) {
   const result = await validateToken(token)
   if (!result.valid) return { error: result.error }
-  // Another account than before: its listens can't be sent any more (they
-  // are not this account's), so drop them rather than keep them forever.
-  const account = accountOf({ username: result.username })
-  try { ensureQueue(db); db.prepare('DELETE FROM listenbrainz_queue WHERE account <> ?').run(account) } catch {}
+  // Listens queued for other accounts stay (the queue is bounded): they are
+  // sent when their own account is connected again, never with this one.
   setSetting(db, 'listenbrainz_token', String(token).trim())
   setSetting(db, 'listenbrainz_username', result.username)
   setSetting(db, 'listenbrainz_enabled', '1')
