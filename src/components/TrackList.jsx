@@ -6,6 +6,7 @@ import { api } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
+import { trackArtURL, isPlayable, isStreamed, saveToLibrary } from '../onlineTracks'
 
 const RECENT_ITEMS_KEY = 'lokal-recent-items'
 const MAX_RECENT = 5
@@ -321,7 +322,18 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
   }
 
-  const isGhostTrack = (track) => String(track?.file_path || '').startsWith('ghost://')
+  // A ghost that can't be played (no file, no stream): opens the resolve dialog.
+  // Online songs are ghosts too, but they stream, so they play like any track.
+  const isGhostTrack = (track) => !isPlayable(track)
+
+  const [savingIds, setSavingIds] = useState(() => new Set())
+  /** Save a streamed song to the library (it replaces the ghost once downloaded). */
+  const handleSaveStreamed = async (track, e) => {
+    e.stopPropagation()
+    setSavingIds(prev => new Set(prev).add(track.id))
+    const result = await saveToLibrary(track).catch(err => ({ error: err.message }))
+    if (result?.error) setSavingIds(prev => { const next = new Set(prev); next.delete(track.id); return next })
+  }
 
   const handlePlay = (track, e) => {
     e.stopPropagation()
@@ -498,7 +510,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
   }
 
-  const artSrc = (t) => t.artwork_path ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id)) : null
+  const artSrc = (t) => trackArtURL(t)
 
   const handleSelectedAddToPlaylist = () => {
       const trackIds = Array.from(selectedIds)
@@ -626,6 +638,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         const liked = likedIds.has(track.id)
         const src = artSrc(track)
         const isGhost = isGhostTrack(track)
+        const streamed = isStreamed(track)
         const RowComponent = shouldAnimateRows ? motion.div : 'div'
         const motionProps = shouldAnimateRows ? {
           initial: { opacity: 0, y: 2 },
@@ -683,6 +696,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                   <p className={`text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
                   {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
+                  {streamed && <span title="Streamed from YouTube, not in your library yet" className="px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-[10px] uppercase tracking-wide text-accent flex-shrink-0">YouTube</span>}
                 </div>
                 <p className="text-xs text-muted truncate">{track.artist}</p>
               </div>
@@ -697,6 +711,13 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 <button onClick={e => handlePlayNext(track, e)}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                   <Clock size={14} />
+                </button>
+              )}
+              {streamed && (
+                <button onClick={e => handleSaveStreamed(track, e)} disabled={savingIds.has(track.id)}
+                  title={savingIds.has(track.id) ? 'Saving to your library…' : 'Save to library'}
+                  className={`transition-all ${savingIds.has(track.id) ? 'text-accent' : 'opacity-0 group-hover:opacity-100 text-muted hover:text-accent'}`}>
+                  <Download size={14} />
                 </button>
               )}
               {showAddToQueue && !isGhost && (

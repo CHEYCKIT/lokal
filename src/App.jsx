@@ -30,6 +30,7 @@ import Profile from './pages/Profile'
 import Recap from './pages/Recap'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import { audioSrcFor, streamVideoId } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -186,6 +187,16 @@ export default function App() {
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
     const code = el?.error?.code
+    // An online song that couldn't be streamed: ask why, and say so.
+    const failedTrack = usePlayerStore.getState().currentTrack
+    const failedVideo = streamVideoId(failedTrack)
+    if (failedVideo && el?.getAttribute('src') === api.onlineStreamURL(failedVideo)) {
+      const why = await Promise.resolve(api.onlinePrepare(failedVideo, true)).catch(() => null)
+      if (usePlayerStore.getState().currentTrack?.id === failedTrack.id) {
+        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song from YouTube." })
+      }
+      return
+    }
     if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
     const src = el.getAttribute('src') || ''
     if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
@@ -741,6 +752,8 @@ export default function App() {
         if (dataUrl) {
           artworkSrc = dataUrl
         }
+      } else if (currentTrack.artwork_url) {
+        artworkSrc = currentTrack.artwork_url
       }
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: currentTrack.title || '',
@@ -939,6 +952,22 @@ export default function App() {
     return playedSeconds >= Math.min(durationSeconds / 2, 240)
   }, [getLastfmTrackDuration])
 
+  // An online song that couldn't be streamed (shown as a small notice).
+  const [streamError, setStreamError] = useState(null)
+  useEffect(() => {
+    if (!streamError) return undefined
+    const t = setTimeout(() => setStreamError(null), 9000)
+    return () => clearTimeout(t)
+  }, [streamError])
+
+  /** Look up the next song's stream ahead of time, so it starts without the yt-dlp wait. */
+  const prepareNextStream = useCallback(() => {
+    const { queue, queueIndex } = usePlayerStore.getState()
+    const next = Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
+    const videoId = streamVideoId(next)
+    if (videoId) Promise.resolve(api.onlinePrepare(videoId)).catch(() => {})
+  }, [])
+
   const beginLastfmPlayback = useCallback((track) => {
     if (!track?.id) {
       lastfmPlaybackStartedAtRef.current = 0
@@ -1113,9 +1142,9 @@ export default function App() {
     const fadeOutGain = isPrimaryActive ? gainNodeRef.current : cfGainNodeRef.current
     const fadeInGain = isPrimaryActive ? cfGainNodeRef.current : gainNodeRef.current
 
-    const encodedPath = nextTrack.file_path.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')
-    const encodedSrc = api.isElectron ? `file://${encodedPath}` : api.streamURL(nextTrack)
-    
+    const encodedSrc = audioSrcFor(nextTrack)
+    if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
+
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
@@ -1219,16 +1248,17 @@ export default function App() {
 
     initAudioCtx()
 
-    if (String(currentTrack.file_path || '').startsWith('ghost://')) {
+    // A file, or an online song streamed from YouTube; other ghost tracks
+    // (imported entries with no file) can't be played.
+    const src = audioSrcFor(currentTrack)
+    if (!src) {
       audioRef.current.pause()
       audioRef.current.src = ''
       setIsPlaying(false)
       return
     }
-
-    const src = api.isElectron 
-      ? `file://${currentTrack.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
-      : api.streamURL(currentTrack);
+    setStreamError(null)
+    prepareNextStream()
     audioRef.current.dataset.fallbackFor = ''
     audioRef.current.dataset.fallbackSrc = ''
     audioRef.current.src = src
@@ -1705,6 +1735,20 @@ export default function App() {
             
             {renderYtDlpNotice()}
             {renderUpdateToast()}
+            <AnimatePresence>
+              {streamError && (
+                <motion.div
+                  role="status"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 12 }}
+                  className="fixed bottom-28 right-6 z-[60] max-w-sm rounded-xl border border-border bg-elevated px-4 py-3 shadow-2xl"
+                >
+                  <p className="text-sm font-medium text-text truncate">Couldn't stream "{streamError.title}"</p>
+                  <p className="text-xs text-muted mt-1">{streamError.message}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </>
         )}
 

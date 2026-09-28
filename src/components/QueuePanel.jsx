@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { X, Music, GripVertical, ListPlus, ListStart, FolderPlus } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
+import { trackArtURL } from '../onlineTracks'
 
 // The actual queue list, with no opinion about how it's framed -- used both
 // by the standalone panel below (independent mode) and embedded directly
@@ -26,9 +27,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const displayQueue = shuffle ? shuffleQueue : queue
   const displayIndex = shuffle ? shuffleIndex : queueIndex
 
-  const artSrc = (track) => track.artwork_path
-    ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id))
-    : null
+  const artSrc = (track) => trackArtURL(track)
 
   const handleDragStart = (e, index) => {
     if (shuffle) return

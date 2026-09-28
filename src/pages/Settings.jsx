@@ -1308,6 +1308,13 @@ export default function Settings() {
             {settings.separate_album_types !== '0' ? 'Yes' : 'No'}
           </button>
         </Row>
+        <Row label="Online Results in Search" desc="Also show songs from YouTube Music when searching. They stream with your yt-dlp and can be added to playlists or saved to your library.">
+          <button
+            onClick={() => set('online_search', settings.online_search === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.online_search !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.online_search !== '0' ? 'Yes' : 'No'}
+          </button>
+        </Row>
         <Row label="Use YouTube Cookies" desc="Pass cookies to yt-dlp to bypass rate limiting, access private playlists and liked music. Not shared elsewhere.">
           <div className="flex items-center gap-2">
             <button

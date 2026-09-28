@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import { useSearchStore } from '../store/search'
 import TrackList from '../components/TrackList'
+import OnlineResults from '../components/OnlineResults'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
 
@@ -154,7 +155,8 @@ export default function Search() {
     playTrack(track, [track])
   }
 
-  const showSearchResults = isSearchStarted && query && (tracks.length > 0 || artists.length > 0 || albums.length > 0 || lyricMatches.length > 0 || searching)
+  // With a query, the results page: library matches, then online songs.
+  const showSearchResults = isSearchStarted
 
   return (
     <div className="p-6 space-y-6 pb-10">
@@ -311,11 +313,13 @@ export default function Search() {
           )}
 
           {query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
-            <div className="text-center py-16 text-muted">
-              <Music size={36} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">No results for "{query}"</p>
+            <div className="flex items-center gap-3 py-3 text-muted">
+              <Music size={18} className="opacity-40" />
+              <p className="text-sm">Nothing in your library for "{query}"</p>
             </div>
           )}
+
+          <OnlineResults query={query} />
         </>
       )}
     </div>

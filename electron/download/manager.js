@@ -823,6 +823,15 @@ class DownloadManager {
             if (thumb) this.update(job, { thumbnail: thumb }, { persist: true })
           } catch {}
         }
+        // A streamed song saved to the library: the file takes the ghost
+        // track's place in playlists, likes and history.
+        if (job.opts?.replaceTrackId && job.kind === 'single') {
+          try {
+            const { resolveGhostTrack } = require('../../server/routes/playlists')
+            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id)
+            if (swapped?.ok) job.outputLines.push(`[Lokal] Replaced the streamed version (${job.opts.replaceTrackId}) with this file`)
+          } catch {}
+        }
         try { this.deps.onLibraryUpdated?.(result) } catch {}
       }
     } catch {}

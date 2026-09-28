@@ -4,6 +4,7 @@ import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from '
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
 import Waveform from './Waveform'
+import { trackArtURL } from '../onlineTracks'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -199,9 +200,7 @@ export default function MiniPlayer({ windowed = false }) {
     return () => clearInterval(id)
   }, [])
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackArtURL(currentTrack)
 
   const handleScrub = (e) => {
     if (!duration) return

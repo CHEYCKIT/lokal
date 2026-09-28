@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('electron', {
 
   
   downloadYT: (url, opts) => invoke('downloader:download', url, opts),
+  onlineSearch: (query) => invoke('online:search', query),
+  onlineSave: (items) => invoke('online:save', items),
+  onlinePrepare: (videoId, force) => invoke('online:prepare', videoId, force),
   downloadPlaylist: (url, opts) => invoke('downloader:downloadPlaylist', url, opts),
   searchYT: (q, page) => invoke('downloader:search', q, page),
   searchYTArtist: (q, page) => invoke('downloader:searchArtist', q, page),

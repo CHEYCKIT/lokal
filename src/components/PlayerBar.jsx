@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Download } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
@@ -8,6 +8,7 @@ import { navigateToTrackAlbum } from '../playbackContext'
 import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
 import Modal from './Modal'
+import { trackArtURL, isStreamed, saveToLibrary } from '../onlineTracks'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -96,9 +97,18 @@ export default function PlayerBar() {
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }
   }
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackArtURL(currentTrack)
+
+  // An online song streamed from YouTube: badge, and a button to save it.
+  const streamed = isStreamed(currentTrack)
+  const [savingId, setSavingId] = useState(null)
+  /** Save the streamed song with the downloader; it replaces the stream once it's in. */
+  const saveStreamed = async () => {
+    const track = currentTrack
+    setSavingId(track.id)
+    const result = await saveToLibrary(track).catch(e => ({ error: e.message }))
+    if (result?.error) setSavingId(null)
+  }
 
   const handleArtistClick = () => {
     if (!currentTrack) return
@@ -150,10 +160,17 @@ export default function PlayerBar() {
                 )}
               </div>
               {currentTrack ? (
-                <button onClick={handleArtistClick}
-                  className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
-                  {currentTrack.artist}
-                </button>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {streamed && (
+                    <span title="Streaming from YouTube, not in your library" className="flex-shrink-0 text-[9px] font-display uppercase tracking-wider text-accent">
+                      YouTube ·
+                    </span>
+                  )}
+                  <button onClick={handleArtistClick}
+                    className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
+                    {currentTrack.artist}
+                  </button>
+                </div>
               ) : <p className="text-xs text-muted">No track playing</p>}
             </motion.div>
           </AnimatePresence>
@@ -180,6 +197,14 @@ export default function PlayerBar() {
           <button onClick={() => openAddToPlaylist(currentTrack)} title="Add to playlist"
             className="flex-shrink-0 text-subtle hover:text-accent transition-colors">
             <Plus size={14} />
+          </button>
+        )}
+        {streamed && (
+          <button onClick={saveStreamed} disabled={savingId === currentTrack.id}
+            title={savingId === currentTrack.id ? 'Saving to your library…' : 'Save to library'}
+            aria-label="Save to library"
+            className={`flex-shrink-0 transition-colors ${savingId === currentTrack.id ? 'text-accent' : 'text-subtle hover:text-accent'}`}>
+            <Download size={14} />
           </button>
         )}
         </div>

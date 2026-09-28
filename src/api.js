@@ -167,6 +167,11 @@ export const api = {
   searchYTPaginated: (q, page = 1) => isE() ? el().searchYT(q, page) : apiFetch(`/download/search?q=${encodeURIComponent(q)}&page=${page}`),
   searchYTArtist: (artist, page = 1) => isE() ? el().searchYTArtist(artist, page) : apiFetch(`/download/artist-search?q=${encodeURIComponent(artist)}&page=${page}`),
   downloadYT: (url, o) => isE() ? el().downloadYT(url, o) : apiFetch('/download', { method:'POST', body:{url,...o} }),
+  // Online results (YouTube Music), streamed with the user's yt-dlp.
+  onlineSearch: (q) => isE() ? el().onlineSearch(q) : apiFetch(`/online/search?q=${encodeURIComponent(q)}`),
+  onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
+  onlinePrepare: (videoId, force = false) => isE() ? el().onlinePrepare(videoId, force) : apiFetch(`/online/prepare/${encodeURIComponent(videoId)}${force ? '?force=1' : ''}`, { method:'POST' }),
+  onlineStreamURL: (videoId) => isE() ? `lokal-stream://yt/${videoId}` : `${BASE}/online/stream/${encodeURIComponent(videoId)}`,
   downloadPlaylist: (url, o) => isE() ? el().downloadPlaylist(url, o) : apiFetch('/download/playlist', { method:'POST', body:{url,...o} }),
   getDownloadedPlaylists: () => isE() ? el().getDownloadedPlaylists() : apiFetch('/download/playlists'),
   redownloadPlaylist: (id) => isE() ? el().redownloadPlaylist(id) : apiFetch('/download/playlist/redownload', { method:'POST', body:{playlistId:id} }),
