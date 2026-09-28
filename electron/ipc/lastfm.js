@@ -195,7 +195,13 @@ function registerLastFmHandlers(ipcMain) {
   })
   
   
-  ipcMain.handle('lastfm:connect', async (_, apiKey, apiSecret, token) => {
+  ipcMain.handle('lastfm:connect', async (_, apiKey, maskedOrSecret, token) => {
+  // Settings shows the saved secret masked: the mask means "the saved one".
+  let apiSecret = maskedOrSecret
+  if (apiSecret === '••••••••') {
+    apiSecret = getDB().prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value || ''
+    if (!apiSecret) return { error: 'Enter your Last.fm API secret again' }
+  }
   if (!apiKey || !apiSecret) {
     return { error: 'API key and secret required' }
   }
