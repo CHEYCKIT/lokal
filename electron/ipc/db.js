@@ -290,6 +290,16 @@ function initDB() {
   for (const m of quickMigrations) { try { db.exec(m) } catch {} }
   // Audio quality and ISRC columns (electron/quality).
   try { require('../quality').ensureColumns(db) } catch (e) { console.warn('quality columns:', e.message) }
+  // "Paste my cookie" became the default cookie source. Whoever turned
+  // cookies on before without picking a source was using Firefox: keep that.
+  // Once only (marked done), so a later "on" with the new default isn't touched.
+  try {
+    if (!db.prepare("SELECT 1 FROM settings WHERE key = 'yt_cookie_default_v2'").get()) {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value)
+        SELECT 'yt_cookie_browser', 'firefox' WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'yt_cookies' AND value = '1')`).run()
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('yt_cookie_default_v2', '1')").run()
+    }
+  } catch {}
   
   
   try {

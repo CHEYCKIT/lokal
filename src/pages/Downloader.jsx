@@ -1,13 +1,23 @@
 import React, { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock } from 'lucide-react'
+import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock, Cookie, X } from 'lucide-react'
 import { api } from '../api'
 import { useDownloads, startDownloadSync, isActive } from '../store/downloads'
 import { DownloadList } from '../components/DownloadManager'
 import SoulseekSearch from '../components/SoulseekSearch'
 
 const DISCLAIMER_KEY = 'lokal-dl-accepted'
+const COOKIE_HINT_KEY = 'lokal-yt-cookie-hint-dismissed'
+
+/** Is a YouTube cookie set up (turned on, and the chosen source filled in)? */
+function youTubeCookieReady(settings) {
+  if (settings?.yt_cookies !== '1') return false
+  const source = settings.yt_cookie_browser || 'paste'
+  if (source === 'paste') return !!settings.yt_cookie_header
+  if (source === 'file') return !!settings.yt_cookie_file
+  return true
+}
 
 function fmt(seconds) {
   if (!seconds) return ''
@@ -87,7 +97,18 @@ export default function Downloader() {
   // the Soulseek tab with the song searched, and let the file picked there
   // replace the stream / the track's file.
   const location = useLocation()
+  const nav = useNavigate()
   const soulseekFor = location.state?.soulseek || null
+  // YouTube downloads without the user's cookie often fail ("confirm you're
+  // not a bot"): say so until one is set up (or the hint is dismissed).
+  const [cookieReady, setCookieReady] = useState(true)
+  const [cookieHintDismissed, setCookieHintDismissed] = useState(() => { try { return localStorage.getItem(COOKIE_HINT_KEY) === '1' } catch { return false } })
+  useEffect(() => {
+    const check = () => Promise.resolve(api.getSettings()).then(s => setCookieReady(youTubeCookieReady(s))).catch(() => {})
+    check()
+    window.addEventListener('lokal:settings-saved', check)
+    return () => window.removeEventListener('lokal:settings-saved', check)
+  }, [])
   const [tab, setTab] = useState(soulseekFor ? 'soulseek' : 'search')
   useEffect(() => { if (soulseekFor) setTab('soulseek') }, [soulseekFor])
   const [downloadedPlaylists, setDownloadedPlaylists] = useState([])
@@ -330,6 +351,18 @@ export default function Downloader() {
           </div>
           <p className="mt-3 text-xs text-muted">{FORMATS.find(f => f.id === format)?.hint}</p>
         </section>
+      )}
+
+      {!cookieReady && !cookieHintDismissed && ['search', 'artist', 'playlist'].includes(tab) && (
+        <div className="flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3">
+          <Cookie size={16} className="mt-0.5 flex-shrink-0 text-yellow-300" />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="text-yellow-100">Set up your YouTube cookie first</p>
+            <p className="mt-0.5 text-xs text-muted">Without it, YouTube often refuses downloads ("confirm you're not a bot"). It takes a minute: Settings → Library → Use YouTube Cookies, then paste your cookie.</p>
+          </div>
+          <button onClick={() => nav('/settings')} className="flex-shrink-0 rounded-xl bg-yellow-500/20 px-3 py-1.5 text-xs font-semibold text-yellow-100 hover:bg-yellow-500/30">Set up</button>
+          <button onClick={() => { setCookieHintDismissed(true); try { localStorage.setItem(COOKIE_HINT_KEY, '1') } catch {} }} title="Don't show again" className="flex-shrink-0 p-1 text-muted hover:text-white"><X size={14} /></button>
+        </div>
       )}
 
       {queueError && (

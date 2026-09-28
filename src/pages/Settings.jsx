@@ -1332,16 +1332,16 @@ export default function Settings() {
             </button>
             {settings.yt_cookies === '1' && (
               <select
-                value={settings.yt_cookie_browser || 'firefox'}
+                value={settings.yt_cookie_browser || 'paste'}
                 onChange={e => set('yt_cookie_browser', e.target.value)}
                 className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                <option value="paste">Paste my cookie (recommended)</option>
                 <option value="firefox">Firefox</option>
                 <option value="chrome">Chrome</option>
                 <option value="edge">Edge</option>
                 <option value="brave">Brave</option>
                 <option value="opera">Opera</option>
                 <option value="file">cookies.txt file</option>
-                <option value="paste">Paste my cookie</option>
               </select>
             )}
           </div>
@@ -1368,7 +1368,7 @@ export default function Settings() {
             </div>
           </Row>
         )}
-        {settings.yt_cookies === '1' && settings.yt_cookie_browser === 'paste' && (
+        {settings.yt_cookies === '1' && (settings.yt_cookie_browser || 'paste') === 'paste' && (
           <Row label="YouTube Cookie" desc={"Like the Spotify cookie: paste your own YouTube session, and yt-dlp uses it for downloads and streaming. With a YouTube Premium account, streaming at Best quality gets Premium's 256 kbps AAC.\n\nTo get it:\n1. Install the \"Get cookies.txt LOCALLY\" browser extension (Chrome, Edge or Firefox).\n2. Open music.youtube.com, signed in.\n3. Click the extension, then Copy, and paste it here. (Or Export, and pick \"cookies.txt file\" as the source above.)\nOnly the YouTube cookies are kept.\n\nTip: YouTube renews the cookies of a tab you keep open. Copy them from a private window (allow the extension there in its settings) and close it without signing out: they then last for months.\n\n"+(api.isElectron
             ? "It stays on this computer (a private cookies.txt in Lokal's data folder, deleted when you clear it) and is only given to yt-dlp for YouTube links. It's your real account."
             : "In the web app it is sent to the Lokal server and stored there (in its settings and a private cookies.txt in its data folder, deleted when you clear it), and only given to yt-dlp for YouTube links. Only paste it into a Lokal server you run or trust. It's your real account.")}>

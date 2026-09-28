@@ -50,7 +50,7 @@ function friendlyError(lines, fallback) {
   if (/HTTP Error 403|Requested format is not available|nsig extraction failed|Signature extraction failed|n challenge solving failed/i.test(text)) {
     return 'YouTube refused the download (it blocks older yt-dlp versions). Update yt-dlp in Settings → External Tools, then retry.'
   }
-  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Turn on YouTube cookies (Firefox or a cookies.txt file) in Settings → Library.'
+  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Set your YouTube cookie in Settings → Library → Use YouTube Cookies.'
   if (/Sign in to confirm your age/i.test(text)) return 'This video is age-restricted. Turn on YouTube cookies in Settings → Library to download it.'
   if (/Private video/i.test(text)) return 'This video is private.'
   if (/Video unavailable|has been removed/i.test(text)) return 'This video is unavailable.'
