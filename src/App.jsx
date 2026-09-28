@@ -205,7 +205,7 @@ export default function App() {
         // The element that failed is the one playing (not a crossfade's
         // incoming one): nothing is playing any more, so say so and stop
         // counting playback time.
-        const activeEl = activeElementRef.current === 'cf' ? cfAudioRef.current : audioRef.current
+        const activeEl = usePlayerStore.getState().activeAudioElement === 'cf' ? cfAudioRef.current : audioRef.current
         if (el === activeEl) {
           clearInterval(playTimerRef.current)
           playTimerRef.current = null

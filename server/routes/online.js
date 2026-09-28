@@ -87,8 +87,11 @@ const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept
 
 router.get('/stream/:provider/:id', async (req, res) => {
   let upstream
+  // The player went away (skipped to another song): stop an addon's fetch too.
+  const gone = new AbortController()
+  req.on('close', () => { if (!res.writableEnded) gone.abort() })
   try {
-    const { res: r, mime } = await sources.fetchStream(req.params.provider, req.params.id, { ...streamOptions(), range: req.headers.range })
+    const { res: r, mime } = await sources.fetchStream(req.params.provider, req.params.id, { ...streamOptions(), range: req.headers.range, signal: gone.signal })
     upstream = r
     res.status(r.status)
     for (const name of PASS_HEADERS) { const v = r.headers.get(name); if (v) res.setHeader(name, v) }

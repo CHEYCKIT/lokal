@@ -31,6 +31,8 @@ function manager() {
     getDB,
     getStorageDir,
     findTools: () => ({ ytdlp: findBinary('yt-dlp'), ffmpeg: null, ffprobe: null }),
+    // A fresh link for an addon download, right before it starts.
+    resolveAddonUrl: async (provider, id) => (await require('../../electron/online/sources').resolveStream(provider, id, { db: getDB(), force: true })).url,
     requireFfmpeg: false,
     index: async (filepath, opts) => {
       const { indexSingleFile } = require('../../electron/ipc/scanner')
@@ -72,9 +74,16 @@ router.get('/artist-search', async (req, res) => {
 // Only what a browser needs to say. Anything that decides where files go
 // (outputDir) or which archive file is used stays server-side (CWE-22).
 const PLAYLIST_ID = /^[\w.-]{1,120}$/
+/** An addon track to download ({ provider: 'a-<key>', id }), checked, or undefined. */
+function addonSourceOf(value) {
+  if (!value || typeof value !== 'object') return undefined
+  const provider = String(value.provider || '')
+  const id = typeof value.id === 'string' ? value.id : ''
+  return /^a-[0-9a-f]{10}$/.test(provider) && id && id.length <= 300 && !/[\r\n]/.test(id) ? { provider, id } : undefined
+}
 function enqueue(kind) {
   return (req, res) => {
-    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId } = req.body || {}
+    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, addonSource } = req.body || {}
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
     if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
       return res.status(400).json({ error: 'Invalid playlistId' })
@@ -83,6 +92,8 @@ function enqueue(kind) {
     const opts = { format: text(format, 12), quality: text(String(quality ?? ''), 4) || undefined, title: text(title), thumbnail: text(thumbnail, 1000), from: text(from, 120), playlistId: playlistId ?? undefined }
     // The ghost track (a streamed song) this download replaces once it's in the library.
     if (kind === 'single' && typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId)) opts.replaceTrackId = replaceTrackId
+    // An addon track: a fresh link is asked for each time the job starts.
+    if (kind === 'single' && addonSourceOf(addonSource)) opts.addonSource = addonSourceOf(addonSource)
     const result = manager().enqueue(kind, url, opts)
     res.status(result.error ? 500 : 200).json(result)
   }

@@ -98,7 +98,7 @@ function registerStreamProtocol(protocol, net) {
       id = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
     } catch {}
     try {
-      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), fetchImpl: (u, init) => net.fetch(u, init) })
+      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: request.signal, fetchImpl: (u, init) => net.fetch(u, init) })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)

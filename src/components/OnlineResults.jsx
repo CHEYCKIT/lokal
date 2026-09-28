@@ -35,9 +35,15 @@ function storedProvider() {
 function useProviders() {
   const [providers, setProviders] = useState(BUILT_IN)
   useEffect(() => {
-    const load = () => Promise.resolve(api.onlineProviders?.())
-      .then(list => { if (Array.isArray(list) && list.length) setProviders(list) })
-      .catch(() => {})
+    // Only the latest answer counts: an older one arriving late would bring
+    // back an addon removed or turned off since.
+    let latest = 0
+    const load = () => {
+      const seq = ++latest
+      return Promise.resolve(api.onlineProviders?.())
+        .then(list => { if (seq === latest && Array.isArray(list) && list.length) setProviders(list) })
+        .catch(() => {})
+    }
     load()
     window.addEventListener('lokal:addons-changed', load)
     return () => window.removeEventListener('lokal:addons-changed', load)

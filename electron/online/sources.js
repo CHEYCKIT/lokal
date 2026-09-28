@@ -71,11 +71,37 @@ function resolveStream(provider, id, opts = {}) {
   return provider === 'sc' ? sc.resolveStream(id, opts) : yt.resolveStream(id, opts)
 }
 
+// How long an addon's media server may take to start answering (per
+// attempt; resolving the stream has its own timeout in addons.js).
+const ADDON_MEDIA_TIMEOUT_MS = 20000
+
+/** Fetch an addon's media: checked redirects, a timeout, and cancelled with `signal`. */
+async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  // The player went away (skipped, closed): stop fetching, body included.
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener?.('abort', cancel, { once: true })
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; controller.abort() }, ADDON_MEDIA_TIMEOUT_MS)
+  try {
+    return await addons.fetchChecked(url, { fetchImpl, headers, signal: controller.signal })
+  } catch (e) {
+    signal?.removeEventListener?.('abort', cancel)
+    if (timedOut) throw new Error("The addon's audio server took too long to answer.")
+    throw e
+  } finally {
+    // Only the wait for the answer is timed: the song itself streams as long as it lasts.
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Fetch (a range of) the audio of an item. A refused URL (expired, or tied to
- * another address) is looked up again once.
+ * another address) is looked up again once. `signal`: aborts an addon's media
+ * request when the one who asked for it goes away.
  */
-async function fetchStream(provider, id, { range, fetchImpl = fetch, ...opts } = {}) {
+async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
   const attempt = async (force) => {
     const stream = await resolveStream(provider, id, { ...opts, force })
     const headers = { ...stream.headers }
@@ -83,7 +109,7 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, ...opts } =
     // An addon's media URL is the addon's to choose: follow its redirects one
     // at a time, each checked like the addon's own URLs (https, or http on
     // this machine / network only). Built-in providers fetch directly.
-    if (addons.keyOfProvider(provider)) return { stream, res: await addons.fetchChecked(stream.url, { fetchImpl, headers }) }
+    if (addons.keyOfProvider(provider)) return { stream, res: await fetchAddonMedia(stream.url, { fetchImpl, headers, signal }) }
     return { stream, res: await fetchImpl(stream.url, { headers }) }
   }
   let { stream, res } = await attempt(false)

@@ -105,5 +105,8 @@ export async function saveToLibrary(track) {
     thumbnail: track.artwork_url || undefined,
     from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
+    // An addon's link expires: the downloader asks the addon for a fresh one
+    // each time the job starts (queued, restarted or retried).
+    addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,
   })
 }
