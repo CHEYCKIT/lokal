@@ -39,12 +39,32 @@ export function useArtworkBackdropEnabled() {
   return on
 }
 
+// Bumped every time a track is edited. A lookup remembers the generation it
+// started in and only caches its answer if that's still current, so a lookup
+// that was already running when the track changed (and finishes late) can't
+// put the old colours back or overwrite the refreshed ones.
+const meshGeneration = new Map() // trackId -> number
+
+// A track's artwork was changed: forget its colours so they're worked out again.
+if (typeof window !== 'undefined') {
+  window.addEventListener('lokal:track-updated', (e) => {
+    for (const id of e.detail?.ids || []) {
+      meshGeneration.set(id, (meshGeneration.get(id) || 0) + 1)
+      meshCache.delete(id)
+    }
+  })
+}
+
 export function loadMesh(trackId) {
   if (!trackId) return Promise.resolve(null)
   if (meshCache.has(trackId)) return Promise.resolve(meshCache.get(trackId))
+  const generation = meshGeneration.get(trackId) || 0
   return Promise.resolve(api.artworkMesh?.(trackId))
     .then(grid => {
       const value = Array.isArray(grid) && grid.length ? grid : null
+      // Stale: the track changed while this was running. Don't cache it (the
+      // component asking for it has moved on to a newer lookup anyway).
+      if ((meshGeneration.get(trackId) || 0) !== generation) return value
       if (meshCache.size > 100) meshCache.delete(meshCache.keys().next().value)
       meshCache.set(trackId, value)
       return value
@@ -132,7 +152,15 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
   // Two slots so the old song fades out while the new one fades in.
   const [slots, setSlots] = useState([{ id: null, grid: null }, { id: null, grid: null }])
   const [front, setFront] = useState(0)
+  const [revision, setRevision] = useState(0)
   const reqRef = useRef(0)
+
+  // The track on screen was edited (new cover...): recolour.
+  useEffect(() => {
+    const onUpdated = (e) => { if ((e.detail?.ids || []).includes(trackId)) setRevision(r => r + 1) }
+    window.addEventListener('lokal:track-updated', onUpdated)
+    return () => window.removeEventListener('lokal:track-updated', onUpdated)
+  }, [trackId])
 
   useEffect(() => {
     const req = ++reqRef.current
@@ -146,7 +174,7 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
       })
       if (!grid) setSlots([{ id: null, grid: null }, { id: null, grid: null }])
     })
-  }, [trackId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`absolute inset-0 overflow-hidden ${className}`} style={{ backgroundColor: '#121212' }} aria-hidden>

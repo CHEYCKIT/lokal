@@ -129,6 +129,14 @@ function shuffleArray(array) {
 
 const savedQueueState = loadQueue()
 
+// A track's details changed (edited, new artwork...): let anything that
+// remembers per-track lookups (moving covers, cover colours) look again.
+function announceTrackUpdates(tracks) {
+  const ids = (Array.isArray(tracks) ? tracks : []).map(t => t?.id).filter(Boolean)
+  if (!ids.length || typeof window === 'undefined') return
+  try { window.dispatchEvent(new CustomEvent('lokal:track-updated', { detail: { ids } })) } catch {}
+}
+
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
   playbackContext: null,
@@ -814,7 +822,7 @@ export const usePlayerStore = create((set, get) => ({
     return { likedIds: next }
   }),
   initLiked: (ids) => set({ likedIds: new Set(ids) }),
-  syncTrack: (track) => set((state) => {
+  syncTrack: (track) => { announceTrackUpdates([track]); set((state) => {
     if (!track?.id) return state
     const syncList = (list) => sanitizeTrackList(Array.isArray(list) ? list.map(item => item?.id === track.id ? { ...item, ...track } : item) : list)
     const nextCurrent = state.currentTrack?.id === track.id ? { ...state.currentTrack, ...track } : state.currentTrack
@@ -825,8 +833,8 @@ export const usePlayerStore = create((set, get) => ({
       originalQueue: syncList(state.originalQueue),
       currentTrack,
     }
-  }),
-  syncTracks: (tracks) => set((state) => {
+  }) },
+  syncTracks: (tracks) => { announceTrackUpdates(tracks); set((state) => {
     const updates = new Map((Array.isArray(tracks) ? tracks : []).filter(track => track?.id).map(track => [track.id, track]))
     if (!updates.size) return state
     const syncList = (list) => sanitizeTrackList(Array.isArray(list) ? list.map(item => item?.id && updates.has(item.id) ? { ...item, ...updates.get(item.id) } : item) : list)
@@ -840,7 +848,7 @@ export const usePlayerStore = create((set, get) => ({
       originalQueue: syncList(state.originalQueue),
       currentTrack,
     }
-  }),
+  }) },
 }))
 
 export const useAppStore = create((set, get) => ({
