@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, ListMusic, Play, Plus, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api'
@@ -486,7 +486,6 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
 }
 
 export default function Recap() {
-  const allPeriods = useMemo(() => completedPeriods(), [])
   const [periods, setPeriods] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [recapsById, setRecapsById] = useState({})
@@ -507,7 +506,8 @@ export default function Recap() {
     const available = []
     // Only periods with plays are offered: ask for counts (cheap), and
     // build a recap when it's opened.
-    for (const period of allPeriods) {
+    // Worked out on each load, so Refresh picks up a period that just ended.
+    for (const period of completedPeriods()) {
       if (period.year < 2026) continue
 
       try {

@@ -29,23 +29,58 @@ function quarterRange(year, quarter) {
   }
 }
 
-/** A week from its Monday ("2026-09-21"): Monday 00:00 to Sunday 23:59:59, local time. */
-function weekRange(weekStart) {
+/** A usable IANA time zone name ("Europe/Paris"), or null. */
+function validTimeZone(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 64) return null
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz } catch { return null }
+}
+
+/** How far `tz` is ahead of UTC at the instant `ms`, in ms. */
+function zoneOffsetMs(ms, tz) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(ms)).map(p => [p.type, p.value]))
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second)
+  return asUtc - Math.floor(ms / 1000) * 1000
+}
+
+/** The instant (ms) of midnight starting y-m-d in `tz` (the server's own zone without one). */
+function midnightMs(y, m, d, tz) {
+  if (!tz) return new Date(y, m - 1, d).getTime()
+  const guess = Date.UTC(y, m - 1, d)
+  // Twice: the offset at the first guess can differ from the one at midnight (DST).
+  let ms = guess - zoneOffsetMs(guess, tz)
+  ms = guess - zoneOffsetMs(ms, tz)
+  return ms
+}
+
+/**
+ * A week from its Monday ("2026-09-21"): Monday 00:00 to Sunday 23:59:59 in
+ * the listener's time zone (`tz`, from the player; the server's if absent).
+ * Null for anything but a real date that is a Monday.
+ */
+function weekRange(weekStart, tz) {
   const m = String(weekStart || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!m) return null
-  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  if (Number.isNaN(start.getTime())) return null
-  const end = new Date(start)
-  end.setDate(end.getDate() + 7)
-  return { from: Math.floor(start.getTime() / 1000), to: Math.floor(end.getTime() / 1000) - 1, year: start.getFullYear(), weekStart: m[0] }
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  // A date JavaScript would roll over (2026-02-31 → March 3) isn't a date.
+  const day = new Date(Date.UTC(y, mo - 1, d))
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return null
+  if (day.getUTCDay() !== 1) return null // weeks start on Monday
+  const next = new Date(Date.UTC(y, mo - 1, d + 7))
+  const zone = validTimeZone(tz)
+  const from = midnightMs(y, mo, d, zone)
+  const to = midnightMs(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), zone)
+  return { from: Math.floor(from / 1000), to: Math.floor(to / 1000) - 1, year: y, weekStart: m[0], tz: zone }
 }
 
 function resolveRange(opts = {}) {
   const now = new Date()
   const currentYear = now.getFullYear()
   if (opts.scope === 'week') {
-    const week = weekRange(opts.weekStart)
-    if (week) return { ...week, scope: 'week' }
+    const week = weekRange(opts.weekStart, opts.tz)
+    // Never fall back to another range for a bad week.
+    return week ? { ...week, scope: 'week' } : { error: 'Invalid week: weekStart must be a Monday (YYYY-MM-DD).' }
   }
   if (opts.scope === 'quarter') {
     const q = opts.quarter || Math.floor(now.getMonth() / 3) + 1
@@ -259,6 +294,7 @@ function savePreferenceProfile(db, userId, rows) {
 function buildRecap(db, userId = 'guest', opts = {}) {
   ensureRecapTables(db)
   const range = resolveRange(opts)
+  if (range.error) return { error: range.error }
   const now = Math.floor(Date.now() / 1000)
   if ((range.scope === 'week' || range.scope === 'quarter' || range.scope === 'year') && range.to >= now) {
     return { error: 'This recap period has not finished yet.' }

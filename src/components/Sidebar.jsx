@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Home, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
-import { completedPeriods, periodQuery } from '../recapPeriods'
+import { completedPeriods, nextPeriodBoundary, periodQuery } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
 
@@ -96,14 +96,33 @@ export default function Sidebar() {
       const viewed = localStorage.getItem('lokal-recap-last-viewed') || ''
       setShowRecapBadge(Boolean(latest && latest !== viewed))
     }
+    // Check again when the next period ends (e.g. Monday 00:00), and when
+    // the app comes back (a timer doesn't fire while the computer sleeps).
+    let boundaryTimer = null
+    const scheduleNext = () => {
+      clearTimeout(boundaryTimer)
+      const wait = Math.max(1000, nextPeriodBoundary().getTime() - Date.now() + 1000)
+      boundaryTimer = setTimeout(() => { syncRecapBadge(); scheduleNext() }, Math.min(wait, 2 ** 31 - 1))
+    }
+    const onResume = () => {
+      if (document.visibilityState === 'hidden') return
+      syncRecapBadge()
+      scheduleNext()
+    }
     syncRecapBadge()
+    scheduleNext()
     window.addEventListener('storage', syncRecapBadge)
     window.addEventListener('lokal:recap-viewed', syncRecapBadge)
     window.addEventListener('lokal:recap-periods-changed', syncRecapBadge)
+    window.addEventListener('focus', onResume)
+    document.addEventListener('visibilitychange', onResume)
     return () => {
       window.removeEventListener('storage', syncRecapBadge)
       window.removeEventListener('lokal:recap-viewed', syncRecapBadge)
       window.removeEventListener('lokal:recap-periods-changed', syncRecapBadge)
+      window.removeEventListener('focus', onResume)
+      document.removeEventListener('visibilitychange', onResume)
+      clearTimeout(boundaryTimer)
       alive = false
     }
   }, [user?.id])

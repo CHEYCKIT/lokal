@@ -100,9 +100,23 @@ export function completedPeriods(now = new Date()) {
   return periods.sort((left, right) => right.completedAt - left.completedAt)
 }
 
+/** The listener's time zone ("Europe/Paris"), so the server cuts weeks where they do. */
+function localTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined } catch { return undefined }
+}
+
+/** When the next period finishes (the next Monday, quarter or year start), after `now`. */
+export function nextPeriodBoundary(now = new Date()) {
+  const monday = mondayOf(now)
+  monday.setDate(monday.getDate() + 7)
+  const quarter = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 1)
+  const year = new Date(now.getFullYear() + 1, 0, 1)
+  return new Date(Math.min(monday.getTime(), quarter.getTime(), year.getTime()))
+}
+
 /** What the backend needs to build a period's recap. */
 export function periodQuery(period, extra = {}) {
-  if (period.scope === 'week') return { scope: 'week', weekStart: period.weekStart, ...extra }
+  if (period.scope === 'week') return { scope: 'week', weekStart: period.weekStart, tz: localTimeZone(), ...extra }
   if (period.scope === 'quarter') return { scope: 'quarter', year: period.year, quarter: period.quarter, ...extra }
   return { scope: 'year', year: period.year, ...extra }
 }
