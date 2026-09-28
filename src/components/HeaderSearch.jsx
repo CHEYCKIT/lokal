@@ -21,6 +21,7 @@ import {
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 
+/** Is `el` somewhere the user types (input, textarea, select, contenteditable)? */
 function isTextField(el) {
   if (!el || el === document.body) return false
   if (el.isContentEditable) return true
@@ -48,6 +49,7 @@ function Highlighted({ text, typed }) {
   )
 }
 
+/** The header's Home button, search box, history dropdown and random-song button. */
 export default function HeaderSearch() {
   const nav = useNavigate()
   const loc = useLocation()
@@ -93,12 +95,14 @@ export default function HeaderSearch() {
   const suggestions = useMemo(() => matchRecentSearches(history, query), [history, query])
   useEffect(() => { setActive(-1) }, [query, dropdownOpen])
 
+  /** Go to the Search page unless already there. */
   const openSearchPage = useCallback(() => {
     if (loc.pathname !== '/search') nav('/search')
   }, [nav, loc.pathname])
 
   // Typing anywhere starts a search.
   useEffect(() => {
+    /** Global keydown: start a search from anywhere, or focus the box for "/" and Ctrl/Cmd+K. */
     const onKey = (e) => {
       if (e.defaultPrevented || e.isComposing) return
       const altGraph = e.getModifierState?.('AltGraph')
@@ -125,6 +129,7 @@ export default function HeaderSearch() {
     return () => window.removeEventListener('keydown', onKey)
   }, [openSearchPage, requestFocus, loc.pathname])
 
+  /** Search again for a past search picked from the dropdown. */
   const pick = (entry) => {
     setQuery(entry.query)
     saveRecentSearch(entry.query)
@@ -132,6 +137,7 @@ export default function HeaderSearch() {
     openSearchPage()
   }
 
+  /** Keys inside the box: arrows move through the history, Enter picks or saves, Escape steps back. */
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (!suggestions.length) return
@@ -157,12 +163,15 @@ export default function HeaderSearch() {
     }
   }
 
+  /** Play one random song from the library. */
   const playRandom = async () => {
     if (randomLoading) return
     setRandomLoading(true)
     try {
       const track = await api.getRandomTrack()
       if (track && !track.error) playQueue([track], 0)
+    } catch (error) {
+      console.warn('[search] Could not pick a random song:', error)
     } finally {
       setRandomLoading(false)
     }

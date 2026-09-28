@@ -29,6 +29,7 @@ const tourSteps = [
   }
 ]
 
+/** First-run tour pointing at search, library, downloader and settings. */
 export default function PostOnboardingTour() {
   const [isOpen, setIsOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
@@ -59,6 +60,7 @@ export default function PostOnboardingTour() {
     }
   }, [isOpen])
 
+  /** Place the highlight and tooltip on the current step's element. */
   const updatePosition = () => {
     const step = tourSteps[currentStep]
     if (!step) return

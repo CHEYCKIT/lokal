@@ -3,9 +3,11 @@ import { Minus, Square, X } from 'lucide-react'
 import { api } from '../api'
 import HeaderSearch from './HeaderSearch'
 
-// The window header: app name (the draggable part in the desktop app), the
-// Home button and search in the middle, window controls on the right. In the
-// browser it's the same bar without the window controls.
+/**
+ * The window header: app name (the draggable part in the desktop app), the
+ * Home button and search in the middle, window controls on the right. In the
+ * browser it's the same bar without the window controls.
+ */
 export default function TitleBar() {
   const desktop = api.isElectron
   return (

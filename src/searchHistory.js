@@ -8,6 +8,7 @@ const MAX_SEARCHES = 20
 const MAX_ITEMS = 5
 export const HISTORY_EVENT = 'lokal:search-history'
 
+/** A stored JSON list, or [] if missing or unreadable. */
 function read(key) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '[]')
@@ -17,15 +18,18 @@ function read(key) {
   }
 }
 
+/** Store a JSON list and tell listeners the history changed. */
 function write(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
   window.dispatchEvent(new Event(HISTORY_EVENT))
 }
 
+/** Past searches, newest first. */
 export function getRecentSearches() {
   return read(RECENT_SEARCHES_KEY).filter(r => r && typeof r.query === 'string' && r.query.trim())
 }
 
+/** Put `query` at the top of the history (case-insensitive de-duplication). */
 export function saveRecentSearch(query) {
   const q = String(query || '').trim()
   if (!q) return
@@ -33,19 +37,23 @@ export function saveRecentSearch(query) {
   write(RECENT_SEARCHES_KEY, [{ query: q, timestamp: Date.now() }, ...rest].slice(0, MAX_SEARCHES))
 }
 
+/** Remove one past search. */
 export function removeRecentSearch(query) {
   write(RECENT_SEARCHES_KEY, getRecentSearches().filter(r => r.query !== query))
 }
 
+/** Forget all past searches. */
 export function clearRecentSearches() {
   try { localStorage.removeItem(RECENT_SEARCHES_KEY) } catch {}
   window.dispatchEvent(new Event(HISTORY_EVENT))
 }
 
+/** Artists, albums and tracks recently opened from a search, newest first. */
 export function getRecentItems() {
   return read(RECENT_ITEMS_KEY)
 }
 
+/** Put an opened artist, album or track at the top of the recent items. */
 export function saveRecentItem(item) {
   if (!item?.id) return
   const rest = getRecentItems().filter(r => r.id !== item.id)

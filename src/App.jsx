@@ -175,6 +175,7 @@ function AnimatedRoutes() {
   )
 }
 
+/** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)

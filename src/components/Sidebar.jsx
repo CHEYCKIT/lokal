@@ -37,6 +37,7 @@ function getCompletedRecapPeriods() {
   return periods.sort((left, right) => right.completedAt - left.completedAt)
 }
 
+/** Left sidebar: account, navigation and playlists. */
 export default function Sidebar() {
   const nav = useNavigate()
   const loc = useLocation()

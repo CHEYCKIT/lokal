@@ -10,6 +10,7 @@ import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from 
 
 // Results for what's typed in the header search box (HeaderSearch.jsx); with
 // nothing typed, the things recently opened from a search.
+/** The Search page: results for the header query, or recently opened items when it's empty. */
 export default function Search() {
   const query = useSearchStore(s => s.query)
   const [tracks, setTracks] = useState([])
@@ -30,15 +31,26 @@ export default function Search() {
     return () => window.removeEventListener(HISTORY_EVENT, refresh)
   }, [])
 
+  /** Search tracks, albums and lyrics for `q`; results from an outdated search are ignored. */
   const doSearch = useCallback(async (q) => {
     const seq = ++searchSeqRef.current
     if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); setSearching(false); return }
     setSearching(true)
-    const [res, albumRes, lyricsRes] = await Promise.all([
-      api.searchTracks(q),
-      api.searchAlbums(q),
-      api.searchLyrics(q),
-    ])
+    let res, albumRes, lyricsRes
+    try {
+      ;[res, albumRes, lyricsRes] = await Promise.all([
+        api.searchTracks(q),
+        api.searchAlbums(q),
+        api.searchLyrics(q),
+      ])
+    } catch (error) {
+      // Only the latest search may change what's shown.
+      if (seq !== searchSeqRef.current) return
+      console.warn('[search] Search failed:', error)
+      setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([])
+      setSearching(false)
+      return
+    }
     // Typing on: a newer search has started, so these results are stale.
     if (seq !== searchSeqRef.current) return
     if (res?.artists) { setArtists(res.artists || []); setTracks(res.tracks || []) }
@@ -48,9 +60,11 @@ export default function Search() {
     setSearching(false)
   }, [])
 
-  // Results follow the text as it's typed.
+  // Results follow the text as it's typed. A new query makes any search
+  // still in flight stale straight away, not only when the debounce ends.
   useEffect(() => {
     if (!query.trim()) { doSearch(''); return }
+    searchSeqRef.current++
     setSearching(true)
     const t = setTimeout(() => doSearch(query), 200)
     return () => clearTimeout(t)
@@ -70,6 +84,7 @@ export default function Search() {
   const artSrc = (a) => a.image_path ? (api.isElectron ? `file://${a.image_path}` : null) : null
   const albumArt = (a) => a.artwork_path ? (api.isElectron ? `file://${a.artwork_path}` : api.artworkURL(a.id)) : null
 
+  /** Open an artist from the results and remember it. */
   const handleArtistClick = (artist) => {
     saveRecentSearch(artist.name)
     saveRecentItem({ 
@@ -81,6 +96,7 @@ export default function Search() {
     nav(`/artist/${artist.id}`)
   }
 
+  /** Open an album from the results and remember it. */
   const handleAlbumClick = (album) => {
     saveRecentSearch(album.title)
     saveRecentItem({
@@ -94,6 +110,7 @@ export default function Search() {
     nav('/albums', { state: { album } })
   }
 
+  /** Reopen a recent item: an artist or album page, or play a track. */
   const handleRecentItemClick = async (item) => {
     if (item.type === 'artist') {
       nav(`/artist/${item.id}`)
@@ -124,6 +141,7 @@ export default function Search() {
     }
   }
 
+  /** Play a track found by its lyrics and remember it. */
   const handleLyricMatchPlay = (track) => {
     saveRecentSearch(query.trim())
     saveRecentItem({
