@@ -80,6 +80,10 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, ...opts } =
     const stream = await resolveStream(provider, id, { ...opts, force })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
+    // An addon's media URL is the addon's to choose: follow its redirects one
+    // at a time, each checked like the addon's own URLs (https, or http on
+    // this machine / network only). Built-in providers fetch directly.
+    if (addons.keyOfProvider(provider)) return { stream, res: await addons.fetchChecked(stream.url, { fetchImpl, headers }) }
     return { stream, res: await fetchImpl(stream.url, { headers }) }
   }
   let { stream, res } = await attempt(false)

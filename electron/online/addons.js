@@ -77,10 +77,10 @@ const REDIRECT = new Set([301, 302, 303, 307, 308])
  * redirect can't lead to plain http on the internet (or anything else the
  * addon URL itself couldn't be).
  */
-async function fetchChecked(url, { fetchImpl, signal }) {
+async function fetchChecked(url, { fetchImpl = fetch, signal, headers = { Accept: 'application/json' } } = {}) {
   let current = checkUrl(url)
   for (let hop = 0; ; hop++) {
-    const res = await fetchImpl(current.toString(), { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }, redirect: 'manual', signal })
+    const res = await fetchImpl(current.toString(), { headers: { 'User-Agent': USER_AGENT, ...headers }, redirect: 'manual', signal })
     if (!REDIRECT.has(res.status)) return res
     const location = res.headers?.get?.('location')
     try { await res.body?.cancel?.() } catch {}
@@ -311,7 +311,7 @@ async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
 }
 
 module.exports = {
-  addonKey, providerFor, keyOfProvider, checkUrl, getJson,
+  addonKey, providerFor, keyOfProvider, checkUrl, getJson, fetchChecked,
   list, searchable, install, remove, setEnabled, setSettings,
   search, resolveStream, findByKey,
 }
