@@ -3,6 +3,9 @@ const { getDB } = require('./db')
 const QUALIFIED_SECONDS = 30
 const SESSION_GAP_SECONDS = 30 * 60
 const FALLBACK_GENRES = new Set(['music'])
+// Library files and songs streamed from search (YouTube Music, SoundCloud,
+// addons); other ghost tracks (imported, not playable) can't have plays.
+const COUNTED_TRACKS = "(t.file_path NOT LIKE 'ghost://%' OR t.file_path LIKE 'ghost://youtube/online/%' OR t.file_path LIKE 'ghost://soundcloud/online/%' OR t.file_path LIKE 'ghost://addon/%')"
 
 function toUnix(value, fallback = null) {
   if (value === undefined || value === null || value === '') return fallback
@@ -320,9 +323,7 @@ function buildRecap(db, userId = 'guest', opts = {}) {
     return { error: 'This recap period has not finished yet.' }
   }
   try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
-  // Library files and songs streamed from search (YouTube Music, SoundCloud,
-  // addons); other ghost tracks (imported, not playable) can't have plays.
-  const COUNTED = "(t.file_path NOT LIKE 'ghost://%' OR t.file_path LIKE 'ghost://youtube/online/%' OR t.file_path LIKE 'ghost://soundcloud/online/%' OR t.file_path LIKE 'ghost://addon/%')"
+  const COUNTED = COUNTED_TRACKS
   // Just "is there anything?" (period lists, the sidebar badge): no full recap.
   if (['1', 'true'].includes(String(opts.countOnly))) {
     const { n } = db.prepare(`
@@ -396,7 +397,33 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   }
 }
 
+/**
+ * The days (YYYY-MM-DD, in the listener's time zone `tz`) with at least one
+ * counted play: what the Recap page needs to offer only the years, months
+ * and weeks that have something in them. Plays are bucketed by hour first
+ * (one date lookup per hour, not per play); both ends of each hour are
+ * looked at, so half-hour time zones don't lose a day at midnight.
+ */
+function listeningDays(db, userId = 'guest', opts = {}) {
+  ensureRecapTables(db)
+  try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
+  const zone = validTimeZone(opts.tz)
+  const hours = db.prepare(`
+    SELECT DISTINCT CAST(ph.played_at / 3600 AS INTEGER) AS h
+    FROM play_history ph JOIN tracks t ON t.id = ph.track_id
+    WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED_TRACKS}
+  `).all(userId, QUALIFIED_SECONDS).map(row => row.h)
+  const format = new Intl.DateTimeFormat('en-CA', { timeZone: zone || undefined, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const days = new Set()
+  for (const h of hours) {
+    days.add(format.format(new Date(h * 3600 * 1000)))
+    days.add(format.format(new Date((h * 3600 + 3599) * 1000)))
+  }
+  return { days: [...days].sort(), tz: zone }
+}
+
 function registerRecapHandlers(ipcMain) {
+  ipcMain.handle('recaps:days', (_, userId, opts) => listeningDays(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:get', (_, userId, opts) => buildRecap(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:getPreferences', (_, userId) => {
     const row = getDB().prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'listening_preferences'").get(userId || 'guest')
@@ -404,4 +431,4 @@ function registerRecapHandlers(ipcMain) {
   })
 }
 
-module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, ensureRecapTables }
+module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, listeningDays, ensureRecapTables }

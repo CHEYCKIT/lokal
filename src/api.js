@@ -280,6 +280,7 @@ export const api = {
   getListeningRecap: (uid, opts = {}) => isE()
     ? el().getListeningRecap(uid, opts)
     : apiFetch(`/recaps/${uid || 'guest'}?${new URLSearchParams(Object.fromEntries(Object.entries(opts || {}).filter(([, value]) => value !== undefined && value !== null)))}`),
+  getListeningDays: (uid, opts = {}) => isE() ? el().getListeningDays(uid, opts) : apiFetch(`/recaps/${uid || 'guest'}/days?${new URLSearchParams(Object.fromEntries(Object.entries(opts || {}).filter(([, value]) => value !== undefined && value !== null)))}`),
   getListeningPreferences: (uid) => isE() ? el().getListeningPreferences(uid) : apiFetch(`/recaps/${uid || 'guest'}/preferences`),
   discordSetActivity: (t, p) => { if (isE() && el().discordSetActivity) return el().discordSetActivity(t, p); return Promise.resolve() },
   discordConnect: (id) => isE() ? el().discordConnect(id) : Promise.resolve(false),

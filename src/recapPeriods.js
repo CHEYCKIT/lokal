@@ -117,3 +117,98 @@ export function periodQuery(period, extra = {}) {
   if (period.scope === 'month') return { scope: 'month', year: period.year, month: period.month, tz: localTimeZone(), ...extra }
   return { scope: 'year', year: period.year, ...extra }
 }
+
+// ---------------------------------------------------------------- navigation
+//
+// The Recap page lets you pick a year, then a month in it, then a week in
+// that month, and only offers periods that have plays. It's built from the
+// days with plays (from the backend, in the listener's time zone). A week
+// belongs to the month (and year) its Thursday is in, like ISO weeks, so a
+// week is listed once, under the month holding most of its days.
+
+function parseDay(day) {
+  const [y, m, d] = String(day).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+/**
+ * [{ year, period (the whole year, or null while it's going), months: [
+ *    { year, month, key, period (or null while it's going), weeks: [period] }
+ * ] }], newest year first, months and weeks in calendar order. Only
+ * periods that have plays and have ended are offered; a month still going
+ * is listed when it has finished weeks, so they can be reached.
+ */
+export function recapTree(days = [], now = new Date()) {
+  const years = new Map()
+  const yearOf = (y) => {
+    if (!years.has(y)) years.set(y, { year: y, months: new Map() })
+    return years.get(y)
+  }
+  const monthOf = (y, m) => {
+    const entry = yearOf(y)
+    const key = `${y}-${pad(m)}`
+    if (!entry.months.has(key)) entry.months.set(key, { year: y, month: m, key, hasPlays: false, weeks: new Map() })
+    return entry.months.get(key)
+  }
+  for (const day of days) {
+    const date = parseDay(day)
+    if (Number.isNaN(date.getTime())) continue
+    monthOf(date.getFullYear(), date.getMonth() + 1).hasPlays = true
+    const monday = mondayOf(date)
+    const thursday = new Date(monday)
+    thursday.setDate(thursday.getDate() + 3)
+    const week = { id: `w-${isoDay(monday)}`, scope: 'week', weekStart: isoDay(monday), year: monday.getFullYear() }
+    if (periodEnd(week) > now) continue
+    monthOf(thursday.getFullYear(), thursday.getMonth() + 1).weeks.set(week.id, withText(week))
+  }
+  const tree = []
+  for (const entry of years.values()) {
+    const months = []
+    for (const month of entry.months.values()) {
+      const period = { id: `m-${month.key}`, scope: 'month', year: month.year, month: month.month }
+      const finished = periodEnd(period) <= now
+      const weeks = [...month.weeks.values()].sort((a, b) => a.completedAt - b.completedAt)
+      if (!(finished && month.hasPlays) && !weeks.length) continue
+      months.push({ year: month.year, month: month.month, key: month.key, period: finished && month.hasPlays ? withText(period) : null, weeks })
+    }
+    if (!months.length) continue
+    months.sort((a, b) => a.month - b.month)
+    const yearPeriod = { id: `year-${entry.year}`, scope: 'year', year: entry.year }
+    tree.push({ year: entry.year, period: periodEnd(yearPeriod) <= now && months.some(m => m.period || m.weeks.length) ? withText(yearPeriod) : null, months })
+  }
+  return tree.sort((a, b) => b.year - a.year)
+}
+
+/** Every period on offer in a tree, flat. */
+export function treePeriods(tree = []) {
+  const all = []
+  for (const year of tree) {
+    if (year.period) all.push(year.period)
+    for (const month of year.months) {
+      if (month.period) all.push(month.period)
+      all.push(...month.weeks)
+    }
+  }
+  return all
+}
+
+/** The period that ended last (what to show first). */
+export function latestPeriod(tree = []) {
+  return treePeriods(tree).sort((a, b) => b.completedAt - a.completedAt)[0] || null
+}
+
+/** Where a period sits: { year, monthKey } (monthKey null for a whole year). */
+export function periodPlace(tree = [], id) {
+  for (const year of tree) {
+    if (year.period?.id === id) return { year: year.year, monthKey: null }
+    for (const month of year.months) {
+      if (month.period?.id === id || month.weeks.some(w => w.id === id)) return { year: year.year, monthKey: month.key }
+    }
+  }
+  return null
+}
+
+/** The listener's time zone, for asking which days have plays. */
+export function listenerTimeZone() {
+  return localTimeZone()
+}

@@ -208,6 +208,7 @@ contextBridge.exposeInMainWorld('electron', {
   getUserStats: (uid) => invoke('user:getStats', uid),
   getUserRecap: (uid) => invoke('user:getRecap', uid),
   getListeningRecap: (uid, opts) => invoke('recaps:get', uid, opts),
+  getListeningDays: (uid, opts) => invoke('recaps:days', uid, opts),
   getListeningPreferences: (uid) => invoke('recaps:getPreferences', uid),
 
   
