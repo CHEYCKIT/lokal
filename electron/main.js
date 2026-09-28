@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const log = require('electron-log')
@@ -28,6 +28,9 @@ const { registerRecapHandlers } = require('./ipc/recaps')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
+const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
+// Online songs stream from lokal-stream://; the scheme has to be declared before the app is ready.
+try { registerStreamScheme(protocol) } catch (e) { console.error('registerStreamScheme:', e.message) }
 let isUpdating = false;
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
@@ -366,6 +369,8 @@ app.whenReady().then(() => {
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
   try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
+  try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
+  try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
 
 
   ipcMain.on('relaunch-app', () => {

@@ -58,6 +58,14 @@ Search and download from YouTube via yt-dlp. Auto-indexes the track immediately 
 
 ---
 
+**Online results in search**
+
+Songs that aren't in your library show up under your own results, from YouTube Music or SoundCloud (switch between them above the results). Play them straight away (streamed with your own yt-dlp, nothing is hosted by Lokal), add them to playlists, or save them to your library with one click (right-click to find them on Soulseek instead). The saved file takes the stream's place in your playlists.
+
+(*needs yt-dlp*)
+
+---
+
 **Soulseek/slskd**
 
 <img width="810" height="632" alt="image" src="https://github.com/user-attachments/assets/6954fd9e-9f14-45fb-bc4f-c1475bc8300c" />

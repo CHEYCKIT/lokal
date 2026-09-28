@@ -7,7 +7,7 @@ const tourSteps = [
     id: 'search',
     dataTour: 'search',
     title: 'Search Your Music',
-    description: 'Find any track, artist, album, or genre instantly.',
+    description: 'Find any track, artist, album, or genre instantly. You can also just start typing anywhere.',
   },
   {
     id: 'library',
@@ -29,6 +29,7 @@ const tourSteps = [
   }
 ]
 
+/** First-run tour pointing at search, library, downloader and settings. */
 export default function PostOnboardingTour() {
   const [isOpen, setIsOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
@@ -59,6 +60,7 @@ export default function PostOnboardingTour() {
     }
   }, [isOpen])
 
+  /** Place the highlight and tooltip on the current step's element. */
   const updatePosition = () => {
     const step = tourSteps[currentStep]
     if (!step) return
@@ -70,14 +72,17 @@ export default function PostOnboardingTour() {
       const sidebar = document.querySelector('aside')
       const sidebarRect = sidebar?.getBoundingClientRect()
 
-      if (sidebarRect) {
+      // Sidebar items line up with the sidebar's edge; anything else (the
+      // header search) is highlighted where it is, with the tip underneath.
+      const inSidebar = !!targetEl.closest('aside')
+      if (sidebarRect || !inSidebar) {
         setHighlightStyle({
           position: 'fixed',
           top: rect.top,
-          left: sidebarRect.left,
+          left: inSidebar ? sidebarRect.left : rect.left,
           width: rect.width,
           height: rect.height,
-          borderRadius: '8px',
+          borderRadius: inSidebar ? '8px' : '9999px',
           boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75)',
           zIndex: 40,
           pointerEvents: 'none',
@@ -85,7 +90,7 @@ export default function PostOnboardingTour() {
 
         setTooltipPosition({
           top: rect.bottom + 12,
-          left: sidebarRect.left + rect.width + 16,
+          left: inSidebar ? sidebarRect.left + rect.width + 16 : rect.left,
         })
       }
     }

@@ -32,7 +32,19 @@ function manager() {
     getStorageDir,
     findTools: () => ({ ytdlp: findBinary('yt-dlp'), ffmpeg: null, ffprobe: null }),
     requireFfmpeg: false,
-    index: null,
+    index: async (filepath, opts) => {
+      const { indexSingleFile } = require('../../electron/ipc/scanner')
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          if (fs.existsSync(filepath)) {
+            const result = await indexSingleFile(filepath, opts)
+            if (result?.id) return result
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 700))
+      }
+      return null
+    },
     emit: () => {},
   }, 0)
 }
@@ -62,13 +74,15 @@ router.get('/artist-search', async (req, res) => {
 const PLAYLIST_ID = /^[\w.-]{1,120}$/
 function enqueue(kind) {
   return (req, res) => {
-    const { url, format, quality, title, thumbnail, from, playlistId } = req.body || {}
+    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId } = req.body || {}
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
     if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
       return res.status(400).json({ error: 'Invalid playlistId' })
     }
     const text = (v, max = 300) => (typeof v === 'string' ? v.slice(0, max) : undefined)
     const opts = { format: text(format, 12), quality: text(String(quality ?? ''), 4) || undefined, title: text(title), thumbnail: text(thumbnail, 1000), from: text(from, 120), playlistId: playlistId ?? undefined }
+    // The ghost track (a streamed song) this download replaces once it's in the library.
+    if (kind === 'single' && typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId)) opts.replaceTrackId = replaceTrackId
     const result = manager().enqueue(kind, url, opts)
     res.status(result.error ? 500 : 200).json(result)
   }
@@ -121,7 +135,7 @@ router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager()
 router.put('/soulseek/search/:id', soulseek(req => slskd.finishSearch(manager().settings(), req.params.id)))
 router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
 router.post('/soulseek/download', (req, res) => {
-  const { file = {}, title, from } = req.body || {}
+  const { file = {}, title, from, replaceTrackId } = req.body || {}
   const opts = { title: typeof title === 'string' ? title.slice(0, 300) : undefined, from: typeof from === 'string' ? from.slice(0, 120) : undefined }
   if (typeof file.username !== 'string' || typeof file.filename !== 'string' || !file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
   const { name } = slskd.splitRemote(file.filename)
@@ -129,6 +143,8 @@ router.post('/soulseek/download', (req, res) => {
     username: file.username, filename: file.filename, size: file.size,
     title: opts.title || name.replace(/\.[^.]+$/, ''),
     from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+    // A streamed song this file replaces once it's in the library.
+    replaceTrackId: typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId) ? replaceTrackId : undefined,
   })
   res.status(result.error ? 500 : 200).json(result)
 })
@@ -203,5 +219,8 @@ router.post('/playlist/remove-archive', (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+// Shared with the online routes (streaming with the same yt-dlp).
+router.findBinary = findBinary
 
 module.exports = router

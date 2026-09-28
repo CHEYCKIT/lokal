@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isPlayable } from '../onlineTracks'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
@@ -52,16 +53,14 @@ function sidePanelModeTransition(s, value) {
   }
 }
 
-function isGhostTrack(track) {
-  return String(track?.file_path || '').startsWith('ghost://')
-}
-
+// Ghost tracks (no file) stay out of the queue, except online songs, which
+// are streamed.
 function sanitizeTrackList(tracks) {
-  return Array.isArray(tracks) ? tracks.filter(track => track?.id && !isGhostTrack(track)) : []
+  return Array.isArray(tracks) ? tracks.filter(track => track?.id && isPlayable(track)) : []
 }
 
 function sanitizeSingleTrack(track) {
-  return track?.id && !isGhostTrack(track) ? track : null
+  return track?.id && isPlayable(track) ? track : null
 }
 
 // Settings > Appearance > Layout > Side Panels. Defaults to merged/exclusive

@@ -15,6 +15,7 @@ import {
   navigateToTrackAlbum,
 } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
+import { trackArtURL } from '../onlineTracks'
 
 function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
   if (!value) return null
@@ -138,9 +139,7 @@ export default function RightSidebar() {
   const canvasHero = canvasOn && infoHeight > 0
   const heroHeight = canvasHero ? Math.max(300, Math.round(infoHeight * 0.6)) : 300
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackArtURL(currentTrack)
 
   const btnFx = 'flex-1 py-2 bg-white/10 border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/15 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5 backdrop-blur-md'
   const btnClassic = 'flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5'

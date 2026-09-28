@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Search, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
+import { Home, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
@@ -8,7 +8,6 @@ import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
-  { icon: Search, label: 'Search', path: '/search' },
   { icon: Library, label: 'Library', path: '/library' },
   { icon: Download, label: 'Download', path: '/downloader' },
   { icon: BarChart2, label: 'Recap', path: '/recap' },
@@ -38,6 +37,7 @@ function getCompletedRecapPeriods() {
   return periods.sort((left, right) => right.completedAt - left.completedAt)
 }
 
+/** Left sidebar: account, navigation and playlists. */
 export default function Sidebar() {
   const nav = useNavigate()
   const loc = useLocation()
@@ -259,7 +259,7 @@ export default function Sidebar() {
         {navItems.map(({ icon: Icon, label, path }) => (
           <button 
             key={path} 
-            data-tour={path === '/search' ? 'search' : path === '/library' ? 'library' : path === '/downloader' ? 'downloader' : path === '/settings' ? 'settings' : null}
+            data-tour={path === '/library' ? 'library' : path === '/downloader' ? 'downloader' : path === '/settings' ? 'settings' : null}
             onClick={() => nav(path)}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive(path) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
             <Icon size={15} />

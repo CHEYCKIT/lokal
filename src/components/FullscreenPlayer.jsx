@@ -9,6 +9,7 @@ import MotionCover from './MotionCover'
 import { QueueContent } from './QueuePanel'
 import { api } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
+import { trackArtURL } from '../onlineTracks'
 
 function fmt(s) {
   if (!s || isNaN(s)) return '0:00'
@@ -274,9 +275,7 @@ export default function FullscreenPlayer() {
     }
   }, [currentTrack?.id])
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackArtURL(currentTrack)
 
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat

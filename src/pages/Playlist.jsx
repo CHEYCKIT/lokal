@@ -8,6 +8,7 @@ import AddTracksToPlaylistModal from '../components/AddTracksToPlaylistModal'
 import Modal from '../components/Modal'
 import { api } from '../api'
 import { makePlaylistContext } from '../playbackContext'
+import { isPlayable } from '../onlineTracks'
 
 export default function Playlist() {
   const { id } = useParams()
@@ -61,7 +62,8 @@ export default function Playlist() {
     nav(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, nav])
 
-  const playableTracks = useMemo(() => tracks.filter(track => !String(track.file_path || '').startsWith('ghost://')), [tracks])
+  // Online songs are ghost tracks too, but they stream, so they play.
+  const playableTracks = useMemo(() => tracks.filter(track => isPlayable(track)), [tracks])
   const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://')), [tracks])
   const getGhostKey = useCallback((track) => String(track?.playlist_track_id || track?.added_at || track?.id || ''), [])
   const selectedGhost = ghostTracks.find(track => getGhostKey(track) === selectedGhostKey) || ghostTracks[0] || null

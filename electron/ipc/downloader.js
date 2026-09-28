@@ -180,6 +180,8 @@ function enqueueSoulseek(file = {}, opts = {}) {
     size: file.size,
     title: opts.title || name.replace(/\.[^.]+$/, ''),
     from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+    // A streamed song this file replaces once it's in the library.
+    replaceTrackId: typeof opts.replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(opts.replaceTrackId) ? opts.replaceTrackId : undefined,
   })
 }
 

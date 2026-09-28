@@ -30,6 +30,7 @@ import Profile from './pages/Profile'
 import Recap from './pages/Recap'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -48,6 +49,8 @@ const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const YTDLP_DISMISS_KEY = 'lokal-ytdlp-version-dismissed'
 // A scrobble / listen that wasn't sent is tried again after this long (not every second).
 const SCROBBLE_RETRY_MS = 30 * 1000
+// How long a crossfade waits for the next track (a stream may start slowly).
+const CROSSFADE_READY_TIMEOUT_MS = 15 * 1000
 
 function formatRelativeDays(days) {
   if (!Number.isFinite(days) || days <= 0) return 'up to date'
@@ -182,6 +185,7 @@ function AnimatedRoutes() {
   )
 }
 
+/** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
@@ -192,6 +196,16 @@ export default function App() {
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
     const code = el?.error?.code
+    // An online song that couldn't be streamed: ask why, and say so.
+    const failedTrack = usePlayerStore.getState().currentTrack
+    const failedRef = streamRef(failedTrack)
+    if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      const why = await Promise.resolve(api.onlinePrepare(failedRef.provider, failedRef.id, true)).catch(() => null)
+      if (usePlayerStore.getState().currentTrack?.id === failedTrack.id) {
+        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song." })
+      }
+      return
+    }
     if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
     const src = el.getAttribute('src') || ''
     if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
@@ -750,6 +764,8 @@ export default function App() {
         if (dataUrl) {
           artworkSrc = dataUrl
         }
+      } else if (currentTrack.artwork_url) {
+        artworkSrc = currentTrack.artwork_url
       }
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: currentTrack.title || '',
@@ -953,6 +969,22 @@ export default function App() {
     if (!durationSeconds) return true
     return playedSeconds >= Math.min(durationSeconds / 2, 240)
   }, [getLastfmTrackDuration])
+
+  // An online song that couldn't be streamed (shown as a small notice).
+  const [streamError, setStreamError] = useState(null)
+  useEffect(() => {
+    if (!streamError) return undefined
+    const t = setTimeout(() => setStreamError(null), 9000)
+    return () => clearTimeout(t)
+  }, [streamError])
+
+  /** Look up the next song's stream ahead of time, so it starts without the yt-dlp wait. */
+  const prepareNextStream = useCallback(() => {
+    const { queue, queueIndex } = usePlayerStore.getState()
+    const next = Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
+    const ref = streamRef(next)
+    if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
+  }, [])
 
   const beginLastfmPlayback = useCallback((track) => {
     if (!track?.id) {
@@ -1217,25 +1249,51 @@ export default function App() {
     const fadeOutGain = isPrimaryActive ? gainNodeRef.current : cfGainNodeRef.current
     const fadeInGain = isPrimaryActive ? cfGainNodeRef.current : gainNodeRef.current
 
-    const encodedPath = nextTrack.file_path.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')
-    const encodedSrc = api.isElectron ? `file://${encodedPath}` : api.streamURL(nextTrack)
-    
+    const encodedSrc = audioSrcFor(nextTrack)
+    if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
+
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
     fadeInEl.load()
 
+    // The current track stays the active one until the next one can play
+    // (a stream can take several seconds to start). If it can't -- it fails,
+    // or doesn't get ready in time -- the crossfade is called off and the
+    // current track plays out; if the current track ends first, the next one
+    // is played the usual way, without a crossfade.
     const waitForCanplay = new Promise((resolve) => {
-      const onReady = () => {
+      let timer = null
+      const done = (outcome) => {
         fadeInEl.removeEventListener('canplay', onReady)
-        resolve()
+        fadeInEl.removeEventListener('error', onFailed)
+        fadeOutEl.removeEventListener('ended', onEnded)
+        clearTimeout(timer)
+        resolve(outcome)
       }
+      const onReady = () => done('ready')
+      const onFailed = () => done('failed')
+      const onEnded = () => done('ended')
       fadeInEl.addEventListener('canplay', onReady)
-      setTimeout(resolve, 1500)
+      fadeInEl.addEventListener('error', onFailed)
+      fadeOutEl.addEventListener('ended', onEnded)
+      timer = setTimeout(() => done('timeout'), CROSSFADE_READY_TIMEOUT_MS)
     })
 
-    waitForCanplay.then(() => {
+    waitForCanplay.then((outcome) => {
       if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
+
+      if (outcome !== 'ready') {
+        cancelCrossfade()
+        try { fadeInEl.removeAttribute('src'); fadeInEl.load() } catch {}
+        if (outcome === 'ended') {
+          // Its "ended" was ignored while the crossfade was pending.
+          stopTimer()
+          flushTime(currentTrackRef.current?.id)
+          autoNext()
+        }
+        return
+      }
 
       flushTime(currentTrackRef.current?.id)
 
@@ -1262,9 +1320,7 @@ export default function App() {
       })
       beginLastfmPlayback(nextTrack)
 
-      if (fadeInEl.readyState >= 2) {
-        fadeInEl.play().catch(() => {})
-      }
+      fadeInEl.play().catch(() => {})
 
       const rampNow = ctx.currentTime
       fadeOutGain.gain.cancelScheduledValues(rampNow)
@@ -1300,7 +1356,7 @@ export default function App() {
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, cfDuration * 1000)
     })
-  }, [flushTime, setActiveAudioElement, beginLastfmPlayback])
+  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
   useEffect(() => {
     if (isCrossfadingRef.current) {
@@ -1329,16 +1385,17 @@ export default function App() {
 
     initAudioCtx()
 
-    if (String(currentTrack.file_path || '').startsWith('ghost://')) {
+    // A file, or an online song streamed from YouTube; other ghost tracks
+    // (imported entries with no file) can't be played.
+    const src = audioSrcFor(currentTrack)
+    if (!src) {
       audioRef.current.pause()
       audioRef.current.src = ''
       setIsPlaying(false)
       return
     }
-
-    const src = api.isElectron 
-      ? `file://${currentTrack.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
-      : api.streamURL(currentTrack);
+    setStreamError(null)
+    prepareNextStream()
     audioRef.current.dataset.fallbackFor = ''
     audioRef.current.dataset.fallbackSrc = ''
     audioRef.current.src = src
@@ -1782,8 +1839,8 @@ export default function App() {
               style={{ opacity: 'var(--bg-overlay)' }} 
             />
 
-            {api.isElectron && <TitleBar />}
-            <div className="flex flex-1 overflow-hidden">
+            <TitleBar />
+            <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
               <main className="flex-1 overflow-y-auto bg-transparent">
                 <AnimatedRoutes />
@@ -1815,6 +1872,20 @@ export default function App() {
             
             {renderYtDlpNotice()}
             {renderUpdateToast()}
+            <AnimatePresence>
+              {streamError && (
+                <motion.div
+                  role="status"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 12 }}
+                  className="fixed bottom-28 right-6 z-[60] max-w-sm rounded-xl border border-border bg-elevated px-4 py-3 shadow-2xl"
+                >
+                  <p className="text-sm font-medium text-text truncate">Couldn't stream "{streamError.title}"</p>
+                  <p className="text-xs text-muted mt-1">{streamError.message}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </>
         )}
 
