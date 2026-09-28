@@ -54,6 +54,30 @@ export function getRecentItems() {
   return read(RECENT_ITEMS_KEY)
 }
 
+/**
+ * A track as a recent item. Songs streamed from search (ghost tracks) keep
+ * what's needed to play them again (their stream path) and their remote cover.
+ */
+export function recentTrackItem(track) {
+  const item = {
+    id: track.id,
+    name: track.title,
+    artist: track.artist,
+    artwork_path: track.artwork_path || null,
+    type: 'track',
+  }
+  if (String(track.file_path || '').startsWith('ghost://')) {
+    Object.assign(item, {
+      file_path: track.file_path,
+      source_url: track.source_url || null,
+      artwork_url: track.artwork_url || null,
+      album: track.album || null,
+      duration: track.duration || null,
+    })
+  }
+  return item
+}
+
 /** Put an opened artist, album or track at the top of the recent items. */
 export function saveRecentItem(item) {
   if (!item?.id) return
