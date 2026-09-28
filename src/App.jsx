@@ -1671,8 +1671,8 @@ export default function App() {
               style={{ opacity: 'var(--bg-overlay)' }} 
             />
 
-            {api.isElectron && <TitleBar />}
-            <div className="flex flex-1 overflow-hidden">
+            <TitleBar />
+            <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
               <main className="flex-1 overflow-y-auto bg-transparent">
                 <AnimatedRoutes />
