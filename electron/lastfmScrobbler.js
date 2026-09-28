@@ -129,10 +129,10 @@ function flushQueue(db) {
     ensureQueue(db)
     let sent = 0
     for (;;) {
-      // Re-check before every batch: stop if Last.fm was switched off or
-      // reconnected (different session) while this was running.
+      // Re-check before every batch: stop if Last.fm was switched off or its
+      // credentials (session, API key or secret) changed while this was running.
       const s = settingsOf(db)
-      if (!s.enabled || !s.scrobbling || s.sessionKey !== start.sessionKey || s.apiKey !== start.apiKey) break
+      if (!s.enabled || !s.scrobbling || s.sessionKey !== start.sessionKey || s.apiKey !== start.apiKey || s.apiSecret !== start.apiSecret) break
       const rows = db.prepare('SELECT id, scrobble FROM lastfm_queue ORDER BY id LIMIT ?').all(BATCH)
       if (!rows.length) break
       const now = Date.now() / 1000

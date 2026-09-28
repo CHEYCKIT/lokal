@@ -114,17 +114,29 @@ function flushQueue(db, token) {
       if (!s.enabled || !s.token || s.token !== token) break
       const rows = db.prepare('SELECT id, listen FROM listenbrainz_queue ORDER BY id LIMIT ?').all(BATCH)
       if (!rows.length) break
-      const payload = rows.map(r => { try { return JSON.parse(r.listen) } catch { return null } }).filter(Boolean)
-      const r = payload.length
-        ? await call('/submit-listens', { token, method: 'POST', body: { listen_type: 'import', payload }, timeoutMs: 20000 })
-        : { ok: true }
-      if (r.ok || r.status === 400) {
-        // 400: ListenBrainz will never accept these as they are -- don't retry forever.
-        db.prepare(`DELETE FROM listenbrainz_queue WHERE id IN (${rows.map(() => '?').join(',')})`).run(...rows.map(x => x.id))
-        if (r.ok) sent += payload.length
+      const remove = (ids) => { if (ids.length) db.prepare(`DELETE FROM listenbrainz_queue WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids) }
+      const parsed = rows.map(r => { try { return { id: r.id, listen: JSON.parse(r.listen) } } catch { return { id: r.id, listen: null } } })
+      remove(parsed.filter(p => !p.listen).map(p => p.id)) // unreadable rows can never be sent
+      const good = parsed.filter(p => p.listen)
+      if (!good.length) continue
+      const r = await call('/submit-listens', { token, method: 'POST', body: { listen_type: 'import', payload: good.map(p => p.listen) }, timeoutMs: 20000 })
+      if (r.ok) {
+        remove(good.map(p => p.id))
+        sent += good.length
         continue
       }
-      break
+      if (r.status !== 400) break // offline, rate limited, server error: keep them for later
+      // One bad listen makes ListenBrainz refuse the whole batch: send them one
+      // by one, dropping only the ones it refuses on their own.
+      let stopped = false
+      for (const p of good) {
+        const one = await call('/submit-listens', { token, method: 'POST', body: { listen_type: 'import', payload: [p.listen] } })
+        if (one.ok) { remove([p.id]); sent++; continue }
+        if (one.status === 400) { remove([p.id]); continue } // never accepted as it is
+        stopped = true // any other failure: keep this one and the rest for later
+        break
+      }
+      if (stopped) break
     }
     return sent
   })().finally(() => { flushing = null })
