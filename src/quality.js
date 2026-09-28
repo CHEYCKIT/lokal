@@ -72,13 +72,38 @@ export function verdictText(track) {
   }
 }
 
-/** Store searches for a track (same as the backend's, shown before its exact links arrive). */
+// Qobuz stores, by country, with the languages each one comes in (the
+// first is its default). Its search only works under one of these.
+const QOBUZ_STORES = {
+  us: ['en'], ca: ['en', 'fr'], gb: ['en'], ie: ['en'], au: ['en'], nz: ['en'],
+  fr: ['fr'], be: ['fr', 'nl'], lu: ['fr'], ch: ['fr', 'de'],
+  de: ['de'], at: ['de'], it: ['it'], es: ['es'], nl: ['nl'],
+  se: ['en'], dk: ['en'], no: ['en'], fi: ['en'], jp: ['ja'],
+}
+// Language only (no country, or a country without a Qobuz store).
+const QOBUZ_BY_LANGUAGE = { en: 'us-en', fr: 'fr-fr', de: 'de-de', it: 'it-it', es: 'es-es', nl: 'nl-nl', ja: 'jp-ja' }
+
+/**
+ * The Qobuz store for the app's language and region (the system's, e.g.
+ * fr-FR → "fr-fr", en-GB → "gb-en", de-CH → "ch-de"); US English otherwise.
+ */
+export function qobuzLocale(languages = (typeof navigator !== 'undefined' && (navigator.languages?.length ? navigator.languages : [navigator.language])) || []) {
+  for (const tag of languages) {
+    const [lang = '', region = ''] = String(tag || '').toLowerCase().split(/[-_]/)
+    const store = QOBUZ_STORES[region]
+    if (store) return `${region}-${store.includes(lang) ? lang : store[0]}`
+    if (QOBUZ_BY_LANGUAGE[lang]) return QOBUZ_BY_LANGUAGE[lang]
+  }
+  return 'us-en'
+}
+
+/** Store searches for a track (Qobuz in the app's region). */
 export function storeSearches({ artist, title }) {
   const q = [String(artist || '').split(/\s*,\s*/)[0], title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/ig, '').trim()
   const e = encodeURIComponent(q)
   return [
     // Qobuz only answers searches under a locale, as a path (/search?q= doesn't work).
-    { store: 'Qobuz', kind: 'search', format: 'FLAC, up to 24-bit', url: `https://www.qobuz.com/us-en/search/albums/${e}` },
+    { store: 'Qobuz', kind: 'search', format: 'FLAC, up to 24-bit', url: `https://www.qobuz.com/${qobuzLocale()}/search/albums/${e}` },
     { store: 'Bandcamp', kind: 'search', format: 'FLAC, when the artist sells there', url: `https://bandcamp.com/search?q=${e}&item_type=t` },
     { store: '7digital', kind: 'search', format: 'FLAC for many releases', url: `https://us.7digital.com/search?q=${e}` },
   ]

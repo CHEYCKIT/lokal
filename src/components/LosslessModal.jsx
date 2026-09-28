@@ -106,7 +106,7 @@ export default function LosslessModal() {
         <div className="space-y-2">
           <p className="text-[11px] font-display uppercase tracking-widest text-muted">Buy in lossless</p>
           {links?.exact?.map(link => <LinkRow key={link.url} link={link} />)}
-          {(links?.searches?.length ? links.searches : storeSearches(track)).map(link => <LinkRow key={link.url} link={link} />)}
+          {storeSearches(track).map(link => <LinkRow key={link.url} link={link} />)}
           {!links && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> Looking for the exact release on MusicBrainz (a few seconds)…</p>}
           {links && !links.exact?.length && (
             <p className="text-[11px] text-muted">
