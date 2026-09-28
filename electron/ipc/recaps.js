@@ -74,6 +74,22 @@ function weekRange(weekStart, tz) {
   return { from: Math.floor(from / 1000), to: Math.floor(to / 1000) - 1, year: y, weekStart: m[0], tz: zone }
 }
 
+/**
+ * A calendar month (1-12) of `year`, from the 1st 00:00 to the last day's
+ * 23:59:59 in the listener's time zone (`tz`; the server's if absent).
+ * Null unless year and month are whole numbers in range.
+ */
+function monthRange(year, month, tz) {
+  const y = Number(year)
+  const m = Number(month)
+  if (!Number.isInteger(y) || y < 1970 || y > 9999 || !Number.isInteger(m) || m < 1 || m > 12) return null
+  const zone = validTimeZone(tz)
+  const next = m === 12 ? [y + 1, 1] : [y, m + 1]
+  const from = midnightMs(y, m, 1, zone)
+  const to = midnightMs(next[0], next[1], 1, zone)
+  return { from: Math.floor(from / 1000), to: Math.floor(to / 1000) - 1, year: y, month: m, tz: zone }
+}
+
 function resolveRange(opts = {}) {
   const now = new Date()
   const currentYear = now.getFullYear()
@@ -81,6 +97,10 @@ function resolveRange(opts = {}) {
     const week = weekRange(opts.weekStart, opts.tz)
     // Never fall back to another range for a bad week.
     return week ? { ...week, scope: 'week' } : { error: 'Invalid week: weekStart must be a Monday (YYYY-MM-DD).' }
+  }
+  if (opts.scope === 'month') {
+    const month = monthRange(opts.year, opts.month, opts.tz)
+    return month ? { ...month, scope: 'month' } : { error: 'Invalid month: year and month (1-12) are needed.' }
   }
   if (opts.scope === 'quarter') {
     const q = opts.quarter || Math.floor(now.getMonth() / 3) + 1
@@ -296,7 +316,7 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   const range = resolveRange(opts)
   if (range.error) return { error: range.error }
   const now = Math.floor(Date.now() / 1000)
-  if ((range.scope === 'week' || range.scope === 'quarter' || range.scope === 'year') && range.to >= now) {
+  if (['week', 'month', 'quarter', 'year'].includes(range.scope) && range.to >= now) {
     return { error: 'This recap period has not finished yet.' }
   }
   try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}

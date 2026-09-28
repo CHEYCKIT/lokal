@@ -328,7 +328,7 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
   useEffect(() => {
     if (!open) return
     setIndex(0)
-  }, [open, recap?.scope, recap?.year, recap?.quarter])
+  }, [open, recap?.scope, recap?.year, recap?.month, recap?.weekStart])
 
   useEffect(() => {
     if (!open || !slide?.track?.id) return
@@ -592,7 +592,7 @@ export default function Recap() {
             Listening Recaps
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), plus each quarter and year, built from your local listening sessions.</p>
+          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday) and month, plus each year, built from your local listening sessions.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={loadPeriodList} disabled={checkingPeriods || loading} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-muted transition-colors hover:text-white disabled:opacity-50">
