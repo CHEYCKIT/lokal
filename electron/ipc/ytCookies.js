@@ -11,11 +11,17 @@
 // Now:
 //  - a cookies.txt file (the workaround yt-dlp recommends) can be chosen instead
 //    of a browser;
+//  - or the user's YouTube cookie can be pasted (like the Spotify one for
+//    canvases): Lokal writes it to a private cookies.txt in its data folder
+//    and hands that to yt-dlp. A YouTube Premium account's cookie gives
+//    Premium's 256 kbps AAC when streaming at "Best";
 //  - if reading a browser's cookies fails, the download is retried once without
 //    cookies (most music downloads don't need them), and browser cookies are
 //    skipped for the rest of the session so each download doesn't fail first.
 
 const fs = require('fs')
+const path = require('path')
+const crypto = require('crypto')
 
 const CHROMIUM = new Set(['chrome', 'chromium', 'edge', 'brave', 'opera', 'vivaldi', 'whale'])
 
@@ -24,9 +30,59 @@ const COOKIE_ERROR = /Failed to decrypt with DPAPI|app[- ]bound|Could not copy \
 // Browsers whose cookies failed this session; skipped until the app restarts.
 const unreadable = new Set()
 
+/**
+ * A Netscape cookies.txt for youtube.com from what the user pasted: a Cookie
+ * header ("name=value; name2=value2", with or without "cookie:"), or a
+ * cookies.txt as is. Returns '' when nothing usable was pasted.
+ */
+function cookiesTxtFrom(pasted) {
+  const text = String(pasted || '').trim()
+  if (!text) return ''
+  if (/^(?:#|\.?[\w.-]+\t(?:TRUE|FALSE)\t)/m.test(text)) return text.endsWith('\n') ? text : `${text}\n`
+  const expires = Math.floor(Date.now() / 1000) + 365 * 24 * 3600
+  const lines = ['# Netscape HTTP Cookie File', '# Written by Lokal from the cookie pasted in Settings.']
+  for (const part of text.replace(/^cookie:\s*/i, '').split(/;\s*/)) {
+    const i = part.indexOf('=')
+    if (i <= 0) continue
+    const name = part.slice(0, i).trim()
+    const value = part.slice(i + 1).trim()
+    if (!/^[\w.$%&+-]+$/.test(name) || /[\t\r\n]/.test(value)) continue
+    lines.push(['.youtube.com', 'TRUE', '/', 'TRUE', String(expires), name, value].join('\t'))
+  }
+  return lines.length > 2 ? `${lines.join('\n')}\n` : ''
+}
+
+/** Does a pasted cookie look like a signed-in YouTube session? */
+function looksSignedIn(pasted) {
+  return /(?:^|[;\s\t])(?:__Secure-3PAPISID|SAPISID|__Secure-1PSID|LOGIN_INFO)[=\t]/.test(String(pasted || ''))
+}
+
+/** Write the pasted cookie as cookies.txt in the data folder (only when it changed). */
+function pastedCookieFile(pasted) {
+  const content = cookiesTxtFrom(pasted)
+  if (!content) return null
+  let dir
+  try { dir = require('./db').getStorageDir() } catch { return null }
+  if (!dir) return null
+  const file = path.join(dir, 'youtube-cookies.txt')
+  const stamp = path.join(dir, 'youtube-cookies.hash')
+  const hash = crypto.createHash('sha256').update(content).digest('hex')
+  try {
+    if (!fs.existsSync(file) || (fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '') !== hash) {
+      fs.writeFileSync(file, content, { mode: 0o600 })
+      fs.writeFileSync(stamp, hash, { mode: 0o600 })
+    }
+    return file
+  } catch { return null }
+}
+
 function cookieSource(settings) {
   if (settings.yt_cookies !== '1') return null
   const browser = String(settings.yt_cookie_browser || 'firefox').toLowerCase()
+  if (browser === 'paste') {
+    const file = pastedCookieFile(settings.yt_cookie_header)
+    return file ? { type: 'file', file } : null
+  }
   if (browser === 'file') {
     const file = String(settings.yt_cookie_file || '').trim()
     return file ? { type: 'file', file } : null
@@ -74,4 +130,4 @@ function markUnreadable(browser) {
 
 const COOKIE_FAILURE_MESSAGE = "Couldn't read the browser's cookies. Pick Firefox or a cookies.txt file in Settings → Library, or turn YouTube cookies off."
 
-module.exports = { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE }
+module.exports = { cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE, cookiesTxtFrom, looksSignedIn }
