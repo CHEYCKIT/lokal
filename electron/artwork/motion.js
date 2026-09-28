@@ -154,7 +154,7 @@ async function fromApple({ title, artist, album }, storefront = 'us') {
   const songs = res?.results?.songs?.data || []
   const wantTitle = norm(cleanTitle(title))
   const wantAlbum = norm(album)
-  let best = null
+  const matches = []
   for (const song of songs) {
     const a = song.attributes || {}
     if (COMPILATION.test(a.albumName || '')) continue
@@ -165,18 +165,26 @@ async function fromApple({ title, artist, album }, storefront = 'us') {
     if (wantAlbum) score += al === wantAlbum ? 20 : (al.includes(wantAlbum) || wantAlbum.includes(al)) ? 10 : 0
     const editionHere = EDITION.test(a.albumName || '')
     if (editionHere) score += EDITION.test(album || '') ? 5 : -3
-    if (score >= 12 && (!best || score > best.score)) best = { song, score }
+    if (score >= 12) matches.push({ song, score })
   }
-  if (!best) return null
-  let video = best.song.attributes?.editorialVideo
-  if (!pickRendition(video)) {
-    const albumId = best.song.relationships?.albums?.data?.[0]?.id || String(best.song.attributes?.url || '').match(/\/album\/[^?]*?(\d+)(?:\?|$)/)?.[1]
-    if (!albumId || String(albumId).startsWith('pl.')) return null
-    const albumRes = await appleGet(`${base}/albums/${albumId}?extend=editorialVideo`)
-    video = albumRes?.data?.[0]?.attributes?.editorialVideo
+  // Best match first; but when several tie (no album to tell the single from
+  // the album release, say) the first may simply have no moving cover while
+  // another release of the same song does -- so try the top few in turn.
+  matches.sort((x, y) => y.score - x.score)
+  const seenAlbums = new Set()
+  for (const { song } of matches.slice(0, 4)) {
+    let video = song.attributes?.editorialVideo
+    if (!pickRendition(video)) {
+      const albumId = song.relationships?.albums?.data?.[0]?.id || String(song.attributes?.url || '').match(/\/album\/[^?]*?(\d+)(?:\?|$)/)?.[1]
+      if (!albumId || String(albumId).startsWith('pl.') || seenAlbums.has(albumId)) continue
+      seenAlbums.add(albumId)
+      const albumRes = await appleGet(`${base}/albums/${albumId}?extend=editorialVideo`)
+      video = albumRes?.data?.[0]?.attributes?.editorialVideo
+    }
+    const pick = pickRendition(video)
+    if (pick) return { url: pick.url, kind: 'hls', source: 'apple', tall: pick.tall }
   }
-  const pick = pickRendition(video)
-  return pick ? { url: pick.url, kind: 'hls', source: 'apple', tall: pick.tall } : null
+  return null
 }
 
 // ---------------------------------------------------------------- Tidal
@@ -368,8 +376,15 @@ function enabledSources(settings) {
 /**
  * @returns {Promise<{ file: string, source: string, tall: boolean } | null>}
  */
+// The library stores a missing album as the literal "Unknown Album". Treat
+// that (or an empty album) as no album, so sources match on title and artist
+// alone -- otherwise Tidal and the community list, which require the album to
+// match when one is given, never found anything for these tracks.
+const NO_ALBUM = /^\s*(?:unknown album|unknown|untitled)?\s*$/i
+
 async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {}) {
   if (!track?.title || !track?.artist) return null
+  if (NO_ALBUM.test(track.album || '')) track = { ...track, album: '' }
   if (settings.motion_covers === '0') return null
   const sources = enabledSources(settings)
   if (!sources.length) return null
@@ -377,7 +392,8 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   // "|s3": Spotify lookups from before the canvas-query switch are ignored.
   // "|v2": lookups from before the provider-call fix above are ignored (they
   // were cached as "no moving cover" for days).
-  const key = keyFor(track) + `|${sources.join(',')}|v2` + (sources.includes('spotify') ? '|s3' : '')
+  // "|v3": lookups made before "Unknown Album" was ignored are looked up again.
+  const key = keyFor(track) + `|${sources.join(',')}|v3` + (sources.includes('spotify') ? '|s3' : '')
   const row = db.prepare('SELECT data, fetched_at FROM motion_covers WHERE key = ?').get(key)
   let found
   if (row) {
