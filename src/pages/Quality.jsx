@@ -18,15 +18,17 @@ const FILTERS = [
 ]
 const PAGE = 200
 
-function StatTile({ tier, count, total, active, onClick }) {
+// Every tile has the same rows, each one line high (badge, number, share,
+// description), so the badges, numbers and texts line up across the row.
+function StatTile({ tier, count, share, active, onClick }) {
   const info = TIERS[tier]
-  const share = total ? Math.round((count / total) * 100) : 0
   return (
-    <button onClick={onClick}
-      className={`rounded-2xl border p-3 text-left transition-colors ${active ? 'border-accent/50 bg-accent/10' : 'border-border bg-card/50 hover:bg-card'}`}>
-      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
-      <p className="mt-2 font-display text-2xl text-white">{Number(count || 0).toLocaleString()}</p>
-      <p className="text-[11px] text-muted">{tier === 'suspect' ? info.desc : `${share}% · ${info.desc}`}</p>
+    <button onClick={onClick} title={info.hint}
+      className={`flex h-full min-w-0 flex-col items-start justify-start gap-1.5 rounded-2xl border p-3 text-left transition-colors ${active ? 'border-accent/50 bg-accent/10' : 'border-border bg-card/50 hover:bg-card'}`}>
+      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide ${info.className}`}>{info.label}</span>
+      <span className="mt-1 font-display text-2xl leading-8 tabular-nums text-white">{Number(count || 0).toLocaleString()}</span>
+      <span className="w-full truncate text-[11px] leading-4 text-muted/80 tabular-nums">{share}</span>
+      <span className="w-full truncate text-[11px] leading-4 text-muted">{info.desc}</span>
     </button>
   )
 }
@@ -86,6 +88,13 @@ export default function Quality() {
   const total = summary?.total || 0
   const unread = tiers.unknown || 0
   const running = job.running
+  const known = total - unread
+  const checked = (tiers.hires || 0) + (tiers.lossless || 0) - (summary?.unchecked || 0)
+  // Tiers: share of the tracks read. Suspect: out of the lossless files checked.
+  const shareText = (tier) => {
+    if (tier === 'suspect') return checked > 0 ? `of ${checked.toLocaleString()} checked` : 'Not checked yet'
+    return known ? `${Math.round(((tiers[tier] || 0) / known) * 100)}% of tracks` : '—'
+  }
 
   return (
     <div className="max-w-5xl space-y-6 px-4 pb-12 pt-6">
@@ -128,7 +137,7 @@ export default function Quality() {
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {['hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
-            <StatTile key={tier} tier={tier} count={tiers[tier]} total={total - unread} active={filter === tier} onClick={() => setFilter(tier)} />
+            <StatTile key={tier} tier={tier} count={tiers[tier]} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
           ))}
         </div>
       </section>

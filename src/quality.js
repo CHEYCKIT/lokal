@@ -39,11 +39,11 @@ export function isUpgradable(track) {
 }
 
 export const TIERS = {
-  hires: { label: 'Hi-res', desc: 'Lossless above CD quality', className: 'bg-violet-500/15 text-violet-300 border-violet-400/25' },
-  lossless: { label: 'Lossless', desc: 'CD quality or better', className: 'bg-green-500/15 text-green-300 border-green-400/25' },
-  high: { label: 'High', desc: 'Lossy, 256 kbps+ (Opus 160+)', className: 'bg-sky-500/15 text-sky-300 border-sky-400/25' },
-  low: { label: 'Low', desc: 'Lossy, below that', className: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/25' },
-  suspect: { label: 'Suspect', desc: 'Lossless file made from a lossy one', className: 'bg-red/15 text-red border-red/30' },
+  hires: { label: 'Hi-res', desc: 'Above CD quality', hint: 'Lossless, more than 16-bit or 48 kHz', className: 'bg-violet-500/15 text-violet-300 border-violet-400/25' },
+  lossless: { label: 'Lossless', desc: 'CD quality', hint: 'Lossless, 16-bit up to 48 kHz', className: 'bg-green-500/15 text-green-300 border-green-400/25' },
+  high: { label: 'High', desc: 'Lossy, 256 kbps and up', hint: 'MP3/AAC at 256 kbps or more, Opus/Vorbis at 160 kbps or more', className: 'bg-sky-500/15 text-sky-300 border-sky-400/25' },
+  low: { label: 'Low', desc: 'Lossy, under 256 kbps', hint: 'MP3/AAC under 256 kbps, Opus/Vorbis under 160 kbps', className: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/25' },
+  suspect: { label: 'Suspect', desc: 'FLAC made from a lossy file', hint: 'The spectrum check found a lossy encoder\'s cut-off', className: 'bg-red/15 text-red border-red/30' },
   unknown: { label: 'Not read', desc: 'Details not read yet', className: 'bg-white/5 text-muted border-border' },
 }
 
