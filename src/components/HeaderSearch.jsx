@@ -185,17 +185,17 @@ export default function HeaderSearch() {
         onClick={() => nav('/')}
         title="Home"
         aria-label="Home"
-        className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors bg-elevated hover:bg-card ${onHome ? 'text-text' : 'text-muted hover:text-text'}`}
+        className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-elevated hover:bg-card ${onHome ? 'text-text' : 'text-muted hover:text-text'}`}
       >
-        <Home size={13} strokeWidth={onHome ? 2.4 : 1.8} />
+        <Home size={15} strokeWidth={onHome ? 2.4 : 1.8} />
       </button>
 
       <div className="relative min-w-0" style={{ flex: '0 1 474px' }} data-tour="search">
         <div
-          className={`group h-6 flex items-center rounded-full bg-elevated border transition-colors ${focused ? 'border-accent/60' : 'border-transparent hover:border-border2 hover:bg-card'}`}
+          className={`group h-7 flex items-center rounded-full bg-elevated border transition-colors ${focused ? 'border-accent/60' : 'border-transparent hover:border-border2 hover:bg-card'}`}
           onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}
         >
-          <SearchIcon size={13} className={`ml-2.5 mr-1.5 flex-shrink-0 ${focused ? 'text-text' : 'text-muted group-hover:text-text'}`} />
+          <SearchIcon size={15} className={`ml-3 mr-1.5 flex-shrink-0 ${focused ? 'text-text' : 'text-muted group-hover:text-text'}`} />
           <input
             ref={inputRef}
             value={query}
@@ -209,7 +209,7 @@ export default function HeaderSearch() {
             aria-expanded={showDropdown}
             aria-controls="header-search-history"
             aria-activedescendant={active >= 0 ? `header-search-history-${active}` : undefined}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] leading-none text-text placeholder:text-muted"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[14px] leading-none text-text placeholder:text-muted"
           />
           {query && (
             <button
@@ -219,21 +219,21 @@ export default function HeaderSearch() {
               aria-label="Clear search"
               className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-muted hover:text-text"
             >
-              <X size={12} />
+              <X size={14} />
             </button>
           )}
-          <span className="flex-shrink-0 w-px h-3.5 bg-border2 mx-1" />
+          <span className="flex-shrink-0 w-px h-4 bg-border2 mx-1" />
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={playRandom}
             disabled={randomLoading}
             title="Play a random song"
             aria-label="Play a random song"
-            className="flex-shrink-0 w-6 h-6 mr-0.5 rounded-full flex items-center justify-center text-muted hover:text-text disabled:opacity-60 transition-colors"
+            className="flex-shrink-0 w-7 h-7 mr-0.5 rounded-full flex items-center justify-center text-muted hover:text-text disabled:opacity-60 transition-colors"
           >
             {randomLoading
               ? <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-              : <Shuffle size={13} />}
+              : <Shuffle size={15} />}
           </button>
         </div>
 
