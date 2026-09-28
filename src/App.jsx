@@ -1015,10 +1015,25 @@ export default function App() {
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
     lastfmScrobbleCheckRef.current = playbackKey
 
+    const clearLastfmScrobbleCheck = () => {
+      if (lastfmScrobbleCheckRef.current === playbackKey) {
+        lastfmScrobbleCheckRef.current = null
+      }
+    }
+
     api.getSettings().then((settings) => {
-      if (settings?.lastfm_enabled === '0') return
-      if (settings?.lastfm_scrobbling !== '1') return
-      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) return
+      if (settings?.lastfm_enabled === '0') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (settings?.lastfm_scrobbling !== '1') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) {
+        clearLastfmScrobbleCheck()
+        return
+      }
       pushLastfmStatus({
         level: 'info',
         label: 'Scrobble',
@@ -1070,8 +1085,8 @@ export default function App() {
           label: 'Scrobble',
           message: `Failed to scrobble ${track.artist} - ${track.title}`
         })
-      })
-    }).catch(() => {})
+      }).finally(clearLastfmScrobbleCheck)
+    }).catch(clearLastfmScrobbleCheck)
   }, [getLastfmTrackDuration, shouldScrobbleLastfmTrack])
 
   // ListenBrainz: submitted at the same moment, under the same rule, as a
@@ -1086,9 +1101,16 @@ export default function App() {
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
     listenbrainzSubmittedPlaybackKeyRef.current = playbackKey
     Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
-      // Off / not set up: allow a later try (e.g. after connecting).
-      if (!result || result.skipped || result.error) listenbrainzSubmittedPlaybackKeyRef.current = null
-    }).catch(() => { listenbrainzSubmittedPlaybackKeyRef.current = null })
+      // Off / not set up: allow a later try (e.g. after connecting). Do not
+      // clear a newer track's marker when this request settles late.
+      if ((!result || result.skipped || result.error) && listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
+        listenbrainzSubmittedPlaybackKeyRef.current = null
+      }
+    }).catch(() => {
+      if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
+        listenbrainzSubmittedPlaybackKeyRef.current = null
+      }
+    })
   }, [shouldScrobbleLastfmTrack])
 
   useEffect(() => {

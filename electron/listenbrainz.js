@@ -11,6 +11,7 @@
 const API = 'https://api.listenbrainz.org/1'
 const QUEUE_LIMIT = 5000
 const BATCH = 100
+const QUEUE_RETRY_INTERVAL_MS = 60 * 1000
 
 let clientVersion = ''
 try { clientVersion = require('../package.json').version || '' } catch {}
@@ -106,6 +107,25 @@ function queuedCount(db) {
 }
 
 let flushing = null
+let queueRetryTimer = null
+let queueRetryDb = null
+
+/** Keep retrying queued listens while the app/server is running. */
+function startQueueRetry(db) {
+  if (db) queueRetryDb = db
+  if (queueRetryTimer || !queueRetryDb) return
+
+  queueRetryTimer = setInterval(() => {
+    try {
+      const currentDb = queueRetryDb
+      const s = settingsOf(currentDb)
+      if (s.enabled && s.token && queuedCount(currentDb)) {
+        flushQueue(currentDb, s.token).catch(() => {})
+      }
+    } catch {}
+  }, QUEUE_RETRY_INTERVAL_MS)
+  queueRetryTimer.unref?.()
+}
 
 /** Send queued listens, oldest first, in batches. Stops at the first failure. */
 function flushQueue(db, token) {
@@ -162,6 +182,8 @@ async function connect(db, token) {
   setSetting(db, 'listenbrainz_token', String(token).trim())
   setSetting(db, 'listenbrainz_username', result.username)
   setSetting(db, 'listenbrainz_enabled', '1')
+  startQueueRetry(db)
+  if (queuedCount(db)) flushQueue(db, String(token).trim()).catch(() => {})
   return { ok: true, username: result.username }
 }
 
@@ -176,6 +198,7 @@ function disconnect(db) {
 
 /** Connection state for Settings: connected, username, on/off, queued count. */
 function status(db) {
+  startQueueRetry(db)
   const s = settingsOf(db)
   return { connected: !!s.token, username: s.username, enabled: s.enabled, queued: queuedCount(db) }
 }
@@ -193,6 +216,7 @@ async function nowPlaying(db, track) {
 
 /** Submit a finished listen; queued if ListenBrainz can't take it right now. */
 async function submitListen(db, track, listenedAt) {
+  startQueueRetry(db)
   const s = settingsOf(db)
   if (!s.enabled || !s.token) return { skipped: true, reason: 'ListenBrainz is off' }
   if (!track?.artist || !track?.title) return { skipped: true, reason: 'No artist or title' }
@@ -210,4 +234,4 @@ async function submitListen(db, track, listenedAt) {
   return { queued: true, reason: r.error || `ListenBrainz answered ${r.status}` }
 }
 
-module.exports = { connect, disconnect, status, nowPlaying, submitListen, flushQueue, validateToken, listenOf, settingsOf }
+module.exports = { connect, disconnect, status, nowPlaying, submitListen, flushQueue, startQueueRetry, validateToken, listenOf, settingsOf }

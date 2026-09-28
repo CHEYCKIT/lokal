@@ -1346,7 +1346,10 @@ function registerScannerHandlers(ipcMain) {
     if (kept.length) {
       const restore = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
       for (const row of kept) {
-        if (!(row.key in incoming)) restore.run(row.key, row.value)
+        const incomingValue = incoming[row.key]
+        if (!(row.key in incoming) || String(incomingValue) === SECRET_SETTING_PLACEHOLDER) {
+          restore.run(row.key, row.value)
+        }
       }
     }
     return result
