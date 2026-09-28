@@ -25,7 +25,6 @@ const net = require('net')
 
 const COOKIE = 'lokal_api_key'
 const ONE_YEAR_S = 365 * 24 * 3600
-const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 /** The API_KEY from the environment, or '' when none is set. */
 function configuredKey() {
@@ -128,7 +127,7 @@ function requireApiKey(req, res, next) {
   if (header) {
     if (sameKey(header, key)) return next()
   } else if (sameKey(cookie, key)) {
-    if (SAFE_METHODS.has(req.method) || isSameOrigin(req)) return next()
+    if (isSameOrigin(req)) return next()
     return res.status(403).json({ error: 'Cross-origin request refused.' })
   }
   res.status(401).json({ error: 'This Lokal server needs its API key.', needsApiKey: true })

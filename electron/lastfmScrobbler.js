@@ -17,6 +17,7 @@ const API_ROOT = 'https://ws.audioscrobbler.com/2.0/'
 const BATCH = 50            // Last.fm's maximum per track.scrobble call
 const QUEUE_LIMIT = 5000
 const MAX_AGE_S = 14 * 24 * 3600 // Last.fm ignores scrobbles older than two weeks
+const RETRY_DELAY_MS = 60 * 1000
 // Errors worth retrying later: 11 service offline, 16 temporarily unavailable, 29 rate limit.
 const RETRYABLE = new Set([11, 16, 29])
 // Credential/config problems the user can fix (4 auth failed, 9 session expired,
@@ -126,9 +127,23 @@ function queuedCount(db) {
 }
 
 let flushing = null
+let retryTimer = null
+
+function scheduleFlush(db) {
+  if (retryTimer) return
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    flushQueue(db).catch(() => {})
+  }, RETRY_DELAY_MS)
+  retryTimer.unref?.()
+}
 
 /** Send queued scrobbles in batches of 50, oldest first; drop ones too old for Last.fm. */
 function flushQueue(db) {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
   if (flushing) return flushing
   flushing = (async () => {
     const start = settingsOf(db)
@@ -158,7 +173,10 @@ function flushQueue(db) {
       const done = () => db.prepare(`DELETE FROM lastfm_queue WHERE id IN (${rows.map(() => '?').join(',')})`).run(...rows.map(r => r.id))
       if (!i) { done(); continue }
       const json = await signedCall('track.scrobble', params, s)
-      if (json.networkError || RETRYABLE.has(json.error)) break // still unreachable: try again later
+      if (json.networkError || RETRYABLE.has(json.error)) {
+        scheduleFlush(db)
+        break
+      }
       if (NEEDS_USER.has(json.error)) break // keep them until the credentials are fixed
       done() // sent, or refused for good: don't retry forever
       if (!json.error) sent += i
@@ -201,6 +219,7 @@ async function scrobble(db, { artist, track, album, duration, timestamp }) {
   const json = await signedCall('track.scrobble', params, s)
   if (json.networkError || RETRYABLE.has(json.error) || NEEDS_USER.has(json.error)) {
     enqueue(db, item)
+    if (json.networkError || RETRYABLE.has(json.error)) scheduleFlush(db)
     return { queued: true, reason: json.networkError ? `Couldn't reach Last.fm (${json.networkError})` : describeError(json) }
   }
   if (json.error) return { error: describeError(json) }
