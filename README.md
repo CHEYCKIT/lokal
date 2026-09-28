@@ -117,7 +117,8 @@ Auto-generated mixes built from your listening history and liked tracks, as well
 - **Web mode** — run as a web server to access your library from another device on your network (currently in hiatus, main focus on app ver.)
 - **Artist name exceptions** — prevents names like "Tyler, the Creator" from being incorrectly split into multiple artists, configurable via **settings**. 
 - **Queue & Shuffling** — move around your queue as needed and shuffle with the ability to fully go back without issue.
-- **Last.FM Scrobbling (in alpha, half-done implementation)** — scrobble your music with *last.fm* to keep your profile up-to-date (requires 50% listened)
+- **Last.fm Scrobbling** — sends "now playing" and scrobbles to *last.fm* (after half the track or 4 minutes), in the app and in web mode. Scrobbles made while offline are kept and sent later.
+- **ListenBrainz** — the same for *ListenBrainz* (the open alternative by MetaBrainz): paste your user token in **Settings → Integrations**. Listens made while offline are kept and sent later.
 
 ---
 
@@ -178,7 +179,7 @@ If you want to access your library from another device (e.g. devices on the go/l
    - Windows: `C:\Users\<you>\AppData\Roaming\lokal-music\data`
    - macOS: `~/Library/Application Support/lokal-music/data`
    - Linux: `~/.config/lokal-music/data`
-3. Optionally set `API_KEY` to a random string to protect remote access
+3. Optionally set `API_KEY` to a random string to protect remote access: every `/api` request then needs it. The web app asks for it once per browser (it's kept in a cookie); other clients send it as an `x-api-key` header. To reach Lokal from outside your network, put it behind HTTPS (a reverse proxy or tunnel with TLS): with `API_KEY` set, plain HTTP is only accepted from this machine and your local network
 4. Run `npm run dev:web`
 
 ---

@@ -15,7 +15,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:3421', changeOrigin: true }
+      // xfwd: pass the page's own host on, so the server's same-origin check
+      // (API_KEY, cookie-authorised writes) recognises requests from :5173.
+      '/api': { target: 'http://localhost:3421', changeOrigin: true, xfwd: true }
     }
   }
 })

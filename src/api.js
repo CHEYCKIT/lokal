@@ -45,6 +45,38 @@ function albumTrackParams(album) {
   return new URLSearchParams(Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')))
 }
 
+// Web mode with API_KEY set on the server: ask for the key once, let the
+// server store it as a cookie (which also covers artwork and audio), then
+// reload so everything that failed without it loads.
+let apiKeyPrompt = null
+/** Ask once for the server's API key, store it as a cookie via /api/auth, then reload. */
+function askForApiKey() {
+  if (!apiKeyPrompt) {
+    apiKeyPrompt = (async () => {
+      let message = 'This Lokal server is protected. Enter its API key:'
+      for (;;) {
+        const key = window.prompt(message)
+        if (!key) return false
+        const res = await fetch(BASE + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key }),
+        }).catch(() => null)
+        if (res?.ok) { window.location.reload(); return true }
+        if (res?.status === 403) {
+          // Plain HTTP from outside the local network: retrying won't help.
+          window.alert((await res.json().catch(() => ({}))).error || 'This server refused the key.')
+          return false
+        }
+        message = 'That key was not accepted. Enter the API key:'
+      }
+    })()
+    // Once it's settled (cancelled, refused or accepted), a later 401 can ask again.
+    apiKeyPrompt.finally(() => { apiKeyPrompt = null })
+  }
+  return apiKeyPrompt
+}
+
 async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(BASE + path, {
@@ -52,6 +84,11 @@ async function apiFetch(path, opts = {}) {
       ...opts,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     })
+    if (res.status === 401) {
+      const body = await res.json().catch(() => ({}))
+      if (body.needsApiKey) askForApiKey()
+      return { error: body.error || 'Not authorized' }
+    }
     if (!res.ok) return { error: (await res.json().catch(() => ({}))).error || 'Request failed' }
     return res.json()
   } catch (e) { return { error: e.message } }
@@ -240,6 +277,12 @@ export const api = {
   lastfmGetTrackInfo: (artist, track) => isE() ? el().lastfmGetTrackInfo(artist, track) : apiFetch(`/lastfm/track?${new URLSearchParams({artist, track})}`),
   lastfmGetSimilarArtists: (artist, limit) => isE() ? el().lastfmGetSimilarArtists(artist, limit) : apiFetch(`/lastfm/similar/${encodeURIComponent(artist)}?limit=${limit || 5}`),
   lastfmScrobble: (artist, track, album, duration, timestamp) => isE() ? el().lastfmScrobble(artist, track, album, duration, timestamp) : apiFetch('/lastfm/scrobble', { method:'POST', body:{artist, track, album, duration, timestamp} }),
+  listenbrainzStatus: () => isE() ? el().listenbrainzStatus() : apiFetch('/listenbrainz/status'),
+  listenbrainzConnect: (token) => isE() ? el().listenbrainzConnect(token) : apiFetch('/listenbrainz/connect', { method: 'POST', body: { token } }),
+  listenbrainzDisconnect: () => isE() ? el().listenbrainzDisconnect() : apiFetch('/listenbrainz/disconnect', { method: 'POST' }),
+  listenbrainzSetEnabled: (enabled) => isE() ? el().listenbrainzSetEnabled(enabled) : apiFetch('/listenbrainz/enabled', { method: 'POST', body: { enabled } }),
+  listenbrainzNowPlaying: (track) => isE() ? el().listenbrainzNowPlaying(track) : apiFetch('/listenbrainz/now-playing', { method: 'POST', body: { track } }),
+  listenbrainzSubmit: (track, listenedAt) => isE() ? el().listenbrainzSubmit(track, listenedAt) : apiFetch('/listenbrainz/submit', { method: 'POST', body: { track, listenedAt } }),
   lastfmUpdateNowPlaying: (artist, track, album, duration) => isE() ? el().lastfmUpdateNowPlaying(artist, track, album, duration) : apiFetch('/lastfm/update-now-playing', { method:'POST', body:{artist, track, album, duration} }),
   onLastfmAuthToken: (fn) => {
     if (isE() && typeof el().onLastfmAuthToken === 'function') {
