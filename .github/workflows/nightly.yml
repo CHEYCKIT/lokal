@@ -59,7 +59,9 @@ jobs:
         shell: bash
         run: |
           BASE=$(node -p "require('./package.json').version.split('-')[0]")
-          git fetch --tags --force --quiet origin || true
+          # Must succeed: without the latest tags, the version and nightly
+          # number below would be worked out from stale ones.
+          git fetch --tags --force --quiet origin
           if git rev-parse -q --verify "refs/tags/v${BASE}" >/dev/null; then
             BASE=$(node -p "const [a, b, c] = process.argv[1].split('.').map(Number); [a, b, c + 1].join('.')" "$BASE")
             echo "v$(node -p "require('./package.json').version") is already released; building the next patch."
