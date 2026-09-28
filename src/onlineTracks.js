@@ -7,6 +7,16 @@ import { api } from './api'
 
 export const PROVIDER_LABELS = { yt: 'YouTube', sc: 'SoundCloud' }
 
+/** Is `provider` a user-installed addon ("a-<key>")? */
+export function isAddonProvider(provider) {
+  return /^a-[0-9a-f]{10}$/.test(String(provider || ''))
+}
+
+/** Label of a provider: YouTube, SoundCloud, or "Addon". */
+export function providerLabel(provider) {
+  return PROVIDER_LABELS[provider] || (isAddonProvider(provider) ? 'Addon' : 'the web')
+}
+
 /** A placeholder track with no file (imported or online). */
 export function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
@@ -15,6 +25,10 @@ export function isGhostTrack(track) {
 /** Where a ghost track can be streamed from: { provider: 'yt' | 'sc', id }, or null. */
 export function streamRef(track) {
   const path = String(track?.file_path || '')
+  const fromAddon = path.match(/^ghost:\/\/addon\/([0-9a-f]{10})\/(.+)$/)
+  if (fromAddon) {
+    try { return { provider: `a-${fromAddon[1]}`, id: decodeURIComponent(fromAddon[2]) } } catch { return null }
+  }
   const own = path.match(/^ghost:\/\/(youtube|soundcloud)\/online\/([\w-]+)$/)
   if (own) return { provider: own[1] === 'youtube' ? 'yt' : 'sc', id: own[2] }
   if (!path.startsWith('ghost://')) return null
@@ -39,7 +53,7 @@ export function isStreamed(track) {
 /** "YouTube" / "SoundCloud" for a streamed track, else null. */
 export function streamLabel(track) {
   const ref = streamRef(track)
-  return ref ? PROVIDER_LABELS[ref.provider] : null
+  return ref ? providerLabel(ref.provider) : null
 }
 
 /** Can the player play it: a file, or a ghost that can be streamed. */
@@ -68,7 +82,7 @@ export function audioSrcFor(track) {
 /** The URL the downloader fetches a streamed song from. */
 export function downloadUrlFor(track) {
   const ref = streamRef(track)
-  if (!ref) return null
+  if (!ref || isAddonProvider(ref.provider)) return null // addons: resolved when saving
   return ref.provider === 'sc' ? `https://api.soundcloud.com/tracks/${ref.id}` : `https://music.youtube.com/watch?v=${ref.id}`
 }
 
@@ -76,13 +90,23 @@ export function downloadUrlFor(track) {
  * Save a streamed song to the library with the usual downloader. Once the
  * file is in, it takes the ghost track's place in playlists, likes and history.
  */
-export function saveToLibrary(track) {
-  const url = downloadUrlFor(track)
-  if (!url) return Promise.resolve({ error: 'Not a streamed song' })
+export async function saveToLibrary(track) {
+  const ref = streamRef(track)
+  let url = downloadUrlFor(track)
+  if (ref && isAddonProvider(ref.provider)) {
+    // An addon's link is only known once asked for (and may expire): get it now.
+    const got = await api.onlineDownloadUrl(ref.provider, ref.id)
+    if (!got?.url) return { error: got?.error || 'The addon gave no download link' }
+    url = got.url
+  }
+  if (!url) return { error: 'Not a streamed song' }
   return api.downloadYT(url, {
     title: [track.artist, track.title].filter(Boolean).join(' - ') || undefined,
     thumbnail: track.artwork_url || undefined,
-    from: 'Streaming',
+    from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
+    // An addon's link expires: the downloader asks the addon for a fresh one
+    // each time the job starts (queued, restarted or retried).
+    addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,
   })
 }

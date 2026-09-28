@@ -420,6 +420,12 @@ class DownloadManager {
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
     if (job.status !== 'downloading') return Promise.resolve({ success: true, status: job.status })
+    if (job.resolvingUrl) {
+      // Still asking the addon for a link: nothing is running yet.
+      job.stop = 'cancelled'
+      this.update(job, { status: 'cancelled', message: 'Cancelled', finishedAt: Date.now() }, { persist: true })
+      return Promise.resolve({ success: true, status: 'cancelled' })
+    }
     if (job.kind === 'soulseek' && !job.exited) {
       job.stop = 'cancelled'
       if (job.transferId) slskd.cancelTransfer(job.settings || this.settings(), job.opts.username, job.transferId)
@@ -495,6 +501,36 @@ class DownloadManager {
   // ------------------------------------------------------------- running
 
   start(job) {
+    // An addon download: its link expires, so ask the addon for a fresh one
+    // right before yt-dlp starts (first run, restart or retry alike). The job
+    // holds its slot meanwhile.
+    if (job.opts?.addonSource && this.deps.resolveAddonUrl && !job.urlRefreshed) {
+      job.resolvingUrl = true
+      job.stop = null
+      this.running++
+      this.update(job, { status: 'downloading', message: 'Getting a fresh link from the addon...', error: null })
+      const { provider, id } = job.opts.addonSource
+      Promise.resolve(this.deps.resolveAddonUrl(provider, id)).then((url) => {
+        if (!url || typeof url !== 'string') throw new Error('The addon gave no download link')
+        return url
+      }).then((url) => {
+        job.resolvingUrl = false
+        this.running--
+        if (job.stop || job.status !== 'downloading') return // cancelled meanwhile
+        job.url = url
+        job.urlRefreshed = true
+        this.start(job)
+      }, (e) => {
+        job.resolvingUrl = false
+        this.running--
+        if (job.stop || job.status !== 'downloading') return
+        const message = `Couldn't get a link from the addon: ${e.message}`
+        this.update(job, { status: 'error', error: message, message, finishedAt: Date.now() }, { persist: true })
+        this.pump()
+      })
+      return
+    }
+    job.urlRefreshed = false // the next start (a retry) asks again
     const check = this.checkTools()
     if (check.error) {
       this.update(job, { status: 'error', error: check.error, message: check.error, finishedAt: Date.now() }, { persist: true })

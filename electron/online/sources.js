@@ -4,6 +4,7 @@
 //   yt  YouTube Music (youtube.js): its own Songs search, full tracks
 //   sc  SoundCloud (soundcloud.js): yt-dlp search, progressive MP3; Go+
 //       tracks only give a 30-second preview
+//   a-<key>  addons the user installed from a manifest URL (addons.js)
 //
 // Shared by the desktop app (IPC + lokal-stream://<provider>/<id>) and the web
 // server (/api/online). An online song that's played, liked or added to a
@@ -12,8 +13,10 @@
 // albums, artists and mixes keep ignoring it. Saving it to the library swaps
 // the ghost for the downloaded file.
 
+const crypto = require('crypto')
 const yt = require('./youtube')
 const sc = require('./soundcloud')
+const addons = require('./addons')
 
 const PROVIDERS = {
   yt: { id: 'yt', label: 'YouTube Music', platform: 'youtube', idPattern: /^[\w-]{11}$/, sourceUrl: id => `https://music.youtube.com/watch?v=${id}` },
@@ -21,15 +24,17 @@ const PROVIDERS = {
 }
 const PLATFORM_TO_PROVIDER = { youtube: 'yt', soundcloud: 'sc' }
 
-/** A known provider, or null. */
+/** A built-in provider, or an addon provider ("a-<key>"), or null. */
 function providerOf(id) {
-  return PROVIDERS[id] || null
+  if (PROVIDERS[id]) return PROVIDERS[id]
+  const key = addons.keyOfProvider(id)
+  return key ? { id, addonKey: key, platform: 'addon', idPattern: /^[^\n\r]{1,300}$/, sourceUrl: () => null } : null
 }
 
 /** Is `id` a well-formed item id for `provider`? */
 function validId(provider, id) {
   const p = providerOf(provider)
-  return !!p && p.idPattern.test(String(id || ''))
+  return !!p && p.idPattern.test(String(id ?? ''))
 }
 
 // ---------------------------------------------------------------- search
@@ -44,7 +49,9 @@ function fromYouTube(r) {
  * YouTube search through yt-dlp if YouTube Music can't be reached.
  * @param fallbackSearch (query) => Promise<results in the yt shape>, optional
  */
-async function search(provider, query, { ytdlp, fetchImpl, fallbackSearch, limit = 10 } = {}) {
+async function search(provider, query, { db, ytdlp, fetchImpl, fallbackSearch, limit = 10 } = {}) {
+  const key = addons.keyOfProvider(provider)
+  if (key) return { results: await addons.search(db, key, query, { fetchImpl, limit: 20 }) }
   if (provider === 'sc') return { results: await sc.searchTracks(query, { ytdlp, limit }) }
   try {
     return { results: (await yt.searchSongs(query, { limit, fetchImpl })).map(fromYouTube) }
@@ -59,18 +66,50 @@ async function search(provider, query, { ytdlp, fetchImpl, fallbackSearch, limit
 /** Resolve (or reuse) the stream of an item. */
 function resolveStream(provider, id, opts = {}) {
   if (!validId(provider, id)) return Promise.reject(new Error('Unknown online song'))
+  const key = addons.keyOfProvider(provider)
+  if (key) return addons.resolveStream(opts.db, key, id, { force: opts.force, fetchImpl: opts.addonFetch })
   return provider === 'sc' ? sc.resolveStream(id, opts) : yt.resolveStream(id, opts)
+}
+
+// How long an addon's media server may take to start answering (per
+// attempt; resolving the stream has its own timeout in addons.js).
+const ADDON_MEDIA_TIMEOUT_MS = 20000
+
+/** Fetch an addon's media: checked redirects, a timeout, and cancelled with `signal`. */
+async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  // The player went away (skipped, closed): stop fetching, body included.
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener?.('abort', cancel, { once: true })
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; controller.abort() }, ADDON_MEDIA_TIMEOUT_MS)
+  try {
+    return await addons.fetchChecked(url, { fetchImpl, headers, signal: controller.signal })
+  } catch (e) {
+    signal?.removeEventListener?.('abort', cancel)
+    if (timedOut) throw new Error("The addon's audio server took too long to answer.")
+    throw e
+  } finally {
+    // Only the wait for the answer is timed: the song itself streams as long as it lasts.
+    clearTimeout(timer)
+  }
 }
 
 /**
  * Fetch (a range of) the audio of an item. A refused URL (expired, or tied to
- * another address) is looked up again once.
+ * another address) is looked up again once. `signal`: aborts an addon's media
+ * request when the one who asked for it goes away.
  */
-async function fetchStream(provider, id, { range, fetchImpl = fetch, ...opts } = {}) {
+async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
   const attempt = async (force) => {
     const stream = await resolveStream(provider, id, { ...opts, force })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
+    // An addon's media URL is the addon's to choose: follow its redirects one
+    // at a time, each checked like the addon's own URLs (https, or http on
+    // this machine / network only). Built-in providers fetch directly.
+    if (addons.keyOfProvider(provider)) return { stream, res: await fetchAddonMedia(stream.url, { fetchImpl, headers, signal }) }
     return { stream, res: await fetchImpl(stream.url, { headers }) }
   }
   let { stream, res } = await attempt(false)
@@ -83,14 +122,26 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, ...opts } =
 
 // ---------------------------------------------------------------- tracks
 
-/** Library id of an online song. */
+/** Library id of an online song (addon ids can be anything, so they're hashed). */
 function onlineTrackId(provider, id) {
+  if (addons.keyOfProvider(provider)) return `${provider}-${crypto.createHash('sha1').update(String(id)).digest('hex').slice(0, 16)}`
   return `${provider}-${id}`
+}
+
+/** ghost:// path of an online song. */
+function ghostPath(provider, id) {
+  const key = addons.keyOfProvider(provider)
+  if (key) return `ghost://addon/${key}/${encodeURIComponent(id)}`
+  return `ghost://${providerOf(provider).platform}/online/${id}`
 }
 
 /** Where a track can be streamed from ({ provider, id }), or null. */
 function streamRef(track) {
   const path = String(track?.file_path || '')
+  const fromAddon = path.match(/^ghost:\/\/addon\/([0-9a-f]{10})\/(.+)$/)
+  if (fromAddon) {
+    try { return { provider: addons.providerFor(fromAddon[1]), id: decodeURIComponent(fromAddon[2]) } } catch { return null }
+  }
   const own = path.match(/^ghost:\/\/(youtube|soundcloud)\/online\/([\w-]+)$/)
   if (own) {
     const provider = PLATFORM_TO_PROVIDER[own[1]]
@@ -138,7 +189,7 @@ function saveOnlineTracks(db, items = []) {
     const id = onlineTrackId(provider, itemId)
     upsert.run({
       id,
-      file_path: `ghost://${p.platform}/online/${itemId}`,
+      file_path: ghostPath(provider, itemId),
       title: String(item.title || 'Unknown Track').slice(0, 500),
       artist: String(item.artist || (item.artists || []).join(', ') || 'Unknown Artist').slice(0, 500),
       album: item.album ? String(item.album).slice(0, 500) : null,
@@ -162,7 +213,7 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
     const prune = db.transaction((cutoff) => {
       const ids = db.prepare(`
         SELECT id FROM tracks
-        WHERE (file_path LIKE 'ghost://youtube/online/%' OR file_path LIKE 'ghost://soundcloud/online/%')
+        WHERE (file_path LIKE 'ghost://youtube/online/%' OR file_path LIKE 'ghost://soundcloud/online/%' OR file_path LIKE 'ghost://addon/%')
           AND COALESCE(last_modified, 0) < ?
           AND id NOT IN (SELECT track_id FROM playlist_tracks)
           AND id NOT IN (SELECT track_id FROM user_likes)
@@ -183,7 +234,7 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
 }
 
 module.exports = {
-  PROVIDERS, providerOf, validId,
+  PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
   onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks,
 }

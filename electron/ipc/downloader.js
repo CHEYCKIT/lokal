@@ -84,6 +84,8 @@ function manager() {
     getDB,
     getStorageDir,
     findTools: () => ({ ytdlp: findYtDlp(), ffmpeg: findFfmpeg(), ffprobe: findFfprobe() }),
+    // A fresh link for an addon download, right before it starts.
+    resolveAddonUrl: async (provider, id) => (await require('../online/sources').resolveStream(provider, id, { db: getDB(), force: true })).url,
     requireFfmpeg: true,
     index: async (filepath, opts) => {
       const { indexSingleFile } = require('./scanner')
@@ -139,7 +141,15 @@ function registerDownloaderHandlers(ipcMain) {
     return runJsonSearch(ytdlp, `${query} artist profile`, mapArtistResult, page, 10, trackProcess)
   })
 
-  ipcMain.handle('downloader:download', (_, url, opts = {}) => manager().enqueue('single', url, opts || {}))
+  ipcMain.handle('downloader:download', (_, url, opts = {}) => {
+    const clean = { ...(opts || {}) }
+    // An addon track: a fresh link is asked for each time the job starts.
+    const source = clean.addonSource
+    const provider = String(source?.provider || '')
+    clean.addonSource = /^a-[0-9a-f]{10}$/.test(provider) && typeof source?.id === 'string' && source.id && source.id.length <= 300 && !/[\r\n]/.test(source.id)
+      ? { provider, id: source.id } : undefined
+    return manager().enqueue('single', url, clean)
+  })
   ipcMain.handle('downloader:cancel', (_, id) => manager().cancel(id))
   ipcMain.handle('downloader:remove', (_, id) => manager().remove(id))
   ipcMain.handle('downloader:retry', (_, id) => manager().retry(id))

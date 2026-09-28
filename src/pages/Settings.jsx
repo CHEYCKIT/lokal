@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
-import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle } from 'lucide-react'
+import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
 import { api } from '../api'
+import AddonsSettings from '../components/AddonsSettings'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
 import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
@@ -29,6 +30,7 @@ const SETTINGS_CATEGORIES = [
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'integrations', label: 'Integrations', icon: Zap },
   { key: 'plugins', label: 'Plugins', icon: Puzzle },
+  { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
 ]
@@ -1386,7 +1388,7 @@ export default function Settings() {
             </div>
           </Row>
         )}
-        <Row label="Streaming Quality" desc={"For songs played from YouTube Music in search. Best: highest bitrate available (Opus ~160 kbps; 256 kbps AAC with a Premium cookie). Data saver: lowest Opus (~50–70 kbps). SoundCloud always streams 128 kbps MP3, the only format it offers for direct playback."}>
+        <Row label="Streaming Quality" desc={"For songs played from YouTube Music in search. Best: highest bitrate available (Opus ~160 kbps; 256 kbps AAC with a Premium cookie). Data saver: lowest Opus (~50–70 kbps). SoundCloud always streams 128 kbps MP3, the only format it offers for direct playback. Addons have their own quality setting in Settings → Addons."}>
           <select
             value={settings.online_quality || 'best'}
             onChange={e => set('online_quality', e.target.value)}
@@ -2160,6 +2162,12 @@ export default function Settings() {
             </div>
           </>
         )}
+      </Section>
+      )}
+
+      {inCategory('addons') && (
+      <Section title="Addons">
+        <AddonsSettings />
       </Section>
       )}
 

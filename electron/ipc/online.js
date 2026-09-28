@@ -20,7 +20,7 @@ function streamOptions() {
   const all = settings()
   // Only YouTube streams go through yt-dlp with cookies.
   const cookies = cookieArgs(all, { url: 'https://music.youtube.com/' })
-  return { quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+  return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
@@ -37,10 +37,19 @@ async function youtubeFallback(query) {
 /** Songs for `query` on a provider ('yt' YouTube Music, 'sc' SoundCloud). */
 async function search(query, provider = 'yt') {
   try {
-    return await sources.search(sources.providerOf(provider) ? provider : 'yt', query, { ytdlp: findYtDlp(), fallbackSearch: youtubeFallback })
+    return await sources.search(sources.providerOf(provider) ? provider : 'yt', query, { db: getDB(), ytdlp: findYtDlp(), fallbackSearch: youtubeFallback })
   } catch (e) {
     return { error: e.message, results: [] }
   }
+}
+
+/** Built-in sources, then the user's enabled addons that can search and stream. */
+function providers() {
+  return [
+    { id: 'yt', label: 'YouTube Music' },
+    { id: 'sc', label: 'SoundCloud' },
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true })),
+  ]
 }
 
 /** IPC: online:search, online:save (keep as ghost tracks), online:prepare (resolve a stream ahead of time, or get why it fails). */
@@ -50,6 +59,19 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('online:save', (_, items) => {
     try { return sources.saveOnlineTracks(getDB(), items) } catch (e) { return { error: e.message } }
   })
+  // The sources the search page can switch between: built-in ones, then addons.
+  ipcMain.handle('online:providers', () => providers())
+  // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
+  ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
+    try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }
+  })
+  ipcMain.handle('addons:list', () => sources.addons.list(getDB()))
+  ipcMain.handle('addons:install', async (_, url) => {
+    try { return await sources.addons.install(getDB(), url) } catch (e) { return { error: e.message } }
+  })
+  ipcMain.handle('addons:remove', (_, key) => sources.addons.remove(getDB(), key))
+  ipcMain.handle('addons:setEnabled', (_, key, enabled) => sources.addons.setEnabled(getDB(), key, enabled))
+  ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
       const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
@@ -73,10 +95,10 @@ function registerStreamProtocol(protocol, net) {
     try {
       const url = new URL(request.url)
       provider = url.hostname
-      id = url.pathname.replace(/^\/+/, '')
+      id = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
     } catch {}
     try {
-      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), fetchImpl: (u, init) => net.fetch(u, init) })
+      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: request.signal, fetchImpl: (u, init) => net.fetch(u, init) })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)
@@ -87,4 +109,4 @@ function registerStreamProtocol(protocol, net) {
   })
 }
 
-module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions }
+module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers }
