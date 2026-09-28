@@ -60,6 +60,11 @@ function getYtDlpDismissKey(status) {
   return `${status?.installedVersion || 'missing'}::${status?.latestVersion || 'unknown'}`
 }
 
+/** The fields ListenBrainz needs from a library track. */
+function listenBrainzTrack(track) {
+  return { title: track.title, artist: track.artist, album: track.album || '', duration: Number(track.duration) || 0, track_num: track.track_num || null }
+}
+
 function pushLastfmStatus(entry) {
   try {
     const feed = JSON.parse(localStorage.getItem(LASTFM_STATUS_KEY) || '[]')
@@ -237,6 +242,7 @@ export default function App() {
   const lastfmPlaybackStartedAtRef = useRef(0)
   const lastfmPlaybackKeyRef = useRef(null)
   const lastfmScrobbledPlaybackKeyRef = useRef(null)
+  const listenbrainzSubmittedPlaybackKeyRef = useRef(null)
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
@@ -949,6 +955,11 @@ export default function App() {
     lastfmPlaybackStartedAtRef.current = startedAt
     lastfmPlaybackKeyRef.current = `${track.id}:${startedAt}`
 
+    // ListenBrainz: "now playing" too (it checks its own on/off switch).
+    if (track.artist && track.title) {
+      api.listenbrainzNowPlaying?.(listenBrainzTrack(track))?.catch?.(() => {})
+    }
+
     api.getSettings().then((settings) => {
       if (settings?.lastfm_enabled === '0') return
       if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) return
@@ -1020,6 +1031,23 @@ export default function App() {
           })
           return
         }
+        if (result?.queued) {
+          // Kept and sent automatically once Last.fm can be reached.
+          pushLastfmStatus({
+            level: 'info',
+            label: 'Scrobble',
+            message: `Saved for later (${result.reason || 'Last.fm unreachable'}): ${track.artist} - ${track.title}`
+          })
+          return
+        }
+        if (result?.ignored) {
+          pushLastfmStatus({
+            level: 'error',
+            label: 'Scrobble',
+            message: `${result.reason || 'Last.fm ignored this scrobble'}: ${track.artist} - ${track.title}`
+          })
+          return
+        }
         pushLastfmStatus({
           level: 'success',
           label: 'Scrobble',
@@ -1036,14 +1064,31 @@ export default function App() {
     }).catch(() => {})
   }, [getLastfmTrackDuration, shouldScrobbleLastfmTrack])
 
+  // ListenBrainz: submitted at the same moment, under the same rule, as a
+  // Last.fm scrobble (half the track or 4 minutes, at least 30 s), but tracked
+  // separately so either service works without the other.
+  const trySubmitListenBrainz = useCallback((track, playedSeconds) => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const startedAt = lastfmPlaybackStartedAtRef.current
+    if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
+    if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) return
+    if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    listenbrainzSubmittedPlaybackKeyRef.current = playbackKey
+    Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
+      // Off / not set up: allow a later try (e.g. after connecting).
+      if (!result || result.skipped || result.error) listenbrainzSubmittedPlaybackKeyRef.current = null
+    }).catch(() => { listenbrainzSubmittedPlaybackKeyRef.current = null })
+  }, [shouldScrobbleLastfmTrack])
+
   const flushTime = useCallback((trackId) => {
     const secs = playSecsRef.current
     const flushedTrack = currentTrackRef.current
     playSecsRef.current = 0
     if (trackId) lastFlushedTrackIdRef.current = trackId
     tryScrobbleLastfmTrack(flushedTrack, secs)
+    trySubmitListenBrainz(flushedTrack, secs)
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
-  }, [tryScrobbleLastfmTrack])
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   useEffect(() => {
     const previousTrack = currentTrackRef.current

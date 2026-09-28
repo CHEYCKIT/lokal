@@ -235,6 +235,12 @@ export const api = {
   lastfmGetTrackInfo: (artist, track) => isE() ? el().lastfmGetTrackInfo(artist, track) : apiFetch(`/lastfm/track?${new URLSearchParams({artist, track})}`),
   lastfmGetSimilarArtists: (artist, limit) => isE() ? el().lastfmGetSimilarArtists(artist, limit) : apiFetch(`/lastfm/similar/${encodeURIComponent(artist)}?limit=${limit || 5}`),
   lastfmScrobble: (artist, track, album, duration, timestamp) => isE() ? el().lastfmScrobble(artist, track, album, duration, timestamp) : apiFetch('/lastfm/scrobble', { method:'POST', body:{artist, track, album, duration, timestamp} }),
+  listenbrainzStatus: () => isE() ? el().listenbrainzStatus() : apiFetch('/listenbrainz/status'),
+  listenbrainzConnect: (token) => isE() ? el().listenbrainzConnect(token) : apiFetch('/listenbrainz/connect', { method: 'POST', body: { token } }),
+  listenbrainzDisconnect: () => isE() ? el().listenbrainzDisconnect() : apiFetch('/listenbrainz/disconnect', { method: 'POST' }),
+  listenbrainzSetEnabled: (enabled) => isE() ? el().listenbrainzSetEnabled(enabled) : apiFetch('/listenbrainz/enabled', { method: 'POST', body: { enabled } }),
+  listenbrainzNowPlaying: (track) => isE() ? el().listenbrainzNowPlaying(track) : apiFetch('/listenbrainz/now-playing', { method: 'POST', body: { track } }),
+  listenbrainzSubmit: (track, listenedAt) => isE() ? el().listenbrainzSubmit(track, listenedAt) : apiFetch('/listenbrainz/submit', { method: 'POST', body: { track, listenedAt } }),
   lastfmUpdateNowPlaying: (artist, track, album, duration) => isE() ? el().lastfmUpdateNowPlaying(artist, track, album, duration) : apiFetch('/lastfm/update-now-playing', { method:'POST', body:{artist, track, album, duration} }),
   onLastfmAuthToken: (fn) => {
     if (isE() && typeof el().onLastfmAuthToken === 'function') {

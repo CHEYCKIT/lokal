@@ -272,6 +272,17 @@ export default function Settings() {
     const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
     setSoulseekCheck(status || { error: 'No answer' })
   }
+  // ListenBrainz: its token is saved only once ListenBrainz confirms it.
+  const [lbStatus, setLbStatus] = useState(null)
+  const [lbToken, setLbToken] = useState('')
+  const [lbMessage, setLbMessage] = useState(null)
+  const refreshListenBrainz = () => { Promise.resolve(api.listenbrainzStatus?.()).then(s => { if (s && !s.error) setLbStatus(s) }).catch(() => {}) }
+  const connectListenBrainz = async () => {
+    setLbMessage({ loading: true })
+    const result = await api.listenbrainzConnect(lbToken.trim()).catch(e => ({ error: e.message }))
+    if (result?.ok) { setLbToken(''); setLbMessage(null); refreshListenBrainz() }
+    else setLbMessage({ error: result?.error || 'Could not connect' })
+  }
   const [spotifyCheck, setSpotifyCheck] = useState(null)
   const testSpotifyCanvas = async () => {
     setSpotifyCheck({ loading: true })
@@ -339,6 +350,8 @@ export default function Settings() {
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState('library')
+  // Load the ListenBrainz connection state when Integrations is opened.
+  useEffect(() => { if (activeCategory === 'integrations') refreshListenBrainz() }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   // Every category shares the page's one scroll container (App's <main>), so
   // switching from halfway down a long category used to land halfway down
   // the next one. Start each category at the top; layout effect so the new
@@ -2068,6 +2081,51 @@ export default function Settings() {
             ))}
           </div>
         </div>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="ListenBrainz">
+        <p className="text-xs text-muted leading-relaxed">
+          Sends what you play to <span className="text-white">ListenBrainz</span>, the open alternative to Last.fm run by MetaBrainz: "now playing" when a song starts, and a listen once you've heard half of it (or 4 minutes). Listens made while offline are kept and sent later.
+        </p>
+        {lbStatus?.connected ? (
+          <>
+            <Row label="Account" desc={lbStatus.queued ? `${lbStatus.queued} listen${lbStatus.queued === 1 ? '' : 's'} waiting to be sent` : 'Connected'}>
+              <div className="flex items-center gap-2">
+                <button onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(lbStatus.username || '')}/`)}
+                  className="text-sm text-accent hover:underline">{lbStatus.username || 'Connected'}</button>
+                <button onClick={async () => { await api.listenbrainzDisconnect(); setLbToken(''); setLbMessage(null); refreshListenBrainz() }}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">Disconnect</button>
+              </div>
+            </Row>
+            <Row label="Submit Listens" desc="Turn off to pause sending without disconnecting.">
+              <button onClick={async () => setLbStatus(await api.listenbrainzSetEnabled(!lbStatus.enabled))}
+                className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${lbStatus.enabled ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {lbStatus.enabled ? 'On' : 'Off'}
+              </button>
+            </Row>
+          </>
+        ) : (
+          <>
+            <Row label="User Token" desc="Copy it from your ListenBrainz settings page (listenbrainz.org/settings). It's stored on this device only.">
+              <div className="flex items-center gap-2">
+                <input type="password" value={lbToken} onChange={e => { setLbToken(e.target.value); setLbMessage(null) }}
+                  placeholder="ListenBrainz user token" spellCheck={false} autoComplete="off"
+                  className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                <button onClick={() => api.openExternal('https://listenbrainz.org/settings/')}
+                  className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">Get Token</button>
+              </div>
+            </Row>
+            <div className="flex items-center gap-3">
+              <button onClick={connectListenBrainz} disabled={lbMessage?.loading || !lbToken.trim()}
+                className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+                {lbMessage?.loading ? 'Checking...' : 'Connect'}
+              </button>
+              {lbMessage?.error && <p className="text-xs text-red-400">{lbMessage.error}</p>}
+            </div>
+          </>
+        )}
       </Section>
       )}
 
