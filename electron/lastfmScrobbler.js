@@ -19,6 +19,10 @@ const QUEUE_LIMIT = 5000
 const MAX_AGE_S = 14 * 24 * 3600 // Last.fm ignores scrobbles older than two weeks
 // Errors worth retrying later: 11 service offline, 16 temporarily unavailable, 29 rate limit.
 const RETRYABLE = new Set([11, 16, 29])
+// Credential/config problems the user can fix (4 auth failed, 9 session expired,
+// 10 bad API key, 13 bad signature/secret, 26 suspended key): keep the
+// scrobbles so they're sent once Last.fm is reconnected, rather than drop them.
+const NEEDS_USER = new Set([4, 9, 10, 13, 26])
 
 const DEFAULT_KEEP_COMMA = [
   'tyler, the creator', 'earth, wind & fire', 'crosby, stills & nash',
@@ -120,11 +124,15 @@ let flushing = null
 function flushQueue(db) {
   if (flushing) return flushing
   flushing = (async () => {
-    const s = settingsOf(db)
-    if (!s.enabled || !s.scrobbling || !s.apiKey || !s.apiSecret || !s.sessionKey) return 0
+    const start = settingsOf(db)
+    if (!start.enabled || !start.scrobbling || !start.apiKey || !start.apiSecret || !start.sessionKey) return 0
     ensureQueue(db)
     let sent = 0
     for (;;) {
+      // Re-check before every batch: stop if Last.fm was switched off or
+      // reconnected (different session) while this was running.
+      const s = settingsOf(db)
+      if (!s.enabled || !s.scrobbling || s.sessionKey !== start.sessionKey || s.apiKey !== start.apiKey) break
       const rows = db.prepare('SELECT id, scrobble FROM lastfm_queue ORDER BY id LIMIT ?').all(BATCH)
       if (!rows.length) break
       const now = Date.now() / 1000
@@ -144,7 +152,8 @@ function flushQueue(db) {
       if (!i) { done(); continue }
       const json = await signedCall('track.scrobble', params, s)
       if (json.networkError || RETRYABLE.has(json.error)) break // still unreachable: try again later
-      done() // sent, or refused for good (bad session etc.): don't retry forever
+      if (NEEDS_USER.has(json.error)) break // keep them until the credentials are fixed
+      done() // sent, or refused for good: don't retry forever
       if (!json.error) sent += i
       else break
     }
@@ -181,7 +190,7 @@ async function scrobble(db, { artist, track, album, duration, timestamp }) {
   if (item.album) params['album[0]'] = item.album
   if (item.duration) params['duration[0]'] = String(item.duration)
   const json = await signedCall('track.scrobble', params, s)
-  if (json.networkError || RETRYABLE.has(json.error)) {
+  if (json.networkError || RETRYABLE.has(json.error) || NEEDS_USER.has(json.error)) {
     enqueue(db, item)
     return { queued: true, reason: json.networkError ? `Couldn't reach Last.fm (${json.networkError})` : describeError(json) }
   }

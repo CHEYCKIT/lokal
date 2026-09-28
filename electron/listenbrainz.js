@@ -108,6 +108,10 @@ function flushQueue(db, token) {
     ensureQueue(db)
     let sent = 0
     for (;;) {
+      // Re-check before every batch: stop if ListenBrainz was switched off,
+      // disconnected, or connected with another token while this was running.
+      const s = settingsOf(db)
+      if (!s.enabled || !s.token || s.token !== token) break
       const rows = db.prepare('SELECT id, listen FROM listenbrainz_queue ORDER BY id LIMIT ?').all(BATCH)
       if (!rows.length) break
       const payload = rows.map(r => { try { return JSON.parse(r.listen) } catch { return null } }).filter(Boolean)

@@ -2100,7 +2100,11 @@ export default function Settings() {
               </div>
             </Row>
             <Row label="Submit Listens" desc="Turn off to pause sending without disconnecting.">
-              <button onClick={async () => setLbStatus(await api.listenbrainzSetEnabled(!lbStatus.enabled))}
+              <button onClick={async () => {
+                  // Keep the current state if the change didn't go through.
+                  const next = await Promise.resolve(api.listenbrainzSetEnabled(!lbStatus.enabled)).catch(() => null)
+                  if (next && !next.error) setLbStatus(next)
+                }}
                 className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${lbStatus.enabled ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
                 {lbStatus.enabled ? 'On' : 'Off'}
               </button>
