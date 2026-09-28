@@ -1303,7 +1303,7 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('db:clearSongCache', () => clearSongCache(getDB()))
   ipcMain.handle('db:clearLyrics', () => { const db = getDB(); db.prepare('DELETE FROM lyrics_cache').run(); db.prepare('DELETE FROM lyrics_translations').run() })
   ipcMain.handle('settings:get', () => { const rows = getDB().prepare('SELECT key, value FROM settings').all(); return Object.fromEntries(rows.map(r => [r.key, SECRET_SETTING_KEYS.has(r.key) && r.value ? SECRET_SETTING_PLACEHOLDER : r.value])) })
-  ipcMain.handle('settings:save', (_, s) => { const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'); for (const [k, v] of Object.entries(s)) stmt.run(k, String(v)) })
+  ipcMain.handle('settings:save', (_, s) => { const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'); for (const [k, v] of Object.entries(s)) { if (SECRET_SETTING_KEYS.has(k) && String(v) === SECRET_SETTING_PLACEHOLDER) continue; stmt.run(k, String(v)) } })
   ipcMain.handle('settings:getKeepCommaArtists', () => { try { const db = getDB(); const setting = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get(); return setting?.value ? JSON.parse(setting.value) : [] } catch { return [] } })
   ipcMain.handle('settings:setKeepCommaArtists', (_, artists) => getDB().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keep_comma_artists', ?)").run(JSON.stringify(artists)))
 
@@ -1336,7 +1336,21 @@ function registerScannerHandlers(ipcMain) {
     }
   })
   ipcMain.handle('settings:exportAll', () => exportAppData())
-  ipcMain.handle('settings:importAll', (_, payload) => importAppData(payload))
+  ipcMain.handle('settings:importAll', (_, payload) => {
+    const incoming = payload?.settings && typeof payload.settings === 'object' && !Array.isArray(payload.settings)
+      ? payload.settings
+      : {}
+    const current = getDB().prepare('SELECT key, value FROM settings').all()
+    const kept = current.filter(row => SECRET_SETTING_KEYS.has(row.key))
+    const result = importAppData(payload)
+    if (kept.length) {
+      const restore = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+      for (const row of kept) {
+        if (!(row.key in incoming)) restore.run(row.key, row.value)
+      }
+    }
+    return result
+  })
   ipcMain.handle('settings:factoryReset', () => resetAppData())
   
   function parseM3U(content) {
