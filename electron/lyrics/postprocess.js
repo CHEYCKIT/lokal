@@ -156,8 +156,10 @@ function dropCredits(lines, { title, artist } = {}) {
     if (sungSeen >= 6 || !line.text) return true
     const text = line.text.trim()
     const n = normalizeName(text)
+    const dash = text.match(/^(.+?)\s[-–—]\s(.+)$/)
+    const titlePlusArtist = !!(dash && normalizeName(dash[1]) === t && normalizeName(dash[2]))
     const isCredit = CREDIT_LINE.test(text) ||
-      (t && /\s[-–—]\s/.test(text) && n.includes(t) && (!a || n.includes(a.split(' ')[0])))
+      (t && (titlePlusArtist || (/\s[-–—]\s/.test(text) && n.includes(t) && (!a || n.includes(a.split(' ')[0])))))
     if (isCredit) return false
     sungSeen++
     return true
