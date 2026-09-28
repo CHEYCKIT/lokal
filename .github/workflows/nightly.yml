@@ -53,9 +53,18 @@ jobs:
         # it's out. Only this build's copy of package.json is changed; nothing
         # is committed. Same run number on every runner, so all three platforms
         # get the same version.
+        # If that version is already released (its tag exists), the nightly is
+        # a pre-release of the *next* patch: after v2.0.3 is tagged, main's
+        # 2.0.3 builds as 2.0.4-nightly.N, so it stays newer than the release
+        # without anyone having to bump package.json after each release.
         shell: bash
         run: |
           BASE=$(node -p "require('./package.json').version.split('-')[0]")
+          git fetch --tags --force --quiet origin || true
+          if git rev-parse -q --verify "refs/tags/v${BASE}" >/dev/null; then
+            BASE=$(node -p "const [a, b, c] = process.argv[1].split('.').map(Number); [a, b, c + 1].join('.')" "$BASE")
+            echo "v$(node -p "require('./package.json').version") is already released; building the next patch."
+          fi
           npm pkg set version="${BASE}-nightly.${{ github.run_number }}"
           echo "Building nightly version $(node -p "require('./package.json').version")"
 
