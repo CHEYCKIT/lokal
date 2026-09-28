@@ -46,6 +46,8 @@ const EQ_AUDIO_BANDS = [
 ]
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const YTDLP_DISMISS_KEY = 'lokal-ytdlp-version-dismissed'
+// A scrobble / listen that wasn't sent is tried again after this long (not every second).
+const SCROBBLE_RETRY_MS = 30 * 1000
 
 function formatRelativeDays(days) {
   if (!Number.isFinite(days) || days <= 0) return 'up to date'
@@ -244,6 +246,7 @@ export default function App() {
   const lastfmScrobbledPlaybackKeyRef = useRef(null)
   const lastfmScrobbleCheckRef = useRef(null)
   const listenbrainzSubmittedPlaybackKeyRef = useRef(null)
+  const listenbrainzNowPlayingKeyRef = useRef(null)
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
@@ -962,11 +965,6 @@ export default function App() {
     lastfmPlaybackStartedAtRef.current = startedAt
     lastfmPlaybackKeyRef.current = `${track.id}:${startedAt}`
 
-    // ListenBrainz: "now playing" too (it checks its own on/off switch).
-    if (track.artist && track.title) {
-      api.listenbrainzNowPlaying?.(listenBrainzTrack(track))?.catch?.(() => {})
-    }
-
     api.getSettings().then((settings) => {
       if (settings?.lastfm_enabled === '0') return
       if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) return
@@ -1015,10 +1013,14 @@ export default function App() {
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
     lastfmScrobbleCheckRef.current = playbackKey
 
+    // Nothing was scrobbled: let a later playback tick try again, after a
+    // pause so a switched-off / failing Last.fm isn't asked every second.
     const clearLastfmScrobbleCheck = () => {
-      if (lastfmScrobbleCheckRef.current === playbackKey) {
-        lastfmScrobbleCheckRef.current = null
-      }
+      setTimeout(() => {
+        if (lastfmScrobbleCheckRef.current === playbackKey) {
+          lastfmScrobbleCheckRef.current = null
+        }
+      }, SCROBBLE_RETRY_MS)
     }
 
     api.getSettings().then((settings) => {
@@ -1049,6 +1051,7 @@ export default function App() {
       ).then((result) => {
         if (result?.error || result?.skipped) {
           lastfmScrobbledPlaybackKeyRef.current = null
+          clearLastfmScrobbleCheck()
           pushLastfmStatus({
             level: 'error',
             label: 'Scrobble',
@@ -1080,12 +1083,13 @@ export default function App() {
         })
       }).catch(() => {
         lastfmScrobbledPlaybackKeyRef.current = null
+        clearLastfmScrobbleCheck()
         pushLastfmStatus({
           level: 'error',
           label: 'Scrobble',
           message: `Failed to scrobble ${track.artist} - ${track.title}`
         })
-      }).finally(clearLastfmScrobbleCheck)
+      })
     }).catch(clearLastfmScrobbleCheck)
   }, [getLastfmTrackDuration, shouldScrobbleLastfmTrack])
 
@@ -1100,18 +1104,32 @@ export default function App() {
     if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) return
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
     listenbrainzSubmittedPlaybackKeyRef.current = playbackKey
-    Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
-      // Off / not set up: allow a later try (e.g. after connecting). Do not
-      // clear a newer track's marker when this request settles late.
-      if ((!result || result.skipped || result.error) && listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
-        listenbrainzSubmittedPlaybackKeyRef.current = null
-      }
-    }).catch(() => {
+    // Allow another try for this play later (not on the next tick), and never
+    // clear a newer track's marker when this request settles late.
+    const retryLater = () => setTimeout(() => {
       if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
         listenbrainzSubmittedPlaybackKeyRef.current = null
       }
-    })
+    }, SCROBBLE_RETRY_MS)
+    Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
+      if (result?.ok || result?.queued) return // sent, or queued and sent later
+      // Refused for good (invalid listen, rejected token): keep it marked.
+      if (result?.permanent) return
+      // Off / not set up yet, or a failure worth another try.
+      retryLater()
+    }).catch(retryLater)
   }, [shouldScrobbleLastfmTrack])
+
+  /** ListenBrainz "now playing": once per playback, when the audio starts. */
+  const sendListenBrainzNowPlaying = useCallback(() => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const track = currentTrackRef.current
+    if (!playbackKey || !track?.id || !track.artist || !track.title) return
+    if (listenbrainzNowPlayingKeyRef.current === playbackKey) return
+    listenbrainzNowPlayingKeyRef.current = playbackKey
+    // It checks its own on/off switch.
+    Promise.resolve(api.listenbrainzNowPlaying?.(listenBrainzTrack(track))).catch(() => {})
+  }, [])
 
   useEffect(() => {
     scrobbleTickRef.current = () => {
@@ -1800,7 +1818,7 @@ export default function App() {
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
@@ -1809,7 +1827,7 @@ export default function App() {
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -

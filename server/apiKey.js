@@ -70,8 +70,10 @@ function isLocalAddress(address) {
 function isLocalRequest(req) {
   if (!isLocalAddress(req.socket?.remoteAddress)) return false
   // Behind a proxy or tunnel on this machine, every request looks local:
-  // go by the client address the proxy reports instead.
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+  // go by the client address the proxy reports instead. That's the last
+  // entry: the proxy appends the address it saw, while everything before it
+  // came from the client and could be made up (e.g. "127.0.0.1, <real ip>").
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean).pop()
   return !forwarded || isLocalAddress(forwarded)
 }
 

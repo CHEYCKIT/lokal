@@ -13,7 +13,7 @@ const { recordListeningEvent } = require('./recaps')
 
 const DEFAULT_MUSIC_PATH = 'C:\\Users\\sipbuu\\Music'
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.ogg', '.wav', '.aac', '.opus', '.wma', '.alac', '.ape'])
-const SECRET_SETTING_KEYS = new Set(['listenbrainz_token'])
+const SECRET_SETTING_KEYS = new Set(['listenbrainz_token', 'lastfm_api_secret', 'lastfm_session_key'])
 const SECRET_SETTING_PLACEHOLDER = '••••••••'
 const DRUM_KIT_PATTERNS = /\b(kick|snare|808|hi[- ]?hat|hihat|rimshot|clap|crash|cymbal|drum( kit| loop| sample)?|sample pack|loop kit|one[- ]?shot|fx[- ]?sound|bass[- ]?drum|perc(ussion)?|stem[s]?|acapella)\b/i
 

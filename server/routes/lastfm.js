@@ -63,15 +63,25 @@ async function lastfmCall(method, params, apiKey, apiSecret, sessionKey) {
 }
 
 
+// Settings shows secrets masked; this is the mask, never a real secret.
+const SECRET_PLACEHOLDER = '••••••••'
+
 router.post('/connect', async (req, res) => {
-  const { apiKey, apiSecret, token } = req.body
+  const { apiKey, token } = req.body
   if (!apiKey) return res.status(400).json({ error: 'API key required' })
   
   const db = getDB()
-  
+  // The API secret, unchanged in Settings, arrives masked: use the one saved
+  // here instead (the mask is never used as, or saved over, the secret).
+  let apiSecret = typeof req.body.apiSecret === 'string' ? req.body.apiSecret : ''
+  if (apiSecret === SECRET_PLACEHOLDER) {
+    apiSecret = db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value || ''
+    if (!apiSecret) return res.status(400).json({ error: 'Enter your Last.fm API secret again' })
+  } else if (apiSecret) {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_secret', ?)").run(apiSecret)
+  }
   
   if (apiKey) db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_key', ?)").run(apiKey)
-  if (apiSecret) db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_secret', ?)").run(apiSecret)
   
   if (token) {
     try {

@@ -12,6 +12,7 @@ const API = 'https://api.listenbrainz.org/1'
 const QUEUE_LIMIT = 5000
 const BATCH = 100
 const QUEUE_RETRY_INTERVAL_MS = 60 * 1000
+const FLUSH_SOON_MS = 30 * 1000
 
 let clientVersion = ''
 try { clientVersion = require('../package.json').version || '' } catch {}
@@ -87,28 +88,62 @@ function listenOf(track, listenedAt) {
 
 // ---------------------------------------------------------------- queue
 
-/** Create the offline listen queue table if needed. */
+// Each queued listen belongs to the ListenBrainz account (validated username)
+// that was connected when it was played, and is only ever sent with that
+// account's token: connecting another account never submits them as its own.
+
+/** Create the offline listen queue table if needed (with its account column). */
 function ensureQueue(db) {
-  db.exec('CREATE TABLE IF NOT EXISTS listenbrainz_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, listen TEXT NOT NULL, queued_at INTEGER NOT NULL)')
+  db.exec('CREATE TABLE IF NOT EXISTS listenbrainz_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, listen TEXT NOT NULL, queued_at INTEGER NOT NULL, account TEXT NOT NULL DEFAULT \'\')')
+  const columns = db.prepare('PRAGMA table_info(listenbrainz_queue)').all().map(c => c.name)
+  if (!columns.includes('account')) {
+    // Queues from before accounts were tracked: file their listens under the
+    // account connected now (the best guess; they were most likely its own).
+    db.exec("ALTER TABLE listenbrainz_queue ADD COLUMN account TEXT NOT NULL DEFAULT ''")
+    db.prepare('UPDATE listenbrainz_queue SET account = ?').run(accountOf(settingsOf(db)))
+  }
 }
 
-/** Queue a listen for later, keeping the queue bounded. */
-function enqueue(db, listen) {
+/** The account queued listens are filed under: the validated username. */
+function accountOf(settings) {
+  return String(settings?.username || '').trim().toLowerCase()
+}
+
+/** Queue a listen for later (for `account`), keeping the queue bounded. */
+function enqueue(db, listen, account) {
   ensureQueue(db)
-  db.prepare('INSERT INTO listenbrainz_queue (listen, queued_at) VALUES (?, ?)').run(JSON.stringify(listen), Date.now())
+  db.prepare('INSERT INTO listenbrainz_queue (listen, queued_at, account) VALUES (?, ?, ?)').run(JSON.stringify(listen), Date.now(), account)
   // Keep it bounded: drop the oldest if someone is offline for a very long time.
   const count = db.prepare('SELECT COUNT(*) AS n FROM listenbrainz_queue').get().n
   if (count > QUEUE_LIMIT) db.prepare('DELETE FROM listenbrainz_queue WHERE id IN (SELECT id FROM listenbrainz_queue ORDER BY id LIMIT ?)').run(count - QUEUE_LIMIT)
 }
 
-/** How many listens are waiting to be sent. */
-function queuedCount(db) {
-  try { ensureQueue(db); return db.prepare('SELECT COUNT(*) AS n FROM listenbrainz_queue').get().n } catch { return 0 }
+/** How many listens are waiting to be sent for `account`. */
+function queuedCount(db, account) {
+  try { ensureQueue(db); return db.prepare('SELECT COUNT(*) AS n FROM listenbrainz_queue WHERE account = ?').get(account).n } catch { return 0 }
 }
 
 let flushing = null
 let queueRetryTimer = null
 let queueRetryDb = null
+let flushSoonTimer = null
+
+/** Flush the active account's queue now, if there is anything to send. */
+function flushActive(db) {
+  const s = settingsOf(db)
+  if (s.enabled && s.token && queuedCount(db, accountOf(s))) return flushQueue(db, s.token).catch(() => 0)
+  return Promise.resolve(0)
+}
+
+/** Try the queue again shortly (after a listen was queued), once. */
+function scheduleFlush(db) {
+  if (flushSoonTimer) return
+  flushSoonTimer = setTimeout(() => {
+    flushSoonTimer = null
+    try { flushActive(db) } catch {}
+  }, FLUSH_SOON_MS)
+  flushSoonTimer.unref?.()
+}
 
 /** Keep retrying queued listens while the app/server is running. */
 function startQueueRetry(db) {
@@ -116,29 +151,27 @@ function startQueueRetry(db) {
   if (queueRetryTimer || !queueRetryDb) return
 
   queueRetryTimer = setInterval(() => {
-    try {
-      const currentDb = queueRetryDb
-      const s = settingsOf(currentDb)
-      if (s.enabled && s.token && queuedCount(currentDb)) {
-        flushQueue(currentDb, s.token).catch(() => {})
-      }
-    } catch {}
+    try { flushActive(queueRetryDb) } catch {}
   }, QUEUE_RETRY_INTERVAL_MS)
   queueRetryTimer.unref?.()
 }
 
-/** Send queued listens, oldest first, in batches. Stops at the first failure. */
+/**
+ * Send the connected account's queued listens, oldest first, in batches.
+ * Only listens queued for that account are sent. Stops at the first failure.
+ */
 function flushQueue(db, token) {
   if (flushing) return flushing
   flushing = (async () => {
     ensureQueue(db)
+    const account = accountOf(settingsOf(db))
     let sent = 0
     for (;;) {
       // Re-check before every batch: stop if ListenBrainz was switched off,
-      // disconnected, or connected with another token while this was running.
+      // disconnected, or connected with another token / account meanwhile.
       const s = settingsOf(db)
-      if (!s.enabled || !s.token || s.token !== token) break
-      const rows = db.prepare('SELECT id, listen FROM listenbrainz_queue ORDER BY id LIMIT ?').all(BATCH)
+      if (!s.enabled || !s.token || s.token !== token || accountOf(s) !== account) break
+      const rows = db.prepare('SELECT id, listen FROM listenbrainz_queue WHERE account = ? ORDER BY id LIMIT ?').all(account, BATCH)
       if (!rows.length) break
       const remove = (ids) => { if (ids.length) db.prepare(`DELETE FROM listenbrainz_queue WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids) }
       const parsed = rows.map(r => { try { return { id: r.id, listen: JSON.parse(r.listen) } } catch { return { id: r.id, listen: null } } })
@@ -159,7 +192,7 @@ function flushQueue(db, token) {
         // Same check as before each batch: ListenBrainz may have been switched
         // off or reconnected with another token while these were being sent.
         const now = settingsOf(db)
-        if (!now.enabled || !now.token || now.token !== token) { stopped = true; break }
+        if (!now.enabled || !now.token || now.token !== token || accountOf(now) !== account) { stopped = true; break }
         const one = await call('/submit-listens', { token, method: 'POST', body: { listen_type: 'import', payload: [p.listen] } })
         if (one.ok) { remove([p.id]); sent++; continue }
         if (one.status === 400) { remove([p.id]); continue } // never accepted as it is
@@ -179,11 +212,15 @@ function flushQueue(db, token) {
 async function connect(db, token) {
   const result = await validateToken(token)
   if (!result.valid) return { error: result.error }
+  // Another account than before: its listens can't be sent any more (they
+  // are not this account's), so drop them rather than keep them forever.
+  const account = accountOf({ username: result.username })
+  try { ensureQueue(db); db.prepare('DELETE FROM listenbrainz_queue WHERE account <> ?').run(account) } catch {}
   setSetting(db, 'listenbrainz_token', String(token).trim())
   setSetting(db, 'listenbrainz_username', result.username)
   setSetting(db, 'listenbrainz_enabled', '1')
   startQueueRetry(db)
-  if (queuedCount(db)) flushQueue(db, String(token).trim()).catch(() => {})
+  flushActive(db)
   return { ok: true, username: result.username }
 }
 
@@ -200,7 +237,7 @@ function disconnect(db) {
 function status(db) {
   startQueueRetry(db)
   const s = settingsOf(db)
-  return { connected: !!s.token, username: s.username, enabled: s.enabled, queued: queuedCount(db) }
+  return { connected: !!s.token, username: s.username, enabled: s.enabled, queued: queuedCount(db, accountOf(s)) }
 }
 
 /** Send a "playing now" listen. */
@@ -223,14 +260,17 @@ async function submitListen(db, track, listenedAt) {
   const listen = listenOf(track, listenedAt || Date.now() / 1000)
   const r = await call('/submit-listens', { token: s.token, method: 'POST', body: { listen_type: 'single', payload: [listen] } })
   if (r.ok) {
-    // Online again: send anything that was waiting.
-    if (queuedCount(db)) flushQueue(db, s.token).catch(() => {})
+    // Online again: send anything that was waiting (this account's only).
+    flushActive(db)
     return { ok: true }
   }
-  if (r.status === 401) return { error: 'ListenBrainz rejected the token (reconnect in Settings).' }
-  if (r.status === 400) return { error: r.json?.error || 'ListenBrainz refused this listen.' }
-  // Offline, timed out, rate limited or a server error: keep it for later.
-  enqueue(db, listen)
+  // Permanent: sending it again won't help (the player must not retry it).
+  if (r.status === 401 || r.status === 403) return { error: 'ListenBrainz rejected the token (reconnect in Settings).', permanent: true }
+  if (r.status === 400) return { error: r.json?.error || 'ListenBrainz refused this listen.', permanent: true }
+  // Offline, timed out, rate limited or a server error: keep it for later,
+  // for this account, and try the queue again shortly.
+  enqueue(db, listen, accountOf(s))
+  scheduleFlush(db)
   return { queued: true, reason: r.error || `ListenBrainz answered ${r.status}` }
 }
 
