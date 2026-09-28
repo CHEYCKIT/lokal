@@ -134,6 +134,19 @@ async function applyTags(filePath, changes = {}) {
     if (changes.squareCover) {
       try { if (await squareCover(T, file)) { done.cover = true; dirty = true } } catch {}
     }
+    if (changes.album && !file.tag.album) { file.tag.album = changes.album; done.album = changes.album; dirty = true }
+    // A cover for a file that has none (e.g. a bare audio link from an addon).
+    if (changes.coverBytes && !(file.tag.pictures || []).length) {
+      try {
+        const cover = T.Picture.fromData(T.ByteVector.fromByteArray(changes.coverBytes))
+        cover.type = T.PictureType.FrontCover
+        cover.mimeType = changes.coverMime || 'image/jpeg'
+        cover.description = 'Cover'
+        file.tag.pictures = [cover]
+        done.cover = true
+        dirty = true
+      } catch {}
+    }
     if (changes.title || changes.artist) {
       if (changes.title && changes.title !== file.tag.title) { file.tag.title = changes.title; done.title = changes.title }
       if (changes.artist) { file.tag.performers = [changes.artist]; done.artist = changes.artist }

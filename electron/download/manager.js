@@ -811,7 +811,7 @@ class DownloadManager {
           filepath = playable
           finalPath = playable
         }
-        const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir })
+        const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir, known: job.opts?.tags || null })
         finalPath = done.filePath
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)

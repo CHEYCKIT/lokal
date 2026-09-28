@@ -94,13 +94,53 @@ function renameWithoutArtist(filePath, artist) {
   } catch { return filePath }
 }
 
+// ---------------------------------------------------------------- known tags
+// A song saved from an addon comes from a bare audio link: no title, artist
+// or cover in it, and yt-dlp names it after the link ("7779369"). What the
+// addon said about the song (its search result) is passed along instead, and
+// fills in whatever the file itself doesn't have.
+
+const COVER_MAX_BYTES = 5 * 1024 * 1024
+const COVER_TIMEOUT_MS = 10000
+
+/** Tags for a download from the client, checked: { title, artist, album, cover } or undefined. */
+function knownTagsOf(value) {
+  if (!value || typeof value !== 'object') return undefined
+  const text = (v) => (typeof v === 'string' && v.trim() ? v.trim().replace(/[\u0000-\u001f]/g, ' ').slice(0, 300) : undefined)
+  const tags = {
+    title: text(value.title),
+    artist: text(value.artist),
+    album: text(value.album),
+    cover: typeof value.cover === 'string' && /^https:\/\/[^\s]{1,1000}$/.test(value.cover) ? value.cover : undefined,
+  }
+  return tags.title || tags.artist ? tags : undefined
+}
+
+/** The cover image at `url` (https, an image, 5 MB at most), or null. */
+async function fetchCover(url) {
+  if (!url) return null
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), COVER_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, { signal: controller.signal, redirect: 'follow' })
+    const mime = String(res.headers.get('content-type') || '').split(';')[0].trim()
+    if (!res.ok || !/^image\/(?:jpeg|png|webp)$/.test(mime)) return null
+    if (Number(res.headers.get('content-length')) > COVER_MAX_BYTES) return null
+    const bytes = Buffer.from(await res.arrayBuffer())
+    return bytes.length && bytes.length <= COVER_MAX_BYTES ? { bytes, mime } : null
+  } catch { return null } finally { clearTimeout(timer) }
+}
+
 /**
+ * @param known  tags the source gave for the song ({ title, artist, album, cover }),
+ *               used where the file has none
  * @returns {{ filePath: string, lyrics: string|null, lyricsSource: string|null, cover: boolean }}
  */
-async function finishFile(filePath, { db, settings = {}, url, meta = null, kind = 'single', outputDir = null }) {
+async function finishFile(filePath, { db, settings = {}, url, meta = null, kind = 'single', outputDir = null, known = null }) {
   const out = { filePath, lyrics: null, lyricsSource: null, cover: false }
   const info = readInfo(filePath)
   if (!info) return out
+  if (known) return finishKnownFile(filePath, info, { db, settings, known, outputDir, out })
   const clean = settings.clean_download_metadata !== '0'
   // "Artist - Song" videos: the artist is in the title, not the channel.
   const fromTitle = clean && isYouTube(url) ? artistAndTitle(meta, info) : null
@@ -133,4 +173,38 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle }
+/** finishFile for a file whose song is known from its source (an addon). */
+async function finishKnownFile(filePath, info, { db, settings, known, outputDir, out }) {
+  const tags = {
+    title: info.title || known.title || '',
+    artist: info.artist || known.artist || '',
+    album: info.album || known.album || '',
+  }
+  const changes = {}
+  if (!info.title && known.title) changes.title = known.title
+  if (!info.artist && known.artist) changes.artist = known.artist
+  if (!info.album && known.album) changes.album = known.album
+  const cover = known.cover ? await fetchCover(known.cover) : null
+  if (cover) { changes.coverBytes = cover.bytes; changes.coverMime = cover.mime }
+
+  if (settings.download_embed_lyrics !== '0' && !info.hasLyrics && tags.title && tags.artist && db) {
+    const controller = new AbortController()
+    const lyrics = await withTimeout(findLyrics(db, { ...info, ...tags }, controller.signal), LYRICS_TIMEOUT_MS)
+    controller.abort()
+    if (lyrics) {
+      changes.lyrics = toPortableLyrics(lyrics)
+      changes.privateLyrics = toPrivateTag(lyrics)
+      out.lyrics = lyrics.sync
+      out.lyricsSource = lyrics.source
+    }
+  }
+  const done = await applyTags(filePath, changes)
+  if (!done.lyrics) { out.lyrics = null; out.lyricsSource = null }
+  out.cover = done.cover
+  out.artist = tags.artist || undefined
+  // Named and filed like any single: Music/Artist/Album/Title.ext.
+  out.filePath = tags.title ? refile(filePath, { artist: tags.artist, title: tags.title, album: tags.album, outputDir }) : filePath
+  return out
+}
+
+module.exports = { finishFile, findLyrics, artistAndTitle, knownTagsOf }
