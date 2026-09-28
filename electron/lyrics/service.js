@@ -160,6 +160,8 @@ function trustedFilePath(db, trackId) {
   if (!trackId) return null
   try {
     const row = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)
+    // Ghost tracks (online songs, imported entries) have no file to read.
+    if (String(row?.file_path || '').startsWith('ghost://')) return null
     return row?.file_path || null
   } catch { return null }
 }

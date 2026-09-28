@@ -32,6 +32,7 @@ import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -48,6 +49,10 @@ const EQ_AUDIO_BANDS = [
 ]
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const YTDLP_DISMISS_KEY = 'lokal-ytdlp-version-dismissed'
+// A scrobble / listen that wasn't sent is tried again after this long (not every second).
+const SCROBBLE_RETRY_MS = 30 * 1000
+// How long a crossfade waits for the next track (a stream may start slowly).
+const CROSSFADE_READY_TIMEOUT_MS = 15 * 1000
 
 function formatRelativeDays(days) {
   if (!Number.isFinite(days) || days <= 0) return 'up to date'
@@ -60,6 +65,11 @@ function formatRelativeDays(days) {
 
 function getYtDlpDismissKey(status) {
   return `${status?.installedVersion || 'missing'}::${status?.latestVersion || 'unknown'}`
+}
+
+/** The fields ListenBrainz needs from a library track. */
+function listenBrainzTrack(track) {
+  return { title: track.title, artist: track.artist, album: track.album || '', duration: Number(track.duration) || 0, track_num: track.track_num || null }
 }
 
 function pushLastfmStatus(entry) {
@@ -178,6 +188,7 @@ function AnimatedRoutes() {
   )
 }
 
+/** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
@@ -188,6 +199,16 @@ export default function App() {
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
     const code = el?.error?.code
+    // An online song that couldn't be streamed: ask why, and say so.
+    const failedTrack = usePlayerStore.getState().currentTrack
+    const failedRef = streamRef(failedTrack)
+    if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      const why = await Promise.resolve(api.onlinePrepare(failedRef.provider, failedRef.id, true)).catch(() => null)
+      if (usePlayerStore.getState().currentTrack?.id === failedTrack.id) {
+        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song." })
+      }
+      return
+    }
     if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
     const src = el.getAttribute('src') || ''
     if (!src.startsWith('file://') || el.dataset.fallbackFor === src || el.dataset.fallbackSrc === src) return
@@ -240,6 +261,9 @@ export default function App() {
   const lastfmPlaybackStartedAtRef = useRef(0)
   const lastfmPlaybackKeyRef = useRef(null)
   const lastfmScrobbledPlaybackKeyRef = useRef(null)
+  const lastfmScrobbleCheckRef = useRef(null)
+  const listenbrainzSubmittedPlaybackKeyRef = useRef(null)
+  const listenbrainzNowPlayingKeyRef = useRef(null)
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
@@ -743,6 +767,8 @@ export default function App() {
         if (dataUrl) {
           artworkSrc = dataUrl
         }
+      } else if (currentTrack.artwork_url) {
+        artworkSrc = currentTrack.artwork_url
       }
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: currentTrack.title || '',
@@ -920,9 +946,15 @@ export default function App() {
     })
   }, [])
 
+  // Checked every second of playback, so a scrobble / listen is sent as soon
+  // as half the track (or 4 minutes) has been played, not when it ends.
+  const scrobbleTickRef = useRef(null)
   const startTimer = useCallback(() => {
     if (playTimerRef.current) return
-    playTimerRef.current = setInterval(() => { playSecsRef.current++ }, 1000)
+    playTimerRef.current = setInterval(() => {
+      playSecsRef.current++
+      try { scrobbleTickRef.current?.() } catch {}
+    }, 1000)
   }, [])
 
   const stopTimer = useCallback(() => {
@@ -940,6 +972,22 @@ export default function App() {
     if (!durationSeconds) return true
     return playedSeconds >= Math.min(durationSeconds / 2, 240)
   }, [getLastfmTrackDuration])
+
+  // An online song that couldn't be streamed (shown as a small notice).
+  const [streamError, setStreamError] = useState(null)
+  useEffect(() => {
+    if (!streamError) return undefined
+    const t = setTimeout(() => setStreamError(null), 9000)
+    return () => clearTimeout(t)
+  }, [streamError])
+
+  /** Look up the next song's stream ahead of time, so it starts without the yt-dlp wait. */
+  const prepareNextStream = useCallback(() => {
+    const { queue, queueIndex } = usePlayerStore.getState()
+    const next = Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
+    const ref = streamRef(next)
+    if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
+  }, [])
 
   const beginLastfmPlayback = useCallback((track) => {
     if (!track?.id) {
@@ -995,12 +1043,34 @@ export default function App() {
     const startedAt = lastfmPlaybackStartedAtRef.current
     if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
     if (lastfmScrobbledPlaybackKeyRef.current === playbackKey) return
+    // Already checking this play (the check runs every second of playback).
+    if (lastfmScrobbleCheckRef.current === playbackKey) return
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    lastfmScrobbleCheckRef.current = playbackKey
+
+    // Nothing was scrobbled: let a later playback tick try again, after a
+    // pause so a switched-off / failing Last.fm isn't asked every second.
+    const clearLastfmScrobbleCheck = () => {
+      setTimeout(() => {
+        if (lastfmScrobbleCheckRef.current === playbackKey) {
+          lastfmScrobbleCheckRef.current = null
+        }
+      }, SCROBBLE_RETRY_MS)
+    }
 
     api.getSettings().then((settings) => {
-      if (settings?.lastfm_enabled === '0') return
-      if (settings?.lastfm_scrobbling !== '1') return
-      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) return
+      if (settings?.lastfm_enabled === '0') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (settings?.lastfm_scrobbling !== '1') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) {
+        clearLastfmScrobbleCheck()
+        return
+      }
       pushLastfmStatus({
         level: 'info',
         label: 'Scrobble',
@@ -1016,10 +1086,28 @@ export default function App() {
       ).then((result) => {
         if (result?.error || result?.skipped) {
           lastfmScrobbledPlaybackKeyRef.current = null
+          clearLastfmScrobbleCheck()
           pushLastfmStatus({
             level: 'error',
             label: 'Scrobble',
             message: result?.error || result?.reason || 'Scrobble was skipped'
+          })
+          return
+        }
+        if (result?.queued) {
+          // Kept and sent automatically once Last.fm can be reached.
+          pushLastfmStatus({
+            level: 'info',
+            label: 'Scrobble',
+            message: `Saved for later (${result.reason || 'Last.fm unreachable'}): ${track.artist} - ${track.title}`
+          })
+          return
+        }
+        if (result?.ignored) {
+          pushLastfmStatus({
+            level: 'error',
+            label: 'Scrobble',
+            message: `${result.reason || 'Last.fm ignored this scrobble'}: ${track.artist} - ${track.title}`
           })
           return
         }
@@ -1030,14 +1118,62 @@ export default function App() {
         })
       }).catch(() => {
         lastfmScrobbledPlaybackKeyRef.current = null
+        clearLastfmScrobbleCheck()
         pushLastfmStatus({
           level: 'error',
           label: 'Scrobble',
           message: `Failed to scrobble ${track.artist} - ${track.title}`
         })
       })
-    }).catch(() => {})
+    }).catch(clearLastfmScrobbleCheck)
   }, [getLastfmTrackDuration, shouldScrobbleLastfmTrack])
+
+  // ListenBrainz: submitted at the same moment, under the same rule, as a
+  // Last.fm scrobble (half the track or 4 minutes, at least 30 s), but tracked
+  // separately so either service works without the other.
+  /** Submit a ListenBrainz listen once the track has played long enough. */
+  const trySubmitListenBrainz = useCallback((track, playedSeconds) => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const startedAt = lastfmPlaybackStartedAtRef.current
+    if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
+    if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) return
+    if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    listenbrainzSubmittedPlaybackKeyRef.current = playbackKey
+    // Allow another try for this play later (not on the next tick), and never
+    // clear a newer track's marker when this request settles late.
+    const retryLater = () => setTimeout(() => {
+      if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
+        listenbrainzSubmittedPlaybackKeyRef.current = null
+      }
+    }, SCROBBLE_RETRY_MS)
+    Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
+      if (result?.ok || result?.queued) return // sent, or queued and sent later
+      // Refused for good (invalid listen, rejected token): keep it marked.
+      if (result?.permanent) return
+      // Off / not set up yet, or a failure worth another try.
+      retryLater()
+    }).catch(retryLater)
+  }, [shouldScrobbleLastfmTrack])
+
+  /** ListenBrainz "now playing": once per playback, when the audio starts. */
+  const sendListenBrainzNowPlaying = useCallback(() => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const track = currentTrackRef.current
+    if (!playbackKey || !track?.id || !track.artist || !track.title) return
+    if (listenbrainzNowPlayingKeyRef.current === playbackKey) return
+    listenbrainzNowPlayingKeyRef.current = playbackKey
+    // It checks its own on/off switch.
+    Promise.resolve(api.listenbrainzNowPlaying?.(listenBrainzTrack(track))).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    scrobbleTickRef.current = () => {
+      const track = currentTrackRef.current
+      if (!track) return
+      tryScrobbleLastfmTrack(track, playSecsRef.current)
+      trySubmitListenBrainz(track, playSecsRef.current)
+    }
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   const flushTime = useCallback((trackId) => {
     const secs = playSecsRef.current
@@ -1045,8 +1181,9 @@ export default function App() {
     playSecsRef.current = 0
     if (trackId) lastFlushedTrackIdRef.current = trackId
     tryScrobbleLastfmTrack(flushedTrack, secs)
+    trySubmitListenBrainz(flushedTrack, secs)
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
-  }, [tryScrobbleLastfmTrack])
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   useEffect(() => {
     const previousTrack = currentTrackRef.current
@@ -1115,31 +1252,63 @@ export default function App() {
     const fadeOutGain = isPrimaryActive ? gainNodeRef.current : cfGainNodeRef.current
     const fadeInGain = isPrimaryActive ? cfGainNodeRef.current : gainNodeRef.current
 
-    const encodedPath = nextTrack.file_path.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')
-    const encodedSrc = api.isElectron ? `file://${encodedPath}` : api.streamURL(nextTrack)
-    
+    const encodedSrc = audioSrcFor(nextTrack)
+    if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
+
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
     fadeInEl.load()
 
+    // The current track stays the active one until the next one can play
+    // (a stream can take several seconds to start). If it can't -- it fails,
+    // or doesn't get ready in time -- the crossfade is called off and the
+    // current track plays out; if the current track ends first, the next one
+    // is played the usual way, without a crossfade.
     const waitForCanplay = new Promise((resolve) => {
-      const onReady = () => {
+      let timer = null
+      const done = (outcome) => {
         fadeInEl.removeEventListener('canplay', onReady)
-        resolve()
+        fadeInEl.removeEventListener('error', onFailed)
+        fadeOutEl.removeEventListener('ended', onEnded)
+        clearTimeout(timer)
+        resolve(outcome)
       }
+      const onReady = () => done('ready')
+      const onFailed = () => done('failed')
+      const onEnded = () => done('ended')
       fadeInEl.addEventListener('canplay', onReady)
-      setTimeout(resolve, 1500)
+      fadeInEl.addEventListener('error', onFailed)
+      fadeOutEl.addEventListener('ended', onEnded)
+      timer = setTimeout(() => done('timeout'), CROSSFADE_READY_TIMEOUT_MS)
     })
 
-    waitForCanplay.then(() => {
+    waitForCanplay.then((outcome) => {
       if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
+
+      if (outcome !== 'ready') {
+        cancelCrossfade()
+        try { fadeInEl.removeAttribute('src'); fadeInEl.load() } catch {}
+        if (outcome === 'ended') {
+          // Its "ended" was ignored while the crossfade was pending.
+          stopTimer()
+          flushTime(currentTrackRef.current?.id)
+          autoNext()
+        }
+        return
+      }
 
       flushTime(currentTrackRef.current?.id)
 
       const nextSide = isPrimaryActive ? 'cf' : 'primary'
       setActiveAudioElement(nextSide)
       activeElementRef.current = nextSide
+
+      // The next track is the current one from here on: set the ref now, not
+      // when React re-renders, so the fading-in element's "play" (ListenBrainz
+      // now playing, scrobble ticks) already reads the new track.
+      prevTrackIdRef.current = currentTrackRef.current?.id || null
+      currentTrackRef.current = nextTrack
 
       const state = usePlayerStore.getState()
       const nextIdx = state.shuffle ? state.shuffleIndex + 1 : state.queueIndex + 1
@@ -1154,9 +1323,7 @@ export default function App() {
       })
       beginLastfmPlayback(nextTrack)
 
-      if (fadeInEl.readyState >= 2) {
-        fadeInEl.play().catch(() => {})
-      }
+      fadeInEl.play().catch(() => {})
 
       const rampNow = ctx.currentTime
       fadeOutGain.gain.cancelScheduledValues(rampNow)
@@ -1192,7 +1359,7 @@ export default function App() {
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, cfDuration * 1000)
     })
-  }, [flushTime, setActiveAudioElement, beginLastfmPlayback])
+  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
   useEffect(() => {
     if (isCrossfadingRef.current) {
@@ -1221,16 +1388,17 @@ export default function App() {
 
     initAudioCtx()
 
-    if (String(currentTrack.file_path || '').startsWith('ghost://')) {
+    // A file, or an online song streamed from YouTube; other ghost tracks
+    // (imported entries with no file) can't be played.
+    const src = audioSrcFor(currentTrack)
+    if (!src) {
       audioRef.current.pause()
       audioRef.current.src = ''
       setIsPlaying(false)
       return
     }
-
-    const src = api.isElectron 
-      ? `file://${currentTrack.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
-      : api.streamURL(currentTrack);
+    setStreamError(null)
+    prepareNextStream()
     audioRef.current.dataset.fallbackFor = ''
     audioRef.current.dataset.fallbackSrc = ''
     audioRef.current.src = src
@@ -1674,8 +1842,8 @@ export default function App() {
               style={{ opacity: 'var(--bg-overlay)' }} 
             />
 
-            {api.isElectron && <TitleBar />}
-            <div className="flex flex-1 overflow-hidden">
+            <TitleBar />
+            <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
               <main className="flex-1 overflow-y-auto bg-transparent">
                 <AnimatedRoutes />
@@ -1708,6 +1876,20 @@ export default function App() {
             
             {renderYtDlpNotice()}
             {renderUpdateToast()}
+            <AnimatePresence>
+              {streamError && (
+                <motion.div
+                  role="status"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 12 }}
+                  className="fixed bottom-28 right-6 z-[60] max-w-sm rounded-xl border border-border bg-elevated px-4 py-3 shadow-2xl"
+                >
+                  <p className="text-sm font-medium text-text truncate">Couldn't stream "{streamError.title}"</p>
+                  <p className="text-xs text-muted mt-1">{streamError.message}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </>
         )}
 
@@ -1717,7 +1899,7 @@ export default function App() {
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
@@ -1726,7 +1908,7 @@ export default function App() {
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -

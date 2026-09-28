@@ -1,93 +1,59 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Search as SearchIcon, Music, Disc3, Shuffle, Clock, User, X, Play } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Music, Disc3, Clock, User, Play, Search as SearchIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
+import { useSearchStore } from '../store/search'
 import TrackList from '../components/TrackList'
+import OnlineResults from '../components/OnlineResults'
 import { api } from '../api'
+import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
 
-const RECENT_SEARCHES_KEY = 'lokal-recent-searches'
-const RECENT_ITEMS_KEY = 'lokal-recent-items'
-const MAX_RECENT = 5
-// Recently opened artists, albums and tracks (the covers shown before typing): 3 rows of 5.
-const MAX_RECENT_ITEMS = 15
-
-function getRecentSearches() {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveRecentSearch(query) {
-  if (!query.trim()) return
-  const recent = getRecentSearches()
-  const filtered = recent.filter(r => r.query.toLowerCase() !== query.toLowerCase())
-  const newRecent = [{ query, timestamp: Date.now() }, ...filtered].slice(0, MAX_RECENT)
-  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(newRecent))
-}
-
-function clearRecentSearches() {
-  localStorage.removeItem(RECENT_SEARCHES_KEY)
-}
-
-function getRecentItems() {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_ITEMS_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveRecentItem(item) {
-  if (!item?.id) return
-  const recent = getRecentItems()
-  const filtered = recent.filter(r => r.id !== item.id)
-  const newRecent = [item, ...filtered].slice(0, MAX_RECENT_ITEMS)
-  localStorage.setItem(RECENT_ITEMS_KEY, JSON.stringify(newRecent))
-}
-
+// Results for what's typed in the header search box (HeaderSearch.jsx); with
+// nothing typed, the things recently opened from a search.
+/** The Search page: results for the header query, or recently opened items when it's empty. */
 export default function Search() {
-  const [query, setQuery] = useState('')
+  const query = useSearchStore(s => s.query)
   const [tracks, setTracks] = useState([])
   const [artists, setArtists] = useState([])
   const [albums, setAlbums] = useState([])
   const [lyricMatches, setLyricMatches] = useState([])
   const [searching, setSearching] = useState(false)
-  const [randomLoading, setRandomLoading] = useState(false)
-  const [recentSearches, setRecentSearches] = useState([])
-  const [recentItems, setRecentItems] = useState([])
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
-  const [isSearchStarted, setIsSearchStarted] = useState(false)
-  const searchInputRef = useRef(null)
+  const [recentItems, setRecentItems] = useState(getRecentItems)
   const recentTrackSelectionRef = useRef(0)
+  const searchSeqRef = useRef(0)
   const nav = useNavigate()
   const { playQueue, queue, playTrack } = usePlayerStore()
+  const isSearchStarted = !!query.trim()
 
   useEffect(() => {
-    setRecentSearches(getRecentSearches())
-    setRecentItems(getRecentItems())
+    const refresh = () => setRecentItems(getRecentItems())
+    window.addEventListener(HISTORY_EVENT, refresh)
+    return () => window.removeEventListener(HISTORY_EVENT, refresh)
   }, [])
 
-   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (searchInputRef.current && !searchInputRef.current.contains(e.target)) {
-        setShowSearchDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
+  /** Search tracks, albums and lyrics for `q`; results from an outdated search are ignored. */
   const doSearch = useCallback(async (q) => {
-    if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); return }
+    const seq = ++searchSeqRef.current
+    if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); setSearching(false); return }
     setSearching(true)
-    const [res, albumRes, lyricsRes] = await Promise.all([
-      api.searchTracks(q),
-      api.searchAlbums(q),
-      api.searchLyrics(q),
-    ])
+    let res, albumRes, lyricsRes
+    try {
+      ;[res, albumRes, lyricsRes] = await Promise.all([
+        api.searchTracks(q),
+        api.searchAlbums(q),
+        api.searchLyrics(q),
+      ])
+    } catch (error) {
+      // Only the latest search may change what's shown.
+      if (seq !== searchSeqRef.current) return
+      console.warn('[search] Search failed:', error)
+      setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([])
+      setSearching(false)
+      return
+    }
+    // Typing on: a newer search has started, so these results are stale.
+    if (seq !== searchSeqRef.current) return
     if (res?.artists) { setArtists(res.artists || []); setTracks(res.tracks || []) }
     else { setArtists([]); setTracks(Array.isArray(res) ? res : []) }
     setAlbums(Array.isArray(albumRes) ? albumRes : [])
@@ -95,12 +61,15 @@ export default function Search() {
     setSearching(false)
   }, [])
 
+  // Results follow the text as it's typed. A new query makes any search
+  // still in flight stale straight away, not only when the debounce ends.
   useEffect(() => {
-    if (isSearchStarted && query) {
-      const t = setTimeout(() => doSearch(query), 300)
-      return () => clearTimeout(t)
-    }
-  }, [query, isSearchStarted])
+    if (!query.trim()) { doSearch(''); return }
+    searchSeqRef.current++
+    setSearching(true)
+    const t = setTimeout(() => doSearch(query), 200)
+    return () => clearTimeout(t)
+  }, [query, doSearch])
 
   useEffect(() => {
     const handleRefresh = () => {
@@ -116,16 +85,7 @@ export default function Search() {
   const artSrc = (a) => a.image_path ? (api.isElectron ? `file://${a.image_path}` : null) : null
   const albumArt = (a) => a.artwork_path ? (api.isElectron ? `file://${a.artwork_path}` : api.artworkURL(a.id)) : null
 
-  const playRandom = async () => {
-    ++recentTrackSelectionRef.current
-    setRandomLoading(true)
-    const track = await api.getRandomTrack()
-    if (track) {
-      playQueue([track], 0)
-    }
-    setRandomLoading(false)
-  }
-
+  /** Open an artist from the results and remember it. */
   const handleArtistClick = (artist) => {
     saveRecentSearch(artist.name)
     saveRecentItem({ 
@@ -137,6 +97,7 @@ export default function Search() {
     nav(`/artist/${artist.id}`)
   }
 
+  /** Open an album from the results and remember it. */
   const handleAlbumClick = (album) => {
     saveRecentSearch(album.title)
     saveRecentItem({
@@ -150,11 +111,7 @@ export default function Search() {
     nav('/albums', { state: { album } })
   }
 
-  const handleRecentSearchClick = (recent) => {
-    setQuery(recent.query)
-    setShowSearchDropdown(false)
-  }
-
+  /** Reopen a recent item: an artist or album page, or play a track. */
   const handleRecentItemClick = async (item) => {
     if (item.type === 'artist') {
       nav(`/artist/${item.id}`)
@@ -185,30 +142,7 @@ export default function Search() {
     }
   }
 
-  const handleInputFocus = () => {
-    if (recentSearches.length > 0) {
-      setShowSearchDropdown(true)
-    }
-  }
-
-  const handleInputChange = (e) => {
-    const value = e.target.value
-    setQuery(value)
-    setIsSearchStarted(true)
-    
-    if (value === '' && recentSearches.length > 0) {
-      setShowSearchDropdown(true)
-    } else if (value === '') {
-      setIsSearchStarted(false)
-      setTracks([])
-      setArtists([])
-      setAlbums([])
-      setLyricMatches([])
-    } else {
-      setShowSearchDropdown(false)
-    }
-  }
-
+  /** Play a track found by its lyrics and remember it. */
   const handleLyricMatchPlay = (track) => {
     saveRecentSearch(query.trim())
     saveRecentItem({
@@ -221,59 +155,11 @@ export default function Search() {
     playTrack(track, [track])
   }
 
-  const showSearchResults = isSearchStarted && query && (tracks.length > 0 || artists.length > 0 || albums.length > 0 || lyricMatches.length > 0 || searching)
+  // With a query, the results page: library matches, then online songs.
+  const showSearchResults = isSearchStarted
 
   return (
     <div className="p-6 space-y-6 pb-10">
-      <div className="relative" ref={searchInputRef}>
-        <SearchIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          autoFocus
-          value={query}
-          onChange={handleInputChange}
-          onFocus={handleInputFocus}
-          placeholder="Search tracks, artists, albums…"
-          onKeyDown={(e) => { if (e.key === 'Enter' && query.trim()) saveRecentSearch(query.trim()) }}
-          className="w-full bg-elevated border border-border rounded-2xl pl-10 pr-5 py-3 text-sm text-white outline-none focus:border-accent/50 placeholder:text-muted"
-        />
-        {searching && <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
-        
-        <AnimatePresence>
-          {showSearchDropdown && recentSearches.length > 0 && !query && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="absolute top-full left-0 right-0 mt-2 bg-elevated border border-border rounded-xl shadow-xl z-50 overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-                <span className="text-xs text-muted flex items-center gap-2">
-                  <Clock size={10} /> Recent Searches
-                </span>
-                <button 
-                  onClick={() => { clearRecentSearches(); setRecentSearches([]); setShowSearchDropdown(false) }}
-                  className="text-xs text-muted hover:text-white transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="py-1">
-                {recentSearches.map((recent, i) => (
-                  <button
-                    key={`${recent.query}-${i}`}
-                    onClick={() => handleRecentSearchClick(recent)}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-card transition-colors"
-                  >
-                    <Clock size={12} className="text-muted" />
-                    <span className="text-sm text-white">{recent.query}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
       {!showSearchResults && (
         <div className="space-y-6">
           {recentItems.length > 0 && (
@@ -336,19 +222,13 @@ export default function Search() {
           )}
           
           {recentItems.length === 0 && (
-            <p className="text-muted text-sm text-center py-4">Start typing to search your library…</p>
+            <div className="text-center py-16 text-muted">
+              <SearchIcon size={36} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm">Search your library from the bar at the top.</p>
+              <p className="text-xs mt-1 opacity-70">Or just start typing anywhere in Lokal.</p>
+            </div>
           )}
           
-          <div className="flex justify-center">
-            <button 
-              onClick={playRandom} 
-              disabled={randomLoading}
-              className="flex items-center gap-2 px-6 py-3 bg-accent/20 border border-accent/40 text-accent rounded-full text-sm font-medium hover:bg-accent/30 transition-colors disabled:opacity-50"
-            >
-              <Shuffle size={16} />
-              {randomLoading ? 'Finding...' : 'Play Random Song'}
-            </button>
-          </div>
         </div>
       )}
 
@@ -433,11 +313,13 @@ export default function Search() {
           )}
 
           {query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
-            <div className="text-center py-16 text-muted">
-              <Music size={36} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">No results for "{query}"</p>
+            <div className="flex items-center gap-3 py-3 text-muted">
+              <Music size={18} className="opacity-40" />
+              <p className="text-sm">Nothing in your library for "{query}"</p>
             </div>
           )}
+
+          <OnlineResults query={query} />
         </>
       )}
     </div>

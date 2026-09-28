@@ -20,6 +20,11 @@ if (fs.existsSync(distPath)) app.use(express.static(distPath))
 const publicPath = path.join(__dirname, '../public')
 if (fs.existsSync(publicPath)) app.use(express.static(publicPath))
 
+// API_KEY in .env: every /api route below needs it (see apiKey.js).
+const { requireApiKey, authRoute } = require('./apiKey')
+app.use('/api', requireApiKey)
+app.post('/api/auth', authRoute)
+
 
 app.use('/api/tracks', require('./routes/tracks'))
 const artistsRouter = require('./routes/artists')
@@ -33,6 +38,8 @@ app.use('/api/settings', require('./routes/settings'))
 app.use('/api/mixes', require('./routes/mixes'))
 app.use('/api/albums', require('./routes/albums'))
 app.use('/api/lastfm', require('./routes/lastfm'))
+app.use('/api/listenbrainz', require('./routes/listenbrainz'))
+app.use('/api/online', require('./routes/online'))
 app.use('/api/remote', require('./routes/remote'))
 app.use('/api/plugins', require('./routes/plugins'))
 app.use('/api/recaps', require('./routes/recaps'))

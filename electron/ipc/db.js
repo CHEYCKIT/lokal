@@ -212,6 +212,10 @@ function initDB() {
     `ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0`,
     `ALTER TABLE play_history ADD COLUMN session_id TEXT`,
     `ALTER TABLE tracks ADD COLUMN genres TEXT`,
+    // Ghost tracks: where the song can be found (an import link, or the
+    // YouTube Music page of an online song) and its remote cover.
+    `ALTER TABLE tracks ADD COLUMN source_url TEXT`,
+    `ALTER TABLE tracks ADD COLUMN artwork_url TEXT`,
     `ALTER TABLE tracks ADD COLUMN record_label TEXT`,
     `ALTER TABLE tracks ADD COLUMN explicit INTEGER DEFAULT 0`,
     `ALTER TABLE tracks ADD COLUMN instrumental INTEGER`,
@@ -245,6 +249,10 @@ function initDB() {
     `ALTER TABLE artists ADD COLUMN image_source TEXT`,
     `ALTER TABLE artists ADD COLUMN image_fetched_at INTEGER`,
     `ALTER TABLE tracks ADD COLUMN genres TEXT`,
+    // Ghost tracks: where the song can be found (an import link, or the
+    // YouTube Music page of an online song) and its remote cover.
+    `ALTER TABLE tracks ADD COLUMN source_url TEXT`,
+    `ALTER TABLE tracks ADD COLUMN artwork_url TEXT`,
     `ALTER TABLE tracks ADD COLUMN record_label TEXT`,
     `ALTER TABLE tracks ADD COLUMN explicit INTEGER DEFAULT 0`,
     `ALTER TABLE tracks ADD COLUMN instrumental INTEGER`,

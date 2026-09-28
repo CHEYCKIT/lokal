@@ -1,4 +1,5 @@
 const { getDB } = require('./db')
+const scrobbler = require('../lastfmScrobbler')
 const crypto = require('crypto')
 
 
@@ -194,7 +195,13 @@ function registerLastFmHandlers(ipcMain) {
   })
   
   
-  ipcMain.handle('lastfm:connect', async (_, apiKey, apiSecret, token) => {
+  ipcMain.handle('lastfm:connect', async (_, apiKey, maskedOrSecret, token) => {
+  // Settings shows the saved secret masked: the mask means "the saved one".
+  let apiSecret = maskedOrSecret
+  if (apiSecret === '••••••••') {
+    apiSecret = getDB().prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value || ''
+    if (!apiSecret) return { error: 'Enter your Last.fm API secret again' }
+  }
   if (!apiKey || !apiSecret) {
     return { error: 'API key and secret required' }
   }
@@ -258,49 +265,17 @@ function registerLastFmHandlers(ipcMain) {
   })
   
   
-  ipcMain.handle('lastfm:scrobble', async (_, artist, track, album, duration, timestamp) => {
-    const db = getDB()
-    const settings = {
-      apiKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_key'").get()?.value,
-      apiSecret: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value,
-      sessionKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_session_key'").get()?.value,
-      enabled: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_enabled'").get()?.value !== '0',
-      scrobblingEnabled: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_scrobbling'").get()?.value === '1'
-    }
+  // Scrobbling and "now playing" go through the shared scrobbler (also used
+  // by the web server): correct signing, main-artist handling, no
+  // placeholder albums, and an offline queue.
+  ipcMain.handle('lastfm:scrobble', (_, artist, track, album, duration, timestamp) =>
+    scrobbler.scrobble(getDB(), { artist, track, album, duration, timestamp }).catch(e => ({ error: e.message })))
 
-    if (!settings.enabled) {
-      return { skipped: true, reason: 'Last.fm disabled' }
-    }
-    if (!settings.scrobblingEnabled) {
-      return { skipped: true, reason: 'Scrobbling disabled' }
-    }
-    
-    if (!settings.apiKey || !settings.apiSecret || !settings.sessionKey) {
-      return { skipped: true, reason: 'Last.fm not configured' }
-    }
-    
-    return await scrobbleTrack(artist, track, album, duration, timestamp, settings.apiKey, settings.apiSecret, settings.sessionKey)
-  })
-  
-  
-  ipcMain.handle('lastfm:updateNowPlaying', async (_, artist, track, album, duration) => {
-    const db = getDB()
-    const settings = {
-      apiKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_key'").get()?.value,
-      apiSecret: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value,
-      sessionKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_session_key'").get()?.value,
-      enabled: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_enabled'").get()?.value !== '0'
-    }
+  ipcMain.handle('lastfm:updateNowPlaying', (_, artist, track, album, duration) =>
+    scrobbler.updateNowPlaying(getDB(), { artist, track, album, duration }).catch(e => ({ error: e.message })))
 
-    if (!settings.enabled) {
-      return { skipped: true, reason: 'Last.fm disabled' }
-    }
-    if (!settings.apiKey || !settings.apiSecret || !settings.sessionKey) {
-      return { skipped: true }
-    }
-    
-    return await updateNowPlaying(artist, track, album, duration, settings.apiKey, settings.apiSecret, settings.sessionKey)
-  })
+  // Scrobbles queued while offline: try once shortly after start-up.
+  setTimeout(() => { try { scrobbler.flushQueue(getDB()).catch(() => {}) } catch {} }, 20000)
 }
 
 module.exports = { registerLastFmHandlers }

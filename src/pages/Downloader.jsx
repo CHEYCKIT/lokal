@@ -83,8 +83,9 @@ const FORMATS = [
 export default function Downloader() {
   const [accepted] = useState(() => localStorage.getItem(DISCLAIMER_KEY) === '1')
   const [showDisclaimer, setShowDisclaimer] = useState(!accepted)
-  // "Get it in lossless" → Soulseek: open the Soulseek tab with the song
-  // searched, and let the file picked there replace the track's file.
+  // "Find on Soulseek" from a streamed song, or "Get it in lossless": open
+  // the Soulseek tab with the song searched, and let the file picked there
+  // replace the stream / the track's file.
   const location = useLocation()
   const soulseekFor = location.state?.soulseek || null
   const [tab, setTab] = useState(soulseekFor ? 'soulseek' : 'search')
@@ -335,7 +336,7 @@ export default function Downloader() {
         <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{queueError}</p>
       )}
 
-      {tab === 'soulseek' && <SoulseekSearch key={soulseekFor?.upgradeTrackId || 'soulseek'} initialQuery={soulseekFor?.query} initialLosslessOnly={!!soulseekFor?.losslessOnly} upgradeTrack={soulseekFor?.upgradeTrackId ? soulseekFor : null} />}
+      {tab === 'soulseek' && <SoulseekSearch key={soulseekFor?.replaceTrackId || soulseekFor?.upgradeTrackId || 'soulseek'} initialQuery={soulseekFor?.query} initialLosslessOnly={!!soulseekFor?.losslessOnly} replaceTrack={soulseekFor?.replaceTrackId ? soulseekFor : null} upgradeTrack={soulseekFor?.upgradeTrackId ? soulseekFor : null} />}
 
       {tab === 'search' && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">

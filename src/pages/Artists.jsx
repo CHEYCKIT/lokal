@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Clock, LayoutGrid, List, Loader2, Music, Play, Search, Sparkles, Users } from 'lucide-react'
+import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Search, Sparkles, Users } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 
@@ -78,6 +78,50 @@ function ArtistCard({ artist, onClick, onPlay, rank }) {
   )
 }
 
+/** One artist as a list row: small avatar, full name (wraps instead of being cut), track count. */
+function ArtistRow({ artist, onClick, onPlay }) {
+  const imgSrc = getArtistImage(artist)
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(event) => { if (event.key === 'Enter') onClick?.() }}
+      className="group grid cursor-pointer grid-cols-[2.5rem_1fr_auto] items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-elevated"
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}
+    >
+      <div className="relative h-10 w-10 overflow-hidden rounded-full bg-card">
+        {imgSrc ? <img src={imgSrc} alt="" loading="lazy" className="h-full w-full object-cover" /> : <FallbackAvatar name={artist.name} />}
+      </div>
+      <div className="min-w-0">
+        <p className="break-words text-sm font-medium leading-snug text-text" title={artist.name}>{artist.name}</p>
+        <p className="text-xs text-muted">{artist.track_count} {artist.track_count === 1 ? 'track' : 'tracks'}</p>
+      </div>
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); onPlay?.() }}
+        title={`Play ${artist.name}`}
+        aria-label={`Play ${artist.name}`}
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+      >
+        <Play size={13} fill="currentColor" className="translate-x-px" />
+      </button>
+    </div>
+  )
+}
+
+/** First letter for list headers: A–Z, "#" for digits/symbols. */
+function letterOf(name) {
+  const c = String(name || '').trim().normalize('NFKD').charAt(0).toUpperCase()
+  return /[A-Z]/.test(c) ? c : '#'
+}
+
+const VIEWS = [
+  { id: 'spaced', label: 'Grid', icon: Grid2x2 },
+  { id: 'compact', label: 'Compact grid', icon: Grid3x3 },
+  { id: 'list', label: 'List', icon: List },
+]
+
 export default function Artists() {
   const [artists, setArtists] = useState([])
   const [topArtists, setTopArtists] = useState([])
@@ -151,11 +195,24 @@ export default function Artists() {
     localStorage.setItem('lokal-artists-sort', value)
   }
 
-  const toggleDensity = () => {
-    const next = density === 'spaced' ? 'compact' : 'spaced'
+  // Grid, compact grid, or list (long names are easier to read and scan in a list).
+  const changeView = (next) => {
     setDensity(next)
-    localStorage.setItem('lokal-artists-density', next)
+    try { localStorage.setItem('lokal-artists-density', next) } catch {}
   }
+
+  // List view sorted by name: a letter header before each new first letter.
+  const listRows = useMemo(() => {
+    if (density !== 'list') return []
+    const rows = []
+    let last = null
+    for (const artist of artists) {
+      const letter = sort === 'name' ? letterOf(artist.name) : null
+      if (letter && letter !== last) { rows.push({ type: 'letter', letter }); last = letter }
+      rows.push({ type: 'artist', artist })
+    }
+    return rows
+  }, [artists, density, sort])
 
   const playArtist = async (artist) => {
     const data = await api.getArtist(artist.id)
@@ -202,13 +259,21 @@ export default function Artists() {
               <option value="name">Name (A–Z)</option>
               <option value="tracks">Most Tracks</option>
             </select>
-            <button
-              onClick={toggleDensity}
-              title={density === 'spaced' ? 'Switch to compact grid' : 'Switch to spaced grid'}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/70 transition-colors hover:border-white/25 hover:text-white"
-            >
-              {density === 'spaced' ? <LayoutGrid size={15} /> : <List size={15} />}
-            </button>
+            <div role="radiogroup" aria-label="Artists view" className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+              {VIEWS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  role="radio"
+                  aria-checked={density === id}
+                  onClick={() => changeView(id)}
+                  title={label}
+                  aria-label={label}
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${density === id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
+                >
+                  <Icon size={15} />
+                </button>
+              ))}
+            </div>
             <div className="relative w-full sm:w-64">
               <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -221,7 +286,7 @@ export default function Artists() {
           </div>
         </div>
 
-        {!query.trim() && topArtists.length > 0 && (
+        {!query.trim() && topArtists.length > 0 && density !== 'list' && (
           <section className="space-y-4">
             <div className="flex items-center gap-2">
               <Sparkles size={14} className="text-accent" />
@@ -242,7 +307,7 @@ export default function Artists() {
         )}
 
         <section className="space-y-4">
-          {!query.trim() && topArtists.length > 0 && (
+          {!query.trim() && topArtists.length > 0 && density !== 'list' && (
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">All Artists</h2>
           )}
           {loading ? (
@@ -256,16 +321,32 @@ export default function Artists() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className={gridClass}>
-                {artists.map((artist) => (
-                  <ArtistCard
-                    key={artist.id}
-                    artist={artist}
-                    onClick={() => navigate(`/artist/${artist.id}`)}
-                    onPlay={() => playArtist(artist)}
-                  />
-                ))}
-              </div>
+              {density === 'list' ? (
+                <div className="columns-1 gap-6 lg:columns-2">
+                  {listRows.map((row) => row.type === 'letter' ? (
+                    <h3 key={`letter-${row.letter}`} className="break-after-avoid px-3 pb-1 pt-4 font-display text-xs uppercase tracking-[0.3em] text-accent first:pt-0">{row.letter}</h3>
+                  ) : (
+                    <div key={row.artist.id} className="break-inside-avoid">
+                      <ArtistRow
+                        artist={row.artist}
+                        onClick={() => navigate(`/artist/${row.artist.id}`)}
+                        onPlay={() => playArtist(row.artist)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={gridClass}>
+                  {artists.map((artist) => (
+                    <ArtistCard
+                      key={artist.id}
+                      artist={artist}
+                      onClick={() => navigate(`/artist/${artist.id}`)}
+                      onPlay={() => playArtist(artist)}
+                    />
+                  ))}
+                </div>
+              )}
               {(hasMore || loadingMore) && (
                 <div ref={loadMoreRef} className="flex min-h-20 items-center justify-center">
                   {loadingMore ? <Loader2 size={18} className="animate-spin text-muted" /> : <p className="text-xs text-muted/60">Scroll for more</p>}

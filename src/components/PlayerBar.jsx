@@ -8,6 +8,8 @@ import { navigateToTrackAlbum } from '../playbackContext'
 import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
 import Modal from './Modal'
+import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
+import SaveToLibraryButton from './SaveToLibraryButton'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -96,9 +98,10 @@ export default function PlayerBar() {
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }
   }
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackArtURL(currentTrack)
+
+  // An online song (YouTube, SoundCloud): label, and a button to save it.
+  const streamed = isStreamed(currentTrack)
 
   const handleArtistClick = () => {
     if (!currentTrack) return
@@ -150,10 +153,17 @@ export default function PlayerBar() {
                 )}
               </div>
               {currentTrack ? (
-                <button onClick={handleArtistClick}
-                  className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
-                  {currentTrack.artist}
-                </button>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {streamed && (
+                    <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="flex-shrink-0 text-[9px] font-display uppercase tracking-wider text-accent">
+                      {streamLabel(currentTrack)} ·
+                    </span>
+                  )}
+                  <button onClick={handleArtistClick}
+                    className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
+                    {currentTrack.artist}
+                  </button>
+                </div>
               ) : <p className="text-xs text-muted">No track playing</p>}
             </motion.div>
           </AnimatePresence>
@@ -182,6 +192,7 @@ export default function PlayerBar() {
             <Plus size={14} />
           </button>
         )}
+        {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-subtle" />}
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">

@@ -434,8 +434,8 @@ function createGhostTrack(db, entry, sourcePlatform = 'generic', playlistId = 'i
   const filePath = `ghost://${safePlatform}/${playlistId}/${id}`;
   db.prepare(`
     INSERT INTO tracks
-    (id, file_path, file_hash, title, artist, album, album_artist, track_num, year, genre, genres, record_label, explicit, danceability, energy, track_key, loudness, mode, speechiness, acousticness, instrumentalness, liveness, valence, tempo, time_signature, duration, artwork_path, bitrate, last_modified)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, file_path, file_hash, title, artist, album, album_artist, track_num, year, genre, genres, record_label, explicit, danceability, energy, track_key, loudness, mode, speechiness, acousticness, instrumentalness, liveness, valence, tempo, time_signature, duration, artwork_path, bitrate, last_modified, source_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     filePath,
@@ -465,7 +465,9 @@ function createGhostTrack(db, entry, sourcePlatform = 'generic', playlistId = 'i
     entry.duration ? Number(entry.duration) : null,
     null,
     null,
-    Date.now()
+    Date.now(),
+    // Kept on the track, so a ghost with a YouTube link can be streamed.
+    entry.source_url ? String(entry.source_url).slice(0, 1000) : null
   );
   // Kept so the file is matched to this ghost by ISRC when it arrives.
   const ghostIsrc = normalizeIsrc(entry.isrc || entry.ISRC)
@@ -555,6 +557,9 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId) {
     applyImportedMetadata(db, targetTrackId, ghost)
     db.prepare('UPDATE OR IGNORE playlist_tracks SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId);
     db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(ghostTrackId);
+    // A streamed ghost can have been liked and played: keep that on the file.
+    db.prepare('UPDATE OR IGNORE user_likes SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId);
+    db.prepare('UPDATE OR IGNORE play_history SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId);
     db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(ghostTrackId);
     db.prepare('DELETE FROM play_history WHERE track_id = ?').run(ghostTrackId);
     db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(ghostTrackId);
@@ -778,5 +783,6 @@ function registerPlaylistHandlers() {
 module.exports = {
   registerPlaylistHandlers,
   applyPendingImportedMetadataToTrack,
+  resolveGhostTrack,
   resolveGhostsByIsrc,
 };

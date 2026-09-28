@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('electron', {
 
   
   downloadYT: (url, opts) => invoke('downloader:download', url, opts),
+  onlineSearch: (query, provider) => invoke('online:search', query, provider),
+  onlineSave: (items) => invoke('online:save', items),
+  onlinePrepare: (provider, id, force) => invoke('online:prepare', provider, id, force),
   downloadPlaylist: (url, opts) => invoke('downloader:downloadPlaylist', url, opts),
   searchYT: (q, page) => invoke('downloader:search', q, page),
   searchYTArtist: (q, page) => invoke('downloader:searchArtist', q, page),
@@ -212,6 +215,12 @@ contextBridge.exposeInMainWorld('electron', {
   lastfmGetSimilarArtists: (artist, limit) => invoke('lastfm:getSimilarArtists', artist, limit),
   lastfmScrobble: (artist, track, album, duration, timestamp) => invoke('lastfm:scrobble', artist, track, album, duration, timestamp),
   lastfmUpdateNowPlaying: (artist, track, album, duration) => invoke('lastfm:updateNowPlaying', artist, track, album, duration),
+  listenbrainzStatus: () => invoke('listenbrainz:status'),
+  listenbrainzConnect: (token) => invoke('listenbrainz:connect', token),
+  listenbrainzDisconnect: () => invoke('listenbrainz:disconnect'),
+  listenbrainzSetEnabled: (enabled) => invoke('listenbrainz:setEnabled', enabled),
+  listenbrainzNowPlaying: (track) => invoke('listenbrainz:nowPlaying', track),
+  listenbrainzSubmit: (track, listenedAt) => invoke('listenbrainz:submit', track, listenedAt),
   onLastfmAuthToken: (fn) => on('lastfm:auth-token', (_, token) => fn(token)),
   pluginsList: () => invoke('plugins:list'),
   pluginsReload: () => invoke('plugins:reload'),

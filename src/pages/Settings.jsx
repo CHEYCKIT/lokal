@@ -272,6 +272,19 @@ export default function Settings() {
     const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
     setSoulseekCheck(status || { error: 'No answer' })
   }
+  // ListenBrainz: its token is saved only once ListenBrainz confirms it.
+  const [lbStatus, setLbStatus] = useState(null)
+  const [lbToken, setLbToken] = useState('')
+  const [lbMessage, setLbMessage] = useState(null)
+  /** Reload the ListenBrainz connection status. */
+  const refreshListenBrainz = () => { Promise.resolve(api.listenbrainzStatus?.()).then(s => { if (s && !s.error) setLbStatus(s) }).catch(() => {}) }
+  /** Connect ListenBrainz with the pasted token. */
+  const connectListenBrainz = async () => {
+    setLbMessage({ loading: true })
+    const result = await api.listenbrainzConnect(lbToken.trim()).catch(e => ({ error: e.message }))
+    if (result?.ok) { setLbToken(''); setLbMessage(null); refreshListenBrainz() }
+    else setLbMessage({ error: result?.error || 'Could not connect' })
+  }
   const [spotifyCheck, setSpotifyCheck] = useState(null)
   const testSpotifyCanvas = async () => {
     setSpotifyCheck({ loading: true })
@@ -339,6 +352,8 @@ export default function Settings() {
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState('library')
+  // Load the ListenBrainz connection state when Integrations is opened.
+  useEffect(() => { if (activeCategory === 'integrations') refreshListenBrainz() }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   // Every category shares the page's one scroll container (App's <main>), so
   // switching from halfway down a long category used to land halfway down
   // the next one. Start each category at the top; layout effect so the new
@@ -1326,6 +1341,7 @@ export default function Settings() {
                 <option value="brave">Brave</option>
                 <option value="opera">Opera</option>
                 <option value="file">cookies.txt file</option>
+                <option value="paste">Paste my cookie</option>
               </select>
             )}
           </div>
@@ -1352,6 +1368,33 @@ export default function Settings() {
             </div>
           </Row>
         )}
+        {settings.yt_cookies === '1' && settings.yt_cookie_browser === 'paste' && (
+          <Row label="YouTube Cookie" desc={"Like the Spotify cookie: paste your own YouTube session, and yt-dlp uses it for downloads and streaming. With a YouTube Premium account, streaming at Best quality gets Premium's 256 kbps AAC.\n\nTo get it: open music.youtube.com signed in, press F12 > Network, click any request to music.youtube.com, and copy the whole value of the \"cookie\" request header. Tip: YouTube refreshes the cookies of an open tab, so copy them from a private window and close it afterwards; they then last for months.\n\n"+(api.isElectron
+            ? "It stays on this computer (a private cookies.txt in Lokal's data folder, deleted when you clear it) and is only given to yt-dlp for YouTube links. It's your real account."
+            : "In the web app it is sent to the Lokal server and stored there (in its settings and a private cookies.txt in its data folder, deleted when you clear it), and only given to yt-dlp for YouTube links. Only paste it into a Lokal server you run or trust. It's your real account.")}>
+            <div className="flex flex-col items-end gap-1">
+              <input type="password" value={settings.yt_cookie_header || ''} onChange={e => set('yt_cookie_header', e.target.value)}
+                placeholder="SAPISID=…; __Secure-3PAPISID=…; …" spellCheck={false} autoComplete="off"
+                className="w-56 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {settings.yt_cookie_header && (
+                settings.yt_cookie_header === '••••••••'
+                  ? <span className="text-[11px] text-muted">Saved</span>
+                  : /(?:^|[;\s])(?:__Secure-3PAPISID|SAPISID|__Secure-1PSID|LOGIN_INFO)=/.test(settings.yt_cookie_header)
+                    ? <span className="text-[11px] text-accent">Looks signed in</span>
+                    : <span className="text-[11px] text-yellow-300">No sign-in cookie found (SAPISID / LOGIN_INFO): copy the whole cookie header</span>
+              )}
+            </div>
+          </Row>
+        )}
+        <Row label="Streaming Quality" desc={"For songs played from YouTube Music in search. Best: highest bitrate available (Opus ~160 kbps; 256 kbps AAC with a Premium cookie). Data saver: lowest Opus (~50–70 kbps). SoundCloud always streams 128 kbps MP3, the only format it offers for direct playback."}>
+          <select
+            value={settings.online_quality || 'best'}
+            onChange={e => set('online_quality', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="best">Best</option>
+            <option value="saver">Data saver</option>
+          </select>
+        </Row>
         {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
           <p className="text-[11px] text-muted -mt-1 mb-2">
             On Windows, Chrome-based browsers encrypt their cookies in a way yt-dlp can't read (“Failed to decrypt with DPAPI”). Lokal will download without cookies when that happens. Use Firefox or a cookies.txt file instead.
@@ -1939,14 +1982,14 @@ export default function Settings() {
             </button>
           </div>
         </Row>
-        <Row label="Last.fm Integration" desc="Turn Last.fm off completely, including now playing updates and end-of-track scrobbles.">
+        <Row label="Last.fm Integration" desc="Turn Last.fm off completely, including now playing updates and scrobbles.">
           <button
             onClick={() => set('lastfm_enabled', settings.lastfm_enabled === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lastfm_enabled !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {settings.lastfm_enabled !== '0' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Scrobbling" desc="Submit plays to Last.fm when tracks finish">
+        <Row label="Scrobbling" desc="Scrobble a track to Last.fm once you have listened to half of it, or 4 minutes for long tracks (Last.fm's rule). Tracks under 30 seconds are not scrobbled.">
           <button
             onClick={() => { const v = settings.lastfm_scrobbling !== '1'; set('lastfm_scrobbling', v ? '1' : '0') }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lastfm_scrobbling === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
@@ -2068,6 +2111,55 @@ export default function Settings() {
             ))}
           </div>
         </div>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="ListenBrainz">
+        <p className="text-xs text-muted leading-relaxed">
+          Sends what you play to <span className="text-white">ListenBrainz</span>, the open alternative to Last.fm run by MetaBrainz: "now playing" when a song starts, and a listen once you've heard half of it (or 4 minutes). Listens made while offline are kept and sent later.
+        </p>
+        {lbStatus?.connected ? (
+          <>
+            <Row label="Account" desc={lbStatus.queued ? `${lbStatus.queued} listen${lbStatus.queued === 1 ? '' : 's'} waiting to be sent` : 'Connected'}>
+              <div className="flex items-center gap-2">
+                <button onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(lbStatus.username || '')}/`)}
+                  className="text-sm text-accent hover:underline">{lbStatus.username || 'Connected'}</button>
+                <button onClick={async () => { await api.listenbrainzDisconnect(); setLbToken(''); setLbMessage(null); refreshListenBrainz() }}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">Disconnect</button>
+              </div>
+            </Row>
+            <Row label="Submit Listens" desc="Turn off to pause sending without disconnecting.">
+              <button onClick={async () => {
+                  // Keep the current state if the change didn't go through.
+                  const next = await Promise.resolve(api.listenbrainzSetEnabled(!lbStatus.enabled)).catch(() => null)
+                  if (next && !next.error) setLbStatus(next)
+                }}
+                className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${lbStatus.enabled ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {lbStatus.enabled ? 'On' : 'Off'}
+              </button>
+            </Row>
+          </>
+        ) : (
+          <>
+            <Row label="User Token" desc="Copy it from your ListenBrainz settings page (listenbrainz.org/settings). It's stored on this device only.">
+              <div className="flex items-center gap-2">
+                <input type="password" value={lbToken} onChange={e => { setLbToken(e.target.value); setLbMessage(null) }}
+                  placeholder="ListenBrainz user token" spellCheck={false} autoComplete="off"
+                  className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                <button onClick={() => api.openExternal('https://listenbrainz.org/settings/')}
+                  className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">Get Token</button>
+              </div>
+            </Row>
+            <div className="flex items-center gap-3">
+              <button onClick={connectListenBrainz} disabled={lbMessage?.loading || !lbToken.trim()}
+                className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+                {lbMessage?.loading ? 'Checking...' : 'Connect'}
+              </button>
+              {lbMessage?.error && <p className="text-xs text-red-400">{lbMessage.error}</p>}
+            </div>
+          </>
+        )}
       </Section>
       )}
 
