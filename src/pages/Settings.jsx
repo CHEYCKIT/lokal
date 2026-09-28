@@ -594,7 +594,14 @@ export default function Settings() {
     setCheckingUpdate(true)
     setUpdateCheckResult('')
     try {
-      await api.updaterCheck()
+      const result = await api.updaterCheck()
+      if (result?.nightly) {
+        // Nightlies aren't offered the stable release; they update by hand.
+        setUpdateCheckResult('')
+        setCheckingUpdate(false)
+        api.openExternal('https://github.com/sipbuu/lokal/releases')
+        return
+      }
       setUpdateCheckResult('Checking for updates...')
       setTimeout(() => {
         setUpdateCheckResult('')
@@ -1263,7 +1270,7 @@ export default function Settings() {
           <Row label="Version" desc="Current app version">
             <span className="text-sm text-muted font-mono">{appVersion || '1.0.0'}</span>
           </Row>
-          <Row label="Check for Updates" desc="Manually check for new versions">
+          <Row label="Check for Updates" desc={/-nightly\./i.test(appVersion || '') ? 'Nightly builds are not offered stable releases. Get the newest nightly from GitHub Releases.' : 'Manually check for new versions'}>
             <div className="flex items-center gap-3">
               <button 
                 onClick={checkForUpdates}
@@ -1271,7 +1278,7 @@ export default function Settings() {
                 className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 disabled:opacity-40 transition-colors"
               >
                 <RefreshCcw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
-                {checkingUpdate ? 'Checking...' : 'Check for updates'}
+                {checkingUpdate ? 'Checking...' : /-nightly\./i.test(appVersion || '') ? 'Open Releases' : 'Check for updates'}
               </button>
               {updateCheckResult && (
                 <span className="text-xs text-muted">{updateCheckResult}</span>

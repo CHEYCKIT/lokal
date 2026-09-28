@@ -144,6 +144,10 @@ autoUpdater.autoInstallOnAppQuit = true
 // Latest release: 2.0.2 is older than 2.0.3-nightly.N (no prompt), and the
 // official 2.0.3 is newer (prompt).
 autoUpdater.allowPrerelease = false
+// Nightly builds don't look for updates at all: someone on a nightly chose
+// it, and being offered the stable release (older in features once the
+// nightly moves on) makes no sense. New nightlies come from GitHub Releases.
+const IS_NIGHTLY = /-nightly\./i.test(app.getVersion())
 
 autoUpdater.on('update-available', (info) => {
   if (mainWindow) {
@@ -598,7 +602,9 @@ ipcMain.handle('updater:install', () => {
   }, 500);
 });
   ipcMain.handle('updater:check', () => {
+    if (IS_NIGHTLY) return { nightly: true, version: app.getVersion() }
     autoUpdater.checkForUpdates()
+    return { checking: true }
   })
   ipcMain.handle('app:getVersion', () => {
     return app.getVersion()
@@ -615,6 +621,8 @@ ipcMain.handle('updater:install', () => {
 
   if (!app.isPackaged) {
     console.log('[updater] skipping in dev mode')
+  } else if (IS_NIGHTLY) {
+    console.log(`[updater] nightly build (${app.getVersion()}): not checking for stable updates`)
   } else {
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(err => {
