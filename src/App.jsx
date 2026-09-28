@@ -242,6 +242,7 @@ export default function App() {
   const lastfmPlaybackStartedAtRef = useRef(0)
   const lastfmPlaybackKeyRef = useRef(null)
   const lastfmScrobbledPlaybackKeyRef = useRef(null)
+  const lastfmScrobbleCheckRef = useRef(null)
   const listenbrainzSubmittedPlaybackKeyRef = useRef(null)
 
   const [updateState, setUpdateState] = useState({
@@ -923,9 +924,15 @@ export default function App() {
     })
   }, [])
 
+  // Checked every second of playback, so a scrobble / listen is sent as soon
+  // as half the track (or 4 minutes) has been played, not when it ends.
+  const scrobbleTickRef = useRef(null)
   const startTimer = useCallback(() => {
     if (playTimerRef.current) return
-    playTimerRef.current = setInterval(() => { playSecsRef.current++ }, 1000)
+    playTimerRef.current = setInterval(() => {
+      playSecsRef.current++
+      try { scrobbleTickRef.current?.() } catch {}
+    }, 1000)
   }, [])
 
   const stopTimer = useCallback(() => {
@@ -1003,7 +1010,10 @@ export default function App() {
     const startedAt = lastfmPlaybackStartedAtRef.current
     if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
     if (lastfmScrobbledPlaybackKeyRef.current === playbackKey) return
+    // Already checking this play (the check runs every second of playback).
+    if (lastfmScrobbleCheckRef.current === playbackKey) return
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    lastfmScrobbleCheckRef.current = playbackKey
 
     api.getSettings().then((settings) => {
       if (settings?.lastfm_enabled === '0') return
@@ -1080,6 +1090,15 @@ export default function App() {
       if (!result || result.skipped || result.error) listenbrainzSubmittedPlaybackKeyRef.current = null
     }).catch(() => { listenbrainzSubmittedPlaybackKeyRef.current = null })
   }, [shouldScrobbleLastfmTrack])
+
+  useEffect(() => {
+    scrobbleTickRef.current = () => {
+      const track = currentTrackRef.current
+      if (!track) return
+      tryScrobbleLastfmTrack(track, playSecsRef.current)
+      trySubmitListenBrainz(track, playSecsRef.current)
+    }
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   const flushTime = useCallback((trackId) => {
     const secs = playSecsRef.current
