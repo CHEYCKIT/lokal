@@ -95,9 +95,11 @@ const TIER_SQL = {
   high: "lossless = 0 AND bitrate >= (CASE WHEN LOWER(IFNULL(codec, '')) LIKE 'opus%' OR LOWER(IFNULL(codec, '')) LIKE 'vorbis%' THEN 160 ELSE 256 END)",
   low: "lossless = 0 AND (bitrate IS NULL OR bitrate < (CASE WHEN LOWER(IFNULL(codec, '')) LIKE 'opus%' OR LOWER(IFNULL(codec, '')) LIKE 'vorbis%' THEN 160 ELSE 256 END))",
   unknown: 'lossless IS NULL',
-  suspect: "lossless = 1 AND spectral_verdict IN ('lossy', 'likely-lossy')",
+  // Only a confirmed lossy source: "likely-lossy" (a cut-off some real
+  // masters have too) is shown on the track but not counted against it.
+  suspect: "lossless = 1 AND spectral_verdict = 'lossy'",
   // What's worth replacing: lossy files and suspect lossless ones.
-  upgradable: "(lossless = 0) OR (lossless = 1 AND spectral_verdict IN ('lossy', 'likely-lossy'))",
+  upgradable: "(lossless = 0) OR (lossless = 1 AND spectral_verdict = 'lossy')",
 }
 
 const REAL_FILE = "file_path NOT LIKE 'ghost://%'"

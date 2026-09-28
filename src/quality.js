@@ -30,7 +30,8 @@ export function tierOf(track) {
 
 /** Did the spectrum check say this lossless file came from a lossy one? */
 export function isSuspect(track) {
-  return Number(track?.lossless) === 1 && (track?.spectral_verdict === 'lossy' || track?.spectral_verdict === 'likely-lossy')
+  // Only a confirmed lossy source ("likely-lossy" is shown, not counted).
+  return Number(track?.lossless) === 1 && track?.spectral_verdict === 'lossy'
 }
 
 /** Worth getting again in lossless: lossy, or a suspect lossless file. */

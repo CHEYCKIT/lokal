@@ -289,7 +289,9 @@ function initDB() {
   ]
   for (const m of quickMigrations) { try { db.exec(m) } catch {} }
   // Audio quality and ISRC columns (electron/quality).
-  try { require('../quality').ensureColumns(db) } catch (e) { console.warn('quality columns:', e.message) }
+  // The scanner writes these columns: without them indexing would fail later
+  // and less clearly, so a failure here stops start-up.
+  try { require('../quality').ensureColumns(db) } catch (e) { console.warn('quality columns:', e.message); throw e }
   // "Paste my cookie" became the default cookie source. Whoever turned
   // cookies on before without picking a source was using Firefox: keep that.
   // Once only (marked done), so a later "on" with the new default isn't touched.
