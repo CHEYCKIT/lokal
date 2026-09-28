@@ -33,7 +33,10 @@ export function useTheme() {
   const [themeName, setThemeName] = useState('dark')
   const [themeOverrides, setThemeOverrides] = useState({})
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [textScale, setTextScaleState] = useState('1')
+  // The scale already applied at startup, so the picker doesn't show 1x first.
+  const [textScale, setTextScaleState] = useState(() => {
+    try { return document.documentElement.style.getPropertyValue('--text-scale').trim() || '1' } catch { return '1' }
+  })
   // The latest theme, readable right away (state only updates on the next
   // render, so two quick changes would otherwise both start from the old one).
   const current = useRef({ name: 'dark', overrides: {} })

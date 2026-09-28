@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Search, Sparkles, Users } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
+import { peekCache, writeCache, usePageReady } from '../pageCache'
 
 const PAGE_SIZE = 60
 const TOP_ARTISTS_LIMIT = 8
@@ -123,14 +124,18 @@ const VIEWS = [
 ]
 
 export default function Artists() {
-  const [artists, setArtists] = useState([])
-  const [topArtists, setTopArtists] = useState([])
-  const [total, setTotal] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [sort, setSort] = useState(() => localStorage.getItem('lokal-artists-sort') || 'name')
+  // The unfiltered first page from last time, shown at once on the way back
+  // (count included) while it refreshes, instead of "Loading artists...".
+  const cached = peekCache(`artists:${sort}`)
+  const [artists, setArtists] = useState(() => cached?.items || [])
+  const [topArtists, setTopArtists] = useState(() => peekCache('artists:top') || [])
+  const [total, setTotal] = useState(() => cached?.total || 0)
+  const [hasMore, setHasMore] = useState(() => !!cached?.hasMore)
+  const [loading, setLoading] = useState(!cached)
   const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState(() => localStorage.getItem('lokal-artists-sort') || 'name')
+  usePageReady(!loading)
   const [density, setDensity] = useState(() => localStorage.getItem('lokal-artists-density') || 'spaced')
   const loadMoreRef = useRef(null)
   const navigate = useNavigate()
@@ -138,9 +143,12 @@ export default function Artists() {
 
   const loadArtists = (search, offset, append, sortMode) => {
     const setBusy = append ? setLoadingMore : setLoading
-    setBusy(true)
+    // A refresh of what's already on screen happens quietly (no spinner).
+    const quiet = !append && !search && !!peekCache(`artists:${sortMode}`)
+    if (!quiet) setBusy(true)
     return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode }).then((result) => {
       const items = Array.isArray(result?.items) ? result.items : []
+      if (!append && !search) writeCache(`artists:${sortMode}`, { items, total: result?.total || 0, hasMore: !!result?.hasMore })
       setArtists((current) => (append ? [...current, ...items] : items))
       setTotal(result?.total || 0)
       setHasMore(!!result?.hasMore)
@@ -153,7 +161,9 @@ export default function Artists() {
   const loadTopArtists = () => {
     api.getArtistsPage({ search: '', limit: TOP_ARTISTS_LIMIT, offset: 0, sort: 'tracks' }).then((result) => {
       const items = Array.isArray(result?.items) ? result.items : []
-      setTopArtists(items.filter((artist) => Number(artist.track_count) > 0))
+      const top = items.filter((artist) => Number(artist.track_count) > 0)
+      writeCache('artists:top', top)
+      setTopArtists(top)
     }).catch(() => {})
   }
 
@@ -246,7 +256,7 @@ export default function Artists() {
               </button>
             </div>
             <p className="mt-3 text-sm text-muted">
-              {loading ? 'Loading artists...' : `${total} artist${total === 1 ? '' : 's'}`}
+              {loading ? '\u00a0' : `${total.toLocaleString()} artist${total === 1 ? '' : 's'}`}
             </p>
           </div>
 

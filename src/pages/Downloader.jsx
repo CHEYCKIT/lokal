@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock, Cookie, X } from 'lucide-react'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
+import { usePageReady } from '../pageCache'
 import { useDownloads, startDownloadSync, isActive } from '../store/downloads'
 import { DownloadList } from '../components/DownloadManager'
 import SoulseekSearch from '../components/SoulseekSearch'
@@ -83,12 +84,20 @@ function normalizeArtistResults(items) {
 }
 
 // Honest formats: nothing claims to be better than the source it came from.
+// Original is the default: it's the best quality and needs no re-encoding.
+const DEFAULT_FORMAT = 'original'
 const FORMATS = [
   { id: 'original', label: 'Original', hint: 'The source audio as-is (Opus or AAC on YouTube), no re-encoding. Best quality, smallest files.' },
   { id: 'mp3', label: 'MP3', hint: 'Re-encoded to MP3 for players and devices that need it.' },
   { id: 'm4a', label: 'M4A', hint: 'AAC in an M4A file, copied without re-encoding when the source is AAC.' },
   { id: 'opus', label: 'Opus', hint: 'Opus, copied without re-encoding when the source is Opus (most of YouTube).' },
 ]
+
+/** The saved download format, or the default when none (or an old one) is saved. */
+function savedFormat(settings) {
+  const saved = String(settings?.download_format || DEFAULT_FORMAT)
+  return FORMATS.some(f => f.id === saved) ? saved : DEFAULT_FORMAT
+}
 
 export default function Downloader() {
   const [accepted] = useState(() => localStorage.getItem(DISCLAIMER_KEY) === '1')
@@ -101,7 +110,7 @@ export default function Downloader() {
   const soulseekFor = location.state?.soulseek || null
   // YouTube downloads without the user's cookie often fail ("confirm you're
   // not a bot"): say so until one is set up (or the hint is dismissed).
-  const [cookieReady, setCookieReady] = useState(true)
+  const [cookieReady, setCookieReady] = useState(() => (peekSettings() ? youTubeCookieReady(peekSettings()) : true))
   const [cookieHintDismissed, setCookieHintDismissed] = useState(() => { try { return localStorage.getItem(COOKIE_HINT_KEY) === '1' } catch { return false } })
   useEffect(() => {
     const check = () => Promise.resolve(api.getSettings()).then(s => setCookieReady(youTubeCookieReady(s))).catch(() => {})
@@ -128,8 +137,12 @@ export default function Downloader() {
   const [loadingMoreArtist, setLoadingMoreArtist] = useState(false)
   const [artistError, setArtistError] = useState('')
   const [playlistUrl, setPlaylistUrl] = useState('')
-  const [format, setFormatState] = useState('mp3')
-  const [quality, setQualityState] = useState('320')
+  // Seeded from the settings already read, so the right format is picked on
+  // the first frame (it used to show MP3, then jump to the saved one).
+  const [format, setFormatState] = useState(() => savedFormat(peekSettings()))
+  const [quality, setQualityState] = useState(() => String(peekSettings()?.download_quality || '320'))
+  const [settingsKnown, setSettingsKnown] = useState(() => !!peekSettings())
+  usePageReady(settingsKnown)
   const [queueError, setQueueError] = useState('')
   const downloads = useDownloads(state => state.jobs)
   const { enqueue, load: refreshQueue, cancelAll, clearFinished, markSeen } = useDownloads.getState()
@@ -141,10 +154,9 @@ export default function Downloader() {
     startDownloadSync()
     refreshQueue()
     api.getSettings().then(settings => {
-      const saved = String(settings?.download_format || 'mp3')
-      setFormatState(FORMATS.some(f => f.id === saved) ? saved : 'original')
+      setFormatState(savedFormat(settings))
       if (settings?.download_quality) setQualityState(String(settings.download_quality))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setSettingsKnown(true))
   }, [])
 
   // Being on this page counts as having seen how the downloads ended.

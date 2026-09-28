@@ -94,6 +94,11 @@ async function apiFetch(path, opts = {}) {
   } catch (e) { return { error: e.message } }
 }
 
+// The settings as last read (plus changes saved since), or null before the
+// first read. Synchronous, for a page's first render.
+let settingsSnapshot = null
+export const peekSettings = () => settingsSnapshot
+
 export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
@@ -181,8 +186,16 @@ export const api = {
   clearLyricsCache: (tid) => isE() ? el().clearLyricsCache(tid) : apiFetch(`/lyrics/${tid}`, { method:'DELETE' }),
   clearLyricsDb: () => isE() ? el().clearLyricsDb() : apiFetch('/lyrics/clear-all', { method:'POST' }),
   clearSongCache: () => isE() ? el().clearSongCache() : Promise.resolve({ ok: false, error: 'Electron only' }),
-  getSettings: () => isE() ? el().getSettings() : apiFetch('/settings'),
-  saveSettings: (s) => isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s }),
+  // Both keep the snapshot peekSettings() hands out, so a page can paint with
+  // the real settings on its first frame instead of defaults.
+  getSettings: () => Promise.resolve(isE() ? el().getSettings() : apiFetch('/settings')).then(s => {
+    if (s && typeof s === 'object' && !s.error) settingsSnapshot = s
+    return s
+  }),
+  saveSettings: (s) => {
+    if (settingsSnapshot && s && typeof s === 'object') settingsSnapshot = { ...settingsSnapshot, ...s }
+    return isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })
+  },
   exportAllData: () => isE() ? el().exportAllData() : apiFetch('/settings/export-all'),
   importAllData: (payload) => isE() ? el().importAllData(payload) : apiFetch('/settings/import-all', { method:'POST', body: payload }),
   factoryReset: () => isE() ? el().factoryReset() : apiFetch('/settings/factory-reset', { method:'POST' }),

@@ -2,7 +2,8 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
+import { peekCache, writeCache, usePageReady } from '../pageCache'
 import AddonsSettings from '../components/AddonsSettings'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
@@ -198,8 +199,23 @@ function queueSettings(patch, delay = 400) {
 
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', () => { flushSettings() })
 
+/** Settings as the page shows them: the Discord fields get their defaults. */
+function withSettingDefaults(s) {
+  return {
+    ...(s || {}),
+    discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
+    discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
+    discord_auto_connect: s?.discord_auto_connect ?? '0',
+  }
+}
+
 export default function Settings() {
-  const [settings, setSettings] = useState({})
+  // Seeded from the settings already read (and the version / tools found on
+  // the last visit), so the first frame already has the real values: rows
+  // used to appear, change text and push everything below them down.
+  const [settings, setSettings] = useState(() => (peekSettings() ? withSettingDefaults(peekSettings()) : {}))
+  const [settingsLoaded, setSettingsLoaded] = useState(() => !!peekSettings())
+  const touchedSettingsRef = useRef(new Set())
   // null | 'saving' | 'saved' | { error }
   const [saveState, setSaveState] = useState(null)
   useEffect(() => {
@@ -261,7 +277,8 @@ export default function Settings() {
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetConfirmArmed, setResetConfirmArmed] = useState(false)
   const [factoryResetting, setFactoryResetting] = useState(false)
-  const [toolsStatus, setToolsStatus] = useState(null)
+  const [toolsStatus, setToolsStatusState] = useState(() => peekCache('settings:tools') || null)
+  const setToolsStatus = (status) => { writeCache('settings:tools', status); setToolsStatusState(status) }
   const [toolsLoading, setToolsLoading] = useState(false)
   const [soulseekCheck, setSoulseekCheck] = useState(null)
   const testSoulseek = async () => {
@@ -340,7 +357,9 @@ export default function Settings() {
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
   // the Side Panels toggle's saves -- see their declaration for why this
   // can't be a useRef here.
-  const [appVersion, setAppVersion] = useState('')
+  const [appVersion, setAppVersionState] = useState(() => peekCache('settings:version') || '')
+  const setAppVersion = (version) => { writeCache('settings:version', version); setAppVersionState(version) }
+  usePageReady(settingsLoaded && (!api.isElectron || (!!appVersion && !!toolsStatus)))
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
@@ -399,12 +418,13 @@ export default function Settings() {
   useEffect(() => {
 
     api.getSettings().then(s => {
-      setSettings({
-        ...(s || {}),
-        discord_use_default_app_id: s?.discord_use_default_app_id ?? '1',
-        discord_client_id: s?.discord_client_id || DEFAULT_DISCORD_CLIENT_ID,
-        discord_auto_connect: s?.discord_auto_connect ?? '0',
+      // A seeded page is live at once: keep what was changed while this loaded.
+      setSettings(prev => {
+        const next = withSettingDefaults(s)
+        for (const key of touchedSettingsRef.current) next[key] = prev[key]
+        return next
       })
+      setSettingsLoaded(true)
       // Keep the player store's live `exclusiveSidePanels` in sync with the
       // backend-persisted value on load -- it was previously seeded only
       // from localStorage, so a value saved from another install/profile
@@ -625,6 +645,7 @@ export default function Settings() {
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
+    touchedSettingsRef.current.add(k)
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
   }
@@ -1223,7 +1244,7 @@ export default function Settings() {
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
           <div className="flex items-center gap-3">
             {/* No Save button: changes save as they're made. */}
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="wait" initial={false}>
               {saveState?.error ? (
                 <motion.span key="error" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-red-400 flex items-center gap-2">

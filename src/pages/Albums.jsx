@@ -3,7 +3,8 @@ import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Loader2, Play, Search } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
+import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 
 const PAGE_SIZE = 48
@@ -194,19 +195,24 @@ function AlbumCard({ album, onClick, onPlay }) {
 }
 
 export default function Albums() {
-  const [albums, setAlbums] = useState([])
+  // Last visit's releases (and the settings already read) paint at once on
+  // the way back, instead of "Loading releases..." first; they refresh quietly.
+  const [albums, setAlbumsState] = useState(() => peekCache('albums:all') || [])
+  const setAlbums = (list) => { writeCache('albums:all', list); setAlbumsState(list) }
   const [selectedAlbum, setSelectedAlbum] = useState(null)
   const [albumTracks, setAlbumTracks] = useState([])
-  const [loadingAlbums, setLoadingAlbums] = useState(true)
+  const [loadingAlbums, setLoadingAlbums] = useState(() => !peekCache('albums:all'))
   const [loadingTracks, setLoadingTracks] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
   const [hoveredTrack, setHoveredTrack] = useState(null)
   const [visibleByType, setVisibleByType] = useState({ all: PAGE_SIZE, album: PAGE_SIZE, ep: PAGE_SIZE, single: PAGE_SIZE })
-  const [settings, setSettings] = useState({})
+  const [settings, setSettings] = useState(() => peekSettings() || {})
   const loadMoreRef = useRef(null)
   const navigate = useNavigate()
   const location = useLocation()
+  // Opening a given album: wait for its tracks too, so the grid doesn't show first.
+  usePageReady(!loadingAlbums && (!location.state?.album || albumTracks.length > 0))
   const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore()
   const albumContext = useMemo(() => makeAlbumContext(selectedAlbum), [selectedAlbum])
   // Set by the bottom-bar / now-playing shortcuts so we can flash the playing track.
@@ -244,7 +250,7 @@ export default function Albums() {
   }, [highlightTrackReady, highlightTrackId])
 
   const loadAlbums = () => {
-    setLoadingAlbums(true)
+    if (!albums.length) setLoadingAlbums(true)
     Promise.all([api.getAllAlbums(), api.getSettings().catch(() => ({}))]).then(([result, loadedSettings]) => {
       setAlbums(Array.isArray(result) ? result : [])
       setSettings(loadedSettings || {})
@@ -429,7 +435,7 @@ export default function Albums() {
             <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
             <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">Albums</h1>
             <p className="mt-3 text-sm text-muted">
-              {loadingAlbums ? 'Loading releases...' : `${filteredAlbums.length} visible releases`}
+              {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
             </p>
           </div>
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">

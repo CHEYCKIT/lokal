@@ -32,6 +32,7 @@ import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import { PageReadyContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
@@ -150,6 +151,33 @@ function NativeHistoryNavigation() {
   return null
 }
 
+/**
+ * One page's fade in / out. A `gated` page stays invisible until it calls
+ * usePageReady(true) (its data is in), so it appears whole instead of
+ * flashing its empty state first; PAGE_READY_TIMEOUT_MS caps the wait.
+ */
+function PageTransition({ gated = false, children }) {
+  const [ready, setReady] = useState(!gated)
+  const markReady = useCallback(() => setReady(true), [])
+  useEffect(() => {
+    if (ready) return
+    const timer = setTimeout(markReady, PAGE_READY_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [ready, markReady])
+  return (
+    <PageReadyContext.Provider value={markReady}>
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
+        exit={{ opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {children}
+      </motion.div>
+    </PageReadyContext.Provider>
+  )
+}
+
 function AnimatedRoutes() {
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -171,18 +199,18 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait" onExitComplete={handleExitComplete}>
       <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Home /></motion.div>} />
-        <Route path="/albums" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Albums /></motion.div>} />
-        <Route path="/artists" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Artists /></motion.div>} />
-        <Route path="/library" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Library /></motion.div>} />
-        <Route path="/search" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Search /></motion.div>} />
-        <Route path="/artist/:id" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Artist /></motion.div>} />
-        <Route path="/playlist/:id" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Playlist /></motion.div>} />
-        <Route path="/downloader" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Downloader /></motion.div>} />
-        <Route path="/profile" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Profile /></motion.div>} />
-        <Route path="/quality" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Quality /></motion.div>} />
-        <Route path="/recap" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Recap /></motion.div>} />
-        <Route path="/settings" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Settings /></motion.div>} />
+        <Route path="/" element={<PageTransition gated><Home /></PageTransition>} />
+        <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />
+        <Route path="/artists" element={<PageTransition gated><Artists /></PageTransition>} />
+        <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
+        <Route path="/search" element={<PageTransition><Search /></PageTransition>} />
+        <Route path="/artist/:id" element={<PageTransition><Artist /></PageTransition>} />
+        <Route path="/playlist/:id" element={<PageTransition><Playlist /></PageTransition>} />
+        <Route path="/downloader" element={<PageTransition gated><Downloader /></PageTransition>} />
+        <Route path="/profile" element={<PageTransition><Profile /></PageTransition>} />
+        <Route path="/quality" element={<PageTransition gated><Quality /></PageTransition>} />
+        <Route path="/recap" element={<PageTransition gated><Recap /></PageTransition>} />
+        <Route path="/settings" element={<PageTransition gated><Settings /></PageTransition>} />
       </Routes>
     </AnimatePresence>
   )

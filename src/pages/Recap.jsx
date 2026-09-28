@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, ListMusic, Play, Plus, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api'
+import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapTree, treePeriods } from '../recapPeriods'
@@ -494,23 +495,29 @@ function PeriodChip({ active, context, dashed, onClick, children, title }) {
 }
 
 export default function Recap() {
-  const [tree, setTree] = useState([])
-  const [navYear, setNavYear] = useState(null)
-  const [navMonth, setNavMonth] = useState(null) // 'YYYY-MM' whose weeks are shown
-  const [selectedId, setSelectedId] = useState('')
-  const [recapsById, setRecapsById] = useState({})
-  const [recap, setRecap] = useState(null)
+  const { user } = useAppStore()
+  // Kept across visits (per user): coming back shows the recap as it was
+  // while the periods refresh quietly, instead of rebuilding it on screen.
+  const k = `recap:${user?.id || 'guest'}`
+  const [tree, setTree, treeWasCached] = useCachedState(`${k}:tree`, [])
+  const [navYear, setNavYear] = useCachedState(`${k}:year`, null)
+  const [navMonth, setNavMonth] = useCachedState(`${k}:month`, null) // 'YYYY-MM' whose weeks are shown
+  const [selectedId, setSelectedId] = useCachedState(`${k}:selected`, '')
+  const [recapsById, setRecapsById] = useCachedState(`${k}:byId`, {})
+  const [recap, setRecap] = useCachedState(`${k}:recap`, null)
   const [loading, setLoading] = useState(false)
-  const [checkingPeriods, setCheckingPeriods] = useState(true)
+  const [checkingPeriods, setCheckingPeriods] = useState(!treeWasCached)
   const [status, setStatus] = useState('')
   const [storyOpen, setStoryOpen] = useState(false)
-  const { user } = useAppStore()
   const { playQueue } = usePlayerStore()
 
   const periods = treePeriods(tree)
   const selectedPeriod = periods.find(period => period.id === selectedId) || null
   const yearEntry = tree.find(y => y.year === navYear) || null
   const monthEntry = yearEntry?.months.find(m => m.key === navMonth) || null
+  // Shown once the periods and the selected recap are in, so the page doesn't
+  // go "no recap" -> "looking..." -> chips -> "building..." -> recap on screen.
+  usePageReady(!checkingPeriods && !loading && (!selectedPeriod || !!recapsById[selectedPeriod.id] || !!status))
 
   /** Select a period and show where it sits (its year, and its month's weeks). */
   const select = (period, currentTree = tree) => {
@@ -536,6 +543,7 @@ export default function Recap() {
 
   // Worked out on each load, so Refresh picks up a period that just ended.
   const loadPeriodList = async () => {
+    // Quietly when the chips are already on screen (only the icon spins).
     setCheckingPeriods(true)
     setStatus('')
     let days = []
@@ -545,7 +553,9 @@ export default function Recap() {
     } catch {}
     const nextTree = recapTree(days)
     const available = treePeriods(nextTree)
-    setRecapsById({})
+    // Drop the saved recaps, but keep the one on screen: it stays until the
+    // refreshed one replaces it, instead of blanking into "Building recap...".
+    setRecapsById(current => (selectedId && current[selectedId] && available.some(p => p.id === selectedId) ? { [selectedId]: current[selectedId] } : {}))
     setTree(nextTree)
     const latest = latestPeriod(nextTree)
     const keep = available.find(period => period.id === selectedId)
@@ -645,7 +655,7 @@ export default function Recap() {
         </div>
       </div>
 
-      {checkingPeriods ? (
+      {checkingPeriods && !tree.length ? (
         <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">Looking for finished recaps with listening data...</div>
       ) : periods.length > 0 ? (
         // Year, then month, then week: only periods with plays are listed.
@@ -693,7 +703,7 @@ export default function Recap() {
 
       {status && <div className="rounded-xl border border-border bg-elevated px-4 py-3 text-sm text-muted">{status}</div>}
 
-      {loading ? (
+      {loading && !recap ? (
         <div className="rounded-xl border border-border bg-elevated p-10 text-center text-sm text-muted">Building recap...</div>
       ) : !recap || recap.totalPlays === 0 ? (
         <div className="rounded-xl border border-border bg-elevated p-10 text-center">
@@ -702,7 +712,8 @@ export default function Recap() {
           <p className="mt-1 text-xs text-muted">Once a completed period has enough listening data, it will show up here.</p>
         </div>
       ) : (
-        <>
+        // Switching period keeps the current recap (dimmed) until the next is built.
+        <div className={`space-y-6 transition-opacity duration-200 ${loading ? 'opacity-50' : ''}`}>
           <section className="relative overflow-hidden rounded-xl border border-border bg-elevated">
             {heroArt && <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl scale-110" style={{ backgroundImage: `url("${heroArt}")` }} />}
             <div className="relative grid gap-6 p-6 lg:grid-cols-[1fr_260px]">
@@ -790,7 +801,7 @@ export default function Recap() {
               </div>
             </section>
           )}
-        </>
+        </div>
       )}
 
       <RecapStory open={storyOpen} onClose={() => setStoryOpen(false)} recap={recap ? { ...recap, topGenres } : recap} period={selectedPeriod} playQueue={playQueue} onSavePlaylist={savePlaylist} playlistStatus={status} />

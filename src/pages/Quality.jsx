@@ -5,6 +5,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AudioWaveform, Gem, Loader2, Play, RefreshCw, ScanLine, Square } from 'lucide-react'
 import { api } from '../api'
+import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCache'
+import AnimatedNumber from '../components/AnimatedNumber'
 import { usePlayerStore } from '../store/player'
 import { TIERS, formatLabel, isSuspect, openLossless, tierOf, verdictText } from '../quality'
 
@@ -20,13 +22,13 @@ const PAGE = 200
 
 // Every tile has the same rows, each one line high (badge, number, share,
 // description), so the badges, numbers and texts line up across the row.
-function StatTile({ tier, count, share, active, onClick }) {
+function StatTile({ tier, count, share, active, onClick, rollFrom }) {
   const info = TIERS[tier]
   return (
     <button onClick={onClick} title={info.hint}
       className={`flex h-full min-w-0 flex-col items-start justify-start gap-1.5 rounded-2xl border p-3 text-left transition-colors ${active ? 'border-accent/50 bg-accent/10' : 'border-border bg-card/50 hover:bg-card'}`}>
       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide ${info.className}`}>{info.label}</span>
-      <span className="mt-1 font-display text-2xl leading-8 tabular-nums text-white">{Number(count || 0).toLocaleString()}</span>
+      <AnimatedNumber value={count} from={rollFrom} className="mt-1 font-display text-2xl leading-8 tabular-nums text-white" />
       <span className="w-full truncate text-[11px] leading-4 text-muted/80 tabular-nums">{share}</span>
       <span className="w-full truncate text-[11px] leading-4 text-muted">{info.desc}</span>
     </button>
@@ -34,21 +36,32 @@ function StatTile({ tier, count, share, active, onClick }) {
 }
 
 export default function Quality() {
-  const [summary, setSummary] = useState(null)
+  // Kept across visits: coming back shows the numbers as they were (and they
+  // roll to any new value); the first visit counts them up from zero.
+  const [summary, setSummary, summaryWasCached] = useCachedState('quality:summary', null)
   const [job, setJob] = useState({ running: false })
-  const [filter, setFilter] = useState('upgradable')
-  const [rows, setRows] = useState([])
+  const [filter, setFilter] = useCachedState('quality:filter', 'upgradable')
+  const [rows, setRowsState] = useState(() => peekCache(`quality:rows:${filter}`) || [])
+  const [rowsLoaded, setRowsLoaded] = useState(() => !!peekCache(`quality:rows:${filter}`))
   const [loading, setLoading] = useState(false)
+  usePageReady(!!summary && rowsLoaded)
   const [message, setMessage] = useState('')
   const { playQueue } = usePlayerStore()
   const pollRef = useRef(null)
   const wasRunning = useRef(false)
 
-  const loadSummary = useCallback(() => Promise.resolve(api.qualitySummary()).then(s => { if (s && !s.error) setSummary(s) }).catch(() => {}), [])
+  // A failed read still lets the page show (with zeros) instead of waiting on it.
+  const loadSummary = useCallback(() => Promise.resolve(api.qualitySummary()).then(s => { if (s && !s.error) setSummary(s); else setSummary(prev => prev || {}) }).catch(() => setSummary(prev => prev || {})), [setSummary])
   const loadRows = useCallback(async () => {
+    // Switching filter shows that filter's last list at once, if there is one.
+    const seen = peekCache(`quality:rows:${filter}`)
+    if (seen) setRowsState(seen)
     setLoading(true)
     const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(() => [])
-    setRows(Array.isArray(list) ? list : [])
+    const next = Array.isArray(list) ? list : []
+    writeCache(`quality:rows:${filter}`, next)
+    setRowsState(next)
+    setRowsLoaded(true)
     setLoading(false)
   }, [filter])
 
@@ -91,9 +104,12 @@ export default function Quality() {
   const known = total - unread
   const checked = (tiers.hires || 0) + (tiers.lossless || 0) - (summary?.unchecked || 0)
   // Tiers: share of the tracks read. Suspect: out of the lossless files checked.
+  const rollFrom = (n) => (summaryWasCached ? n : 0)
   const shareText = (tier) => {
-    if (tier === 'suspect') return checked > 0 ? `of ${checked.toLocaleString()} checked` : 'Not checked yet'
-    return known ? `${Math.round(((tiers[tier] || 0) / known) * 100)}% of tracks` : '—'
+    if (tier === 'suspect') return checked > 0 ? <>of <AnimatedNumber value={checked} from={rollFrom(checked)} /> checked</> : 'Not checked yet'
+    if (!known) return '—'
+    const pct = Math.round(((tiers[tier] || 0) / known) * 100)
+    return <><AnimatedNumber value={pct} from={rollFrom(pct)} />% of tracks</>
   }
 
   return (
@@ -102,7 +118,7 @@ export default function Quality() {
         <div className="flex flex-wrap items-center gap-3">
           <AudioWaveform size={18} className="text-accent" />
           <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">Audio quality</h1>
-          <span className="text-xs text-muted">{total.toLocaleString()} tracks</span>
+          <span className="text-xs text-muted tabular-nums"><AnimatedNumber value={total} from={rollFrom(total)} /> tracks</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {running ? (
               <>
@@ -137,7 +153,7 @@ export default function Quality() {
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {['hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
-            <StatTile key={tier} tier={tier} count={tiers[tier]} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
+            <StatTile key={tier} tier={tier} count={tiers[tier]} rollFrom={rollFrom(tiers[tier] || 0)} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
           ))}
         </div>
       </section>
@@ -160,7 +176,7 @@ export default function Quality() {
         {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.</p>}
 
         {loading && !rows.length && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
-        {!loading && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
+        {rowsLoaded && !loading && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
 
         <div className="space-y-0.5">
           {rows.map((track, i) => {
