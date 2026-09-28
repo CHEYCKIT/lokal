@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Check, Download, AlertCircle, Search } from 'lucide-react'
 import { useDownloads } from '../store/downloads'
-import { PROVIDER_LABELS, downloadUrlFor, saveToLibrary, streamRef } from '../onlineTracks'
+import { downloadUrlFor, providerLabel as labelOf, saveToLibrary, streamRef } from '../onlineTracks'
 
 const SAVING = new Set(['queued', 'downloading', 'finishing'])
 
@@ -24,8 +24,13 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
 export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '' }) {
   const nav = useNavigate()
   const ref = track ? streamRef(track) : source
-  const url = ref ? downloadUrlFor({ file_path: `ghost://${ref.provider === 'sc' ? 'soundcloud' : 'youtube'}/online/${ref.id}` }) : null
-  const job = useDownloads(s => (url ? s.jobs.find(j => j.url === url) : null))
+  const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
+    ? downloadUrlFor({ file_path: `ghost://${ref.provider === 'sc' ? 'soundcloud' : 'youtube'}/online/${ref.id}` })
+    : null
+  // The download job: by its URL (YouTube, SoundCloud), or by the id we got
+  // back when starting it (addon links change on every request).
+  const [jobId, setJobId] = useState(null)
+  const job = useDownloads(s => s.jobs.find(j => (url && j.url === url) || (jobId && j.id === jobId)) || null)
   const [requested, setRequested] = useState(false)
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }
@@ -48,7 +53,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   }, [menu])
 
   if (!ref) return null
-  const providerLabel = PROVIDER_LABELS[ref.provider] || 'the web'
+  const providerLabel = labelOf(ref.provider)
 
   const resolveTrack = async () => track || (getTrack ? await getTrack() : null)
 
@@ -61,6 +66,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     const target = await resolveTrack().catch(() => null)
     const result = target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
     if (result?.error) { setRequested(false); setError(result.error) }
+    else if (result?.downloadId) setJobId(result.downloadId)
     useDownloads.getState().load?.()
   }
 

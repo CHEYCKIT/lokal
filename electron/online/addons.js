@@ -1,0 +1,279 @@
+// Addons: online sources the user adds by pasting a manifest URL, using the
+// same HTTP protocol as Eclipse Music addons (eclipsemusic.app/docs), itself
+// modelled on Stremio's. Lokal ships none and hosts nothing: it only talks
+// to the addons the user installed, like a browser talks to the sites the
+// user opens.
+//
+// Supported (v1): tracks.
+//   GET <base>/manifest.json      id, name, version, resources, icon, settings
+//   GET <base>/search?q=...       { tracks: [{ id, title, artist, album, duration, artworkURL, ... }] }
+//   GET <base>/stream/<id>        { url, format, expiresAt, ... }
+// <base> is the manifest URL without "/manifest.json" (it may carry the
+// user's token, e.g. https://addon.example/<token>/manifest.json). The
+// addon's settings (declared in its manifest, edited in Settings → Addons)
+// are sent as query parameters on every request.
+//
+// Stored in the settings table as JSON under "addons".
+
+const crypto = require('crypto')
+const net = require('net')
+
+const SETTINGS_KEY = 'addons'
+const TIMEOUT_MS = { manifest: 10000, search: 10000, stream: 15000 }
+const MAX_BYTES = 2 * 1024 * 1024
+const SEARCH_TTL_MS = 5 * 60 * 1000
+const STREAM_TTL_MS = 20 * 60 * 1000
+const ADAPTIVE = /\.(mpd|m3u8)(?:$|[?#])/i
+
+const searchCache = new Map() // `${key}\n${query}` -> { at, results }
+const streamCache = new Map() // `${key}\n${id}` -> stream
+const resolving = new Map()
+
+/** Short stable key for an addon (from its manifest id), used in track ids and URLs. */
+function addonKey(manifestId) {
+  return crypto.createHash('sha1').update(String(manifestId)).digest('hex').slice(0, 10)
+}
+
+/** The provider id an addon's results carry: "a-<key>". */
+function providerFor(key) {
+  return `a-${key}`
+}
+
+/** "a-<key>" -> "<key>", or null. */
+function keyOfProvider(provider) {
+  const m = String(provider || '').match(/^a-([0-9a-f]{10})$/)
+  return m ? m[1] : null
+}
+
+function isLocalHost(hostname) {
+  const h = String(hostname || '').replace(/^\[|\]$/g, '')
+  if (h === 'localhost' || h.endsWith('.localhost')) return true
+  if (net.isIPv4(h)) { const [a, b] = h.split('.').map(Number); return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) }
+  return h === '::1'
+}
+
+/** An addon URL must be https (plain http only for addons on this machine or network). */
+function checkUrl(raw) {
+  let url
+  try { url = new URL(String(raw || '').trim()) } catch { throw new Error('That is not a valid URL.') }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalHost(url.hostname))) {
+    throw new Error('Addons must use https:// (plain http is only allowed on this computer or your local network).')
+  }
+  url.hash = ''
+  return url
+}
+
+/** GET a JSON document from an addon, with a timeout and a size limit. */
+async function getJson(url, { timeoutMs, fetchImpl = fetch } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs || 10000)
+  try {
+    const res = await fetchImpl(url, { headers: { Accept: 'application/json' }, redirect: 'follow', signal: controller.signal })
+    const text = await res.text()
+    if (text.length > MAX_BYTES) throw new Error('The addon sent too much data.')
+    let json = null
+    try { json = JSON.parse(text) } catch {}
+    if (!res.ok) throw new Error(json?.error || json?.message || `The addon answered ${res.status}.`)
+    if (!json || typeof json !== 'object') throw new Error('The addon did not answer with JSON.')
+    return json
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('The addon took too long to answer.')
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// ---------------------------------------------------------------- storage
+
+function readAll(db) {
+  try {
+    const raw = db.prepare('SELECT value FROM settings WHERE key = ?').get(SETTINGS_KEY)?.value
+    const list = JSON.parse(raw || '[]')
+    return Array.isArray(list) ? list.filter(a => a && a.key && a.baseUrl && a.manifest) : []
+  } catch { return [] }
+}
+
+function writeAll(db, list) {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(list))
+  searchCache.clear()
+  streamCache.clear()
+}
+
+/** Settings values for an addon: its manifest defaults, overridden by the user's. */
+function effectiveSettings(addon) {
+  const values = {}
+  for (const field of Array.isArray(addon.manifest?.settings) ? addon.manifest.settings : []) {
+    if (!field?.key) continue
+    const v = addon.settings?.[field.key] ?? field.default
+    if (v !== undefined && v !== null && v !== '') values[field.key] = String(v)
+  }
+  return values
+}
+
+/** What the UI may see about an addon (no base URL: it can contain the user's token). */
+function publicView(addon) {
+  const m = addon.manifest
+  return {
+    key: addon.key,
+    provider: providerFor(addon.key),
+    id: m.id,
+    name: m.name,
+    version: m.version,
+    description: m.description || '',
+    icon: /^https:\/\//.test(String(m.icon || '')) ? m.icon : null,
+    resources: m.resources,
+    settingsSchema: Array.isArray(m.settings) ? m.settings : [],
+    settings: effectiveSettings(addon),
+    enabled: addon.enabled !== false,
+    host: (() => { try { return new URL(addon.baseUrl).host } catch { return '' } })(),
+    installedAt: addon.installedAt || null,
+  }
+}
+
+/** Installed addons, as the UI sees them. */
+function list(db) {
+  return readAll(db).map(publicView)
+}
+
+/** Enabled addons that can search and stream (for the source switch in search). */
+function searchable(db) {
+  return list(db).filter(a => a.enabled && a.resources.includes('search') && a.resources.includes('stream'))
+}
+
+function findByKey(db, key) {
+  return readAll(db).find(a => a.key === key) || null
+}
+
+/**
+ * Install (or update) an addon from its manifest URL.
+ * @returns the installed addon (public view)
+ */
+async function install(db, manifestUrl, { fetchImpl } = {}) {
+  const url = checkUrl(manifestUrl)
+  if (!/\/manifest\.json$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, '')}/manifest.json`
+  const manifest = await getJson(url.toString(), { timeoutMs: TIMEOUT_MS.manifest, fetchImpl })
+  const resources = Array.isArray(manifest.resources) ? manifest.resources.filter(r => typeof r === 'string') : []
+  if (!manifest.id || !manifest.name || !manifest.version) throw new Error('This is not an addon manifest (id, name and version are required).')
+  if (!resources.includes('search') || !resources.includes('stream')) throw new Error('This addon cannot search and stream tracks, so Lokal cannot use it.')
+  const clean = {
+    id: String(manifest.id).slice(0, 200),
+    name: String(manifest.name).slice(0, 100),
+    version: String(manifest.version).slice(0, 40),
+    description: String(manifest.description || '').slice(0, 500),
+    icon: String(manifest.icon || '').slice(0, 1000),
+    resources,
+    types: Array.isArray(manifest.types) ? manifest.types.slice(0, 10) : [],
+    settings: Array.isArray(manifest.settings) ? manifest.settings.slice(0, 30) : [],
+  }
+  const key = addonKey(clean.id)
+  const baseUrl = url.toString().replace(/\/manifest\.json(?:\?.*)?$/i, '')
+  const all = readAll(db)
+  const existing = all.find(a => a.key === key)
+  const addon = { key, baseUrl, manifest: clean, enabled: existing ? existing.enabled !== false : true, settings: existing?.settings || {}, installedAt: existing?.installedAt || Date.now() }
+  writeAll(db, [...all.filter(a => a.key !== key), addon])
+  return publicView(addon)
+}
+
+function remove(db, key) {
+  writeAll(db, readAll(db).filter(a => a.key !== key))
+  return { ok: true }
+}
+
+function setEnabled(db, key, enabled) {
+  writeAll(db, readAll(db).map(a => (a.key === key ? { ...a, enabled: !!enabled } : a)))
+  return { ok: true }
+}
+
+/** Save the user's values for an addon's settings (only keys its manifest declares). */
+function setSettings(db, key, values = {}) {
+  writeAll(db, readAll(db).map(a => {
+    if (a.key !== key) return a
+    const allowed = new Set((a.manifest.settings || []).map(f => f?.key).filter(Boolean))
+    const next = {}
+    for (const [k, v] of Object.entries(values || {})) if (allowed.has(k)) next[k] = typeof v === 'boolean' || typeof v === 'number' ? v : String(v ?? '').slice(0, 500)
+    return { ...a, settings: next }
+  }))
+  return { ok: true }
+}
+
+/** <base><path>?<addon settings>&<extra> */
+function endpoint(addon, path, extra = {}) {
+  const url = new URL(`${addon.baseUrl}${path}`)
+  for (const [k, v] of Object.entries(effectiveSettings(addon))) url.searchParams.set(k, v)
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v)
+  return url.toString()
+}
+
+// ---------------------------------------------------------------- search & stream
+
+/** Seconds from an addon track (duration in s, or durationMs). */
+function durationOf(t) {
+  if (Number(t.durationMs) > 0) return Math.round(Number(t.durationMs) / 1000)
+  const d = Number(t.duration)
+  if (!(d > 0)) return null
+  return d > 36000 ? Math.round(d / 1000) : Math.round(d) // some send ms in "duration"
+}
+
+/** Tracks from an addon's /search. */
+async function search(db, key, query, { fetchImpl, limit = 20 } = {}) {
+  const addon = findByKey(db, key)
+  if (!addon || addon.enabled === false) throw new Error('This addon is not installed or is turned off.')
+  const q = String(query || '').trim()
+  if (q.length < 2) return []
+  const cacheKey = `${key}\n${q.toLowerCase()}`
+  const cached = searchCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < SEARCH_TTL_MS) return cached.results.slice(0, limit)
+  const json = await getJson(endpoint(addon, '/search', { q }), { timeoutMs: TIMEOUT_MS.search, fetchImpl })
+  const provider = providerFor(key)
+  const results = (Array.isArray(json.tracks) ? json.tracks : [])
+    .filter(t => t && t.id != null && t.title)
+    .map(t => ({
+      provider,
+      id: String(t.id).slice(0, 300),
+      title: String(t.title).slice(0, 500),
+      artist: String(t.artist || (Array.isArray(t.artists) ? t.artists.map(a => a?.name || a).join(', ') : '') || '').slice(0, 500),
+      artists: [String(t.artist || '')].filter(Boolean),
+      album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
+      duration: durationOf(t),
+      thumbnail: /^https:\/\//.test(String(t.artworkURL || t.artwork || '')) ? String(t.artworkURL || t.artwork) : null,
+      quality: t.format ? String(t.format).slice(0, 40) : null,
+      kind: 'song',
+    }))
+  if (searchCache.size > 100) searchCache.delete(searchCache.keys().next().value)
+  searchCache.set(cacheKey, { at: Date.now(), results })
+  return results.slice(0, limit)
+}
+
+const MIME = { flac: 'audio/flac', mp3: 'audio/mpeg', aac: 'audio/aac', m4a: 'audio/mp4', mp4: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm' }
+
+/** The audio URL for an addon track (from its /stream), cached until it expires. */
+async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
+  const addon = findByKey(db, key)
+  if (!addon || addon.enabled === false) throw new Error('This addon is not installed or is turned off.')
+  const cacheKey = `${key}\n${id}`
+  const cached = streamCache.get(cacheKey)
+  if (!force && cached && cached.expiresAt > Date.now()) return cached
+  if (!force && resolving.has(cacheKey)) return resolving.get(cacheKey)
+  const job = getJson(endpoint(addon, `/stream/${encodeURIComponent(id)}`), { timeoutMs: TIMEOUT_MS.stream, fetchImpl })
+    .then(json => {
+      let url
+      try { url = checkUrl(json.url).toString() } catch { throw new Error('The addon gave no playable link for this track.') }
+      if (ADAPTIVE.test(url) || json.manifest) throw new Error('This addon streams in a format Lokal cannot play yet (DASH/HLS).')
+      const format = String(json.format || '').toLowerCase()
+      const expires = Number(json.expiresAt) > 0 ? Number(json.expiresAt) * (Number(json.expiresAt) < 1e12 ? 1000 : 1) - 60000 : Date.now() + STREAM_TTL_MS
+      const stream = { url, headers: {}, mime: MIME[format] || 'audio/*', expiresAt: Math.max(Date.now() + 30000, expires), format: format || null, quality: json.quality || null }
+      if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
+      streamCache.set(cacheKey, stream)
+      return stream
+    })
+    .finally(() => resolving.delete(cacheKey))
+  resolving.set(cacheKey, job)
+  return job
+}
+
+module.exports = {
+  addonKey, providerFor, keyOfProvider, checkUrl,
+  list, searchable, install, remove, setEnabled, setSettings,
+  search, resolveStream, findByKey,
+}

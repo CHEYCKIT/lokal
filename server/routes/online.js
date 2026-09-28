@@ -23,7 +23,7 @@ function settings() {
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
   const cookies = cookieArgs(settings())
-  return { ytdlp: ytdlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+  return { db: getDB(), ytdlp: ytdlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
@@ -41,11 +41,34 @@ router.get('/search', async (req, res) => {
   const q = String(req.query.q || '').slice(0, 200)
   const provider = sources.providerOf(String(req.query.provider || '')) ? String(req.query.provider) : 'yt'
   try {
-    res.json(await sources.search(provider, q, { ytdlp: ytdlp(), fallbackSearch: youtubeFallback }))
+    res.json(await sources.search(provider, q, { db: getDB(), ytdlp: ytdlp(), fallbackSearch: youtubeFallback }))
   } catch (e) {
     res.json({ error: e.message, results: [] })
   }
 })
+
+// The sources the search page can switch between: built-in ones, then addons.
+router.get('/providers', (req, res) => {
+  res.json([
+    { id: 'yt', label: 'YouTube Music' },
+    { id: 'sc', label: 'SoundCloud' },
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true })),
+  ])
+})
+
+// Direct audio link of an addon track, for "Save to library".
+router.post('/download-url/:provider/:id', async (req, res) => {
+  try { res.json({ url: (await sources.resolveStream(req.params.provider, req.params.id, { ...streamOptions(), force: true })).url }) } catch (e) { res.json({ error: e.message }) }
+})
+
+// Addons (Settings → Addons).
+router.get('/addons', (req, res) => res.json(sources.addons.list(getDB())))
+router.post('/addons', async (req, res) => {
+  try { res.json(await sources.addons.install(getDB(), req.body?.url)) } catch (e) { res.status(400).json({ error: e.message }) }
+})
+router.delete('/addons/:key', (req, res) => res.json(sources.addons.remove(getDB(), req.params.key)))
+router.put('/addons/:key/enabled', (req, res) => res.json(sources.addons.setEnabled(getDB(), req.params.key, !!req.body?.enabled)))
+router.put('/addons/:key/settings', (req, res) => res.json(sources.addons.setSettings(getDB(), req.params.key, req.body?.values || {})))
 
 router.post('/save', (req, res) => {
   try { res.json(sources.saveOnlineTracks(getDB(), req.body?.items)) } catch (e) { res.status(500).json({ error: e.message }) }
