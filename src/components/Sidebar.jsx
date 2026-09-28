@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Home, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
+import { completedPeriods, periodQuery } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
 
@@ -13,29 +14,6 @@ const NAV = [
   { icon: BarChart2, label: 'Recap', path: '/recap' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ]
-
-function periodEnd(period) {
-  if (period.scope === 'year') return new Date(period.year + 1, 0, 1)
-  if (period.scope === 'quarter') return new Date(period.year, period.quarter * 3, 1)
-  return new Date()
-}
-
-function getCompletedRecapPeriods() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const periods = []
-  for (let y = year; y >= year - 3; y -= 1) {
-    const yearly = { id: `year-${y}`, scope: 'year', year: y }
-    if (periodEnd(yearly) <= now) periods.push({ ...yearly, completedAt: periodEnd(yearly).getTime() })
-  }
-  for (let y = year; y >= year - 2; y -= 1) {
-    for (let q = 4; q >= 1; q -= 1) {
-      const quarterly = { id: `q${q}-${y}`, scope: 'quarter', year: y, quarter: q }
-      if (periodEnd(quarterly) <= now) periods.push({ ...quarterly, completedAt: periodEnd(quarterly).getTime() })
-    }
-  }
-  return periods.sort((left, right) => right.completedAt - left.completedAt)
-}
 
 /** Left sidebar: account, navigation and playlists. */
 export default function Sidebar() {
@@ -103,9 +81,10 @@ export default function Sidebar() {
     let alive = true
     const syncRecapBadge = async () => {
       let latest = ''
-      for (const period of getCompletedRecapPeriods()) {
+      for (const period of completedPeriods()) {
+        if (period.year < 2026) continue
         try {
-          const recap = await api.getListeningRecap(user?.id || 'guest', period)
+          const recap = await api.getListeningRecap(user?.id || 'guest', periodQuery(period, { countOnly: 1 }))
           if (recap?.totalPlays > 0) {
             latest = period.id
             localStorage.setItem('lokal-recap-latest-completed', latest)

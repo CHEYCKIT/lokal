@@ -4,9 +4,8 @@ import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, Lis
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
+import { completedPeriods, periodQuery } from '../recapPeriods'
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const GENRE_COMMENTS = {
   'slowcore': "staring at the ceiling again, i see.",
@@ -74,47 +73,6 @@ function filteredGenres(genres = []) {
 function genreComment(genre) {
   const key = String(genre || '').trim().toLowerCase()
   return GENRE_COMMENTS[key] || GENRE_COMMENTS['default']
-}
-
-function periodEnd(period) {
-  if (period.scope === 'year') return new Date(period.year + 1, 0, 1)
-  if (period.scope === 'quarter') return new Date(period.year, period.quarter * 3, 1)
-  return new Date()
-}
-
-function periodMonths(period) {
-  if (period.scope === 'year') return { start: 0, end: 11 }
-  const start = (period.quarter - 1) * 3
-  return { start, end: start + 2 }
-}
-
-function periodTitle(period) {
-  if (!period) return 'Recap'
-  const { start, end } = periodMonths(period)
-  return `${MONTHS[start]}-${MONTHS[end]} ${period.year} Recap`
-}
-
-function periodLabel(period) {
-  if (!period) return ''
-  const { start, end } = periodMonths(period)
-  return `${SHORT_MONTHS[start]}-${SHORT_MONTHS[end]} ${period.year}`
-}
-
-function buildPeriods() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const periods = []
-  for (let y = year; y >= year - 3; y -= 1) {
-    const yearly = { id: `year-${y}`, scope: 'year', year: y }
-    if (periodEnd(yearly) <= now) periods.push({ ...yearly, label: periodLabel(yearly), title: periodTitle(yearly), completedAt: periodEnd(yearly).getTime() })
-  }
-  for (let y = year; y >= year - 2; y -= 1) {
-    for (let q = 4; q >= 1; q -= 1) {
-      const quarterly = { id: `q${q}-${y}`, scope: 'quarter', year: y, quarter: q }
-      if (periodEnd(quarterly) <= now) periods.push({ ...quarterly, label: periodLabel(quarterly), title: periodTitle(quarterly), completedAt: periodEnd(quarterly).getTime() })
-    }
-  }
-  return periods.sort((left, right) => right.completedAt - left.completedAt)
 }
 
 function getLatestCompletedPeriodId(periods) {
@@ -528,7 +486,7 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
 }
 
 export default function Recap() {
-  const allPeriods = useMemo(buildPeriods, [])
+  const allPeriods = useMemo(() => completedPeriods(), [])
   const [periods, setPeriods] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [recapsById, setRecapsById] = useState({})
@@ -547,15 +505,14 @@ export default function Recap() {
     setStatus('')
     const nextRecaps = {}
     const available = []
+    // Only periods with plays are offered: ask for counts (cheap), and
+    // build a recap when it's opened.
     for (const period of allPeriods) {
       if (period.year < 2026) continue
 
       try {
-        const result = await api.getListeningRecap(user?.id || 'guest', period)
-        if (!result?.error && result?.totalPlays > 0) {
-          nextRecaps[period.id] = result
-          available.push(period)
-        }
+        const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period, { countOnly: 1 }))
+        if (!result?.error && result?.totalPlays > 0) available.push(period)
       } catch {}
     }
     setRecapsById(nextRecaps)
@@ -575,7 +532,7 @@ export default function Recap() {
     setStatus('')
     try {
       const cached = recapsById[selectedPeriod.id]
-      const result = cached || await api.getListeningRecap(user?.id || 'guest', selectedPeriod)
+      const result = cached || await api.getListeningRecap(user?.id || 'guest', periodQuery(selectedPeriod))
       if (result?.error) {
         setStatus(result.error)
         setRecap(null)
@@ -635,7 +592,7 @@ export default function Recap() {
             Listening Recaps
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">Finished monthly-range snapshots built from your local listening sessions.</p>
+          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), plus each quarter and year, built from your local listening sessions.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={loadPeriodList} disabled={checkingPeriods || loading} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-muted transition-colors hover:text-white disabled:opacity-50">

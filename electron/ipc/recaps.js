@@ -29,9 +29,24 @@ function quarterRange(year, quarter) {
   }
 }
 
+/** A week from its Monday ("2026-09-21"): Monday 00:00 to Sunday 23:59:59, local time. */
+function weekRange(weekStart) {
+  const m = String(weekStart || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(start.getTime())) return null
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { from: Math.floor(start.getTime() / 1000), to: Math.floor(end.getTime() / 1000) - 1, year: start.getFullYear(), weekStart: m[0] }
+}
+
 function resolveRange(opts = {}) {
   const now = new Date()
   const currentYear = now.getFullYear()
+  if (opts.scope === 'week') {
+    const week = weekRange(opts.weekStart)
+    if (week) return { ...week, scope: 'week' }
+  }
   if (opts.scope === 'quarter') {
     const q = opts.quarter || Math.floor(now.getMonth() / 3) + 1
     return { ...quarterRange(opts.year || currentYear, q), scope: 'quarter', year: Number(opts.year || currentYear), quarter: Number(q) }
@@ -245,17 +260,28 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   ensureRecapTables(db)
   const range = resolveRange(opts)
   const now = Math.floor(Date.now() / 1000)
-  if ((range.scope === 'quarter' || range.scope === 'year') && range.to >= now) {
+  if ((range.scope === 'week' || range.scope === 'quarter' || range.scope === 'year') && range.to >= now) {
     return { error: 'This recap period has not finished yet.' }
   }
   try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
+  // Library files and songs streamed from search (YouTube Music, SoundCloud,
+  // addons); other ghost tracks (imported, not playable) can't have plays.
+  const COUNTED = "(t.file_path NOT LIKE 'ghost://%' OR t.file_path LIKE 'ghost://youtube/online/%' OR t.file_path LIKE 'ghost://soundcloud/online/%' OR t.file_path LIKE 'ghost://addon/%')"
+  // Just "is there anything?" (period lists, the sidebar badge): no full recap.
+  if (['1', 'true'].includes(String(opts.countOnly))) {
+    const { n } = db.prepare(`
+      SELECT COUNT(*) AS n FROM play_history ph JOIN tracks t ON t.id = ph.track_id
+      WHERE ph.user_id = ? AND ph.played_at BETWEEN ? AND ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED}
+    `).get(userId, range.from, range.to, QUALIFIED_SECONDS)
+    return { ...range, userId, totalPlays: n }
+  }
   const rows = db.prepare(`
     SELECT t.*, ph.id as history_id, ph.played_at, COALESCE(ph.seconds_played, 0) as seconds_played, ph.session_id
     FROM play_history ph
     JOIN tracks t ON t.id = ph.track_id
     WHERE ph.user_id = ?
       AND ph.played_at BETWEEN ? AND ?
-      AND t.file_path NOT LIKE 'ghost://%'
+      AND ${COUNTED}
     ORDER BY ph.played_at ASC
   `).all(userId, range.from, range.to)
   const qualified = rows.filter(row => Number(row.seconds_played || 0) >= QUALIFIED_SECONDS)
