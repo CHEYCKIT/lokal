@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.calc.outputs.version }}
+      tag: ${{ steps.calc.outputs.tag }}
       sha: ${{ steps.calc.outputs.sha }}
     steps:
       - name: Checkout Code
@@ -30,6 +31,9 @@ jobs:
 
       - name: Calculate the nightly version
         id: calc
+        env:
+          # Through the environment, not pasted into the script: a ref is user input.
+          REF: ${{ inputs.ref || 'main' }}
         # Build as e.g. 2.0.3-nightly.42 rather than plain 2.0.3: a pre-release
         # version counts as *older* than the release it leads up to, so people
         # on a nightly are still offered the official 2.0.3 by the updater once
@@ -71,6 +75,17 @@ jobs:
           fi
           VERSION="${BASE}-nightly.${N}"
           echo "Nightly version: ${VERSION}"
+          # The release's tag is the version itself (v2.1.2-nightly.3): GitHub
+          # orders same-day releases by the version in the tag name, and a
+          # plain "nightly-main" tag sorted below that day's stable release.
+          # A build of another ref gets it appended (v2.1.2-nightly.3.my-branch).
+          if [ "$REF" = "main" ]; then
+            TAG="v${VERSION}"
+          else
+            TAG="v${VERSION}.$(printf '%s' "$REF" | tr -c '0-9A-Za-z-' '-' | sed 's/^-*//; s/-*$//' | cut -c1-40)"
+          fi
+          echo "Nightly tag: ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -233,7 +248,7 @@ jobs:
           # The release is re-created each run (see below), so only link a
           # banner this run actually made.
           if [ -f release-banner.png ]; then
-            echo "md=![Release Banner](https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png)" >> "$GITHUB_OUTPUT"
+            echo "md=![Release Banner](https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}/release-banner.png)" >> "$GITHUB_OUTPUT"
           else
             echo "md=" >> "$GITHUB_OUTPUT"
           fi
@@ -281,24 +296,37 @@ jobs:
           fi
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Start a fresh nightly release at this commit
-        # GitHub sorts releases by their tag's date, and the nightly tag used to
-        # stay on an old commit, so the nightly sat below newer releases.
-        # Deleting the old nightly release and tag and creating them again at
-        # the commit just built puts the newest build at the top of the list.
-        # (Releases made with the workflow token don't trigger other workflows,
-        # so this doesn't announce anything on Discord.)
+      - name: Remove the previous nightly
+        # Only one nightly per ref is kept: the previous one (release and tag)
+        # goes, whether it has the old "nightly-<ref>" tag or a versioned one
+        # (v2.1.2-nightly.2 for main, v2.1.2-nightly.2.<ref> for another ref).
+        # Stable releases are never touched: only pre-releases with a
+        # "-nightly." tag of this ref. (Releases made with the workflow token
+        # don't trigger other workflows, so the v* tag doesn't start a stable
+        # release build and nothing is announced on Discord.)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ inputs.ref || 'main' }}
+          NEW_TAG: ${{ needs.version.outputs.tag }}
         shell: bash
         run: |
-          gh release delete "nightly-${{ inputs.ref || 'main' }}" --repo "${{ github.repository }}" --cleanup-tag --yes || echo "No previous nightly release to remove."
+          SUFFIX=""
+          if [ "$REF" != "main" ]; then SUFFIX="\.${NEW_TAG##*-nightly.[0-9]*.}"; fi
+          gh release list --repo "${{ github.repository }}" --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease) | .tagName' |
+          while read -r tag; do
+            if [ "$tag" = "nightly-$REF" ] || [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+${SUFFIX}$ ]]; then
+              [ "$tag" = "$NEW_TAG" ] && continue
+              echo "Removing the previous nightly: $tag"
+              gh release delete "$tag" --repo "${{ github.repository }}" --cleanup-tag --yes || true
+            fi
+          done
 
       - name: Create Nightly Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "nightly-${{ inputs.ref || 'main' }}"
+          tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ steps.commit_info.outputs.SHA }}
           name: "Lokal Nightly (${{ inputs.ref || 'main' }})"
           prerelease: true
@@ -343,7 +371,7 @@ jobs:
         # the upload).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NIGHTLY_TAG: nightly-${{ inputs.ref || 'main' }}
+          NIGHTLY_TAG: ${{ needs.version.outputs.tag }}
         shell: bash
         run: |
           # The banner is always kept: when this run couldn't make one, the
@@ -379,7 +407,7 @@ jobs:
             exit 0
           fi
 
-          BANNER_URL="https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png"
+          BANNER_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}/release-banner.png"
 
           PAYLOAD=$(jq -n \
             --arg version "Nightly (${{ inputs.ref || 'main' }})" \
