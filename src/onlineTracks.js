@@ -108,5 +108,10 @@ export async function saveToLibrary(track) {
     // An addon's link expires: the downloader asks the addon for a fresh one
     // each time the job starts (queued, restarted or retried).
     addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,
+    // An addon's file is a bare audio link, without tags: name and tag it
+    // from what the addon said (only where the file has nothing).
+    tags: ref && isAddonProvider(ref.provider)
+      ? { title: track.title || undefined, artist: track.artist || undefined, album: track.album || undefined, cover: /^https:\/\//.test(String(track.artwork_url || '')) ? track.artwork_url : undefined }
+      : undefined,
   })
 }
