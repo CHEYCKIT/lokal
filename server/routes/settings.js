@@ -7,7 +7,7 @@ const path = require('path')
 // Secrets never leave the server: the web settings page gets a placeholder,
 // saving the placeholder back leaves the stored value alone, and web exports
 // leave them out.
-const SECRET_KEYS = new Set(['soulseek_api_key', 'spotify_sp_dc'])
+const SECRET_KEYS = new Set(['soulseek_api_key', 'spotify_sp_dc', 'yt_cookie_header'])
 const SECRET_PLACEHOLDER = '••••••••'
 
 function toDataUrl(filePath) {

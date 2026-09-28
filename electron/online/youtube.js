@@ -170,10 +170,21 @@ function streamError(text) {
   return line ? line.replace(/^.*?ERROR:\s*/, '').slice(0, 200) : 'Could not get the audio from YouTube.'
 }
 
-function runResolve(videoId, { ytdlp, cookieArgs = [] }) {
+// Streaming quality (Settings → Library → Streaming Quality):
+//   best   the highest bitrate: Opus ~160 kbps, or Premium's 256 kbps AAC
+//          when the cookies are a YouTube Premium account's (-S abr, since
+//          yt-dlp would otherwise prefer Opus over AAC whatever the bitrate)
+//   saver  the smallest Opus stream (~50-70 kbps)
+const QUALITY_ARGS = {
+  // (direct https formats only: the player can't use HLS/DASH manifests)
+  best: ['-f', 'bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio', '-S', 'abr'],
+  saver: ['-f', 'worstaudio[acodec=opus][protocol=https]/worstaudio[protocol=https]/worstaudio'],
+}
+
+function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
   return new Promise((resolve, reject) => {
     const args = [
-      '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio',
+      ...(QUALITY_ARGS[quality] || QUALITY_ARGS.best),
       '-j', '--no-playlist', '--no-warnings', '--skip-download',
       ...cookieArgs,
       `https://music.youtube.com/watch?v=${videoId}`,
@@ -203,6 +214,7 @@ function runResolve(videoId, { ytdlp, cookieArgs = [] }) {
       }
       const ext = info.ext || ''
       resolve({
+        format: [info.acodec, info.abr ? `${Math.round(info.abr)} kbps` : null].filter(Boolean).join(' ') || null,
         url: info.url,
         headers: info.http_headers || {},
         mime: ext === 'webm' ? 'audio/webm' : ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : 'audio/*',
@@ -213,27 +225,29 @@ function runResolve(videoId, { ytdlp, cookieArgs = [] }) {
 }
 
 /** The audio URL for a video, from cache or yt-dlp (one lookup at a time per video). */
-async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false } = {}) {
+async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best' } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
   if (!ytdlp) throw new Error('yt-dlp is not installed. Install it from the Download page.')
-  const cached = streamCache.get(videoId)
+  const q = QUALITY_ARGS[quality] ? quality : 'best'
+  const key = `${videoId}\n${q}` // a quality change looks the stream up again
+  const cached = streamCache.get(key)
   if (!force && cached && cached.expiresAt > Date.now()) return cached
-  if (!force && resolving.has(videoId)) return resolving.get(videoId)
+  if (!force && resolving.has(key)) return resolving.get(key)
   const job = (async () => {
     try {
-      return await runResolve(videoId, { ytdlp, cookieArgs })
+      return await runResolve(videoId, { ytdlp, cookieArgs, quality: q })
     } catch (e) {
       if (!cookieBrowser || !e.cookieError) throw e
       markUnreadable(cookieBrowser)
-      return runResolve(videoId, { ytdlp, cookieArgs: [] })
+      return runResolve(videoId, { ytdlp, cookieArgs: [], quality: q })
     }
   })().then(stream => {
     if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
-    streamCache.set(videoId, stream)
+    streamCache.set(key, stream)
     return stream
   })
-    .finally(() => resolving.delete(videoId))
-  resolving.set(videoId, job)
+    .finally(() => resolving.delete(key))
+  resolving.set(key, job)
   return job
 }
 

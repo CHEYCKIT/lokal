@@ -1326,6 +1326,7 @@ export default function Settings() {
                 <option value="brave">Brave</option>
                 <option value="opera">Opera</option>
                 <option value="file">cookies.txt file</option>
+                <option value="paste">Paste my cookie</option>
               </select>
             )}
           </div>
@@ -1352,6 +1353,31 @@ export default function Settings() {
             </div>
           </Row>
         )}
+        {settings.yt_cookies === '1' && settings.yt_cookie_browser === 'paste' && (
+          <Row label="YouTube Cookie" desc={"Like the Spotify cookie: paste your own YouTube session, and yt-dlp uses it for downloads and streaming. With a YouTube Premium account, streaming at Best quality gets Premium's 256 kbps AAC.\n\nTo get it: open music.youtube.com signed in, press F12 > Network, click any request to music.youtube.com, and copy the whole value of the \"cookie\" request header. Tip: YouTube refreshes the cookies of an open tab, so copy them from a private window and close it afterwards; they then last for months.\n\nIt stays on this computer (a private cookies.txt in Lokal's data folder) and is only given to yt-dlp for YouTube. It's your real account."}>
+            <div className="flex flex-col items-end gap-1">
+              <input type="password" value={settings.yt_cookie_header || ''} onChange={e => set('yt_cookie_header', e.target.value)}
+                placeholder="SAPISID=…; __Secure-3PAPISID=…; …" spellCheck={false} autoComplete="off"
+                className="w-56 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {settings.yt_cookie_header && (
+                settings.yt_cookie_header === '••••••••'
+                  ? <span className="text-[11px] text-muted">Saved</span>
+                  : /(?:^|[;\s])(?:__Secure-3PAPISID|SAPISID|__Secure-1PSID|LOGIN_INFO)=/.test(settings.yt_cookie_header)
+                    ? <span className="text-[11px] text-accent">Looks signed in</span>
+                    : <span className="text-[11px] text-yellow-300">No sign-in cookie found (SAPISID / LOGIN_INFO): copy the whole cookie header</span>
+              )}
+            </div>
+          </Row>
+        )}
+        <Row label="Streaming Quality" desc={"For songs played from YouTube Music in search. Best: highest bitrate available (Opus ~160 kbps; 256 kbps AAC with a Premium cookie). Data saver: lowest Opus (~50–70 kbps). SoundCloud always streams 128 kbps MP3, the only format it offers for direct playback."}>
+          <select
+            value={settings.online_quality || 'best'}
+            onChange={e => set('online_quality', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="best">Best</option>
+            <option value="saver">Data saver</option>
+          </select>
+        </Row>
         {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
           <p className="text-[11px] text-muted -mt-1 mb-2">
             On Windows, Chrome-based browsers encrypt their cookies in a way yt-dlp can't read (“Failed to decrypt with DPAPI”). Lokal will download without cookies when that happens. Use Firefox or a cookies.txt file instead.

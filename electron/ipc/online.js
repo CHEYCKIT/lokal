@@ -17,8 +17,9 @@ function settings() {
 
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
-  const cookies = cookieArgs(settings())
-  return { ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+  const all = settings()
+  const cookies = cookieArgs(all)
+  return { quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
