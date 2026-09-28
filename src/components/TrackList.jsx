@@ -9,9 +9,9 @@ import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
 import { trackArtURL, isPlayable, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
+// One shared list and limit (15) for recent items (see src/searchHistory.js).
+import { saveRecentItem, recentTrackItem } from '../searchHistory'
 
-const RECENT_ITEMS_KEY = 'lokal-recent-items'
-const MAX_RECENT = 5
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
 // fixed-height spacers standing in for everything above and below so the
@@ -34,30 +34,8 @@ function getScrollParent(node) {
   return null // the document itself scrolls
 }
 
-function getRecentItems() {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_ITEMS_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveRecentItem(item) {
-  if (!item?.id) return
-  const recent = getRecentItems()
-  const filtered = recent.filter(r => r.id !== item.id)
-  const newRecent = [item, ...filtered].slice(0, MAX_RECENT)
-  localStorage.setItem(RECENT_ITEMS_KEY, JSON.stringify(newRecent))
-}
-
 function saveRecentTrack(track) {
-  saveRecentItem({
-    id: track.id,
-    name: track.title,
-    artist: track.artist,
-    artwork_path: track.artwork_path,
-    type: 'track'
-  })
+  saveRecentItem(recentTrackItem(track))
 }
 
 function fmt(s) { return s ? `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}` : '' }

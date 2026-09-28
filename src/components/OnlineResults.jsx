@@ -10,7 +10,7 @@ import { Music, Pause, Play, Plus } from 'lucide-react'
 import { api } from '../api'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { sameStream } from '../onlineTracks'
-import { saveRecentSearch } from '../searchHistory'
+import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
 
 const DEBOUNCE_MS = 450
@@ -101,6 +101,8 @@ export default function OnlineResults({ query }) {
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
+    // Shows up in Recent on the Search page, and plays again from there.
+    saveRecentItem(recentTrackItem(target))
     const queue = rows.filter(Boolean)
     playQueue(queue, queue.findIndex(t => t.id === target.id), { type: 'search', id: q, name: `${providerLabel}: ${q}` })
   }

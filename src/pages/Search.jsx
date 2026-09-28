@@ -8,6 +8,7 @@ import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
+import { isStreamed } from '../onlineTracks'
 
 // Results for what's typed in the header search box (HeaderSearch.jsx); with
 // nothing typed, the things recently opened from a search.
@@ -122,6 +123,12 @@ export default function Search() {
         playQueue(queue, trackIndex)
         return
       }
+      // A song streamed from search: the item has what it takes to stream it again.
+      if (item.file_path && isStreamed(item)) {
+        const track = { id: item.id, title: item.name, artist: item.artist, album: item.album, file_path: item.file_path, source_url: item.source_url, artwork_url: item.artwork_url, duration: item.duration }
+        playTrack(track, [track])
+        return
+      }
 
       let matches
       try {
@@ -193,6 +200,8 @@ export default function Search() {
                       ) : (
                         item.artwork_path ? (
                           <img src={api.isElectron ? `file://${item.artwork_path}` : api.artworkURL(item.id)} className="w-full h-full object-cover" />
+                        ) : item.artwork_url ? (
+                          <img src={item.artwork_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <Music size={20} />
                         )
