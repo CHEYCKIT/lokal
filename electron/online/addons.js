@@ -68,12 +68,36 @@ function checkUrl(raw) {
   return url
 }
 
+const MAX_REDIRECTS = 5
+const REDIRECT = new Set([301, 302, 303, 307, 308])
+
+/**
+ * GET `url`, following redirects one by one: each target is resolved against
+ * the current URL and checked with checkUrl() before it is requested, so a
+ * redirect can't lead to plain http on the internet (or anything else the
+ * addon URL itself couldn't be).
+ */
+async function fetchChecked(url, { fetchImpl, signal }) {
+  let current = checkUrl(url)
+  for (let hop = 0; ; hop++) {
+    const res = await fetchImpl(current.toString(), { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }, redirect: 'manual', signal })
+    if (!REDIRECT.has(res.status)) return res
+    const location = res.headers?.get?.('location')
+    try { await res.body?.cancel?.() } catch {}
+    if (!location) throw new Error(`The addon redirected without saying where (HTTP ${res.status}).`)
+    if (hop >= MAX_REDIRECTS) throw new Error('The addon redirected too many times.')
+    let next
+    try { next = new URL(location, current) } catch { throw new Error('The addon redirected to an invalid URL.') }
+    try { current = checkUrl(next.toString()) } catch (e) { throw new Error(`The addon redirected to a URL Lokal won't use: ${e.message}`) }
+  }
+}
+
 /** GET a JSON document from an addon, with a timeout and a size limit. */
 async function getJson(url, { timeoutMs, fetchImpl = fetch } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs || 10000)
   try {
-    const res = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }, redirect: 'follow', signal: controller.signal })
+    const res = await fetchChecked(url, { fetchImpl, signal: controller.signal })
     const text = await res.text()
     if (text.length > MAX_BYTES) throw new Error('The addon sent too much data.')
     let json = null
@@ -287,7 +311,7 @@ async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
 }
 
 module.exports = {
-  addonKey, providerFor, keyOfProvider, checkUrl,
+  addonKey, providerFor, keyOfProvider, checkUrl, getJson,
   list, searchable, install, remove, setEnabled, setSettings,
   search, resolveStream, findByKey,
 }
