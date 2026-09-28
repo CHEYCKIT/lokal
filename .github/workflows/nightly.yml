@@ -69,10 +69,17 @@ jobs:
           # the last release tag, so after v2.0.3 the builds go 2.0.4-nightly.1,
           # .2, ... It only goes up as main moves forward, and it comes from git
           # alone, so all three runners agree. With no release tag at all, fall
-          # back to the workflow run number.
-          LAST=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD 2>/dev/null) || LAST=""
+          # back to the workflow run number. The tag is looked up along the
+          # first-parent line too, so a tag inside a merged branch doesn't count.
+          LAST=$(git describe --first-parent --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD 2>/dev/null) || LAST=""
           if [ -n "$LAST" ]; then
             N=$(git rev-list --count --first-parent "${LAST}..HEAD")
+            if [ "$N" -eq 0 ]; then
+              # This commit IS the release: a nightly of it would only be a
+              # "nightly.0" copy of that release under another version.
+              echo "::error::Nothing has changed since ${LAST}; there is no nightly to build. Merge a change first, or build another ref."
+              exit 1
+            fi
             echo "${N} change(s) since ${LAST}."
           else
             N=${{ github.run_number }}
