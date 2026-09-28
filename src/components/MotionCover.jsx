@@ -23,7 +23,11 @@ export function forgetMotionCovers() {
   lookups.clear()
 }
 
-if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved', forgetMotionCovers)
+if (typeof window !== 'undefined') {
+  window.addEventListener('lokal:settings-saved', forgetMotionCovers)
+  // A track was edited (title, artist, album...): its old answer may be wrong.
+  window.addEventListener('lokal:track-updated', (e) => { for (const id of e.detail?.ids || []) lookups.delete(id) })
+}
 
 /**
  * Renders only the clip layer; put it over the still <img>.
@@ -34,7 +38,15 @@ if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved
 export default function MotionCover({ trackId, className = '', onActive, only, style }) {
   const [clip, setClip] = useState(null)
   const [ready, setReady] = useState(false)
+  const [revision, setRevision] = useState(0)
   const videoRef = useRef(null)
+
+  // The track on screen was edited: look it up again.
+  useEffect(() => {
+    const onUpdated = (e) => { if ((e.detail?.ids || []).includes(trackId)) setRevision(r => r + 1) }
+    window.addEventListener('lokal:track-updated', onUpdated)
+    return () => window.removeEventListener('lokal:track-updated', onUpdated)
+  }, [trackId])
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +62,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
       setClip(found)
     })
     return () => { cancelled = true }
-  }, [trackId, only]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, only, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unmounting (e.g. the next track has no artwork, so the parent stops
   // rendering this) must also clear the parent's "clip showing" state -- the
