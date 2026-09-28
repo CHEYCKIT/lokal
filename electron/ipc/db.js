@@ -288,6 +288,20 @@ function initDB() {
     `CREATE TABLE IF NOT EXISTS listening_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, track_id TEXT NOT NULL, event_type TEXT NOT NULL, source_type TEXT, source_id TEXT, session_id TEXT, seconds_played INTEGER DEFAULT 0, track_duration REAL, started_at INTEGER, ended_at INTEGER, created_at INTEGER DEFAULT (unixepoch()))`,
   ]
   for (const m of quickMigrations) { try { db.exec(m) } catch {} }
+  // Audio quality and ISRC columns (electron/quality).
+  // The scanner writes these columns: without them indexing would fail later
+  // and less clearly, so a failure here stops start-up.
+  try { require('../quality').ensureColumns(db) } catch (e) { console.warn('quality columns:', e.message); throw e }
+  // "Paste my cookie" became the default cookie source. Whoever turned
+  // cookies on before without picking a source was using Firefox: keep that.
+  // Once only (marked done), so a later "on" with the new default isn't touched.
+  try {
+    if (!db.prepare("SELECT 1 FROM settings WHERE key = 'yt_cookie_default_v2'").get()) {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value)
+        SELECT 'yt_cookie_browser', 'firefox' WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'yt_cookies' AND value = '1')`).run()
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('yt_cookie_default_v2', '1')").run()
+    }
+  } catch {}
   
   
   try {

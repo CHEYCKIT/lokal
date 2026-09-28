@@ -146,8 +146,13 @@ router.get('/soulseek/search/:id', soulseek(req => slskd.searchResults(manager()
 router.put('/soulseek/search/:id', soulseek(req => slskd.finishSearch(manager().settings(), req.params.id)))
 router.delete('/soulseek/search/:id', soulseek(req => slskd.stopSearch(manager().settings(), req.params.id)))
 router.post('/soulseek/download', (req, res) => {
-  const { file = {}, title, from, replaceTrackId } = req.body || {}
-  const opts = { title: typeof title === 'string' ? title.slice(0, 300) : undefined, from: typeof from === 'string' ? from.slice(0, 120) : undefined }
+  const { file = {}, title, from, replaceTrackId, upgradeTrackId } = req.body || {}
+  const opts = {
+    title: typeof title === 'string' ? title.slice(0, 300) : undefined,
+    from: typeof from === 'string' ? from.slice(0, 120) : undefined,
+    // "Get it in lossless": the file replaces this track's file.
+    upgradeTrackId: typeof upgradeTrackId === 'string' && /^[\w.:-]{1,200}$/.test(upgradeTrackId) ? upgradeTrackId : undefined,
+  }
   if (typeof file.username !== 'string' || typeof file.filename !== 'string' || !file.username || !file.filename) return res.status(400).json({ error: 'Pick a file from the Soulseek results.' })
   const { name } = slskd.splitRemote(file.filename)
   const result = manager().enqueue('soulseek', `soulseek://${encodeURIComponent(file.username)}/${encodeURIComponent(file.filename)}`, {
@@ -156,6 +161,7 @@ router.post('/soulseek/download', (req, res) => {
     from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
     // A streamed song this file replaces once it's in the library.
     replaceTrackId: typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId) ? replaceTrackId : undefined,
+    upgradeTrackId: opts.upgradeTrackId,
   })
   res.status(result.error ? 500 : 200).json(result)
 })

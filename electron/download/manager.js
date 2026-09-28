@@ -50,7 +50,7 @@ function friendlyError(lines, fallback) {
   if (/HTTP Error 403|Requested format is not available|nsig extraction failed|Signature extraction failed|n challenge solving failed/i.test(text)) {
     return 'YouTube refused the download (it blocks older yt-dlp versions). Update yt-dlp in Settings → External Tools, then retry.'
   }
-  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Turn on YouTube cookies (Firefox or a cookies.txt file) in Settings → Library.'
+  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Set your YouTube cookie in Settings → Library → Use YouTube Cookies.'
   if (/Sign in to confirm your age/i.test(text)) return 'This video is age-restricted. Turn on YouTube cookies in Settings → Library to download it.'
   if (/Private video/i.test(text)) return 'This video is private.'
   if (/Video unavailable|has been removed/i.test(text)) return 'This video is unavailable.'
@@ -831,7 +831,7 @@ class DownloadManager {
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
       }
       const index = this.deps.index
-      if (index && (job.settings?.index_while_downloading === '1' || job.kind === 'single' || job.kind === 'soulseek')) {
+      if ((index || job.opts?.upgradeTrackId) && (job.settings?.index_while_downloading === '1' || job.kind === 'single' || job.kind === 'soulseek')) {
         await this.indexOne(job, finalPath)
       } else {
         job.pendingIndex = [...(job.pendingIndex || []), finalPath]
@@ -841,6 +841,22 @@ class DownloadManager {
   }
 
   async indexOne(job, filepath) {
+    // "Get it in lossless": this file replaces a track's file, keeping the
+    // track (playlists, likes, history). If that can't be done, it is added
+    // as a track of its own below, as usual.
+    if (job.opts?.upgradeTrackId && !job.upgradedTrackId) {
+      const { upgradeTrackFile } = require('../quality/upgrade')
+      const up = await upgradeTrackFile(this.db(), job.opts.upgradeTrackId, filepath, { storageDir: this.deps.getStorageDir?.() }).catch(e => ({ error: e.message }))
+      if (up?.id) {
+        job.upgradedTrackId = up.id
+        job.indexedTracks.push({ filepath, id: up.id, title: path.basename(filepath, path.extname(filepath)) })
+        if (up.movedTo) job.outputLines.push(`[Lokal] The previous file was moved to ${up.movedTo}`)
+        this.update(job, { message: `Upgraded in your library: ${path.basename(filepath)}` }, { persist: true })
+        try { this.deps.onLibraryUpdated?.({ id: up.id, upgraded: true }) } catch {}
+        return
+      }
+      job.outputLines.push(`[Lokal] Not used as an upgrade: ${up?.error || 'unknown error'}`)
+    }
     const index = this.deps.index
     if (!index) return
     try {

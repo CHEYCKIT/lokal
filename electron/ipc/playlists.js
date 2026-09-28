@@ -91,6 +91,8 @@ function parseExplicit(value) {
   return ['1', 'true', 'yes', 'y', 'explicit'].includes(normalized) ? 1 : 0
 }
 
+const { normalizeIsrc } = require('../quality')
+
 function parseCSV(fileContent) {
   const lines = fileContent.split(/\r?\n/).filter(l => l.trim())
   const entries = []
@@ -118,6 +120,7 @@ function parseCSV(fileContent) {
   const valenceCol = findCol(['valence'])
   const tempoCol = findCol(['tempo'])
   const timeSignatureCol = findCol(['time signature'])
+  const isrcCol = findCol(['isrc'])
   if (titleCol === -1) return entries
   for (let i = 1; i < lines.length; i++) {
     const values = parseCsvLine(lines[i])
@@ -149,6 +152,8 @@ function parseCSV(fileContent) {
       valence: valenceCol !== -1 ? parseNumber(values[valenceCol]) : null,
       tempo: tempoCol !== -1 ? parseNumber(values[tempoCol]) : null,
       time_signature: timeSignatureCol !== -1 ? parseInteger(values[timeSignatureCol]) : null,
+      // Exportify and similar exports have it: matches the exact recording.
+      isrc: isrcCol !== -1 ? normalizeIsrc(values[isrcCol]) : null,
     })
   }
   return entries
@@ -268,6 +273,12 @@ function normalizeMatchValue(value) {
 
 function findTrack(db, entry) {
   let track = null;
+  // Same ISRC: the same recording, whatever the names say.
+  const isrc = normalizeIsrc(entry.isrc || entry.ISRC)
+  if (isrc) {
+    track = db.prepare("SELECT id FROM tracks WHERE isrc = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(isrc);
+    if (track) return track;
+  }
   const normalizedArtist = normalizeArtistList(entry.artist)
   const primaryArtist = String(normalizedArtist || '').split(/\s*,\s*/).map(s => s.trim()).filter(Boolean)[0] || null;
   if (entry.file_path) {
@@ -458,6 +469,9 @@ function createGhostTrack(db, entry, sourcePlatform = 'generic', playlistId = 'i
     // Kept on the track, so a ghost with a YouTube link can be streamed.
     entry.source_url ? String(entry.source_url).slice(0, 1000) : null
   );
+  // Kept so the file is matched to this ghost by ISRC when it arrives.
+  const ghostIsrc = normalizeIsrc(entry.isrc || entry.ISRC)
+  if (ghostIsrc) db.prepare('UPDATE tracks SET isrc = ? WHERE id = ?').run(ghostIsrc, id);
   return { id, title, artist, album: entry.album || null, file_path: filePath, source_url: entry.source_url || null, isGhost: true };
 }
 
@@ -556,6 +570,19 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId) {
 
   run();
   return { ok: true, track: db.prepare('SELECT * FROM tracks WHERE id = ?').get(targetTrackId) };
+}
+
+/**
+ * A file with an ISRC just came in: ghost tracks with the same ISRC (from an
+ * import) are that recording, so they resolve to it at once.
+ */
+function resolveGhostsByIsrc(db, trackId) {
+  const track = db.prepare("SELECT id, isrc FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(trackId)
+  if (!track?.isrc) return 0
+  const ghosts = db.prepare("SELECT id FROM tracks WHERE isrc = ? AND file_path LIKE 'ghost://%'").all(track.isrc)
+  let resolved = 0
+  for (const ghost of ghosts) if (resolveGhostTrack(db, ghost.id, track.id)?.ok) resolved++
+  return resolved
 }
 
 function importExternalMetadata(db, payload = {}) {
@@ -757,4 +784,5 @@ module.exports = {
   registerPlaylistHandlers,
   applyPendingImportedMetadataToTrack,
   resolveGhostTrack,
+  resolveGhostsByIsrc,
 };

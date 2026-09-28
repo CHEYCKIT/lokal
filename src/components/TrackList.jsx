@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem } from 'lucide-react'
+import { isUpgradable, openLossless, formatLabel } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
 import TrackEditModal from './TrackEditModal'
@@ -747,6 +748,13 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                     )}
                   </AnimatePresence>
                 </div>
+              )}
+              {!isGhost && isUpgradable(track) && (
+                <button onClick={e => { e.stopPropagation(); openLossless(track) }}
+                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
+                  title={`Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`}>
+                  <Gem size={13} />
+                </button>
               )}
               <button onClick={e => { e.stopPropagation(); openAddToPlaylist(track) }}
                 className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"

@@ -5,7 +5,8 @@
 const RECENT_SEARCHES_KEY = 'lokal-recent-searches'
 const RECENT_ITEMS_KEY = 'lokal-recent-items'
 const MAX_SEARCHES = 20
-const MAX_ITEMS = 5
+// Recently opened artists, albums and tracks (the covers shown before typing): 3 rows of 5.
+const MAX_ITEMS = 15
 export const HISTORY_EVENT = 'lokal:search-history'
 
 /** A stored JSON list, or [] if missing or unreadable. */

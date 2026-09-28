@@ -173,7 +173,7 @@ export default function Search() {
                     key={`${item.id}-${i}`}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
+                    transition={{ delay: Math.min(i, 10) * 0.03 }}
                     onClick={() => handleRecentItemClick(item)}
                     className="flex flex-col items-center gap-2 group min-w-0"
                   >

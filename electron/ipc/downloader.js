@@ -192,6 +192,8 @@ function enqueueSoulseek(file = {}, opts = {}) {
     from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
     // A streamed song this file replaces once it's in the library.
     replaceTrackId: typeof opts.replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(opts.replaceTrackId) ? opts.replaceTrackId : undefined,
+    // "Get it in lossless": the file replaces this track's file.
+    upgradeTrackId: typeof opts.upgradeTrackId === 'string' && /^[\w.:-]{1,200}$/.test(opts.upgradeTrackId) ? opts.upgradeTrackId : undefined,
   })
 }
 

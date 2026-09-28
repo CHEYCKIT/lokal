@@ -30,19 +30,23 @@ function groupResults(results, losslessOnly) {
 }
 
 /**
- * @param initialQuery  searched right away (e.g. "Artist Title" from a streamed song)
- * @param replaceTrack  { replaceTrackId, title, artist }: a streamed song the first single
- *                      file picked here replaces once it's downloaded
+ * @param initialQuery         searched right away (e.g. "Artist Title" from a streamed song or "Get it in lossless")
+ * @param initialLosslessOnly  start with "Lossless only" on
+ * @param replaceTrack         { replaceTrackId, title, artist }: a streamed song the first single
+ *                             file picked here replaces once it's downloaded
+ * @param upgradeTrack         { upgradeTrackId, title, artist, current }: a library track whose
+ *                             file the first single file picked here replaces once downloaded
  */
-export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTrack = null }) {
+export default function SoulseekSearch({ onQueued, initialQuery = '', initialLosslessOnly = false, replaceTrack = null, upgradeTrack = null }) {
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
   const [status, setStatus] = useState(null)
   const [query, setQuery] = useState(initialQuery || '')
   const [replacing, setReplacing] = useState(replaceTrack)
+  const [upgrading, setUpgrading] = useState(upgradeTrack)
   const [search, setSearch] = useState(null) // { id, complete, results, error }
-  const [losslessOnly, setLosslessOnly] = useState(false)
+  const [losslessOnly, setLosslessOnly] = useState(!!initialLosslessOnly)
   const [error, setError] = useState('')
   const pollRef = useRef(null)
   const finishing = useRef(false)
@@ -58,7 +62,7 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTra
     return () => { clearTimeout(pollRef.current) }
   }, [])
 
-  // Opened for a streamed song: search for it straight away.
+  // Opened for a song: search for it straight away.
   useEffect(() => {
     if (initialQuery) run(initialQuery)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -87,15 +91,19 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTra
   }
 
   const queue = async (files, folder) => {
-    // One file picked for a streamed song: it takes the stream's place.
+    // One file picked for a streamed song (it takes the stream's place) or
+    // for "Get it in lossless" (it replaces the track's file).
     const replaceTrackId = replacing && files.length === 1 ? replacing.replaceTrackId : undefined
+    const upgradeTrackId = upgrading && files.length === 1 ? upgrading.upgradeTrackId : undefined
     for (const file of files) {
       const opts = folder ? { from: `Soulseek · ${file.username} · ${folder}` } : {}
       if (replaceTrackId) opts.replaceTrackId = replaceTrackId
+      if (upgradeTrackId) opts.upgradeTrackId = upgradeTrackId
       const result = await api.soulseekDownload(file, opts)
       if (result?.error) { setError(result.error); break }
     }
     if (replaceTrackId) setReplacing(null)
+    if (upgradeTrackId) setUpgrading(null)
     load()
     onQueued?.()
   }
@@ -125,6 +133,17 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTra
         </div>
       )}
 
+      {upgrading && (
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm">
+          <Download size={15} className="flex-shrink-0 text-accent" />
+          <p className="min-w-0 flex-1 text-text">
+            Pick one file for <span className="font-semibold">{[upgrading.artist, upgrading.title].filter(Boolean).join(' – ')}</span>{upgrading.current ? <span className="text-muted"> (now {upgrading.current})</span> : null}.
+            Once it's downloaded it replaces that file in your library, keeping its playlists, likes and plays; the old file is moved to Lokal's data folder.
+          </p>
+          <button onClick={() => setUpgrading(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">Cancel</button>
+        </div>
+      )}
+
       {notReady && (
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-yellow-300" />
@@ -147,7 +166,7 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTra
             className="w-full rounded-2xl border border-border bg-black/20 py-3 pl-10 pr-4 text-sm text-white outline-none transition-colors focus:border-accent/50 placeholder:text-muted"
           />
         </div>
-        <button onClick={run} disabled={!query.trim()} className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:opacity-40">
+        <button onClick={() => run()} disabled={!query.trim()} className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:opacity-40">
           Search
         </button>
       </div>

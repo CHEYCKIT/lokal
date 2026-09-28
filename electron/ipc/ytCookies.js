@@ -120,7 +120,9 @@ function pastedCookieFile(pasted) {
 }
 
 function cookieSource(settings) {
-  const browser = String(settings.yt_cookie_browser || 'firefox').toLowerCase()
+  // Pasting the cookie is the default: it works whatever the browser (Chrome
+  // and Edge encrypt theirs on Windows, where yt-dlp can't read them).
+  const browser = String(settings.yt_cookie_browser || 'paste').toLowerCase()
   if (settings.yt_cookies !== '1' || browser !== 'paste') {
     // Cookies off, or another source picked: the pasted one isn't used, so
     // its file doesn't stay behind in the data folder.
