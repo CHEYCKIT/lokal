@@ -73,7 +73,16 @@ async function getJson(url, { timeoutMs, fetchImpl = fetch } = {}) {
     if (text.length > MAX_BYTES) throw new Error('The addon sent too much data.')
     let json = null
     try { json = JSON.parse(text) } catch {}
-    if (!res.ok) throw new Error(json?.error || json?.message || `The addon answered ${res.status}.`)
+    if (!res.ok) {
+      // Say that the addon refused, and how: its own words plus the status.
+      const said = String(json?.error || json?.message || '').slice(0, 200)
+      const why = res.status === 401 || res.status === 403
+        ? 'refused the request (its access may be restricted, or the link / token may no longer be valid)'
+        : res.status === 429 ? 'is limiting requests right now' : `answered with an error`
+      const e = new Error(`The addon ${why}${said ? `: "${said}"` : ''} (HTTP ${res.status}).`)
+      e.status = res.status
+      throw e
+    }
     if (!json || typeof json !== 'object') throw new Error('The addon did not answer with JSON.')
     return json
   } catch (e) {
