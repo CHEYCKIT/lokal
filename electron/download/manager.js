@@ -828,7 +828,7 @@ class DownloadManager {
         if (job.opts?.replaceTrackId && job.kind === 'single') {
           try {
             const { resolveGhostTrack } = require('../../server/routes/playlists')
-            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id)
+            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id, youTubeId(job.url))
             if (swapped?.ok) job.outputLines.push(`[Lokal] Replaced the streamed version (${job.opts.replaceTrackId}) with this file`)
           } catch {}
         }

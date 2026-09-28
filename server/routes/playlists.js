@@ -466,11 +466,16 @@ function buildImportPreview(db, entries = []) {
   return { total: entries.length, matched, ghostable: Math.max(entries.length - matched, 0), rows: rows.slice(0, 12) }
 }
 
-function resolveGhostTrack(db, ghostTrackId, targetTrackId) {
+function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = null) {
   const ghost = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'").get(ghostTrackId)
   const target = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(targetTrackId)
   if (!ghost) return { error: 'Ghost track not found' }
   if (!target) return { error: 'Target track not found' }
+  if (sourceIdentity) {
+    const { youTubeId } = require('../../electron/download/manager')
+    const ghostSourceIdentity = youTubeId(ghost.source_url)
+    if (!ghostSourceIdentity || ghostSourceIdentity !== sourceIdentity) return { ok: false, skipped: true, error: 'Ghost track source does not match downloaded source' }
+  }
 
   const run = db.transaction(() => {
     applyImportedMetadata(db, targetTrackId, ghost)
