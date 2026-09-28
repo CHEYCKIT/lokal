@@ -70,6 +70,8 @@ Songs that aren't in your library show up under your own results, from YouTube M
 
 Add your own online sources in Settings → Addons by pasting an addon's manifest URL. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work: their tracks appear as another source in search and can be played, added to playlists and saved to your library. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add.
 
+*https://ultramax.vip/eclipse.html* has been tested and is functional, Tido requires whitelisting so it won't be compatible
+
 ---
 
 **Soulseek/slskd**
