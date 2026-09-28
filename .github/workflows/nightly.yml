@@ -51,8 +51,7 @@ jobs:
         # version counts as *older* than the release it leads up to, so people
         # on a nightly are still offered the official 2.0.3 by the updater once
         # it's out. Only this build's copy of package.json is changed; nothing
-        # is committed. Same run number on every runner, so all three platforms
-        # get the same version.
+        # is committed.
         # If that version is already released (its tag exists), the nightly is
         # a pre-release of the *next* patch: after v2.0.3 is tagged, main's
         # 2.0.3 builds as 2.0.4-nightly.N, so it stays newer than the release
@@ -65,7 +64,21 @@ jobs:
             BASE=$(node -p "const [a, b, c] = process.argv[1].split('.').map(Number); [a, b, c + 1].join('.')" "$BASE")
             echo "v$(node -p "require('./package.json').version") is already released; building the next patch."
           fi
-          npm pkg set version="${BASE}-nightly.${{ github.run_number }}"
+          # The nightly number starts again after each release: it's how many
+          # changes (merges/commits on the first-parent line) have landed since
+          # the last release tag, so after v2.0.3 the builds go 2.0.4-nightly.1,
+          # .2, ... It only goes up as main moves forward, and it comes from git
+          # alone, so all three runners agree. With no release tag at all, fall
+          # back to the workflow run number.
+          LAST=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD 2>/dev/null) || LAST=""
+          if [ -n "$LAST" ]; then
+            N=$(git rev-list --count --first-parent "${LAST}..HEAD")
+            echo "${N} change(s) since ${LAST}."
+          else
+            N=${{ github.run_number }}
+            echo "No release tag found; using the run number."
+          fi
+          npm pkg set version="${BASE}-nightly.${N}"
           echo "Building nightly version $(node -p "require('./package.json').version")"
 
       - name: Build Application
