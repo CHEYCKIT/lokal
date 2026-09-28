@@ -123,8 +123,10 @@ jobs:
           
           echo "MSG=$COMMIT_MSG" >> $GITHUB_OUTPUT
           echo "DATE=$COMMIT_DATE" >> $GITHUB_OUTPUT
+          echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Generate Nightly Banner
+        id: banner
         env:
           # Passed through the environment and read via process.env below
           # instead of interpolated straight into the JS source -- inputs.ref
@@ -174,6 +176,13 @@ jobs:
             }
           })();
           EOF
+          # The release is re-created each run (see below), so only link a
+          # banner this run actually made.
+          if [ -f release-banner.png ]; then
+            echo "md=![Release Banner](https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png)" >> "$GITHUB_OUTPUT"
+          else
+            echo "md=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -218,11 +227,25 @@ jobs:
           fi
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Start a fresh nightly release at this commit
+        # GitHub sorts releases by their tag's date, and the nightly tag used to
+        # stay on an old commit, so the nightly sat below newer releases.
+        # Deleting the old nightly release and tag and creating them again at
+        # the commit just built puts the newest build at the top of the list.
+        # (Releases made with the workflow token don't trigger other workflows,
+        # so this doesn't announce anything on Discord.)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release delete "nightly-${{ inputs.ref || 'main' }}" --repo "${{ github.repository }}" --cleanup-tag --yes || echo "No previous nightly release to remove."
+
       - name: Create Nightly Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "nightly-${{ inputs.ref || 'main' }}"
+          target_commitish: ${{ steps.commit_info.outputs.SHA }}
           name: "Lokal Nightly (${{ inputs.ref || 'main' }})"
           prerelease: true
           files: |
@@ -234,7 +257,7 @@ jobs:
             release_all/**/latest*.yml
             release-banner.png
           body: |
-            ![Release Banner](https://github.com/${{ github.repository }}/releases/download/nightly-${{ inputs.ref || 'main' }}/release-banner.png)
+            ${{ steps.banner.outputs.md }}
 
             ---
             
