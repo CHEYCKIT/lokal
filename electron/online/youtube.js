@@ -244,9 +244,9 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
  * Fetch (a range of) the audio for a video. A refused URL (expired, or tied
  * to another address) is looked up again once.
  */
-async function fetchStream(videoId, { range, ytdlp, cookieArgs, fetchImpl = fetch } = {}) {
+async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, fetchImpl = fetch } = {}) {
   const attempt = async (force) => {
-    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, force })
+    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
     return { stream, res: await fetchImpl(stream.url, { headers }) }
@@ -318,14 +318,26 @@ function saveOnlineTracks(db, items = []) {
  */
 function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
   try {
-    return db.prepare(`
-      DELETE FROM tracks
-      WHERE file_path LIKE 'ghost://youtube/online/%'
-        AND COALESCE(last_modified, 0) < ?
-        AND id NOT IN (SELECT track_id FROM playlist_tracks)
-        AND id NOT IN (SELECT track_id FROM user_likes)
-        AND id NOT IN (SELECT track_id FROM play_history)
-    `).run(Date.now() - maxAgeMs).changes
+    const prune = db.transaction((cutoff) => {
+      const ids = db.prepare(`
+        SELECT id FROM tracks
+        WHERE file_path LIKE 'ghost://youtube/online/%'
+          AND COALESCE(last_modified, 0) < ?
+          AND id NOT IN (SELECT track_id FROM playlist_tracks)
+          AND id NOT IN (SELECT track_id FROM user_likes)
+          AND id NOT IN (SELECT track_id FROM play_history)
+      `).all(cutoff).map(row => row.id)
+
+      for (const id of ids) {
+        db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id)
+        db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id)
+        db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id)
+        try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}
+        db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
+      }
+      return ids.length
+    })
+    return prune(Date.now() - maxAgeMs)
   } catch { return 0 }
 }
 

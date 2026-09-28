@@ -32,7 +32,19 @@ function manager() {
     getStorageDir,
     findTools: () => ({ ytdlp: findBinary('yt-dlp'), ffmpeg: null, ffprobe: null }),
     requireFfmpeg: false,
-    index: null,
+    index: async (filepath, opts) => {
+      const { indexSingleFile } = require('../../electron/ipc/scanner')
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          if (fs.existsSync(filepath)) {
+            const result = await indexSingleFile(filepath, opts)
+            if (result?.id) return result
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 700))
+      }
+      return null
+    },
     emit: () => {},
   }, 0)
 }

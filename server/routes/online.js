@@ -69,7 +69,9 @@ router.get('/stream/:videoId', async (req, res) => {
   if (!upstream.body) return res.end()
   const body = Readable.fromWeb(upstream.body)
   // Skipping to another song aborts this request: stop fetching from YouTube too.
-  req.on('close', () => body.destroy())
+  res.on('close', () => {
+    if (!res.writableFinished) body.destroy()
+  })
   body.on('error', () => res.end())
   body.pipe(res)
 })
