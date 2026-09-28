@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Download } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
@@ -8,7 +8,8 @@ import { navigateToTrackAlbum } from '../playbackContext'
 import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
 import Modal from './Modal'
-import { trackArtURL, isStreamed, saveToLibrary } from '../onlineTracks'
+import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
+import SaveToLibraryButton from './SaveToLibraryButton'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -99,16 +100,8 @@ export default function PlayerBar() {
 
   const artSrc = trackArtURL(currentTrack)
 
-  // An online song streamed from YouTube: badge, and a button to save it.
+  // An online song (YouTube, SoundCloud): label, and a button to save it.
   const streamed = isStreamed(currentTrack)
-  const [savingId, setSavingId] = useState(null)
-  /** Save the streamed song with the downloader; it replaces the stream once it's in. */
-  const saveStreamed = async () => {
-    const track = currentTrack
-    setSavingId(track.id)
-    const result = await saveToLibrary(track).catch(e => ({ error: e.message }))
-    if (result?.error) setSavingId(null)
-  }
 
   const handleArtistClick = () => {
     if (!currentTrack) return
@@ -162,8 +155,8 @@ export default function PlayerBar() {
               {currentTrack ? (
                 <div className="flex items-center gap-1.5 min-w-0">
                   {streamed && (
-                    <span title="Streaming from YouTube, not in your library" className="flex-shrink-0 text-[9px] font-display uppercase tracking-wider text-accent">
-                      YouTube ·
+                    <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="flex-shrink-0 text-[9px] font-display uppercase tracking-wider text-accent">
+                      {streamLabel(currentTrack)} ·
                     </span>
                   )}
                   <button onClick={handleArtistClick}
@@ -199,14 +192,7 @@ export default function PlayerBar() {
             <Plus size={14} />
           </button>
         )}
-        {streamed && (
-          <button onClick={saveStreamed} disabled={savingId === currentTrack.id}
-            title={savingId === currentTrack.id ? 'Saving to your library…' : 'Save to library'}
-            aria-label="Save to library"
-            className={`flex-shrink-0 transition-colors ${savingId === currentTrack.id ? 'text-accent' : 'text-subtle hover:text-accent'}`}>
-            <Download size={14} />
-          </button>
-        )}
+        {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-subtle" />}
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">

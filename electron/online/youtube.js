@@ -8,11 +8,8 @@
 //   - stream: yt-dlp works out the audio URL (Opus when there is one), cached
 //     until shortly before it expires, and fetched again once if YouTube
 //     refuses it (an expired or IP-bound URL);
-//   - an online song that's played, liked or added to a playlist is kept as
-//     a ghost track (ghost://youtube/online/<videoId>), so playlists, likes
-//     and history work as for any track, while the library, albums, artists
-//     and mixes keep ignoring it. Saving it to the library swaps the ghost
-//     for the downloaded file.
+//   - keeping online songs as ghost tracks (for playlists, likes, history)
+//     is shared with the other sources: see sources.js.
 
 const { spawn } = require('child_process')
 const { isCookieError, markUnreadable } = require('../ipc/ytCookies')
@@ -259,90 +256,13 @@ async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, f
   return { res, mime: stream.mime }
 }
 
-// ---------------------------------------------------------------- tracks
-
-/** Library id of an online song. */
-function onlineTrackId(videoId) {
-  return `yt-${videoId}`
-}
-
-/** The YouTube video id a track can be streamed from, or null. */
-function streamableVideoId(track) {
-  const fromPath = String(track?.file_path || '').match(/^ghost:\/\/youtube\/online\/([\w-]{11})$/)
-  if (fromPath) return fromPath[1]
-  if (!String(track?.file_path || '').startsWith('ghost://')) return null
-  const url = String(track?.source_url || '')
-  const m = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)
+/** A YouTube video id from a youtube.com / music.youtube.com / youtu.be link, or null. */
+function videoIdFromUrl(url) {
+  const m = String(url || '').match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)
   return m ? m[1] : null
-}
-
-/**
- * Keep online songs as ghost tracks, so they can be played, liked and added
- * to playlists. Returns the track rows, in the same order.
- */
-function saveOnlineTracks(db, items = []) {
-  const upsert = db.prepare(`
-    INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, duration, source_url, artwork_url, last_modified)
-    VALUES (@id, @file_path, @id, @title, @artist, @album, @album_artist, @duration, @source_url, @artwork_url, @now)
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title, artist = excluded.artist, album = excluded.album,
-      album_artist = excluded.album_artist, duration = excluded.duration,
-      source_url = excluded.source_url, artwork_url = excluded.artwork_url
-    WHERE tracks.file_path LIKE 'ghost://%'
-  `)
-  const get = db.prepare('SELECT * FROM tracks WHERE id = ?')
-  const run = db.transaction((list) => list.map(item => {
-    const videoId = String(item?.videoId || '')
-    if (!VIDEO_ID.test(videoId)) return null
-    const id = onlineTrackId(videoId)
-    upsert.run({
-      id,
-      file_path: `ghost://youtube/online/${videoId}`,
-      title: String(item.title || 'Unknown Track').slice(0, 500),
-      artist: String(item.artist || (item.artists || []).join(', ') || 'Unknown Artist').slice(0, 500),
-      album: item.album ? String(item.album).slice(0, 500) : null,
-      album_artist: item.artists?.[0] ? String(item.artists[0]).slice(0, 500) : null,
-      duration: Number(item.duration) > 0 ? Number(item.duration) : null,
-      source_url: `https://music.youtube.com/watch?v=${videoId}`,
-      artwork_url: /^https:\/\//.test(String(item.thumbnail || '')) ? String(item.thumbnail).slice(0, 1000) : null,
-      now: Date.now(),
-    })
-    return get.get(id)
-  }))
-  return run(Array.isArray(items) ? items.slice(0, 100) : [])
-}
-
-/**
- * Forget online songs nobody kept: played from a search but never liked,
- * added to a playlist or listened to for long enough to count, after a week.
- */
-function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
-  try {
-    const prune = db.transaction((cutoff) => {
-      const ids = db.prepare(`
-        SELECT id FROM tracks
-        WHERE file_path LIKE 'ghost://youtube/online/%'
-          AND COALESCE(last_modified, 0) < ?
-          AND id NOT IN (SELECT track_id FROM playlist_tracks)
-          AND id NOT IN (SELECT track_id FROM user_likes)
-          AND id NOT IN (SELECT track_id FROM play_history)
-      `).all(cutoff).map(row => row.id)
-
-      for (const id of ids) {
-        db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id)
-        db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id)
-        db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id)
-        try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}
-        db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
-      }
-      return ids.length
-    })
-    return prune(Date.now() - maxAgeMs)
-  } catch { return 0 }
 }
 
 module.exports = {
   searchSongs, parseSearch, parseItem, parseDuration,
-  resolveStream, fetchStream, streamError,
-  onlineTrackId, streamableVideoId, saveOnlineTracks, pruneOnlineTracks,
+  resolveStream, fetchStream, streamError, videoIdFromUrl,
 }

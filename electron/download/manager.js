@@ -23,6 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
+const { sourceIdentity } = require('../online/sources')
 const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
 const { makePlayable } = require('./convert')
 
@@ -825,10 +826,11 @@ class DownloadManager {
         }
         // A streamed song saved to the library: the file takes the ghost
         // track's place in playlists, likes and history.
-        if (job.opts?.replaceTrackId && job.kind === 'single') {
+        // (Soulseek: the file the user picked for that song, so no source check.)
+        if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
           try {
             const { resolveGhostTrack } = require('../../server/routes/playlists')
-            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id, youTubeId(job.url))
+            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id, job.kind === 'single' ? sourceIdentity(job.url) : null)
             if (swapped?.ok) job.outputLines.push(`[Lokal] Replaced the streamed version (${job.opts.replaceTrackId}) with this file`)
           } catch {}
         }

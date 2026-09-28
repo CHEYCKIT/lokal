@@ -60,7 +60,7 @@ Search and download from YouTube via yt-dlp. Auto-indexes the track immediately 
 
 **Online results in search**
 
-Songs that aren't in your library show up under your own results, from YouTube Music. Play them straight away (streamed with your own yt-dlp, nothing is hosted by Lokal), add them to playlists, or save them to your library with one click, which swaps the stream for the downloaded file. Can be turned off in Settings → Library.
+Songs that aren't in your library show up under your own results, from YouTube Music or SoundCloud (switch between them above the results). Play them straight away (streamed with your own yt-dlp, nothing is hosted by Lokal), add them to playlists, or save them to your library with one click (right-click to find them on Soulseek instead). The saved file takes the stream's place in your playlists.
 
 (*needs yt-dlp*)
 

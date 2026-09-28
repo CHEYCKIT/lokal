@@ -30,7 +30,7 @@ import Profile from './pages/Profile'
 import Recap from './pages/Recap'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
-import { audioSrcFor, streamVideoId } from './onlineTracks'
+import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -189,11 +189,11 @@ export default function App() {
     const code = el?.error?.code
     // An online song that couldn't be streamed: ask why, and say so.
     const failedTrack = usePlayerStore.getState().currentTrack
-    const failedVideo = streamVideoId(failedTrack)
-    if (failedVideo && el?.getAttribute('src') === api.onlineStreamURL(failedVideo)) {
-      const why = await Promise.resolve(api.onlinePrepare(failedVideo, true)).catch(() => null)
+    const failedRef = streamRef(failedTrack)
+    if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      const why = await Promise.resolve(api.onlinePrepare(failedRef.provider, failedRef.id, true)).catch(() => null)
       if (usePlayerStore.getState().currentTrack?.id === failedTrack.id) {
-        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song from YouTube." })
+        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song." })
       }
       return
     }
@@ -964,8 +964,8 @@ export default function App() {
   const prepareNextStream = useCallback(() => {
     const { queue, queueIndex } = usePlayerStore.getState()
     const next = Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
-    const videoId = streamVideoId(next)
-    if (videoId) Promise.resolve(api.onlinePrepare(videoId)).catch(() => {})
+    const ref = streamRef(next)
+    if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
   }, [])
 
   const beginLastfmPlayback = useCallback((track) => {

@@ -1,11 +1,12 @@
-// Online results (YouTube Music) for the desktop app: search, keeping songs as
-// ghost tracks, and the lokal-stream:// protocol the player streams from.
+// Online results (YouTube Music, SoundCloud) for the desktop app: search,
+// keeping songs as ghost tracks, and the lokal-stream://<provider>/<id>
+// protocol the player streams from. See electron/online/sources.js.
 
 const { getDB } = require('./db')
 const { findYtDlp } = require('./tools')
 const { cookieArgs } = require('./ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../download/search')
-const yt = require('../online/youtube')
+const sources = require('../online/sources')
 
 const SCHEME = 'lokal-stream'
 
@@ -20,33 +21,38 @@ function streamOptions() {
   return { ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
-/** Songs for `query`: YouTube Music, or plain YouTube through yt-dlp if that fails. */
-async function search(query) {
+/** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
+async function youtubeFallback(query) {
+  const ytdlp = findYtDlp()
+  if (!ytdlp) throw new Error('YouTube Music could not be reached, and yt-dlp is not installed.')
+  const found = await runJsonSearch(ytdlp, String(query || ''), mapSearchResult, 1, 10)
+  return (found.results || []).map(r => ({
+    videoId: r.id, title: r.title, artist: r.channel, artists: [r.channel], album: null,
+    duration: r.duration || null, thumbnail: r.thumbnail, kind: r.topic ? 'song' : 'video', official: !!r.official, url: r.url,
+  }))
+}
+
+/** Songs for `query` on a provider ('yt' YouTube Music, 'sc' SoundCloud). */
+async function search(query, provider = 'yt') {
   try {
-    return { results: await yt.searchSongs(query, { limit: 10 }) }
+    return await sources.search(sources.providerOf(provider) ? provider : 'yt', query, { ytdlp: findYtDlp(), fallbackSearch: youtubeFallback })
   } catch (e) {
-    const ytdlp = findYtDlp()
-    if (!ytdlp) return { error: e.message, results: [] }
-    const found = await runJsonSearch(ytdlp, String(query || ''), mapSearchResult, 1, 10)
-    return {
-      fallback: true,
-      results: (found.results || []).map(r => ({
-        videoId: r.id, title: r.title, artist: r.channel, artists: [r.channel], album: null,
-        duration: r.duration || null, thumbnail: r.thumbnail, kind: r.topic ? 'song' : 'video', official: !!r.official, url: r.url,
-      })),
-    }
+    return { error: e.message, results: [] }
   }
 }
 
 /** IPC: online:search, online:save (keep as ghost tracks), online:prepare (resolve a stream ahead of time, or get why it fails). */
 function registerOnlineHandlers(ipcMain) {
-  yt.pruneOnlineTracks(getDB())
-  ipcMain.handle('online:search', (_, query) => search(query))
+  sources.pruneOnlineTracks(getDB())
+  ipcMain.handle('online:search', (_, query, provider) => search(query, provider))
   ipcMain.handle('online:save', (_, items) => {
-    try { return yt.saveOnlineTracks(getDB(), items) } catch (e) { return { error: e.message } }
+    try { return sources.saveOnlineTracks(getDB(), items) } catch (e) { return { error: e.message } }
   })
-  ipcMain.handle('online:prepare', async (_, videoId, force = false) => {
-    try { await yt.resolveStream(videoId, { ...streamOptions(), force: !!force }); return { ok: true } } catch (e) { return { error: e.message } }
+  ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
+    try {
+      const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
+      return { ok: true, preview: !!stream.preview }
+    } catch (e) { return { error: e.message } }
   })
 }
 
@@ -57,13 +63,18 @@ function registerStreamScheme(protocol) {
 
 const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges']
 
-/** lokal-stream://yt/<videoId>: the song's audio from YouTube, with Range support for seeking. */
+/** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking. */
 function registerStreamProtocol(protocol, net) {
   protocol.handle(SCHEME, async (request) => {
-    let videoId = ''
-    try { videoId = new URL(request.url).pathname.replace(/^\/+/, '') } catch {}
+    let provider = ''
+    let id = ''
     try {
-      const { res, mime } = await yt.fetchStream(videoId, { ...streamOptions(), range: request.headers.get('Range'), fetchImpl: (url, init) => net.fetch(url, init) })
+      const url = new URL(request.url)
+      provider = url.hostname
+      id = url.pathname.replace(/^\/+/, '')
+    } catch {}
+    try {
+      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), fetchImpl: (u, init) => net.fetch(u, init) })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)

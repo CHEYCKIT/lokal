@@ -29,12 +29,18 @@ function groupResults(results, losslessOnly) {
     .slice(0, 60)
 }
 
-export default function SoulseekSearch({ onQueued }) {
+/**
+ * @param initialQuery  searched right away (e.g. "Artist Title" from a streamed song)
+ * @param replaceTrack  { replaceTrackId, title, artist }: a streamed song the first single
+ *                      file picked here replaces once it's downloaded
+ */
+export default function SoulseekSearch({ onQueued, initialQuery = '', replaceTrack = null }) {
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
   const [status, setStatus] = useState(null)
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery || '')
+  const [replacing, setReplacing] = useState(replaceTrack)
   const [search, setSearch] = useState(null) // { id, complete, results, error }
   const [losslessOnly, setLosslessOnly] = useState(false)
   const [error, setError] = useState('')
@@ -52,8 +58,13 @@ export default function SoulseekSearch({ onQueued }) {
     return () => { clearTimeout(pollRef.current) }
   }, [])
 
-  const run = async () => {
-    const text = query.trim()
+  // Opened for a streamed song: search for it straight away.
+  useEffect(() => {
+    if (initialQuery) run(initialQuery)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = async (override) => {
+    const text = String(typeof override === 'string' ? override : query).trim()
     if (!text) return
     clearTimeout(pollRef.current)
     if (search?.id && !search.complete) api.soulseekStopSearch(search.id)
@@ -76,10 +87,15 @@ export default function SoulseekSearch({ onQueued }) {
   }
 
   const queue = async (files, folder) => {
+    // One file picked for a streamed song: it takes the stream's place.
+    const replaceTrackId = replacing && files.length === 1 ? replacing.replaceTrackId : undefined
     for (const file of files) {
-      const result = await api.soulseekDownload(file, folder ? { from: `Soulseek · ${file.username} · ${folder}` } : {})
+      const opts = folder ? { from: `Soulseek · ${file.username} · ${folder}` } : {}
+      if (replaceTrackId) opts.replaceTrackId = replaceTrackId
+      const result = await api.soulseekDownload(file, opts)
       if (result?.error) { setError(result.error); break }
     }
+    if (replaceTrackId) setReplacing(null)
     load()
     onQueued?.()
   }
@@ -98,6 +114,16 @@ export default function SoulseekSearch({ onQueued }) {
         <span>Soulseek</span>
         {status?.loggedIn && <span className="normal-case tracking-normal text-green-400/80">· connected{status.username ? ` as ${status.username}` : ''}</span>}
       </div>
+
+      {replacing && (
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm">
+          <Download size={15} className="flex-shrink-0 text-accent" />
+          <p className="min-w-0 flex-1 text-text">
+            Pick a file for <span className="font-semibold">{[replacing.artist, replacing.title].filter(Boolean).join(' – ')}</span>. Once it's downloaded it replaces the streamed version in your playlists.
+          </p>
+          <button onClick={() => setReplacing(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">Cancel</button>
+        </div>
+      )}
 
       {notReady && (
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">

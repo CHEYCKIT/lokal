@@ -472,8 +472,8 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = nul
   if (!ghost) return { error: 'Ghost track not found' }
   if (!target) return { error: 'Target track not found' }
   if (sourceIdentity) {
-    const { youTubeId } = require('../../electron/download/manager')
-    const ghostSourceIdentity = youTubeId(ghost.source_url)
+    const { sourceIdentity: identityOf } = require('../../electron/online/sources')
+    const ghostSourceIdentity = identityOf(ghost.source_url)
     if (!ghostSourceIdentity || ghostSourceIdentity !== sourceIdentity) return { ok: false, skipped: true, error: 'Ghost track source does not match downloaded source' }
   }
 

@@ -1,27 +1,45 @@
-// Helpers for online songs (YouTube Music), which live in the library as
-// ghost tracks: ghost://youtube/online/<videoId>, or any ghost track whose
-// source link is a YouTube video (e.g. an imported playlist entry).
+// Helpers for online songs (YouTube Music, SoundCloud), which live in the
+// library as ghost tracks: ghost://youtube/online/<videoId> or
+// ghost://soundcloud/online/<trackId>, or any ghost track whose source link is
+// a YouTube video or a SoundCloud track (e.g. an imported playlist entry).
 
 import { api } from './api'
+
+export const PROVIDER_LABELS = { yt: 'YouTube', sc: 'SoundCloud' }
 
 /** A placeholder track with no file (imported or online). */
 export function isGhostTrack(track) {
   return String(track?.file_path || '').startsWith('ghost://')
 }
 
-/** The YouTube video a ghost track can be streamed from, or null. */
-export function streamVideoId(track) {
+/** Where a ghost track can be streamed from: { provider: 'yt' | 'sc', id }, or null. */
+export function streamRef(track) {
   const path = String(track?.file_path || '')
-  const own = path.match(/^ghost:\/\/youtube\/online\/([\w-]{11})$/)
-  if (own) return own[1]
+  const own = path.match(/^ghost:\/\/(youtube|soundcloud)\/online\/([\w-]+)$/)
+  if (own) return { provider: own[1] === 'youtube' ? 'yt' : 'sc', id: own[2] }
   if (!path.startsWith('ghost://')) return null
-  const m = String(track?.source_url || '').match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)
-  return m ? m[1] : null
+  const url = String(track?.source_url || '')
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/)
+  if (yt) return { provider: 'yt', id: yt[1] }
+  const sc = url.match(/api\.soundcloud\.com\/tracks\/(?:soundcloud(?:%3A|:)tracks(?:%3A|:))?(\d+)/i)
+  return sc ? { provider: 'sc', id: sc[1] } : null
 }
 
-/** Streamed from YouTube rather than played from a file. */
+/** Same online song? (a track, or a search result { provider, id }) */
+export function sameStream(track, item) {
+  const ref = streamRef(track)
+  return !!ref && !!item && ref.provider === item.provider && ref.id === String(item.id)
+}
+
+/** Streamed rather than played from a file. */
 export function isStreamed(track) {
-  return !!streamVideoId(track)
+  return !!streamRef(track)
+}
+
+/** "YouTube" / "SoundCloud" for a streamed track, else null. */
+export function streamLabel(track) {
+  const ref = streamRef(track)
+  return ref ? PROVIDER_LABELS[ref.provider] : null
 }
 
 /** Can the player play it: a file, or a ghost that can be streamed. */
@@ -39,12 +57,19 @@ export function trackArtURL(track) {
 /** Where the player gets the audio: the file, or the stream of an online song; null if neither. */
 export function audioSrcFor(track) {
   if (!track?.file_path) return null
-  const videoId = streamVideoId(track)
-  if (videoId) return api.onlineStreamURL(videoId)
+  const ref = streamRef(track)
+  if (ref) return api.onlineStreamURL(ref.provider, ref.id)
   if (isGhostTrack(track)) return null
   return api.isElectron
     ? `file://${track.file_path.replace(/\\/g, '/').split('/').map(s => encodeURIComponent(s)).join('/').replace(/%3A/g, ':')}`
     : api.streamURL(track)
+}
+
+/** The URL the downloader fetches a streamed song from. */
+export function downloadUrlFor(track) {
+  const ref = streamRef(track)
+  if (!ref) return null
+  return ref.provider === 'sc' ? `https://api.soundcloud.com/tracks/${ref.id}` : `https://music.youtube.com/watch?v=${ref.id}`
 }
 
 /**
@@ -52,9 +77,9 @@ export function audioSrcFor(track) {
  * file is in, it takes the ghost track's place in playlists, likes and history.
  */
 export function saveToLibrary(track) {
-  const videoId = streamVideoId(track)
-  if (!videoId) return Promise.resolve({ error: 'Not a streamed song' })
-  return api.downloadYT(`https://music.youtube.com/watch?v=${videoId}`, {
+  const url = downloadUrlFor(track)
+  if (!url) return Promise.resolve({ error: 'Not a streamed song' })
+  return api.downloadYT(url, {
     title: [track.artist, track.title].filter(Boolean).join(' - ') || undefined,
     thumbnail: track.artwork_url || undefined,
     from: 'Streaming',
