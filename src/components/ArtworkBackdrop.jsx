@@ -39,17 +39,32 @@ export function useArtworkBackdropEnabled() {
   return on
 }
 
+// Bumped every time a track is edited. A lookup remembers the generation it
+// started in and only caches its answer if that's still current, so a lookup
+// that was already running when the track changed (and finishes late) can't
+// put the old colours back or overwrite the refreshed ones.
+const meshGeneration = new Map() // trackId -> number
+
 // A track's artwork was changed: forget its colours so they're worked out again.
 if (typeof window !== 'undefined') {
-  window.addEventListener('lokal:track-updated', (e) => { for (const id of e.detail?.ids || []) meshCache.delete(id) })
+  window.addEventListener('lokal:track-updated', (e) => {
+    for (const id of e.detail?.ids || []) {
+      meshGeneration.set(id, (meshGeneration.get(id) || 0) + 1)
+      meshCache.delete(id)
+    }
+  })
 }
 
 export function loadMesh(trackId) {
   if (!trackId) return Promise.resolve(null)
   if (meshCache.has(trackId)) return Promise.resolve(meshCache.get(trackId))
+  const generation = meshGeneration.get(trackId) || 0
   return Promise.resolve(api.artworkMesh?.(trackId))
     .then(grid => {
       const value = Array.isArray(grid) && grid.length ? grid : null
+      // Stale: the track changed while this was running. Don't cache it (the
+      // component asking for it has moved on to a newer lookup anyway).
+      if ((meshGeneration.get(trackId) || 0) !== generation) return value
       if (meshCache.size > 100) meshCache.delete(meshCache.keys().next().value)
       meshCache.set(trackId, value)
       return value
