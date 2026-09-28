@@ -20,6 +20,7 @@ const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
 const { registerUserHandlers } = require('./ipc/users')
 const { registerDiscordHandlers } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
+const { registerListenBrainzHandlers } = require('./ipc/listenbrainz')
 const { registerToolsHandlers } = require('./ipc/tools')
 const { registerPlaylistHandlers } = require('./ipc/playlists')
 const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
@@ -357,7 +358,7 @@ app.whenReady().then(() => {
   for (const fn of [
     registerScannerHandlers, registerPlayerHandlers, registerDownloaderHandlers,
     registerExtraDownloaderHandlers, registerPlaylistArchiveHandlers, registerLyricsHandlers, registerUserHandlers,
-    registerDiscordHandlers, registerExtraHandlers, registerV4Handlers, registerLastFmHandlers,
+    registerDiscordHandlers, registerExtraHandlers, registerV4Handlers, registerLastFmHandlers, registerListenBrainzHandlers,
     registerToolsHandlers, registerPlaylistHandlers, registerMixesHandlers, registerPluginHandlers, registerRecapHandlers
   ]) {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }

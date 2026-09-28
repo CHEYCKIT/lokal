@@ -281,12 +281,47 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;')
 
+    // API_KEY set on the server: ask once, let the server store it as a
+    // cookie, then reload.
+    let askingForKey = false
+    /** Ask once for the server's API key, store it as a cookie via /api/auth, then reload. */
+    async function askForApiKey() {
+      if (askingForKey) return
+      askingForKey = true
+      try {
+        let message = 'This Lokal server is protected. Enter its API key:'
+        for (;;) {
+          const key = window.prompt(message)
+          if (!key) return
+          const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key }),
+          }).catch(() => null)
+          if (res?.ok) { location.reload(); return }
+          if (res?.status === 403) {
+            // Plain HTTP from outside the local network: retrying won't help.
+            alert((await res.json().catch(() => ({}))).error || 'This server refused the key.')
+            return
+          }
+          message = 'That key was not accepted. Enter the API key:'
+        }
+      } finally {
+        // Cancelled or refused: a later 401 can ask again.
+        askingForKey = false
+      }
+    }
+
     async function call(path, opts = {}) {
       const res = await fetch(`/api/remote/${path}`, {
         method: opts.method || 'GET',
         headers: { 'Content-Type': 'application/json' },
         body: opts.body ? JSON.stringify(opts.body) : undefined,
       })
+      if (res.status === 401) {
+        const body = await res.clone().json().catch(() => ({}))
+        if (body.needsApiKey) askForApiKey()
+      }
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     }

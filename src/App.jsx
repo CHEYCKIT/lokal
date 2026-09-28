@@ -46,6 +46,8 @@ const EQ_AUDIO_BANDS = [
 ]
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const YTDLP_DISMISS_KEY = 'lokal-ytdlp-version-dismissed'
+// A scrobble / listen that wasn't sent is tried again after this long (not every second).
+const SCROBBLE_RETRY_MS = 30 * 1000
 
 function formatRelativeDays(days) {
   if (!Number.isFinite(days) || days <= 0) return 'up to date'
@@ -58,6 +60,11 @@ function formatRelativeDays(days) {
 
 function getYtDlpDismissKey(status) {
   return `${status?.installedVersion || 'missing'}::${status?.latestVersion || 'unknown'}`
+}
+
+/** The fields ListenBrainz needs from a library track. */
+function listenBrainzTrack(track) {
+  return { title: track.title, artist: track.artist, album: track.album || '', duration: Number(track.duration) || 0, track_num: track.track_num || null }
 }
 
 function pushLastfmStatus(entry) {
@@ -237,6 +244,9 @@ export default function App() {
   const lastfmPlaybackStartedAtRef = useRef(0)
   const lastfmPlaybackKeyRef = useRef(null)
   const lastfmScrobbledPlaybackKeyRef = useRef(null)
+  const lastfmScrobbleCheckRef = useRef(null)
+  const listenbrainzSubmittedPlaybackKeyRef = useRef(null)
+  const listenbrainzNowPlayingKeyRef = useRef(null)
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
@@ -917,9 +927,15 @@ export default function App() {
     })
   }, [])
 
+  // Checked every second of playback, so a scrobble / listen is sent as soon
+  // as half the track (or 4 minutes) has been played, not when it ends.
+  const scrobbleTickRef = useRef(null)
   const startTimer = useCallback(() => {
     if (playTimerRef.current) return
-    playTimerRef.current = setInterval(() => { playSecsRef.current++ }, 1000)
+    playTimerRef.current = setInterval(() => {
+      playSecsRef.current++
+      try { scrobbleTickRef.current?.() } catch {}
+    }, 1000)
   }, [])
 
   const stopTimer = useCallback(() => {
@@ -992,12 +1008,34 @@ export default function App() {
     const startedAt = lastfmPlaybackStartedAtRef.current
     if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
     if (lastfmScrobbledPlaybackKeyRef.current === playbackKey) return
+    // Already checking this play (the check runs every second of playback).
+    if (lastfmScrobbleCheckRef.current === playbackKey) return
     if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    lastfmScrobbleCheckRef.current = playbackKey
+
+    // Nothing was scrobbled: let a later playback tick try again, after a
+    // pause so a switched-off / failing Last.fm isn't asked every second.
+    const clearLastfmScrobbleCheck = () => {
+      setTimeout(() => {
+        if (lastfmScrobbleCheckRef.current === playbackKey) {
+          lastfmScrobbleCheckRef.current = null
+        }
+      }, SCROBBLE_RETRY_MS)
+    }
 
     api.getSettings().then((settings) => {
-      if (settings?.lastfm_enabled === '0') return
-      if (settings?.lastfm_scrobbling !== '1') return
-      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) return
+      if (settings?.lastfm_enabled === '0') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (settings?.lastfm_scrobbling !== '1') {
+        clearLastfmScrobbleCheck()
+        return
+      }
+      if (!settings?.lastfm_session_key || !settings?.lastfm_api_key || !settings?.lastfm_api_secret) {
+        clearLastfmScrobbleCheck()
+        return
+      }
       pushLastfmStatus({
         level: 'info',
         label: 'Scrobble',
@@ -1013,10 +1051,28 @@ export default function App() {
       ).then((result) => {
         if (result?.error || result?.skipped) {
           lastfmScrobbledPlaybackKeyRef.current = null
+          clearLastfmScrobbleCheck()
           pushLastfmStatus({
             level: 'error',
             label: 'Scrobble',
             message: result?.error || result?.reason || 'Scrobble was skipped'
+          })
+          return
+        }
+        if (result?.queued) {
+          // Kept and sent automatically once Last.fm can be reached.
+          pushLastfmStatus({
+            level: 'info',
+            label: 'Scrobble',
+            message: `Saved for later (${result.reason || 'Last.fm unreachable'}): ${track.artist} - ${track.title}`
+          })
+          return
+        }
+        if (result?.ignored) {
+          pushLastfmStatus({
+            level: 'error',
+            label: 'Scrobble',
+            message: `${result.reason || 'Last.fm ignored this scrobble'}: ${track.artist} - ${track.title}`
           })
           return
         }
@@ -1027,14 +1083,62 @@ export default function App() {
         })
       }).catch(() => {
         lastfmScrobbledPlaybackKeyRef.current = null
+        clearLastfmScrobbleCheck()
         pushLastfmStatus({
           level: 'error',
           label: 'Scrobble',
           message: `Failed to scrobble ${track.artist} - ${track.title}`
         })
       })
-    }).catch(() => {})
+    }).catch(clearLastfmScrobbleCheck)
   }, [getLastfmTrackDuration, shouldScrobbleLastfmTrack])
+
+  // ListenBrainz: submitted at the same moment, under the same rule, as a
+  // Last.fm scrobble (half the track or 4 minutes, at least 30 s), but tracked
+  // separately so either service works without the other.
+  /** Submit a ListenBrainz listen once the track has played long enough. */
+  const trySubmitListenBrainz = useCallback((track, playedSeconds) => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const startedAt = lastfmPlaybackStartedAtRef.current
+    if (!playbackKey || !startedAt || !track?.artist || !track?.title) return
+    if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) return
+    if (!shouldScrobbleLastfmTrack(playedSeconds, track)) return
+    listenbrainzSubmittedPlaybackKeyRef.current = playbackKey
+    // Allow another try for this play later (not on the next tick), and never
+    // clear a newer track's marker when this request settles late.
+    const retryLater = () => setTimeout(() => {
+      if (listenbrainzSubmittedPlaybackKeyRef.current === playbackKey) {
+        listenbrainzSubmittedPlaybackKeyRef.current = null
+      }
+    }, SCROBBLE_RETRY_MS)
+    Promise.resolve(api.listenbrainzSubmit?.(listenBrainzTrack(track), startedAt)).then((result) => {
+      if (result?.ok || result?.queued) return // sent, or queued and sent later
+      // Refused for good (invalid listen, rejected token): keep it marked.
+      if (result?.permanent) return
+      // Off / not set up yet, or a failure worth another try.
+      retryLater()
+    }).catch(retryLater)
+  }, [shouldScrobbleLastfmTrack])
+
+  /** ListenBrainz "now playing": once per playback, when the audio starts. */
+  const sendListenBrainzNowPlaying = useCallback(() => {
+    const playbackKey = lastfmPlaybackKeyRef.current
+    const track = currentTrackRef.current
+    if (!playbackKey || !track?.id || !track.artist || !track.title) return
+    if (listenbrainzNowPlayingKeyRef.current === playbackKey) return
+    listenbrainzNowPlayingKeyRef.current = playbackKey
+    // It checks its own on/off switch.
+    Promise.resolve(api.listenbrainzNowPlaying?.(listenBrainzTrack(track))).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    scrobbleTickRef.current = () => {
+      const track = currentTrackRef.current
+      if (!track) return
+      tryScrobbleLastfmTrack(track, playSecsRef.current)
+      trySubmitListenBrainz(track, playSecsRef.current)
+    }
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   const flushTime = useCallback((trackId) => {
     const secs = playSecsRef.current
@@ -1042,8 +1146,9 @@ export default function App() {
     playSecsRef.current = 0
     if (trackId) lastFlushedTrackIdRef.current = trackId
     tryScrobbleLastfmTrack(flushedTrack, secs)
+    trySubmitListenBrainz(flushedTrack, secs)
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
-  }, [tryScrobbleLastfmTrack])
+  }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   useEffect(() => {
     const previousTrack = currentTrackRef.current
@@ -1137,6 +1242,12 @@ export default function App() {
       const nextSide = isPrimaryActive ? 'cf' : 'primary'
       setActiveAudioElement(nextSide)
       activeElementRef.current = nextSide
+
+      // The next track is the current one from here on: set the ref now, not
+      // when React re-renders, so the fading-in element's "play" (ListenBrainz
+      // now playing, scrobble ticks) already reads the new track.
+      prevTrackIdRef.current = currentTrackRef.current?.id || null
+      currentTrackRef.current = nextTrack
 
       const state = usePlayerStore.getState()
       const nextIdx = state.shuffle ? state.shuffleIndex + 1 : state.queueIndex + 1
@@ -1713,7 +1824,7 @@ export default function App() {
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
@@ -1722,7 +1833,7 @@ export default function App() {
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -

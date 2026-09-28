@@ -1,20 +1,15 @@
 const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
 const crypto = require('crypto')
+const scrobbler = require('../../electron/lastfmScrobbler')
 
 const API_ROOT = 'https://ws.audioscrobbler.com/2.0/'
 
 
-function generateSignature(params, secret) {
-  const sorted = Object.keys(params).sort()
-  let str = ''
-  for (const key of sorted) {
-    str += key + params[key]
-  }
-  str += secret
-  return crypto.createHash('md5').update(str).digest('hex')
-}
-
+// Last.fm's api_sig must leave out "format" (and "callback"); this used to
+// include it, so every signed call from web mode (connect, scrobble, now
+// playing) was rejected with "Invalid method signature".
+const { sign: generateSignature } = require('../../electron/lastfmScrobbler')
 
 async function lastfmCall(method, params, apiKey, apiSecret, sessionKey) {
   const https = require('https')
@@ -68,15 +63,25 @@ async function lastfmCall(method, params, apiKey, apiSecret, sessionKey) {
 }
 
 
+// Settings shows secrets masked; this is the mask, never a real secret.
+const SECRET_PLACEHOLDER = '••••••••'
+
 router.post('/connect', async (req, res) => {
-  const { apiKey, apiSecret, token } = req.body
+  const { apiKey, token } = req.body
   if (!apiKey) return res.status(400).json({ error: 'API key required' })
   
   const db = getDB()
-  
+  // The API secret, unchanged in Settings, arrives masked: use the one saved
+  // here instead (the mask is never used as, or saved over, the secret).
+  let apiSecret = typeof req.body.apiSecret === 'string' ? req.body.apiSecret : ''
+  if (apiSecret === SECRET_PLACEHOLDER) {
+    apiSecret = db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value || ''
+    if (!apiSecret) return res.status(400).json({ error: 'Enter your Last.fm API secret again' })
+  } else if (apiSecret) {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_secret', ?)").run(apiSecret)
+  }
   
   if (apiKey) db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_key', ?)").run(apiKey)
-  if (apiSecret) db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('lastfm_api_secret', ?)").run(apiSecret)
   
   if (token) {
     try {
@@ -160,72 +165,15 @@ router.get('/similar/:artist', async (req, res) => {
 })
 
 
+// Scrobbling and "now playing": the same shared scrobbler as the desktop app.
 router.post('/scrobble', async (req, res) => {
-  const db = getDB()
-  const settings = {
-    apiKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_key'").get()?.value,
-    apiSecret: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value,
-    sessionKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_session_key'").get()?.value,
-    scrobblingEnabled: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_scrobbling'").get()?.value === '1'
-  }
-  
-  if (!settings.scrobblingEnabled) {
-    return res.json({ skipped: true, reason: 'Scrobbling disabled' })
-  }
-  
-  if (!settings.apiKey || !settings.apiSecret || !settings.sessionKey) {
-    return res.json({ skipped: true, reason: 'Last.fm not configured' })
-  }
-  
-  const { artist, track, album, duration, timestamp } = req.body
-  if (!artist || !track || !timestamp) {
-    return res.status(400).json({ error: 'artist, track, and timestamp required' })
-  }
-  
-  const params = {
-    'artist[0]': artist,
-    'track[0]': track,
-    'timestamp[0]': timestamp.toString(),
-    'sk': settings.sessionKey
-  }
-  
-  if (album) params['album[0]'] = album
-  if (duration) params['duration[0]'] = duration.toString()
-  
-  const result = await lastfmCall('track.scrobble', params, settings.apiKey, settings.apiSecret, settings.sessionKey)
-  res.json(result)
+  const { artist, track, album, duration, timestamp } = req.body || {}
+  res.json(await scrobbler.scrobble(getDB(), { artist, track, album, duration, timestamp }).catch(e => ({ error: e.message })))
 })
 
-
 router.post('/update-now-playing', async (req, res) => {
-  const db = getDB()
-  const settings = {
-    apiKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_key'").get()?.value,
-    apiSecret: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_api_secret'").get()?.value,
-    sessionKey: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_session_key'").get()?.value,
-    scrobblingEnabled: db.prepare("SELECT value FROM settings WHERE key = 'lastfm_scrobbling'").get()?.value === '1'
-  }
-  
-  if (!settings.apiKey || !settings.apiSecret || !settings.sessionKey) {
-    return res.json({ skipped: true })
-  }
-  
-  const { artist, track, album, duration } = req.body
-  if (!artist || !track) {
-    return res.status(400).json({ error: 'artist and track required' })
-  }
-  
-  const params = {
-    artist,
-    track,
-    sk: settings.sessionKey
-  }
-  
-  if (album) params.album = album
-  if (duration) params.duration = duration.toString()
-  
-  const result = await lastfmCall('track.updateNowPlaying', params, settings.apiKey, settings.apiSecret, settings.sessionKey)
-  res.json(result)
+  const { artist, track, album, duration } = req.body || {}
+  res.json(await scrobbler.updateNowPlaying(getDB(), { artist, track, album, duration }).catch(e => ({ error: e.message })))
 })
 
 module.exports = router
