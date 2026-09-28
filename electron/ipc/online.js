@@ -16,7 +16,8 @@ function settings() {
 
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
-  return { ytdlp: findYtDlp(), cookieArgs: cookieArgs(settings()).args }
+  const cookies = cookieArgs(settings())
+  return { ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
 /** Songs for `query`: YouTube Music, or plain YouTube through yt-dlp if that fails. */

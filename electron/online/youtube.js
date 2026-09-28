@@ -15,6 +15,7 @@
 //     for the downloaded file.
 
 const { spawn } = require('child_process')
+const { isCookieError, markUnreadable } = require('../ipc/ytCookies')
 
 const SEARCH_URL = 'https://music.youtube.com/youtubei/v1/search?prettyPrint=false'
 const CLIENT = { clientName: 'WEB_REMIX', clientVersion: '1.20250901.03.00', hl: 'en' }
@@ -192,7 +193,17 @@ function runResolve(videoId, { ytdlp, cookieArgs = [] }) {
       clearTimeout(timer)
       let info = null
       try { info = JSON.parse(out.trim().split('\n').pop()) } catch {}
-      if (!info?.url) { reject(new Error(streamError(err || out))); return }
+      const output = err || out
+      if (!info?.url) {
+        if (isCookieError(output)) {
+          const error = new Error('YouTube cookies could not be read')
+          error.cookieError = true
+          reject(error)
+          return
+        }
+        reject(new Error(streamError(output)))
+        return
+      }
       const ext = info.ext || ''
       resolve({
         url: info.url,
@@ -205,18 +216,25 @@ function runResolve(videoId, { ytdlp, cookieArgs = [] }) {
 }
 
 /** The audio URL for a video, from cache or yt-dlp (one lookup at a time per video). */
-async function resolveStream(videoId, { ytdlp, cookieArgs, force = false } = {}) {
+async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
   if (!ytdlp) throw new Error('yt-dlp is not installed. Install it from the Download page.')
   const cached = streamCache.get(videoId)
   if (!force && cached && cached.expiresAt > Date.now()) return cached
   if (!force && resolving.has(videoId)) return resolving.get(videoId)
-  const job = runResolve(videoId, { ytdlp, cookieArgs })
-    .then(stream => {
-      if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
-      streamCache.set(videoId, stream)
-      return stream
-    })
+  const job = (async () => {
+    try {
+      return await runResolve(videoId, { ytdlp, cookieArgs })
+    } catch (e) {
+      if (!cookieBrowser || !e.cookieError) throw e
+      markUnreadable(cookieBrowser)
+      return runResolve(videoId, { ytdlp, cookieArgs: [] })
+    }
+  })().then(stream => {
+    if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
+    streamCache.set(videoId, stream)
+    return stream
+  })
     .finally(() => resolving.delete(videoId))
   resolving.set(videoId, job)
   return job

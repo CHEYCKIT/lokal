@@ -22,7 +22,8 @@ function settings() {
 
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
-  return { ytdlp: ytdlp(), cookieArgs: cookieArgs(settings()).args }
+  const cookies = cookieArgs(settings())
+  return { ytdlp: ytdlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
 router.get('/search', async (req, res) => {
