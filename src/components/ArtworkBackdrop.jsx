@@ -39,6 +39,11 @@ export function useArtworkBackdropEnabled() {
   return on
 }
 
+// A track's artwork was changed: forget its colours so they're worked out again.
+if (typeof window !== 'undefined') {
+  window.addEventListener('lokal:track-updated', (e) => { for (const id of e.detail?.ids || []) meshCache.delete(id) })
+}
+
 export function loadMesh(trackId) {
   if (!trackId) return Promise.resolve(null)
   if (meshCache.has(trackId)) return Promise.resolve(meshCache.get(trackId))
@@ -132,7 +137,15 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
   // Two slots so the old song fades out while the new one fades in.
   const [slots, setSlots] = useState([{ id: null, grid: null }, { id: null, grid: null }])
   const [front, setFront] = useState(0)
+  const [revision, setRevision] = useState(0)
   const reqRef = useRef(0)
+
+  // The track on screen was edited (new cover...): recolour.
+  useEffect(() => {
+    const onUpdated = (e) => { if ((e.detail?.ids || []).includes(trackId)) setRevision(r => r + 1) }
+    window.addEventListener('lokal:track-updated', onUpdated)
+    return () => window.removeEventListener('lokal:track-updated', onUpdated)
+  }, [trackId])
 
   useEffect(() => {
     const req = ++reqRef.current
@@ -146,7 +159,7 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
       })
       if (!grid) setSlots([{ id: null, grid: null }, { id: null, grid: null }])
     })
-  }, [trackId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`absolute inset-0 overflow-hidden ${className}`} style={{ backgroundColor: '#121212' }} aria-hidden>
