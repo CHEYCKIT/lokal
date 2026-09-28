@@ -727,13 +727,21 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                   </AnimatePresence>
                 </div>
               )}
-              {!isGhost && isUpgradable(track) && (
-                <button onClick={e => { e.stopPropagation(); openLossless(track) }}
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
-                  title={`Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`}>
-                  <Gem size={13} />
-                </button>
-              )}
+              {(() => {
+                // On every row, so the columns line up; greyed out where it can't be used.
+                const upgradable = !isGhost && isUpgradable(track)
+                const why = upgradable ? `Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
+                  : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
+                    : track.lossless === null || track.lossless === undefined ? 'Get it in lossless: quality not read yet (Audio Quality → Read details)'
+                      : `Already lossless${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`
+                return (
+                  <button onClick={e => { e.stopPropagation(); if (upgradable) openLossless(track) }}
+                    aria-disabled={!upgradable} title={why} aria-label={why}
+                    className={`opacity-0 group-hover:opacity-100 transition-all ${upgradable ? 'text-muted hover:text-accent' : 'text-muted/30 cursor-not-allowed'}`}>
+                    <Gem size={13} />
+                  </button>
+                )
+              })()}
               <button onClick={e => { e.stopPropagation(); openAddToPlaylist(track) }}
                 className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
                 title="Add to another playlist">

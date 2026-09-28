@@ -1,12 +1,21 @@
 const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
-const { buildRecap } = require('../../electron/ipc/recaps')
+const { buildRecap, listeningDays } = require('../../electron/ipc/recaps')
 
 router.get('/:userId', (req, res) => {
   try {
     res.json(buildRecap(getDB(), req.params.userId || 'guest', req.query || {}))
   } catch (e) {
     res.json({ error: e.message })
+  }
+})
+
+// Days with plays (in the listener's time zone), for the Recap page's navigation.
+router.get('/:userId/days', (req, res) => {
+  try {
+    res.json(listeningDays(getDB(), req.params.userId || 'guest', { tz: typeof req.query.tz === 'string' ? req.query.tz : undefined }))
+  } catch (e) {
+    res.json({ error: e.message, days: [] })
   }
 })
 

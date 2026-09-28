@@ -4,7 +4,7 @@ import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, Lis
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
-import { completedPeriods, periodQuery } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapTree, treePeriods } from '../recapPeriods'
 
 
 const GENRE_COMMENTS = {
@@ -73,10 +73,6 @@ function filteredGenres(genres = []) {
 function genreComment(genre) {
   const key = String(genre || '').trim().toLowerCase()
   return GENRE_COMMENTS[key] || GENRE_COMMENTS['default']
-}
-
-function getLatestCompletedPeriodId(periods) {
-  return periods[0]?.id || ''
 }
 
 function daysText(minutes) {
@@ -328,7 +324,7 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
   useEffect(() => {
     if (!open) return
     setIndex(0)
-  }, [open, recap?.scope, recap?.year, recap?.quarter])
+  }, [open, recap?.scope, recap?.year, recap?.month, recap?.weekStart])
 
   useEffect(() => {
     if (!open || !slide?.track?.id) return
@@ -485,8 +481,22 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
   )
 }
 
+const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** One chip of the period picker. */
+function PeriodChip({ active, context, dashed, onClick, children, title }) {
+  return (
+    <button onClick={onClick} title={title}
+      className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-display uppercase tracking-wider transition-colors ${active ? 'border-accent bg-accent text-base' : context ? 'border-accent/60 bg-accent/10 text-accent' : `${dashed ? 'border-dashed' : ''} border-border bg-elevated text-muted hover:text-white`}`}>
+      {children}
+    </button>
+  )
+}
+
 export default function Recap() {
-  const [periods, setPeriods] = useState([])
+  const [tree, setTree] = useState([])
+  const [navYear, setNavYear] = useState(null)
+  const [navMonth, setNavMonth] = useState(null) // 'YYYY-MM' whose weeks are shown
   const [selectedId, setSelectedId] = useState('')
   const [recapsById, setRecapsById] = useState({})
   const [recap, setRecap] = useState(null)
@@ -497,31 +507,52 @@ export default function Recap() {
   const { user } = useAppStore()
   const { playQueue } = usePlayerStore()
 
-  const selectedPeriod = periods.find(period => period.id === selectedId) || periods[0]
+  const periods = treePeriods(tree)
+  const selectedPeriod = periods.find(period => period.id === selectedId) || null
+  const yearEntry = tree.find(y => y.year === navYear) || null
+  const monthEntry = yearEntry?.months.find(m => m.key === navMonth) || null
 
+  /** Select a period and show where it sits (its year, and its month's weeks). */
+  const select = (period, currentTree = tree) => {
+    if (!period) return
+    const place = periodPlace(currentTree, period.id)
+    setSelectedId(period.id)
+    if (place) { setNavYear(place.year); setNavMonth(place.monthKey) }
+  }
+
+  // Picking a year shows the whole year when it's over, else its latest month or week.
+  const pickYear = (entry) => {
+    const latestMonth = [...entry.months].reverse().find(m => m.period || m.weeks.length)
+    if (entry.period) { setSelectedId(entry.period.id); setNavYear(entry.year); setNavMonth(null); return }
+    select(latestMonth?.period || latestMonth?.weeks[latestMonth.weeks.length - 1])
+  }
+
+  // Picking a month shows it (or, while it's going, its latest finished week).
+  const pickMonth = (entry) => {
+    setNavMonth(entry.key)
+    if (entry.period) setSelectedId(entry.period.id)
+    else if (entry.weeks.length) setSelectedId(entry.weeks[entry.weeks.length - 1].id)
+  }
+
+  // Worked out on each load, so Refresh picks up a period that just ended.
   const loadPeriodList = async () => {
     setCheckingPeriods(true)
     setStatus('')
-    const nextRecaps = {}
-    const available = []
-    // Only periods with plays are offered: ask for counts (cheap), and
-    // build a recap when it's opened.
-    // Worked out on each load, so Refresh picks up a period that just ended.
-    for (const period of completedPeriods()) {
-      if (period.year < 2026) continue
-
-      try {
-        const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period, { countOnly: 1 }))
-        if (!result?.error && result?.totalPlays > 0) available.push(period)
-      } catch {}
-    }
-    setRecapsById(nextRecaps)
-    setPeriods(available)
-    const latestId = getLatestCompletedPeriodId(available)
-    setSelectedId(current => available.some(period => period.id === current) ? current : latestId)
-    if (latestId) {
-      localStorage.setItem('lokal-recap-latest-completed', latestId)
-      window.dispatchEvent(new CustomEvent('lokal:recap-periods-changed', { detail: { latestId } }))
+    let days = []
+    try {
+      const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone() })
+      days = Array.isArray(result?.days) ? result.days : []
+    } catch {}
+    const nextTree = recapTree(days)
+    const available = treePeriods(nextTree)
+    setRecapsById({})
+    setTree(nextTree)
+    const latest = latestPeriod(nextTree)
+    const keep = available.find(period => period.id === selectedId)
+    select(keep || latest, nextTree)
+    if (latest) {
+      localStorage.setItem('lokal-recap-latest-completed', latest.id)
+      window.dispatchEvent(new CustomEvent('lokal:recap-periods-changed', { detail: { latestId: latest.id } }))
     }
     setCheckingPeriods(false)
   }
@@ -592,7 +623,7 @@ export default function Recap() {
             Listening Recaps
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), plus each quarter and year, built from your local listening sessions.</p>
+          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday) and month, plus each year, built from your local listening sessions.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={loadPeriodList} disabled={checkingPeriods || loading} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-muted transition-colors hover:text-white disabled:opacity-50">
@@ -617,12 +648,44 @@ export default function Recap() {
       {checkingPeriods ? (
         <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">Looking for finished recaps with listening data...</div>
       ) : periods.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {periods.map(period => (
-            <button key={period.id} onClick={() => setSelectedId(period.id)} className={`flex-shrink-0 rounded-full border px-4 py-2 text-xs font-display uppercase tracking-wider transition-colors ${selectedId === period.id ? 'border-accent bg-accent text-base' : 'border-border bg-elevated text-muted hover:text-white'}`}>
-              {period.label}
-            </button>
-          ))}
+        // Year, then month, then week: only periods with plays are listed.
+        <div className="space-y-3 rounded-xl border border-border bg-elevated/60 p-4">
+          <div className="flex items-center gap-3">
+            <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Year</span>
+            <div className="flex gap-2 overflow-x-auto pb-0.5">
+              {tree.map(entry => (
+                <PeriodChip key={entry.year} active={selectedId === entry.period?.id} context={navYear === entry.year && selectedId !== entry.period?.id} onClick={() => pickYear(entry)}
+                  title={entry.period ? `The whole of ${entry.year}` : `${entry.year} is still going: pick a month or a week`}>
+                  {entry.year}
+                </PeriodChip>
+              ))}
+            </div>
+          </div>
+          {yearEntry && (
+            <div className="flex items-center gap-3">
+              <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Month</span>
+              <div className="flex gap-2 overflow-x-auto pb-0.5">
+                {yearEntry.months.map(entry => (
+                  <PeriodChip key={entry.key} active={selectedId === entry.period?.id} context={navMonth === entry.key && selectedId !== entry.period?.id}
+                    dashed={!entry.period} title={entry.period ? undefined : 'Still going: pick one of its finished weeks'} onClick={() => pickMonth(entry)}>
+                    {SHORT_MONTH_NAMES[entry.month - 1]}
+                  </PeriodChip>
+                ))}
+              </div>
+            </div>
+          )}
+          {monthEntry && monthEntry.weeks.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Week</span>
+              <div className="flex gap-2 overflow-x-auto pb-0.5">
+                {monthEntry.weeks.map(period => (
+                  <PeriodChip key={period.id} active={selectedId === period.id} onClick={() => setSelectedId(period.id)}>
+                    {period.label}
+                  </PeriodChip>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">No finished recap periods with listening data yet.</div>

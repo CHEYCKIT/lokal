@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Home, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User, AudioWaveform } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
-import { completedPeriods, nextPeriodBoundary, periodQuery } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
 
@@ -80,18 +80,13 @@ export default function Sidebar() {
   useEffect(() => {
     let alive = true
     const syncRecapBadge = async () => {
+      // The latest finished period with plays (same rule as the Recap page).
       let latest = ''
-      for (const period of completedPeriods()) {
-        if (period.year < 2026) continue
-        try {
-          const recap = await api.getListeningRecap(user?.id || 'guest', periodQuery(period, { countOnly: 1 }))
-          if (recap?.totalPlays > 0) {
-            latest = period.id
-            localStorage.setItem('lokal-recap-latest-completed', latest)
-            break
-          }
-        } catch {}
-      }
+      try {
+        const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone() })
+        latest = latestPeriod(recapTree(Array.isArray(result?.days) ? result.days : []))?.id || ''
+        if (latest) localStorage.setItem('lokal-recap-latest-completed', latest)
+      } catch {}
       if (!alive) return
       const viewed = localStorage.getItem('lokal-recap-last-viewed') || ''
       setShowRecapBadge(Boolean(latest && latest !== viewed))
