@@ -9,6 +9,8 @@ import { api } from '../api'
 const RECENT_SEARCHES_KEY = 'lokal-recent-searches'
 const RECENT_ITEMS_KEY = 'lokal-recent-items'
 const MAX_RECENT = 5
+// Recently opened artists, albums and tracks (the covers shown before typing): 3 rows of 5.
+const MAX_RECENT_ITEMS = 15
 
 function getRecentSearches() {
   try {
@@ -42,7 +44,7 @@ function saveRecentItem(item) {
   if (!item?.id) return
   const recent = getRecentItems()
   const filtered = recent.filter(r => r.id !== item.id)
-  const newRecent = [item, ...filtered].slice(0, MAX_RECENT)
+  const newRecent = [item, ...filtered].slice(0, MAX_RECENT_ITEMS)
   localStorage.setItem(RECENT_ITEMS_KEY, JSON.stringify(newRecent))
 }
 
@@ -285,7 +287,7 @@ export default function Search() {
                     key={`${item.id}-${i}`}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
+                    transition={{ delay: Math.min(i, 10) * 0.03 }}
                     onClick={() => handleRecentItemClick(item)}
                     className="flex flex-col items-center gap-2 group min-w-0"
                   >
