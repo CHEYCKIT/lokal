@@ -211,16 +211,21 @@ const SAMPLE_SECONDS = 12
 const CLIFF_DB = 35 // this far below the band under it...
 const FLOOR_DB = -90 // ...or below this (dBFS RMS): nothing there
 
-let ffmpegPath
-/** ffmpeg: the one Settings points at, else the one on PATH. */
+let ffmpegPath = null
+/**
+ * ffmpeg for the web server: the one Settings points at, else the one on
+ * PATH. (The desktop app passes its own, found like everywhere else in the
+ * app: the one installed from Settings → Tools, bundled, custom or on PATH.)
+ */
 function findFfmpeg(db) {
   try {
     const custom = db?.prepare("SELECT value FROM settings WHERE key = 'custom_ffmpeg_path'").get()?.value
     if (custom && fs.existsSync(custom)) return custom
   } catch {}
-  if (ffmpegPath !== undefined) return ffmpegPath
+  if (ffmpegPath) return ffmpegPath
   const name = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  try { execFileSync(name, ['-version'], { stdio: 'ignore', windowsHide: true }); ffmpegPath = name } catch { ffmpegPath = null }
+  // Only a hit is remembered: installing ffmpeg later works without a restart.
+  try { execFileSync(name, ['-version'], { stdio: 'ignore', windowsHide: true }); ffmpegPath = name } catch {}
   return ffmpegPath
 }
 
@@ -308,9 +313,9 @@ function saveVerdict(db, trackId, result) {
 }
 
 /** Check lossless tracks: the given ids, or every one not checked yet. */
-function startChecking(db, { ids = null, recheck = false } = {}) {
+function startChecking(db, { ids = null, recheck = false, ffmpeg: givenFfmpeg = null } = {}) {
   ensureColumns(db)
-  const ffmpeg = findFfmpeg(db)
+  const ffmpeg = givenFfmpeg || findFfmpeg(db)
   if (!ffmpeg) return { error: 'ffmpeg is needed to check files. Install it in Settings → Tools.' }
   let rows
   if (Array.isArray(ids) && ids.length) {
@@ -329,13 +334,13 @@ function startChecking(db, { ids = null, recheck = false } = {}) {
 }
 
 /** Check one track now and return the result (for the track's menu). */
-async function checkOne(db, trackId) {
+async function checkOne(db, trackId, { ffmpeg = null } = {}) {
   ensureColumns(db)
   const row = db.prepare(`SELECT id, file_path, duration, sample_rate, lossless FROM tracks WHERE id = ? AND ${REAL_FILE}`).get(String(trackId || ''))
   if (!row) return { error: 'Track not found' }
   if (Number(row.lossless) !== 1) return { error: 'Only lossless files can be checked: a lossy file is lossy already.' }
   if (!fs.existsSync(row.file_path)) return { error: 'The file is missing' }
-  const result = await spectralCheck(row.file_path, { ffmpeg: findFfmpeg(db), duration: row.duration, sampleRate: row.sample_rate })
+  const result = await spectralCheck(row.file_path, { ffmpeg: ffmpeg || findFfmpeg(db), duration: row.duration, sampleRate: row.sample_rate })
   saveVerdict(db, row.id, result)
   return result
 }

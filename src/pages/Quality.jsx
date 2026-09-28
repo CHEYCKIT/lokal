@@ -130,7 +130,7 @@ export default function Quality() {
             )}
           </div>
         </div>
-        {message && <p className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
+        {message && <p className="mt-3 rounded-xl border border-red/25 bg-red/10 px-3 py-2 text-xs text-red">{message}</p>}
         {unread > 0 && !running && (
           <p className="mt-3 text-xs text-muted">{unread.toLocaleString()} tracks were added before Lokal kept their format: read their details to see them here.</p>
         )}
@@ -174,7 +174,7 @@ export default function Quality() {
                   <p className="truncate text-sm text-white">{track.title}</p>
                   <p className="truncate text-xs text-muted" title={verdict || undefined}>
                     {track.artist}{track.album ? ` · ${track.album}` : ''}
-                    {tier === 'suspect' && track.spectral_cutoff ? <span className="text-red-300/80"> · nothing above {track.spectral_cutoff / 1000} kHz</span> : null}
+                    {tier === 'suspect' && track.spectral_cutoff ? <span className="text-red/80"> · nothing above {track.spectral_cutoff / 1000} kHz</span> : null}
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
