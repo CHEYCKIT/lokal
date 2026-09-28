@@ -10,12 +10,22 @@
 //     SameSite=Lax, not Strict, so it's still sent when Last.fm redirects
 //     back to /api/lastfm/callback.
 //
+// Two more rules while API_KEY is set:
+//   - Plain HTTP only works from this machine or the local network. From
+//     anywhere else the key would travel in clear text, so it's refused: put
+//     Lokal behind HTTPS (a reverse proxy or tunnel with TLS) to expose it.
+//   - A write (POST, PUT, PATCH, DELETE) authorised only by the cookie must
+//     come from Lokal's own pages (same origin), so another site can't make
+//     the browser send one. The x-api-key header is unaffected.
+//
 // /api/remote keeps its own REMOTE_TOKEN check on top of this.
 
 const crypto = require('crypto')
+const net = require('net')
 
 const COOKIE = 'lokal_api_key'
 const ONE_YEAR_S = 365 * 24 * 3600
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 function configuredKey() {
   return String(process.env.API_KEY || '').trim()
@@ -37,17 +47,79 @@ function cookieValue(req, name) {
   return ''
 }
 
-function providedKey(req) {
-  return req.headers['x-api-key'] || cookieValue(req, COOKIE)
+// ------------------------------------------------------------ transport
+
+/** Loopback, private (10/8, 172.16/12, 192.168/16), link-local, or IPv6 ULA. */
+function isLocalAddress(address) {
+  let ip = String(address || '').trim().replace(/^\[|\]$/g, '')
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7)
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number)
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+  }
+  if (net.isIPv6(ip)) {
+    const lower = ip.toLowerCase()
+    return lower === '::1' || /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower)
+  }
+  return false
 }
+
+/** Did this request come from this machine or the local network? */
+function isLocalRequest(req) {
+  if (!isLocalAddress(req.socket?.remoteAddress)) return false
+  // Behind a proxy or tunnel on this machine, every request looks local:
+  // go by the client address the proxy reports instead.
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+  return !forwarded || isLocalAddress(forwarded)
+}
+
+function isHttps(req) {
+  return !!req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'
+}
+
+/** The key may only be used over HTTPS, or over HTTP from the local network. */
+function transportAllowed(req) {
+  return isHttps(req) || isLocalRequest(req)
+}
+
+function refuseInsecure(res) {
+  res.status(403).json({ error: 'This Lokal server only accepts its API key over HTTPS from outside the local network.' })
+}
+
+// ------------------------------------------------------------ same origin
+
+/** Is Origin (or, failing that, Referer) this server itself? */
+function isSameOrigin(req) {
+  const source = req.headers.origin || req.headers.referer
+  if (!source || source === 'null') return false
+  let host
+  try { host = new URL(source).host } catch { return false }
+  const own = [req.headers['x-forwarded-host'], req.headers.host]
+    .flatMap(h => String(h || '').split(','))
+    .map(h => h.trim().toLowerCase())
+    .filter(Boolean)
+  return own.includes(host.toLowerCase())
+}
+
+// ------------------------------------------------------------ middleware
 
 /** Mounted on /api, before every router. */
 function requireApiKey(req, res, next) {
   const key = configuredKey()
   if (!key) return next()
-  // Checks the key and hands out the cookie, so it must be reachable without one.
+  // Checks the key and hands out the cookie, so it must be reachable without
+  // one (it applies the same transport rule itself).
   if (req.method === 'POST' && req.path === '/auth') return next()
-  if (sameKey(providedKey(req), key)) return next()
+  const header = req.headers['x-api-key']
+  const cookie = cookieValue(req, COOKIE)
+  if (!header && !cookie) return res.status(401).json({ error: 'This Lokal server needs its API key.', needsApiKey: true })
+  if (!transportAllowed(req)) return refuseInsecure(res)
+  if (header) {
+    if (sameKey(header, key)) return next()
+  } else if (sameKey(cookie, key)) {
+    if (SAFE_METHODS.has(req.method) || isSameOrigin(req)) return next()
+    return res.status(403).json({ error: 'Cross-origin request refused.' })
+  }
   res.status(401).json({ error: 'This Lokal server needs its API key.', needsApiKey: true })
 }
 
@@ -55,10 +127,10 @@ function requireApiKey(req, res, next) {
 function authRoute(req, res) {
   const key = configuredKey()
   if (!key) return res.json({ ok: true, required: false })
+  if (!transportAllowed(req)) return refuseInsecure(res)
   if (!sameKey(req.body?.key, key)) return res.status(401).json({ error: 'Wrong API key.', needsApiKey: true })
-  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https'
-  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(key)}; Path=/; Max-Age=${ONE_YEAR_S}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`)
+  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(key)}; Path=/; Max-Age=${ONE_YEAR_S}; HttpOnly; SameSite=Lax${isHttps(req) ? '; Secure' : ''}`)
   res.json({ ok: true, required: true })
 }
 
-module.exports = { requireApiKey, authRoute }
+module.exports = { requireApiKey, authRoute, isLocalAddress }

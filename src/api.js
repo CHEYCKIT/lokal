@@ -62,9 +62,16 @@ function askForApiKey() {
           body: JSON.stringify({ key }),
         }).catch(() => null)
         if (res?.ok) { window.location.reload(); return true }
+        if (res?.status === 403) {
+          // Plain HTTP from outside the local network: retrying won't help.
+          window.alert((await res.json().catch(() => ({}))).error || 'This server refused the key.')
+          return false
+        }
         message = 'That key was not accepted. Enter the API key:'
       }
     })()
+    // Once it's settled (cancelled, refused or accepted), a later 401 can ask again.
+    apiKeyPrompt.finally(() => { apiKeyPrompt = null })
   }
   return apiKeyPrompt
 }
