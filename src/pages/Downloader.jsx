@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock } from 'lucide-react'
 import { api } from '../api'
@@ -82,7 +83,12 @@ const FORMATS = [
 export default function Downloader() {
   const [accepted] = useState(() => localStorage.getItem(DISCLAIMER_KEY) === '1')
   const [showDisclaimer, setShowDisclaimer] = useState(!accepted)
-  const [tab, setTab] = useState('search')
+  // "Get it in lossless" → Soulseek: open the Soulseek tab with the song
+  // searched, and let the file picked there replace the track's file.
+  const location = useLocation()
+  const soulseekFor = location.state?.soulseek || null
+  const [tab, setTab] = useState(soulseekFor ? 'soulseek' : 'search')
+  useEffect(() => { if (soulseekFor) setTab('soulseek') }, [soulseekFor])
   const [downloadedPlaylists, setDownloadedPlaylists] = useState([])
   const [loadingPlaylists, setLoadingPlaylists] = useState(false)
   const [query, setQuery] = useState('')
@@ -329,7 +335,7 @@ export default function Downloader() {
         <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{queueError}</p>
       )}
 
-      {tab === 'soulseek' && <SoulseekSearch />}
+      {tab === 'soulseek' && <SoulseekSearch key={soulseekFor?.upgradeTrackId || 'soulseek'} initialQuery={soulseekFor?.query} initialLosslessOnly={!!soulseekFor?.losslessOnly} upgradeTrack={soulseekFor?.upgradeTrackId ? soulseekFor : null} />}
 
       {tab === 'search' && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">

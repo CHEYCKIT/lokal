@@ -28,6 +28,8 @@ import Downloader from './pages/Downloader'
 import Settings from './pages/Settings'
 import Profile from './pages/Profile'
 import Recap from './pages/Recap'
+import Quality from './pages/Quality'
+import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
 import { THEMES, applyTheme } from './theme'
@@ -168,6 +170,7 @@ function AnimatedRoutes() {
         <Route path="/playlist/:id" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Playlist /></motion.div>} />
         <Route path="/downloader" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Downloader /></motion.div>} />
         <Route path="/profile" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Profile /></motion.div>} />
+        <Route path="/quality" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Quality /></motion.div>} />
         <Route path="/recap" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Recap /></motion.div>} />
         <Route path="/settings" element={<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}><Settings /></motion.div>} />
       </Routes>
@@ -1688,6 +1691,7 @@ export default function App() {
             <ProfileModal />
             <StatsModal />
             <AddToPlaylistModal />
+            <LosslessModal />
             <RecapStories
               open={showRecapStories}
               onClose={() => {

@@ -24,6 +24,7 @@ const { registerToolsHandlers } = require('./ipc/tools')
 const { registerPlaylistHandlers } = require('./ipc/playlists')
 const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
+const { registerQualityHandlers } = require('./ipc/quality')
 const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
@@ -358,7 +359,8 @@ app.whenReady().then(() => {
     registerScannerHandlers, registerPlayerHandlers, registerDownloaderHandlers,
     registerExtraDownloaderHandlers, registerPlaylistArchiveHandlers, registerLyricsHandlers, registerUserHandlers,
     registerDiscordHandlers, registerExtraHandlers, registerV4Handlers, registerLastFmHandlers,
-    registerToolsHandlers, registerPlaylistHandlers, registerMixesHandlers, registerPluginHandlers, registerRecapHandlers
+    registerToolsHandlers, registerPlaylistHandlers, registerMixesHandlers, registerPluginHandlers, registerRecapHandlers,
+    registerQualityHandlers
   ]) {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }
   }

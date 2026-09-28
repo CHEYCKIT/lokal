@@ -29,14 +29,21 @@ function groupResults(results, losslessOnly) {
     .slice(0, 60)
 }
 
-export default function SoulseekSearch({ onQueued }) {
+/**
+ * @param initialQuery         searched right away (e.g. "Artist Title" from "Get it in lossless")
+ * @param initialLosslessOnly  start with "Lossless only" on
+ * @param upgradeTrack         { upgradeTrackId, title, artist, current }: a library track whose
+ *                             file the first single file picked here replaces once downloaded
+ */
+export default function SoulseekSearch({ onQueued, initialQuery = '', initialLosslessOnly = false, upgradeTrack = null }) {
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
   const [status, setStatus] = useState(null)
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery || '')
+  const [upgrading, setUpgrading] = useState(upgradeTrack)
   const [search, setSearch] = useState(null) // { id, complete, results, error }
-  const [losslessOnly, setLosslessOnly] = useState(false)
+  const [losslessOnly, setLosslessOnly] = useState(!!initialLosslessOnly)
   const [error, setError] = useState('')
   const pollRef = useRef(null)
   const finishing = useRef(false)
@@ -52,8 +59,13 @@ export default function SoulseekSearch({ onQueued }) {
     return () => { clearTimeout(pollRef.current) }
   }, [])
 
-  const run = async () => {
-    const text = query.trim()
+  // Opened for a song: search for it straight away.
+  useEffect(() => {
+    if (initialQuery) run(initialQuery)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = async (override) => {
+    const text = String(typeof override === 'string' ? override : query).trim()
     if (!text) return
     clearTimeout(pollRef.current)
     if (search?.id && !search.complete) api.soulseekStopSearch(search.id)
@@ -76,10 +88,15 @@ export default function SoulseekSearch({ onQueued }) {
   }
 
   const queue = async (files, folder) => {
+    // One file picked for "Get it in lossless": it replaces the track's file.
+    const upgradeTrackId = upgrading && files.length === 1 ? upgrading.upgradeTrackId : undefined
     for (const file of files) {
-      const result = await api.soulseekDownload(file, folder ? { from: `Soulseek · ${file.username} · ${folder}` } : {})
+      const opts = folder ? { from: `Soulseek · ${file.username} · ${folder}` } : {}
+      if (upgradeTrackId) opts.upgradeTrackId = upgradeTrackId
+      const result = await api.soulseekDownload(file, opts)
       if (result?.error) { setError(result.error); break }
     }
+    if (upgradeTrackId) setUpgrading(null)
     load()
     onQueued?.()
   }
@@ -98,6 +115,17 @@ export default function SoulseekSearch({ onQueued }) {
         <span>Soulseek</span>
         {status?.loggedIn && <span className="normal-case tracking-normal text-green-400/80">· connected{status.username ? ` as ${status.username}` : ''}</span>}
       </div>
+
+      {upgrading && (
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm">
+          <Download size={15} className="flex-shrink-0 text-accent" />
+          <p className="min-w-0 flex-1 text-white">
+            Pick one file for <span className="font-semibold">{[upgrading.artist, upgrading.title].filter(Boolean).join(' – ')}</span>{upgrading.current ? <span className="text-muted"> (now {upgrading.current})</span> : null}.
+            Once it's downloaded it replaces that file in your library, keeping its playlists, likes and plays; the old file is moved to Lokal's data folder.
+          </p>
+          <button onClick={() => setUpgrading(null)} className="flex-shrink-0 text-xs text-muted hover:text-white">Cancel</button>
+        </div>
+      )}
 
       {notReady && (
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
@@ -121,7 +149,7 @@ export default function SoulseekSearch({ onQueued }) {
             className="w-full rounded-2xl border border-border bg-black/20 py-3 pl-10 pr-4 text-sm text-white outline-none transition-colors focus:border-accent/50 placeholder:text-muted"
           />
         </div>
-        <button onClick={run} disabled={!query.trim()} className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:opacity-40">
+        <button onClick={() => run()} disabled={!query.trim()} className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:opacity-40">
           Search
         </button>
       </div>

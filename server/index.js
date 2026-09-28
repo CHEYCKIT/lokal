@@ -36,6 +36,7 @@ app.use('/api/lastfm', require('./routes/lastfm'))
 app.use('/api/remote', require('./routes/remote'))
 app.use('/api/plugins', require('./routes/plugins'))
 app.use('/api/recaps', require('./routes/recaps'))
+app.use('/api/quality', require('./routes/quality'))
 
 const AUDIO_TYPES = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.webm': 'audio/webm' }
 

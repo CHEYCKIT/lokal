@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Search, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User } from 'lucide-react'
+import { Home, Search, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User, AudioWaveform } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
@@ -282,6 +282,11 @@ export default function Sidebar() {
           onClick={() => nav('/artists')}
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive('/artists') ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
           <Users size={15} /> Artists
+        </button>
+        <button
+          onClick={() => nav('/quality')}
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${loc.pathname === '/quality' ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
+          <AudioWaveform size={15} /> Audio Quality
         </button>
       </nav>
       <DownloadManagerPanel />

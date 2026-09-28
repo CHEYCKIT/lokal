@@ -280,6 +280,8 @@ function initDB() {
     `CREATE TABLE IF NOT EXISTS listening_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, track_id TEXT NOT NULL, event_type TEXT NOT NULL, source_type TEXT, source_id TEXT, session_id TEXT, seconds_played INTEGER DEFAULT 0, track_duration REAL, started_at INTEGER, ended_at INTEGER, created_at INTEGER DEFAULT (unixepoch()))`,
   ]
   for (const m of quickMigrations) { try { db.exec(m) } catch {} }
+  // Audio quality and ISRC columns (electron/quality).
+  try { require('../quality').ensureColumns(db) } catch (e) { console.warn('quality columns:', e.message) }
   
   
   try {

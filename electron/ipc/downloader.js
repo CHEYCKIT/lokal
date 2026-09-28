@@ -180,6 +180,8 @@ function enqueueSoulseek(file = {}, opts = {}) {
     size: file.size,
     title: opts.title || name.replace(/\.[^.]+$/, ''),
     from: opts.from || `Soulseek · ${file.username}${file.quality ? ` · ${file.quality}` : ''}`,
+    // "Get it in lossless": the file replaces this track's file.
+    upgradeTrackId: typeof opts.upgradeTrackId === 'string' && /^[\w.:-]{1,200}$/.test(opts.upgradeTrackId) ? opts.upgradeTrackId : undefined,
   })
 }
 

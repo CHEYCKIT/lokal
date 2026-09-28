@@ -4,10 +4,11 @@ const crypto = require('crypto')
 const https = require('https')
 const http = require('http')
 const mm = require('music-metadata')
+const quality = require('../quality')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
-const { applyPendingImportedMetadataToTrack } = require('./playlists')
+const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
 const { cacheArtistMetadata, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
@@ -284,6 +285,7 @@ async function scanFolder(folderPath) {
       } else {
         insertTrack.run(params)
       }
+      if (item.quality) quality.saveFields(db, trackId, item.quality, { fileChanged: true })
       db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
       const artistNames = splitArtists(item.artist)
       for (const name of artistNames) {
@@ -297,6 +299,7 @@ async function scanFolder(folderPath) {
         }
       }
       applyPendingImportedMetadataToTrack(db, trackId)
+      resolveGhostsByIsrc(db, trackId)
     }
   })
   const insertBatch = async (items) => {
@@ -340,7 +343,7 @@ async function scanFolder(folderPath) {
       if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
       const artwork = await extractArtwork(meta, trackId)
       const replaygain = c.replaygain_track_gain || null
-      batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain })
+      batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta) })
       if (batch.length >= BATCH) { await insertBatch(batch); batch = [] }
     } catch { scanStatus.errors++ }
     scanStatus.done++; emit('scanner:progress', { ...scanStatus })
@@ -1609,6 +1612,7 @@ async function indexSingleFile(filePath, opts = {}) {
       db.prepare(`INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, track_num, year, genre, duration, artwork_path, bitrate, last_modified, replaygain) VALUES (@id, @file_path, @file_hash, @title, @artist, @album, @album_artist, @track_num, @year, @genre, @duration, @artwork_path, @bitrate, @last_modified, @replaygain)`)
         .run(params)
     }
+    quality.saveFields(db, trackId, quality.qualityFields(meta), { fileChanged: true })
     db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
     const artistNames = splitArtists(artist)
     for (const name of artistNames) { 
@@ -1623,6 +1627,7 @@ async function indexSingleFile(filePath, opts = {}) {
       }
     }
     applyPendingImportedMetadataToTrack(db, trackId)
+    resolveGhostsByIsrc(db, trackId)
   })
   
   insertTransaction()

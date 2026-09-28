@@ -794,7 +794,7 @@ class DownloadManager {
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
       }
       const index = this.deps.index
-      if (index && (job.settings?.index_while_downloading === '1' || job.kind === 'single' || job.kind === 'soulseek')) {
+      if ((index || job.opts?.upgradeTrackId) && (job.settings?.index_while_downloading === '1' || job.kind === 'single' || job.kind === 'soulseek')) {
         await this.indexOne(job, finalPath)
       } else {
         job.pendingIndex = [...(job.pendingIndex || []), finalPath]
@@ -804,6 +804,22 @@ class DownloadManager {
   }
 
   async indexOne(job, filepath) {
+    // "Get it in lossless": this file replaces a track's file, keeping the
+    // track (playlists, likes, history). If that can't be done, it is added
+    // as a track of its own below, as usual.
+    if (job.opts?.upgradeTrackId && !job.upgradedTrackId) {
+      const { upgradeTrackFile } = require('../quality/upgrade')
+      const up = await upgradeTrackFile(this.db(), job.opts.upgradeTrackId, filepath, { storageDir: this.deps.getStorageDir?.() }).catch(e => ({ error: e.message }))
+      if (up?.id) {
+        job.upgradedTrackId = up.id
+        job.indexedTracks.push({ filepath, id: up.id, title: path.basename(filepath, path.extname(filepath)) })
+        if (up.movedTo) job.outputLines.push(`[Lokal] The previous file was moved to ${up.movedTo}`)
+        this.update(job, { message: `Upgraded in your library: ${path.basename(filepath)}` }, { persist: true })
+        try { this.deps.onLibraryUpdated?.({ id: up.id, upgraded: true }) } catch {}
+        return
+      }
+      job.outputLines.push(`[Lokal] Not used as an upgrade: ${up?.error || 'unknown error'}`)
+    }
     const index = this.deps.index
     if (!index) return
     try {
