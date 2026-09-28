@@ -276,7 +276,9 @@ export default function Settings() {
   const [lbStatus, setLbStatus] = useState(null)
   const [lbToken, setLbToken] = useState('')
   const [lbMessage, setLbMessage] = useState(null)
+  /** Reload the ListenBrainz connection status. */
   const refreshListenBrainz = () => { Promise.resolve(api.listenbrainzStatus?.()).then(s => { if (s && !s.error) setLbStatus(s) }).catch(() => {}) }
+  /** Connect ListenBrainz with the pasted token. */
   const connectListenBrainz = async () => {
     setLbMessage({ loading: true })
     const result = await api.listenbrainzConnect(lbToken.trim()).catch(e => ({ error: e.message }))

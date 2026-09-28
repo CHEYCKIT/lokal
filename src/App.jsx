@@ -1067,6 +1067,7 @@ export default function App() {
   // ListenBrainz: submitted at the same moment, under the same rule, as a
   // Last.fm scrobble (half the track or 4 minutes, at least 30 s), but tracked
   // separately so either service works without the other.
+  /** Submit a ListenBrainz listen once the track has played long enough. */
   const trySubmitListenBrainz = useCallback((track, playedSeconds) => {
     const playbackKey = lastfmPlaybackKeyRef.current
     const startedAt = lastfmPlaybackStartedAtRef.current

@@ -27,16 +27,19 @@ const COOKIE = 'lokal_api_key'
 const ONE_YEAR_S = 365 * 24 * 3600
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+/** The API_KEY from the environment, or '' when none is set. */
 function configuredKey() {
   return String(process.env.API_KEY || '').trim()
 }
 
+/** Constant-time comparison of a provided key with the configured one. */
 function sameKey(given, expected) {
   const a = crypto.createHash('sha256').update(String(given || '')).digest()
   const b = crypto.createHash('sha256').update(expected).digest()
   return crypto.timingSafeEqual(a, b)
 }
 
+/** The value of one cookie from the request, or ''. */
 function cookieValue(req, name) {
   for (const part of String(req.headers.cookie || '').split(';')) {
     const i = part.indexOf('=')
@@ -89,6 +92,7 @@ function transportAllowed(req) {
   return isHttps(req) || isLocalRequest(req)
 }
 
+/** Answer 403: the key isn't accepted over plain HTTP from outside. */
 function refuseInsecure(res) {
   res.status(403).json({ error: 'This Lokal server only accepts its API key over HTTPS from outside the local network.' })
 }

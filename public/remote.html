@@ -284,6 +284,7 @@
     // API_KEY set on the server: ask once, let the server store it as a
     // cookie, then reload.
     let askingForKey = false
+    /** Ask once for the server's API key, store it as a cookie via /api/auth, then reload. */
     async function askForApiKey() {
       if (askingForKey) return
       askingForKey = true

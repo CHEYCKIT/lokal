@@ -2,6 +2,7 @@
 const { getDB } = require('./db')
 const lb = require('../listenbrainz')
 
+/** ListenBrainz IPC for the desktop app: status, connect/disconnect, on/off, now playing, listens. */
 function registerListenBrainzHandlers(ipcMain) {
   ipcMain.handle('listenbrainz:status', () => lb.status(getDB()))
   ipcMain.handle('listenbrainz:connect', (_, token) => lb.connect(getDB(), token))

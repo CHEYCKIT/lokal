@@ -49,6 +49,7 @@ function albumTrackParams(album) {
 // server store it as a cookie (which also covers artwork and audio), then
 // reload so everything that failed without it loads.
 let apiKeyPrompt = null
+/** Ask once for the server's API key, store it as a cookie via /api/auth, then reload. */
 function askForApiKey() {
   if (!apiKeyPrompt) {
     apiKeyPrompt = (async () => {

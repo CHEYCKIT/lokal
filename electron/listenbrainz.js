@@ -15,6 +15,7 @@ const BATCH = 100
 let clientVersion = ''
 try { clientVersion = require('../package.json').version || '' } catch {}
 
+/** ListenBrainz token, username and on/off switch from the settings table. */
 function settingsOf(db) {
   const get = (key) => {
     try { return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '' } catch { return '' }
@@ -26,10 +27,12 @@ function settingsOf(db) {
   }
 }
 
+/** Write one setting. */
 function setSetting(db, key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? ''))
 }
 
+/** Call the ListenBrainz API; resolves to { status, ok, json } (status 0 when unreachable). */
 async function call(path, { token, method = 'GET', body, timeoutMs = 10000 } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -83,10 +86,12 @@ function listenOf(track, listenedAt) {
 
 // ---------------------------------------------------------------- queue
 
+/** Create the offline listen queue table if needed. */
 function ensureQueue(db) {
   db.exec('CREATE TABLE IF NOT EXISTS listenbrainz_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, listen TEXT NOT NULL, queued_at INTEGER NOT NULL)')
 }
 
+/** Queue a listen for later, keeping the queue bounded. */
 function enqueue(db, listen) {
   ensureQueue(db)
   db.prepare('INSERT INTO listenbrainz_queue (listen, queued_at) VALUES (?, ?)').run(JSON.stringify(listen), Date.now())
@@ -95,6 +100,7 @@ function enqueue(db, listen) {
   if (count > QUEUE_LIMIT) db.prepare('DELETE FROM listenbrainz_queue WHERE id IN (SELECT id FROM listenbrainz_queue ORDER BY id LIMIT ?)').run(count - QUEUE_LIMIT)
 }
 
+/** How many listens are waiting to be sent. */
 function queuedCount(db) {
   try { ensureQueue(db); return db.prepare('SELECT COUNT(*) AS n FROM listenbrainz_queue').get().n } catch { return 0 }
 }
@@ -149,6 +155,7 @@ function flushQueue(db, token) {
 
 // ---------------------------------------------------------------- actions
 
+/** Check a token and, if valid, save it and switch ListenBrainz on. */
 async function connect(db, token) {
   const result = await validateToken(token)
   if (!result.valid) return { error: result.error }
@@ -158,6 +165,7 @@ async function connect(db, token) {
   return { ok: true, username: result.username }
 }
 
+/** Forget the token and drop any queued listens. */
 function disconnect(db) {
   setSetting(db, 'listenbrainz_token', '')
   setSetting(db, 'listenbrainz_username', '')
@@ -166,11 +174,13 @@ function disconnect(db) {
   return { ok: true }
 }
 
+/** Connection state for Settings: connected, username, on/off, queued count. */
 function status(db) {
   const s = settingsOf(db)
   return { connected: !!s.token, username: s.username, enabled: s.enabled, queued: queuedCount(db) }
 }
 
+/** Send a "playing now" listen. */
 async function nowPlaying(db, track) {
   const s = settingsOf(db)
   if (!s.enabled || !s.token) return { skipped: true, reason: 'ListenBrainz is off' }
@@ -181,6 +191,7 @@ async function nowPlaying(db, track) {
   return { error: r.error || r.json?.error || `ListenBrainz answered ${r.status}` }
 }
 
+/** Submit a finished listen; queued if ListenBrainz can't take it right now. */
 async function submitListen(db, track, listenedAt) {
   const s = settingsOf(db)
   if (!s.enabled || !s.token) return { skipped: true, reason: 'ListenBrainz is off' }

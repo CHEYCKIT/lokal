@@ -30,6 +30,7 @@ const DEFAULT_KEEP_COMMA = [
   'syd barrett', 'pete & bas', 'pe & ne',
 ]
 
+/** Artist names that contain a comma but are one artist (defaults plus the user's list). */
 function keepCommaArtists(db) {
   const keep = new Set(DEFAULT_KEEP_COMMA)
   try {
@@ -57,6 +58,7 @@ function sign(params, secret) {
   return crypto.createHash('md5').update(str, 'utf8').digest('hex')
 }
 
+/** Last.fm credentials and switches from the settings table. */
 function settingsOf(db) {
   const get = (key) => { try { return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '' } catch { return '' } }
   return {
@@ -93,8 +95,10 @@ async function signedCall(method, params, { apiKey, apiSecret }, timeoutMs = 150
 }
 
 const NO_ALBUM = /^\s*(?:unknown album|unknown)?\s*$/i
+/** The album to send, or '' for a missing or placeholder album. */
 const albumOf = (album) => { const a = String(album || '').trim(); return a && !NO_ALBUM.test(a) ? a : '' }
 
+/** A readable message for a Last.fm error response. */
 function describeError(json) {
   if (json?.error === 9) return 'Last.fm session expired (reconnect in Settings).'
   if (json?.error === 13) return 'Last.fm rejected the request signature (check the API secret).'
@@ -103,10 +107,12 @@ function describeError(json) {
 
 // ---------------------------------------------------------------- queue
 
+/** Create the offline scrobble queue table if needed. */
 function ensureQueue(db) {
   db.exec('CREATE TABLE IF NOT EXISTS lastfm_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, scrobble TEXT NOT NULL, queued_at INTEGER NOT NULL)')
 }
 
+/** Queue a scrobble for later, keeping the queue bounded. */
 function enqueue(db, scrobble) {
   ensureQueue(db)
   db.prepare('INSERT INTO lastfm_queue (scrobble, queued_at) VALUES (?, ?)').run(JSON.stringify(scrobble), Date.now())
@@ -114,6 +120,7 @@ function enqueue(db, scrobble) {
   if (n > QUEUE_LIMIT) db.prepare('DELETE FROM lastfm_queue WHERE id IN (SELECT id FROM lastfm_queue ORDER BY id LIMIT ?)').run(n - QUEUE_LIMIT)
 }
 
+/** How many scrobbles are waiting to be sent. */
 function queuedCount(db) {
   try { ensureQueue(db); return db.prepare('SELECT COUNT(*) AS n FROM lastfm_queue').get().n } catch { return 0 }
 }
@@ -164,6 +171,7 @@ function flushQueue(db) {
 
 // ---------------------------------------------------------------- actions
 
+/** Tell Last.fm what's playing now. */
 async function updateNowPlaying(db, { artist, track, album, duration }) {
   const s = settingsOf(db)
   if (!s.enabled) return { skipped: true, reason: 'Last.fm disabled' }
@@ -179,6 +187,7 @@ async function updateNowPlaying(db, { artist, track, album, duration }) {
   return { ok: true }
 }
 
+/** Scrobble a play; queued if Last.fm can't take it right now. */
 async function scrobble(db, { artist, track, album, duration, timestamp }) {
   const s = settingsOf(db)
   if (!s.enabled) return { skipped: true, reason: 'Last.fm disabled' }
