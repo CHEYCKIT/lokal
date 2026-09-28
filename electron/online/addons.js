@@ -25,6 +25,11 @@ const SEARCH_TTL_MS = 5 * 60 * 1000
 const STREAM_TTL_MS = 20 * 60 * 1000
 const ADAPTIVE = /\.(mpd|m3u8)(?:$|[?#])/i
 
+// Lokal says who it is (like BitChord's "BitChord"), so an addon's author can
+// allow it; it never pretends to be another app.
+let USER_AGENT = 'Lokal'
+try { USER_AGENT = `Lokal/${require('../../package.json').version}` } catch {}
+
 const searchCache = new Map() // `${key}\n${query}` -> { at, results }
 const streamCache = new Map() // `${key}\n${id}` -> stream
 const resolving = new Map()
@@ -68,7 +73,7 @@ async function getJson(url, { timeoutMs, fetchImpl = fetch } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs || 10000)
   try {
-    const res = await fetchImpl(url, { headers: { Accept: 'application/json' }, redirect: 'follow', signal: controller.signal })
+    const res = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }, redirect: 'follow', signal: controller.signal })
     const text = await res.text()
     if (text.length > MAX_BYTES) throw new Error('The addon sent too much data.')
     let json = null
