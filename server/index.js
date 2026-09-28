@@ -20,6 +20,11 @@ if (fs.existsSync(distPath)) app.use(express.static(distPath))
 const publicPath = path.join(__dirname, '../public')
 if (fs.existsSync(publicPath)) app.use(express.static(publicPath))
 
+// API_KEY in .env: every /api route below needs it (see apiKey.js).
+const { requireApiKey, authRoute } = require('./apiKey')
+app.use('/api', requireApiKey)
+app.post('/api/auth', authRoute)
+
 
 app.use('/api/tracks', require('./routes/tracks'))
 const artistsRouter = require('./routes/artists')

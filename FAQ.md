@@ -46,7 +46,7 @@ Open the fullscreen lyrics view and use the Search button in the top right. You 
 
 **Does web mode expose my library to the internet?**
 
-Only if you explicitly port forward or use a tunnel. By default the web server only listens on your local network (`localhost:3421`). If you expose it externally, set an `API_KEY` in your `.env` file — any request without the matching header will be rejected.
+Only if you explicitly port forward or use a tunnel. By default the web server only listens on your local network (`localhost:3421`). If you expose it externally, set an `API_KEY` in your `.env` file — any API request without it is rejected. The web app asks for the key once per browser; scripts and other clients send it in an `x-api-key` header.
 
 ---
 

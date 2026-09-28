@@ -171,7 +171,7 @@ If you want to access your library from another device (e.g. devices on the go/l
    - Windows: `C:\Users\<you>\AppData\Roaming\lokal-music\data`
    - macOS: `~/Library/Application Support/lokal-music/data`
    - Linux: `~/.config/lokal-music/data`
-3. Optionally set `API_KEY` to a random string to protect remote access
+3. Optionally set `API_KEY` to a random string to protect remote access: every `/api` request then needs it. The web app asks for it once per browser (it's kept in a cookie); other clients send it as an `x-api-key` header
 4. Run `npm run dev:web`
 
 ---

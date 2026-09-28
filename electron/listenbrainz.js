@@ -130,6 +130,10 @@ function flushQueue(db, token) {
       // by one, dropping only the ones it refuses on their own.
       let stopped = false
       for (const p of good) {
+        // Same check as before each batch: ListenBrainz may have been switched
+        // off or reconnected with another token while these were being sent.
+        const now = settingsOf(db)
+        if (!now.enabled || !now.token || now.token !== token) { stopped = true; break }
         const one = await call('/submit-listens', { token, method: 'POST', body: { listen_type: 'import', payload: [p.listen] } })
         if (one.ok) { remove([p.id]); sent++; continue }
         if (one.status === 400) { remove([p.id]); continue } // never accepted as it is

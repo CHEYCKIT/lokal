@@ -45,6 +45,30 @@ function albumTrackParams(album) {
   return new URLSearchParams(Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')))
 }
 
+// Web mode with API_KEY set on the server: ask for the key once, let the
+// server store it as a cookie (which also covers artwork and audio), then
+// reload so everything that failed without it loads.
+let apiKeyPrompt = null
+function askForApiKey() {
+  if (!apiKeyPrompt) {
+    apiKeyPrompt = (async () => {
+      let message = 'This Lokal server is protected. Enter its API key:'
+      for (;;) {
+        const key = window.prompt(message)
+        if (!key) return false
+        const res = await fetch(BASE + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key }),
+        }).catch(() => null)
+        if (res?.ok) { window.location.reload(); return true }
+        message = 'That key was not accepted. Enter the API key:'
+      }
+    })()
+  }
+  return apiKeyPrompt
+}
+
 async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(BASE + path, {
@@ -52,6 +76,11 @@ async function apiFetch(path, opts = {}) {
       ...opts,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     })
+    if (res.status === 401) {
+      const body = await res.json().catch(() => ({}))
+      if (body.needsApiKey) askForApiKey()
+      return { error: body.error || 'Not authorized' }
+    }
     if (!res.ok) return { error: (await res.json().catch(() => ({}))).error || 'Request failed' }
     return res.json()
   } catch (e) { return { error: e.message } }
