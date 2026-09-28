@@ -73,8 +73,15 @@ function isLocalRequest(req) {
   return !forwarded || isLocalAddress(forwarded)
 }
 
+/**
+ * HTTPS here, or at a proxy/tunnel on this machine or network that says so.
+ * X-Forwarded-Proto is only believed from such a proxy: a client connecting
+ * directly could send it itself.
+ */
 function isHttps(req) {
-  return !!req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'
+  if (req.secure) return true
+  if (!isLocalAddress(req.socket?.remoteAddress)) return false
+  return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https'
 }
 
 /** The key may only be used over HTTPS, or over HTTP from the local network. */
