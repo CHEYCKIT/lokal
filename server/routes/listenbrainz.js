@@ -3,6 +3,17 @@ const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
 const lb = require('../../electron/listenbrainz')
 
+// Listens queued while offline: try once shortly after start-up, then keep
+// retrying while the web server is running even when playback is idle.
+setTimeout(() => {
+  try {
+    const db = getDB()
+    lb.startQueueRetry(db)
+    const s = lb.settingsOf(db)
+    if (s.enabled && s.token) lb.flushQueue(db, s.token).catch(() => {})
+  } catch {}
+}, 15000)
+
 router.get('/status', (req, res) => res.json(lb.status(getDB())))
 router.post('/connect', async (req, res) => res.json(await lb.connect(getDB(), req.body?.token)))
 router.post('/disconnect', (req, res) => res.json(lb.disconnect(getDB())))

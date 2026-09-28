@@ -13,11 +13,14 @@ function registerListenBrainzHandlers(ipcMain) {
   })
   ipcMain.handle('listenbrainz:nowPlaying', (_, track) => lb.nowPlaying(getDB(), track).catch(e => ({ error: e.message })))
   ipcMain.handle('listenbrainz:submit', (_, track, listenedAt) => lb.submitListen(getDB(), track, listenedAt).catch(e => ({ error: e.message })))
-  // Listens queued while offline: try once shortly after start-up.
+  // Listens queued while offline: try once shortly after start-up,
+  // then keep retrying while the desktop app is running.
   setTimeout(() => {
     try {
-      const s = lb.settingsOf(getDB())
-      if (s.enabled && s.token) lb.flushQueue(getDB(), s.token).catch(() => {})
+      const db = getDB()
+      lb.startQueueRetry(db)
+      const s = lb.settingsOf(db)
+      if (s.enabled && s.token) lb.flushQueue(db, s.token).catch(() => {})
     } catch {}
   }, 15000)
 }

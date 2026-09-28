@@ -23,7 +23,8 @@ function settings() {
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
   const all = settings()
-  const cookies = cookieArgs(all)
+  // Only YouTube streams go through yt-dlp with cookies.
+  const cookies = cookieArgs(all, { url: 'https://music.youtube.com/' })
   return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: ytdlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
