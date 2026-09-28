@@ -989,8 +989,12 @@ export default function App() {
 
   /** Look up the next song's stream ahead of time, so it starts without the yt-dlp wait. */
   const prepareNextStream = useCallback(() => {
-    const { queue, queueIndex } = usePlayerStore.getState()
-    const next = Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
+    // The track that plays next, from the queue playback follows (the
+    // shuffled one while shuffle is on).
+    const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = usePlayerStore.getState()
+    const next = shuffle && Array.isArray(shuffleQueue) && shuffleQueue.length
+      ? shuffleQueue[(shuffleIndex ?? -1) + 1]
+      : Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
     const ref = streamRef(next)
     if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
   }, [])
@@ -1296,10 +1300,17 @@ export default function App() {
         cancelCrossfade()
         try { fadeInEl.removeAttribute('src'); fadeInEl.load() } catch {}
         if (outcome === 'ended') {
-          // Its "ended" was ignored while the crossfade was pending.
+          // Its "ended" was ignored while the crossfade was pending: do what
+          // it would have done (repeat one plays the track again).
           stopTimer()
           flushTime(currentTrackRef.current?.id)
-          autoNext()
+          if (usePlayerStore.getState().repeat === 'one') {
+            beginLastfmPlayback(currentTrackRef.current)
+            fadeOutEl.currentTime = 0
+            fadeOutEl.play().catch(() => {})
+          } else {
+            autoNext()
+          }
         }
         return
       }
