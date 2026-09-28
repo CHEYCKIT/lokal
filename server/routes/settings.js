@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const { getDB, importAppData, resetAppData } = require('../../electron/ipc/db')
 const { scanFolder, DEFAULT_MUSIC_PATH } = require('../../electron/ipc/scanner')
+const { syncPastedCookie } = require('../../electron/ipc/ytCookies')
 const fs = require('fs-extra')
 const path = require('path')
 
@@ -64,6 +65,7 @@ router.put('/', (req, res) => {
     if (SECRET_KEYS.has(k) && String(v) === SECRET_PLACEHOLDER) continue
     stmt.run(k, String(v))
   }
+  syncPastedCookie(Object.fromEntries(getDB().prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value])))
   res.json({ ok: true })
 })
 

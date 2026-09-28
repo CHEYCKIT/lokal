@@ -49,6 +49,8 @@ const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const YTDLP_DISMISS_KEY = 'lokal-ytdlp-version-dismissed'
 // A scrobble / listen that wasn't sent is tried again after this long (not every second).
 const SCROBBLE_RETRY_MS = 30 * 1000
+// How long a crossfade waits for the next track (a stream may start slowly).
+const CROSSFADE_READY_TIMEOUT_MS = 15 * 1000
 
 function formatRelativeDays(days) {
   if (!Number.isFinite(days) || days <= 0) return 'up to date'
@@ -1255,17 +1257,43 @@ export default function App() {
     fadeInEl.src = encodedSrc
     fadeInEl.load()
 
+    // The current track stays the active one until the next one can play
+    // (a stream can take several seconds to start). If it can't -- it fails,
+    // or doesn't get ready in time -- the crossfade is called off and the
+    // current track plays out; if the current track ends first, the next one
+    // is played the usual way, without a crossfade.
     const waitForCanplay = new Promise((resolve) => {
-      const onReady = () => {
+      let timer = null
+      const done = (outcome) => {
         fadeInEl.removeEventListener('canplay', onReady)
-        resolve()
+        fadeInEl.removeEventListener('error', onFailed)
+        fadeOutEl.removeEventListener('ended', onEnded)
+        clearTimeout(timer)
+        resolve(outcome)
       }
+      const onReady = () => done('ready')
+      const onFailed = () => done('failed')
+      const onEnded = () => done('ended')
       fadeInEl.addEventListener('canplay', onReady)
-      setTimeout(resolve, 1500)
+      fadeInEl.addEventListener('error', onFailed)
+      fadeOutEl.addEventListener('ended', onEnded)
+      timer = setTimeout(() => done('timeout'), CROSSFADE_READY_TIMEOUT_MS)
     })
 
-    waitForCanplay.then(() => {
+    waitForCanplay.then((outcome) => {
       if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
+
+      if (outcome !== 'ready') {
+        cancelCrossfade()
+        try { fadeInEl.removeAttribute('src'); fadeInEl.load() } catch {}
+        if (outcome === 'ended') {
+          // Its "ended" was ignored while the crossfade was pending.
+          stopTimer()
+          flushTime(currentTrackRef.current?.id)
+          autoNext()
+        }
+        return
+      }
 
       flushTime(currentTrackRef.current?.id)
 
@@ -1286,9 +1314,7 @@ export default function App() {
       })
       beginLastfmPlayback(nextTrack)
 
-      if (fadeInEl.readyState >= 2) {
-        fadeInEl.play().catch(() => {})
-      }
+      fadeInEl.play().catch(() => {})
 
       const rampNow = ctx.currentTime
       fadeOutGain.gain.cancelScheduledValues(rampNow)
@@ -1324,7 +1350,7 @@ export default function App() {
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, cfDuration * 1000)
     })
-  }, [flushTime, setActiveAudioElement, beginLastfmPlayback])
+  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
   useEffect(() => {
     if (isCrossfadingRef.current) {

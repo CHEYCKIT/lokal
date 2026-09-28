@@ -176,9 +176,11 @@ function streamError(text) {
 //          yt-dlp would otherwise prefer Opus over AAC whatever the bitrate)
 //   saver  the smallest Opus stream (~50-70 kbps)
 const QUALITY_ARGS = {
-  // (direct https formats only: the player can't use HLS/DASH manifests)
-  best: ['-f', 'bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio', '-S', 'abr'],
-  saver: ['-f', 'worstaudio[acodec=opus][protocol=https]/worstaudio[protocol=https]/worstaudio'],
+  // Direct HTTP(S) formats only, fallbacks included: the player can't use HLS
+  // or DASH manifests, so none of them may pick one. The last resort is a
+  // direct file with audio in it (a small muxed video) rather than a manifest.
+  best: ['-f', 'bestaudio[protocol=https]/bestaudio[protocol=http]/best[acodec!=none][protocol=https]', '-S', 'abr'],
+  saver: ['-f', 'worstaudio[acodec=opus][protocol=https]/worstaudio[protocol=https]/worstaudio[protocol=http]/worst[acodec!=none][protocol=https]'],
 }
 
 function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {

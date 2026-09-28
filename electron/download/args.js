@@ -64,7 +64,7 @@ function isYouTube(url) {
  * @returns {{ args: string[], cookies: { args, notes, usedBrowser } }}
  */
 function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [] }) {
-  const cookies = cookieArgs(settings, { withoutCookies })
+  const cookies = cookieArgs(settings, { withoutCookies, url })
   const args = [
     ...audioArgs(format),
     '--embed-thumbnail',
