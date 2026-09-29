@@ -493,7 +493,9 @@ export default function LyricsPanel({
   useEffect(() => {
     setSearchOpen(false)
     const cached = trackKey != null && lyricsCache.has(trackKey)
-    setResult(cached ? lyricsCache.get(trackKey) : null); setFocusIdx(-1); lastScrollIdx.current = -1
+    // Cached: its lines show right away (even if the previous song was still
+    // loading); otherwise the loading state until this song's answer.
+    setResult(cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
     setTranslation({ state: 'idle', lines: null }); setRomanization({ state: 'idle', lines: null })
     load({}, cached)
   }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
