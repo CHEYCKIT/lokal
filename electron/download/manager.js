@@ -213,6 +213,7 @@ class DownloadManager {
         finishedAt: data.finishedAt || null,
         output: data.output || '',
         seen: data.seen !== false,
+        removed: !!data.removed,
       })
       if (ACTIVE.has(row.status)) {
         job.status = 'queued'
@@ -314,6 +315,7 @@ class DownloadManager {
       createdAt: job.createdAt,
       finishedAt: job.finishedAt || null,
       seen: !!job.seen,
+      removed: !!job.removed,
     }
   }
 
@@ -454,6 +456,24 @@ class DownloadManager {
     return { success: true }
   }
 
+  /**
+   * Songs deleted from the library: a finished download no longer counts as
+   * saved once all of its songs are gone, so it can be downloaded again.
+   */
+  forgetTracks(trackIds) {
+    const gone = new Set((trackIds || []).filter(Boolean))
+    if (!gone.size) return 0
+    let changed = 0
+    for (const job of this.jobs.values()) {
+      if (ACTIVE.has(job.status) || !job.indexedTracks?.some(t => gone.has(t.id))) continue
+      const indexedTracks = job.indexedTracks.filter(t => !gone.has(t.id))
+      const removed = indexedTracks.length === 0
+      this.update(job, { indexedTracks, removed, ...(removed ? { message: 'Deleted from your library' } : {}) }, { persist: true, force: true })
+      changed++
+    }
+    return changed
+  }
+
   clearFinished() {
     let count = 0
     for (const job of [...this.jobs.values()]) {
@@ -476,7 +496,7 @@ class DownloadManager {
     this.update(job, {
       status: 'queued', message: 'Queued', error: null, progress: 0, speed: null, eta: null,
       attempt: 0, finishedAt: null, retryAt: null, withoutCookies: false, stop: null, seen: false,
-      triedToolUpdate: false, triedClients: false, extraArgs: null, waitingForTools: false,
+      triedToolUpdate: false, triedClients: false, extraArgs: null, waitingForTools: false, removed: false,
     }, { persist: true })
     this.pump()
     return { downloadId: job.id, queued: true }
@@ -851,7 +871,7 @@ class DownloadManager {
         job.upgradedTrackId = up.id
         job.indexedTracks.push({ filepath, id: up.id, title: path.basename(filepath, path.extname(filepath)) })
         if (up.movedTo) job.outputLines.push(`[Lokal] The previous file was moved to ${up.movedTo}`)
-        this.update(job, { message: `Upgraded in your library: ${path.basename(filepath)}` }, { persist: true })
+        this.update(job, { message: `Upgraded in your library: ${path.basename(filepath)}`, removed: false }, { persist: true })
         try { this.deps.onLibraryUpdated?.({ id: up.id, upgraded: true }) } catch {}
         return
       }
@@ -864,7 +884,7 @@ class DownloadManager {
       const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
       if (result?.id) {
         job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
-        this.update(job, { message: `Added to library: ${path.basename(filepath)}` })
+        this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false })
         // No cover inside the file (common on Soulseek, where the art is a
         // separate cover.jpg in the uploader's folder): use the one the
         // library just found for the track (online artwork), so the row in

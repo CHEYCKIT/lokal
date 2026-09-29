@@ -9,7 +9,7 @@ const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
-const { removeTrackFiles } = require('./trackFiles')
+const { removeTrackFiles, forgetDownloads } = require('./trackFiles')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
@@ -1815,7 +1815,7 @@ function registerExtraHandlers(ipcMain) {
     const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
     return buildPossibleDuplicateGroups(tracks)
   })
-  ipcMain.handle('scanner:deleteTrack', async (_, trackId) => { const db = getDB(); const filePath = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)?.file_path; db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId); return { success: true, files: await removeTrackFiles(db, [filePath]) } })
+  ipcMain.handle('scanner:deleteTrack', async (_, trackId) => { const db = getDB(); const filePath = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)?.file_path; db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId); forgetDownloads([trackId]); return { success: true, files: await removeTrackFiles(db, [filePath]) } })
   ipcMain.handle('scanner:deleteTrackByPath', async (_, filePath) => { 
     const db = getDB()
     const track = db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(filePath)
@@ -1830,6 +1830,7 @@ function registerExtraHandlers(ipcMain) {
     db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
     try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
+    forgetDownloads([trackId])
     return { success: true, trackId, files: await removeTrackFiles(db, [filePath]) }
   })
 }
@@ -1954,7 +1955,7 @@ function registerV4Handlers(ipcMain) {
     const rows = getDB().prepare(`${albumRowsQuery("AND (album LIKE ? OR album_artist LIKE ? OR artist LIKE ?)")} ORDER BY album ASC`).all(term, term, term)
     return enrichAlbumRows(rows)
   })
-  ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })
+  ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); forgetDownloads(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })
   ipcMain.handle('scanner:mergeDuplicates', (_, keepId, removeIds) => {
     const db = getDB()
     const merge = db.transaction(() => {

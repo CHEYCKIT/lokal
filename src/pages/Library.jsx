@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
+import ScanBanner from '../components/ScanBanner'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 
@@ -110,6 +111,8 @@ export default function Library() {
         </div>
       </div>
 
+      <ScanBanner />
+
       {tracks.length > 0 && view === 'list' && (
         <>
           <div className="flex items-center justify-between">
@@ -156,7 +159,7 @@ export default function Library() {
       {loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
-          <p>No tracks yet — scan your music folder from Home.</p>
+          <p>No tracks yet — pick your music folder above.</p>
         </div>
       )}
     </div>

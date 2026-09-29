@@ -1,65 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Music, RefreshCw, ScanLine, Play, Clock, Sparkles, Radio, History } from 'lucide-react'
+import { Music, Play, Clock, Sparkles, Radio, History } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
 import SectionSwap from '../components/SectionSwap'
-import { api, peekSettings } from '../api'
+import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
-
-function ScanBanner({ onScan }) {
-  // From the settings already read, so the folder doesn't show "Not set" first.
-  const [folder, setFolder] = useState(() => peekSettings()?.music_folder || '')
-  const [folderKnown, setFolderKnown] = useState(() => !!peekSettings())
-  const [progress, setProgress] = useState(null)
-
-  useEffect(() => {
-    api.getSettings().then(s => { if (s?.music_folder) setFolder(s.music_folder) }).catch(() => {}).finally(() => setFolderKnown(true))
-    const unsub = api.onScanProgress((_, data) => {
-      setProgress(data)
-      if (data.complete) { onScan?.(); setTimeout(() => setProgress(null), 3000) }
-    })
-    return () => { if (typeof unsub === 'function') unsub() }
-  }, [])
-
-  const scan = async () => {
-    let f = folder
-    if (api.isElectron) f = (await api.openFolder()) || folder
-    if (!f) f = 'C:\\Users\\sipbuu\\Music'
-    setFolder(f)
-    api.scanFolder(f)
-  }
-
-  return (
-    <div className="bg-elevated border border-border rounded-xl p-4 flex items-center justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-white">Music Folder</p>
-        <p className="text-xs text-muted mt-0.5 font-display truncate">{folder || (folderKnown ? 'Not set' : '\u00a0')}</p>
-        {progress && !progress.complete && (
-          <div className="mt-2 space-y-1">
-            <p className="text-xs text-accent">Scanning… {progress.done}/{progress.total} · {progress.skipped || 0} skipped</p>
-            <div className="h-0.5 bg-border rounded-full w-48 overflow-hidden">
-              <motion.div className="h-full bg-accent rounded-full" animate={{ width: progress.total ? `${(progress.done / progress.total) * 100}%` : '0%' }} />
-            </div>
-          </div>
-        )}
-        {progress?.complete && <p className="text-xs text-accent mt-1">✓ {progress.done - (progress.skipped || 0)} tracks indexed</p>}
-      </div>
-      <div className="flex gap-2 flex-shrink-0">
-        {folder && (
-          <button onClick={() => api.scanFolder(folder).then(onScan)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted hover:text-white transition-colors">
-            <RefreshCw size={12} /> Rescan
-          </button>
-        )}
-        <button onClick={scan} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-base text-xs font-medium hover:bg-accent/80 transition-colors">
-          <ScanLine size={12} /> {folder ? 'Change' : 'Select Folder'}
-        </button>
-      </div>
-    </div>
-  )
-}
 
 function MixCard({ mix, onClick }) {
   const artSrc = (t) => t.artwork_path
@@ -175,7 +123,6 @@ function HomeContent({ user }) {
         <p className="text-sm text-muted mt-1">Here's what's happening with your music</p>
       </div>
 
-      <ScanBanner onScan={load} />
 
       <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">
         {[['home', 'Home'], ['history', 'History']].map(([id, label]) => (
@@ -256,7 +203,7 @@ function HomeContent({ user }) {
             <div className="text-center py-24 text-muted">
               <Music size={48} className="mx-auto mb-4 opacity-20" />
               <p className="font-medium">No tracks yet</p>
-              <p className="text-sm mt-1 opacity-60">Scan your music folder above.</p>
+              <p className="text-sm mt-1 opacity-60">Pick your music folder in Library.</p>
             </div>
           )}
         </>

@@ -30,7 +30,8 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   // The download job: by its URL (YouTube, SoundCloud), or by the id we got
   // back when starting it (addon links change on every request).
   const [jobId, setJobId] = useState(null)
-  const job = useDownloads(s => s.jobs.find(j => (url && j.url === url) || (jobId && j.id === jobId)) || null)
+  // A finished download whose song was deleted since doesn't count: it can be saved again.
+  const job = useDownloads(s => s.jobs.find(j => !j.removed && ((url && j.url === url) || (jobId && j.id === jobId))) || null)
   const [requested, setRequested] = useState(false)
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }

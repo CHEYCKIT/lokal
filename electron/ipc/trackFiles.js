@@ -57,4 +57,12 @@ async function removeTrackFiles(db, filePaths) {
   return result
 }
 
-module.exports = { removeTrackFiles, deleteFilesEnabled, isInside }
+/**
+ * Tells the download queue these songs are gone, so a finished download of
+ * them stops showing as saved (and can be downloaded again).
+ */
+function forgetDownloads(trackIds) {
+  try { require('../download/manager').getDownloadManager().forgetTracks(trackIds) } catch {}
+}
+
+module.exports = { removeTrackFiles, forgetDownloads, deleteFilesEnabled, isInside }
