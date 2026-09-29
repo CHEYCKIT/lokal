@@ -165,6 +165,48 @@ function sourceIdentity(url) {
   return trackId ? `sc:${trackId}` : null
 }
 
+// ------------------------------------------------------ the same song, streamed
+// Liking (or adding to a playlist) a streamed song, then downloading it from
+// anywhere else (another result, an addon, Soulseek, the Download page) left
+// both copies in likes and playlists. These find a new file's streamed twins:
+// same title and lead artist, lengths within a few seconds. Noise such as
+// "(Official Video)" or "(feat. …)" is ignored; "(Remix)", "(Live)", "(… Edit)"
+// are not, so a remix is never taken for the original.
+const NOISE_TAG = /^(?:official\b.*|lyrics?(?: video)?|lyric video|audio|video|music video|visuali[sz]er|hd|hq|4k|mv|explicit|clean|remaster(?:ed)?(?: \d{4})?|\d{4} remaster(?:ed)?|(?:feat|ft|featuring|with)\b.*)$/i
+const TWIN_DURATION_SLACK_S = 5
+
+const plainKey = (s) => String(s || '').toLowerCase().replace(/['’`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+function titleKey(title) {
+  return plainKey(String(title || '').replace(/\s*[([]([^()[\]]*)[)\]]/g, (group, inner) => (NOISE_TAG.test(inner.trim()) ? '' : group)))
+}
+
+function leadArtistKey(artist) {
+  const lead = String(artist || '').split(/\s+(?:feat\.?|ft\.?|featuring|with|x|vs\.?)\s+|\s+&\s+|,\s*/i)[0]
+  return plainKey(lead.replace(/\s*-\s*topic$/i, ''))
+}
+
+/** Ids of liked or playlisted streamed tracks that are the same song as `track`. */
+function streamedTwins(db, track) {
+  const artist = leadArtistKey(track?.artist)
+  // "Artist - Song" video titles carry the artist: compare the song part.
+  const songOf = (key, who) => (key.startsWith(`${who} `) ? key.slice(who.length + 1) : key)
+  const song = songOf(titleKey(track?.title), artist)
+  if (!artist || !song) return []
+  const ghosts = db.prepare(`
+    SELECT id, title, artist, duration FROM tracks
+    WHERE file_path LIKE 'ghost://%'
+      AND (id IN (SELECT track_id FROM user_likes) OR id IN (SELECT track_id FROM playlist_tracks))
+  `).all()
+  const length = Number(track.duration) || 0
+  return ghosts.filter(ghost => {
+    if (leadArtistKey(ghost.artist) !== artist) return false
+    if (songOf(titleKey(ghost.title), artist) !== song) return false
+    const other = Number(ghost.duration) || 0
+    return !(length && other && Math.abs(length - other) > TWIN_DURATION_SLACK_S)
+  }).map(ghost => ghost.id)
+}
+
 /**
  * Keep online songs as ghost tracks, so they can be played, liked and added
  * to playlists. Returns the track rows (null for unusable items), in order.
@@ -236,5 +278,5 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
 module.exports = {
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
-  onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks,
+  onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks, streamedTwins,
 }
