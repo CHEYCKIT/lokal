@@ -251,7 +251,7 @@ export default function Albums() {
 
   const loadAlbums = () => {
     if (!albums.length) setLoadingAlbums(true)
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => ({}))]).then(([result, loadedSettings]) => {
+    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(([result, loadedSettings]) => {
       if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
       if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
       setLoadingAlbums(false)
@@ -260,7 +260,7 @@ export default function Albums() {
 
   useEffect(() => {
     let active = true
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => ({}))]).then(([result, loadedSettings]) => {
+    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(([result, loadedSettings]) => {
       if (!active) return
       if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
       if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
