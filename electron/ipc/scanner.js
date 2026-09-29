@@ -9,7 +9,8 @@ const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
-const { cacheArtistMetadata, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
+const { removeTrackFiles } = require('./trackFiles')
+const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
 const DEFAULT_MUSIC_PATH = 'C:\\Users\\sipbuu\\Music'
@@ -1117,9 +1118,18 @@ function registerScannerHandlers(ipcMain) {
       const enabled = db.prepare("SELECT value FROM settings WHERE key = 'auto_fetch_artist_metadata'").get()?.value === '1'
       if (!enabled) return addArtistFallback(db, artist)
     }
+    // overwrite: replace what was fetched before (Manage > Lookup > auto match);
+    // otherwise only what's missing is filled in.
+    if (opts?.overwrite === true) {
+      await refreshArtistMetadata(db, artist, { source: opts.source })
+      return addArtistFallback(db, findArtistById(db, artistId) || artist)
+    }
     const refreshed = await cacheArtistMetadata(db, artist, opts || {})
     return addArtistFallback(db, refreshed)
   })
+  ipcMain.handle('artists:refreshAllMetadata', (_, opts = {}) => startRefreshAll(getDB(), { source: opts?.source }))
+  ipcMain.handle('artists:refreshAllStatus', () => refreshAllStatus())
+  ipcMain.handle('artists:refreshAllCancel', () => cancelRefreshAll())
   ipcMain.handle('artist:searchMetadata', async (_, query, opts = {}) => searchArtistMetadataCandidates(query, opts || {}))
   ipcMain.handle('artist:applyMetadataSelection', async (_, artistId, selection, mode) => {
     const db = getDB()
@@ -1742,8 +1752,8 @@ function registerExtraHandlers(ipcMain) {
     const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
     return buildPossibleDuplicateGroups(tracks)
   })
-  ipcMain.handle('scanner:deleteTrack', (_, trackId) => { const db = getDB(); db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId) })
-  ipcMain.handle('scanner:deleteTrackByPath', (_, filePath) => { 
+  ipcMain.handle('scanner:deleteTrack', async (_, trackId) => { const db = getDB(); const filePath = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)?.file_path; db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId); return { success: true, files: await removeTrackFiles(db, [filePath]) } })
+  ipcMain.handle('scanner:deleteTrackByPath', async (_, filePath) => { 
     const db = getDB()
     const track = db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(filePath)
     if (!track) return { error: 'Track not found' }
@@ -1756,7 +1766,7 @@ function registerExtraHandlers(ipcMain) {
     db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId)
     db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
     db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
-    return { success: true, trackId }
+    return { success: true, trackId, files: await removeTrackFiles(db, [filePath]) }
   })
 }
 
@@ -1880,7 +1890,7 @@ function registerV4Handlers(ipcMain) {
     const rows = getDB().prepare(`${albumRowsQuery("AND (album LIKE ? OR album_artist LIKE ? OR artist LIKE ?)")} ORDER BY album ASC`).all(term, term, term)
     return enrichAlbumRows(rows)
   })
-  ipcMain.handle('scanner:deleteTracks', (_, ids) => { const db = getDB(); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids) })
+  ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })
   ipcMain.handle('scanner:mergeDuplicates', (_, keepId, removeIds) => {
     const db = getDB()
     const merge = db.transaction(() => {

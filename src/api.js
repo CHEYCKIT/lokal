@@ -141,6 +141,10 @@ export const api = {
   artistSetImage: (id, d) => isE() ? el().artistSetImage(id, d) : apiFetch(`/artists/${id}/image`, { method:'PUT', body:{imageData:d} }),
   artistSetImageUrl: (id, url) => isE() ? el().artistSetImageUrl(id, url) : apiFetch(`/artists/${id}/image-url`, { method:'PUT', body:{url} }),
   artistRefreshMetadata: (id, opts = {}) => isE() ? el().artistRefreshMetadata(id, opts) : apiFetch(`/artists/${id}/refresh-metadata`, { method:'POST', body: opts }),
+  // Refresh every artist's bio and picture from a provider (a background job; poll its status).
+  artistsRefreshAllMetadata: (opts = {}) => isE() ? el().artistsRefreshAllMetadata(opts) : apiFetch('/artists/refresh-all', { method:'POST', body: opts }),
+  artistsRefreshAllStatus: () => isE() ? el().artistsRefreshAllStatus() : apiFetch('/artists/refresh-all'),
+  artistsRefreshAllCancel: () => isE() ? el().artistsRefreshAllCancel() : apiFetch('/artists/refresh-all', { method:'DELETE' }),
   artistSearchMetadata: (query, opts = {}) => isE()
     ? el().artistSearchMetadata(query, opts)
     : apiFetch(`/artists/metadata/search?${new URLSearchParams({ q: query || '', source: opts.source || 'either' })}`),

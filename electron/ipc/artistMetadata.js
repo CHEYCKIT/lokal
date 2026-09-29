@@ -63,6 +63,15 @@ function normalizeSource(source) {
   return source === 'wikipedia' || source === 'musicbrainz' ? source : 'either'
 }
 
+/** Settings > Artists > "Artist info source": where bios and pictures come from by default. */
+function getDefaultArtistSource(db) {
+  try {
+    return normalizeSource(db.prepare("SELECT value FROM settings WHERE key = 'artist_metadata_source'").get()?.value)
+  } catch {
+    return 'either'
+  }
+}
+
 function isUsefulArtistDescription(description) {
   if (!description) return false
   return /(musician|singer|rapper|band|artist|composer|producer|dj|duo|group|songwriter)/i.test(description)
@@ -341,7 +350,7 @@ async function cacheArtistMetadata(db, artist, options = {}) {
   const { fetchImages } = getArtistFetchSettings(db)
   if (!shouldFetchArtistMetadata(artist, fetchImages)) return artist
 
-  const fetched = await fetchArtistMetadata(artist.name, options)
+  const fetched = await fetchArtistMetadata(artist.name, { ...options, source: options.source || getDefaultArtistSource(db) })
   const now = Date.now()
 
   if (!fetched) {
@@ -384,7 +393,90 @@ async function cacheArtistMetadata(db, artist, options = {}) {
   return db.prepare('SELECT * FROM artists WHERE id = ?').get(artist.id) || artist
 }
 
+/**
+ * Fetches an artist's bio and picture again and replaces the ones fetched
+ * online before (a bio or picture the user set by hand is kept). A picture is
+ * downloaded to a temporary file first, so a failed download never loses the
+ * current one. Returns { bio, image }: what was replaced.
+ */
+async function refreshArtistMetadata(db, artist, { source } = {}) {
+  const fetched = await fetchArtistMetadata(artist.name, { source: source || getDefaultArtistSource(db) })
+  const now = Date.now()
+  const done = { bio: false, image: false }
+  if (fetched?.bio && artist.bio_source !== 'manual') {
+    db.prepare(`UPDATE artists SET bio = ?, bio_source = ?, bio_fetched_at = ? WHERE id = ? AND COALESCE(bio_source, '') != 'manual'`)
+      .run(fetched.bio, fetched.source || 'wikipedia', now, artist.id)
+    done.bio = true
+  }
+  if (fetched?.imageUrl && artist.image_source !== 'manual') {
+    const dest = path.join(getStorageDir(), 'artwork', `artist-${artist.id}.jpg`)
+    const tmp = `${dest}.download`
+    try {
+      await downloadToFile(fetched.imageUrl, tmp)
+      await fs.move(tmp, dest, { overwrite: true })
+      db.prepare(`UPDATE artists SET image_path = ?, image_source = ?, image_fetched_at = ? WHERE id = ? AND COALESCE(image_source, '') != 'manual'`)
+        .run(dest, fetched.source || 'wikipedia', now, artist.id)
+      done.image = true
+    } catch {
+      fs.remove(tmp).catch(() => {})
+    }
+  }
+  return done
+}
+
+// ---------------------------------------------------------------- refresh all
+// One background job for the whole library (Artists > Refresh artist info),
+// shared by the desktop app and the web server; the page polls its status.
+// MusicBrainz asks for at most one request a second, so artists are done one
+// at a time with a pause when it's involved.
+const refreshAll = { running: false, cancel: false, source: null, total: 0, done: 0, bios: 0, images: 0, failed: 0, startedAt: 0, finishedAt: 0 }
+
+function refreshAllStatus() {
+  const { cancel, ...status } = refreshAll
+  return { ...status }
+}
+
+function startRefreshAll(db, { source } = {}) {
+  if (refreshAll.running) return refreshAllStatus()
+  const chosen = normalizeSource(source || getDefaultArtistSource(db))
+  const artists = db.prepare(`
+    SELECT a.* FROM artists a
+    WHERE EXISTS (SELECT 1 FROM artist_track_links l WHERE l.artist_id = a.id)
+    ORDER BY a.name COLLATE NOCASE
+  `).all()
+  Object.assign(refreshAll, { running: true, cancel: false, source: chosen, total: artists.length, done: 0, bios: 0, images: 0, failed: 0, startedAt: Date.now(), finishedAt: 0 })
+  const gapMs = chosen === 'wikipedia' ? 250 : 1100
+  ;(async () => {
+    for (const artist of artists) {
+      if (refreshAll.cancel) break
+      if (artist.bio_source === 'manual' && artist.image_source === 'manual') { refreshAll.done++; continue }
+      try {
+        const done = await refreshArtistMetadata(db, artist, { source: chosen })
+        if (done.bio) refreshAll.bios++
+        if (done.image) refreshAll.images++
+      } catch {
+        refreshAll.failed++
+      }
+      refreshAll.done++
+      await new Promise(resolve => setTimeout(resolve, gapMs))
+    }
+    refreshAll.running = false
+    refreshAll.finishedAt = Date.now()
+  })()
+  return refreshAllStatus()
+}
+
+function cancelRefreshAll() {
+  if (refreshAll.running) refreshAll.cancel = true
+  return refreshAllStatus()
+}
+
 module.exports = {
+  refreshArtistMetadata,
+  startRefreshAll,
+  refreshAllStatus,
+  cancelRefreshAll,
+  getDefaultArtistSource,
   applyArtistMetadataSelection,
   cacheArtistMetadata,
   clearArtistImageOverride,

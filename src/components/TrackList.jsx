@@ -4,7 +4,7 @@ import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, Lis
 import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
@@ -818,8 +818,10 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
               <p className="text-xs text-muted leading-relaxed">
                 Are you sure you want to delete this track? This will remove it from your library, playlists, and play history.
               </p>
-              <p className="text-[10px] text-muted/60 pt-1">
-                The file on your computer will NOT be deleted.
+              <p className={`text-[10px] pt-1 ${peekSettings()?.delete_files_from_disk === '1' ? 'text-red-300/80' : 'text-muted/60'}`}>
+                {peekSettings()?.delete_files_from_disk === '1'
+                  ? (api.isElectron ? 'The file will also be moved to the Recycle Bin / Trash (Settings > Library).' : 'The file will also be deleted from the server for good (Settings > Library).')
+                  : 'The file on your computer will NOT be deleted.'}
               </p>
             </div>
           </div>

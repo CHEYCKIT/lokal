@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Search, Sparkles, Users } from 'lucide-react'
+import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, RefreshCw, Search, Sparkles, Users } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import FadeImg from '../components/FadeImg'
+import ArtistRefreshAllModal from '../components/ArtistRefreshAllModal'
 
 const PAGE_SIZE = 60
 const TOP_ARTISTS_LIMIT = 8
@@ -142,6 +143,8 @@ export default function Artists() {
   const [query, setQuery] = useState('')
   usePageReady(!loading)
   const [density, setDensity] = useState(() => localStorage.getItem('lokal-artists-density') || 'spaced')
+  const [refreshOpen, setRefreshOpen] = useState(false)
+  const [refreshStatus, setRefreshStatus] = useState(null)
   const loadMoreRef = useRef(null)
   // Only the latest request's answer applies (an earlier search can land late).
   const artistRequestRef = useRef({ id: 0, append: false })
@@ -281,6 +284,14 @@ export default function Artists() {
               >
                 <Clock size={13} />
               </button>
+              <button
+                onClick={() => setRefreshOpen(true)}
+                title={refreshStatus?.running ? `Refreshing artist info: ${refreshStatus.done}/${refreshStatus.total}` : 'Refresh artist info (pictures and bios)'}
+                aria-label="Refresh artist info"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 transition-colors hover:border-white/25 hover:text-white"
+              >
+                <RefreshCw size={13} className={refreshStatus?.running ? 'animate-spin' : ''} />
+              </button>
             </div>
             <p className="mt-3 text-sm text-muted">
               {loading ? '\u00a0' : `${total.toLocaleString()} artist${total === 1 ? '' : 's'}`}
@@ -395,6 +406,7 @@ export default function Artists() {
           )}
         </section>
       </div>
+      <ArtistRefreshAllModal open={refreshOpen} onClose={() => setRefreshOpen(false)} onStatus={setRefreshStatus} />
     </div>
   )
 }
