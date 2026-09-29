@@ -278,55 +278,8 @@ function isArtistSummary(summary) {
   return isMusicText(String(summary.extract || '').split(/(?<=\.)\s/)[0])
 }
 
-// Titles too common to tell one artist from another.
-const GENERIC_TITLES = new Set(['intro', 'outro', 'interlude', 'untitled', 'live', 'demo', 'demos', 'singles', 'ep', 'the ep', 'greatest hits', 'best of', 'the best of', 'hits', 'remixes', 'unknown album', 'home', 'love', 'forever', 'music', 'songs', 'acoustic'])
-
-/**
- * The artist's album and song titles in the library, to tell same-name
- * artists apart: the right Wikipedia page names at least one. Edition tags
- * ("(Deluxe Edition)", " - EP") are left out; titles that are the artist's
- * own name (self-titled albums) or too common prove nothing.
- */
-function artistKnownTitles(db, artistId, artistName) {
-  if (!db || !artistId) return []
-  let rows = []
-  try {
-    rows = db.prepare(`
-      SELECT DISTINCT t.album AS album, t.title AS title FROM tracks t
-      JOIN artist_track_links l ON l.track_id = t.id
-      WHERE l.artist_id = ? AND t.file_path NOT LIKE 'ghost://%'
-      LIMIT 500
-    `).all(artistId)
-  } catch { return [] }
-  const own = wikiNameKey(artistName)
-  const titles = new Set()
-  for (const row of rows) {
-    for (const raw of [row.album, row.title]) {
-      const key = wikiNameKey(String(raw || '').replace(/\s*[([][^)\]]*[)\]]/g, '').replace(/\s+-\s+(single|ep)$/i, ''))
-      if (key.length >= 4 && key !== own && !GENERIC_TITLES.has(key)) titles.add(key)
-    }
-  }
-  return [...titles]
-}
-
-/** Does the page's full text name one of `knownTitles`? */
-async function wikiPageNamesAny(title, knownTitles) {
-  try {
-    const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*`, 8000)
-    const page = Object.values(data?.query?.pages || {})[0]
-    const text = ` ${wikiNameKey(page?.extract)} `
-    return knownTitles.some(known => text.includes(` ${known} `))
-  } catch {
-    return false
-  }
-}
-
-/**
- * The artist's own Wikipedia page ({ title, bio, imageUrl }), or null when not
- * sure. With `knownTitles` (artistKnownTitles), the page must also name one
- * of the artist's albums or songs: a same-name artist's page won't.
- */
-async function findWikipediaArtistPage(name, knownTitles = []) {
+/** The artist's own Wikipedia page ({ title, bio, imageUrl }), or null when not sure. */
+async function findWikipediaArtistPage(name) {
   const titles = new Map()
   for (const query of [`"${name}" band`, `"${name}" musician`, `"${name}"`]) {
     try {
@@ -344,15 +297,13 @@ async function findWikipediaArtistPage(name, knownTitles = []) {
     const summary = await getWikipediaSummary(title)
     if (!isArtistSummary(summary)) continue
     const bio = typeof summary.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
-    if (!bio) continue
-    if (knownTitles.length && !(await wikiPageNamesAny(title, knownTitles))) continue
-    return { title, bio, imageUrl: summary.originalimage?.source || summary.thumbnail?.source || null }
+    if (bio) return { title, bio, imageUrl: summary.originalimage?.source || summary.thumbnail?.source || null }
   }
   return null
 }
 
-async function fetchWikipediaArtistMetadata(name, options = {}) {
-  const metadata = await findWikipediaArtistPage(name, options.knownTitles || [])
+async function fetchWikipediaArtistMetadata(name) {
+  const metadata = await findWikipediaArtistPage(name)
   return metadata ? { ...metadata, source: 'wikipedia' } : null
 }
 
@@ -382,12 +333,12 @@ const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz', 'wikipedia']
 async function fetchArtistMetadata(name, options = {}) {
   const source = normalizeSource(options.source)
   if (source !== 'either') {
-    const found = await FETCHERS[source](name, options).catch(() => null)
+    const found = await FETCHERS[source](name).catch(() => null)
     return found ? { ...found, bioSource: source, imageSource: source } : null
   }
   const asked = new Map()
   const ask = (id) => {
-    if (!asked.has(id)) asked.set(id, FETCHERS[id](name, options).catch(() => null))
+    if (!asked.has(id)) asked.set(id, FETCHERS[id](name).catch(() => null))
     return asked.get(id)
   }
   const merged = { title: null, bio: null, imageUrl: null, source: null, bioSource: null, imageSource: null }
@@ -563,7 +514,7 @@ async function cacheArtistMetadata(db, artist, options = {}) {
   const { fetchImages } = getArtistFetchSettings(db)
   if (!shouldFetchArtistMetadata(artist, fetchImages)) return artist
 
-  const fetched = await fetchArtistMetadata(artist.name, { ...options, source: options.source || getDefaultArtistSource(db), knownTitles: artistKnownTitles(db, artist.id, artist.name) })
+  const fetched = await fetchArtistMetadata(artist.name, { ...options, source: options.source || getDefaultArtistSource(db) })
   const now = Date.now()
 
   if (!fetched) {
@@ -613,7 +564,7 @@ async function cacheArtistMetadata(db, artist, options = {}) {
  * current one. Returns { bio, image }: what was replaced.
  */
 async function refreshArtistMetadata(db, artist, { source } = {}) {
-  const fetched = await fetchArtistMetadata(artist.name, { source: source || getDefaultArtistSource(db), knownTitles: artistKnownTitles(db, artist.id, artist.name) })
+  const fetched = await fetchArtistMetadata(artist.name, { source: source || getDefaultArtistSource(db) })
   const now = Date.now()
   const done = { bio: false, image: false }
   if (fetched?.bio && artist.bio_source !== 'manual') {
