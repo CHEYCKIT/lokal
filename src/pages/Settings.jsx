@@ -12,6 +12,7 @@ import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
 import { useTheme } from '../themeHooks'
+import { ARTIST_SOURCES } from '../artistSources'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -1570,11 +1571,11 @@ export default function Settings() {
 
       {inCategory('artists') && (
       <Section title="Artist Photos">
-        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Either tries Wikipedia, then MusicBrainz.">
-          <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
-            {[['either', 'Either'], ['wikipedia', 'Wikipedia'], ['musicbrainz', 'MusicBrainz']].map(([id, label]) => (
+        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto tries Wikipedia, TheAudioDB, MusicBrainz, then Deezer (photos only).">
+          <div className="flex flex-wrap justify-end gap-1 p-0.5 bg-card rounded-lg border border-border">
+            {ARTIST_SOURCES.map(([id, label]) => (
               <button key={id} onClick={() => set('artist_metadata_source', id)}
-                className={`px-3 py-1 text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+                className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
                 {label}
               </button>
             ))}

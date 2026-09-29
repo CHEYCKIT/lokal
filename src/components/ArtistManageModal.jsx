@@ -4,6 +4,7 @@ import Modal from './Modal'
 import SectionSwap, { ReadyWhen } from './SectionSwap'
 import AutoHeight from './AutoHeight'
 import { api, peekSettings } from '../api'
+import { ARTIST_SOURCES } from '../artistSources'
 
 function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, '').trim()
@@ -226,11 +227,11 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
         <div className="space-y-4">
           <p className="text-xs text-muted leading-relaxed">Search for a better web match if the current bio or image is wrong. Applying a result becomes a manual override, so Lokal will keep your choice.</p>
           <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
-            {[['either', 'Either'], ['wikipedia', 'Wikipedia'], ['musicbrainz', 'MusicBrainz']].map(([id, label]) => (
+            {ARTIST_SOURCES.map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setLookupSource(id)}
-                className={`flex-1 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
+                className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
               >
                 {label}
               </button>
@@ -267,7 +268,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
                     <div className="flex items-center gap-2 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{result.title}</p>
                       <span className="px-1.5 py-0.5 rounded bg-elevated border border-border text-[10px] uppercase tracking-wider text-muted flex-shrink-0">
-                        {result.source || 'web'}
+                        {ARTIST_SOURCES.find(([id]) => id === result.source)?.[1] || result.source || 'web'}
                       </span>
                     </div>
                     {result.snippet && <p className="text-xs text-muted max-h-10 overflow-hidden">{stripHtml(result.snippet)}</p>}

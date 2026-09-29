@@ -3,7 +3,13 @@ import { RefreshCw, Square } from 'lucide-react'
 import Modal from './Modal'
 import { api, peekSettings } from '../api'
 
-const SOURCES = [['either', 'Either'], ['wikipedia', 'Wikipedia'], ['musicbrainz', 'MusicBrainz']]
+import { ARTIST_SOURCES as SOURCES } from '../artistSources'
+
+const PACE_NOTE = {
+  either: 'MusicBrainz allows one request a second, so a large library takes a while.',
+  musicbrainz: 'MusicBrainz allows one request a second, so a large library takes a while.',
+  theaudiodb: 'TheAudioDB allows about 30 requests a minute, so a large library takes a while.',
+}
 
 /**
  * Artists > Refresh artist info: fetches every artist's bio and picture again
@@ -58,7 +64,7 @@ export default function ArtistRefreshAllModal({ open, onClose, onStatus }) {
   }
 
   const percent = status?.total ? Math.round((status.done / status.total) * 100) : 0
-  const finished = status && !status.running && status.finishedAt
+  const finished = !!(status && !status.running && status.finishedAt)
 
   return (
     <Modal open={open} onClose={onClose} title="Refresh artist info" width="max-w-md">
@@ -66,12 +72,13 @@ export default function ArtistRefreshAllModal({ open, onClose, onStatus }) {
         <p className="text-xs text-muted leading-relaxed">
           Fetches every artist's bio and picture again and replaces the ones fetched online before.
           Anything you set yourself (a picture you picked, a bio you wrote, a Lookup result you applied) is kept.
+          {source === 'deezer' && ' Deezer only has pictures, so bios stay as they are.'}
         </p>
 
         <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
           {SOURCES.map(([id, label]) => (
             <button key={id} onClick={() => setSource(id)} disabled={running}
-              className={`flex-1 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors disabled:opacity-50 ${source === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+              className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors disabled:opacity-50 ${source === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
               {label}
             </button>
           ))}
@@ -87,8 +94,8 @@ export default function ArtistRefreshAllModal({ open, onClose, onStatus }) {
                 ? `${status.done.toLocaleString()} of ${status.total.toLocaleString()} artists · ${status.images} pictures and ${status.bios} bios updated`
                 : `Done: ${status.images} pictures and ${status.bios} bios updated across ${status.done.toLocaleString()} artists${status.failed ? ` (${status.failed} failed)` : ''}.`}
             </p>
-            {running && (source === 'musicbrainz' || source === 'either') && (
-              <p className="text-[11px] text-muted/70">MusicBrainz allows one request a second, so a large library takes a while. You can close this; it keeps going.</p>
+            {running && PACE_NOTE[status.source || source] && (
+              <p className="text-[11px] text-muted/70">{PACE_NOTE[status.source || source]} You can close this; it keeps going.</p>
             )}
           </div>
         )}

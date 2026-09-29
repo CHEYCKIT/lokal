@@ -59,8 +59,12 @@ function buildArtistQueries(name) {
   ]
 }
 
+// 'either' (shown as Auto) combines them: the bio and the picture each come
+// from the first provider that has one.
+const ARTIST_SOURCES = ['either', 'wikipedia', 'musicbrainz', 'theaudiodb', 'deezer']
+
 function normalizeSource(source) {
-  return source === 'wikipedia' || source === 'musicbrainz' ? source : 'either'
+  return ARTIST_SOURCES.includes(source) ? source : 'either'
 }
 
 /** Settings > Artists > "Artist info source": where bios and pictures come from by default. */
@@ -136,6 +140,85 @@ async function fetchMusicBrainzArtistMetadata(name) {
   return null
 }
 
+// ---------------------------------------------------------------- TheAudioDB
+// Bios, artist photos (and fanart) for most well-known artists. The free
+// public key allows about 30 requests a minute, so calls are spaced out.
+const AUDIODB = 'https://www.theaudiodb.com/api/v1/json/123'
+const AUDIODB_GAP_MS = 2100
+let audioDbNextAt = 0
+
+async function audioDbGet(url) {
+  const wait = audioDbNextAt - Date.now()
+  audioDbNextAt = Math.max(Date.now(), audioDbNextAt) + AUDIODB_GAP_MS
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
+  return getJson(url)
+}
+
+const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+
+async function searchAudioDbArtists(query) {
+  const normalized = String(query || '').trim()
+  if (!normalized) return []
+  try {
+    const data = await audioDbGet(`${AUDIODB}/search.php?s=${encodeURIComponent(normalized)}`)
+    return Array.isArray(data?.artists) ? data.artists : []
+  } catch {
+    return []
+  }
+}
+
+function audioDbMetadata(artist) {
+  if (!artist?.strArtist) return null
+  const bio = typeof artist.strBiographyEN === 'string' && artist.strBiographyEN.trim() ? artist.strBiographyEN.trim() : null
+  return {
+    id: artist.idArtist,
+    title: artist.strArtist,
+    bio,
+    imageUrl: artist.strArtistThumb || artist.strArtistFanart || null,
+    snippet: [artist.strGenre, artist.strCountry].filter(Boolean).join(' • '),
+    source: 'theaudiodb',
+  }
+}
+
+async function fetchAudioDbArtistMetadata(name) {
+  const artists = await searchAudioDbArtists(name)
+  const match = artists.find(artist => sameName(artist?.strArtist, name))
+  return match ? audioDbMetadata(match) : null
+}
+
+// ---------------------------------------------------------------- Deezer
+// Photos only (Deezer has no bios). Artists without a photo get a grey
+// placeholder whose URL has an empty image id ("/artist//"): not a photo.
+async function searchDeezerArtists(query) {
+  const normalized = String(query || '').trim()
+  if (!normalized) return []
+  try {
+    const data = await getJson(`https://api.deezer.com/search/artist?q=${encodeURIComponent(normalized)}&limit=8`)
+    return Array.isArray(data?.data) ? data.data : []
+  } catch {
+    return []
+  }
+}
+
+function deezerMetadata(artist) {
+  const picture = artist?.picture_xl || artist?.picture_big || null
+  if (!artist?.name) return null
+  return {
+    id: String(artist.id || ''),
+    title: artist.name,
+    bio: null,
+    imageUrl: picture && !/\/artist\/\//.test(picture) ? picture : null,
+    snippet: artist.nb_fan ? `${Number(artist.nb_fan).toLocaleString('en-US')} fans on Deezer` : '',
+    source: 'deezer',
+  }
+}
+
+async function fetchDeezerArtistMetadata(name) {
+  const artists = await searchDeezerArtists(name)
+  const match = artists.find(artist => sameName(artist?.name, name))
+  return match ? deezerMetadata(match) : null
+}
+
 async function searchWikipediaTitle(name) {
   const queries = buildArtistQueries(name)
   for (const query of queries) {
@@ -194,18 +277,37 @@ async function fetchWikipediaArtistMetadata(name) {
   return metadata ? { ...metadata, source: 'wikipedia' } : null
 }
 
+const FETCHERS = {
+  wikipedia: fetchWikipediaArtistMetadata,
+  theaudiodb: fetchAudioDbArtistMetadata,
+  musicbrainz: fetchMusicBrainzArtistMetadata,
+  deezer: fetchDeezerArtistMetadata,
+}
+
+/**
+ * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
+ * Auto asks the providers in turn (Wikipedia, TheAudioDB, MusicBrainz,
+ * Deezer) until it has both a bio and a picture, each from the first one
+ * that had it.
+ */
 async function fetchArtistMetadata(name, options = {}) {
   const source = normalizeSource(options.source)
-  if (source === 'wikipedia') return fetchWikipediaArtistMetadata(name)
-  if (source === 'musicbrainz') return fetchMusicBrainzArtistMetadata(name)
-
-  const wikipedia = await fetchWikipediaArtistMetadata(name)
-  if (wikipedia?.bio || wikipedia?.imageUrl) return wikipedia
-
-  const musicbrainz = await fetchMusicBrainzArtistMetadata(name)
-  if (musicbrainz?.bio || musicbrainz?.imageUrl) return musicbrainz
-
-  return wikipedia || musicbrainz || null
+  if (source !== 'either') {
+    const found = await FETCHERS[source](name).catch(() => null)
+    return found ? { ...found, bioSource: source, imageSource: source } : null
+  }
+  const merged = { title: null, bio: null, imageUrl: null, source: null, bioSource: null, imageSource: null }
+  for (const [id, fetcher] of Object.entries(FETCHERS)) {
+    if (merged.bio && merged.imageUrl) break
+    if (id === 'deezer' && merged.imageUrl) continue // photos only
+    const found = await fetcher(name).catch(() => null)
+    if (!found) continue
+    if (!merged.bio && found.bio) { merged.bio = found.bio; merged.bioSource = id }
+    if (!merged.imageUrl && found.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id }
+    merged.title = merged.title || found.title
+  }
+  merged.source = merged.bioSource || merged.imageSource
+  return merged.source ? merged : null
 }
 
 async function getArtistMetadataByTitle(title) {
@@ -262,21 +364,32 @@ async function searchMusicBrainzMetadataCandidates(query) {
   return candidates
 }
 
+async function searchAudioDbMetadataCandidates(query) {
+  return (await searchAudioDbArtists(query)).map(audioDbMetadata).filter(Boolean).slice(0, 5)
+}
+
+async function searchDeezerMetadataCandidates(query) {
+  return (await searchDeezerArtists(query)).map(deezerMetadata).filter(candidate => candidate?.imageUrl).slice(0, 5)
+}
+
+const CANDIDATE_SEARCHES = {
+  wikipedia: searchWikipediaMetadataCandidates,
+  theaudiodb: searchAudioDbMetadataCandidates,
+  musicbrainz: searchMusicBrainzMetadataCandidates,
+  deezer: searchDeezerMetadataCandidates,
+}
+
 async function searchArtistMetadataCandidates(query, options = {}) {
   const source = normalizeSource(options.source)
-  if (source === 'wikipedia') return searchWikipediaMetadataCandidates(query)
-  if (source === 'musicbrainz') return searchMusicBrainzMetadataCandidates(query)
-  const [wikipedia, musicbrainz] = await Promise.all([
-    searchWikipediaMetadataCandidates(query),
-    searchMusicBrainzMetadataCandidates(query),
-  ])
+  if (source !== 'either') return CANDIDATE_SEARCHES[source](query).catch(() => [])
+  const results = await Promise.all(Object.values(CANDIDATE_SEARCHES).map(search => search(query).catch(() => [])))
   const seen = new Set()
-  return [...wikipedia, ...musicbrainz].filter((candidate) => {
+  return results.flat().filter((candidate) => {
     const key = `${candidate.source}:${String(candidate.title || '').toLowerCase()}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
-  }).slice(0, 8)
+  }).slice(0, 10)
 }
 
 async function applyArtistMetadataSelection(db, artistId, selection, options = {}) {
@@ -370,7 +483,7 @@ async function cacheArtistMetadata(db, artist, options = {}) {
           bio_source = CASE WHEN COALESCE(NULLIF(bio, ''), '') = '' AND ? IS NOT NULL THEN ? ELSE bio_source END,
           bio_fetched_at = ?
       WHERE id = ? AND COALESCE(bio_source, '') != 'manual'
-    `).run(fetched.bio, fetched.bio, fetched.source || 'wikipedia', now, artist.id)
+    `).run(fetched.bio, fetched.bio, fetched.bioSource || fetched.source || 'wikipedia', now, artist.id)
   }
 
   if (fetchImages && shouldFetchField(artist.image_path, artist.image_source, artist.image_fetched_at)) {
@@ -387,7 +500,7 @@ async function cacheArtistMetadata(db, artist, options = {}) {
           image_source = CASE WHEN image_path IS NULL AND ? IS NOT NULL THEN ? ELSE image_source END,
           image_fetched_at = ?
       WHERE id = ? AND COALESCE(image_source, '') != 'manual'
-    `).run(imagePath, imagePath, fetched.source || 'wikipedia', now, artist.id)
+    `).run(imagePath, imagePath, fetched.imageSource || fetched.source || 'wikipedia', now, artist.id)
   }
 
   return db.prepare('SELECT * FROM artists WHERE id = ?').get(artist.id) || artist
@@ -405,7 +518,7 @@ async function refreshArtistMetadata(db, artist, { source } = {}) {
   const done = { bio: false, image: false }
   if (fetched?.bio && artist.bio_source !== 'manual') {
     db.prepare(`UPDATE artists SET bio = ?, bio_source = ?, bio_fetched_at = ? WHERE id = ? AND COALESCE(bio_source, '') != 'manual'`)
-      .run(fetched.bio, fetched.source || 'wikipedia', now, artist.id)
+      .run(fetched.bio, fetched.bioSource || fetched.source || 'wikipedia', now, artist.id)
     done.bio = true
   }
   if (fetched?.imageUrl && artist.image_source !== 'manual') {
@@ -415,7 +528,7 @@ async function refreshArtistMetadata(db, artist, { source } = {}) {
       await downloadToFile(fetched.imageUrl, tmp)
       await fs.move(tmp, dest, { overwrite: true })
       db.prepare(`UPDATE artists SET image_path = ?, image_source = ?, image_fetched_at = ? WHERE id = ? AND COALESCE(image_source, '') != 'manual'`)
-        .run(dest, fetched.source || 'wikipedia', now, artist.id)
+        .run(dest, fetched.imageSource || fetched.source || 'wikipedia', now, artist.id)
       done.image = true
     } catch {
       fs.remove(tmp).catch(() => {})
@@ -445,7 +558,8 @@ function startRefreshAll(db, { source } = {}) {
     ORDER BY a.name COLLATE NOCASE
   `).all()
   Object.assign(refreshAll, { running: true, cancel: false, source: chosen, total: artists.length, done: 0, bios: 0, images: 0, failed: 0, startedAt: Date.now(), finishedAt: 0 })
-  const gapMs = chosen === 'wikipedia' ? 250 : 1100
+  // MusicBrainz: one request a second. TheAudioDB paces itself (audioDbGet).
+  const gapMs = chosen === 'wikipedia' || chosen === 'deezer' || chosen === 'theaudiodb' ? 250 : 1100
   ;(async () => {
     for (const artist of artists) {
       if (refreshAll.cancel) break
