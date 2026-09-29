@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search, Maximize2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -7,6 +7,7 @@ import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
 import { QueueContent } from './QueuePanel'
+import LyricsFullscreen, { FULLSCREEN_SWITCH } from './LyricsFullscreen'
 import { api } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL } from '../onlineTracks'
@@ -164,6 +165,17 @@ export default function FullscreenPlayer() {
   // state, exactly like it already does in windowed mode).
   const [fullscreenPanel, setFullscreenPanel] = useState('none')
   const prevTrackId = useRef(null)
+  // Full-screen lyrics is this same overlay in another layout (see
+  // LyricsFullscreen): it's open when either view is, and the player's own
+  // controls step aside while lyrics shows.
+  const open = showFullscreen || showLyricsFullscreen
+  const lyricsMode = showLyricsFullscreen
+  // Reduced motion: the views just crossfade (no cover morph, no scale).
+  const reduceMotion = useReducedMotion()
+  const playerLayerRef = useRef(null)
+  useEffect(() => {
+    if (playerLayerRef.current) playerLayerRef.current.inert = lyricsMode
+  }, [lyricsMode, open])
   // The panel container fades/collapses out over 500ms after fullscreenPanel
   // goes back to 'none' (see isPanelVisible below), but the ternary that picks
   // Queue vs. Lyrics content only matched 'queue' -- everything else, 'none'
@@ -234,7 +246,7 @@ export default function FullscreenPlayer() {
   // inset-0 z-50" classes, so matching on those instead risked hiding an
   // unrelated, legitimately open overlay.
   useEffect(() => {
-    if (showFullscreen) {
+    if (open) {
       // Reopening before the exit animation finishes can make Framer Motion
       // reuse the same overlay DOM node, and React doesn't manage the inline
       // visibility set below -- clear it or the player reopens invisible.
@@ -248,7 +260,7 @@ export default function FullscreenPlayer() {
     document.querySelectorAll('[data-fullscreen-player-overlay]').forEach((el) => {
       el.style.setProperty('visibility', 'hidden')
     })
-  }, [showFullscreen])
+  }, [open])
 
   const canOpenContext = isContextNavigable(playbackContext)
   const openContext = () => {
@@ -320,7 +332,7 @@ export default function FullscreenPlayer() {
 
   return (
     <AnimatePresence>
-      {showFullscreen && (
+      {open && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -363,7 +375,19 @@ export default function FullscreenPlayer() {
               </AnimatePresence>
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
+            {/* Lyrics read over a darker backdrop: the same one, dimmed. */}
+            <motion.div className="absolute inset-0 bg-black" initial={false}
+              animate={{ opacity: lyricsMode ? 0.35 : 0 }} transition={FULLSCREEN_SWITCH} />
           </div>
+
+          {/* The player's own controls, which step aside for full-screen
+              lyrics (and come back when it closes) instead of a second
+              overlay sliding over them. */}
+          <motion.div ref={playerLayerRef} className="absolute inset-0 flex"
+            initial={false}
+            animate={{ opacity: lyricsMode ? 0 : 1, transform: lyricsMode && !reduceMotion ? 'scale(0.97)' : 'scale(1)' }}
+            transition={FULLSCREEN_SWITCH}
+            style={{ pointerEvents: lyricsMode ? 'none' : undefined }}>
 
           <div className="absolute top-5 left-5 z-20 flex items-center gap-2">
             <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
@@ -398,21 +422,29 @@ export default function FullscreenPlayer() {
             </div>
           )}
           <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
-            <AnimatePresence mode="wait">
+            {/* In full-screen lyrics the cover moves into that view's header
+                (same layoutId); its space here is kept so nothing shifts. */}
+            {lyricsMode ? (
+              <div className="mb-8 flex-shrink-0" style={fsCanvas ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16' } : { width: '20rem', height: '20rem' }} />
+            ) : (
+            // initial={false}: coming back from lyrics, the cover grows back
+            // from the header instead of also popping in.
+            <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={currentTrack?.id || 'none'}
+                layoutId={reduceMotion ? undefined : 'fullscreen-cover'}
                 initial={{ opacity: 0, scale: 0.92, y: 16 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 26 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 26, layout: FULLSCREEN_SWITCH }}
                 className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center"
                 // A tall (9:16) canvas plays in the card itself, which grows to
                 // its shape. (It used to fill the whole screen behind the
                 // lyrics panel, whose blur then had to be redone every video
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
-                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: '20rem', height: '20rem' }}
+                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease', borderRadius: 16 }
+                  : { width: '20rem', height: '20rem', borderRadius: 16 }}
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
@@ -422,6 +454,7 @@ export default function FullscreenPlayer() {
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} />}
               </motion.div>
             </AnimatePresence>
+            )}
 
             <AnimatePresence mode="wait">
               <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -568,6 +601,9 @@ export default function FullscreenPlayer() {
               />
             )}
           </AnimatePresence>
+          </motion.div>
+
+          <LyricsFullscreen />
         </motion.div>
       )}
     </AnimatePresence>
