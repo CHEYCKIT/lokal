@@ -7,13 +7,13 @@ import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 import FadeImg from '../components/FadeImg'
+import CoverPlay from '../components/CoverPlay'
 import { plural } from '../plural'
 
 const PAGE_SIZE = 48
 
 function getAlbumArtwork(album) {
-  if (!album?.artwork_path) return null
-  return api.isElectron ? `file://${album.artwork_path}` : api.artworkURL(album.artwork_path)
+  return api.albumArtURL(album)
 }
 
 function releaseLabel(type) {
@@ -129,46 +129,36 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
 // in, and dozens of card animations running with it dropped frames.
 const FIRST_SCREEN_CARDS = 24
 
+/**
+ * One release in the grid, Spotify style: the cover shows unobstructed and
+ * plays the release (darkened, with a play glyph, on hover); the name and
+ * the text under it open it.
+ */
 function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
   const artSrc = getAlbumArtwork(album)
 
   return (
-    <motion.button
+    <motion.div
       initial={animateIn ? { opacity: 0, y: 10 } : false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
-      whileHover={{ y: -4, scale: 1.02 }}
-      whileTap={{ scale: 0.985 }}
-      onClick={onClick}
-      className="group overflow-hidden rounded-[1.5rem] border border-border bg-card/60 text-left transition-colors hover:border-accent/35"
+      whileHover={{ y: -3 }}
+      className="group overflow-hidden rounded-[1.5rem] border border-border bg-card/60 transition-colors hover:border-accent/35"
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
       <div className="relative aspect-square overflow-hidden bg-black/20">
         {artSrc ? (
           // (A blurred copy used to sit under the cover, entirely hidden by
           // it: a full-size blur per card for nothing.)
-          <FadeImg src={artSrc} alt={album.title} className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+          <FadeImg src={artSrc} alt={album.title} className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Disc3 size={34} className="text-muted" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-        <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-display uppercase tracking-[0.22em] text-white/85">
-          {releaseLabel(album.release_type)}
-        </div>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onPlay?.()
-          }}
-          className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-lg transition-transform group-hover:scale-105"
-        >
-          <Play size={15} fill="currentColor" className="translate-x-px" />
-        </button>
+        <CoverPlay label={`Play ${album.title}`} onPlay={onPlay} />
       </div>
-      <div className="relative overflow-hidden px-4 py-3">
+      <button type="button" onClick={onClick} className="group/open relative block w-full overflow-hidden px-4 py-3 text-left">
         <div
           className="absolute inset-0 scale-110 blur-xl"
           style={{
@@ -180,14 +170,14 @@ function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
         />
         <div className="absolute inset-0 bg-black/35" />
         <div className="relative space-y-1">
-          <p className="truncate text-sm font-medium text-white">{album.title}</p>
+          <p className="truncate text-sm font-medium text-white decoration-white/60 underline-offset-2 group-hover/open:underline">{album.title}</p>
           <p className="truncate text-xs text-muted">{album.artists || album.album_artist || 'Unknown Artist'}</p>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-muted/70">
-            {plural(album.track_count, 'track')}{album.year ? ` • ${album.year}` : ''}
+          <p className="text-[11px] uppercase leading-snug tracking-[0.16em] text-muted/70">
+            {releaseLabel(album.release_type)} • {plural(album.track_count, 'track')}{album.year ? ` • ${album.year}` : ''}
           </p>
         </div>
-      </div>
-    </motion.button>
+      </button>
+    </motion.div>
   )
 }
 

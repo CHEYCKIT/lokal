@@ -106,6 +106,13 @@ export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
   artworkURL: (id) => `${BASE}/artwork/${encodeURIComponent(id)}`,
+  // An album's cover (from getAllAlbums: the path, and the track it's from).
+  // Artwork is served by track id, not by path (or album title).
+  albumArtURL: (album) => {
+    if (!album?.artwork_path) return null
+    if (isE()) return `file://${album.artwork_path}`
+    return album.artwork_track_id ? `${BASE}/artwork/${encodeURIComponent(album.artwork_track_id)}` : null
+  },
   playlistCoverURL: (id) => `${BASE}/playlists/${encodeURIComponent(id)}/cover`,
   streamURL: (t) => `${BASE}/stream/${encodeURIComponent(t.id)}`,
   avatarURL: (id) => `${BASE}/avatar/${id}`,

@@ -89,8 +89,18 @@ app.get('/api/db', (req, res) => {
 
 
 app.get('/api/artwork/:trackId', (req, res) => {
-  const p = path.join(getStorageDir(), 'artwork', `${req.params.trackId}.jpg`)
-  fs.existsSync(p) ? res.sendFile(p) : res.status(404).send('No artwork')
+  const dir = path.join(getStorageDir(), 'artwork')
+  const p = path.join(dir, `${req.params.trackId}.jpg`)
+  if (path.dirname(p) === dir && fs.existsSync(p)) return res.sendFile(p)
+  // Covers not named after the track (a download's thumbnail "t-<id>.jpg",
+  // one found online, one shared from the same album): the track's own
+  // artwork_path, as long as it's in the artwork folder.
+  try {
+    const stored = getDB().prepare('SELECT artwork_path FROM tracks WHERE id = ?').get(req.params.trackId)?.artwork_path
+    const resolved = stored ? path.resolve(stored) : null
+    if (resolved && resolved.startsWith(dir + path.sep) && fs.existsSync(resolved)) return res.sendFile(resolved)
+  } catch {}
+  res.status(404).send('No artwork')
 })
 
 app.get('/api/artist-image/:artistId', (req, res) => {

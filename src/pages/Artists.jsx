@@ -6,6 +6,7 @@ import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import FadeImg from '../components/FadeImg'
+import { PlayGlyph } from '../components/CoverPlay'
 import ArtistRefreshAllModal from '../components/ArtistRefreshAllModal'
 
 const PAGE_SIZE = 60
@@ -67,13 +68,16 @@ function ArtistCard({ artist, onClick, onPlay, rank, animateIn = true }) {
         ) : (
           <FallbackAvatar name={artist.name} />
         )}
+        {/* Same play glyph as the album covers; the rest of the card opens the artist. */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <button
             type="button"
+            aria-label={`Play ${artist.name}`}
+            title={`Play ${artist.name}`}
             onClick={(event) => { event.stopPropagation(); onPlay?.() }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-xl transition-transform hover:scale-105"
+            className="text-white transition-transform hover:scale-110 active:scale-95"
           >
-            <Play size={15} fill="currentColor" className="translate-x-px" />
+            <PlayGlyph className="h-11 w-11 drop-shadow-[0_4px_14px_rgba(0,0,0,0.6)]" />
           </button>
         </div>
       </div>

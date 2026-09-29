@@ -11,8 +11,7 @@ const PAGE_SIZE = 40
 
 function AlbumCard({ album, onClick }) {
   const [imgLoaded, setImgLoaded] = useState(false)
-  const artSrc = album.artwork_path
-    ? (api.isElectron ? `file://${album.artwork_path}` : api.artworkURL(album.artwork_path))
+  const artSrc = api.albumArtURL(album)
     : null
 
   return (
@@ -78,8 +77,8 @@ function AlbumDetail({ album, onClose }) {
       <div className="flex items-center gap-4 p-6 border-b border-border flex-shrink-0 overflow-hidden">
         <button onClick={onClose} className="text-muted hover:text-white transition-colors">← Back</button>
         <div className="w-16 h-16 rounded-xl overflow-hidden bg-card flex items-center justify-center flex-shrink-0">
-          {album.artwork_path
-            ? <img src={api.isElectron ? `file://${album.artwork_path}` : api.artworkURL(album.artwork_path)} className="w-full h-full object-cover" />
+          {api.albumArtURL(album)
+            ? <img src={api.albumArtURL(album)} className="w-full h-full object-cover" />
             : <Disc3 size={28} className="text-subtle" />
           }
         </div>
