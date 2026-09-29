@@ -32,6 +32,7 @@ import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import Toaster from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
@@ -187,7 +188,16 @@ function PageTransition({ gated = false, children }) {
       <PageShownContext.Provider value={shown}>
       <motion.div
         ref={pageRef}
-        onAnimationComplete={() => { if (ready) setShown(true) }}
+        onAnimationComplete={() => {
+          if (!ready) return
+          // Leave no transform behind once it's in: even an identity
+          // translateY(0px) makes this div the containing block of every
+          // position:fixed element inside the page, so modals (Delete, Edit
+          // track info...) were placed at the top of the page instead of the
+          // screen -- out of view once the page was scrolled.
+          if (pageRef.current) pageRef.current.style.transform = 'none'
+          setShown(true)
+        }}
         initial={{ opacity: 0, transform: hidden }}
         animate={ready ? { opacity: 1, transform: 'none' } : { opacity: 0, transform: hidden }}
         exit={{ opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }}
@@ -1946,6 +1956,7 @@ export default function App() {
             
             {renderYtDlpNotice()}
             {renderUpdateToast()}
+            <Toaster />
             <AnimatePresence>
               {streamError && (
                 <motion.div

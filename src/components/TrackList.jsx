@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem } from 'lucide-react'
+import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
@@ -462,9 +463,12 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
     if (selectedIds.size > 1) {
       const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
-      selectedTracks.filter(t => !isGhostTrack(t)).forEach(t => playNext(t))
+      const playable = selectedTracks.filter(t => !isGhostTrack(t))
+      playable.forEach(t => playNext(t))
+      showToast(`${playable.length} tracks will play next`)
     } else {
       playNext(track)
+      showToast(`Playing next: ${track.title || 'Unknown track'}`)
     }
   }
 
@@ -476,9 +480,12 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
     if (selectedIds.size > 1) {
       const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
-      selectedTracks.filter(t => !isGhostTrack(t)).forEach(t => addToQueue(t))
+      const playable = selectedTracks.filter(t => !isGhostTrack(t))
+      playable.forEach(t => addToQueue(t))
+      showToast(`Added ${playable.length} tracks to queue`)
     } else {
       addToQueue(track)
+      showToast(`Added to queue: ${track.title || 'Unknown track'}`)
     }
   }
 
@@ -680,14 +687,14 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 <p className="text-xs text-muted/60 mr-2 hidden lg:block">{fmtAddedAt(track.added_at)}</p>
               )}
               {showPlayNext && !isGhost && (
-                <button onClick={e => handlePlayNext(track, e)}
+                <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                   <Clock size={14} />
                 </button>
               )}
               {streamed && <SaveToLibraryButton track={track} className="opacity-0 group-hover:opacity-100" />}
               {showAddToQueue && !isGhost && (
-                <button onClick={e => handleAddToQueue(track, e)}
+                <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                   <ListEnd size={14} />
                 </button>
