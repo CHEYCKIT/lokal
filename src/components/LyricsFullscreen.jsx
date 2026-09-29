@@ -1,18 +1,24 @@
-import React, { useState, useEffect } from 'react'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { X, Download, RotateCcw, Search, Disc3 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import SearchDrawer from './LyricsSearchDrawer'
 import { api } from '../api'
 
-// How the player and full-screen lyrics trade places (FullscreenPlayer uses it too).
+// How the player and full-screen lyrics trade places (FullscreenPlayer uses
+// these too): the view being left fades out quickly, the one arriving fades in
+// just after (so the two sets of text never sit on top of each other), and the
+// cover flies between them over the whole switch.
 export const FULLSCREEN_SWITCH = { duration: 0.42, ease: [0.22, 1, 0.36, 1] }
+export const FULLSCREEN_OUT = { duration: 0.18, ease: [0.4, 0, 1, 1] }
+export const FULLSCREEN_IN = { duration: 0.34, delay: 0.1, ease: [0.22, 1, 0.36, 1] }
 
 // Full-screen lyrics is a layout of the full-screen player, not an overlay of
-// its own: FullscreenPlayer renders this over its (shared) backdrop, fades its
-// own controls out as this fades in, and the cover shrinks into this header
-// (layoutId "fullscreen-cover"), so switching reads as one view rearranging.
+// its own: FullscreenPlayer renders this over its (shared) backdrop and keeps
+// it mounted -- lyrics loaded and following the song -- the whole time it's
+// open, so switching is only a crossfade (nothing to fetch or build at the
+// click). The cover flies into this header's cover (data-fullscreen-thumb).
 export default function LyricsFullscreen() {
   const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore()
   const [refreshKey, setRefreshKey] = useState(0)
@@ -20,8 +26,13 @@ export default function LyricsFullscreen() {
   const [searchSessions, setSearchSessions] = useState({})
   const [settings, setSettings] = useState({})
   const wordSync = localStorage.getItem('word-sync') !== '0'
-  const reduceMotion = useReducedMotion()
-  const away = reduceMotion ? 'none' : 'translateY(16px)'
+  const active = showLyricsFullscreen
+  // Faded out (opacity 0, not visibility: hidden: that would drop what's
+  // drawn and make switching back redraw every line on its first frame), the
+  // lyrics keep following the song, so they're in place when it shows.
+  const layerRef = useRef(null)
+  useLayoutEffect(() => { if (layerRef.current) layerRef.current.inert = !active }, [active])
+  useEffect(() => { if (!active) setShowSearch(false) }, [active])
 
   // LyricsFullscreen stays mounted as long as the full-screen player overlay
   // (it just hides its own JSX), so a settings fetch
@@ -30,8 +41,8 @@ export default function LyricsFullscreen() {
   // and lyrics kept auto-syncing (or not) based on whatever was cached at
   // launch. Re-fetching whenever the overlay actually opens picks up the
   // current saved value.
+  // (Also on mount: the layer is ready, hidden, while the player shows.)
   useEffect(() => {
-    if (!showLyricsFullscreen) return
     api.getSettings().then(s => setSettings(s || {}))
   }, [showLyricsFullscreen])
 
@@ -103,23 +114,26 @@ export default function LyricsFullscreen() {
   const isAutoSynced = settings.unsynced_auto_sync === '1'
 
   return (
-    <AnimatePresence>
-      {showLyricsFullscreen && (
         <motion.div
-          initial={{ opacity: 0, transform: away }}
-          animate={{ opacity: 1, transform: reduceMotion ? 'none' : 'translateY(0px)' }}
-          exit={{ opacity: 0, transform: away }}
-          transition={FULLSCREEN_SWITCH}
+          ref={layerRef}
+          initial={false}
+          animate={{ opacity: active ? 1 : 0 }}
+          transition={active ? FULLSCREEN_IN : FULLSCREEN_OUT}
+          aria-hidden={active ? undefined : true}
           className="absolute inset-0 z-20 flex flex-col overflow-hidden"
+          style={{ pointerEvents: active ? undefined : 'none' }}
         >
           <div className="relative z-10 flex items-center justify-between px-8 py-5 flex-shrink-0">
             <div className="flex items-center gap-4">
               {artSrc && (
-                // The player's big cover shrinks into this one (and back).
-                <motion.img layoutId={reduceMotion ? undefined : 'fullscreen-cover'} src={artSrc} alt=""
-                  transition={FULLSCREEN_SWITCH}
-                  style={{ borderRadius: 8 }}
-                  className="w-10 h-10 object-cover border border-white/10 flex-shrink-0" />
+                // The player's big cover flies into this one (and back), and
+                // clicking it goes back to the player, like the Player button.
+                <button type="button" onClick={() => switchFullscreenView('player')}
+                  title="Switch to the full-screen player" aria-label="Back to the full-screen player"
+                  className="flex-shrink-0 rounded-lg transition-transform hover:scale-105 active:scale-95">
+                  <img data-fullscreen-thumb src={artSrc} alt=""
+                    className="w-10 h-10 rounded-lg object-cover border border-white/10" />
+                </button>
               )}
               <div>
                 <p className="text-xs font-display text-white/30 uppercase tracking-widest">Lyrics</p>
@@ -187,7 +201,5 @@ export default function LyricsFullscreen() {
             )}
           </AnimatePresence>
         </motion.div>
-      )}
-    </AnimatePresence>
   )
 }

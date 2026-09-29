@@ -378,6 +378,18 @@ function Pill({ active, onClick, children, title, disabled }) {
 
 // ---------------------------------------------------------------- panel
 
+// Lyrics already fetched, per song, shared by every panel (sidebar, full-screen
+// player side panel, full-screen lyrics). A panel opened for a song another one
+// already shows starts with its lines on the first frame (and refreshes them
+// quietly), instead of "no lyrics", then a skeleton, then the lines.
+const lyricsCache = new Map() // trackId -> result | null
+const LYRICS_CACHE_MAX = 30
+function cacheLyrics(trackId, result) {
+  lyricsCache.delete(trackId)
+  lyricsCache.set(trackId, result)
+  if (lyricsCache.size > LYRICS_CACHE_MAX) lyricsCache.delete(lyricsCache.keys().next().value)
+}
+
 function Loading() {
   return (
     <div className="w-full flex flex-col gap-5 px-3 pt-4">
@@ -399,8 +411,10 @@ export default function LyricsPanel({
 }) {
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState(() => (track?.id && lyricsCache.has(track.id) ? lyricsCache.get(track.id) : null))
+  // Loading from the first render when there's nothing to show yet, so a new
+  // panel never flashes "no lyrics" before its request has even started.
+  const [loading, setLoading] = useState(() => !!track?.id && !lyricsCache.has(track.id))
   const [sourceBusy, setSourceBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [sources, setSources] = useState([])
@@ -435,22 +449,29 @@ export default function LyricsPanel({
   const resultRef = useRef(null)
   resultRef.current = result
 
-  const load = useCallback((opts = {}) => {
+  // quiet: lines already on screen (from the cache) stay up while this
+  // refreshes them; the answer only replaces them if it's different.
+  const load = useCallback((opts = {}, quiet = false) => {
     if (!track?.id) return
     const seq = ++requestSeq.current
-    setLoading(true)
+    const trackId = track.id
+    if (!quiet) setLoading(true)
     setNotice('')
     api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path, opts)
       .then(r => {
         if (seq !== requestSeq.current) return
-        setResult(r && (r.lines?.length || r.instrumental) ? r : null)
+        const next = r && (r.lines?.length || r.instrumental) ? r : null
+        cacheLyrics(trackId, next)
+        // Same lyrics as shown: keep the scroll position and translations.
+        if (quiet && JSON.stringify(next) === JSON.stringify(resultRef.current)) return
+        setResult(next)
         // A refreshed result has different lines: drop translations and the
         // scroll position that belonged to the previous one.
         setTranslation({ state: 'idle', lines: null })
         setRomanization({ state: 'idle', lines: null })
         lastScrollIdx.current = -1
       })
-      .catch(() => { if (seq === requestSeq.current) setResult(null) })
+      .catch(() => { if (seq === requestSeq.current && !quiet) setResult(null) })
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
   }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
 
@@ -471,9 +492,10 @@ export default function LyricsPanel({
 
   useEffect(() => {
     setSearchOpen(false)
-    setResult(null); setFocusIdx(-1); lastScrollIdx.current = -1
+    const cached = trackKey != null && lyricsCache.has(trackKey)
+    setResult(cached ? lyricsCache.get(trackKey) : null); setFocusIdx(-1); lastScrollIdx.current = -1
     setTranslation({ state: 'idle', lines: null }); setRomanization({ state: 'idle', lines: null })
-    load()
+    load({}, cached)
   }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (!loading) onLyricsAvailable?.(lines.length > 0) }, [loading, lines.length, onLyricsAvailable])

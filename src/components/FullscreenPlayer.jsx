@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search, Maximize2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -7,7 +7,7 @@ import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
 import { QueueContent } from './QueuePanel'
-import LyricsFullscreen, { FULLSCREEN_SWITCH } from './LyricsFullscreen'
+import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
 import { api } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL } from '../onlineTracks'
@@ -170,12 +170,70 @@ export default function FullscreenPlayer() {
   // controls step aside while lyrics shows.
   const open = showFullscreen || showLyricsFullscreen
   const lyricsMode = showLyricsFullscreen
-  // Reduced motion: the views just crossfade (no cover morph, no scale).
+  // Reduced motion: the views just crossfade (the cover doesn't fly).
   const reduceMotion = useReducedMotion()
   const playerLayerRef = useRef(null)
+  const coverRef = useRef(null)
   useEffect(() => {
     if (playerLayerRef.current) playerLayerRef.current.inert = lyricsMode
   }, [lyricsMode, open])
+  // The cover flies between the player and the full-screen lyrics header: a
+  // copy of it, moved with a compositor-only transform (smooth even while the
+  // two views crossfade and the lyrics keep playing), while the real ones
+  // stay hidden until it lands. Both views are always laid out (just faded),
+  // so both ends can be measured right away.
+  const flightRef = useRef(null)
+  const prevModeRef = useRef(null)
+  useLayoutEffect(() => {
+    const was = prevModeRef.current
+    prevModeRef.current = open ? lyricsMode : null
+    if (!open || was === null || was === lyricsMode || reduceMotion) return
+    flightRef.current?.()
+    const overlay = document.querySelector('[data-fullscreen-player-overlay]')
+    const big = coverRef.current
+    const thumb = overlay?.querySelector('[data-fullscreen-thumb]')
+    const art = trackArtURL(usePlayerStore.getState().currentTrack)
+    if (!overlay || !big || !thumb || !art) return
+    const from = lyricsMode ? big : thumb, to = lyricsMode ? thumb : big
+    const a = from.getBoundingClientRect(), b = to.getBoundingClientRect()
+    if (!a.width || !b.width) return
+    const flyer = document.createElement('img')
+    flyer.src = art
+    flyer.alt = ''
+    const radius = lyricsMode ? [16, 8] : [8, 16]
+    Object.assign(flyer.style, {
+      position: 'fixed', left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px`,
+      objectFit: 'cover', zIndex: '60', pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform',
+      borderRadius: `${radius[0]}px`, boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
+    })
+    overlay.appendChild(flyer)
+    big.style.visibility = 'hidden'
+    thumb.style.visibility = 'hidden'
+    const sx = b.width / a.width, sy = b.height / a.height
+    const timing = { duration: FULLSCREEN_SWITCH.duration * 1000 + 60, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' }
+    // Transform alone, so the compositor runs it; the corner rounding is a
+    // separate (main-thread) animation that can't hold the movement back.
+    const flight = flyer.animate([
+      { transform: 'translate(0px, 0px) scale(1, 1)' },
+      { transform: `translate(${b.left - a.left}px, ${b.top - a.top}px) scale(${sx}, ${sy})` },
+    ], timing)
+    const corners = flyer.animate([
+      { borderRadius: `${radius[0]}px` },
+      { borderRadius: `${radius[1] / Math.min(sx, sy)}px` },
+    ], timing)
+    const land = () => {
+      if (flightRef.current !== land) return
+      flightRef.current = null
+      big.style.visibility = ''
+      thumb.style.visibility = ''
+      flight.cancel()
+      corners.cancel()
+      flyer.remove()
+    }
+    flightRef.current = land
+    flight.finished.then(land, land)
+  }, [lyricsMode, open, reduceMotion])
+  useEffect(() => () => flightRef.current?.(), [])
   // The panel container fades/collapses out over 500ms after fullscreenPanel
   // goes back to 'none' (see isPanelVisible below), but the ternary that picks
   // Queue vs. Lyrics content only matched 'queue' -- everything else, 'none'
@@ -382,11 +440,13 @@ export default function FullscreenPlayer() {
 
           {/* The player's own controls, which step aside for full-screen
               lyrics (and come back when it closes) instead of a second
-              overlay sliding over them. */}
+              overlay sliding over them. Faded out, they stay drawn (opacity
+              0, not visibility: hidden, which would drop what's drawn and
+              make coming back redraw all of it on the switch's first frame). */}
           <motion.div ref={playerLayerRef} className="absolute inset-0 flex"
             initial={false}
-            animate={{ opacity: lyricsMode ? 0 : 1, transform: lyricsMode && !reduceMotion ? 'scale(0.97)' : 'scale(1)' }}
-            transition={FULLSCREEN_SWITCH}
+            animate={{ opacity: lyricsMode ? 0 : 1 }}
+            transition={lyricsMode ? FULLSCREEN_OUT : FULLSCREEN_IN}
             style={{ pointerEvents: lyricsMode ? 'none' : undefined }}>
 
           <div className="absolute top-5 left-5 z-20 flex items-center gap-2">
@@ -422,29 +482,22 @@ export default function FullscreenPlayer() {
             </div>
           )}
           <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
-            {/* In full-screen lyrics the cover moves into that view's header
-                (same layoutId); its space here is kept so nothing shifts. */}
-            {lyricsMode ? (
-              <div className="mb-8 flex-shrink-0" style={fsCanvas ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16' } : { width: '20rem', height: '20rem' }} />
-            ) : (
-            // initial={false}: coming back from lyrics, the cover grows back
-            // from the header instead of also popping in.
-            <AnimatePresence mode="wait" initial={false}>
+            <AnimatePresence mode="wait">
               <motion.div
                 key={currentTrack?.id || 'none'}
-                layoutId={reduceMotion ? undefined : 'fullscreen-cover'}
+                ref={coverRef}
                 initial={{ opacity: 0, scale: 0.92, y: 16 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 26, layout: FULLSCREEN_SWITCH }}
+                transition={{ type: 'spring', stiffness: 200, damping: 26 }}
                 className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center"
                 // A tall (9:16) canvas plays in the card itself, which grows to
                 // its shape. (It used to fill the whole screen behind the
                 // lyrics panel, whose blur then had to be redone every video
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
-                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease', borderRadius: 16 }
-                  : { width: '20rem', height: '20rem', borderRadius: 16 }}
+                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
+                  : { width: '20rem', height: '20rem' }}
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
@@ -454,7 +507,6 @@ export default function FullscreenPlayer() {
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} />}
               </motion.div>
             </AnimatePresence>
-            )}
 
             <AnimatePresence mode="wait">
               <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
