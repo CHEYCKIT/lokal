@@ -312,9 +312,10 @@ function initDB() {
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('yt_cookie_default_v2', '1')").run()
     }
   } catch {}
-  // Auto no longer uses Wikipedia (it found the wrong page too often, and its
-  // photos are small stage shots): bios and photos fetched from it before are
-  // cleared so they're fetched again from the other sources. Set by hand ones
+  // Wikipedia's old search found the wrong page too often (a band member's for
+  // a band), and its photos are small stage shots: bios and photos fetched from
+  // it before are cleared so they're fetched again (Wikipedia is now only a
+  // checked last resort for bios). Set by hand ones
   // are kept. Once only, so someone who picks Wikipedia later keeps its results.
   try {
     if (!db.prepare("SELECT 1 FROM settings WHERE key = 'artist_wikipedia_cleared_v1'").get()) {

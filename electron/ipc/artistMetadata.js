@@ -48,17 +48,6 @@ function getArtistFetchSettings(db) {
   }
 }
 
-function buildArtistQueries(name) {
-  const normalized = String(name || '').trim()
-  if (!normalized) return []
-  return [
-    `"${normalized}" musician`,
-    `"${normalized}" band`,
-    `"${normalized}" artist`,
-    normalized,
-  ]
-}
-
 // 'either' (shown as Auto) combines them: the bio and the picture each come
 // from the first provider that has one.
 const ARTIST_SOURCES = ['either', 'theaudiodb', 'deezer', 'musicbrainz', 'wikipedia']
@@ -116,12 +105,14 @@ async function getMusicBrainzArtistMetadataById(id) {
     const wikipediaRelation = relations.find((relation) => relation?.type === 'wikipedia' || /wikipedia\.org\/wiki\//i.test(relation?.url?.resource || ''))
     const wikipediaTitle = getWikipediaTitleFromUrl(wikipediaRelation?.url?.resource)
     const summary = wikipediaTitle ? await getWikipediaSummary(wikipediaTitle) : null
-    const bio = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : buildMusicBrainzBio(data)
+    const article = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
     const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || null
     return {
       id: data.id,
       title: data.name,
-      bio,
+      bio: article || buildMusicBrainzBio(data),
+      // No linked article: the bio is only a tag line ("Person • Atlanta • hip hop").
+      shortBio: !article,
       imageUrl,
       snippet: data.disambiguation || buildMusicBrainzBio(data) || '',
       source: 'musicbrainz',
@@ -219,20 +210,6 @@ async function fetchDeezerArtistMetadata(name) {
   return match ? deezerMetadata(match) : null
 }
 
-async function searchWikipediaTitle(name) {
-  const queries = buildArtistQueries(name)
-  for (const query of queries) {
-    try {
-      const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json&origin=*`)
-      const results = Array.isArray(data?.query?.search) ? data.query.search : []
-      const preferred = results.find((entry) => isUsefulArtistDescription(entry?.snippet))
-      const first = preferred || results[0]
-      if (first?.title) return first.title
-    } catch {}
-  }
-  return null
-}
-
 async function getWikipediaSummary(title) {
   if (!title) return null
   try {
@@ -270,10 +247,56 @@ function downloadToFile(url, dest) {
   })
 }
 
+// A page is only the artist's when its title is the artist's name, alone or
+// with a music qualifier ("Eagles (band)", "Low (American band)", "Joe Walsh"),
+// and Wikipedia describes it as music ("American rock band"). A search for a
+// band otherwise lands on a member's page ("Eagles" gave Joe Walsh), the
+// disambiguation page, or anything else sharing the name.
+const MUSIC_WORDS = /\b(band|musician|singer|rapper|group|duo|trio|dj|producer|songwriter|composer|artist|vocalist|guitarist|drummer|bassist|pianist|musical|ensemble|orchestra|choir|mc)\b/i
+const wikiNameKey = (text) => String(text || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/^the\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+/** 2 for "Name (band)"-like titles, 1 for "Name", 0 when it's not the artist's name. */
+function wikiTitleMatch(title, name) {
+  const [, base, qualifier] = String(title || '').match(/^(.*?)(?:\s+\(([^)]*)\))?$/) || []
+  if (!base || wikiNameKey(base) !== wikiNameKey(name)) return 0
+  if (!qualifier) return 1
+  return MUSIC_WORDS.test(qualifier) ? 2 : 0
+}
+
+function isArtistSummary(summary) {
+  if (!summary || summary.type === 'disambiguation') return false
+  if (summary.description) return MUSIC_WORDS.test(summary.description)
+  // No short description: the first sentence has to say it.
+  return MUSIC_WORDS.test(String(summary.extract || '').split(/(?<=\.)\s/)[0])
+}
+
+/** The artist's own Wikipedia page ({ title, bio, imageUrl }), or null when not sure. */
+async function findWikipediaArtistPage(name) {
+  const titles = new Map()
+  for (const query of [`"${name}" band`, `"${name}" musician`, `"${name}"`]) {
+    try {
+      const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=10&format=json&origin=*`)
+      for (const entry of Array.isArray(data?.query?.search) ? data.query.search : []) {
+        const match = wikiTitleMatch(entry?.title, name)
+        if (match && !titles.has(entry.title)) titles.set(entry.title, match)
+      }
+    } catch {}
+    if ([...titles.values()].includes(2)) break
+  }
+  // "Name (band)" before a bare "Name", which is often the disambiguation page.
+  const ordered = [...titles].sort((a, b) => b[1] - a[1]).map(([title]) => title).slice(0, 3)
+  for (const title of ordered) {
+    const summary = await getWikipediaSummary(title)
+    if (!isArtistSummary(summary)) continue
+    const bio = typeof summary.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
+    if (bio) return { title, bio, imageUrl: summary.originalimage?.source || summary.thumbnail?.source || null }
+  }
+  return null
+}
+
 async function fetchWikipediaArtistMetadata(name) {
-  const title = await searchWikipediaTitle(name)
-  if (!title) return null
-  const metadata = await getArtistMetadataByTitle(title)
+  const metadata = await findWikipediaArtistPage(name)
   return metadata ? { ...metadata, source: 'wikipedia' } : null
 }
 
@@ -284,15 +307,16 @@ const FETCHERS = {
   wikipedia: fetchWikipediaArtistMetadata,
 }
 
-// Auto picks the photo and the bio separately, best source first. No
-// Wikipedia: its search lands on the wrong page (a band member's for a band:
-// "Eagles" gave Joe Walsh), and its lead images are small stage shots that
-// don't read as an artist photo, even from the right page.
+// Auto picks the photo and the bio separately, best source first.
 // Photos: Deezer's are large square artist photos; TheAudioDB's are curated.
+// Never Wikipedia's: its lead images are small stage shots that don't read
+// as an artist photo, even from the right page.
 const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb']
 // Bios: TheAudioDB's are written for music; then MusicBrainz, which follows
-// the artist's own linked Wikipedia article (or gives a tag line without one).
-const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz']
+// the artist's own linked Wikipedia article; then a Wikipedia page found by
+// name, only when it's surely the artist's (findWikipediaArtistPage); last,
+// MusicBrainz's tag line when nothing has a real bio.
+const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz', 'wikipedia']
 
 /**
  * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
@@ -315,10 +339,15 @@ async function fetchArtistMetadata(name, options = {}) {
     const found = await ask(id)
     if (found?.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id; merged.title = found.title || null; break }
   }
+  let tagLine = null
   for (const id of AUTO_BIO_ORDER) {
     const found = await ask(id)
-    if (found?.bio) { merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null; break }
+    if (!found?.bio) continue
+    if (found.shortBio) { tagLine = tagLine || { bio: found.bio, id }; continue }
+    merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null
+    break
   }
+  if (!merged.bio && tagLine) { merged.bio = tagLine.bio; merged.bioSource = tagLine.id }
   merged.source = merged.bioSource || merged.imageSource
   return merged.source ? merged : null
 }
@@ -395,7 +424,7 @@ const CANDIDATE_SEARCHES = {
 async function searchArtistMetadataCandidates(query, options = {}) {
   const source = normalizeSource(options.source)
   if (source !== 'either') return CANDIDATE_SEARCHES[source](query).catch(() => [])
-  // Wikipedia only when picked by hand (see AUTO_IMAGE_ORDER).
+  // Wikipedia's list is a loose search with small photos: only when picked by hand.
   const searches = Object.entries(CANDIDATE_SEARCHES).filter(([id]) => id !== 'wikipedia').map(([, search]) => search)
   const results = await Promise.all(searches.map(search => search(query).catch(() => [])))
   const seen = new Set()
