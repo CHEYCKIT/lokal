@@ -120,7 +120,7 @@ Auto-generated mixes built from your listening history and liked tracks, as well
 - **Crossfade** — smooth transitions between tracks, configurable within **settings**
 - **Discord Rich Presence** — shows what you're listening to in real time. (use the one provided, or grab your custom id from discord's development panel)
 - **Duplicate detection** — smart merge that scores each copy by bitrate, artwork, and metadata completeness, then keeps the best one. (best for situations where you can contain duplicates of the same music)
-- **Playlists** — create, manage, reorder
+- **Playlists** — create, manage, reorder, download
 - **Play history & stats** — tracks listening time, top artists, top genres (top left)
 - **Web mode** — run as a web server to access your library from another device on your network (currently in hiatus, main focus on app ver.)
 - **Artist name exceptions** — prevents names like "Tyler, the Creator" from being incorrectly split into multiple artists, configurable via **settings**. 
