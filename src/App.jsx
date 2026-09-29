@@ -6,7 +6,6 @@ import PlayerBar from './components/PlayerBar'
 import TitleBar from './components/TitleBar'
 import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
-import LyricsFullscreen from './components/LyricsFullscreen'
 import QueuePanel from './components/QueuePanel'
 import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
@@ -1933,8 +1932,8 @@ export default function App() {
               {!exclusiveSidePanels && <LyricsSidePanel />}
             </div>
             <PlayerBar />
+            {/* Also full-screen lyrics: one overlay, two layouts. */}
             <FullscreenPlayer />
-            <LyricsFullscreen />
             <AuthModal />
             <ProfileModal />
             <StatsModal />
