@@ -61,7 +61,7 @@ function buildArtistQueries(name) {
 
 // 'either' (shown as Auto) combines them: the bio and the picture each come
 // from the first provider that has one.
-const ARTIST_SOURCES = ['either', 'wikipedia', 'musicbrainz', 'theaudiodb', 'deezer']
+const ARTIST_SOURCES = ['either', 'theaudiodb', 'deezer', 'musicbrainz', 'wikipedia']
 
 function normalizeSource(source) {
   return ARTIST_SOURCES.includes(source) ? source : 'either'
@@ -116,12 +116,14 @@ async function getMusicBrainzArtistMetadataById(id) {
     const wikipediaRelation = relations.find((relation) => relation?.type === 'wikipedia' || /wikipedia\.org\/wiki\//i.test(relation?.url?.resource || ''))
     const wikipediaTitle = getWikipediaTitleFromUrl(wikipediaRelation?.url?.resource)
     const summary = wikipediaTitle ? await getWikipediaSummary(wikipediaTitle) : null
-    const bio = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : buildMusicBrainzBio(data)
+    const article = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
     const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || null
     return {
       id: data.id,
       title: data.name,
-      bio,
+      bio: article || buildMusicBrainzBio(data),
+      // No linked article: the bio is only a tag line ("Person • Atlanta • hip hop").
+      shortBio: !article,
       imageUrl,
       snippet: data.disambiguation || buildMusicBrainzBio(data) || '',
       source: 'musicbrainz',
@@ -278,17 +280,26 @@ async function fetchWikipediaArtistMetadata(name) {
 }
 
 const FETCHERS = {
-  wikipedia: fetchWikipediaArtistMetadata,
   theaudiodb: fetchAudioDbArtistMetadata,
-  musicbrainz: fetchMusicBrainzArtistMetadata,
   deezer: fetchDeezerArtistMetadata,
+  musicbrainz: fetchMusicBrainzArtistMetadata,
+  wikipedia: fetchWikipediaArtistMetadata,
 }
+
+// Auto picks the photo and the bio separately, best source first.
+// Photos: Deezer's are large square artist photos; TheAudioDB's are curated;
+// MusicBrainz goes by the artist's own linked Wikipedia page, so its lead
+// image is the right artist's; a Wikipedia search can land on the wrong page.
+const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb', 'musicbrainz', 'wikipedia']
+// Bios: TheAudioDB's are written for music; then the linked Wikipedia
+// article (via MusicBrainz), a Wikipedia search, and last MusicBrainz's
+// tag line when there's no article.
+const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz', 'wikipedia']
 
 /**
  * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
- * Auto asks the providers in turn (Wikipedia, TheAudioDB, MusicBrainz,
- * Deezer) until it has both a bio and a picture, each from the first one
- * that had it.
+ * Auto takes the photo and the bio each from the first provider in its
+ * order that has one, asking each provider at most once.
  */
 async function fetchArtistMetadata(name, options = {}) {
   const source = normalizeSource(options.source)
@@ -296,16 +307,25 @@ async function fetchArtistMetadata(name, options = {}) {
     const found = await FETCHERS[source](name).catch(() => null)
     return found ? { ...found, bioSource: source, imageSource: source } : null
   }
-  const merged = { title: null, bio: null, imageUrl: null, source: null, bioSource: null, imageSource: null }
-  for (const [id, fetcher] of Object.entries(FETCHERS)) {
-    if (merged.bio && merged.imageUrl) break
-    if (id === 'deezer' && merged.imageUrl) continue // photos only
-    const found = await fetcher(name).catch(() => null)
-    if (!found) continue
-    if (!merged.bio && found.bio) { merged.bio = found.bio; merged.bioSource = id }
-    if (!merged.imageUrl && found.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id }
-    merged.title = merged.title || found.title
+  const asked = new Map()
+  const ask = (id) => {
+    if (!asked.has(id)) asked.set(id, FETCHERS[id](name).catch(() => null))
+    return asked.get(id)
   }
+  const merged = { title: null, bio: null, imageUrl: null, source: null, bioSource: null, imageSource: null }
+  for (const id of AUTO_IMAGE_ORDER) {
+    const found = await ask(id)
+    if (found?.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id; merged.title = found.title || null; break }
+  }
+  let shortBio = null
+  for (const id of AUTO_BIO_ORDER) {
+    const found = await ask(id)
+    if (!found?.bio) continue
+    if (found.shortBio) { shortBio = shortBio || { bio: found.bio, id }; continue }
+    merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null
+    break
+  }
+  if (!merged.bio && shortBio) { merged.bio = shortBio.bio; merged.bioSource = shortBio.id }
   merged.source = merged.bioSource || merged.imageSource
   return merged.source ? merged : null
 }
@@ -373,10 +393,10 @@ async function searchDeezerMetadataCandidates(query) {
 }
 
 const CANDIDATE_SEARCHES = {
-  wikipedia: searchWikipediaMetadataCandidates,
   theaudiodb: searchAudioDbMetadataCandidates,
-  musicbrainz: searchMusicBrainzMetadataCandidates,
   deezer: searchDeezerMetadataCandidates,
+  musicbrainz: searchMusicBrainzMetadataCandidates,
+  wikipedia: searchWikipediaMetadataCandidates,
 }
 
 async function searchArtistMetadataCandidates(query, options = {}) {
