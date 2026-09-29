@@ -269,6 +269,63 @@ function libraryTrackId(db, trackId) {
 }
 
 /**
+ * Every id a library song goes by: its own, the streamed copy of the online
+ * song it was downloaded from ("sc-<id>"...), and the streamed copies it
+ * replaced (a player may still hold one). A heart shows the same on all.
+ */
+function songIds(db, trackId) {
+  const ids = new Set([trackId])
+  try {
+    const ref = String(db.prepare('SELECT source_ref FROM tracks WHERE id = ?').get(trackId)?.source_ref || '').match(/^([^:]+):(.+)$/)
+    if (ref && validId(ref[1], ref[2])) ids.add(onlineTrackId(ref[1], ref[2]))
+    for (const row of db.prepare('SELECT old_id FROM track_aliases WHERE track_id = ?').all(trackId)) ids.add(row.old_id)
+    // Streamed copies that are the same song by title, artist and length
+    // (the match libraryCopyOf makes the other way).
+    const track = db.prepare("SELECT title, artist, duration FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(trackId)
+    const length = Number(track?.duration) || 0
+    if (length > 0) {
+      const ghosts = db.prepare("SELECT id, title, artist, duration FROM tracks WHERE file_path LIKE 'ghost://%' AND duration BETWEEN ? AND ?")
+        .all(length - TWIN_DURATION_SLACK_S, length + TWIN_DURATION_SLACK_S)
+      for (const ghost of ghosts) if (sameSong(track, ghost)) ids.add(ghost.id)
+    }
+  } catch {}
+  return [...ids]
+}
+
+/**
+ * Likes left on streamed copies of songs you have (made before likes were
+ * kept on the library copy) move to the library copy: one entry per song in
+ * Liked Songs.
+ */
+function foldStreamedLikes(db, userId) {
+  try {
+    const ghosts = db.prepare("SELECT ul.track_id FROM user_likes ul JOIN tracks t ON t.id = ul.track_id WHERE ul.user_id = ? AND t.file_path LIKE 'ghost://%'").all(userId)
+    for (const { track_id: ghostId } of ghosts) {
+      const copy = libraryCopyOf(db, ghostId)
+      if (!copy) continue
+      db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, copy)
+      db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(userId, ghostId)
+    }
+  } catch {}
+}
+
+/**
+ * Like or unlike a song, from wherever it shows: a streamed copy of a song
+ * you have counts as that song, so the like is the library copy's (and an
+ * older like on the streamed copy is folded into it). Returns
+ * { liked, trackId, ids }: every id the song goes by, to update all hearts.
+ */
+function toggleSongLike(db, userId, trackId) {
+  const id = libraryTrackId(db, trackId)
+  const ids = [...new Set([trackId, ...songIds(db, id)])]
+  const marks = ids.map(() => '?').join(', ')
+  const liked = !!db.prepare(`SELECT 1 FROM user_likes WHERE user_id = ? AND track_id IN (${marks})`).get(userId, ...ids)
+  db.prepare(`DELETE FROM user_likes WHERE user_id = ? AND track_id IN (${marks})`).run(userId, ...ids)
+  if (!liked) db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, id)
+  return { liked: !liked, trackId: id, ids }
+}
+
+/**
  * Keep online songs as ghost tracks, so they can be played, liked and added
  * to playlists. Returns the track rows (null for unusable items), in order.
  */
@@ -340,5 +397,5 @@ module.exports = {
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
   onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks, streamedTwins,
-  sameSong, sourceRefOf, sourceRefOfTrack, libraryCopyOf, libraryTrackId,
+  sameSong, sourceRefOf, sourceRefOfTrack, libraryCopyOf, libraryTrackId, songIds, toggleSongLike, foldStreamedLikes,
 }

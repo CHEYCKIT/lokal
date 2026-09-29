@@ -567,10 +567,14 @@ router.get('/search-lyrics', (req, res) => {
 
 router.get('/liked', (req, res) => {
   const userId = req.query.userId || 'guest'
-  res.json(getDB().prepare(`
+  const db = getDB()
+  const { songIds, foldStreamedLikes } = require('../../electron/online/sources')
+  foldStreamedLikes(db, userId)
+  // also_ids: the other ids each song goes by, so its heart shows everywhere.
+  res.json(db.prepare(`
     SELECT t.* FROM tracks t JOIN user_likes ul ON ul.track_id = t.id
     WHERE ul.user_id = ? ORDER BY ul.liked_at DESC
-  `).all(userId))
+  `).all(userId).map(t => ({ ...t, also_ids: songIds(db, t.id).filter(id => id !== t.id) })))
 })
 
 router.get('/history', (req, res) => {
@@ -782,14 +786,8 @@ router.put('/:id/artwork', (req, res) => {
 router.post('/:id/like', (req, res) => {
   const db = getDB()
   const { userId = 'guest' } = req.body
-  // A streamed song you already have: the like goes to the library copy
-  // (and a liked copy isn't unliked from a streamed one).
-  const id = require('../../electron/online/sources').libraryTrackId(db, req.params.id)
-  const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(userId, id)
-  if (exists && id !== req.params.id) return res.json({ liked: true })
-  if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(userId, id); return res.json({ liked: false }) }
-  db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, id)
-  res.json({ liked: true })
+  // A streamed song you already have is that song: see toggleSongLike.
+  res.json(require('../../electron/online/sources').toggleSongLike(db, userId, req.params.id))
 })
 
 router.post('/:id/playtime', (req, res) => {

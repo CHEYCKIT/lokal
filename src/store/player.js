@@ -827,6 +827,11 @@ export const usePlayerStore = create((set, get) => ({
     liked ? next.add(id) : next.delete(id)
     return { likedIds: next }
   }),
+  setLikedMany: (ids, liked) => set(s => {
+    const next = new Set(s.likedIds)
+    for (const id of ids || []) liked ? next.add(id) : next.delete(id)
+    return { likedIds: next }
+  }),
   initLiked: (ids) => set({ likedIds: new Set(ids) }),
   syncTrack: (track) => { announceTrackUpdates([track]); set((state) => {
     if (!track?.id) return state
