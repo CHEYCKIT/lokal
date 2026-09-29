@@ -4,14 +4,17 @@ import { motion } from 'framer-motion'
 import { Music, RefreshCw, ScanLine, Play, Clock, Sparkles, Radio, History } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
+import { useCachedState, usePageReady } from '../pageCache'
 
 function ScanBanner({ onScan }) {
-  const [folder, setFolder] = useState('')
+  // From the settings already read, so the folder doesn't show "Not set" first.
+  const [folder, setFolder] = useState(() => peekSettings()?.music_folder || '')
+  const [folderKnown, setFolderKnown] = useState(() => !!peekSettings())
   const [progress, setProgress] = useState(null)
 
   useEffect(() => {
-    api.getSettings().then(s => { if (s?.music_folder) setFolder(s.music_folder) })
+    api.getSettings().then(s => { if (s?.music_folder) setFolder(s.music_folder) }).catch(() => {}).finally(() => setFolderKnown(true))
     const unsub = api.onScanProgress((_, data) => {
       setProgress(data)
       if (data.complete) { onScan?.(); setTimeout(() => setProgress(null), 3000) }
@@ -31,7 +34,7 @@ function ScanBanner({ onScan }) {
     <div className="bg-elevated border border-border rounded-xl p-4 flex items-center justify-between gap-4">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-white">Music Folder</p>
-        <p className="text-xs text-muted mt-0.5 font-display truncate">{folder || 'Not set'}</p>
+        <p className="text-xs text-muted mt-0.5 font-display truncate">{folder || (folderKnown ? 'Not set' : '\u00a0')}</p>
         {progress && !progress.complete && (
           <div className="mt-2 space-y-1">
             <p className="text-xs text-accent">Scanning… {progress.done}/{progress.total} · {progress.skipped || 0} skipped</p>
@@ -104,23 +107,47 @@ function MixCard({ mix, onClick }) {
   )
 }
 
+// Remounted per user, so one user's cached sections never show for another
+// (and a late answer for the previous user can't land in the new one's cache).
 export default function Home() {
-  const [recentTracks, setRecentTracks] = useState([])
-  const [suggestions, setSuggestions] = useState([])
-  const [history, setHistory] = useState([])
-  const [mixes, setMixes] = useState([])
+  const { user } = useAppStore()
+  return <HomeContent key={user?.id || 'guest'} user={user} />
+}
+
+function HomeContent({ user }) {
+  const uidKey = user?.id || 'guest'
+  // Kept across visits: coming back shows the last sections at once.
+  const [recentTracks, setRecentTracks] = useCachedState(`home:recent:${uidKey}`, [])
+  const [suggestions, setSuggestions] = useCachedState(`home:suggestions:${uidKey}`, [])
+  const [history, setHistory] = useCachedState(`home:history:${uidKey}`, [])
+  const [mixes, setMixes] = useCachedState(`home:mixes:${uidKey}`, [])
+  // Sections appear together once everything is in (not mixes, then
+  // suggestions, then recent), and "No tracks yet" only when it's true.
+  const [loaded, setLoaded, wasCached] = useCachedState(`home:loaded:${uidKey}`, false)
+  usePageReady(loaded || wasCached)
   const location = useLocation()
   const [tab, setTab] = useState(() => (location.state?.tab === 'history' ? 'history' : 'home'))
   const { playQueue } = usePlayerStore()
-  const { user } = useAppStore()
   const nonGhost = (items) => (Array.isArray(items) ? items.filter(item => !String(item?.file_path || '').startsWith('ghost://')) : [])
 
   const load = () => {
     const uid = user?.id
-    api.getTracks({ sort: 'added_at DESC', limit: 10 }).then(t => setRecentTracks(nonGhost(t)))
-    api.getSuggestions(uid).then(s => setSuggestions(nonGhost(s)))
-    api.getHistory(uid, 30).then(h => setHistory(Array.isArray(h) ? h : []))
-    api.getMixes(uid).then(m => setMixes((Array.isArray(m) ? m : []).map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0)))
+    const soft = (promise) => Promise.resolve(promise).catch(() => null)
+    // Applied in one go, so the sections don't pop in one after another.
+    Promise.all([
+      soft(api.getTracks({ sort: 'added_at DESC', limit: 10 })),
+      soft(api.getSuggestions(uid)),
+      soft(api.getHistory(uid, 30)),
+      soft(api.getMixes(uid)),
+    ]).then(([t, s, h, m]) => {
+      // A failed request (or an { error } answer) keeps the last good section.
+      if (Array.isArray(t)) setRecentTracks(nonGhost(t))
+      if (Array.isArray(s)) setSuggestions(nonGhost(s))
+      if (Array.isArray(h)) setHistory(h)
+      if (Array.isArray(m)) setMixes(m.map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0))
+      // "No tracks yet" needs the sections it's about to have really answered.
+      if ([t, s, m].every(Array.isArray)) setLoaded(true)
+    })
   }
 
   useEffect(() => { load() }, [user?.id])
@@ -163,8 +190,8 @@ export default function Home() {
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">Listen History</h2>
           </div>
           {history.length > 0
-            ? <TrackList tracks={history} showAlbum />
-            : <p className="text-muted text-sm text-center py-12">No listen history yet.</p>
+            ? <TrackList tracks={history} showAlbum reduceMotion={wasCached} />
+            : loaded && <p className="text-muted text-sm text-center py-12">No listen history yet.</p>
           }
         </section>
       ) : (
@@ -193,7 +220,7 @@ export default function Home() {
                 {suggestions.slice(0, 8).map((t, i) => (
                   <motion.button
                     key={t.id}
-                    initial={{ opacity: 0, y: 8 }}
+                    initial={wasCached ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
                     onDoubleClick={() => playQueue(suggestions, i)}
@@ -220,11 +247,11 @@ export default function Home() {
                   Play All
                 </button>
               </div>
-              <TrackList tracks={recentTracks} />
+              <TrackList tracks={recentTracks} reduceMotion={wasCached} />
             </section>
           )}
 
-          {!recentTracks.length && !mixes.length && !suggestions.length && (
+          {loaded && !recentTracks.length && !mixes.length && !suggestions.length && (
             <div className="text-center py-24 text-muted">
               <Music size={48} className="mx-auto mb-4 opacity-20" />
               <p className="font-medium">No tracks yet</p>

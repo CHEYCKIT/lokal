@@ -5,56 +5,65 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import { api } from '../api'
+import { useCachedState, usePageReady } from '../pageCache'
 
 const LIBRARY_PAGE_SIZE = 50
 const HEAVY_GRID_THRESHOLD = 80
 
 export default function Library() {
-  const [tracks, setTracks] = useState([])
-  const [sort, setSort] = useState('added_at DESC')
-  const [view, setView] = useState('list')
+  // Kept across visits (with the sort and view they were shown in), so coming
+  // back paints the list at once instead of "No tracks yet" first.
+  const [tracks, setTracks, wasCached] = useCachedState('library:tracks', [])
+  const [sort, setSort] = useCachedState('library:sort', 'added_at DESC')
+  const [view, setView] = useCachedState('library:view', 'list')
   const [loading, setLoading] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
+  const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
+  // The empty state waits for the first answer instead of showing meanwhile.
+  const [loaded, setLoaded] = useState(wasCached)
+  usePageReady(loaded)
   const { playQueue } = usePlayerStore()
   const navigate = useNavigate()
-  const offsetRef = useRef(0)
+  const offsetRef = useRef(tracks.length)
+  const loadingRef = useRef(false)
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
 
   const load = async (append = false) => {
-    if (loading && append) return
+    // Synchronous in-flight check: the observer's `loading` can be stale, and a
+    // load-more mustn't supersede the first-page refresh (or run twice).
+    if (loadingRef.current && append) return
     const requestId = ++requestIdRef.current
     const nextOffset = append ? offsetRef.current : 0
+    loadingRef.current = true
     setLoading(true)
     try {
       const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset })
       if (requestId !== requestIdRef.current) return
-      const items = (Array.isArray(result) ? result : []).filter(track => !String(track?.file_path || '').startsWith('ghost://'))
+      // A failed request keeps the list already shown (and cached).
+      if (!Array.isArray(result)) return
+      const items = result.filter(track => !String(track?.file_path || '').startsWith('ghost://'))
       offsetRef.current = nextOffset + items.length
       setTracks(prev => append ? [...prev, ...items] : items)
       setHasMore(items.length === LIBRARY_PAGE_SIZE)
+      // Only a real answer ends the first load ("No tracks yet" must be true).
+      setLoaded(true)
     } finally {
       if (requestId === requestIdRef.current) {
+        loadingRef.current = false
         setLoading(false)
       }
     }
   }
 
+  // The list on screen (from last time, or the previous sort) stays until
+  // the new first page replaces it; a failed request leaves it as it is.
   useEffect(() => {
-    offsetRef.current = 0
-    setTracks([])
-    setHasMore(true)
     load(false)
   }, [sort])
 
   useEffect(() => {
-    const handleRefresh = () => {
-      offsetRef.current = 0
-      setTracks([])
-      setHasMore(true)
-      load(false)
-    }
+    const handleRefresh = () => load(false)
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
   }, [sort])
@@ -106,7 +115,7 @@ export default function Library() {
             <p className="text-xs text-muted font-display">{tracks.length} loaded tracks</p>
             <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
           </div>
-          <TrackList tracks={tracks} showAlbum reduceMotion={tracks.length > LIBRARY_PAGE_SIZE} />
+          <TrackList tracks={tracks} showAlbum reduceMotion={wasCached || tracks.length > LIBRARY_PAGE_SIZE} />
         </>
       )}
 
@@ -117,7 +126,7 @@ export default function Library() {
             return (
               <motion.button
                 key={t.id}
-                initial={shouldAnimateGrid ? { opacity: 0, scale: 0.9 } : false}
+                initial={shouldAnimateGrid && !wasCached ? { opacity: 0, scale: 0.9 } : false}
                 animate={shouldAnimateGrid ? { opacity: 1, scale: 1 } : undefined}
                 transition={shouldAnimateGrid ? { delay: Math.min(i * 0.012, 0.3) } : undefined}
                 whileHover={shouldAnimateGrid ? { scale: 1.04 } : undefined}
@@ -139,11 +148,11 @@ export default function Library() {
 
       {(hasMore || loading) && (
         <div ref={loadMoreRef} className="flex justify-center pt-2 min-h-10">
-          {loading && <p className="text-xs text-muted">Loading more tracks...</p>}
+          {loading && tracks.length > 0 && <p className="text-xs text-muted">Loading more tracks...</p>}
         </div>
       )}
 
-      {!tracks.length && (
+      {loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
           <p>No tracks yet — scan your music folder from Home.</p>

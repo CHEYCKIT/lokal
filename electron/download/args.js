@@ -15,8 +15,9 @@ const FORMATS = ['original', 'mp3', 'm4a', 'opus', 'flac']
 const MP3_BITRATES = ['128', '192', '256', '320']
 
 function resolveFormat(opts = {}, settings = {}) {
-  let format = String(opts.format || settings.download_format || 'mp3').toLowerCase()
-  if (!FORMATS.includes(format)) format = 'mp3'
+  // Same default as the Downloader page shows: Original (no re-encoding).
+  let format = String(opts.format || settings.download_format || 'original').toLowerCase()
+  if (!FORMATS.includes(format)) format = 'original'
   let quality = String(opts.quality || settings.download_quality || '320').replace(/k$/i, '')
   if (!MP3_BITRATES.includes(quality)) quality = '320'
   return { format, quality }
