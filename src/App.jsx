@@ -32,7 +32,7 @@ import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
-import { PageReadyContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
+import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
 
@@ -158,9 +158,20 @@ function NativeHistoryNavigation() {
  */
 function PageTransition({ gated = false, children }) {
   const [ready, setReady] = useState(!gated)
-  const markReady = useCallback(() => setReady(true), [])
-  // Reduced motion: fade only, no rise.
-  const rise = useReducedMotion() ? 0 : 6
+  const [shown, setShown] = useState(false)
+  // Start the fade two frames after the page says it's ready: the page's
+  // first render and paint (heavy on image grids) then happen while it's
+  // still invisible, instead of eating the start of the fade.
+  const requested = useRef(false)
+  const markReady = useCallback(() => {
+    if (requested.current) return
+    requested.current = true
+    requestAnimationFrame(() => requestAnimationFrame(() => setReady(true)))
+  }, [])
+  // Reduced motion: fade only, no rise. A plain transform string (not `y`)
+  // plus opacity lets the fade run on the compositor (WAAPI), so it stays
+  // smooth while the page's first render and its images are still busy.
+  const hidden = useReducedMotion() ? 'none' : 'translateY(6px)'
   // While it's invisible, the page's controls can't take keyboard focus.
   const pageRef = useRef(null)
   useLayoutEffect(() => {
@@ -173,15 +184,18 @@ function PageTransition({ gated = false, children }) {
   }, [ready, markReady])
   return (
     <PageReadyContext.Provider value={markReady}>
+      <PageShownContext.Provider value={shown}>
       <motion.div
         ref={pageRef}
-        initial={{ opacity: 0, y: rise }}
-        animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: rise }}
+        onAnimationComplete={() => { if (ready) setShown(true) }}
+        initial={{ opacity: 0, transform: hidden }}
+        animate={ready ? { opacity: 1, transform: 'none' } : { opacity: 0, transform: hidden }}
         exit={{ opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       >
         {children}
       </motion.div>
+      </PageShownContext.Provider>
     </PageReadyContext.Provider>
   )
 }

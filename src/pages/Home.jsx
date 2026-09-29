@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Music, RefreshCw, ScanLine, Play, Clock, Sparkles, Radio, History } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
+import FadeImg from '../components/FadeImg'
 import { api, peekSettings } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 
@@ -85,11 +86,11 @@ function MixCard({ mix, onClick }) {
     >
       <div className="w-full aspect-square rounded-lg overflow-hidden bg-card relative">
         {arts.length === 0 && <div className="w-full h-full flex items-center justify-center text-subtle"><Radio size={36} /></div>}
-        {arts.length === 1 && <img src={artSrc({ artwork_path: arts[0] })} className="w-full h-full object-cover" />}
+        {arts.length === 1 && <FadeImg src={artSrc({ artwork_path: arts[0] })} className="w-full h-full object-cover" />}
         {arts.length > 1 && (
           <div className="w-full h-full grid grid-cols-2">
             {arts.slice(0, 4).map((art, i) => (
-              <img key={i} src={artSrc({ artwork_path: art })} className="w-full h-full object-cover" />
+              <FadeImg key={i} src={artSrc({ artwork_path: art })} className="w-full h-full object-cover" />
             ))}
           </div>
         )}
@@ -190,7 +191,7 @@ function HomeContent({ user }) {
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">Listen History</h2>
           </div>
           {history.length > 0
-            ? <TrackList tracks={history} showAlbum reduceMotion={wasCached} />
+            ? <TrackList tracks={history} showAlbum reduceMotion />
             : loaded && <p className="text-muted text-sm text-center py-12">No listen history yet.</p>
           }
         </section>
@@ -220,14 +221,11 @@ function HomeContent({ user }) {
                 {suggestions.slice(0, 8).map((t, i) => (
                   <motion.button
                     key={t.id}
-                    initial={wasCached ? false : { opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.04 }}
                     onDoubleClick={() => playQueue(suggestions, i)}
                     className="flex items-center gap-3 p-3 bg-elevated rounded-xl border border-border hover:border-accent/30 transition-all group text-left"
                   >
                     <div className="w-10 h-10 rounded-lg bg-card overflow-hidden flex-shrink-0 flex items-center justify-center text-subtle">
-                      {trackArt(t) ? <img src={trackArt(t)} className="w-full h-full object-cover" /> : <Music size={16} />}
+                      {trackArt(t) ? <FadeImg src={trackArt(t)} className="w-full h-full object-cover" /> : <Music size={16} />}
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-white truncate">{t.title}</p>
@@ -247,7 +245,7 @@ function HomeContent({ user }) {
                   Play All
                 </button>
               </div>
-              <TrackList tracks={recentTracks} reduceMotion={wasCached} />
+              <TrackList tracks={recentTracks} reduceMotion />
             </section>
           )}
 

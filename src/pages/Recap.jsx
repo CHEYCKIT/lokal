@@ -5,6 +5,7 @@ import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
+import FadeImg from '../components/FadeImg'
 import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapTree, treePeriods } from '../recapPeriods'
 
 
@@ -114,9 +115,8 @@ function SessionCard({ session, index, onPlay }) {
   return (
     <motion.button
       key={session.id || index}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.03 }}
+      // No entrance of its own: the page fades in as a whole.
+      initial={false}
       onClick={onPlay}
       className="group overflow-hidden rounded-xl border border-border bg-elevated text-left transition-colors hover:border-accent/35"
     >
@@ -164,7 +164,7 @@ function SessionCard({ session, index, onPlay }) {
             const art = trackArt(track)
             return (
               <div key={track.id || trackIndex} className="aspect-square overflow-hidden rounded-lg bg-card">
-                {art ? <img src={art} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted/50"><Disc3 size={16} /></div>}
+                {art ? <FadeImg src={art} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted/50"><Disc3 size={16} /></div>}
               </div>
             )
           })}
@@ -796,7 +796,7 @@ function RecapContent({ user }) {
               </div>
               <div className="rounded-xl border border-border bg-black/20 p-4">
                 <div className="aspect-square overflow-hidden rounded-lg bg-card">
-                  {heroArt ? <img src={heroArt} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>}
+                  {heroArt ? <FadeImg src={heroArt} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>}
                 </div>
                 <p className="mt-3 truncate text-sm font-medium text-white">{heroTrack?.title}</p>
                 <p className="truncate text-xs text-muted">{heroTrack?.artist}</p>
@@ -810,7 +810,7 @@ function RecapContent({ user }) {
                 <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
                 <button onClick={() => playQueue(topTracks, 0)} className="text-xs font-display uppercase tracking-wider text-accent hover:text-accent/70">Play Top 50</button>
               </div>
-              <TrackList tracks={topTracks.slice(0, 20)} showAlbum />
+              <TrackList tracks={topTracks.slice(0, 20)} showAlbum reduceMotion />
             </section>
 
             <aside className="space-y-4">
