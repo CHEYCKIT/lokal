@@ -4,6 +4,7 @@ import { LayoutGrid, List, Music, Disc3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
+import FadeImg from '../components/FadeImg'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 
@@ -115,7 +116,9 @@ export default function Library() {
             <p className="text-xs text-muted font-display">{tracks.length} loaded tracks</p>
             <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
           </div>
-          <TrackList tracks={tracks} showAlbum reduceMotion={wasCached || tracks.length > LIBRARY_PAGE_SIZE} />
+          {/* No per-row entrance: the page fades in as a whole, and 50 row
+              animations in the same frames made that fade stutter. */}
+          <TrackList tracks={tracks} showAlbum reduceMotion />
         </>
       )}
 
@@ -126,15 +129,13 @@ export default function Library() {
             return (
               <motion.button
                 key={t.id}
-                initial={shouldAnimateGrid && !wasCached ? { opacity: 0, scale: 0.9 } : false}
-                animate={shouldAnimateGrid ? { opacity: 1, scale: 1 } : undefined}
-                transition={shouldAnimateGrid ? { delay: Math.min(i * 0.012, 0.3) } : undefined}
+                initial={false}
                 whileHover={shouldAnimateGrid ? { scale: 1.04 } : undefined}
                 onDoubleClick={() => playQueue(tracks, i)}
                 className="flex flex-col gap-2 text-left group"
               >
                 <div className="w-full aspect-square rounded-xl bg-elevated border border-border overflow-hidden flex items-center justify-center">
-                  {src ? <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" /> : <Music size={28} className="text-muted" />}
+                  {src ? <FadeImg src={src} className="w-full h-full object-cover" /> : <Music size={28} className="text-muted" />}
                 </div>
                 <div>
                   <p className="text-xs font-medium text-white truncate">{t.title}</p>

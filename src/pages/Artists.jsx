@@ -5,6 +5,7 @@ import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Search, Sparkles, 
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
+import FadeImg from '../components/FadeImg'
 
 const PAGE_SIZE = 60
 const TOP_ARTISTS_LIMIT = 8
@@ -38,26 +39,30 @@ function FallbackAvatar({ name }) {
   )
 }
 
-function ArtistCard({ artist, onClick, onPlay, rank }) {
+// Cards on the first screen skip their own entrance: the page already fades
+// in, and dozens of card animations running with it dropped frames.
+const FIRST_SCREEN_CARDS = 24
+
+function ArtistCard({ artist, onClick, onPlay, rank, animateIn = true }) {
   const imgSrc = getArtistImage(artist)
 
   return (
     <motion.button
-      initial={{ opacity: 0, y: 10 }}
+      initial={animateIn ? { opacity: 0, y: 10 } : false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
       onClick={onClick}
-      className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-center backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.08]"
+      className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-center transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.08]"
       style={{ contentVisibility: 'auto', containIntrinsicSize: '190px' }}
     >
       {rank != null && (
-        <div className="absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-[10px] font-display text-white/70 backdrop-blur-sm">
+        <div className="absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] font-display text-white/70">
           {rank}
         </div>
       )}
       <div className="relative aspect-square w-full overflow-hidden rounded-full ring-1 ring-white/10 shadow-lg shadow-black/40 transition-all duration-200 group-hover:ring-white/25">
         {imgSrc ? (
-          <img src={imgSrc} alt={artist.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" />
+          <FadeImg src={imgSrc} alt={artist.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" />
         ) : (
           <FallbackAvatar name={artist.name} />
         )}
@@ -92,7 +97,7 @@ function ArtistRow({ artist, onClick, onPlay }) {
       style={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}
     >
       <div className="relative h-10 w-10 overflow-hidden rounded-full bg-card">
-        {imgSrc ? <img src={imgSrc} alt="" loading="lazy" className="h-full w-full object-cover" /> : <FallbackAvatar name={artist.name} />}
+        {imgSrc ? <FadeImg src={imgSrc} className="h-full w-full object-cover" /> : <FallbackAvatar name={artist.name} />}
       </div>
       <div className="min-w-0">
         <p className="break-words text-sm font-medium leading-snug text-text" title={artist.name}>{artist.name}</p>
@@ -332,6 +337,7 @@ export default function Artists() {
                   rank={index + 1}
                   onClick={() => navigate(`/artist/${artist.id}`)}
                   onPlay={() => playArtist(artist)}
+                  animateIn={false}
                 />
               ))}
             </div>
@@ -369,12 +375,13 @@ export default function Artists() {
                 </div>
               ) : (
                 <div className={gridClass}>
-                  {artists.map((artist) => (
+                  {artists.map((artist, index) => (
                     <ArtistCard
                       key={artist.id}
                       artist={artist}
                       onClick={() => navigate(`/artist/${artist.id}`)}
                       onPlay={() => playArtist(artist)}
+                      animateIn={index >= FIRST_SCREEN_CARDS}
                     />
                   ))}
                 </div>

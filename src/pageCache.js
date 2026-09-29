@@ -56,6 +56,11 @@ export const PAGE_READY_TIMEOUT_MS = 350
 
 export const PageReadyContext = createContext(null)
 
+// True once the page has finished fading in (always true outside a page).
+// Artwork waits for it before fading itself in, so the page's fade doesn't
+// share its frames with dozens of image fades.
+export const PageShownContext = createContext(true)
+
 /**
  * Hold the page's fade-in until `ready` is true. Layout effect, so a page
  * whose data is already cached is released before its first paint.

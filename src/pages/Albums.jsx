@@ -6,6 +6,7 @@ import { usePlayerStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
+import FadeImg from '../components/FadeImg'
 
 const PAGE_SIZE = 48
 
@@ -123,12 +124,16 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
   )
 }
 
-function AlbumCard({ album, onClick, onPlay }) {
+// Cards on the first screen skip their own entrance: the page already fades
+// in, and dozens of card animations running with it dropped frames.
+const FIRST_SCREEN_CARDS = 24
+
+function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
   const artSrc = getAlbumArtwork(album)
 
   return (
     <motion.button
-      initial={{ opacity: 0, y: 10 }}
+      initial={animateIn ? { opacity: 0, y: 10 } : false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
       whileHover={{ y: -4, scale: 1.02 }}
@@ -139,25 +144,16 @@ function AlbumCard({ album, onClick, onPlay }) {
     >
       <div className="relative aspect-square overflow-hidden bg-black/20">
         {artSrc ? (
-          <>
-            <div
-              className="absolute inset-0 scale-110 blur-xl"
-              style={{
-                backgroundImage: `url("${artSrc}")`,
-                backgroundPosition: 'center',
-                backgroundSize: 'cover',
-                opacity: 0.7,
-              }}
-            />
-            <img src={artSrc} alt={album.title} className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-          </>
+          // (A blurred copy used to sit under the cover, entirely hidden by
+          // it: a full-size blur per card for nothing.)
+          <FadeImg src={artSrc} alt={album.title} className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <Disc3 size={34} className="text-muted" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-        <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[10px] font-display uppercase tracking-[0.22em] text-white/85 backdrop-blur-md">
+        <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-display uppercase tracking-[0.22em] text-white/85">
           {releaseLabel(album.release_type)}
         </div>
         <button
@@ -586,6 +582,7 @@ export default function Albums() {
                         navigate('/albums', { state: { album } })
                       }}
                       onPlay={() => playAlbumRelease(album)}
+                      animateIn={index >= FIRST_SCREEN_CARDS}
                     />
                   ))}
                 </div>
