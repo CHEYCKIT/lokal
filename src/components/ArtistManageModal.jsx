@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react'
-import { Camera, Merge, Search, Trash2, Undo2 } from 'lucide-react'
+import { Camera, Check, Merge, Search, Trash2, Undo2 } from 'lucide-react'
 import Modal from './Modal'
 import SectionSwap, { ReadyWhen } from './SectionSwap'
 import AutoHeight from './AutoHeight'
@@ -10,6 +10,13 @@ import { plural } from '../plural'
 function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, '').trim()
 }
+
+// Lookup lists photos and bios apart, best sources first (as Auto picks).
+const PHOTO_RANK = { deezer: 0, theaudiodb: 1, musicbrainz: 2, wikipedia: 3 }
+const BIO_RANK = { theaudiodb: 0, musicbrainz: 1, wikipedia: 2 }
+const resultKey = (result) => result.key || `${result.source}:${result.title}`
+const sourceLabel = (source) => ARTIST_SOURCES.find(([id]) => id === source)?.[1] || source || 'web'
+const byRank = (rank, extra = () => 0) => (a, b) => ((rank[a.source] ?? 9) + extra(a)) - ((rank[b.source] ?? 9) + extra(b))
 
 export default function ArtistManageModal({ artist, open, onClose, onChanged }) {
   const [tab, setTab] = useState('edit')
@@ -29,7 +36,14 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
   const [lookupError, setLookupError] = useState('')
   const [autoMatching, setAutoMatching] = useState(false)
   const [saving, setSaving] = useState(false)
+  // What was picked in Lookup this time (shown as "Using"), and the bio opened in full.
+  const [pickedImage, setPickedImage] = useState(null)
+  const [pickedBio, setPickedBio] = useState(null)
+  const [openBio, setOpenBio] = useState(null)
   const fileRef = useRef()
+  // Lookup searches by itself the first time it opens for an artist.
+  const lookedUp = useRef(null)
+  const runLookupRef = useRef(null)
   const deferredMergeSearch = useDeferredValue(mergeSearch)
 
   useEffect(() => {
@@ -44,7 +58,17 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
     setLookupSource(peekSettings()?.artist_metadata_source || 'either')
     setLookupResults([])
     setLookupError('')
+    setPickedImage(null)
+    setPickedBio(null)
+    setOpenBio(null)
+    lookedUp.current = null
   }, [artist?.id, open])
+
+  useEffect(() => {
+    if (!open || tab !== 'lookup' || !artist?.id || lookedUp.current === artist.id) return
+    lookedUp.current = artist.id
+    runLookupRef.current?.()
+  }, [artist?.id, open, tab])
 
   useEffect(() => {
     if (!open || tab !== 'merge' || !artist) return
@@ -107,13 +131,13 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
     onClose?.()
   }
 
-  const runLookup = async () => {
+  const runLookup = async (source = lookupSource) => {
     const query = lookupQuery.trim()
     if (!query) return
     setLookupLoading(true)
     setLookupError('')
     try {
-      const results = await api.artistSearchMetadata(query, { source: lookupSource })
+      const results = await api.artistSearchMetadata(query, { source })
       const items = Array.isArray(results) ? results : []
       setLookupResults(items)
       if (!items.length) setLookupError('No matches found.')
@@ -124,12 +148,20 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
     setLookupLoading(false)
   }
 
-  const applyLookup = async (selection, mode = 'both') => {
+  runLookupRef.current = runLookup
+
+  const applyLookup = async (selection, mode) => {
     setSaving(true)
     await api.artistApplyMetadataSelection(artist.id, selection, mode)
     setSaving(false)
+    if (mode === 'image') setPickedImage(resultKey(selection))
+    if (mode === 'bio') setPickedBio(resultKey(selection))
     onChanged?.()
   }
+
+  const photoResults = lookupResults.filter(result => result.imageUrl).sort(byRank(PHOTO_RANK))
+  // A MusicBrainz tag line ("Group • Duluth • slowcore") after the real bios.
+  const bioResults = lookupResults.filter(result => result.bio).sort(byRank(BIO_RANK, result => (result.shortBio ? 5 : 0)))
 
   const useLocalFallback = async () => {
     setSaving(true)
@@ -226,12 +258,12 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
 
       {tab === 'lookup' && (
         <div className="space-y-4">
-          <p className="text-xs text-muted leading-relaxed">Search for a better web match if the current bio or image is wrong. Applying a result becomes a manual override, so Lokal will keep your choice.</p>
+          <p className="text-xs text-muted leading-relaxed">Pick a photo and a bio separately, from any source. Artists who share a name are listed apart: the line under each name says who it is. What you pick is kept as your choice.</p>
           <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
             {ARTIST_SOURCES.map(([id, label]) => (
               <button
                 key={id}
-                onClick={() => setLookupSource(id)}
+                onClick={() => { setLookupSource(id); runLookup(id) }}
                 className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
               >
                 {label}
@@ -249,40 +281,75 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
               placeholder="Search artist name..."
               className="flex-1 bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors"
             />
-            <button onClick={runLookup} disabled={lookupLoading || !lookupQuery.trim()} className="px-4 py-2.5 rounded-xl bg-accent text-base text-sm font-medium hover:bg-accent-dim transition-colors disabled:opacity-40">
+            <button onClick={() => runLookup()} disabled={lookupLoading || !lookupQuery.trim()} className="px-4 py-2.5 rounded-xl bg-accent text-base text-sm font-medium hover:bg-accent-dim transition-colors disabled:opacity-40">
               <Search size={14} className="inline mr-1.5" />Search
             </button>
           </div>
           {lookupError && <p className="text-xs text-amber-300">{lookupError}</p>}
-          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-5 max-h-[26rem] overflow-y-auto pr-1">
             {lookupLoading && <p className="text-xs text-muted">Searching...</p>}
             {!lookupLoading && !lookupResults.length && !lookupError && (
               <p className="text-xs text-muted">Search for a better artist match.</p>
             )}
-            {lookupResults.map(result => (
-              <div key={result.title} className="rounded-xl border border-border bg-card p-3 space-y-3">
-                <div className="flex gap-3">
-                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-elevated border border-border flex items-center justify-center flex-shrink-0">
-                    {result.imageUrl ? <img src={result.imageUrl} className="w-full h-full object-cover" /> : <span className="text-muted text-xs">No image</span>}
-                  </div>
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{result.title}</p>
-                      <span className="px-1.5 py-0.5 rounded bg-elevated border border-border text-[10px] uppercase tracking-wider text-muted flex-shrink-0">
-                        {ARTIST_SOURCES.find(([id]) => id === result.source)?.[1] || result.source || 'web'}
-                      </span>
-                    </div>
-                    {result.snippet && <p className="text-xs text-muted max-h-10 overflow-hidden">{stripHtml(result.snippet)}</p>}
-                  </div>
+            {!lookupLoading && photoResults.length > 0 && (
+              <section>
+                <h3 className="text-xs font-display text-muted uppercase tracking-widest mb-2">Photos</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {photoResults.map(result => {
+                    const picked = pickedImage === resultKey(result)
+                    return (
+                      <button
+                        key={resultKey(result)}
+                        onClick={() => applyLookup(result, 'image')}
+                        disabled={saving}
+                        title={[result.title, stripHtml(result.snippet), sourceLabel(result.source)].filter(Boolean).join(' · ')}
+                        className={`group text-left rounded-xl border p-1.5 transition-colors disabled:opacity-60 ${picked ? 'border-accent bg-accent/10' : 'border-border bg-card hover:border-accent/40'}`}
+                      >
+                        <div className="relative aspect-square rounded-lg overflow-hidden bg-elevated">
+                          <img src={result.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                          {picked && <span className="absolute top-1 right-1 rounded-full bg-accent text-base p-0.5"><Check size={12} /></span>}
+                        </div>
+                        <p className="mt-1.5 text-[11px] font-medium text-white truncate">{result.title}</p>
+                        <p className="text-[10px] text-muted truncate">{sourceLabel(result.source)}{result.snippet ? ` · ${stripHtml(result.snippet)}` : ''}</p>
+                      </button>
+                    )
+                  })}
                 </div>
-                {result.bio && <p className="text-xs text-muted leading-relaxed max-h-20 overflow-hidden">{result.bio}</p>}
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => applyLookup(result, 'both')} disabled={saving} className="px-3 py-1.5 rounded-lg bg-accent text-base text-xs font-medium hover:bg-accent-dim transition-colors disabled:opacity-40">Use bio + image</button>
-                  <button onClick={() => applyLookup(result, 'image')} disabled={saving || !result.imageUrl} className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted hover:text-white hover:border-accent/40 transition-colors disabled:opacity-40">Use image only</button>
-                  <button onClick={() => applyLookup(result, 'bio')} disabled={saving || !result.bio} className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted hover:text-white hover:border-accent/40 transition-colors disabled:opacity-40">Use bio only</button>
+              </section>
+            )}
+            {!lookupLoading && bioResults.length > 0 && (
+              <section>
+                <h3 className="text-xs font-display text-muted uppercase tracking-widest mb-2">Bios</h3>
+                <div className="space-y-2">
+                  {bioResults.map(result => {
+                    const key = resultKey(result)
+                    const picked = pickedBio === key
+                    const expanded = openBio === key
+                    return (
+                      <div key={key} className={`rounded-xl border p-3 space-y-2 ${picked ? 'border-accent bg-accent/10' : 'border-border bg-card'}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{result.title}</p>
+                          <span className="px-1.5 py-0.5 rounded bg-elevated border border-border text-[10px] uppercase tracking-wider text-muted flex-shrink-0">{sourceLabel(result.source)}</span>
+                        </div>
+                        {result.snippet && <p className="text-[11px] text-accent/80 truncate">{stripHtml(result.snippet)}</p>}
+                        <p className={`text-xs text-muted leading-relaxed whitespace-pre-line ${expanded ? '' : 'line-clamp-3'}`}>{result.bio}</p>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => applyLookup(result, 'bio')} disabled={saving || picked}
+                            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 ${picked ? 'bg-accent/20 text-accent' : 'bg-accent text-base hover:bg-accent-dim'}`}>
+                            {picked ? <><Check size={12} /> Using this bio</> : 'Use this bio'}
+                          </button>
+                          {result.bio.length > 180 && (
+                            <button onClick={() => setOpenBio(expanded ? null : key)} className="text-xs text-muted hover:text-white transition-colors">
+                              {expanded ? 'Less' : 'Read more'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
-            ))}
+              </section>
+            )}
           </div>
         </div>
       )}

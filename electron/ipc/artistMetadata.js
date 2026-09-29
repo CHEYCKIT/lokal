@@ -65,11 +65,6 @@ function getDefaultArtistSource(db) {
   }
 }
 
-function isUsefulArtistDescription(description) {
-  if (!description) return false
-  return /(musician|singer|rapper|band|artist|composer|producer|dj|duo|group|songwriter)/i.test(description)
-}
-
 function getWikipediaTitleFromUrl(url) {
   if (!url) return null
   const match = String(url).match(/https?:\/\/[a-z]+\.wikipedia\.org\/wiki\/(.+)$/i)
@@ -114,7 +109,8 @@ async function getMusicBrainzArtistMetadataById(id) {
       // No linked article: the bio is only a tag line ("Person • Atlanta • hip hop").
       shortBio: !article,
       imageUrl,
-      snippet: data.disambiguation || buildMusicBrainzBio(data) || '',
+      // Type, disambiguation, place, genres: what tells same-name artists apart.
+      snippet: buildMusicBrainzBio(data) || '',
       source: 'musicbrainz',
     }
   } catch {
@@ -359,14 +355,9 @@ async function fetchArtistMetadata(name, options = {}) {
   return merged.source ? merged : null
 }
 
-async function getArtistMetadataByTitle(title) {
-  const summary = await getWikipediaSummary(title)
-  if (!summary) return null
-  const bio = typeof summary.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
-  const imageUrl = summary.originalimage?.source || summary.thumbnail?.source || null
-  return { title, bio, imageUrl }
-}
-
+// Pages about musicians only (a same-name footballer or painter never shows),
+// the ones titled with the artist's name first. Other musicians' pages (a
+// band's members) can show too, for the user to pick or skip.
 async function searchWikipediaMetadataCandidates(query) {
   const normalized = String(query || '').trim()
   if (!normalized) return []
@@ -376,14 +367,16 @@ async function searchWikipediaMetadataCandidates(query) {
     const candidates = []
     for (const result of results) {
       if (!result?.title) continue
-      const metadata = await getArtistMetadataByTitle(result.title)
-      if (!metadata) continue
+      const summary = await getWikipediaSummary(result.title)
+      if (!isArtistSummary(summary)) continue
+      const bio = typeof summary.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
       candidates.push({
-        title: metadata.title,
-        bio: metadata.bio,
-        imageUrl: metadata.imageUrl,
-        snippet: result.snippet || '',
-        score: isUsefulArtistDescription(result.snippet) ? 1 : 0,
+        key: `wikipedia:${result.title}`,
+        title: result.title,
+        bio,
+        imageUrl: summary.originalimage?.source || summary.thumbnail?.source || null,
+        snippet: summary.description || '',
+        score: wikiTitleMatch(result.title, normalized),
         source: 'wikipedia',
       })
       if (candidates.length >= 5) break
@@ -401,8 +394,10 @@ async function searchMusicBrainzMetadataCandidates(query) {
     const metadata = await getMusicBrainzArtistMetadataById(artist.id)
     if (!metadata) continue
     candidates.push({
+      key: `musicbrainz:${artist.id}`,
       title: metadata.title,
       bio: metadata.bio,
+      shortBio: metadata.shortBio,
       imageUrl: metadata.imageUrl,
       snippet: metadata.snippet || '',
       score: artist.score || 0,
@@ -415,10 +410,12 @@ async function searchMusicBrainzMetadataCandidates(query) {
 
 async function searchAudioDbMetadataCandidates(query) {
   return (await searchAudioDbArtists(query)).map(audioDbMetadata).filter(Boolean).slice(0, 5)
+    .map(candidate => ({ ...candidate, key: `theaudiodb:${candidate.id}` }))
 }
 
 async function searchDeezerMetadataCandidates(query) {
   return (await searchDeezerArtists(query)).map(deezerMetadata).filter(candidate => candidate?.imageUrl).slice(0, 5)
+    .map(candidate => ({ ...candidate, key: `deezer:${candidate.id}` }))
 }
 
 const CANDIDATE_SEARCHES = {
@@ -431,16 +428,15 @@ const CANDIDATE_SEARCHES = {
 async function searchArtistMetadataCandidates(query, options = {}) {
   const source = normalizeSource(options.source)
   if (source !== 'either') return CANDIDATE_SEARCHES[source](query).catch(() => [])
-  // Wikipedia's list is a loose search with small photos: only when picked by hand.
-  const searches = Object.entries(CANDIDATE_SEARCHES).filter(([id]) => id !== 'wikipedia').map(([, search]) => search)
-  const results = await Promise.all(searches.map(search => search(query).catch(() => [])))
+  const results = await Promise.all(Object.values(CANDIDATE_SEARCHES).map(search => search(query).catch(() => [])))
+  // Same-name artists stay separate (each has its own id): the user picks.
   const seen = new Set()
   return results.flat().filter((candidate) => {
-    const key = `${candidate.source}:${String(candidate.title || '').toLowerCase()}`
+    const key = candidate.key || `${candidate.source}:${String(candidate.title || '').toLowerCase()}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
-  }).slice(0, 10)
+  })
 }
 
 async function applyArtistMetadataSelection(db, artistId, selection, options = {}) {
