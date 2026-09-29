@@ -206,9 +206,16 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   const done = await applyTags(filePath, changes)
   if (!done.lyrics) { out.lyrics = null; out.lyricsSource = null }
   out.cover = done.cover
-  out.artist = tags.artist || undefined
+  // Filed by what the file now says: a tag that couldn't be written keeps
+  // the file's own value, so the path never disagrees with the tags.
+  const final = {
+    title: changes.title && done.title !== changes.title ? info.title : tags.title,
+    artist: changes.artist && done.artist !== changes.artist ? info.artist : tags.artist,
+    album: changes.album && done.album !== changes.album ? info.album : tags.album,
+  }
+  out.artist = final.artist || undefined
   // Named and filed like any single: Music/Artist/Album/Title.ext.
-  out.filePath = tags.title ? refile(filePath, { artist: tags.artist, title: tags.title, album: tags.album, outputDir }) : filePath
+  out.filePath = final.title ? refile(filePath, { artist: final.artist, title: final.title, album: final.album, outputDir }) : filePath
   return out
 }
 
