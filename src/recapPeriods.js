@@ -115,7 +115,7 @@ export function nextPeriodBoundary(now = new Date()) {
 export function periodQuery(period, extra = {}) {
   if (period.scope === 'week') return { scope: 'week', weekStart: period.weekStart, tz: localTimeZone(), ...extra }
   if (period.scope === 'month') return { scope: 'month', year: period.year, month: period.month, tz: localTimeZone(), ...extra }
-  return { scope: 'year', year: period.year, ...extra }
+  return { scope: 'year', year: period.year, tz: localTimeZone(), ...extra }
 }
 
 // ---------------------------------------------------------------- navigation

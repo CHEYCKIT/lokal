@@ -187,18 +187,15 @@ function PageTransition({ gated = false, children }) {
       <PageShownContext.Provider value={shown}>
       <motion.div
         ref={pageRef}
-        onAnimationComplete={() => {
-          if (!ready) return
-          // Leave no transform behind once it's in: even an identity
-          // translateY(0px) makes this div the containing block of every
-          // position:fixed element inside the page, so modals (Delete, Edit
-          // track info...) were placed at the top of the page instead of the
-          // screen -- out of view once the page was scrolled.
-          if (pageRef.current) pageRef.current.style.transform = 'none'
-          setShown(true)
-        }}
+        onAnimationComplete={() => { if (ready) setShown(true) }}
         initial={{ opacity: 0, transform: hidden }}
-        animate={ready ? { opacity: 1, transform: 'none' } : { opacity: 0, transform: hidden }}
+        // Leave no transform behind once it's in: even an identity
+        // translateY(0px) makes this div the containing block of every
+        // position:fixed element inside the page, so overlays (modals, the
+        // Recap story) were sized and placed by the page instead of the
+        // screen. transitionEnd sets it in framer's own state: setting the
+        // style by hand was undone by framer on the next render.
+        animate={ready ? { opacity: 1, transform: 'translateY(0px)', transitionEnd: { transform: 'none' } } : { opacity: 0, transform: hidden }}
         exit={{ opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       >
