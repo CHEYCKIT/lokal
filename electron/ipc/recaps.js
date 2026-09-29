@@ -47,6 +47,22 @@ function zoneOffsetMs(ms, tz) {
   return asUtc - Math.floor(ms / 1000) * 1000
 }
 
+/**
+ * The hour of day (0-23) a play at `seconds` happened at in `tz` (the
+ * server's own zone without one). The zone's offset is looked up once per
+ * hour of plays, not once per play.
+ */
+function hourInZone(tz) {
+  const offsets = new Map()
+  return (seconds) => {
+    const ms = Number(seconds) * 1000
+    if (!tz) return new Date(ms).getHours()
+    const bucket = Math.floor(ms / 3600000)
+    if (!offsets.has(bucket)) offsets.set(bucket, zoneOffsetMs(bucket * 3600000, tz))
+    return new Date(ms + offsets.get(bucket)).getUTCHours()
+  }
+}
+
 /** The instant (ms) of midnight starting y-m-d in `tz` (the server's own zone without one). */
 function midnightMs(y, m, d, tz) {
   if (!tz) return new Date(y, m - 1, d).getTime()
@@ -111,6 +127,11 @@ function resolveRange(opts = {}) {
   }
   if (opts.scope === 'year') {
     const year = Number(opts.year || currentYear)
+    const zone = validTimeZone(opts.tz)
+    // In the listener's time zone, like weeks and months (the days listed come from it too).
+    if (zone && Number.isInteger(year) && year >= 1970 && year <= 9999) {
+      return { from: Math.floor(midnightMs(year, 1, 1, zone) / 1000), to: Math.floor(midnightMs(year + 1, 1, 1, zone) / 1000) - 1, scope: 'year', year, tz: zone }
+    }
     return { from: startOfYear(year), to: endOfYear(year), scope: 'year', year }
   }
   const from = toUnix(opts.from, 0)
@@ -366,14 +387,13 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   const replayQueue = topTracks.slice(0, 50)
   const totalSeconds = qualified.reduce((sum, row) => sum + Number(row.seconds_played || 0), 0)
   const preferenceProfile = savePreferenceProfile(db, userId, rows)
-  const peakHour = db.prepare(`
-    SELECT CAST(strftime('%H', ph.played_at, 'unixepoch', 'localtime') AS INTEGER) as hour, COUNT(*) as plays
-    FROM play_history ph
-    WHERE ph.user_id = ? AND ph.played_at BETWEEN ? AND ? AND COALESCE(ph.seconds_played, 0) >= ?
-    GROUP BY hour
-    ORDER BY plays DESC
-    LIMIT 1
-  `).get(userId, range.from, range.to, QUALIFIED_SECONDS) || null
+  // Plays per hour of the day, in the listener's time zone (SQLite's
+  // 'localtime' is the server's, which the web version may not share).
+  const hourOf = hourInZone(validTimeZone(opts.tz))
+  const hours = Array(24).fill(0)
+  for (const row of qualified) hours[hourOf(row.played_at)] += 1
+  const busiest = hours.reduce((best, plays, hour) => (plays > best.plays ? { hour, plays } : best), { hour: null, plays: 0 })
+  const peakHour = busiest.plays ? busiest : null
   return {
     ...range,
     userId,
@@ -393,6 +413,7 @@ function buildRecap(db, userId = 'guest', opts = {}) {
     biggestSession: sessions[0] || null,
     replayQueue,
     peakHour,
+    hours,
     preferences: preferenceProfile,
   }
 }

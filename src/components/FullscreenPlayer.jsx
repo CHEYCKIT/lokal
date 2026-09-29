@@ -6,6 +6,7 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
+import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
 import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
 import { api } from '../api'
@@ -177,11 +178,12 @@ export default function FullscreenPlayer() {
   useEffect(() => {
     if (playerLayerRef.current) playerLayerRef.current.inert = lyricsMode
   }, [lyricsMode, open])
-  // The cover flies between the player and the full-screen lyrics header: a
-  // copy of it, moved with a compositor-only transform (smooth even while the
-  // two views crossfade and the lyrics keep playing), while the real ones
-  // stay hidden until it lands. Both views are always laid out (just faded),
-  // so both ends can be measured right away.
+  // The cover flies between the player and the full-screen lyrics header (see
+  // coverFlight): a copy of it moves while the real ones stay hidden until it
+  // lands. With a canvas playing, the copy keeps playing it and turns into
+  // the cover on the way (the header shows the cover), without stretching
+  // from the card's 9:16 into the square. Both views are always laid out
+  // (just faded), so both ends can be measured right away.
   const flightRef = useRef(null)
   const prevModeRef = useRef(null)
   useLayoutEffect(() => {
@@ -194,41 +196,30 @@ export default function FullscreenPlayer() {
     const thumb = overlay?.querySelector('[data-fullscreen-thumb]')
     const art = trackArtURL(usePlayerStore.getState().currentTrack)
     if (!overlay || !big || !thumb || !art) return
-    const from = lyricsMode ? big : thumb, to = lyricsMode ? thumb : big
-    const a = from.getBoundingClientRect(), b = to.getBoundingClientRect()
-    if (!a.width || !b.width) return
-    const flyer = document.createElement('img')
-    flyer.src = art
-    flyer.alt = ''
-    const radius = lyricsMode ? [16, 8] : [8, 16]
-    Object.assign(flyer.style, {
-      position: 'fixed', left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px`,
-      objectFit: 'cover', zIndex: '60', pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform',
-      borderRadius: `${radius[0]}px`, boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
+    const card = big.getBoundingClientRect()
+    const small = thumb.getBoundingClientRect()
+    if (!card.width || !small.width) return
+    // The canvas, if one is showing in the card (MotionCover fades it in once playing).
+    const video = [...big.querySelectorAll('video')].find(v => v.readyState >= 2 && v.style.opacity !== '0') || null
+    const flight = startCoverFlight({
+      parent: overlay,
+      from: lyricsMode ? card : small,
+      to: lyricsMode ? small : card,
+      art,
+      video,
+      card: { width: card.width, height: card.height },
+      toLyrics: lyricsMode,
+      radius: lyricsMode ? [16, 8] : [8, 16],
+      timing: { duration: FULLSCREEN_SWITCH.duration * 1000 + 60, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' },
     })
-    overlay.appendChild(flyer)
     big.style.visibility = 'hidden'
     thumb.style.visibility = 'hidden'
-    const sx = b.width / a.width, sy = b.height / a.height
-    const timing = { duration: FULLSCREEN_SWITCH.duration * 1000 + 60, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' }
-    // Transform alone, so the compositor runs it; the corner rounding is a
-    // separate (main-thread) animation that can't hold the movement back.
-    const flight = flyer.animate([
-      { transform: 'translate(0px, 0px) scale(1, 1)' },
-      { transform: `translate(${b.left - a.left}px, ${b.top - a.top}px) scale(${sx}, ${sy})` },
-    ], timing)
-    const corners = flyer.animate([
-      { borderRadius: `${radius[0]}px` },
-      { borderRadius: `${radius[1] / Math.min(sx, sy)}px` },
-    ], timing)
     const land = () => {
       if (flightRef.current !== land) return
       flightRef.current = null
       big.style.visibility = ''
       thumb.style.visibility = ''
       flight.cancel()
-      corners.cancel()
-      flyer.remove()
     }
     flightRef.current = land
     flight.finished.then(land, land)
