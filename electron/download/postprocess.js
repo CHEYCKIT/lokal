@@ -61,7 +61,27 @@ function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
   const artist = unquote(m[1])
   const song = unquote(m[2])
   if (!artist || !song || NOT_AN_ARTIST.test(artist)) return null
-  return { artist, title: song }
+  return { artist, title: song, fromDash: true }
+}
+
+// "Song - Artist (Someone Edit)" uploads exist too: a dash alone can't tell
+// which side is the artist. When the right side is an artist already in the
+// library and the left side isn't, they're swapped; a trailing "(… Edit)" /
+// "[… Remix]" stays with the song.
+const TRAILING_TAGS = /((?:\s*[([][^()[\]]*[)\]])+)\s*$/
+
+function knownArtist(db, name) {
+  const first = String(name || '').split(/\s+(?:feat\.?|ft\.?|featuring|&|x|vs\.?)\s+|,\s*/i)[0].trim()
+  if (!db || !first) return false
+  try { return !!db.prepare('SELECT 1 FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1').get(first) } catch { return false }
+}
+
+function preferKnownArtist(parsed, db) {
+  if (!parsed?.fromDash || !db) return parsed
+  const tags = parsed.title.match(TRAILING_TAGS)
+  const other = tags ? parsed.title.slice(0, tags.index).trim() : parsed.title
+  if (!other || knownArtist(db, parsed.artist) || !knownArtist(db, other)) return parsed
+  return { artist: other, title: `${parsed.artist}${tags ? ' ' + tags[1].trim() : ''}`, fromDash: true }
 }
 
 function safeName(s) {
@@ -152,7 +172,7 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   // YouTube and SoundCloud: the artist from the title ("Artist - Song"), not
   // the uploader. (Addons bring their own tags; Soulseek files have theirs.)
   const soundcloud = isSoundCloud(url)
-  const fromTitle = clean && (isYouTube(url) || soundcloud) ? artistAndTitle(meta, info, { soundcloud }) : null
+  const fromTitle = clean && (isYouTube(url) || soundcloud) ? preferKnownArtist(artistAndTitle(meta, info, { soundcloud }), db) : null
   const lookupInfo = fromTitle
     ? { ...info, ...fromTitle }
     : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
@@ -220,4 +240,4 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle, knownTagsOf }
+module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, knownTagsOf }
