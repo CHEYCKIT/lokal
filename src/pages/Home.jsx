@@ -5,6 +5,7 @@ import { Music, RefreshCw, ScanLine, Play, Clock, Sparkles, Radio, History } fro
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
+import SectionSwap from '../components/SectionSwap'
 import { api, peekSettings } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 
@@ -184,6 +185,8 @@ function HomeContent({ user }) {
         ))}
       </div>
 
+      {/* Switching tab: the other one fades in once painted. */}
+      <SectionSwap id={tab} className="space-y-7">
       {tab === 'history' ? (
         <section>
           <div className="flex items-center gap-2 mb-4">
@@ -258,6 +261,7 @@ function HomeContent({ user }) {
           )}
         </>
       )}
+      </SectionSwap>
     </div>
   )
 }

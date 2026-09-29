@@ -4,6 +4,7 @@ import { useDeferredValue } from 'react'
 import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
+import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
@@ -238,7 +239,9 @@ export default function Settings() {
   const [eqGains, setEqGains] = useState(EQ_PRESETS[DEFAULT_EQ_PRESET].gains)
   const [eqPreset, setEqPreset] = useState(DEFAULT_EQ_PRESET)
   const [showClearModal, setShowClearModal] = useState(false)
-  const [artists, setArtists] = useState([])
+  // Lists a category loads are kept for the next visit, so switching back to
+  // it shows them at once (and refreshes them quietly).
+  const [artists, setArtists] = useState(() => peekCache('settings:artists') || [])
   const [artistsLoading, setArtistsLoading] = useState(false)
   const [artistsHasMore, setArtistsHasMore] = useState(false)
   const [artistsTotal, setArtistsTotal] = useState(0)
@@ -269,8 +272,10 @@ export default function Settings() {
   const [importPreview, setImportPreview] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
-  const [appUsers, setAppUsers] = useState([])
+  const [appUsers, setAppUsers] = useState(() => peekCache('settings:users') || [])
   const [usersLoading, setUsersLoading] = useState(false)
+  // A users request has answered (or failed): the Data category can show.
+  const [usersTried, setUsersTried] = useState(() => peekCache('settings:users') !== undefined)
   const [accountStatus, setAccountStatus] = useState('')
   const [userToDelete, setUserToDelete] = useState(null)
   const [showFactoryResetModal, setShowFactoryResetModal] = useState(false)
@@ -369,7 +374,7 @@ export default function Settings() {
   const [manualGenreTrack, setManualGenreTrack] = useState('')
   const [manualGenreAlbum, setManualGenreAlbum] = useState('')
   const [manualGenreValue, setManualGenreValue] = useState('')
-  const [plugins, setPlugins] = useState([])
+  const [plugins, setPlugins] = useState(() => peekCache('settings:plugins') || [])
   const [pluginsLoading, setPluginsLoading] = useState(false)
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
@@ -557,6 +562,8 @@ export default function Settings() {
       if (requestId !== artistRequestRef.current) return
       const nextItems = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : []
       artistOffsetRef.current = offset + nextItems.length
+      // The unfiltered first page is kept for the next visit.
+      if (offset === 0 && !deferredArtistSearch) writeCache('settings:artists', nextItems)
       setArtists(prev => offset === 0 ? nextItems : [...prev, ...nextItems])
       setArtistsHasMore(Boolean(result?.hasMore))
       setArtistsTotal(Number(result?.total) || nextItems.length)
@@ -567,30 +574,44 @@ export default function Settings() {
     }
   }
 
+  // The list on screen stays until the fresh first page replaces it.
   const refreshArtists = async () => {
     artistOffsetRef.current = 0
-    setArtists([])
     await loadArtists()
   }
 
   const loadPlugins = async () => {
     setPluginsLoading(true)
-    const result = await api.pluginsList()
-    if (Array.isArray(result)) {
-      setPlugins(result)
-      setPluginStatus('')
-    } else {
-      setPlugins([])
-      setPluginStatus(result?.error || 'Failed to load plugins')
+    try {
+      const result = await api.pluginsList()
+      if (Array.isArray(result)) {
+        writeCache('settings:plugins', result)
+        setPlugins(result)
+        setPluginStatus('')
+      } else {
+        setPluginStatus(result?.error || 'Failed to load plugins')
+      }
+    } catch (e) {
+      setPluginStatus(e?.message || 'Failed to load plugins')
+    } finally {
+      setPluginsLoading(false)
     }
-    setPluginsLoading(false)
   }
 
   const loadUsers = async () => {
     setUsersLoading(true)
-    const result = await api.listUsers()
-    setAppUsers(Array.isArray(result) ? result : [])
-    setUsersLoading(false)
+    try {
+      const result = await api.listUsers()
+      if (Array.isArray(result)) {
+        writeCache('settings:users', result)
+        setAppUsers(result)
+      }
+    } catch {
+      // Keeps the accounts already shown.
+    } finally {
+      setUsersLoading(false)
+      setUsersTried(true)
+    }
   }
 
   useEffect(() => {
@@ -1300,6 +1321,15 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Switching category: the new one fades in once its data is in, not
+          through "Loading…" / "No … yet" first. */}
+      <SectionSwap id={activeCategory} gated={['artists', 'plugins', 'data', 'addons'].includes(activeCategory)} className="space-y-6">
+      <ReadyWhen ready={
+        activeCategory === 'artists' ? peekCache('settings:artists') !== undefined && !artistsLoading
+          : activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!pluginsLoading && !!pluginStatus)
+          : activeCategory === 'data' ? usersTried
+          : activeCategory !== 'addons'
+      } />
       {api.isElectron && inCategory('library') && (
         <Section title="About">
           <Row label="Version" desc="Current app version">
@@ -1668,7 +1698,7 @@ export default function Settings() {
           </p>
           {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
           <div className="space-y-2">
-            {!usersLoading && appUsers.length === 0 && (
+            {!usersLoading && usersTried && appUsers.length === 0 && (
               <p className="text-xs text-muted">No local accounts found.</p>
             )}
             {appUsers.map((account) => (
@@ -2250,11 +2280,11 @@ export default function Settings() {
 
         <div className="space-y-2">
           <p className="text-sm text-white font-medium">Installed Plugins</p>
-          {pluginsLoading && <p className="text-xs text-muted">Loading plugins...</p>}
-          {!pluginsLoading && plugins.length === 0 && (
+          {pluginsLoading && !plugins.length && <p className="text-xs text-muted">Loading plugins...</p>}
+          {!pluginsLoading && peekCache('settings:plugins') !== undefined && plugins.length === 0 && (
             <p className="text-xs text-muted">No plugins installed yet.</p>
           )}
-          {!pluginsLoading && plugins.length > 0 && (
+          {plugins.length > 0 && (
             <div className="space-y-2">
               {plugins.map((plugin) => (
                 <div key={plugin.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card/40">
@@ -2709,7 +2739,7 @@ module.exports = {
             placeholder="Search artists…"
             className="w-full bg-card border border-border rounded-xl px-4 py-2 text-sm text-white outline-none focus:border-accent/50" />
           <div className="flex items-center justify-between text-xs text-muted">
-            <span>{artistsLoading ? 'Loading artists...' : `${filtered.length} loaded${artistsTotal ? ` of ${artistsTotal}` : ''}`}</span>
+            <span>{artistsLoading && !artists.length ? 'Loading artists...' : `${filtered.length} loaded${artistsTotal ? ` of ${artistsTotal}` : ''}`}</span>
             {!!artistSearch.trim() && <span>Searching server-side</span>}
           </div>
         </div>
@@ -2727,7 +2757,7 @@ module.exports = {
             </div>
           ))}
         </div>
-        {!artistsLoading && !filtered.length && (
+        {!artistsLoading && (peekCache('settings:artists') !== undefined || deferredArtistSearch) && !filtered.length && (
           <p className="text-sm text-muted text-center py-4">No artists found.</p>
         )}
         {artistsHasMore && (
@@ -2741,6 +2771,7 @@ module.exports = {
         )}
       </Section>
       )}
+      </SectionSwap>
 
       <Modal open={showClearModal} onClose={() => setShowClearModal(false)} title="Clear All Library Data?" width="max-w-sm">
         <div className="space-y-4">

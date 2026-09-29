@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Search, Download, CheckCircle, Clock, RefreshCw, Folder, User, Zap, AlertTriangle } from 'lucide-react'
 import { api } from '../api'
 import { useDownloads, isActive } from '../store/downloads'
+import { peekCache, usePageReady, writeCache } from '../pageCache'
 
 const fmtSize = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${(b / 1024 ** 2).toFixed(1)} MB`)
 const fmtTime = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '')
@@ -41,7 +42,10 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
-  const [status, setStatus] = useState(null)
+  // Last known connection status shows at once; the tab fades in once known.
+  const [status, setStatusState] = useState(() => peekCache('soulseek:status') ?? null)
+  const setStatus = (value) => { writeCache('soulseek:status', value); setStatusState(value) }
+  usePageReady(status !== null)
   const [query, setQuery] = useState(initialQuery || '')
   const [replacing, setReplacing] = useState(replaceTrack)
   const [upgrading, setUpgrading] = useState(upgradeTrack)
