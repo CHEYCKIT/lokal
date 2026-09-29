@@ -1,12 +1,21 @@
 const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
-const { buildRecap, listeningDays } = require('../../electron/ipc/recaps')
+const { buildRecap, recapTracks, listeningDays } = require('../../electron/ipc/recaps')
 
 router.get('/:userId', (req, res) => {
   try {
     res.json(buildRecap(getDB(), req.params.userId || 'guest', req.query || {}))
   } catch (e) {
     res.json({ error: e.message })
+  }
+})
+
+// One artist's or genre's songs in a recap (Top Artists / Genres: play, save).
+router.get('/:userId/tracks', (req, res) => {
+  try {
+    res.json(recapTracks(getDB(), req.params.userId || 'guest', req.query || {}))
+  } catch (e) {
+    res.json({ error: e.message, tracks: [] })
   }
 })
 

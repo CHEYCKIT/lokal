@@ -62,6 +62,29 @@ export function periodTitle(period) {
   return `${period.year} Recap`
 }
 
+/**
+ * A period as a playlist name puts it: "September 2026 - Week 3",
+ * "September 2026", "2026". A week is numbered within the month its
+ * Thursday is in (the month the Recap page lists it under), so the first
+ * week of September is the one whose Thursday is between the 1st and 7th.
+ */
+export function periodPlaylistText(period) {
+  if (!period) return ''
+  if (period.scope === 'week') {
+    const thursday = weekStartDate(period)
+    thursday.setDate(thursday.getDate() + 3)
+    return `${MONTHS[thursday.getMonth()]} ${thursday.getFullYear()} - Week ${Math.ceil(thursday.getDate() / 7)}`
+  }
+  if (period.scope === 'month') return `${MONTHS[period.month - 1]} ${period.year}`
+  return String(period.year)
+}
+
+/** "J-Pop - September 2026 - Week 3": a playlist made from part of a recap. */
+export function recapPlaylistName(subject, period) {
+  const when = periodPlaylistText(period)
+  return when ? `${subject} - ${when}` : subject
+}
+
 /** Short label for the period chips: "Sep 21–27", "Sep 2026", "Year 2026". */
 export function periodLabel(period) {
   if (!period) return ''
