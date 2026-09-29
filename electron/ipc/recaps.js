@@ -419,6 +419,42 @@ function buildRecap(db, userId = 'guest', opts = {}) {
 }
 
 /**
+ * The songs one artist or genre of a recap was played for (opts.artist or
+ * opts.genre, as the recap names them), most played first: what the Recap
+ * page plays or saves as a playlist from its Top Artists and Genres.
+ */
+function recapTracks(db, userId = 'guest', opts = {}) {
+  ensureRecapTables(db)
+  const range = resolveRange(opts)
+  if (range.error) return { error: range.error }
+  const artist = typeof opts.artist === 'string' && opts.artist ? opts.artist : null
+  const genre = typeof opts.genre === 'string' && opts.genre ? opts.genre.toLowerCase() : null
+  if (!artist && !genre) return { error: 'An artist or a genre is needed.' }
+  const rows = db.prepare(`
+    SELECT t.*, ph.played_at, COALESCE(ph.seconds_played, 0) as seconds_played
+    FROM play_history ph
+    JOIN tracks t ON t.id = ph.track_id
+    WHERE ph.user_id = ? AND ph.played_at BETWEEN ? AND ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED_TRACKS}
+  `).all(userId, range.from, range.to, QUALIFIED_SECONDS)
+  const matches = artist
+    ? (row) => row.artist === artist
+    : (row) => splitGenres(row).some(name => name.toLowerCase() === genre)
+  const byTrack = new Map()
+  for (const row of rows) {
+    if (!matches(row)) continue
+    const entry = byTrack.get(row.id) || { ...row, plays: 0, seconds: 0 }
+    entry.plays += 1
+    entry.seconds += Number(row.seconds_played || 0)
+    byTrack.set(row.id, entry)
+  }
+  const tracks = [...byTrack.values()]
+    .sort((left, right) => right.plays - left.plays || right.seconds - left.seconds)
+    .slice(0, 100)
+    .map(({ played_at, seconds_played, ...track }) => track)
+  return { tracks }
+}
+
+/**
  * The days (YYYY-MM-DD, in the listener's time zone `tz`) with at least one
  * counted play: what the Recap page needs to offer only the years, months
  * and weeks that have something in them. Plays are bucketed by hour first
@@ -446,10 +482,11 @@ function listeningDays(db, userId = 'guest', opts = {}) {
 function registerRecapHandlers(ipcMain) {
   ipcMain.handle('recaps:days', (_, userId, opts) => listeningDays(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:get', (_, userId, opts) => buildRecap(getDB(), userId || 'guest', opts || {}))
+  ipcMain.handle('recaps:tracks', (_, userId, opts) => recapTracks(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:getPreferences', (_, userId) => {
     const row = getDB().prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'listening_preferences'").get(userId || 'guest')
     try { return row?.value ? JSON.parse(row.value) : null } catch { return null }
   })
 }
 
-module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, listeningDays, ensureRecapTables }
+module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, recapTracks, listeningDays, ensureRecapTables }

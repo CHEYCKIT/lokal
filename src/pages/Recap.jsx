@@ -1,15 +1,15 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
-import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, Play, Plus, RefreshCw, Sparkles } from 'lucide-react'
+import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, ListPlus, Play, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
-import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapTree, treePeriods } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapPlaylistName, recapTree, treePeriods } from '../recapPeriods'
 import { plural } from '../plural'
 import { filteredGenres, fmtDate, fmtHour, fmtMinutes, trackArt } from '../recapText'
 import RecapStory from '../components/RecapStory'
+import { showToast } from '../components/Toaster'
 
 
 function Metric({ label, value, icon: Icon }) {
@@ -24,45 +24,78 @@ function Metric({ label, value, icon: Icon }) {
   )
 }
 
-function SessionCard({ session, index, onPlay }) {
+/**
+ * A session's covers: four different ones as a 2x2 mosaic, else the first
+ * one whole. Songs from the same album share a cover (it used to repeat),
+ * and songs without one are skipped (no grey filler squares).
+ */
+function CoverMosaic({ tracks = [] }) {
+  // Same album, same cover (each track has its own artwork URL, so they
+  // can't be compared).
+  const covers = []
+  const seen = new Set()
+  for (const track of tracks) {
+    const art = trackArt(track)
+    const album = track.album ? `${track.album_artist || track.artist || ''}|${track.album}`.toLowerCase() : ''
+    if (!art || seen.has(album || art) || seen.has(track.artwork_path)) continue
+    seen.add(album || art)
+    seen.add(track.artwork_path)
+    covers.push(art)
+    if (covers.length === 4) break
+  }
+  return (
+    <div className="aspect-square w-full overflow-hidden rounded-lg bg-card">
+      {covers.length === 4 ? (
+        <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+          {covers.map(art => <FadeImg key={art} src={art} className="h-full w-full object-cover" />)}
+        </div>
+      ) : covers.length ? (
+        <FadeImg src={covers[0]} className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-muted/50"><Disc3 size={22} /></div>
+      )}
+    </div>
+  )
+}
+
+/** A small round action button (play, save as playlist). */
+function RoundAction({ onClick, label, disabled, accent, children }) {
+  return (
+    <button onClick={(event) => { event.stopPropagation(); onClick() }} disabled={disabled} title={label} aria-label={label}
+      className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-40 ${accent ? 'border-accent/30 bg-accent/10 text-accent hover:bg-accent hover:text-base' : 'border-border bg-card text-muted hover:border-accent/40 hover:text-white'}`}>
+      {children}
+    </button>
+  )
+}
+
+function SessionCard({ session, onPlay, onSave }) {
   const genres = filteredGenres(session.topGenres || []).slice(0, 3)
   const topArtist = session.topArtists?.[0]
-  const previewTracks = (session.tracks || []).slice(0, 4)
   const duration = fmtMinutes(session.durationMinutes || 0)
+  const hasTracks = !!session.tracks?.length
 
   return (
-    <motion.button
-      key={session.id || index}
-      // No entrance of its own: the page fades in as a whole.
-      initial={false}
-      onClick={onPlay}
-      className="group overflow-hidden rounded-xl border border-border bg-elevated text-left transition-colors hover:border-accent/35"
-    >
-      <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto]">
+    <div className="group overflow-hidden rounded-xl border border-border bg-elevated transition-colors hover:border-accent/35">
+      <div className="grid items-start gap-4 p-4 sm:grid-cols-[1fr_8rem]">
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-base font-display text-white">{session.label}</p>
               <p className="mt-1 text-xs text-muted">{fmtDate(session.start)}</p>
             </div>
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-base">
-              <Play size={14} fill="currentColor" />
+            <div className="flex items-center gap-2">
+              <RoundAction onClick={onSave} disabled={!hasTracks} label="Save this session as a playlist"><ListPlus size={15} /></RoundAction>
+              <RoundAction onClick={onPlay} disabled={!hasTracks} label="Play this session" accent><Play size={14} fill="currentColor" /></RoundAction>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-border/70 bg-card px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted">Time</div>
-              <div className="mt-1 truncate text-sm text-white">{duration}</div>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-card px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted">Tracks</div>
-              <div className="mt-1 text-sm text-white">{session.trackCount || 0}</div>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-card px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted">Skips</div>
-              <div className="mt-1 text-sm text-white">{session.skippedCount || 0}</div>
-            </div>
+            {[['Time', duration], ['Tracks', session.trackCount || 0], ['Skips', session.skippedCount || 0]].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-border/70 bg-card px-3 py-2">
+                <div className="text-[10px] uppercase tracking-widest text-muted">{label}</div>
+                <div className="mt-1 truncate text-sm text-white">{value}</div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -77,21 +110,46 @@ function SessionCard({ session, index, onPlay }) {
           </div>
         </div>
 
-        <div className="grid w-full grid-cols-4 gap-2 sm:w-32 sm:grid-cols-2">
-          {previewTracks.map((track, trackIndex) => {
-            const art = trackArt(track)
-            return (
-              <div key={track.id || trackIndex} className="aspect-square overflow-hidden rounded-lg bg-card">
-                {art ? <FadeImg src={art} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted/50"><Disc3 size={16} /></div>}
-              </div>
-            )
-          })}
-          {!previewTracks.length && (
-            <div className="col-span-4 flex aspect-[4/1] items-center justify-center rounded-lg bg-card text-xs text-muted sm:col-span-2 sm:aspect-square">No tracks</div>
-          )}
-        </div>
+        <button onClick={onPlay} disabled={!hasTracks} title="Play this session" aria-label={`Play ${session.label}`}
+          className="hidden transition-opacity hover:opacity-90 sm:block">
+          <CoverMosaic tracks={session.tracks} />
+        </button>
       </div>
-    </motion.button>
+    </div>
+  )
+}
+
+/**
+ * Top Artists / Genres: a row plays that artist's (or genre's) songs from
+ * this recap; its button saves them as a playlist.
+ */
+function RankedList({ title, items, nameKey, emptyText, busyKey, onPlay, onSave }) {
+  return (
+    <section className="rounded-xl border border-border bg-elevated p-4">
+      <h2 className="text-xs font-display uppercase tracking-widest text-muted">{title}</h2>
+      <div className="mt-4 space-y-2">
+        {items.map((item, index) => {
+          const name = item[nameKey]
+          const busy = busyKey === `${nameKey}:${name}`
+          return (
+            <div key={name || index} className="group/row flex items-center gap-1 rounded-lg bg-card pr-1 transition-colors hover:bg-white/[0.06]">
+              <button onClick={() => onPlay(name)} disabled={busy} title={`Play ${name}`} aria-label={`Play ${name}`}
+                className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left disabled:opacity-60">
+                <span className="w-4 flex-shrink-0 text-xs text-muted">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-white">{name}</span>
+                <span className="flex-shrink-0 text-xs text-muted group-hover/row:hidden">{plural(item.plays, 'play')}</span>
+                <Play size={13} fill="currentColor" className="hidden flex-shrink-0 text-accent group-hover/row:block" />
+              </button>
+              <button onClick={() => onSave(name)} disabled={busy} title={`Save ${name} as a playlist`} aria-label={`Save ${name} as a playlist`}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
+                {busy ? <RefreshCw size={13} className="animate-spin" /> : <ListPlus size={14} />}
+              </button>
+            </div>
+          )
+        })}
+        {!items.length && <p className="text-xs text-muted">{emptyText}</p>}
+      </div>
+    </section>
   )
 }
 
@@ -275,22 +333,67 @@ function RecapContent({ user }) {
   const replayQueue = recap?.replayQueue || topTracks
   const heroTrack = topTracks[0]
   const heroArt = trackArt(heroTrack)
-  const favoriteGenres = filteredGenres(recap?.preferences?.favoriteGenres || [])
+  // This recap's genres, counted the same way as its top artists.
+  const topGenres = filteredGenres(recap?.topGenres || [])
 
+  /** Save `tracks` as a new playlist called `name`. Returns the name, or null. */
+  const saveTracks = async (name, tracks) => {
+    const ids = [...new Set((tracks || []).map(track => track?.id).filter(Boolean))]
+    if (!ids.length) return null
+    const playlist = await api.createPlaylist(name, user?.id, `From your ${shownPeriod?.title || 'listening recap'}`)
+    if (!playlist?.id) return null
+    await api.addMultipleToPlaylist(playlist.id, ids)
+    window.dispatchEvent(new CustomEvent('lokal:playlists-changed', { detail: { playlistId: playlist.id, action: 'created' } }))
+    return name
+  }
+
+  // Playlists are named after what they hold and the recap they're from
+  // ("Top 50 - September 2026 - Week 3"), so ones from different recaps
+  // can be told apart.
   const savePlaylist = async () => {
     // Not while another period loads: the tracks shown are still the old period's.
-    if (loading || !replayQueue.length || !selectedPeriod) return
+    if (loading || !replayQueue.length || !shownPeriod) return
     setStatus('Creating playlist...')
-    const name = `${selectedPeriod.title} Top ${Math.min(replayQueue.length, 50)}`
-    const playlist = await api.createPlaylist(name, user?.id, `Generated from ${selectedPeriod.title}`)
-    if (!playlist?.id) {
-      setStatus('Could not create playlist')
-      return
-    }
-    await api.addMultipleToPlaylist(playlist.id, replayQueue.slice(0, 50).map(track => track.id))
-    window.dispatchEvent(new CustomEvent('lokal:playlists-changed', { detail: { playlistId: playlist.id, action: 'created' } }))
-    setStatus(`Saved ${name}`)
+    const saved = await saveTracks(recapPlaylistName(`Top ${Math.min(replayQueue.length, 50)}`, shownPeriod), replayQueue.slice(0, 50))
+    setStatus(saved ? `Saved ${saved}` : 'Could not create playlist')
   }
+
+  const saveSession = async (session) => {
+    if (loading) return
+    // A session is one sitting: its own date says which one.
+    const saved = await saveTracks(`${session.label} - ${fmtDate(session.start)}`, session.tracks)
+    showToast(saved ? `Saved ${saved}` : 'Could not create playlist')
+  }
+
+  // An artist's or genre's songs in the recap on screen (fetched once each).
+  const subjectTracksRef = useRef(new Map())
+  const [busySubject, setBusySubject] = useState('')
+  const subjectTracks = async (kind, name) => {
+    const key = `${shownId}|${kind}|${name}`
+    if (!subjectTracksRef.current.has(key)) {
+      const result = await api.getRecapTracks(user?.id || 'guest', { ...periodQuery(shownPeriod), [kind]: name }).catch(() => null)
+      if (!Array.isArray(result?.tracks)) return []
+      subjectTracksRef.current.set(key, result.tracks)
+    }
+    return subjectTracksRef.current.get(key)
+  }
+  const withSubject = async (kind, name, use) => {
+    if (loading || !shownPeriod || busySubject) return
+    setBusySubject(`${kind}:${name}`)
+    try {
+      const tracks = await subjectTracks(kind, name)
+      if (!tracks.length) showToast(`Couldn't load the songs for ${name}`)
+      else await use(tracks)
+    } finally {
+      setBusySubject('')
+    }
+  }
+  const playSubject = (kind, name) => withSubject(kind, name, (tracks) =>
+    playQueue(tracks, 0, { type: 'recap', id: `${shownId}:${kind}:${name}`, name: recapPlaylistName(name, shownPeriod) }))
+  const saveSubject = (kind, name) => withSubject(kind, name, async (tracks) => {
+    const saved = await saveTracks(recapPlaylistName(name, shownPeriod), tracks)
+    showToast(saved ? `Saved ${saved}` : 'Could not create playlist')
+  })
 
   return (
     <div className="p-6 pb-10 space-y-6 max-w-6xl">
@@ -426,30 +529,12 @@ function RecapContent({ user }) {
             </section>
 
             <aside className="space-y-4">
-              <section className="rounded-xl border border-border bg-elevated p-4">
-                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Preference Profile</h2>
-                <div className="mt-4 space-y-3">
-                  {favoriteGenres.slice(0, 5).map((genre, index) => (
-                    <div key={genre.genre || index} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2">
-                      <span className="truncate text-sm text-white">{genre.genre}</span>
-                      <span className="text-xs text-muted">{genre.plays}</span>
-                    </div>
-                  ))}
-                  {!favoriteGenres.length && <p className="text-xs text-muted">No specific genre stood out yet.</p>}
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-border bg-elevated p-4">
-                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Artists</h2>
-                <div className="mt-4 space-y-3">
-                  {(recap.topArtists || []).slice(0, 5).map((artist, index) => (
-                    <div key={artist.artist || index} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2">
-                      <span className="truncate text-sm text-white">{artist.artist}</span>
-                      <span className="text-xs text-muted">{artist.plays}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              <RankedList title="Top Artists" items={(recap.topArtists || []).slice(0, 5)} nameKey="artist"
+                emptyText="No artist stood out yet." busyKey={busySubject}
+                onPlay={(name) => playSubject('artist', name)} onSave={(name) => saveSubject('artist', name)} />
+              <RankedList title="Genres" items={topGenres.slice(0, 5)} nameKey="genre"
+                emptyText="No specific genre stood out yet." busyKey={busySubject}
+                onPlay={(name) => playSubject('genre', name)} onSave={(name) => saveSubject('genre', name)} />
             </aside>
           </div>
 
@@ -467,8 +552,8 @@ function RecapContent({ user }) {
                   <SessionCard
                     key={session.id || index}
                     session={session}
-                    index={index}
-                    onPlay={() => session.tracks?.length && playQueue(session.tracks, 0)}
+                    onPlay={() => session.tracks?.length && playQueue(session.tracks, 0, { type: 'recap', id: `${shownId}:session:${session.id || index}`, name: `${session.label} - ${fmtDate(session.start)}` })}
+                    onSave={() => saveSession(session)}
                   />
                 ))}
               </div>
