@@ -141,7 +141,7 @@ export default function FullscreenPlayer() {
   const {
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
     progress, duration, volume, shuffle, repeat,
-    showLyricsFullscreen, toggleLyricsFullscreen,
+    showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     playbackContext,
@@ -365,10 +365,20 @@ export default function FullscreenPlayer() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
           </div>
 
-          <button onClick={toggleFullscreen}
-            className="absolute top-5 left-5 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
-            <X size={15} />
-          </button>
+          <div className="absolute top-5 left-5 z-20 flex items-center gap-2">
+            <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
+              <X size={15} />
+            </button>
+            {/* Straight to full-screen lyrics (the view to come back from
+                has a Player button). */}
+            {currentTrack && (
+              <button onClick={() => switchFullscreenView('lyrics')} title="Switch to full-screen lyrics"
+                className="h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 hover:text-white transition-colors backdrop-blur-sm">
+                <Maximize2 size={13} /> Lyrics
+              </button>
+            )}
+          </div>
 
           {playbackContext?.name && (
             <div className="absolute top-5 left-1/2 -translate-x-1/2 z-20 max-w-[60%] text-center pointer-events-none">

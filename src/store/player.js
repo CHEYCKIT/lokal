@@ -609,6 +609,13 @@ export const usePlayerStore = create((set, get) => ({
   setRepeat: (mode) => set({ repeat: mode === 'all' || mode === 'one' ? mode : 'none' }),
   toggleLyrics: () => set(s => ({ showLyrics: !s.showLyrics })),
   toggleLyricsFullscreen: () => set(s => ({ showLyricsFullscreen: !s.showLyricsFullscreen })),
+  // Go straight from one full-screen view to the other. Full-screen lyrics
+  // opens over the player (closing it lands back on the player); the player
+  // is reached from lyrics by closing lyrics and opening the player under it,
+  // so this works whichever of the two was opened first.
+  switchFullscreenView: (view) => set(view === 'lyrics'
+    ? { showLyricsFullscreen: true }
+    : { showFullscreen: true, showLyricsFullscreen: false }),
   // Opens/closes the right-hand panel itself. In merged mode, reopening
   // always resets to the base "info" view -- the panel's info/lyrics
   // content is the persistent base that Queue slides up over, per Spotify's
