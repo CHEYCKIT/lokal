@@ -1572,7 +1572,7 @@ export default function Settings() {
 
       {inCategory('artists') && (
       <Section title="Artist Photos">
-        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB; bios from TheAudioDB, then MusicBrainz. Wikipedia is only used when you pick it.">
+        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB; bios from TheAudioDB, then MusicBrainz, then Wikipedia (only a page that's surely the artist's).">
           <div className="flex flex-wrap justify-end gap-1 p-0.5 bg-card rounded-lg border border-border">
             {ARTIST_SOURCES.map(([id, label]) => (
               <button key={id} onClick={() => set('artist_metadata_source', id)}
