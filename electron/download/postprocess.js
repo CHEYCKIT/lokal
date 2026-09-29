@@ -7,7 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const { readInfo, applyTags, stripArtistPrefix } = require('./tagger')
 const { toPortableLyrics, toPrivateTag } = require('../lyrics/embedded')
-const { isYouTube } = require('./args')
+const { isYouTube, isSoundCloud } = require('./args')
 
 const LYRICS_TIMEOUT_MS = 30000
 
@@ -32,11 +32,13 @@ async function findLyrics(db, info, signal) {
 }
 
 // ---------------------------------------------------------------- who sang it
-// A YouTube video's channel is often not the artist: labels, VEVO accounts,
-// fan uploads. The title usually is: "Artist - Song (Official Video)". The
-// catalogue itself (YouTube Music, "Artist - Topic" channels) is trusted as-is:
-// its titles are just the song, and a dash there belongs to the song
-// ("Song - Remastered 2011").
+// A YouTube video's channel or a SoundCloud uploader is often not the artist:
+// labels, VEVO accounts, fan uploads, re-uploaders. The title usually is:
+// "Artist - Song (Official Video)". The catalogue itself (YouTube Music,
+// "Artist - Topic" channels) is trusted as-is: its titles are just the song,
+// and a dash there belongs to the song ("Song - Remastered 2011"). SoundCloud
+// always fills `track` with the upload's title, so there only its publisher
+// metadata (`artists`, on label releases) counts as a real credit.
 
 const DASH = /^(.{1,80}?)\s+[-–—|]\s+(.+)$/
 const NOT_AN_ARTIST = /^(?:official|lyrics?|audio|video|full album|live|remix|remastered|\d{4})$/i
@@ -46,11 +48,14 @@ function unquote(s) {
 }
 
 /** { artist, title } from the video, or null to keep what the tags say. */
-function artistAndTitle(meta, tags) {
+function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
   if (!meta) return null
   const channel = String(meta.channel || meta.uploader || '')
-  if (meta.track || /\s-\sTopic$/i.test(channel)) return null
   const title = String(tags.title || meta.title || '').trim()
+  if (soundcloud) {
+    const credited = (Array.isArray(meta.artists) ? meta.artists : []).map(a => String(a || '').trim()).filter(Boolean).join(', ')
+    if (credited) return { artist: credited, title: stripArtistPrefix(title, credited) || title }
+  } else if (meta.track || /\s-\sTopic$/i.test(channel)) return null
   const m = title.match(DASH)
   if (!m) return null
   const artist = unquote(m[1])
@@ -144,7 +149,10 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   if (known) return finishKnownFile(filePath, info, { db, settings, known, outputDir, out })
   const clean = settings.clean_download_metadata !== '0'
   // "Artist - Song" videos: the artist is in the title, not the channel.
-  const fromTitle = clean && isYouTube(url) ? artistAndTitle(meta, info) : null
+  // YouTube and SoundCloud: the artist from the title ("Artist - Song"), not
+  // the uploader. (Addons bring their own tags; Soulseek files have theirs.)
+  const soundcloud = isSoundCloud(url)
+  const fromTitle = clean && (isYouTube(url) || soundcloud) ? artistAndTitle(meta, info, { soundcloud }) : null
   const lookupInfo = fromTitle
     ? { ...info, ...fromTitle }
     : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
