@@ -145,7 +145,8 @@ function HomeContent({ user }) {
       if (Array.isArray(s)) setSuggestions(nonGhost(s))
       if (Array.isArray(h)) setHistory(h)
       if (Array.isArray(m)) setMixes(m.map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0))
-      setLoaded(true)
+      // "No tracks yet" needs the sections it's about to have really answered.
+      if ([t, s, m].every(Array.isArray)) setLoaded(true)
     })
   }
 

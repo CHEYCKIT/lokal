@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
 import TitleBar from './components/TitleBar'
@@ -159,6 +159,13 @@ function NativeHistoryNavigation() {
 function PageTransition({ gated = false, children }) {
   const [ready, setReady] = useState(!gated)
   const markReady = useCallback(() => setReady(true), [])
+  // Reduced motion: fade only, no rise.
+  const rise = useReducedMotion() ? 0 : 6
+  // While it's invisible, the page's controls can't take keyboard focus.
+  const pageRef = useRef(null)
+  useLayoutEffect(() => {
+    if (pageRef.current) pageRef.current.inert = !ready
+  }, [ready])
   useEffect(() => {
     if (ready) return
     const timer = setTimeout(markReady, PAGE_READY_TIMEOUT_MS)
@@ -167,8 +174,9 @@ function PageTransition({ gated = false, children }) {
   return (
     <PageReadyContext.Provider value={markReady}>
       <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
+        ref={pageRef}
+        initial={{ opacity: 0, y: rise }}
+        animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: rise }}
         exit={{ opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       >

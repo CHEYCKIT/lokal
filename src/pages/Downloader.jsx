@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock, Cookie, X } from 'lucide-react'
@@ -143,6 +143,8 @@ export default function Downloader() {
   const [quality, setQualityState] = useState(() => String(peekSettings()?.download_quality || '320'))
   const [settingsKnown, setSettingsKnown] = useState(() => !!peekSettings())
   usePageReady(settingsKnown)
+  // Picked while the settings were loading: the answer doesn't undo it.
+  const pickedRef = useRef({ format: false, quality: false })
   const [queueError, setQueueError] = useState('')
   const downloads = useDownloads(state => state.jobs)
   const { enqueue, load: refreshQueue, cancelAll, clearFinished, markSeen } = useDownloads.getState()
@@ -154,8 +156,10 @@ export default function Downloader() {
     startDownloadSync()
     refreshQueue()
     api.getSettings().then(settings => {
-      setFormatState(savedFormat(settings))
-      if (settings?.download_quality) setQualityState(String(settings.download_quality))
+      // A failed read keeps what's shown (the settings already read).
+      if (!settings || settings.error) return
+      if (!pickedRef.current.format) setFormatState(savedFormat(settings))
+      if (!pickedRef.current.quality && settings.download_quality) setQualityState(String(settings.download_quality))
     }).catch(() => {}).finally(() => setSettingsKnown(true))
   }, [])
 
@@ -163,10 +167,12 @@ export default function Downloader() {
   useEffect(() => { markSeen() }, [downloads])
 
   const setFormat = (value) => {
+    pickedRef.current.format = true
     setFormatState(value)
     Promise.resolve(api.saveSettings({ download_format: value })).catch(() => {})
   }
   const setQuality = (value) => {
+    pickedRef.current.quality = true
     setQualityState(value)
     Promise.resolve(api.saveSettings({ download_quality: value })).catch(() => {})
   }

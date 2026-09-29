@@ -12,7 +12,7 @@
 //                   page stays invisible until then (or PAGE_READY_TIMEOUT_MS,
 //                   so a slow load never hides a page for long).
 
-import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const cache = new Map()
 
@@ -38,13 +38,16 @@ export function useCachedState(key, initial) {
   const [value, setValue] = useState(() => (cache.has(key) ? cache.get(key) : (typeof initial === 'function' ? initial() : initial)))
   const keyRef = useRef(key)
   keyRef.current = key
+  // Only values set through `set` are stored (not the initial one), and only
+  // once React has committed them: the updater itself stays pure.
+  const dirty = useRef(false)
   const set = useCallback((next) => {
-    setValue(prev => {
-      const resolved = typeof next === 'function' ? next(prev) : next
-      cache.set(keyRef.current, resolved)
-      return resolved
-    })
+    dirty.current = true
+    setValue(next)
   }, [])
+  useEffect(() => {
+    if (dirty.current) cache.set(keyRef.current, value)
+  }, [value])
   return [value, set, wasCached]
 }
 

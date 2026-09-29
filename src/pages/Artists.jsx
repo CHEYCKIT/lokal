@@ -150,6 +150,7 @@ export default function Artists() {
       setArtists(seen.items)
       setTotal(seen.total)
       setHasMore(seen.hasMore)
+      setBusy(false)
     } else setBusy(true)
     return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode }).then((result) => {
       // A failed request keeps what's shown (and the cache) as it was.
@@ -167,8 +168,9 @@ export default function Artists() {
 
   const loadTopArtists = () => {
     api.getArtistsPage({ search: '', limit: TOP_ARTISTS_LIMIT, offset: 0, sort: 'tracks' }).then((result) => {
-      const items = Array.isArray(result?.items) ? result.items : []
-      const top = items.filter((artist) => Number(artist.track_count) > 0)
+      // A failed request keeps the top artists shown (and cached).
+      if (!Array.isArray(result?.items)) return
+      const top = result.items.filter((artist) => Number(artist.track_count) > 0)
       writeCache('artists:top', top)
       setTopArtists(top)
     }).catch(() => {})

@@ -43,7 +43,10 @@ export default function Quality() {
   const [filter, setFilter] = useCachedState('quality:filter', 'upgradable')
   const [rows, setRowsState] = useState(() => peekCache(`quality:rows:${filter}`) || [])
   const [rowsLoaded, setRowsLoaded] = useState(() => !!peekCache(`quality:rows:${filter}`))
+  const [rowsError, setRowsError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Only the latest list request (the filter selected now) is applied.
+  const rowsRequestRef = useRef(0)
   usePageReady(!!summary && rowsLoaded)
   const [message, setMessage] = useState('')
   const { playQueue } = usePlayerStore()
@@ -53,15 +56,21 @@ export default function Quality() {
   // A failed read still lets the page show (with zeros) instead of waiting on it.
   const loadSummary = useCallback(() => Promise.resolve(api.qualitySummary()).then(s => { if (s && !s.error) setSummary(s); else setSummary(prev => prev || {}) }).catch(() => setSummary(prev => prev || {})), [setSummary])
   const loadRows = useCallback(async () => {
-    // Switching filter shows that filter's last list at once, if there is one.
+    const request = ++rowsRequestRef.current
+    // Switching filter shows that filter's last list at once, or none at all
+    // (never another filter's rows under this filter's name).
     const seen = peekCache(`quality:rows:${filter}`)
-    if (seen) setRowsState(seen)
+    setRowsState(seen || [])
+    setRowsError('')
     setLoading(true)
-    const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(() => null)
-    // A failed request keeps the rows already shown (and cached).
+    const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(e => ({ error: e?.message }))
+    if (request !== rowsRequestRef.current) return
     if (Array.isArray(list)) {
       writeCache(`quality:rows:${filter}`, list)
       setRowsState(list)
+    } else {
+      // A failed request keeps this filter's cached rows, and says so.
+      setRowsError(list?.error || 'Could not load this list')
     }
     setRowsLoaded(true)
     setLoading(false)
@@ -178,7 +187,13 @@ export default function Quality() {
         {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.</p>}
 
         {loading && !rows.length && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
-        {rowsLoaded && !loading && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
+        {rowsError && (
+          <p className="flex items-center gap-2 py-3 text-xs text-red">
+            Couldn't load this list ({rowsError}).
+            <button onClick={loadRows} className="rounded-full border border-border px-2.5 py-0.5 text-muted hover:text-white">Retry</button>
+          </p>
+        )}
+        {rowsLoaded && !loading && !rowsError && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
 
         <div className="space-y-0.5">
           {rows.map((track, i) => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, ListMusic, Play, Plus, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api'
@@ -510,6 +510,10 @@ function RecapContent({ user }) {
   const [selectedId, setSelectedId] = useCachedState(`${k}:selected`, '')
   const [recapsById, setRecapsById] = useCachedState(`${k}:byId`, {})
   const [recap, setRecap] = useCachedState(`${k}:recap`, null)
+  // The period the recap on screen belongs to (can lag the selection while
+  // the next one loads), so its heading always matches its numbers.
+  const [shownId, setShownId] = useCachedState(`${k}:shownId`, '')
+  const [periodsError, setPeriodsError] = useState('')
   const [loading, setLoading] = useState(false)
   const [checkingPeriods, setCheckingPeriods] = useState(!treeWasCached)
   const [status, setStatus] = useState('')
@@ -518,9 +522,19 @@ function RecapContent({ user }) {
   // The period selected right now, for answers that arrive after a switch.
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
+  // Each recap load gets a number; only the latest one applies its answer.
+  const recapRequestRef = useRef(0)
+  const loadingRef = useRef(loading)
+  loadingRef.current = loading
+  // Keyboard can't reach the dimmed recap either while the next one loads.
+  const recapBodyRef = useRef(null)
+  useLayoutEffect(() => {
+    if (recapBodyRef.current) recapBodyRef.current.inert = loading
+  })
 
   const periods = treePeriods(tree)
   const selectedPeriod = periods.find(period => period.id === selectedId) || null
+  const shownPeriod = periods.find(period => period.id === shownId) || selectedPeriod
   const yearEntry = tree.find(y => y.year === navYear) || null
   const monthEntry = yearEntry?.months.find(m => m.key === navMonth) || null
   // Shown once the periods and the selected recap are in, so the page doesn't
@@ -555,13 +569,22 @@ function RecapContent({ user }) {
     setCheckingPeriods(true)
     setStatus('')
     let days = null
+    let failure = 'No answer'
     try {
       const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone() })
       if (Array.isArray(result?.days)) days = result.days
-    } catch {}
-    // A failed request keeps the periods (and recap) already shown.
-    if (!days && tree.length) { setCheckingPeriods(false); return }
-    days = days || []
+      else failure = result?.error || failure
+    } catch (e) { failure = e?.message || failure }
+    // A failed request keeps the periods (and recap) already shown, and never
+    // reads as "no listening data".
+    if (!days) {
+      if (!tree.length) setPeriodsError(failure)
+      setCheckingPeriods(false)
+      return
+    }
+    setPeriodsError('')
+    // The selection now, not when the request started (it may have changed).
+    const selectedId = selectedIdRef.current
     const nextTree = recapTree(days)
     const available = treePeriods(nextTree)
     // Drop the saved recaps, but keep the one on screen: it stays until the
@@ -587,33 +610,37 @@ function RecapContent({ user }) {
       const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
       if (!result || result.error) return
       setRecapsById(current => ({ ...current, [period.id]: result }))
-      if (selectedIdRef.current === period.id) setRecap(result)
+      // Not over a load started since (it has the newer answer on its way).
+      if (selectedIdRef.current === period.id && !loadingRef.current) { setRecap(result); setShownId(period.id) }
     } catch {}
   }
 
   const loadRecap = async () => {
     if (!selectedPeriod) return
     const period = selectedPeriod
+    const request = ++recapRequestRef.current
+    const current = () => request === recapRequestRef.current && selectedIdRef.current === period.id
     setLoading(true)
     setStatus('')
     try {
       const cached = recapsById[period.id]
       const result = cached || await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
-      // Another period was picked meanwhile: its own load takes over.
-      if (selectedIdRef.current !== period.id) return
+      // A newer load (another period, or this one again) takes over.
+      if (!current()) return
       if (result?.error) {
         setStatus(result.error)
         setRecap(null)
       } else {
         setRecap(result)
+        setShownId(period.id)
         setRecapsById(current => ({ ...current, [period.id]: result }))
       }
     } catch (e) {
-      if (selectedIdRef.current !== period.id) return
+      if (!current()) return
       setStatus(e.message)
       setRecap(null)
     } finally {
-      if (selectedIdRef.current === period.id) setLoading(false)
+      if (request === recapRequestRef.current) setLoading(false)
     }
   }
 
@@ -726,6 +753,11 @@ function RecapContent({ user }) {
             </div>
           )}
         </div>
+      ) : periodsError ? (
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-elevated p-6 text-sm text-muted">
+          Couldn't load your listening days ({periodsError}).
+          <button onClick={loadPeriodList} className="rounded-lg border border-border px-3 py-1 text-xs hover:text-white">Retry</button>
+        </div>
       ) : (
         <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">No finished recap periods with listening data yet.</div>
       )}
@@ -742,7 +774,7 @@ function RecapContent({ user }) {
         </div>
       ) : (
         // Switching period keeps the current recap (dimmed, not clickable) until the next is built.
-        <div aria-busy={loading} className={`space-y-6 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
+        <div ref={recapBodyRef} aria-busy={loading} className={`space-y-6 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
           <section className="relative overflow-hidden rounded-xl border border-border bg-elevated">
             {heroArt && <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl scale-110" style={{ backgroundImage: `url("${heroArt}")` }} />}
             <div className="relative grid gap-6 p-6 lg:grid-cols-[1fr_260px]">
@@ -751,7 +783,7 @@ function RecapContent({ user }) {
                   <CalendarRange size={12} />
                   {fmtDate(recap.from)} - {fmtDate(recap.to)}
                 </div>
-                <h2 className="mt-3 text-4xl font-display text-white">{selectedPeriod?.title}</h2>
+                <h2 className="mt-3 text-4xl font-display text-white">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
                   You played {recap.totalPlays} tracks for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
                 </p>
@@ -833,7 +865,7 @@ function RecapContent({ user }) {
         </div>
       )}
 
-      <RecapStory open={storyOpen} onClose={() => setStoryOpen(false)} recap={recap ? { ...recap, topGenres } : recap} period={selectedPeriod} playQueue={playQueue} onSavePlaylist={savePlaylist} playlistStatus={status} />
+      <RecapStory open={storyOpen} onClose={() => setStoryOpen(false)} recap={recap ? { ...recap, topGenres } : recap} period={shownPeriod} playQueue={playQueue} onSavePlaylist={savePlaylist} playlistStatus={status} />
     </div>
   )
 }

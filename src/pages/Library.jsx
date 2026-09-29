@@ -24,7 +24,6 @@ export default function Library() {
   const { playQueue } = usePlayerStore()
   const navigate = useNavigate()
   const offsetRef = useRef(tracks.length)
-  const firstSortRef = useRef(true)
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
@@ -43,33 +42,23 @@ export default function Library() {
       offsetRef.current = nextOffset + items.length
       setTracks(prev => append ? [...prev, ...items] : items)
       setHasMore(items.length === LIBRARY_PAGE_SIZE)
+      // Only a real answer ends the first load ("No tracks yet" must be true).
+      setLoaded(true)
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false)
-        setLoaded(true)
       }
     }
   }
 
+  // The list on screen (from last time, or the previous sort) stays until
+  // the new first page replaces it; a failed request leaves it as it is.
   useEffect(() => {
-    // On mount, keep the list from last time on screen while it refreshes;
-    // a new sort starts over.
-    if (!firstSortRef.current) {
-      offsetRef.current = 0
-      setTracks([])
-      setHasMore(true)
-    }
-    firstSortRef.current = false
     load(false)
   }, [sort])
 
   useEffect(() => {
-    const handleRefresh = () => {
-      offsetRef.current = 0
-      setTracks([])
-      setHasMore(true)
-      load(false)
-    }
+    const handleRefresh = () => load(false)
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
   }, [sort])
