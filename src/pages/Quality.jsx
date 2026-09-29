@@ -2,7 +2,7 @@
 // bitrate lossy files), lossless files that were made from lossy ones (the
 // spectrum check), and a list of what's worth getting again in lossless.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AudioWaveform, Gem, Loader2, Play, RefreshCw, ScanLine, Square } from 'lucide-react'
 import { api } from '../api'
 import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCache'
@@ -85,7 +85,7 @@ export default function Quality() {
   }, [filter])
   // The poll loop outlives filter switches: it reloads the filter shown now.
   const loadRowsRef = useRef(loadRows)
-  loadRowsRef.current = loadRows
+  useLayoutEffect(() => { loadRowsRef.current = loadRows }, [loadRows])
 
   // Poll the background job (reading details / checking spectra) while it runs.
   const poll = useCallback(async () => {
