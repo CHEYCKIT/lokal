@@ -24,14 +24,18 @@ export default function Library() {
   const { playQueue } = usePlayerStore()
   const navigate = useNavigate()
   const offsetRef = useRef(tracks.length)
+  const loadingRef = useRef(false)
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
 
   const load = async (append = false) => {
-    if (loading && append) return
+    // Synchronous in-flight check: the observer's `loading` can be stale, and a
+    // load-more mustn't supersede the first-page refresh (or run twice).
+    if (loadingRef.current && append) return
     const requestId = ++requestIdRef.current
     const nextOffset = append ? offsetRef.current : 0
+    loadingRef.current = true
     setLoading(true)
     try {
       const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset })
@@ -46,6 +50,7 @@ export default function Library() {
       setLoaded(true)
     } finally {
       if (requestId === requestIdRef.current) {
+        loadingRef.current = false
         setLoading(false)
       }
     }

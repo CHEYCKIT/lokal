@@ -138,10 +138,21 @@ export default function Artists() {
   usePageReady(!loading)
   const [density, setDensity] = useState(() => localStorage.getItem('lokal-artists-density') || 'spaced')
   const loadMoreRef = useRef(null)
+  // Only the latest request's answer applies (an earlier search can land late).
+  const artistRequestRef = useRef({ id: 0, append: false })
   const navigate = useNavigate()
   const { playQueue } = usePlayerStore()
 
   const loadArtists = (search, offset, append, sortMode) => {
+    const requestId = artistRequestRef.current.id + 1
+    artistRequestRef.current = { id: requestId, append }
+    // A superseded load-more still ends its own spinner, unless the newer
+    // request is a load-more too (which owns that spinner now).
+    const stale = () => {
+      if (requestId === artistRequestRef.current.id) return false
+      if (append && !artistRequestRef.current.append) setLoadingMore(false)
+      return true
+    }
     const setBusy = append ? setLoadingMore : setLoading
     // A refresh of what's already on screen happens quietly (no spinner), and
     // a sort seen before shows its last page at once, not the previous sort's.
@@ -153,6 +164,7 @@ export default function Artists() {
       setBusy(false)
     } else setBusy(true)
     return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode }).then((result) => {
+      if (stale()) return
       // A failed request keeps what's shown (and the cache) as it was.
       if (!Array.isArray(result?.items)) { setBusy(false); return }
       const items = result.items
@@ -162,6 +174,7 @@ export default function Artists() {
       setHasMore(!!result?.hasMore)
       setBusy(false)
     }).catch(() => {
+      if (stale()) return
       setBusy(false)
     })
   }
