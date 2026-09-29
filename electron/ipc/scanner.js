@@ -1246,17 +1246,16 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:searchLyrics', (_, q) => {
     return searchLyricsEntries(getDB(), q)
   })
-  ipcMain.handle('scanner:toggleLike', (_, trackId, userId) => {
-    const db = getDB(); const uid = userId || 'guest'
-    // A streamed song you already have: the like goes to the library copy
-    // (and a liked copy isn't unliked from a streamed one).
-    const id = require('../online/sources').libraryTrackId(db, trackId)
-    const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(uid, id)
-    if (exists && id !== trackId) return true
-    if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(uid, id); return false }
-    db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(uid, id); return true
+  // A streamed song you already have is that song: see toggleSongLike.
+  ipcMain.handle('scanner:toggleLike', (_, trackId, userId) => require('../online/sources').toggleSongLike(getDB(), userId || 'guest', trackId))
+  ipcMain.handle('scanner:getLikedTracks', (_, userId) => {
+    const db = getDB()
+    const { songIds, foldStreamedLikes } = require('../online/sources')
+    foldStreamedLikes(db, userId || 'guest')
+    // also_ids: the other ids each song goes by, so its heart shows everywhere.
+    return db.prepare(`SELECT t.* FROM tracks t JOIN user_likes ul ON ul.track_id = t.id WHERE ul.user_id = ? ORDER BY ul.liked_at DESC`).all(userId || 'guest')
+      .map(t => ({ ...t, also_ids: songIds(db, t.id).filter(id => id !== t.id) }))
   })
-  ipcMain.handle('scanner:getLikedTracks', (_, userId) => getDB().prepare(`SELECT t.* FROM tracks t JOIN user_likes ul ON ul.track_id = t.id WHERE ul.user_id = ? ORDER BY ul.liked_at DESC`).all(userId || 'guest'))
   ipcMain.handle('scanner:incrementPlay', (_, trackId, userId) => { const db = getDB(); const uid = userId || 'guest'; db.prepare('UPDATE tracks SET play_count = play_count + 1 WHERE id = ?').run(trackId); db.prepare('INSERT INTO play_history (user_id, track_id) VALUES (?, ?)').run(uid, trackId) })
   ipcMain.handle('scanner:getHistory', (_, userId, limit) => getDB().prepare(`SELECT t.*, ph.played_at FROM tracks t JOIN play_history ph ON ph.track_id = t.id WHERE ph.user_id = ? ORDER BY ph.played_at DESC LIMIT ?`).all(userId || 'guest', limit || 30))
   ipcMain.handle('scanner:getSuggestions', (_, userId) => {

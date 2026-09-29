@@ -112,7 +112,13 @@ export const api = {
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
   searchTracks: (q) => isE() ? el().searchTracks(q) : apiFetch(`/tracks/search?q=${encodeURIComponent(q)}`),
   searchLyrics: (q) => isE() ? el().searchLyrics(q) : apiFetch(`/tracks/search-lyrics?q=${encodeURIComponent(q)}`),
-  toggleLike: (tid, uid) => isE() ? el().toggleLike(tid, uid) : apiFetch(`/tracks/${tid}/like`, { method:'POST', body:{userId:uid} }),
+  toggleLike: async (tid, uid) => {
+    const r = await (isE() ? el().toggleLike(tid, uid) : apiFetch(`/tracks/${tid}/like`, { method:'POST', body:{userId:uid} }))
+    // The like went to the song, whichever copy was clicked: every id it goes
+    // by (library copy, streamed copies) follows, so all its hearts agree.
+    if (r && typeof r === 'object' && Array.isArray(r.ids)) window.dispatchEvent(new CustomEvent('lokal:liked', { detail: { ids: r.ids, liked: !!r.liked } }))
+    return r
+  },
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),
   getHistory: (uid, l) => isE() ? el().getHistory(uid, l) : apiFetch(`/tracks/history?userId=${uid||'guest'}&limit=${l||30}`),

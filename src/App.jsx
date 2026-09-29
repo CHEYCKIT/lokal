@@ -989,8 +989,16 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    api.getLikedTracks(user?.id).then(t => initLiked((t || []).map(x => x.id)))
+    // Each liked song with every id it goes by (its streamed copies too).
+    api.getLikedTracks(user?.id).then(t => initLiked((t || []).flatMap(x => [x.id, ...(x.also_ids || [])])))
   }, [user?.id])
+
+  // A like from any heart: the song's other ids follow (see api.toggleLike).
+  useEffect(() => {
+    const onLiked = (e) => usePlayerStore.getState().setLikedMany(e.detail?.ids, !!e.detail?.liked)
+    window.addEventListener('lokal:liked', onLiked)
+    return () => window.removeEventListener('lokal:liked', onLiked)
+  }, [])
 
   useEffect(() => {
     setAudioRef(audioRef)
