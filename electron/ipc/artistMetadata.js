@@ -252,7 +252,14 @@ function downloadToFile(url, dest) {
 // and Wikipedia describes it as music ("American rock band"). A search for a
 // band otherwise lands on a member's page ("Eagles" gave Joe Walsh), the
 // disambiguation page, or anything else sharing the name.
-const MUSIC_WORDS = /\b(band|musician|singer|rapper|group|duo|trio|dj|producer|songwriter|composer|artist|vocalist|guitarist|drummer|bassist|pianist|musical|ensemble|orchestra|choir|mc)\b/i
+// Only words that mean music on their own. "Artist", "producer", "group",
+// "duo" also describe painters, film producers, companies and comedians, so
+// they count only after a music word: "recording artist", "record producer",
+// "hip hop group", "musical duo" (not "visual artist", "comedy duo").
+const MUSIC_ROLE = /\b(musician|singer|singer-songwriter|songwriter|rapper|vocalist|composer|guitarist|drummer|bassist|pianist|keyboardist|violinist|cellist|saxophonist|trumpeter|beatmaker|disc jockey|dj|band|boy band|girl group|orchestra|choir)\b/i
+const MUSIC_GENRE = '(music|musical|recording|record|rock|pop|hip[- ]hop|rap|indie|punk|metal|electronic|folk|jazz|soul|r&b|country|dance|house|techno|edm|k-pop|j-pop|reggae|blues|gospel|funk|disco|synth-?pop|alternative|grunge|emo|trap|drill|ambient|classical|opera|vocal|a cappella|shoegaze|dream pop|post-rock|hardcore|garage|grime|dubstep|drum and bass|afrobeats?|latin|reggaeton|salsa|ska|bluegrass|americana|new wave|progressive|psychedelic|experimental|noise|industrial|trance)'
+const MUSIC_GROUP = new RegExp(`\\b${MUSIC_GENRE}(\\s+\\w+)?\\s+(group|duo|trio|quartet|ensemble|collective|artist|producer|act|project)\\b`, 'i')
+const isMusicText = (text) => MUSIC_ROLE.test(String(text || '')) || MUSIC_GROUP.test(String(text || ''))
 const wikiNameKey = (text) => String(text || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/^the\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
@@ -261,14 +268,14 @@ function wikiTitleMatch(title, name) {
   const [, base, qualifier] = String(title || '').match(/^(.*?)(?:\s+\(([^)]*)\))?$/) || []
   if (!base || wikiNameKey(base) !== wikiNameKey(name)) return 0
   if (!qualifier) return 1
-  return MUSIC_WORDS.test(qualifier) ? 2 : 0
+  return isMusicText(qualifier) ? 2 : 0
 }
 
 function isArtistSummary(summary) {
   if (!summary || summary.type === 'disambiguation') return false
-  if (summary.description) return MUSIC_WORDS.test(summary.description)
+  if (summary.description) return isMusicText(summary.description)
   // No short description: the first sentence has to say it.
-  return MUSIC_WORDS.test(String(summary.extract || '').split(/(?<=\.)\s/)[0])
+  return isMusicText(String(summary.extract || '').split(/(?<=\.)\s/)[0])
 }
 
 /** The artist's own Wikipedia page ({ title, bio, imageUrl }), or null when not sure. */
