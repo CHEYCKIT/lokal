@@ -59,19 +59,25 @@ router.get('/', (req, res) => {
   const params = []
   const where = search ? 'WHERE a.name LIKE ?' : ''
   const groupBy = 'GROUP BY a.id'
-  const having = 'HAVING COUNT(DISTINCT atl.track_id) > 0'
+  const having = 'HAVING COUNT(DISTINCT t.id) > 0'
 
   if (search) {
     params.push(`%${search}%`)
   }
 
+  // Songs in the library only (not streamed ones), as on the artist's page.
   const baseSql = `
     FROM artists a
     LEFT JOIN artist_track_links atl ON atl.artist_id = a.id
+    LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'
   `
+  // Unpaged (the full list): the same songs as the paged one.
   const selectSql = `
-    SELECT a.*, COUNT(t.id) as track_count FROM artists a
-    JOIN tracks t ON t.artist = a.name GROUP BY a.id ORDER BY a.name
+    SELECT a.*, COUNT(DISTINCT t.id) as track_count
+    ${baseSql}
+    ${groupBy}
+    ${having}
+    ORDER BY a.name ASC
   `
 
   if (!hasPaging) {
@@ -82,7 +88,7 @@ router.get('/', (req, res) => {
   }
 
   const rows = db.prepare(`
-    SELECT a.*, COUNT(DISTINCT atl.track_id) as track_count
+    SELECT a.*, COUNT(DISTINCT t.id) as track_count
     ${baseSql}
     ${where}
     ${groupBy}
@@ -125,23 +131,26 @@ router.get('/:id', (req, res) => {
   const db = getDB()
   let artist = findArtistById(db, req.params.id)
   if (!artist) return res.status(404).json({ error: 'Not found' })
-  const tracks = db.prepare("SELECT * FROM tracks WHERE artist = ? AND file_path NOT LIKE 'ghost://%' ORDER BY album, track_num, title").all(artist.name)
-  const topTracks = db.prepare("SELECT * FROM tracks WHERE artist = ? AND file_path NOT LIKE 'ghost://%' ORDER BY play_count DESC LIMIT 5").all(artist.name)
+  // By the artist's links, as on desktop: collaborations ("A x B") and
+  // features count for each artist, not only an exact artist tag.
+  const tracks = db.prepare("SELECT t.* FROM tracks t JOIN artist_track_links atl ON atl.track_id = t.id WHERE atl.artist_id = ? AND t.file_path NOT LIKE 'ghost://%' ORDER BY t.album, t.track_num, t.title").all(artist.id)
+  const topTracks = db.prepare("SELECT t.* FROM tracks t JOIN artist_track_links atl ON atl.track_id = t.id WHERE atl.artist_id = ? AND t.file_path NOT LIKE 'ghost://%' ORDER BY t.play_count DESC LIMIT 5").all(artist.id)
   const albums = enrichAlbumRows(db.prepare(`
     SELECT
-      album as title,
-      COALESCE(NULLIF(album_artist, ''), artist) as album_artist,
-      year,
-      artwork_path,
+      t.album as title,
+      COALESCE(NULLIF(t.album_artist, ''), t.artist) as album_artist,
+      t.year,
+      t.artwork_path,
       COUNT(*) as track_count,
-      GROUP_CONCAT(DISTINCT artist) as artists
-    FROM tracks
-    WHERE artist = ?
-      AND file_path NOT LIKE 'ghost://%'
-      AND album IS NOT NULL
-    GROUP BY LOWER(album), LOWER(COALESCE(NULLIF(album_artist, ''), artist))
-    ORDER BY year DESC, album ASC
-  `).all(artist.name))
+      GROUP_CONCAT(DISTINCT t.artist) as artists
+    FROM tracks t
+    JOIN artist_track_links atl ON atl.track_id = t.id
+    WHERE atl.artist_id = ?
+      AND t.file_path NOT LIKE 'ghost://%'
+      AND t.album IS NOT NULL
+    GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), ''))
+    ORDER BY t.year DESC, t.album ASC
+  `).all(artist.id))
   const artistWithFallback = addArtistFallback(db, artist)
   res.json({ ...artistWithFallback, tracks, topTracks, albums })
 })
@@ -215,7 +224,15 @@ router.post('/:id/image/fallback', (req, res) => {
 })
 
 router.get('/:id/albums/:album/tracks', (req, res) => {
-  res.json(getDB().prepare('SELECT * FROM tracks WHERE album = ? ORDER BY track_num, title').all(req.params.album))
+  const db = getDB()
+  const artist = findArtistById(db, req.params.id)
+  if (!artist) return res.status(404).json({ error: 'Not found' })
+  res.json(db.prepare(`
+    SELECT t.* FROM tracks t
+    JOIN artist_track_links atl ON atl.track_id = t.id
+    WHERE atl.artist_id = ? AND t.album = ? AND t.file_path NOT LIKE 'ghost://%'
+    ORDER BY t.track_num, t.title
+  `).all(artist.id, req.params.album))
 })
 
 module.exports = router

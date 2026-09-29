@@ -23,7 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
-const { sourceIdentity } = require('../online/sources')
+const { sourceIdentity, onlineTrackId, streamedTwins } = require('../online/sources')
 const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
 const { makePlayable } = require('./convert')
 
@@ -883,8 +883,6 @@ class DownloadManager {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
       const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
       if (result?.id) {
-        job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
-        this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false })
         // No cover inside the file (common on Soulseek, where the art is a
         // separate cover.jpg in the uploader's folder): use the one the
         // library just found for the track (online artwork), so the row in
@@ -898,14 +896,37 @@ class DownloadManager {
         }
         // A streamed song saved to the library: the file takes the ghost
         // track's place in playlists, likes and history.
-        // (Soulseek: the file the user picked for that song, so no source check.)
+        // (Soulseek: the file the user picked for that song, so no source check.
+        // Addons: their link can be anything, often a YouTube or SoundCloud
+        // one, so the song is checked by the addon's own id instead.)
+        const { resolveGhostTrack } = require('../../server/routes/playlists')
+        const replaced = new Set()
+        const replace = (ghostId, identity) => {
+          const swapped = resolveGhostTrack(this.db(), ghostId, result.id, identity)
+          if (!swapped?.ok) return
+          replaced.add(ghostId)
+          job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
+        }
         if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
           try {
-            const { resolveGhostTrack } = require('../../server/routes/playlists')
-            const swapped = resolveGhostTrack(this.db(), job.opts.replaceTrackId, result.id, job.kind === 'single' ? sourceIdentity(job.url) : null)
-            if (swapped?.ok) job.outputLines.push(`[Lokal] Replaced the streamed version (${job.opts.replaceTrackId}) with this file`)
+            const addon = job.opts.addonSource
+            if (addon) {
+              if (job.opts.replaceTrackId === onlineTrackId(addon.provider, addon.id)) replace(job.opts.replaceTrackId, null)
+            } else {
+              replace(job.opts.replaceTrackId, job.kind === 'single' ? sourceIdentity(job.url) : null)
+            }
           } catch {}
         }
+        // The same song liked or added to a playlist from another source.
+        try {
+          const track = this.db().prepare('SELECT id, title, artist, duration FROM tracks WHERE id = ?').get(result.id)
+          for (const ghostId of streamedTwins(this.db(), track)) if (!replaced.has(ghostId)) replace(ghostId, null)
+        } catch {}
+        // Only now does the list show the song (which refreshes the library
+        // pages): once it has taken the streamed version's place, so a
+        // playlist or Liked Songs doesn't reload in between.
+        job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
+        this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false }, { force: true })
         try { this.deps.onLibraryUpdated?.(result) } catch {}
       }
     } catch {}

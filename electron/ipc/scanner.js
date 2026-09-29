@@ -106,19 +106,21 @@ function unlockArtistLinks(db, trackId) {
 
 // Bump when splitArtists changes how it reads names, so the next scan re-links
 // the library once (see relinkArtistsIfNeeded).
-const ARTIST_SPLITTER_VERSION = 2
+// 3: version 2 also linked streamed (ghost://) tracks; this undoes that.
+const ARTIST_SPLITTER_VERSION = 3
 
 /**
  * Brings every track's artist links in line with splitArtists (e.g. after it
  * learned that "h x m x d" is one artist, not h, m and d), then drops the
  * artists left without tracks. A rescan skips unchanged files, so this is
  * what fixes songs already in the library. Only tracks whose links differ
- * are touched.
+ * are touched. Streamed songs (ghost:// tracks) are never linked to artists,
+ * so an artist's page and count only ever mean songs in the library.
  */
 function relinkArtists(db = getDB()) {
   const keepComma = getKeepCommaArtists()
   ensureLinkLocks(db)
-  const tracks = db.prepare('SELECT id, artist FROM tracks WHERE id NOT IN (SELECT track_id FROM artist_link_locks)').all()
+  const tracks = db.prepare("SELECT id, artist FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND id NOT IN (SELECT track_id FROM artist_link_locks)").all()
   const linked = new Map()
   for (const row of db.prepare('SELECT track_id, artist_id FROM artist_track_links').all()) {
     if (!linked.has(row.track_id)) linked.set(row.track_id, new Set())
@@ -150,6 +152,8 @@ function relinkArtists(db = getDB()) {
   }
   let changed = 0
   db.transaction(() => {
+    // Links to streamed songs, or to songs no longer in the library.
+    changed += db.prepare(`DELETE FROM artist_track_links WHERE track_id NOT IN (SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%')`).run().changes || 0
     for (const track of tracks) {
       const names = splitArtists(track.artist, keepComma)
       const want = new Map()
@@ -577,19 +581,21 @@ function getArtistsPage(db, opts = {}) {
   const params = []
   const where = rawSearch ? 'WHERE a.name LIKE ?' : ''
   const groupBy = 'GROUP BY a.id'
-  const having = 'HAVING COUNT(DISTINCT atl.track_id) > 0'
+  const having = 'HAVING COUNT(DISTINCT t.id) > 0'
   const orderBy = sort === 'tracks' ? 'ORDER BY track_count DESC, a.name ASC' : 'ORDER BY a.name ASC'
 
   if (rawSearch) {
     params.push(`%${rawSearch}%`)
   }
 
+  // Songs in the library only (not streamed ones), as on the artist's page.
   const baseSql = `
     FROM artists a
     LEFT JOIN artist_track_links atl ON atl.artist_id = a.id
+    LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'
   `
   const rows = db.prepare(`
-    SELECT a.*, COUNT(DISTINCT atl.track_id) as track_count
+    SELECT a.*, COUNT(DISTINCT t.id) as track_count
     ${baseSql}
     ${where}
     ${groupBy}
@@ -1165,7 +1171,7 @@ function registerScannerHandlers(ipcMain) {
       WHERE atl.artist_id = ?
         AND t.file_path NOT LIKE 'ghost://%'
         AND t.album IS NOT NULL
-      GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
+      GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), ''))
       ORDER BY t.year DESC, t.album ASC
     `).all(artist.id))
     const artistWithFallback = addArtistFallback(db, artist)

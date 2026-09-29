@@ -554,7 +554,7 @@ function startRefreshAll(db, { source } = {}) {
   const chosen = normalizeSource(source || getDefaultArtistSource(db))
   const artists = db.prepare(`
     SELECT a.* FROM artists a
-    WHERE EXISTS (SELECT 1 FROM artist_track_links l WHERE l.artist_id = a.id)
+    WHERE EXISTS (SELECT 1 FROM artist_track_links l JOIN tracks t ON t.id = l.track_id WHERE l.artist_id = a.id AND t.file_path NOT LIKE 'ghost://%')
     ORDER BY a.name COLLATE NOCASE
   `).all()
   Object.assign(refreshAll, { running: true, cancel: false, source: chosen, total: artists.length, done: 0, bios: 0, images: 0, failed: 0, startedAt: Date.now(), finishedAt: 0 })
