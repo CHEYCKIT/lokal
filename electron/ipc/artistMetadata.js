@@ -116,14 +116,12 @@ async function getMusicBrainzArtistMetadataById(id) {
     const wikipediaRelation = relations.find((relation) => relation?.type === 'wikipedia' || /wikipedia\.org\/wiki\//i.test(relation?.url?.resource || ''))
     const wikipediaTitle = getWikipediaTitleFromUrl(wikipediaRelation?.url?.resource)
     const summary = wikipediaTitle ? await getWikipediaSummary(wikipediaTitle) : null
-    const article = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
+    const bio = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : buildMusicBrainzBio(data)
     const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || null
     return {
       id: data.id,
       title: data.name,
-      bio: article || buildMusicBrainzBio(data),
-      // No linked article: the bio is only a tag line ("Person • Atlanta • hip hop").
-      shortBio: !article,
+      bio,
       imageUrl,
       snippet: data.disambiguation || buildMusicBrainzBio(data) || '',
       source: 'musicbrainz',
@@ -286,15 +284,15 @@ const FETCHERS = {
   wikipedia: fetchWikipediaArtistMetadata,
 }
 
-// Auto picks the photo and the bio separately, best source first.
-// Photos: Deezer's are large square artist photos; TheAudioDB's are curated;
-// MusicBrainz goes by the artist's own linked Wikipedia page, so its lead
-// image is the right artist's; a Wikipedia search can land on the wrong page.
-const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb', 'musicbrainz', 'wikipedia']
-// Bios: TheAudioDB's are written for music; then the linked Wikipedia
-// article (via MusicBrainz), a Wikipedia search, and last MusicBrainz's
-// tag line when there's no article.
-const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz', 'wikipedia']
+// Auto picks the photo and the bio separately, best source first. No
+// Wikipedia: its search lands on the wrong page (a band member's for a band:
+// "Eagles" gave Joe Walsh), and its lead images are small stage shots that
+// don't read as an artist photo, even from the right page.
+// Photos: Deezer's are large square artist photos; TheAudioDB's are curated.
+const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb']
+// Bios: TheAudioDB's are written for music; then MusicBrainz, which follows
+// the artist's own linked Wikipedia article (or gives a tag line without one).
+const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz']
 
 /**
  * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
@@ -317,15 +315,10 @@ async function fetchArtistMetadata(name, options = {}) {
     const found = await ask(id)
     if (found?.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id; merged.title = found.title || null; break }
   }
-  let shortBio = null
   for (const id of AUTO_BIO_ORDER) {
     const found = await ask(id)
-    if (!found?.bio) continue
-    if (found.shortBio) { shortBio = shortBio || { bio: found.bio, id }; continue }
-    merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null
-    break
+    if (found?.bio) { merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null; break }
   }
-  if (!merged.bio && shortBio) { merged.bio = shortBio.bio; merged.bioSource = shortBio.id }
   merged.source = merged.bioSource || merged.imageSource
   return merged.source ? merged : null
 }
@@ -402,7 +395,9 @@ const CANDIDATE_SEARCHES = {
 async function searchArtistMetadataCandidates(query, options = {}) {
   const source = normalizeSource(options.source)
   if (source !== 'either') return CANDIDATE_SEARCHES[source](query).catch(() => [])
-  const results = await Promise.all(Object.values(CANDIDATE_SEARCHES).map(search => search(query).catch(() => [])))
+  // Wikipedia only when picked by hand (see AUTO_IMAGE_ORDER).
+  const searches = Object.entries(CANDIDATE_SEARCHES).filter(([id]) => id !== 'wikipedia').map(([, search]) => search)
+  const results = await Promise.all(searches.map(search => search(query).catch(() => [])))
   const seen = new Set()
   return results.flat().filter((candidate) => {
     const key = `${candidate.source}:${String(candidate.title || '').toLowerCase()}`
