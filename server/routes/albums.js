@@ -9,10 +9,11 @@ function classifyAlbumRow(row) {
 }
 
 function enrichAlbumRows(rows = []) {
-  return rows.map((row) => ({
-    ...row,
-    release_type: classifyAlbumRow(row),
-  }))
+  return rows.map(({ cover, ...row }) => {
+    // cover = "<track number>\t<artwork path>\t<track id>" (see albumRowsQuery).
+    const [, artworkPath = null, artworkTrackId = null] = String(cover || '').split('\t')
+    return { ...row, artwork_path: artworkPath, artwork_track_id: artworkTrackId, release_type: classifyAlbumRow(row) }
+  })
 }
 
 function albumRowsQuery(where = '') {
@@ -20,8 +21,13 @@ function albumRowsQuery(where = '') {
     SELECT
       album as title,
       COALESCE(NULLIF(album_artist, ''), artist) as album_artist,
-      year,
-      artwork_path,
+      -- The cover: the first track (by number) that has one. A bare
+      -- artwork_path took whichever row SQLite picked (with MAX(added_at),
+      -- the newest track), so an album whose newest song had no embedded
+      -- cover showed none even when its other songs had one.
+      MIN(CASE WHEN NULLIF(artwork_path, '') IS NOT NULL
+        THEN printf('%06d', COALESCE(track_num, 999999)) || char(9) || artwork_path || char(9) || id END) as cover,
+      MAX(year) as year,
       COUNT(*) as track_count,
       GROUP_CONCAT(DISTINCT artist) as artists
     FROM tracks

@@ -106,6 +106,7 @@ export default function Search() {
       id: album.title,
       title: album.title,
       artwork_path: album.artwork_path,
+      artwork_track_id: album.artwork_track_id,
       track_count: album.track_count,
       year: album.year,
       type: 'album'
@@ -193,8 +194,8 @@ export default function Search() {
                           <User size={20} />
                         )
                       ) : item.type === 'album' ? (
-                        item.artwork_path ? (
-                          <img src={api.isElectron ? `file://${item.artwork_path}` : api.artworkURL(item.id)} className="w-full h-full object-cover" />
+                        api.albumArtURL(item) ? (
+                          <img src={api.albumArtURL(item)} className="w-full h-full object-cover" />
                         ) : (
                           <Disc3 size={20} />
                         )
