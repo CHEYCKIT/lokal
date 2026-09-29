@@ -97,8 +97,9 @@ function renameWithoutArtist(filePath, artist) {
 // ---------------------------------------------------------------- known tags
 // A song saved from an addon comes from a bare audio link: no title, artist
 // or cover in it, and yt-dlp names it after the link ("7779369"). What the
-// addon said about the song (its search result) is passed along instead, and
-// fills in whatever the file itself doesn't have.
+// addon said about the song (its search result) is passed along instead: its
+// title and artist replace yt-dlp's guesses, its album and cover fill in
+// whatever the file itself doesn't have.
 
 const COVER_MAX_BYTES = 5 * 1024 * 1024
 const COVER_TIMEOUT_MS = 10000
@@ -175,14 +176,18 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
 
 /** finishFile for a file whose song is known from its source (an addon). */
 async function finishKnownFile(filePath, info, { db, settings, known, outputDir, out }) {
+  // yt-dlp tags a bare link with its own guesses, written over anything the
+  // file had: the title is the link's file name ("7779369") and the artist
+  // "Unknown Artist" (or the host). So the addon's title and artist win.
+  // The album isn't guessed: one already in the file is kept.
   const tags = {
-    title: info.title || known.title || '',
-    artist: info.artist || known.artist || '',
+    title: known.title || info.title || '',
+    artist: known.artist || info.artist || '',
     album: info.album || known.album || '',
   }
   const changes = {}
-  if (!info.title && known.title) changes.title = known.title
-  if (!info.artist && known.artist) changes.artist = known.artist
+  if (known.title && known.title !== info.title) changes.title = known.title
+  if (known.artist && known.artist !== info.artist) changes.artist = known.artist
   if (!info.album && known.album) changes.album = known.album
   const cover = known.cover ? await fetchCover(known.cover) : null
   if (cover) { changes.coverBytes = cover.bytes; changes.coverMime = cover.mime }
