@@ -23,7 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
-const { sourceIdentity, onlineTrackId, streamedTwins } = require('../online/sources')
+const { sourceIdentity, onlineTrackId, streamedTwins, sourceRefOf } = require('../online/sources')
 const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
 const { makePlayable } = require('./convert')
 
@@ -120,6 +120,28 @@ function terminate(proc) {
       setTimeout(() => { try { proc.kill('SIGKILL') } catch {} }, 1500)
     }
   })
+}
+
+/**
+ * The online song a single download is ("yt:<id>", "sc:<id>", "a-<key>:<id>"),
+ * the same whichever link it came from; null for anything else.
+ */
+function jobSourceRef(kind, url, opts = {}) {
+  if (kind !== 'single') return null
+  const addon = opts?.addonSource
+  if (addon?.provider && addon?.id) return sourceRefOf(addon.provider, addon.id)
+  return sourceIdentity(url)
+}
+
+/** Where a download's files come from, kept on their tracks: yt, sc, an addon (a-<key>), soulseek or web. */
+function jobSourceLabel(job) {
+  if (job.kind === 'soulseek') return 'soulseek'
+  if (job.opts?.addonSource?.provider) return job.opts.addonSource.provider
+  const identity = sourceIdentity(job.url)
+  if (identity) return identity.split(':')[0]
+  if (isYouTube(job.url)) return 'yt'
+  if (/(^|\.)soundcloud\.com$/i.test((() => { try { return new URL(job.url).hostname } catch { return '' } })())) return 'sc'
+  return 'web'
 }
 
 class DownloadManager {
@@ -225,7 +247,25 @@ class DownloadManager {
     }
     this.trimHistory()
     if (resumed) setTimeout(() => this.pump(), 4000)
+    setTimeout(() => this.backfillSources(), 7000)
     setTimeout(() => this.indexLeftovers(), 6000)
+  }
+
+  /** The library track downloaded from the online song `ref`, or null. */
+  libraryTrackWithRef(ref) {
+    try { return this.db().prepare("SELECT id, title FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref) || null } catch { return null }
+  }
+
+  /** Songs downloaded before sources were kept: their source, from the download history. */
+  backfillSources() {
+    try {
+      const tag = this.db().prepare("UPDATE tracks SET download_source = ?, source_ref = COALESCE(source_ref, ?) WHERE id = ? AND download_source IS NULL")
+      for (const job of this.jobs.values()) {
+        if (job.status !== 'done' || !job.indexedTracks?.length) continue
+        const label = jobSourceLabel(job)
+        for (const track of job.indexedTracks) tag.run(label, job.sourceRef || null, track.id)
+      }
+    } catch {}
   }
 
   /** Files a previous session downloaded but never got to add to the library. */
@@ -282,6 +322,7 @@ class DownloadManager {
       retryAt: null,
       withoutCookies: false,
       post: Promise.resolve(),
+      sourceRef: jobSourceRef(kind, url, opts),
       lastEmit: 0,
       seen: false,
     }
@@ -316,6 +357,7 @@ class DownloadManager {
       finishedAt: job.finishedAt || null,
       seen: !!job.seen,
       removed: !!job.removed,
+      sourceRef: job.sourceRef || null,
     }
   }
 
@@ -366,6 +408,24 @@ class DownloadManager {
     if (kind === 'soulseek' && (!opts.username || !opts.filename)) return { error: 'Pick a file from the Soulseek results.' }
     const duplicate = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.url === url && j.kind === kind)
     if (duplicate) return { downloadId: duplicate.id, playlistId: duplicate.playlistId, duplicate: true }
+    // The same online song, whatever the link: one download at a time, and
+    // none once it's in the library (the streamed copy it was saved from
+    // then takes the library copy's place at once).
+    const ref = jobSourceRef(kind, url, opts)
+    if (ref) {
+      const running = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.sourceRef === ref)
+      if (running) return { downloadId: running.id, duplicate: true }
+      const owned = this.libraryTrackWithRef(ref)
+      if (owned) {
+        if (opts.replaceTrackId) {
+          try {
+            const { resolveGhostTrack } = require('../../server/routes/playlists')
+            if (resolveGhostTrack(this.db(), opts.replaceTrackId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
+          } catch {}
+        }
+        return { alreadyInLibrary: true, trackId: owned.id, error: `Already in your library: ${owned.title || 'this song'}` }
+      }
+    }
     const existing = opts.id ? this.jobs.get(opts.id) : null
     if (existing) { this.jobs.delete(existing.id); this.unpersist(existing.id) }
     const job = this.makeJob(kind, url, opts)
@@ -869,6 +929,7 @@ class DownloadManager {
       const up = await upgradeTrackFile(this.db(), job.opts.upgradeTrackId, filepath, { storageDir: this.deps.getStorageDir?.() }).catch(e => ({ error: e.message }))
       if (up?.id) {
         job.upgradedTrackId = up.id
+        try { this.db().prepare('UPDATE tracks SET download_source = ? WHERE id = ?').run(jobSourceLabel(job), up.id) } catch {}
         job.indexedTracks.push({ filepath, id: up.id, title: path.basename(filepath, path.extname(filepath)) })
         if (up.movedTo) job.outputLines.push(`[Lokal] The previous file was moved to ${up.movedTo}`)
         this.update(job, { message: `Upgraded in your library: ${path.basename(filepath)}`, removed: false }, { persist: true })
@@ -883,6 +944,11 @@ class DownloadManager {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
       const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
       if (result?.id) {
+        // Where it came from: tells versions apart, and stops a second download.
+        try {
+          this.db().prepare('UPDATE tracks SET download_source = ?, source_ref = COALESCE(?, source_ref) WHERE id = ?')
+            .run(jobSourceLabel(job), job.sourceRef || null, result.id)
+        } catch {}
         // No cover inside the file (common on Soulseek, where the art is a
         // separate cover.jpg in the uploader's folder): use the one the
         // library just found for the track (online artwork), so the row in

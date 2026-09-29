@@ -189,26 +189,73 @@ function leadArtistKey(artist) {
   return plainKey(lead.replace(/\s*-\s*topic$/i, ''))
 }
 
+// "Artist - Song" video titles carry the artist: compare the song part.
+const songOf = (key, who) => (key.startsWith(`${who} `) ? key.slice(who.length + 1) : key)
+
+/** Are `a` and `b` ({ title, artist, duration }) the same song? */
+function sameSong(a, b) {
+  const artist = leadArtistKey(a?.artist)
+  if (!artist || leadArtistKey(b?.artist) !== artist) return false
+  const song = songOf(titleKey(a.title), artist)
+  if (!song || songOf(titleKey(b.title), artist) !== song) return false
+  const x = Number(a.duration) || 0, y = Number(b.duration) || 0
+  // An unknown length could be any version: not the same, to be safe.
+  return x > 0 && y > 0 && Math.abs(x - y) <= TWIN_DURATION_SLACK_S
+}
+
 /** Ids of liked or playlisted streamed tracks that are the same song as `track`. */
 function streamedTwins(db, track) {
-  const artist = leadArtistKey(track?.artist)
-  // "Artist - Song" video titles carry the artist: compare the song part.
-  const songOf = (key, who) => (key.startsWith(`${who} `) ? key.slice(who.length + 1) : key)
-  const song = songOf(titleKey(track?.title), artist)
-  if (!artist || !song) return []
+  if (!leadArtistKey(track?.artist) || !titleKey(track?.title)) return []
   const ghosts = db.prepare(`
     SELECT id, title, artist, duration FROM tracks
     WHERE file_path LIKE 'ghost://%'
       AND (id IN (SELECT track_id FROM user_likes) OR id IN (SELECT track_id FROM playlist_tracks))
   `).all()
-  const length = Number(track.duration) || 0
-  return ghosts.filter(ghost => {
-    if (leadArtistKey(ghost.artist) !== artist) return false
-    if (songOf(titleKey(ghost.title), artist) !== song) return false
-    const other = Number(ghost.duration) || 0
-    // An unknown length could be any version: leave that one alone.
-    return length > 0 && other > 0 && Math.abs(length - other) <= TWIN_DURATION_SLACK_S
-  }).map(ghost => ghost.id)
+  return ghosts.filter(ghost => sameSong(track, ghost)).map(ghost => ghost.id)
+}
+
+// ---------------------------------------------------------- downloaded songs
+// An online song, the same whichever link it came from: "yt:<videoId>",
+// "sc:<trackId>" or "a-<key>:<id>". Downloads keep it (tracks.source_ref).
+
+function sourceRefOf(provider, id) {
+  return provider && id ? `${provider}:${id}` : null
+}
+
+/** The online song a streamed (ghost) track stands for, or null. */
+function sourceRefOfTrack(track) {
+  const ref = streamRef(track)
+  return ref ? sourceRefOf(ref.provider, ref.id) : null
+}
+
+/**
+ * The library copy of a streamed track, if there is one: the file it was
+ * replaced by, the download of that same online song, or the same song
+ * downloaded from elsewhere. Null for a library track, or when there's none.
+ */
+function libraryCopyOf(db, trackId) {
+  if (!trackId) return null
+  try {
+    const alias = db.prepare("SELECT t.id FROM track_aliases a JOIN tracks t ON t.id = a.track_id WHERE a.old_id = ? AND t.file_path NOT LIKE 'ghost://%'").get(trackId)
+    if (alias) return alias.id
+  } catch {}
+  const track = db.prepare('SELECT id, file_path, source_url, title, artist, duration FROM tracks WHERE id = ?').get(trackId)
+  if (!track || !String(track.file_path || '').startsWith('ghost://')) return null
+  const ref = sourceRefOfTrack(track)
+  if (ref) {
+    const hit = db.prepare("SELECT id FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref)
+    if (hit) return hit.id
+  }
+  // The same song downloaded from elsewhere: candidates by the title's longest word.
+  const word = songOf(titleKey(track.title), leadArtistKey(track.artist)).split(' ').sort((a, b) => b.length - a.length)[0]
+  if (!word || word.length < 2) return null
+  const candidates = db.prepare("SELECT id, title, artist, duration FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) LIKE ? LIMIT 200").all(`%${word}%`)
+  return candidates.find(candidate => sameSong(track, candidate))?.id || null
+}
+
+/** `trackId`, or its library copy when it's a streamed track that has one. */
+function libraryTrackId(db, trackId) {
+  try { return libraryCopyOf(db, trackId) || trackId } catch { return trackId }
 }
 
 /**
@@ -283,4 +330,5 @@ module.exports = {
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
   onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks, streamedTwins,
+  sameSong, sourceRefOf, sourceRefOfTrack, libraryCopyOf, libraryTrackId,
 }

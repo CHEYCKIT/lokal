@@ -231,6 +231,16 @@ function initDB() {
     `ALTER TABLE tracks ADD COLUMN valence REAL`,
     `ALTER TABLE tracks ADD COLUMN tempo REAL`,
     `ALTER TABLE tracks ADD COLUMN time_signature INTEGER`,
+    // Downloaded songs: where from ('yt', 'sc', an addon 'a-<key>', 'soulseek',
+    // 'web') and which online song ("yt:<id>", "a-<key>:<id>"...), so the same
+    // song isn't downloaded twice and versions from different places can be
+    // told apart.
+    `ALTER TABLE tracks ADD COLUMN download_source TEXT`,
+    `ALTER TABLE tracks ADD COLUMN source_ref TEXT`,
+    `CREATE INDEX IF NOT EXISTS idx_tracks_source_ref ON tracks(source_ref)`,
+    // A streamed (ghost) track replaced by its file: its old id still leads
+    // to the file (a player or page may still hold the old one).
+    `CREATE TABLE IF NOT EXISTS track_aliases (old_id TEXT PRIMARY KEY, track_id TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS artist_track_links (artist_id TEXT NOT NULL, track_id TEXT NOT NULL, PRIMARY KEY (artist_id, track_id))`,
     `CREATE TABLE IF NOT EXISTS play_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, track_id TEXT NOT NULL, seconds_played INTEGER DEFAULT 0, played_at INTEGER DEFAULT (unixepoch()))`,
     `CREATE TABLE IF NOT EXISTS listening_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, track_id TEXT NOT NULL, event_type TEXT NOT NULL, source_type TEXT, source_id TEXT, session_id TEXT, seconds_played INTEGER DEFAULT 0, track_duration REAL, started_at INTEGER, ended_at INTEGER, created_at INTEGER DEFAULT (unixepoch()))`,

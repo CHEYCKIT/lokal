@@ -17,6 +17,8 @@ export default function Library() {
   // back paints the list at once instead of "No tracks yet" first.
   const [tracks, setTracks, wasCached] = useCachedState('library:tracks', [])
   const [sort, setSort] = useCachedState('library:sort', 'added_at DESC')
+  // Where the songs came from (see sourceFilter in electron/ipc/scanner.js).
+  const [source, setSource] = useCachedState('library:source', 'all')
   const [view, setView] = useCachedState('library:view', 'list')
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
@@ -40,7 +42,7 @@ export default function Library() {
     loadingRef.current = true
     setLoading(true)
     try {
-      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset })
+      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}) })
       if (requestId !== requestIdRef.current) return
       // A failed request keeps the list already shown (and cached).
       if (!Array.isArray(result)) return
@@ -62,13 +64,13 @@ export default function Library() {
   // the new first page replaces it; a failed request leaves it as it is.
   useEffect(() => {
     load(false)
-  }, [sort])
+  }, [sort, source])
 
   useEffect(() => {
     const handleRefresh = () => load(false)
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [sort])
+  }, [sort, source])
 
   useEffect(() => {
     if (!hasMore || loading) return
@@ -81,7 +83,7 @@ export default function Library() {
     }, { rootMargin: '300px 0px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, sort, tracks.length])
+  }, [hasMore, loading, sort, source, tracks.length])
 
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
@@ -96,6 +98,16 @@ export default function Library() {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-elevated border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">
             <Disc3 size={13} /> Albums
           </button>
+          <select value={source} onChange={e => setSource(e.target.value)} aria-label="Source"
+            className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
+            <option value="all">All sources</option>
+            <option value="local">Music folder</option>
+            <option value="yt">YouTube</option>
+            <option value="sc">SoundCloud</option>
+            <option value="addon">Addons</option>
+            <option value="soulseek">Soulseek</option>
+            <option value="web">Other sites</option>
+          </select>
           <select value={sort} onChange={e => setSort(e.target.value)}
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="added_at DESC">Recently Added</option>
@@ -159,7 +171,7 @@ export default function Library() {
       {loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
-          <p>No tracks yet — pick your music folder above.</p>
+          <p>{source === 'all' ? 'No tracks yet — pick your music folder above.' : 'No songs from this source.'}</p>
         </div>
       )}
     </div>

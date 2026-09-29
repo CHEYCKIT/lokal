@@ -503,6 +503,8 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = nul
     db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(ghostTrackId)
     db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(ghostTrackId)
     db.prepare('DELETE FROM tracks WHERE id = ?').run(ghostTrackId)
+    // A player or page still holding the old id finds the file through it.
+    try { db.prepare('INSERT OR REPLACE INTO track_aliases (old_id, track_id) VALUES (?, ?)').run(ghostTrackId, targetTrackId) } catch {}
   })
 
   run()
@@ -801,7 +803,9 @@ router.post('/:id/tracks', (req, res) => {
   const db = getDB()
   const { trackId, addedBy = 'guest' } = req.body
   const max = db.prepare('SELECT MAX(position) as m FROM playlist_tracks WHERE playlist_id = ?').get(req.params.id)
-  db.prepare('INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position, added_by, added_at) VALUES (?, ?, ?, ?, ?)').run(req.params.id, trackId, (max?.m || 0) + 1, addedBy, Date.now())
+  // A streamed song you already have: the playlist gets the library copy.
+  const id = require('../../electron/online/sources').libraryTrackId(db, trackId)
+  db.prepare('INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position, added_by, added_at) VALUES (?, ?, ?, ?, ?)').run(req.params.id, id, (max?.m || 0) + 1, addedBy, Date.now())
   res.json({ ok: true })
 })
 

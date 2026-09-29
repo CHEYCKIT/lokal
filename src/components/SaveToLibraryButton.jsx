@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Check, Download, AlertCircle, Search } from 'lucide-react'
 import { useDownloads } from '../store/downloads'
-import { downloadUrlFor, providerLabel as labelOf, saveToLibrary, streamRef } from '../onlineTracks'
+import { downloadUrlFor, providerLabel as labelOf, saveToLibrary, streamRef, sourceRefKey } from '../onlineTracks'
 
 const SAVING = new Set(['queued', 'downloading', 'finishing'])
 
@@ -30,15 +30,21 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   // The download job: by its URL (YouTube, SoundCloud), or by the id we got
   // back when starting it (addon links change on every request).
   const [jobId, setJobId] = useState(null)
-  // A finished download whose song was deleted since doesn't count: it can be saved again.
-  const job = useDownloads(s => s.jobs.find(j => !j.removed && ((url && j.url === url) || (jobId && j.id === jobId))) || null)
+  // The download of this song, wherever it was started (a search result, the
+  // player bar...): by the song itself (sourceRef), its URL, or the id we got
+  // back. A finished download whose song was deleted since doesn't count: it
+  // can be saved again.
+  const refKey = sourceRefKey(ref)
+  const job = useDownloads(s => s.jobs.find(j => !j.removed && ((refKey && j.sourceRef === refKey) || (url && j.url === url) || (jobId && j.id === jobId))) || null)
+  // Already in the library (the download was refused as a duplicate).
+  const [inLibrary, setInLibrary] = useState(false)
   const [requested, setRequested] = useState(false)
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }
   const menuRef = useRef(null)
 
   const state = error || job?.status === 'error' || job?.status === 'missing' ? 'failed'
-    : job?.status === 'done' ? 'saved'
+    : inLibrary || job?.status === 'done' ? 'saved'
       : (job && SAVING.has(job.status)) || requested ? 'saving'
         : 'idle'
   useEffect(() => { if (job) setRequested(false) }, [job])
@@ -66,6 +72,14 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     setRequested(true)
     const target = await resolveTrack().catch(() => null)
     const result = target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
+    if (result?.alreadyInLibrary) {
+      // Nothing to download: the song is in the library, and this streamed
+      // copy has just been swapped for it in likes and playlists.
+      setRequested(false)
+      setInLibrary(true)
+      window.dispatchEvent(new Event('lokal:refresh'))
+      return
+    }
     if (result?.error) { setRequested(false); setError(result.error) }
     else if (result?.downloadId) setJobId(result.downloadId)
     useDownloads.getState().load?.()

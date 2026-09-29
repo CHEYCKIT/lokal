@@ -563,6 +563,18 @@ function searchLyricsEntries(db, query) {
     .slice(0, 24)
 }
 
+/**
+ * Library > Source: where songs came from. 'local' is the music folder's own
+ * files (never downloaded in Lokal), 'addon' any addon, and 'yt', 'sc',
+ * 'soulseek', 'web' those downloads. Anything else: no filter.
+ */
+function sourceFilter(source) {
+  if (source === 'local') return { sql: 'download_source IS NULL', params: [] }
+  if (source === 'addon') return { sql: "download_source LIKE 'a-%'", params: [] }
+  if (['yt', 'sc', 'soulseek', 'web'].includes(source)) return { sql: 'download_source = ?', params: [source] }
+  return null
+}
+
 function findArtistById(db, id) {
   let artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(id)
   if (!artist) {
@@ -1139,6 +1151,8 @@ function registerScannerHandlers(ipcMain) {
     if (opts.id) { where.push('id = ?'); params.push(opts.id) }
     if (opts.artistName) { where.push('artist = ?'); params.push(opts.artistName) }
     if (opts.artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(opts.artistId) }
+    const source = sourceFilter(opts.source)
+    if (source) { where.push(source.sql); params.push(...source.params) }
     if (where.length) sql += ' WHERE ' + where.join(' AND ')
     sql += ` ORDER BY ${opts.sort || 'added_at DESC'} LIMIT ${limit} OFFSET ${offset}`
     return db.prepare(sql).all(...params)
@@ -1234,9 +1248,13 @@ function registerScannerHandlers(ipcMain) {
   })
   ipcMain.handle('scanner:toggleLike', (_, trackId, userId) => {
     const db = getDB(); const uid = userId || 'guest'
-    const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(uid, trackId)
-    if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(uid, trackId); return false }
-    db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(uid, trackId); return true
+    // A streamed song you already have: the like goes to the library copy
+    // (and a liked copy isn't unliked from a streamed one).
+    const id = require('../online/sources').libraryTrackId(db, trackId)
+    const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(uid, id)
+    if (exists && id !== trackId) return true
+    if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(uid, id); return false }
+    db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(uid, id); return true
   })
   ipcMain.handle('scanner:getLikedTracks', (_, userId) => getDB().prepare(`SELECT t.* FROM tracks t JOIN user_likes ul ON ul.track_id = t.id WHERE ul.user_id = ? ORDER BY ul.liked_at DESC`).all(userId || 'guest'))
   ipcMain.handle('scanner:incrementPlay', (_, trackId, userId) => { const db = getDB(); const uid = userId || 'guest'; db.prepare('UPDATE tracks SET play_count = play_count + 1 WHERE id = ?').run(trackId); db.prepare('INSERT INTO play_history (user_id, track_id) VALUES (?, ?)').run(uid, trackId) })
@@ -1282,8 +1300,9 @@ function registerScannerHandlers(ipcMain) {
     const db = getDB() 
     const uid = userId || 'guest'
     const max = db.prepare('SELECT MAX(position) as m FROM playlist_tracks WHERE playlist_id = ?').get(plId)
-    
-    db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, position, added_by, added_at) VALUES (?, ?, ?, ?, ?)').run(plId, trackId, (max?.m || 0) + 1, uid, Date.now()) 
+    // A streamed song you already have: the playlist gets the library copy.
+    const id = require('../online/sources').libraryTrackId(db, trackId)
+    db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, position, added_by, added_at) VALUES (?, ?, ?, ?, ?)').run(plId, id, (max?.m || 0) + 1, uid, Date.now()) 
   })
   ipcMain.handle('scanner:removeFromPlaylist', (_, plId, rowId) => {
     
@@ -1795,7 +1814,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
+module.exports = { sourceFilter, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
 
 
 function registerExtraHandlers(ipcMain) {
