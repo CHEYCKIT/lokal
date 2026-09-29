@@ -29,7 +29,9 @@ export function writeCache(key, value) {
 /**
  * useState whose value outlives the page: the next mount starts from the
  * last value instead of `initial`. `key` should include whatever the data
- * depends on (e.g. the user id). Returns [value, setValue, wasCached].
+ * depends on (e.g. the user id), and must not change while the component is
+ * mounted: give the component a React `key` that changes with it instead,
+ * so it remounts (see Home and Recap). Returns [value, setValue, wasCached].
  */
 export function useCachedState(key, initial) {
   const wasCached = useRef(cache.has(key)).current

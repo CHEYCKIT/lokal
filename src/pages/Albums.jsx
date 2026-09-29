@@ -252,7 +252,7 @@ export default function Albums() {
   const loadAlbums = () => {
     if (!albums.length) setLoadingAlbums(true)
     Promise.all([api.getAllAlbums(), api.getSettings().catch(() => ({}))]).then(([result, loadedSettings]) => {
-      setAlbums(Array.isArray(result) ? result : [])
+      if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
       setSettings(loadedSettings || {})
       setLoadingAlbums(false)
     })
@@ -262,7 +262,7 @@ export default function Albums() {
     let active = true
     Promise.all([api.getAllAlbums(), api.getSettings().catch(() => ({}))]).then(([result, loadedSettings]) => {
       if (!active) return
-      setAlbums(Array.isArray(result) ? result : [])
+      if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
       setSettings(loadedSettings || {})
       setLoadingAlbums(false)
     })

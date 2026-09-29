@@ -107,8 +107,14 @@ function MixCard({ mix, onClick }) {
   )
 }
 
+// Remounted per user, so one user's cached sections never show for another
+// (and a late answer for the previous user can't land in the new one's cache).
 export default function Home() {
   const { user } = useAppStore()
+  return <HomeContent key={user?.id || 'guest'} user={user} />
+}
+
+function HomeContent({ user }) {
   const uidKey = user?.id || 'guest'
   // Kept across visits: coming back shows the last sections at once.
   const [recentTracks, setRecentTracks] = useCachedState(`home:recent:${uidKey}`, [])
@@ -134,10 +140,11 @@ export default function Home() {
       soft(api.getHistory(uid, 30)),
       soft(api.getMixes(uid)),
     ]).then(([t, s, h, m]) => {
-      setRecentTracks(nonGhost(t))
-      setSuggestions(nonGhost(s))
-      setHistory(Array.isArray(h) ? h : [])
-      setMixes((Array.isArray(m) ? m : []).map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0))
+      // A failed request (or an { error } answer) keeps the last good section.
+      if (Array.isArray(t)) setRecentTracks(nonGhost(t))
+      if (Array.isArray(s)) setSuggestions(nonGhost(s))
+      if (Array.isArray(h)) setHistory(h)
+      if (Array.isArray(m)) setMixes(m.map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0))
       setLoaded(true)
     })
   }

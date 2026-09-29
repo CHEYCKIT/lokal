@@ -143,11 +143,18 @@ export default function Artists() {
 
   const loadArtists = (search, offset, append, sortMode) => {
     const setBusy = append ? setLoadingMore : setLoading
-    // A refresh of what's already on screen happens quietly (no spinner).
-    const quiet = !append && !search && !!peekCache(`artists:${sortMode}`)
-    if (!quiet) setBusy(true)
+    // A refresh of what's already on screen happens quietly (no spinner), and
+    // a sort seen before shows its last page at once, not the previous sort's.
+    const seen = !append && !search ? peekCache(`artists:${sortMode}`) : null
+    if (seen) {
+      setArtists(seen.items)
+      setTotal(seen.total)
+      setHasMore(seen.hasMore)
+    } else setBusy(true)
     return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode }).then((result) => {
-      const items = Array.isArray(result?.items) ? result.items : []
+      // A failed request keeps what's shown (and the cache) as it was.
+      if (!Array.isArray(result?.items)) { setBusy(false); return }
+      const items = result.items
       if (!append && !search) writeCache(`artists:${sortMode}`, { items, total: result?.total || 0, hasMore: !!result?.hasMore })
       setArtists((current) => (append ? [...current, ...items] : items))
       setTotal(result?.total || 0)

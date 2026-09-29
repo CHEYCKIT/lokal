@@ -192,10 +192,11 @@ export const api = {
     if (s && typeof s === 'object' && !s.error) settingsSnapshot = s
     return s
   }),
-  saveSettings: (s) => {
-    if (settingsSnapshot && s && typeof s === 'object') settingsSnapshot = { ...settingsSnapshot, ...s }
-    return isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })
-  },
+  saveSettings: (s) => Promise.resolve(isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })).then(r => {
+    // Only what was actually saved goes into the snapshot.
+    if (!r?.error && settingsSnapshot && s && typeof s === 'object') settingsSnapshot = { ...settingsSnapshot, ...s }
+    return r
+  }),
   exportAllData: () => isE() ? el().exportAllData() : apiFetch('/settings/export-all'),
   importAllData: (payload) => isE() ? el().importAllData(payload) : apiFetch('/settings/import-all', { method:'POST', body: payload }),
   factoryReset: () => isE() ? el().factoryReset() : apiFetch('/settings/factory-reset', { method:'POST' }),

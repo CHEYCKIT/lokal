@@ -216,6 +216,7 @@ export default function Settings() {
   const [settings, setSettings] = useState(() => (peekSettings() ? withSettingDefaults(peekSettings()) : {}))
   const [settingsLoaded, setSettingsLoaded] = useState(() => !!peekSettings())
   const touchedSettingsRef = useRef(new Set())
+  const [settingsLoadError, setSettingsLoadError] = useState('')
   // null | 'saving' | 'saved' | { error }
   const [saveState, setSaveState] = useState(null)
   useEffect(() => {
@@ -418,6 +419,13 @@ export default function Settings() {
   useEffect(() => {
 
     api.getSettings().then(s => {
+      if (!s || s.error) {
+        // Keep the settings already shown; say the read failed.
+        setSettingsLoadError(s?.error || 'No answer')
+        setSettingsLoaded(true)
+        return
+      }
+      setSettingsLoadError('')
       // A seeded page is live at once: keep what was changed while this loaded.
       setSettings(prev => {
         const next = withSettingDefaults(s)
@@ -435,6 +443,9 @@ export default function Settings() {
       // -- which can resolve after a selection the user already made
       // while it was loading -- can never overwrite a fresher choice.
       hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+    }).catch(e => {
+      setSettingsLoadError(e?.message || 'No answer')
+      setSettingsLoaded(true)
     })
 
     api.getKeepCommaArtists().then(a => {
@@ -1243,6 +1254,9 @@ export default function Settings() {
         <div className="w-full max-w-2xl mx-auto flex items-center justify-between gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
           <div className="flex items-center gap-3">
+            {settingsLoadError && (
+              <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> Couldn't load settings ({settingsLoadError})</span>
+            )}
             {/* No Save button: changes save as they're made. */}
             <AnimatePresence mode="wait" initial={false}>
               {saveState?.error ? (

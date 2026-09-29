@@ -57,10 +57,12 @@ export default function Quality() {
     const seen = peekCache(`quality:rows:${filter}`)
     if (seen) setRowsState(seen)
     setLoading(true)
-    const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(() => [])
-    const next = Array.isArray(list) ? list : []
-    writeCache(`quality:rows:${filter}`, next)
-    setRowsState(next)
+    const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(() => null)
+    // A failed request keeps the rows already shown (and cached).
+    if (Array.isArray(list)) {
+      writeCache(`quality:rows:${filter}`, list)
+      setRowsState(list)
+    }
     setRowsLoaded(true)
     setLoading(false)
   }, [filter])

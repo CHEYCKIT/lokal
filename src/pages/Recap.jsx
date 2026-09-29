@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarRange, ChevronLeft, ChevronRight, Clock3, Disc3, ListMusic, Play, Plus, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api'
@@ -494,8 +494,13 @@ function PeriodChip({ active, context, dashed, onClick, children, title }) {
   )
 }
 
+// Remounted per user, so one user's cached recap never shows for another.
 export default function Recap() {
   const { user } = useAppStore()
+  return <RecapContent key={user?.id || 'guest'} user={user} />
+}
+
+function RecapContent({ user }) {
   // Kept across visits (per user): coming back shows the recap as it was
   // while the periods refresh quietly, instead of rebuilding it on screen.
   const k = `recap:${user?.id || 'guest'}`
@@ -510,6 +515,9 @@ export default function Recap() {
   const [status, setStatus] = useState('')
   const [storyOpen, setStoryOpen] = useState(false)
   const { playQueue } = usePlayerStore()
+  // The period selected right now, for answers that arrive after a switch.
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
 
   const periods = treePeriods(tree)
   const selectedPeriod = periods.find(period => period.id === selectedId) || null
@@ -546,11 +554,14 @@ export default function Recap() {
     // Quietly when the chips are already on screen (only the icon spins).
     setCheckingPeriods(true)
     setStatus('')
-    let days = []
+    let days = null
     try {
       const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone() })
-      days = Array.isArray(result?.days) ? result.days : []
+      if (Array.isArray(result?.days)) days = result.days
     } catch {}
+    // A failed request keeps the periods (and recap) already shown.
+    if (!days && tree.length) { setCheckingPeriods(false); return }
+    days = days || []
     const nextTree = recapTree(days)
     const available = treePeriods(nextTree)
     // Drop the saved recaps, but keep the one on screen: it stays until the
@@ -560,6 +571,9 @@ export default function Recap() {
     const latest = latestPeriod(nextTree)
     const keep = available.find(period => period.id === selectedId)
     select(keep || latest, nextTree)
+    // Same period still selected: its recap is fetched again in the
+    // background (the one on screen stays until the fresh one arrives).
+    if (keep) refreshRecap(keep)
     if (latest) {
       localStorage.setItem('lokal-recap-latest-completed', latest.id)
       window.dispatchEvent(new CustomEvent('lokal:recap-periods-changed', { detail: { latestId: latest.id } }))
@@ -567,25 +581,39 @@ export default function Recap() {
     setCheckingPeriods(false)
   }
 
+  /** Fetch a period's recap again without the loading state; applied only if it's still selected. */
+  const refreshRecap = async (period) => {
+    try {
+      const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
+      if (!result || result.error) return
+      setRecapsById(current => ({ ...current, [period.id]: result }))
+      if (selectedIdRef.current === period.id) setRecap(result)
+    } catch {}
+  }
+
   const loadRecap = async () => {
     if (!selectedPeriod) return
+    const period = selectedPeriod
     setLoading(true)
     setStatus('')
     try {
-      const cached = recapsById[selectedPeriod.id]
-      const result = cached || await api.getListeningRecap(user?.id || 'guest', periodQuery(selectedPeriod))
+      const cached = recapsById[period.id]
+      const result = cached || await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
+      // Another period was picked meanwhile: its own load takes over.
+      if (selectedIdRef.current !== period.id) return
       if (result?.error) {
         setStatus(result.error)
         setRecap(null)
       } else {
         setRecap(result)
-        setRecapsById(current => ({ ...current, [selectedPeriod.id]: result }))
+        setRecapsById(current => ({ ...current, [period.id]: result }))
       }
     } catch (e) {
+      if (selectedIdRef.current !== period.id) return
       setStatus(e.message)
       setRecap(null)
     } finally {
-      setLoading(false)
+      if (selectedIdRef.current === period.id) setLoading(false)
     }
   }
 
@@ -611,7 +639,8 @@ export default function Recap() {
   const favoriteGenres = filteredGenres(recap?.preferences?.favoriteGenres || [])
 
   const savePlaylist = async () => {
-    if (!replayQueue.length || !selectedPeriod) return
+    // Not while another period loads: the tracks shown are still the old period's.
+    if (loading || !replayQueue.length || !selectedPeriod) return
     setStatus('Creating playlist...')
     const name = `${selectedPeriod.title} Top ${Math.min(replayQueue.length, 50)}`
     const playlist = await api.createPlaylist(name, user?.id, `Generated from ${selectedPeriod.title}`)
@@ -640,15 +669,15 @@ export default function Recap() {
             <RefreshCw size={14} className={checkingPeriods || loading ? 'animate-spin' : ''} />
             Refresh
           </button>
-          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={!replayQueue.length} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50">
+          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50">
             <Play size={14} fill="currentColor" />
             Replay Era
           </button>
-          <button onClick={savePlaylist} disabled={!replayQueue.length} className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50">
+          <button onClick={savePlaylist} disabled={loading || !replayQueue.length} className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50">
             <Plus size={14} />
             Add To Playlists
           </button>
-          <button onClick={() => setStoryOpen(true)} disabled={!recap || recap.totalPlays === 0} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50">
+          <button onClick={() => setStoryOpen(true)} disabled={loading || !recap || recap.totalPlays === 0} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50">
             <Sparkles size={14} />
             Show Story
           </button>
@@ -712,8 +741,8 @@ export default function Recap() {
           <p className="mt-1 text-xs text-muted">Once a completed period has enough listening data, it will show up here.</p>
         </div>
       ) : (
-        // Switching period keeps the current recap (dimmed) until the next is built.
-        <div className={`space-y-6 transition-opacity duration-200 ${loading ? 'opacity-50' : ''}`}>
+        // Switching period keeps the current recap (dimmed, not clickable) until the next is built.
+        <div aria-busy={loading} className={`space-y-6 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
           <section className="relative overflow-hidden rounded-xl border border-border bg-elevated">
             {heroArt && <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl scale-110" style={{ backgroundImage: `url("${heroArt}")` }} />}
             <div className="relative grid gap-6 p-6 lg:grid-cols-[1fr_260px]">
