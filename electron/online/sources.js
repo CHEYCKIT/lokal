@@ -185,7 +185,8 @@ function titleKey(title) {
 function leadArtistKey(artist) {
   // "A (feat. B)" / "A [with B]": the credit in brackets goes first.
   const credited = String(artist || '').replace(/\s*[([](?:feat\.?|ft\.?|featuring|with)\s[^()[\]]*[)\]]/gi, '')
-  const lead = credited.split(/\s+(?:feat\.?|ft\.?|featuring|with|x|vs\.?)\s+|\s+&\s+|,\s*/i)[0]
+  // Not on commas: "Tyler, The Creator" is one artist, not Tyler.
+  const lead = credited.split(/\s+(?:feat\.?|ft\.?|featuring|with|x|vs\.?)\s+|\s+&\s+/i)[0]
   return plainKey(lead.replace(/\s*-\s*topic$/i, ''))
 }
 
