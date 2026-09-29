@@ -274,6 +274,8 @@ export default function Settings() {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [appUsers, setAppUsers] = useState(() => peekCache('settings:users') || [])
   const [usersLoading, setUsersLoading] = useState(false)
+  // A users request has answered (or failed): the Data category can show.
+  const [usersTried, setUsersTried] = useState(() => peekCache('settings:users') !== undefined)
   const [accountStatus, setAccountStatus] = useState('')
   const [userToDelete, setUserToDelete] = useState(null)
   const [showFactoryResetModal, setShowFactoryResetModal] = useState(false)
@@ -580,25 +582,36 @@ export default function Settings() {
 
   const loadPlugins = async () => {
     setPluginsLoading(true)
-    const result = await api.pluginsList()
-    if (Array.isArray(result)) {
-      writeCache('settings:plugins', result)
-      setPlugins(result)
-      setPluginStatus('')
-    } else {
-      setPluginStatus(result?.error || 'Failed to load plugins')
+    try {
+      const result = await api.pluginsList()
+      if (Array.isArray(result)) {
+        writeCache('settings:plugins', result)
+        setPlugins(result)
+        setPluginStatus('')
+      } else {
+        setPluginStatus(result?.error || 'Failed to load plugins')
+      }
+    } catch (e) {
+      setPluginStatus(e?.message || 'Failed to load plugins')
+    } finally {
+      setPluginsLoading(false)
     }
-    setPluginsLoading(false)
   }
 
   const loadUsers = async () => {
     setUsersLoading(true)
-    const result = await api.listUsers()
-    if (Array.isArray(result)) {
-      writeCache('settings:users', result)
-      setAppUsers(result)
+    try {
+      const result = await api.listUsers()
+      if (Array.isArray(result)) {
+        writeCache('settings:users', result)
+        setAppUsers(result)
+      }
+    } catch {
+      // Keeps the accounts already shown.
+    } finally {
+      setUsersLoading(false)
+      setUsersTried(true)
     }
-    setUsersLoading(false)
   }
 
   useEffect(() => {
@@ -1314,7 +1327,7 @@ export default function Settings() {
       <ReadyWhen ready={
         activeCategory === 'artists' ? peekCache('settings:artists') !== undefined && !artistsLoading
           : activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!pluginsLoading && !!pluginStatus)
-          : activeCategory === 'data' ? peekCache('settings:users') !== undefined
+          : activeCategory === 'data' ? usersTried
           : activeCategory !== 'addons'
       } />
       {api.isElectron && inCategory('library') && (
@@ -1685,7 +1698,7 @@ export default function Settings() {
           </p>
           {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
           <div className="space-y-2">
-            {!usersLoading && peekCache('settings:users') !== undefined && appUsers.length === 0 && (
+            {!usersLoading && usersTried && appUsers.length === 0 && (
               <p className="text-xs text-muted">No local accounts found.</p>
             )}
             {appUsers.map((account) => (

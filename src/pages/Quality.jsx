@@ -83,6 +83,9 @@ export default function Quality() {
     setRowsLoaded(true)
     setLoading(false)
   }, [filter])
+  // The poll loop outlives filter switches: it reloads the filter shown now.
+  const loadRowsRef = useRef(loadRows)
+  loadRowsRef.current = loadRows
 
   // Poll the background job (reading details / checking spectra) while it runs.
   const poll = useCallback(async () => {
@@ -96,9 +99,9 @@ export default function Quality() {
     } else if (wasRunning.current) {
       wasRunning.current = false
       loadSummary()
-      loadRows()
+      loadRowsRef.current()
     }
-  }, [loadSummary, loadRows])
+  }, [loadSummary])
 
   useEffect(() => { loadSummary(); poll(); return () => clearTimeout(pollRef.current) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadRows() }, [loadRows])

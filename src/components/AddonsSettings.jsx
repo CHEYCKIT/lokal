@@ -3,7 +3,7 @@
 // they declare, remove them. Installed addons show up as sources next to
 // YouTube Music and SoundCloud above the online results in search.
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Blocks, Loader2, Trash2 } from 'lucide-react'
 import { api } from '../api'
 import { peekCache, usePageReady, writeCache } from '../pageCache'
@@ -125,10 +125,18 @@ export default function AddonsSettings() {
   const [installing, setInstalling] = useState(false)
   const [message, setMessage] = useState(null) // { error?, text }
 
-  const load = () => Promise.resolve(api.addonsList?.()).then(list => {
-    if (Array.isArray(list)) writeCache('settings:addons', list)
-    setAddons(Array.isArray(list) ? list : [])
-  }).catch(() => setAddons([]))
+  // Only the latest request applies; a failed one keeps the list shown.
+  const loadRequest = useRef(0)
+  const load = () => {
+    const request = ++loadRequest.current
+    const failed = () => { if (request === loadRequest.current) setAddons(prev => prev ?? []) }
+    return Promise.resolve(api.addonsList?.()).then(list => {
+      if (request !== loadRequest.current) return
+      if (!Array.isArray(list)) return failed()
+      writeCache('settings:addons', list)
+      setAddons(list)
+    }).catch(failed)
+  }
   useEffect(() => { load() }, [])
   const onChanged = () => { load(); changed() }
 

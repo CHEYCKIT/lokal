@@ -123,6 +123,8 @@ export default function Downloader() {
   useEffect(() => { if (soulseekFor) setTab('soulseek') }, [soulseekFor])
   const [downloadedPlaylists, setDownloadedPlaylists] = useState(() => peekCache('dl:playlists') || [])
   const [loadingPlaylists, setLoadingPlaylists] = useState(false)
+  // A playlists request has answered (or failed): the Library tab can show.
+  const [playlistsTried, setPlaylistsTried] = useState(() => peekCache('dl:playlists') !== undefined)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -265,9 +267,9 @@ export default function Downloader() {
       .then(response => {
         if (Array.isArray(response)) writeCache('dl:playlists', response)
         setDownloadedPlaylists(Array.isArray(response) ? response : [])
-        setLoadingPlaylists(false)
       })
-      .catch(() => setLoadingPlaylists(false))
+      .catch(() => {})
+      .finally(() => { setLoadingPlaylists(false); setPlaylistsTried(true) })
   }
 
   const handleRedownload = async (playlistId) => {
@@ -340,7 +342,7 @@ export default function Downloader() {
       {/* Switching tab: the new one fades in once it has what it shows (the
           Library its playlists, Soulseek its connection status). */}
       <SectionSwap id={tab} gated={tab === 'library' || tab === 'soulseek'} className="space-y-6">
-      {tab === 'library' && <ReadyWhen ready={peekCache('dl:playlists') !== undefined && !loadingPlaylists} />}
+      {tab === 'library' && <ReadyWhen ready={playlistsTried && !loadingPlaylists} />}
       {/* Soulseek files arrive as the uploader shared them; formats are for YouTube & co. */}
       {tab !== 'soulseek' && tab !== 'library' && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
