@@ -1,15 +1,20 @@
 // Apple Music-style colour backdrop, built from the cover itself (the way
 // BitChord does it): the main process averages the art into a 6x6 grid (row 0
 // = the cover's bottom edge); here each row after the first is shuffled a
-// little (seeded, so a song always looks the same), smoothed up to 32x32 with
+// little (seeded, so a song always looks the same), smoothed with
 // smoothstep weights, stretched over the area and blurred. Above `seam` (where
 // a full-bleed cover ends) the cover's bottom row simply continues upward, so
 // the colour flows out of the artwork. Songs crossfade over 0.9 s.
+//
+// The blur is baked into a small canvas once per song and size (a CSS
+// filter: blur() over the whole area was redone by the GPU on every frame
+// anything moved on top of it -- the full-screen player's transitions ran at
+// a few frames a second because of it). The canvas is drawn at one pixel per
+// BAKE_SCALE css px and blurred there, then simply stretched.
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 
-const SIZE = 32
 const meshCache = new Map() // trackId -> grid | null
 
 // Settings > Appearance > Now Playing > "Colour Background". Read once and
@@ -109,36 +114,49 @@ function sample(grid, u, v) {
   return out
 }
 
-function paint(canvas, grid, rowsOnly = false) {
-  const ctx = canvas.getContext('2d')
-  const h = rowsOnly ? 1 : SIZE
-  canvas.width = SIZE
-  canvas.height = h
-  const img = ctx.createImageData(SIZE, h)
+/**
+ * Paints the whole backdrop (the cap above `seam`, the mesh below) into
+ * `canvas`, sized for an area of width x height css px, and blurs it there.
+ */
+function paint(canvas, grid, { width, height, seam, blur }) {
+  const scale = Math.max(4, blur / 4) // css px per canvas px
+  const w = Math.max(2, Math.round(width / scale))
+  const h = Math.max(2, Math.round(height / scale))
+  const cap = [grid[0], grid[0]]
+  const flat = document.createElement('canvas')
+  flat.width = w
+  flat.height = h
+  const img = flat.getContext('2d').createImageData(w, h)
   for (let y = 0; y < h; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      const [r, g, b] = rowsOnly ? sample([grid[0], grid[0]], x / (SIZE - 1), 0) : sample(grid, x / (SIZE - 1), y / (SIZE - 1))
-      const i = (y * SIZE + x) * 4
+    const cssY = (y + 0.5) * scale
+    const inCap = cssY < seam
+    const v = inCap ? 0 : Math.min(1, (cssY - seam) / Math.max(1, height - seam))
+    for (let x = 0; x < w; x++) {
+      const u = w > 1 ? x / (w - 1) : 0
+      const [r, g, b] = inCap ? sample(cap, u, 0) : sample(grid, u, v)
+      const i = (y * w + x) * 4
       img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255
     }
   }
-  ctx.putImageData(img, 0, 0)
+  flat.getContext('2d').putImageData(img, 0, 0)
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, w, h)
+  ctx.filter = `blur(${blur / scale}px)`
+  ctx.drawImage(flat, 0, 0)
+  ctx.filter = 'none'
 }
 
-function Layer({ grid, seed, seam, visible }) {
-  const meshRef = useRef(null)
-  const capRef = useRef(null)
+function Layer({ grid, seed, seam, blur, size, visible }) {
+  const canvasRef = useRef(null)
   useEffect(() => {
-    if (!grid) return
-    const shuffled = shuffleRows(grid, seed)
-    if (meshRef.current) paint(meshRef.current, shuffled)
-    if (capRef.current) paint(capRef.current, shuffled, true)
-  }, [grid, seed])
-  const stretch = { position: 'absolute', left: 0, width: '100%', imageRendering: 'auto' }
+    if (!grid || !size || !canvasRef.current) return
+    paint(canvasRef.current, shuffleRows(grid, seed), { width: size.width, height: size.height, seam, blur })
+  }, [grid, seed, seam, blur, size])
   return (
     <div className="absolute inset-0" style={{ opacity: visible ? 1 : 0, transition: 'opacity 900ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-      {seam > 0 && <canvas ref={capRef} style={{ ...stretch, top: 0, height: seam + 2 }} />}
-      <canvas ref={meshRef} style={{ ...stretch, top: seam, height: `calc(100% - ${seam}px)` }} />
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', imageRendering: 'auto' }} />
     </div>
   )
 }
@@ -154,6 +172,23 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
   const [front, setFront] = useState(0)
   const [revision, setRevision] = useState(0)
   const reqRef = useRef(0)
+  // The area painted (css px), so the baked blur matches it; repainted on resize.
+  const areaRef = useRef(null)
+  const [size, setSize] = useState(null)
+  useEffect(() => {
+    const el = areaRef.current
+    if (!el) return
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      const width = Math.round(el.clientWidth), height = Math.round(el.clientHeight)
+      setSize(prev => (prev && prev.width === width && prev.height === height ? prev : { width, height }))
+    }
+    measure()
+    const observer = new ResizeObserver(() => { if (!frame) frame = requestAnimationFrame(measure) })
+    observer.observe(el)
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [])
 
   // The track on screen was edited (new cover...): recolour.
   useEffect(() => {
@@ -180,9 +215,9 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
     <div className={`absolute inset-0 overflow-hidden ${className}`} style={{ backgroundColor: '#121212' }} aria-hidden>
       {/* Drawn larger than the box so the blur has colour to pull in at the
           edges (instead of fading to the dark base). */}
-      <div className="absolute" style={{ inset: -blur * 2, filter: `blur(${blur}px)`, transform: 'translateZ(0)' }}>
+      <div ref={areaRef} className="absolute" style={{ inset: -blur * 2 }}>
         {slots.map((slot, i) => slot.grid && (
-          <Layer key={i} grid={slot.grid} seed={slot.id} seam={seam > 0 ? seam + blur * 2 : 0} visible={i === front} />
+          <Layer key={i} grid={slot.grid} seed={slot.id} seam={seam > 0 ? seam + blur * 2 : 0} blur={blur} size={size} visible={i === front} />
         ))}
       </div>
       <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.06), rgba(0,0,0,0.30))' }} />
