@@ -56,6 +56,34 @@ export function streamLabel(track) {
   return ref ? providerLabel(ref.provider) : null
 }
 
+/**
+ * An online song, the same whichever link it's reached by: "yt:<id>",
+ * "sc:<id>", "a-<key>:<id>" (a download keeps it as its sourceRef).
+ */
+export function sourceRefKey(ref) {
+  return ref?.provider && ref?.id ? `${ref.provider}:${ref.id}` : null
+}
+
+// Where a downloaded song came from (tracks.download_source).
+const DOWNLOAD_SOURCE_LABELS = { yt: 'YouTube', sc: 'SoundCloud', soulseek: 'Soulseek', web: 'Web' }
+let addonNames = null
+
+/** The installed addons' names ({ 'a-<key>': name }), loaded once. */
+export function loadAddonNames() {
+  if (!addonNames) {
+    addonNames = Promise.resolve(api.onlineProviders?.())
+      .then(list => Object.fromEntries((Array.isArray(list) ? list : []).filter(p => isAddonProvider(p?.id)).map(p => [p.id, p.label])))
+      .catch(() => ({}))
+  }
+  return addonNames
+}
+
+/** "YouTube", "SoundCloud", an addon's name, "Soulseek", "Web"; null for the music folder's own files. */
+export function downloadSourceLabel(source, names = {}) {
+  if (!source) return null
+  return DOWNLOAD_SOURCE_LABELS[source] || (isAddonProvider(source) ? (names[source] || 'Addon') : null)
+}
+
 /** Can the player play it: a file, or a ghost that can be streamed. */
 export function isPlayable(track) {
   return !!track && (!isGhostTrack(track) || isStreamed(track))

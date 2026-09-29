@@ -531,7 +531,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 
 router.get('/', (req, res) => {
   const db = getDB()
-  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist } = req.query
+  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source } = req.query
   if (album) {
     const params = [album]
     let sql = "SELECT * FROM tracks WHERE album = ? AND file_path NOT LIKE 'ghost://%'"
@@ -548,6 +548,8 @@ router.get('/', (req, res) => {
   const where = ["file_path NOT LIKE 'ghost://%'"]
   if (id) { where.push('id = ?'); params.push(id) }
   if (artistName) { where.push('artist = ?'); params.push(artistName) }
+  const sourceWhere = require('../../electron/ipc/scanner').sourceFilter(source)
+  if (sourceWhere) { where.push(sourceWhere.sql); params.push(...sourceWhere.params) }
   if (where.length) sql += ' WHERE ' + where.join(' AND ')
   sql += ` ORDER BY ${sort} LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`
   res.json(db.prepare(sql).all(...params))
@@ -780,9 +782,13 @@ router.put('/:id/artwork', (req, res) => {
 router.post('/:id/like', (req, res) => {
   const db = getDB()
   const { userId = 'guest' } = req.body
-  const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(userId, req.params.id)
-  if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(userId, req.params.id); return res.json({ liked: false }) }
-  db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, req.params.id)
+  // A streamed song you already have: the like goes to the library copy
+  // (and a liked copy isn't unliked from a streamed one).
+  const id = require('../../electron/online/sources').libraryTrackId(db, req.params.id)
+  const exists = db.prepare('SELECT 1 FROM user_likes WHERE user_id = ? AND track_id = ?').get(userId, id)
+  if (exists && id !== req.params.id) return res.json({ liked: true })
+  if (exists) { db.prepare('DELETE FROM user_likes WHERE user_id = ? AND track_id = ?').run(userId, id); return res.json({ liked: false }) }
+  db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, id)
   res.json({ liked: true })
 })
 

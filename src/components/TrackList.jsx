@@ -8,7 +8,7 @@ import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
-import { trackArtURL, isPlayable, isStreamed, streamLabel } from '../onlineTracks'
+import { trackArtURL, isPlayable, isStreamed, streamLabel, downloadSourceLabel, loadAddonNames, isAddonProvider } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
@@ -54,6 +54,15 @@ function fmtAddedAt(ts) {
 }
 
 export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
+  // Downloads from an addon are tagged with its name.
+  const [addonNames, setAddonNames] = useState({})
+  const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source))
+  useEffect(() => {
+    if (!hasAddonDownloads) return undefined
+    let live = true
+    loadAddonNames().then(names => { if (live) setAddonNames(names) })
+    return () => { live = false }
+  }, [hasAddonDownloads])
   const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore()
   const { user, openAddToPlaylist, openAddMultipleToPlaylist } = useAppStore()
   const [hoveredId, setHoveredId] = useState(null)
@@ -676,6 +685,9 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
                   {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
                   {streamed && <span title={`Streamed from ${streamLabel(track)}, not in your library yet`} className="px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-[10px] uppercase tracking-wide text-accent flex-shrink-0">{streamLabel(track)}</span>}
+                  {!isGhost && downloadSourceLabel(track.download_source, addonNames) && (
+                    <span title={`Downloaded from ${downloadSourceLabel(track.download_source, addonNames)}`} className="px-1.5 py-0.5 rounded-full bg-card border border-border text-[10px] uppercase tracking-wide text-muted flex-shrink-0">{downloadSourceLabel(track.download_source, addonNames)}</span>
+                  )}
                 </div>
                 <p className="text-xs text-muted truncate">{track.artist}</p>
               </div>

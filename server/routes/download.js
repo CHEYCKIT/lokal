@@ -97,7 +97,8 @@ function enqueue(kind) {
     // What the source said about the song, for a file that comes without tags.
     if (kind === 'single') opts.tags = require('../../electron/download/postprocess').knownTagsOf(tags)
     const result = manager().enqueue(kind, url, opts)
-    res.status(result.error ? 500 : 200).json(result)
+    // Already in the library isn't a failure: the app shows the song as saved.
+    res.status(result.error && !result.alreadyInLibrary ? 500 : 200).json(result)
   }
 }
 
