@@ -1171,7 +1171,7 @@ function registerScannerHandlers(ipcMain) {
       WHERE atl.artist_id = ?
         AND t.file_path NOT LIKE 'ghost://%'
         AND t.album IS NOT NULL
-      GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
+      GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), ''))
       ORDER BY t.year DESC, t.album ASC
     `).all(artist.id))
     const artistWithFallback = addArtistFallback(db, artist)

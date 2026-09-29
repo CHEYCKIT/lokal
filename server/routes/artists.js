@@ -71,9 +71,13 @@ router.get('/', (req, res) => {
     LEFT JOIN artist_track_links atl ON atl.artist_id = a.id
     LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'
   `
+  // Unpaged (the full list): the same songs as the paged one.
   const selectSql = `
-    SELECT a.*, COUNT(t.id) as track_count FROM artists a
-    JOIN tracks t ON t.artist = a.name GROUP BY a.id ORDER BY a.name
+    SELECT a.*, COUNT(DISTINCT t.id) as track_count
+    ${baseSql}
+    ${groupBy}
+    ${having}
+    ORDER BY a.name ASC
   `
 
   if (!hasPaging) {
@@ -144,7 +148,7 @@ router.get('/:id', (req, res) => {
     WHERE atl.artist_id = ?
       AND t.file_path NOT LIKE 'ghost://%'
       AND t.album IS NOT NULL
-    GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
+    GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), ''))
     ORDER BY t.year DESC, t.album ASC
   `).all(artist.id))
   const artistWithFallback = addArtistFallback(db, artist)
@@ -220,7 +224,15 @@ router.post('/:id/image/fallback', (req, res) => {
 })
 
 router.get('/:id/albums/:album/tracks', (req, res) => {
-  res.json(getDB().prepare('SELECT * FROM tracks WHERE album = ? ORDER BY track_num, title').all(req.params.album))
+  const db = getDB()
+  const artist = findArtistById(db, req.params.id)
+  if (!artist) return res.status(404).json({ error: 'Not found' })
+  res.json(db.prepare(`
+    SELECT t.* FROM tracks t
+    JOIN artist_track_links atl ON atl.track_id = t.id
+    WHERE atl.artist_id = ? AND t.album = ? AND t.file_path NOT LIKE 'ghost://%'
+    ORDER BY t.track_num, t.title
+  `).all(artist.id, req.params.album))
 })
 
 module.exports = router

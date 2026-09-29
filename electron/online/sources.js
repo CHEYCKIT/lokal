@@ -171,8 +171,9 @@ function sourceIdentity(url) {
 // both copies in likes and playlists. These find a new file's streamed twins:
 // same title and lead artist, lengths within a few seconds. Noise such as
 // "(Official Video)" or "(feat. …)" is ignored; "(Remix)", "(Live)", "(… Edit)"
-// are not, so a remix is never taken for the original.
-const NOISE_TAG = /^(?:official\b.*|lyrics?(?: video)?|lyric video|audio|video|music video|visuali[sz]er|hd|hq|4k|mv|explicit|clean|remaster(?:ed)?(?: \d{4})?|\d{4} remaster(?:ed)?|(?:feat|ft|featuring|with)\b.*)$/i
+// are not (nor "(Official Remix)", "(Official Live Video)"), so another
+// version is never taken for the original. Both lengths must be known.
+const NOISE_TAG = /^(?:official(?: (?:music|lyric|hd|4k))?(?: (?:video|audio|visuali[sz]er))?|lyrics?(?: video)?|lyric video|audio|video|music video|visuali[sz]er|hd|hq|4k|mv|explicit|clean|remaster(?:ed)?(?: \d{4})?|\d{4} remaster(?:ed)?|(?:feat|ft|featuring|with)\b.*)$/i
 const TWIN_DURATION_SLACK_S = 5
 
 const plainKey = (s) => String(s || '').toLowerCase().replace(/['’`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -182,7 +183,9 @@ function titleKey(title) {
 }
 
 function leadArtistKey(artist) {
-  const lead = String(artist || '').split(/\s+(?:feat\.?|ft\.?|featuring|with|x|vs\.?)\s+|\s+&\s+|,\s*/i)[0]
+  // "A (feat. B)" / "A [with B]": the credit in brackets goes first.
+  const credited = String(artist || '').replace(/\s*[([](?:feat\.?|ft\.?|featuring|with)\s[^()[\]]*[)\]]/gi, '')
+  const lead = credited.split(/\s+(?:feat\.?|ft\.?|featuring|with|x|vs\.?)\s+|\s+&\s+|,\s*/i)[0]
   return plainKey(lead.replace(/\s*-\s*topic$/i, ''))
 }
 
@@ -203,7 +206,8 @@ function streamedTwins(db, track) {
     if (leadArtistKey(ghost.artist) !== artist) return false
     if (songOf(titleKey(ghost.title), artist) !== song) return false
     const other = Number(ghost.duration) || 0
-    return !(length && other && Math.abs(length - other) > TWIN_DURATION_SLACK_S)
+    // An unknown length could be any version: leave that one alone.
+    return length > 0 && other > 0 && Math.abs(length - other) <= TWIN_DURATION_SLACK_S
   }).map(ghost => ghost.id)
 }
 
