@@ -492,6 +492,9 @@ export default function LyricsPanel({
 
   useEffect(() => {
     setSearchOpen(false)
+    // A source request for the previous song won't clear its own spinner
+    // (its answer is dropped as stale), so clear it here.
+    setSourceBusy(false)
     const cached = trackKey != null && lyricsCache.has(trackKey)
     // Cached: its lines show right away (even if the previous song was still
     // loading); otherwise the loading state until this song's answer.
