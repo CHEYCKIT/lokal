@@ -5,6 +5,7 @@ import SectionSwap, { ReadyWhen } from './SectionSwap'
 import AutoHeight from './AutoHeight'
 import { api, peekSettings } from '../api'
 import { ARTIST_SOURCES } from '../artistSources'
+import { plural } from '../plural'
 
 function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, '').trim()
@@ -301,7 +302,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
             <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)} className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors">
               <option value="">Select target artist…</option>
               {mergeOptions.map(a => (
-                <option key={a.id} value={a.id}>{a.name} ({a.track_count} tracks)</option>
+                <option key={a.id} value={a.id}>{a.name} ({plural(a.track_count, 'track')})</option>
               ))}
             </select>
             <p className="text-xs text-muted mt-2">

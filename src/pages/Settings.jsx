@@ -13,6 +13,7 @@ import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
 import { useTheme } from '../themeHooks'
 import { ARTIST_SOURCES } from '../artistSources'
+import { plural } from '../plural'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -2768,7 +2769,7 @@ module.exports = {
             <div key={a.id} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-card group transition-colors">
               <div>
                 <p className="text-sm text-white">{a.name}</p>
-                <p className="text-xs text-muted">{a.track_count} tracks</p>
+                <p className="text-xs text-muted">{plural(a.track_count, 'track')}</p>
               </div>
               <button onClick={() => setManageArtist(a)}
                 className="opacity-0 group-hover:opacity-100 text-xs text-muted hover:text-white px-2 py-1 rounded border border-border transition-all">

@@ -8,6 +8,7 @@ import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import { useDownloads, startDownloadSync, isActive } from '../store/downloads'
 import { DownloadList } from '../components/DownloadManager'
 import SoulseekSearch from '../components/SoulseekSearch'
+import { plural } from '../plural'
 
 const DISCLAIMER_KEY = 'lokal-dl-accepted'
 const COOKIE_HINT_KEY = 'lokal-yt-cookie-hint-dismissed'
@@ -545,7 +546,7 @@ export default function Downloader() {
                   <div key={playlist.id} className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-black/15 p-4">
                     <div className="flex-1 min-w-0">
                       <p className="truncate text-sm font-semibold text-white">{displayTitle(playlist, 'Playlist')}</p>
-                      <p className="mt-1 text-xs text-muted">{playlist.downloaded_count || 0} tracks · {playlist.status}</p>
+                      <p className="mt-1 text-xs text-muted">{plural(playlist.downloaded_count, 'track')} · {playlist.status}</p>
                       {playlist.url ? <p className="mt-2 truncate text-[11px] text-muted">{playlist.url}</p> : null}
                     </div>
                     <div className="flex gap-2">

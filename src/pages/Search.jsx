@@ -9,6 +9,7 @@ import OnlineResults from '../components/OnlineResults'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import { isStreamed } from '../onlineTracks'
+import { plural } from '../plural'
 
 // Results for what's typed in the header search box (HeaderSearch.jsx); with
 // nothing typed, the things recently opened from a search.
@@ -273,7 +274,7 @@ export default function Search() {
                     </div>
                     <div>
                       <p className="text-xs font-medium text-white truncate">{a.title}</p>
-                      <p className="text-xs text-muted">{a.track_count} tracks</p>
+                      <p className="text-xs text-muted">{plural(a.track_count, 'track')}</p>
                     </div>
                   </motion.button>
                 ))}

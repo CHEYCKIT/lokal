@@ -7,6 +7,7 @@ import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
 import { makeAlbumContext, makeArtistContext } from '../playbackContext'
+import { plural } from '../plural'
 
 export default function Artist() {
   const { id } = useParams()
@@ -161,7 +162,7 @@ export default function Artist() {
           <div>
             <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Artist</p>
             <h1 className="text-3xl font-display text-white">{artist.name}</h1>
-            <p className="mt-1 text-xs text-muted">{artist.tracks?.length || 0} tracks</p>
+            <p className="mt-1 text-xs text-muted">{plural(artist.tracks?.length, 'track')}</p>
           </div>
         </div>
         <button onClick={() => setShowManage(true)} className="absolute top-4 right-6 flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs text-white/60 transition-all backdrop-blur-sm hover:border-white/20 hover:text-white">
@@ -220,7 +221,7 @@ export default function Artist() {
                         <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-display uppercase tracking-[0.18em] text-white/70">
                           {releaseLabel(album.release_type)}
                         </span>
-                        <span className="block truncate">{album.year ? `${album.year} • ` : ''}{album.track_count} tracks</span>
+                        <span className="block truncate">{album.year ? `${album.year} • ` : ''}{plural(album.track_count, 'track')}</span>
                       </div>
                     </div>
                   </motion.button>

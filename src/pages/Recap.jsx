@@ -7,6 +7,7 @@ import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
 import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapTree, treePeriods } from '../recapPeriods'
+import { plural } from '../plural'
 
 
 const GENRE_COMMENTS = {
@@ -264,7 +265,7 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
     {
       key: 'overview',
       eyebrow: (period?.label || 'recap').toLowerCase(),
-      title: `${fmtMinutes(recap?.totalMinutes || 0)} // ${recap?.uniqueTracks || 0} tracks // ${recap?.uniqueArtists || 0} artists`,
+      title: `${fmtMinutes(recap?.totalMinutes || 0)} // ${plural(recap?.uniqueTracks, 'track')} // ${plural(recap?.uniqueArtists, 'artist')}`,
       body: `(thats about ${daysText(recap?.totalMinutes || 0)}... you okay?)`,
       track: topTracks[0],
       variant: 'overview',
@@ -281,7 +282,7 @@ function RecapStory({ open, onClose, recap, period, playQueue, onSavePlaylist, p
       key: 'session',
       eyebrow: 'the vibe check',
       title: biggestSession ? `deep session: ${biggestSession.label.toLowerCase()}` : 'your biggest session had a shape.',
-      body: biggestSession ? `${biggestSession.trackCount} tracks over ${fmtMinutes(biggestSession.durationMinutes)}, mostly by ${sessionArtist}. ${sessionComment(biggestSession)}` : 'no named sessions yet.',
+      body: biggestSession ? `${plural(biggestSession.trackCount, 'track')} over ${fmtMinutes(biggestSession.durationMinutes)}, mostly by ${sessionArtist}. ${sessionComment(biggestSession)}` : 'no named sessions yet.',
       track: biggestSession?.tracks?.[0] || topTracks[0],
       actionTracks: biggestSession?.tracks,
       variant: 'session',
@@ -785,7 +786,7 @@ function RecapContent({ user }) {
                 </div>
                 <h2 className="mt-3 text-4xl font-display text-white">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-                  You played {recap.totalPlays} tracks for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
+                  You played {plural(recap.totalPlays, 'track')} for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
                 </p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <Metric label="Minutes" value={fmtMinutes(recap.totalMinutes)} icon={Clock3} />
