@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Search, Download, CheckCircle, AlertTriangle, RefreshCw, Library, UserRound, Link2, Clock, Cookie, X } from 'lucide-react'
 import { api, peekSettings } from '../api'
-import { usePageReady } from '../pageCache'
+import { peekCache, usePageReady, writeCache } from '../pageCache'
+import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import { useDownloads, startDownloadSync, isActive } from '../store/downloads'
 import { DownloadList } from '../components/DownloadManager'
 import SoulseekSearch from '../components/SoulseekSearch'
@@ -120,7 +121,7 @@ export default function Downloader() {
   }, [])
   const [tab, setTab] = useState(soulseekFor ? 'soulseek' : 'search')
   useEffect(() => { if (soulseekFor) setTab('soulseek') }, [soulseekFor])
-  const [downloadedPlaylists, setDownloadedPlaylists] = useState([])
+  const [downloadedPlaylists, setDownloadedPlaylists] = useState(() => peekCache('dl:playlists') || [])
   const [loadingPlaylists, setLoadingPlaylists] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -262,6 +263,7 @@ export default function Downloader() {
     setLoadingPlaylists(true)
     api.getDownloadedPlaylists()
       .then(response => {
+        if (Array.isArray(response)) writeCache('dl:playlists', response)
         setDownloadedPlaylists(Array.isArray(response) ? response : [])
         setLoadingPlaylists(false)
       })
@@ -335,6 +337,10 @@ export default function Downloader() {
         </div>
       </section>
 
+      {/* Switching tab: the new one fades in once it has what it shows (the
+          Library its playlists, Soulseek its connection status). */}
+      <SectionSwap id={tab} gated={tab === 'library' || tab === 'soulseek'} className="space-y-6">
+      {tab === 'library' && <ReadyWhen ready={peekCache('dl:playlists') !== undefined && !loadingPlaylists} />}
       {/* Soulseek files arrive as the uploader shared them; formats are for YouTube & co. */}
       {tab !== 'soulseek' && tab !== 'library' && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
@@ -521,7 +527,7 @@ export default function Downloader() {
             <Library size={14} />
             <span>Downloaded Playlists</span>
           </div>
-            {loadingPlaylists ? (
+            {loadingPlaylists && !downloadedPlaylists.length ? (
               <p className="text-sm text-muted">Loading...</p>
             ) : downloadedPlaylists.length === 0 ? (
               <p className="text-sm text-muted">No playlists downloaded yet. Download a playlist to see it here.</p>
@@ -646,6 +652,7 @@ export default function Downloader() {
           </div>
         </section>
       )}
+      </SectionSwap>
 
       {downloads.length > 0 && (
         <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">

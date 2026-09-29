@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react'
 import { AlertTriangle, Blocks, Loader2, Trash2 } from 'lucide-react'
 import { api } from '../api'
+import { peekCache, usePageReady, writeCache } from '../pageCache'
 
 const changed = () => window.dispatchEvent(new Event('lokal:addons-changed'))
 
@@ -116,12 +117,18 @@ function AddonCard({ addon, onChanged }) {
 
 /** The Addons section. */
 export default function AddonsSettings() {
-  const [addons, setAddons] = useState(null)
+  // Last visit's list shows at once; the Settings category fades in once
+  // the list is in (it used to appear empty for a frame first).
+  const [addons, setAddons] = useState(() => peekCache('settings:addons') ?? null)
+  usePageReady(addons !== null)
   const [url, setUrl] = useState('')
   const [installing, setInstalling] = useState(false)
   const [message, setMessage] = useState(null) // { error?, text }
 
-  const load = () => Promise.resolve(api.addonsList?.()).then(list => setAddons(Array.isArray(list) ? list : [])).catch(() => setAddons([]))
+  const load = () => Promise.resolve(api.addonsList?.()).then(list => {
+    if (Array.isArray(list)) writeCache('settings:addons', list)
+    setAddons(Array.isArray(list) ? list : [])
+  }).catch(() => setAddons([]))
   useEffect(() => { load() }, [])
   const onChanged = () => { load(); changed() }
 

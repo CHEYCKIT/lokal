@@ -7,6 +7,7 @@ import { AudioWaveform, Gem, Loader2, Play, RefreshCw, ScanLine, Square } from '
 import { api } from '../api'
 import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCache'
 import AnimatedNumber from '../components/AnimatedNumber'
+import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import { usePlayerStore } from '../store/player'
 import { TIERS, formatLabel, isSuspect, openLossless, tierOf, verdictText } from '../quality'
 
@@ -43,6 +44,9 @@ export default function Quality() {
   const [filter, setFilter] = useCachedState('quality:filter', 'upgradable')
   const [rows, setRowsState] = useState(() => peekCache(`quality:rows:${filter}`) || [])
   const [rowsLoaded, setRowsLoaded] = useState(() => !!peekCache(`quality:rows:${filter}`))
+  // The filter the rows on screen belong to: a switched-to filter shows (and
+  // plays) nothing of another's while its own rows load.
+  const [rowsFor, setRowsFor] = useState(() => (peekCache(`quality:rows:${filter}`) ? filter : null))
   const [rowsError, setRowsError] = useState('')
   const [loading, setLoading] = useState(false)
   // Only the latest list request (the filter selected now) is applied.
@@ -61,13 +65,17 @@ export default function Quality() {
     // (never another filter's rows under this filter's name).
     const seen = peekCache(`quality:rows:${filter}`)
     setRowsState(seen || [])
+    setRowsFor(seen ? filter : null)
     setRowsError('')
     setLoading(true)
     const list = await Promise.resolve(api.qualityList({ tier: filter, limit: PAGE })).catch(e => ({ error: e?.message }))
     if (request !== rowsRequestRef.current) return
     if (Array.isArray(list)) {
       writeCache(`quality:rows:${filter}`, list)
-      setRowsState(list)
+      // The quiet refresh of a list already shown usually brings the same
+      // rows: re-rendering 200 of them then (mid fade-in) only costs frames.
+      if (!(seen && JSON.stringify(seen) === JSON.stringify(list))) setRowsState(list)
+      setRowsFor(filter)
     } else {
       // A failed request keeps this filter's cached rows, and says so.
       setRowsError(list?.error || 'Could not load this list')
@@ -94,6 +102,25 @@ export default function Quality() {
 
   useEffect(() => { loadSummary(); poll(); return () => clearTimeout(pollRef.current) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadRows() }, [loadRows])
+
+  // Once the page is up, fetch the other filters' lists in the background
+  // (one at a time), so switching filter shows its rows at once.
+  const pageUp = !!summary && rowsLoaded
+  useEffect(() => {
+    if (!pageUp) return
+    let cancelled = false
+    ;(async () => {
+      for (const [tier] of FILTERS) {
+        if (cancelled) return
+        if (peekCache(`quality:rows:${tier}`)) continue
+        await new Promise(r => setTimeout(r, 150))
+        if (cancelled) return
+        const list = await Promise.resolve(api.qualityList({ tier, limit: PAGE })).catch(() => null)
+        if (Array.isArray(list) && !peekCache(`quality:rows:${tier}`)) writeCache(`quality:rows:${tier}`, list)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pageUp])
   useEffect(() => {
     const refresh = () => { loadSummary(); loadRows() }
     window.addEventListener('lokal:quality-changed', refresh)
@@ -177,32 +204,37 @@ export default function Quality() {
               {label}{id === 'upgradable' && tiers.upgradable ? ` · ${tiers.upgradable.toLocaleString()}` : ''}
             </button>
           ))}
-          {rows.length > 0 && (
+          {rows.length > 0 && rowsFor === filter && (
             <button onClick={() => playQueue(rows, 0, { type: 'quality', id: filter, name: `Audio quality: ${FILTERS.find(f => f[0] === filter)?.[1]}` })}
               className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted hover:text-white">
               <Play size={11} fill="currentColor" /> Play these
             </button>
           )}
         </div>
+        {/* Switching filter: the new list fades in once its rows are in (not the
+            previous filter's rows, then "Loading…", then the new ones). */}
+        <SectionSwap id={filter} gated>
+        <ReadyWhen ready={rowsFor === filter || !!rowsError} />
         {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.</p>}
 
-        {loading && !rows.length && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
+        {loading && rowsFor !== filter && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
         {rowsError && (
           <p className="flex items-center gap-2 py-3 text-xs text-red">
             Couldn't load this list ({rowsError}).
             <button onClick={loadRows} className="rounded-full border border-border px-2.5 py-0.5 text-muted hover:text-white">Retry</button>
           </p>
         )}
-        {rowsLoaded && !loading && !rowsError && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
+        {rowsFor === filter && !loading && !rowsError && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
 
         <div className="space-y-0.5">
-          {rows.map((track, i) => {
+          {rowsFor === filter && rows.map((track, i) => {
             const tier = isSuspect(track) ? 'suspect' : tierOf(track)
             const info = TIERS[tier]
             const verdict = verdictText(track)
             return (
               <div key={track.id} onDoubleClick={() => playQueue(rows, i, { type: 'quality', id: filter, name: 'Audio quality' })}
-                className="group grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg px-3 py-1.5 hover:bg-elevated">
+                className="group grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg px-3 py-1.5 hover:bg-elevated"
+                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 48px' }}>
                 <div className="min-w-0">
                   <p className="truncate text-sm text-white">{track.title}</p>
                   <p className="truncate text-xs text-muted" title={verdict || undefined}>
@@ -222,7 +254,8 @@ export default function Quality() {
             )
           })}
         </div>
-        {rows.length === PAGE && <p className="mt-3 text-center text-[11px] text-muted">Showing the first {PAGE}.</p>}
+        {rowsFor === filter && rows.length === PAGE && <p className="mt-3 text-center text-[11px] text-muted">Showing the first {PAGE}.</p>}
+        </SectionSwap>
       </section>
     </div>
   )
