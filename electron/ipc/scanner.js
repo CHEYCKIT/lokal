@@ -89,6 +89,10 @@ function splitArtists(raw, keepComma = null) {
   return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
 }
 
+// Bump when splitArtists changes how it reads names, so the next scan re-links
+// the library once (see relinkArtistsIfNeeded).
+const ARTIST_SPLITTER_VERSION = 2
+
 /**
  * Brings every track's artist links in line with splitArtists (e.g. after it
  * learned that "h x m x d" is one artist, not h, m and d), then drops the
@@ -104,26 +108,66 @@ function relinkArtists(db = getDB()) {
     if (!linked.has(row.track_id)) linked.set(row.track_id, new Set())
     linked.get(row.track_id).add(row.artist_id)
   }
+  const byExactName = db.prepare('SELECT id FROM artists WHERE name = ? LIMIT 1')
+  const byName = db.prepare('SELECT id FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1')
+  const byId = db.prepare('SELECT id FROM artists WHERE id = ?')
   const unlink = db.prepare('DELETE FROM artist_track_links WHERE track_id = ?')
   const addArtist = db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)')
+  const rename = db.prepare('UPDATE OR IGNORE artists SET name = ? WHERE id = ? AND name <> ?')
   const link = db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)')
+  const resolved = new Map()
+  // The artist row a name belongs to: the one already carrying that name
+  // (names are unique, so its id may not be the slug of this spelling), else
+  // the one with its slug ("A.B" and "A B"), else a new row. Null only if no
+  // row could be made, so a link never points at a missing artist.
+  const artistIdFor = (name) => {
+    const key = name.toLowerCase()
+    if (resolved.has(key)) return resolved.get(key)
+    let id = byExactName.get(name)?.id || byName.get(name)?.id
+    if (!id) {
+      const slugId = 'a-' + slugify(name)
+      addArtist.run(slugId, name)
+      id = byId.get(slugId)?.id || null
+    }
+    resolved.set(key, id)
+    return id
+  }
   let changed = 0
   db.transaction(() => {
     for (const track of tracks) {
       const names = splitArtists(track.artist, keepComma)
-      const want = new Set(names.map(name => 'a-' + slugify(name)))
-      const have = linked.get(track.id) || new Set()
-      if (want.size === have.size && [...want].every(id => have.has(id))) continue
-      unlink.run(track.id)
+      const want = new Map()
       for (const name of names) {
-        const id = 'a-' + slugify(name)
-        addArtist.run(id, name)
+        const id = artistIdFor(name)
+        if (id && !want.has(id)) want.set(id, name)
+      }
+      const have = linked.get(track.id) || new Set()
+      if (want.size === have.size && [...want.keys()].every(id => have.has(id))) continue
+      unlink.run(track.id)
+      for (const [id, name] of want) {
+        // Same artist spelled differently ("ARTIST" -> "Artist"): the row
+        // takes this track's spelling, as a scan would.
+        if (byName.get(name)?.id === id) rename.run(name, id, name)
         link.run(id, track.id)
       }
       changed++
     }
     if (changed) db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
   })()
+  return changed
+}
+
+/**
+ * relinkArtists, but only when the splitter or the keep-comma list changed
+ * since the last pass, so a routine scan doesn't walk every track.
+ */
+function relinkArtistsIfNeeded(db = getDB()) {
+  const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
+  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}`
+  const last = db.prepare("SELECT value FROM settings WHERE key = 'artist_relink_fingerprint'").get()?.value
+  if (last === fingerprint) return 0
+  const changed = relinkArtists(db)
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_relink_fingerprint', ?)").run(fingerprint)
   return changed
 }
 
@@ -306,7 +350,7 @@ async function scanFolder(folderPath) {
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
   try {
-    const relinked = relinkArtists(db)
+    const relinked = relinkArtistsIfNeeded(db)
     if (relinked) console.log(`[scanFolder] Re-linked artists for ${relinked} track(s)`)
   } catch (e) { console.warn('[scanFolder] Artist re-link skipped:', e.message) }
   const files = walkDir(folderPath)
@@ -1726,7 +1770,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists }
+module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
 
 
 function registerExtraHandlers(ipcMain) {

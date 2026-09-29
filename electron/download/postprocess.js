@@ -70,8 +70,17 @@ function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
 // "[… Remix]" stays with the song.
 const TRAILING_TAGS = /((?:\s*[([][^()[\]]*[)\]])+)\s*$/
 
+// First credited artist of "A feat. B", "A & B", "A x B", "A, B". Like the
+// scanner, a split on &/x/vs that leaves one-letter pieces is one stylised
+// name ("h x m x d"), not a collaboration.
+function firstArtistOf(s) {
+  const lead = String(s || '').split(/\s+(?:feat\.?|ft\.?|featuring)\s+|,\s*/i)[0].trim()
+  const parts = lead.split(/\s+(?:&|x|vs\.?)\s+/i)
+  return (parts.some(part => part.trim().length < 2) ? lead : parts[0]).trim()
+}
+
 function knownArtist(db, name) {
-  const first = String(name || '').split(/\s+(?:feat\.?|ft\.?|featuring|&|x|vs\.?)\s+|,\s*/i)[0].trim()
+  const first = firstArtistOf(name)
   if (!db || !first) return false
   try { return !!db.prepare('SELECT 1 FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1').get(first) } catch { return false }
 }
@@ -96,7 +105,6 @@ function preferKnownArtist(parsed, db) {
 // the library check above decides.
 const ORDER_LOOKUP_MS = 8000
 const loose = (s) => String(s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/['’`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-const firstArtistOf = (s) => String(s || '').split(/\s+(?:feat\.?|ft\.?|featuring|&|x|vs\.?)\s+|,\s*/i)[0].trim()
 const lucene = (s) => String(s || '').replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
 
 // Uploaded titles are rarely spelled like the catalogue ("Im Really Really
