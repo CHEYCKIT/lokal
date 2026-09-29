@@ -974,6 +974,7 @@ router.post('/batch-delete', async (req, res, next) => {
       db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id)
       try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}
       db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id)
+      try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}
       db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
     }
     res.json({ ok: true, files: await removeTrackFiles(db, filePaths) })
@@ -995,6 +996,7 @@ router.post('/delete-by-path', async (req, res, next) => {
     try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId)
     db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
+    try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
     res.json({ success: true, trackId, files: await removeTrackFiles(db, [filePath]) })
   } catch (e) { next(e) }
