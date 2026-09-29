@@ -988,14 +988,31 @@ export default function App() {
     })
   }, [])
 
+  // Bumped by every like / unlike: a liked-songs read started before one is
+  // older than the hearts and mustn't replace them.
+  const likedRevisionRef = useRef(0)
   useEffect(() => {
+    let cancelled = false
     // Each liked song with every id it goes by (its streamed copies too).
-    api.getLikedTracks(user?.id).then(t => initLiked((t || []).flatMap(x => [x.id, ...(x.also_ids || [])])))
+    const load = () => {
+      const revision = likedRevisionRef.current
+      api.getLikedTracks(user?.id).then(t => {
+        if (cancelled) return
+        if (revision !== likedRevisionRef.current) { load(); return }
+        initLiked((t || []).flatMap(x => [x.id, ...(x.also_ids || [])]))
+      }).catch(() => {})
+    }
+    load()
+    return () => { cancelled = true }
   }, [user?.id])
 
   // A like from any heart: the song's other ids follow (see api.toggleLike).
   useEffect(() => {
-    const onLiked = (e) => usePlayerStore.getState().setLikedMany(e.detail?.ids, !!e.detail?.liked)
+    const onLiked = (e) => {
+      if ((e.detail?.userId ?? null) !== (useAppStore.getState().user?.id ?? null)) return
+      likedRevisionRef.current += 1
+      usePlayerStore.getState().setLikedMany(e.detail?.ids, !!e.detail?.liked)
+    }
     window.addEventListener('lokal:liked', onLiked)
     return () => window.removeEventListener('lokal:liked', onLiked)
   }, [])

@@ -116,7 +116,9 @@ export const api = {
     const r = await (isE() ? el().toggleLike(tid, uid) : apiFetch(`/tracks/${tid}/like`, { method:'POST', body:{userId:uid} }))
     // The like went to the song, whichever copy was clicked: every id it goes
     // by (library copy, streamed copies) follows, so all its hearts agree.
-    if (r && typeof r === 'object' && Array.isArray(r.ids)) window.dispatchEvent(new CustomEvent('lokal:liked', { detail: { ids: r.ids, liked: !!r.liked } }))
+    // Tagged with the user it was for: a late answer after switching user
+    // mustn't touch the new user's hearts.
+    if (r && typeof r === 'object' && Array.isArray(r.ids)) window.dispatchEvent(new CustomEvent('lokal:liked', { detail: { ids: r.ids, liked: !!r.liked, userId: uid ?? null } }))
     return r
   },
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),

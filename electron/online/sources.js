@@ -279,6 +279,15 @@ function songIds(db, trackId) {
     const ref = String(db.prepare('SELECT source_ref FROM tracks WHERE id = ?').get(trackId)?.source_ref || '').match(/^([^:]+):(.+)$/)
     if (ref && validId(ref[1], ref[2])) ids.add(onlineTrackId(ref[1], ref[2]))
     for (const row of db.prepare('SELECT old_id FROM track_aliases WHERE track_id = ?').all(trackId)) ids.add(row.old_id)
+    // Streamed copies that are the same song by title, artist and length
+    // (the match libraryCopyOf makes the other way).
+    const track = db.prepare("SELECT title, artist, duration FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(trackId)
+    const length = Number(track?.duration) || 0
+    if (length > 0) {
+      const ghosts = db.prepare("SELECT id, title, artist, duration FROM tracks WHERE file_path LIKE 'ghost://%' AND duration BETWEEN ? AND ?")
+        .all(length - TWIN_DURATION_SLACK_S, length + TWIN_DURATION_SLACK_S)
+      for (const ghost of ghosts) if (sameSong(track, ghost)) ids.add(ghost.id)
+    }
   } catch {}
   return [...ids]
 }
