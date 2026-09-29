@@ -250,7 +250,9 @@ export default function Albums() {
   }, [highlightTrackReady, highlightTrackId])
 
   const loadAlbums = () => {
-    if (!albums.length) setLoadingAlbums(true)
+    // The cache, not `albums`: the refresh handler keeps an older render's
+    // closure, where the list can still be empty.
+    if (!peekCache('albums:all')?.length) setLoadingAlbums(true)
     Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(([result, loadedSettings]) => {
       if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
       if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
