@@ -23,7 +23,7 @@ const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const slskd = require('./slskd')
-const { sourceIdentity, onlineTrackId, streamedTwins, sourceRefOf } = require('../online/sources')
+const { sourceIdentity, onlineTrackId, streamedTwins, sourceRefOf, sourceRefOfTrack } = require('../online/sources')
 const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
 const { makePlayable } = require('./convert')
 
@@ -256,6 +256,14 @@ class DownloadManager {
     try { return this.db().prepare("SELECT id, title FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref) || null } catch { return null }
   }
 
+  /** Is `trackId` a streamed (ghost) track of the online song `ref`? */
+  isStreamedCopyOf(trackId, ref) {
+    try {
+      const ghost = this.db().prepare("SELECT id, file_path, source_url FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'").get(trackId)
+      return !!ghost && sourceRefOfTrack(ghost) === ref
+    } catch { return false }
+  }
+
   /** Songs downloaded before sources were kept: their source, from the download history. */
   backfillSources() {
     try {
@@ -414,10 +422,19 @@ class DownloadManager {
     const ref = jobSourceRef(kind, url, opts)
     if (ref) {
       const running = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.sourceRef === ref)
-      if (running) return { downloadId: running.id, duplicate: true }
+      if (running) {
+        // This click's streamed copy is replaced too once the file is in.
+        if (opts.replaceTrackId && opts.replaceTrackId !== running.opts.replaceTrackId) {
+          if (!running.opts.replaceTrackId) running.opts.replaceTrackId = opts.replaceTrackId
+          else running.opts.alsoReplace = [...new Set([...(running.opts.alsoReplace || []), opts.replaceTrackId])]
+          this.persist(running)
+        }
+        return { downloadId: running.id, duplicate: true }
+      }
       const owned = this.libraryTrackWithRef(ref)
       if (owned) {
-        if (opts.replaceTrackId) {
+        // Only a streamed copy of this very song takes the library copy's place.
+        if (opts.replaceTrackId && this.isStreamedCopyOf(opts.replaceTrackId, ref)) {
           try {
             const { resolveGhostTrack } = require('../../server/routes/playlists')
             if (resolveGhostTrack(this.db(), opts.replaceTrackId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
@@ -945,8 +962,10 @@ class DownloadManager {
       const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
       if (result?.id) {
         // Where it came from: tells versions apart, and stops a second download.
+        // A file already in the library (indexing gave back its track) keeps
+        // the source it had.
         try {
-          this.db().prepare('UPDATE tracks SET download_source = ?, source_ref = COALESCE(?, source_ref) WHERE id = ?')
+          this.db().prepare('UPDATE tracks SET download_source = COALESCE(download_source, ?), source_ref = COALESCE(source_ref, ?) WHERE id = ?')
             .run(jobSourceLabel(job), job.sourceRef || null, result.id)
         } catch {}
         // No cover inside the file (common on Soulseek, where the art is a
@@ -976,10 +995,14 @@ class DownloadManager {
         if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
           try {
             const addon = job.opts.addonSource
-            if (addon) {
-              if (job.opts.replaceTrackId === onlineTrackId(addon.provider, addon.id)) replace(job.opts.replaceTrackId, null)
-            } else {
-              replace(job.opts.replaceTrackId, job.kind === 'single' ? sourceIdentity(job.url) : null)
+            // Several clicks on the same song (search list, player bar) while
+            // it downloaded: each one's streamed copy.
+            for (const ghostId of [job.opts.replaceTrackId, ...(job.opts.alsoReplace || [])]) {
+              if (addon) {
+                if (ghostId === onlineTrackId(addon.provider, addon.id)) replace(ghostId, null)
+              } else {
+                replace(ghostId, job.kind === 'single' ? sourceIdentity(job.url) : null)
+              }
             }
           } catch {}
         }

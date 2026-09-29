@@ -42,6 +42,14 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }
   const menuRef = useRef(null)
+  // Another song in the same place (a reused row, the player's next song):
+  // nothing of the previous one's state carries over, not even a late answer.
+  const keyRef = useRef(refKey)
+  useEffect(() => {
+    if (keyRef.current === refKey) return
+    keyRef.current = refKey
+    setInLibrary(false); setRequested(false); setError(null); setJobId(null)
+  }, [refKey])
 
   const state = error || job?.status === 'error' || job?.status === 'missing' ? 'failed'
     : inLibrary || job?.status === 'done' ? 'saved'
@@ -70,8 +78,10 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     if (state === 'saving' || state === 'saved') return
     setError(null)
     setRequested(true)
+    const clickedKey = refKey
     const target = await resolveTrack().catch(() => null)
     const result = target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
+    if (keyRef.current !== clickedKey) return
     if (result?.alreadyInLibrary) {
       // Nothing to download: the song is in the library, and this streamed
       // copy has just been swapped for it in likes and playlists.

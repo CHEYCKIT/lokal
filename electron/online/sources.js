@@ -189,15 +189,21 @@ function leadArtistKey(artist) {
   return plainKey(lead.replace(/\s*-\s*topic$/i, ''))
 }
 
-// "Artist - Song" video titles carry the artist: compare the song part.
-const songOf = (key, who) => (key.startsWith(`${who} `) ? key.slice(who.length + 1) : key)
+// "Artist - Song" video titles carry the artist: compare the song part. Only
+// with that separator: "Drake Freestyle" by Drake stays "drake freestyle".
+const ARTIST_SEPARATOR = /^\s*(.+?)\s+[-–—|]\s+(.+)$/
+function songKey(title, artist) {
+  const parts = String(title || '').match(ARTIST_SEPARATOR)
+  if (parts && leadArtistKey(parts[1]) === artist) return titleKey(parts[2])
+  return titleKey(title)
+}
 
 /** Are `a` and `b` ({ title, artist, duration }) the same song? */
 function sameSong(a, b) {
   const artist = leadArtistKey(a?.artist)
   if (!artist || leadArtistKey(b?.artist) !== artist) return false
-  const song = songOf(titleKey(a.title), artist)
-  if (!song || songOf(titleKey(b.title), artist) !== song) return false
+  const song = songKey(a.title, artist)
+  if (!song || songKey(b.title, artist) !== song) return false
   const x = Number(a.duration) || 0, y = Number(b.duration) || 0
   // An unknown length could be any version: not the same, to be safe.
   return x > 0 && y > 0 && Math.abs(x - y) <= TWIN_DURATION_SLACK_S
@@ -246,10 +252,13 @@ function libraryCopyOf(db, trackId) {
     const hit = db.prepare("SELECT id FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref)
     if (hit) return hit.id
   }
-  // The same song downloaded from elsewhere: candidates by the title's longest word.
-  const word = songOf(titleKey(track.title), leadArtistKey(track.artist)).split(' ').sort((a, b) => b.length - a.length)[0]
-  if (!word || word.length < 2) return null
-  const candidates = db.prepare("SELECT id, title, artist, duration FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) LIKE ? LIMIT 200").all(`%${word}%`)
+  // The same song downloaded from elsewhere. sameSong needs both lengths
+  // within a few seconds, so only songs of about that length can match:
+  // those are the candidates, each compared the same way as everywhere else.
+  const length = Number(track.duration) || 0
+  if (!(length > 0)) return null
+  const candidates = db.prepare("SELECT id, title, artist, duration FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND duration BETWEEN ? AND ?")
+    .all(length - TWIN_DURATION_SLACK_S, length + TWIN_DURATION_SLACK_S)
   return candidates.find(candidate => sameSong(track, candidate))?.id || null
 }
 

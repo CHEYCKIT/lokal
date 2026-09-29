@@ -63,6 +63,10 @@ export default function Library() {
   // The list on screen (from last time, or the previous sort) stays until
   // the new first page replaces it; a failed request leaves it as it is.
   useEffect(() => {
+    // Another sort or source: nothing more is fetched (or appended) until its
+    // first page is in, so two lists are never mixed.
+    offsetRef.current = 0
+    setHasMore(false)
     load(false)
   }, [sort, source])
 
