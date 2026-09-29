@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 
@@ -9,7 +10,9 @@ export default function Modal({ open, onClose, title, children, width = 'max-w-m
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  return (
+  // Rendered at the end of <body>, so no page wrapper (a transform, a
+  // filter) can move or clip it: it always covers the screen.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -44,6 +47,7 @@ export default function Modal({ open, onClose, title, children, width = 'max-w-m
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

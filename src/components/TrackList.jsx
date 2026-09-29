@@ -680,14 +680,14 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 <p className="text-xs text-muted/60 mr-2 hidden lg:block">{fmtAddedAt(track.added_at)}</p>
               )}
               {showPlayNext && !isGhost && (
-                <button onClick={e => handlePlayNext(track, e)}
+                <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                   <Clock size={14} />
                 </button>
               )}
               {streamed && <SaveToLibraryButton track={track} className="opacity-0 group-hover:opacity-100" />}
               {showAddToQueue && !isGhost && (
-                <button onClick={e => handleAddToQueue(track, e)}
+                <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                   <ListEnd size={14} />
                 </button>
