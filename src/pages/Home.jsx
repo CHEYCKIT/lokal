@@ -8,6 +8,7 @@ import FadeImg from '../components/FadeImg'
 import SectionSwap from '../components/SectionSwap'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
+import { plural } from '../plural'
 
 function MixCard({ mix, onClick }) {
   const artSrc = (t) => t.artwork_path
@@ -51,7 +52,7 @@ function MixCard({ mix, onClick }) {
       </div>
       <div>
         <p className="text-sm font-medium text-white truncate">{mix.name}</p>
-        <p className="text-xs text-muted">{mix.tracks.length} tracks · {getMixTypeLabel(mix.type)}</p>
+        <p className="text-xs text-muted">{plural(mix.tracks.length, 'track')} · {getMixTypeLabel(mix.type)}</p>
       </div>
     </motion.button>
   )

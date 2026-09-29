@@ -12,6 +12,7 @@ import { trackArtURL, isPlayable, isStreamed, streamLabel, downloadSourceLabel, 
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
+import { plural } from '../plural'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -474,7 +475,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
       const playable = selectedTracks.filter(t => !isGhostTrack(t))
       playable.forEach(t => playNext(t))
-      showToast(`${playable.length} tracks will play next`)
+      showToast(`${plural(playable.length, 'track')} will play next`)
     } else {
       playNext(track)
       showToast(`Playing next: ${track.title || 'Unknown track'}`)
@@ -491,7 +492,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
       const playable = selectedTracks.filter(t => !isGhostTrack(t))
       playable.forEach(t => addToQueue(t))
-      showToast(`Added ${playable.length} tracks to queue`)
+      showToast(`Added ${plural(playable.length, 'track')} to queue`)
     } else {
       addToQueue(track)
       showToast(`Added to queue: ${track.title || 'Unknown track'}`)

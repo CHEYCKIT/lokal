@@ -5,6 +5,7 @@ import { useAppStore } from '../store/player'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 import { makeAlbumContext } from '../playbackContext'
+import { plural } from '../plural'
 
 const PAGE_SIZE = 40
 
@@ -45,7 +46,7 @@ function AlbumCard({ album, onClick }) {
       <div className="min-w-0 flex-1 max-w-full">
         <p className="text-xs font-medium text-white truncate">{album.title}</p>
         <p className="text-[10px] text-muted truncate">{album.artists || album.album_artist}</p>
-        <p className="text-[10px] text-muted/60">{album.track_count} tracks{album.year ? ` · ${album.year}` : ''}</p>
+        <p className="text-[10px] text-muted/60">{plural(album.track_count, 'track')}{album.year ? ` · ${album.year}` : ''}</p>
       </div>
     </motion.button>
   )
@@ -85,7 +86,7 @@ function AlbumDetail({ album, onClose }) {
         <div className="min-w-0 flex-1 max-w-full">
           <h2 className="text-lg font-display text-white truncate">{album.title}</h2>
           <p className="text-sm text-muted truncate">{album.artists || album.album_artist}</p>
-          <p className="text-xs text-muted/60">{album.track_count} tracks{album.year ? ` · ${album.year}` : ''}</p>
+          <p className="text-xs text-muted/60">{plural(album.track_count, 'track')}{album.year ? ` · ${album.year}` : ''}</p>
         </div>
         {tracks.length > 0 && (
           <button onClick={() => playQueue(tracks, 0, albumContext)} className="flex items-center gap-2 px-4 py-2 bg-accent text-base rounded-full text-sm font-medium flex-shrink-0">

@@ -61,7 +61,7 @@ function buildArtistQueries(name) {
 
 // 'either' (shown as Auto) combines them: the bio and the picture each come
 // from the first provider that has one.
-const ARTIST_SOURCES = ['either', 'wikipedia', 'musicbrainz', 'theaudiodb', 'deezer']
+const ARTIST_SOURCES = ['either', 'theaudiodb', 'deezer', 'musicbrainz', 'wikipedia']
 
 function normalizeSource(source) {
   return ARTIST_SOURCES.includes(source) ? source : 'either'
@@ -278,17 +278,26 @@ async function fetchWikipediaArtistMetadata(name) {
 }
 
 const FETCHERS = {
-  wikipedia: fetchWikipediaArtistMetadata,
   theaudiodb: fetchAudioDbArtistMetadata,
-  musicbrainz: fetchMusicBrainzArtistMetadata,
   deezer: fetchDeezerArtistMetadata,
+  musicbrainz: fetchMusicBrainzArtistMetadata,
+  wikipedia: fetchWikipediaArtistMetadata,
 }
+
+// Auto picks the photo and the bio separately, best source first. No
+// Wikipedia: its search lands on the wrong page (a band member's for a band:
+// "Eagles" gave Joe Walsh), and its lead images are small stage shots that
+// don't read as an artist photo, even from the right page.
+// Photos: Deezer's are large square artist photos; TheAudioDB's are curated.
+const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb']
+// Bios: TheAudioDB's are written for music; then MusicBrainz, which follows
+// the artist's own linked Wikipedia article (or gives a tag line without one).
+const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz']
 
 /**
  * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
- * Auto asks the providers in turn (Wikipedia, TheAudioDB, MusicBrainz,
- * Deezer) until it has both a bio and a picture, each from the first one
- * that had it.
+ * Auto takes the photo and the bio each from the first provider in its
+ * order that has one, asking each provider at most once.
  */
 async function fetchArtistMetadata(name, options = {}) {
   const source = normalizeSource(options.source)
@@ -296,15 +305,19 @@ async function fetchArtistMetadata(name, options = {}) {
     const found = await FETCHERS[source](name).catch(() => null)
     return found ? { ...found, bioSource: source, imageSource: source } : null
   }
+  const asked = new Map()
+  const ask = (id) => {
+    if (!asked.has(id)) asked.set(id, FETCHERS[id](name).catch(() => null))
+    return asked.get(id)
+  }
   const merged = { title: null, bio: null, imageUrl: null, source: null, bioSource: null, imageSource: null }
-  for (const [id, fetcher] of Object.entries(FETCHERS)) {
-    if (merged.bio && merged.imageUrl) break
-    if (id === 'deezer' && merged.imageUrl) continue // photos only
-    const found = await fetcher(name).catch(() => null)
-    if (!found) continue
-    if (!merged.bio && found.bio) { merged.bio = found.bio; merged.bioSource = id }
-    if (!merged.imageUrl && found.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id }
-    merged.title = merged.title || found.title
+  for (const id of AUTO_IMAGE_ORDER) {
+    const found = await ask(id)
+    if (found?.imageUrl) { merged.imageUrl = found.imageUrl; merged.imageSource = id; merged.title = found.title || null; break }
+  }
+  for (const id of AUTO_BIO_ORDER) {
+    const found = await ask(id)
+    if (found?.bio) { merged.bio = found.bio; merged.bioSource = id; merged.title = merged.title || found.title || null; break }
   }
   merged.source = merged.bioSource || merged.imageSource
   return merged.source ? merged : null
@@ -373,16 +386,18 @@ async function searchDeezerMetadataCandidates(query) {
 }
 
 const CANDIDATE_SEARCHES = {
-  wikipedia: searchWikipediaMetadataCandidates,
   theaudiodb: searchAudioDbMetadataCandidates,
-  musicbrainz: searchMusicBrainzMetadataCandidates,
   deezer: searchDeezerMetadataCandidates,
+  musicbrainz: searchMusicBrainzMetadataCandidates,
+  wikipedia: searchWikipediaMetadataCandidates,
 }
 
 async function searchArtistMetadataCandidates(query, options = {}) {
   const source = normalizeSource(options.source)
   if (source !== 'either') return CANDIDATE_SEARCHES[source](query).catch(() => [])
-  const results = await Promise.all(Object.values(CANDIDATE_SEARCHES).map(search => search(query).catch(() => [])))
+  // Wikipedia only when picked by hand (see AUTO_IMAGE_ORDER).
+  const searches = Object.entries(CANDIDATE_SEARCHES).filter(([id]) => id !== 'wikipedia').map(([, search]) => search)
+  const results = await Promise.all(searches.map(search => search(query).catch(() => [])))
   const seen = new Set()
   return results.flat().filter((candidate) => {
     const key = `${candidate.source}:${String(candidate.title || '').toLowerCase()}`

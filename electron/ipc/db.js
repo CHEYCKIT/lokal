@@ -312,6 +312,17 @@ function initDB() {
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('yt_cookie_default_v2', '1')").run()
     }
   } catch {}
+  // Auto no longer uses Wikipedia (it found the wrong page too often, and its
+  // photos are small stage shots): bios and photos fetched from it before are
+  // cleared so they're fetched again from the other sources. Set by hand ones
+  // are kept. Once only, so someone who picks Wikipedia later keeps its results.
+  try {
+    if (!db.prepare("SELECT 1 FROM settings WHERE key = 'artist_wikipedia_cleared_v1'").get()) {
+      db.prepare("UPDATE artists SET bio = NULL, bio_source = NULL, bio_fetched_at = NULL WHERE bio_source = 'wikipedia'").run()
+      db.prepare("UPDATE artists SET image_path = NULL, image_source = NULL, image_fetched_at = NULL WHERE image_source = 'wikipedia'").run()
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_wikipedia_cleared_v1', '1')").run()
+    }
+  } catch {}
   
   
   try {

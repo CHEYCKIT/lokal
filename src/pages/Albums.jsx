@@ -7,6 +7,7 @@ import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 import FadeImg from '../components/FadeImg'
+import { plural } from '../plural'
 
 const PAGE_SIZE = 48
 
@@ -107,7 +108,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             <p className="mt-4 truncate text-sm text-white/45 md:text-base">Unknown Artist</p>
           )}
           <p className="mt-3 text-xs uppercase tracking-[0.24em] text-white/45">
-            {trackCount} tracks{album.year ? ` • ${album.year}` : ''}
+            {plural(trackCount, 'track')}{album.year ? ` • ${album.year}` : ''}
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button
@@ -182,7 +183,7 @@ function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
           <p className="truncate text-sm font-medium text-white">{album.title}</p>
           <p className="truncate text-xs text-muted">{album.artists || album.album_artist || 'Unknown Artist'}</p>
           <p className="text-[11px] uppercase tracking-[0.22em] text-muted/70">
-            {album.track_count} tracks{album.year ? ` • ${album.year}` : ''}
+            {plural(album.track_count, 'track')}{album.year ? ` • ${album.year}` : ''}
           </p>
         </div>
       </div>
@@ -488,7 +489,7 @@ export default function Albums() {
                 <div>
                   <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Tracklist</p>
                   <p className="mt-1 text-sm text-white/65">
-                    {loadingTracks ? 'Loading tracks...' : `${albumTracks.length} tracks`}
+                    {loadingTracks ? 'Loading tracks...' : plural(albumTracks.length, 'track')}
                   </p>
                 </div>
                 {albumTracks.length > 0 && (

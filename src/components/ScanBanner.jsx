@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { RefreshCw, ScanLine } from 'lucide-react'
 import { api, peekSettings } from '../api'
+import { plural } from '../plural'
 
 const refreshLibrary = () => window.dispatchEvent(new Event('lokal:refresh'))
 // The desktop app reports the scan's end (progress `complete`), which
@@ -50,7 +51,7 @@ export default function ScanBanner() {
             </div>
           </div>
         )}
-        {progress?.complete && <p className="text-xs text-accent mt-1">✓ {progress.done - (progress.skipped || 0)} tracks indexed</p>}
+        {progress?.complete && <p className="text-xs text-accent mt-1">✓ {plural(progress.done - (progress.skipped || 0), 'track')} indexed</p>}
       </div>
       <div className="flex gap-2 flex-shrink-0">
         {folder && (

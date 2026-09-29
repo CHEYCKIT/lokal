@@ -4,6 +4,7 @@ import { X, Plus, Check, Music, Heart } from 'lucide-react'
 import { useAppStore, usePlayerStore } from '../store/player'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
+import { plural } from '../plural'
 
 export default function AddToPlaylistModal() {
   const { addToPlaylistTrack, addToPlaylistTrackIds, closeAddToPlaylist, user } = useAppStore()
@@ -39,7 +40,7 @@ export default function AddToPlaylistModal() {
       for (const tid of addToPlaylistTrackIds) {
         await api.toggleLike(tid, user?.id)
       }
-      showToast(`Added ${addToPlaylistTrackIds.length} tracks to Liked Songs`)
+      showToast(`Added ${plural(addToPlaylistTrackIds.length, 'track')} to Liked Songs`)
     } else if (track) {
       const r = await api.toggleLike(track.id, user?.id)
       const liked = typeof r === 'boolean' ? r : r?.liked ?? false
@@ -85,7 +86,7 @@ export default function AddToPlaylistModal() {
                 <div className="min-w-0">
                   <p className="text-xs font-display text-muted uppercase tracking-widest">Add to Playlist</p>
                   {trackCount > 1 ? (
-                    <p className="text-sm text-white mt-0.5 truncate font-medium">{trackCount} tracks selected</p>
+                    <p className="text-sm text-white mt-0.5 truncate font-medium">{plural(trackCount, 'track')} selected</p>
                   ) : (
                     <>
                       <p className="text-sm text-white mt-0.5 truncate font-medium">{track?.title}</p>

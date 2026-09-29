@@ -9,6 +9,7 @@ import Modal from '../components/Modal'
 import { api } from '../api'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
+import { plural } from '../plural'
 
 export default function Playlist() {
   const { id } = useParams()
@@ -379,7 +380,7 @@ export default function Playlist() {
               )}
             </div>
           )}
-          <p className="text-sm text-muted">{tracks.length} tracks{totalDuration > 0 ? ` · ${fmt(totalDuration)}` : ''}</p>
+          <p className="text-sm text-muted">{plural(tracks.length, 'track')}{totalDuration > 0 ? ` · ${fmt(totalDuration)}` : ''}</p>
         </div>
       </div>
 
