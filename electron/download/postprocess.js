@@ -108,16 +108,29 @@ function swapped(parsed) {
   const tags = parsed.title.match(TRAILING_TAGS)
   const other = tags ? parsed.title.slice(0, tags.index).trim() : parsed.title
   if (!other) return null
-  const groups = tags ? tags[1].match(/[([][^()[\]]*[)\]]/g) || [] : []
   const guests = [], versions = []
-  for (const group of groups) {
-    const feat = group.match(FEATURING)
-    if (feat) guests.push(feat[1].trim())
-    else versions.push(group)
+  const sort = (groups) => {
+    for (const group of groups) {
+      const feat = group.match(FEATURING)
+      if (feat) guests.push(feat[1].trim())
+      else versions.push(group)
+    }
   }
+  // The song side can carry the credit too: "Song (feat. Guest) - Artist".
+  const songTags = parsed.artist.match(TRAILING_TAGS)
+  const song = songTags ? parsed.artist.slice(0, songTags.index).trim() || parsed.artist : parsed.artist
+  const songVersions = []
+  if (songTags && song !== parsed.artist) {
+    for (const group of songTags[1].match(/[([][^()[\]]*[)\]]/g) || []) {
+      const feat = group.match(FEATURING)
+      if (feat) guests.push(feat[1].trim())
+      else songVersions.push(group)
+    }
+  }
+  sort(tags ? tags[1].match(/[([][^()[\]]*[)\]]/g) || [] : [])
   return {
     artist: guests.length ? `${other} feat. ${guests.join(', ')}` : other,
-    title: [parsed.artist, ...versions].join(' '),
+    title: [songTags && song !== parsed.artist ? song : parsed.artist, ...songVersions, ...versions].join(' '),
     fromDash: true,
   }
 }
@@ -289,10 +302,16 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   if (done.lyrics) { out.lyrics = lyrics.sync; out.lyricsSource = lyrics.source }
   out.cover = done.cover
   if (fromTitle && (done.title || done.artist)) {
-    out.artist = fromTitle.artist
+    // Filed by what the file now says: a tag that couldn't be written keeps
+    // the file's own value.
+    const written = {
+      title: done.title === fromTitle.title ? fromTitle.title : info.title,
+      artist: done.artist === fromTitle.artist ? fromTitle.artist : info.artist,
+    }
+    out.artist = written.artist || undefined
     out.filePath = kind === 'single'
-      ? refile(filePath, { ...fromTitle, album: info.album, outputDir })
-      : refile(filePath, { title: fromTitle.title }) // playlists keep their folder
+      ? refile(filePath, { ...written, album: info.album, outputDir })
+      : refile(filePath, { title: written.title }) // playlists keep their folder
   } else if (clean) out.filePath = renameWithoutArtist(filePath, info.artist)
   return out
 }

@@ -38,11 +38,16 @@ async function moveToTrash(file) {
 async function removeTrackFiles(db, filePaths) {
   if (!deleteFilesEnabled(db)) return null
   const folder = musicFolder(db)
+  // Compared as real paths, so a symlink inside the folder that points
+  // elsewhere doesn't count as inside it.
+  const realFolder = folder ? await fs.realpath(folder).catch(() => null) : null
   const result = { removed: [], skipped: [], failed: [] }
   for (const file of [...new Set((filePaths || []).filter(Boolean))]) {
     if (!isInside(file, folder)) { result.skipped.push(file); continue }
     try {
       if (!(await fs.pathExists(file))) continue
+      const realFile = await fs.realpath(file)
+      if (!realFolder || !isInside(realFile, realFolder)) { result.skipped.push(file); continue }
       await moveToTrash(file)
       result.removed.push(file)
     } catch {

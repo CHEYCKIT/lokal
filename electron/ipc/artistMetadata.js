@@ -521,7 +521,7 @@ async function refreshArtistMetadata(db, artist, { source } = {}) {
       .run(fetched.bio, fetched.bioSource || fetched.source || 'wikipedia', now, artist.id)
     done.bio = true
   }
-  if (fetched?.imageUrl && artist.image_source !== 'manual') {
+  if (fetched?.imageUrl && artist.image_source !== 'manual' && getArtistFetchSettings(db).fetchImages) {
     const dest = path.join(getStorageDir(), 'artwork', `artist-${artist.id}.jpg`)
     const tmp = `${dest}.download`
     try {
@@ -561,22 +561,25 @@ function startRefreshAll(db, { source } = {}) {
   // MusicBrainz: one request a second. TheAudioDB paces itself (audioDbGet).
   const gapMs = chosen === 'wikipedia' || chosen === 'deezer' || chosen === 'theaudiodb' ? 250 : 1100
   ;(async () => {
-    for (const artist of artists) {
-      if (refreshAll.cancel) break
-      if (artist.bio_source === 'manual' && artist.image_source === 'manual') { refreshAll.done++; continue }
-      try {
-        const done = await refreshArtistMetadata(db, artist, { source: chosen })
-        if (done.bio) refreshAll.bios++
-        if (done.image) refreshAll.images++
-      } catch {
-        refreshAll.failed++
+    try {
+      for (const artist of artists) {
+        if (refreshAll.cancel) break
+        if (artist.bio_source === 'manual' && artist.image_source === 'manual') { refreshAll.done++; continue }
+        try {
+          const done = await refreshArtistMetadata(db, artist, { source: chosen })
+          if (done.bio) refreshAll.bios++
+          if (done.image) refreshAll.images++
+        } catch {
+          refreshAll.failed++
+        }
+        refreshAll.done++
+        await new Promise(resolve => setTimeout(resolve, gapMs))
       }
-      refreshAll.done++
-      await new Promise(resolve => setTimeout(resolve, gapMs))
+    } finally {
+      refreshAll.running = false
+      refreshAll.finishedAt = Date.now()
     }
-    refreshAll.running = false
-    refreshAll.finishedAt = Date.now()
-  })()
+  })().catch((error) => console.warn('[artists] Refresh all stopped:', error?.message))
   return refreshAllStatus()
 }
 
