@@ -12,6 +12,7 @@ import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
 import { useTheme } from '../themeHooks'
+import { ARTIST_SOURCES } from '../artistSources'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -1397,6 +1398,15 @@ export default function Settings() {
             {settings.separate_album_types !== '0' ? 'Yes' : 'No'}
           </button>
         </Row>
+        <Row label="Delete Files Too" desc={api.isElectron
+          ? 'Deleting a song in Lokal also moves its file to the Recycle Bin / Trash. Only files inside your music folder are touched.'
+          : 'Deleting a song in Lokal also deletes its file from the server for good. Only files inside the music folder are touched.'}>
+          <button
+            onClick={() => set('delete_files_from_disk', settings.delete_files_from_disk === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.delete_files_from_disk === '1' ? 'bg-red-500/15 border-red-500/40 text-red-300' : 'border-border text-muted hover:text-white'}`}>
+            {settings.delete_files_from_disk === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
         <Row label="Use YouTube Cookies" desc="Pass cookies to yt-dlp to bypass rate limiting, access private playlists and liked music. Not shared elsewhere.">
           <div className="flex items-center gap-2">
             <button
@@ -1561,6 +1571,16 @@ export default function Settings() {
 
       {inCategory('artists') && (
       <Section title="Artist Photos">
+        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto tries Wikipedia, TheAudioDB, MusicBrainz, then Deezer (photos only).">
+          <div className="flex flex-wrap justify-end gap-1 p-0.5 bg-card rounded-lg border border-border">
+            {ARTIST_SOURCES.map(([id, label]) => (
+              <button key={id} onClick={() => set('artist_metadata_source', id)}
+                className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row label="Auto Add Artist Bio & Image" desc="When opening an artist page, try to fetch a missing bio and a better artist image automatically. Default is off.">
           <button
             onClick={() => set('auto_fetch_artist_metadata', settings.auto_fetch_artist_metadata === '1' ? '0' : '1')}

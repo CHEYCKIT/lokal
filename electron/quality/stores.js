@@ -36,21 +36,27 @@ function searchLinks({ artist, title }) {
   ]
 }
 
-async function getJson(url, fetchImpl, headers = {}) {
+async function getJson(url, fetchImpl, headers = {}, signal = null) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  // The caller giving up (e.g. a download's MusicBrainz deadline) ends it too.
+  const onAbort = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
     const res = await fetchImpl(url, { headers: { Accept: 'application/json', ...headers }, signal: controller.signal })
     if (!res.ok) return null
     return await res.json().catch(() => null)
-  } catch { return null } finally { clearTimeout(timer) }
+  } catch { return null } finally { clearTimeout(timer); signal?.removeEventListener?.('abort', onAbort) }
 }
 
 // MusicBrainz, one request a second across the whole app.
 let mbQueue = Promise.resolve()
-function mbGet(pathAndQuery, fetchImpl, { gapMs = MB_GAP_MS } = {}) {
+function mbGet(pathAndQuery, fetchImpl, { gapMs = MB_GAP_MS, signal } = {}) {
   const run = mbQueue.then(async () => {
-    const result = await getJson(`${MB}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}fmt=json`, fetchImpl, { 'User-Agent': USER_AGENT })
+    // Its caller gave up while it waited in line: skip it, don't hold the queue.
+    if (signal?.aborted) return null
+    const result = await getJson(`${MB}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}fmt=json`, fetchImpl, { 'User-Agent': USER_AGENT }, signal)
     await new Promise(resolve => setTimeout(resolve, gapMs))
     return result
   })
@@ -163,4 +169,4 @@ async function buyLinks(track, { fetchImpl = fetch, mbGapMs } = {}) {
   return value
 }
 
-module.exports = { buyLinks, searchLinks, losslessStore, isrcFromDeezer }
+module.exports = { buyLinks, searchLinks, losslessStore, isrcFromDeezer, mbGet }

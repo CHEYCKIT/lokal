@@ -2,7 +2,7 @@ const router = require('express').Router()
 const fs = require('fs-extra')
 const path = require('path')
 const { getDB } = require('../../electron/ipc/db')
-const { cacheArtistMetadata, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('../../electron/ipc/artistMetadata')
+const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('../../electron/ipc/artistMetadata')
 
 function classifyAlbumRow(row) {
   const trackCount = Number(row?.track_count || 0)
@@ -116,6 +116,11 @@ router.get('/metadata/search', async (req, res) => {
   res.json(await searchArtistMetadataCandidates(q, { source }))
 })
 
+// Refresh every artist's bio and picture (background job; GET polls it).
+router.post('/refresh-all', (req, res) => res.json(startRefreshAll(getDB(), { source: req.body?.source })))
+router.get('/refresh-all', (req, res) => res.json(refreshAllStatus()))
+router.delete('/refresh-all', (req, res) => res.json(cancelRefreshAll()))
+
 router.get('/:id', (req, res) => {
   const db = getDB()
   let artist = findArtistById(db, req.params.id)
@@ -149,6 +154,10 @@ router.post('/:id/refresh-metadata', async (req, res) => {
   if (!force) {
     const enabled = db.prepare("SELECT value FROM settings WHERE key = 'auto_fetch_artist_metadata'").get()?.value === '1'
     if (!enabled) return res.json(addArtistFallback(db, artist))
+  }
+  if (req.body?.overwrite === true) {
+    await refreshArtistMetadata(db, artist, { source: req.body?.source })
+    return res.json(addArtistFallback(db, findArtistById(db, req.params.id) || artist))
   }
   const refreshed = await cacheArtistMetadata(db, artist, { source: req.body?.source })
   res.json(addArtistFallback(db, refreshed))

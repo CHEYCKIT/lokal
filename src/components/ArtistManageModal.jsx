@@ -1,7 +1,10 @@
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react'
 import { Camera, Merge, Search, Trash2, Undo2 } from 'lucide-react'
 import Modal from './Modal'
-import { api } from '../api'
+import SectionSwap, { ReadyWhen } from './SectionSwap'
+import AutoHeight from './AutoHeight'
+import { api, peekSettings } from '../api'
+import { ARTIST_SOURCES } from '../artistSources'
 
 function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, '').trim()
@@ -16,6 +19,9 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
   const [mergeSearch, setMergeSearch] = useState('')
   const [mergeOptions, setMergeOptions] = useState([])
   const [mergeLoading, setMergeLoading] = useState(false)
+  // The Merge tab fades in once its first list is in, not through "No
+  // matching artists found" first.
+  const [mergeFetched, setMergeFetched] = useState(false)
   const [lookupQuery, setLookupQuery] = useState('')
   const [lookupResults, setLookupResults] = useState([])
   const [lookupLoading, setLookupLoading] = useState(false)
@@ -32,8 +38,9 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
     setMergeTarget('')
     setMergeSearch('')
     setMergeOptions([])
+    setMergeFetched(false)
     setLookupQuery(artist?.name || '')
-    setLookupSource('either')
+    setLookupSource(peekSettings()?.artist_metadata_source || 'either')
     setLookupResults([])
     setLookupError('')
   }, [artist?.id, open])
@@ -47,10 +54,12 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
       const items = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : []
       setMergeOptions(items.filter(option => option.id !== artist.id))
       setMergeLoading(false)
+      setMergeFetched(true)
     }).catch(() => {
       if (cancelled) return
       setMergeOptions([])
       setMergeLoading(false)
+      setMergeFetched(true)
     })
     return () => {
       cancelled = true
@@ -132,7 +141,8 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
     setAutoMatching(true)
     setLookupError('')
     try {
-      await api.artistRefreshMetadata(artist.id, { force: true, source: lookupSource })
+      // Replaces what was fetched before (a bio or picture set by hand is kept).
+      await api.artistRefreshMetadata(artist.id, { force: true, overwrite: true, source: lookupSource })
       onChanged?.()
     } catch {
       setLookupError('Automatic match failed.')
@@ -171,6 +181,10 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
         ))}
       </div>
 
+      {/* Switching tab: the new one fades in, and the modal glides to its height. */}
+      <AutoHeight>
+      <SectionSwap id={tab} gated={tab === 'merge'}>
+      {tab === 'merge' && <ReadyWhen ready={mergeFetched} />}
       {tab === 'edit' && (
         <div className="space-y-4">
           {}
@@ -213,11 +227,11 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
         <div className="space-y-4">
           <p className="text-xs text-muted leading-relaxed">Search for a better web match if the current bio or image is wrong. Applying a result becomes a manual override, so Lokal will keep your choice.</p>
           <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
-            {[['either', 'Either'], ['wikipedia', 'Wikipedia'], ['musicbrainz', 'MusicBrainz']].map(([id, label]) => (
+            {ARTIST_SOURCES.map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setLookupSource(id)}
-                className={`flex-1 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
+                className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
               >
                 {label}
               </button>
@@ -242,7 +256,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
           <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
             {lookupLoading && <p className="text-xs text-muted">Searching...</p>}
             {!lookupLoading && !lookupResults.length && !lookupError && (
-              <p className="text-xs text-muted">Search Wikipedia for a better artist match.</p>
+              <p className="text-xs text-muted">Search for a better artist match.</p>
             )}
             {lookupResults.map(result => (
               <div key={result.title} className="rounded-xl border border-border bg-card p-3 space-y-3">
@@ -254,7 +268,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
                     <div className="flex items-center gap-2 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{result.title}</p>
                       <span className="px-1.5 py-0.5 rounded bg-elevated border border-border text-[10px] uppercase tracking-wider text-muted flex-shrink-0">
-                        {result.source || 'web'}
+                        {ARTIST_SOURCES.find(([id]) => id === result.source)?.[1] || result.source || 'web'}
                       </span>
                     </div>
                     {result.snippet && <p className="text-xs text-muted max-h-10 overflow-hidden">{stripHtml(result.snippet)}</p>}
@@ -291,7 +305,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
               ))}
             </select>
             <p className="text-xs text-muted mt-2">
-              {mergeLoading ? 'Loading artists...' : mergeOptions.length ? `Showing ${mergeOptions.length} matching artists` : 'No matching artists found'}
+              {mergeLoading && !mergeOptions.length ? 'Loading artists...' : mergeOptions.length ? `Showing ${mergeOptions.length} matching artists` : 'No matching artists found'}
             </p>
           </div>
           <button onClick={doMerge} disabled={!mergeTarget || saving} className="w-full py-2.5 bg-orange-500/20 border border-orange-500/40 text-orange-300 rounded-xl text-sm font-medium hover:bg-orange-500/30 transition-colors disabled:opacity-40">
@@ -308,6 +322,8 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
           </button>
         </div>
       )}
+      </SectionSwap>
+      </AutoHeight>
     </Modal>
   )
 }

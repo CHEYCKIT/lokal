@@ -1,4 +1,5 @@
 const router = require('express').Router()
+const { removeTrackFiles } = require('../../electron/ipc/trackFiles')
 const { getDB } = require('../../electron/ipc/db')
 const { recordListeningEvent } = require('../../electron/ipc/recaps')
 const path = require('path')
@@ -285,7 +286,12 @@ function splitArtists(raw) {
   let artists = [raw]
   artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
   artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => a.split(/\s+(?:&|x|vs\.?)\s+/i))
+  artists = artists.flatMap(a => {
+    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
+    // A split that leaves one-letter pieces isn't a collaboration but one
+    // stylised name ("h x m x d" was becoming the artists h, m and d).
+    return parts.some(part => part.trim().length < 2) ? [a] : parts
+  })
   return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
 }
 
@@ -956,19 +962,44 @@ router.post('/merge-all', (req, res) => {
   }
 })
 
-router.post('/batch-delete', (req, res) => {
-  const { ids = [] } = req.body
-  const db = getDB()
-  for (const id of ids) {
-    db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id)
-    db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id)
-    db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id)
-    db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id)
-    try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}
-    db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id)
-    db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
-  }
-  res.json({ ok: true })
+router.post('/batch-delete', async (req, res, next) => {
+  try {
+    const { ids = [] } = req.body
+    const db = getDB()
+    const filePaths = ids.map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path)
+    for (const id of ids) {
+      db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id)
+      db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id)
+      db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id)
+      db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id)
+      try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}
+      db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id)
+      try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}
+      db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
+    }
+    res.json({ ok: true, files: await removeTrackFiles(db, filePaths) })
+  } catch (e) { next(e) }
+})
+
+// The track menu's Delete (the desktop app has the same, over IPC).
+router.post('/delete-by-path', async (req, res, next) => {
+  try {
+    const filePath = req.body?.filePath
+    const db = getDB()
+    const track = filePath ? db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(filePath) : null
+    if (!track) return res.status(404).json({ error: 'Track not found' })
+    const trackId = track.id
+    db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
+    db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId)
+    db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId)
+    db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId)
+    try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}
+    db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId)
+    db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
+    try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
+    db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
+    res.json({ success: true, trackId, files: await removeTrackFiles(db, [filePath]) })
+  } catch (e) { next(e) }
 })
 
 module.exports = router

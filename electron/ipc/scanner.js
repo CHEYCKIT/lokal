@@ -9,7 +9,8 @@ const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
-const { cacheArtistMetadata, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
+const { removeTrackFiles } = require('./trackFiles')
+const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
 const DEFAULT_MUSIC_PATH = 'C:\\Users\\sipbuu\\Music'
@@ -67,10 +68,10 @@ function getKeepCommaArtists() {
   return keepComma
 }
 
-function splitArtists(raw) {
+function splitArtists(raw, keepComma = null) {
   if (!raw) return []
   const lower = raw.toLowerCase().trim()
-  const KEEP_COMMA_ARTISTS = getKeepCommaArtists()
+  const KEEP_COMMA_ARTISTS = keepComma || getKeepCommaArtists()
   for (const known of KEEP_COMMA_ARTISTS) {
     if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
   }
@@ -79,8 +80,111 @@ function splitArtists(raw) {
   let artists = [raw]
   artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
   artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => a.split(/\s+(?:&|x|vs\.?)\s+/i))
+  artists = artists.flatMap(a => {
+    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
+    // A split that leaves one-letter pieces isn't a collaboration but one
+    // stylised name ("h x m x d" was becoming the artists h, m and d).
+    return parts.some(part => part.trim().length < 2) ? [a] : parts
+  })
   return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+}
+
+// Tracks whose artist links were changed by hand (Manage > rename, merge,
+// delete): their links no longer follow the artist text, on purpose, so the
+// re-link pass leaves them alone. Editing the song's artist, or its file
+// changing, re-parses the links and lifts this again.
+function ensureLinkLocks(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS artist_link_locks (track_id TEXT PRIMARY KEY)')
+}
+function lockArtistLinks(db, artistId) {
+  ensureLinkLocks(db)
+  db.prepare('INSERT OR IGNORE INTO artist_link_locks (track_id) SELECT track_id FROM artist_track_links WHERE artist_id = ?').run(artistId)
+}
+function unlockArtistLinks(db, trackId) {
+  try { db.prepare('DELETE FROM artist_link_locks WHERE track_id = ?').run(trackId) } catch {}
+}
+
+// Bump when splitArtists changes how it reads names, so the next scan re-links
+// the library once (see relinkArtistsIfNeeded).
+const ARTIST_SPLITTER_VERSION = 2
+
+/**
+ * Brings every track's artist links in line with splitArtists (e.g. after it
+ * learned that "h x m x d" is one artist, not h, m and d), then drops the
+ * artists left without tracks. A rescan skips unchanged files, so this is
+ * what fixes songs already in the library. Only tracks whose links differ
+ * are touched.
+ */
+function relinkArtists(db = getDB()) {
+  const keepComma = getKeepCommaArtists()
+  ensureLinkLocks(db)
+  const tracks = db.prepare('SELECT id, artist FROM tracks WHERE id NOT IN (SELECT track_id FROM artist_link_locks)').all()
+  const linked = new Map()
+  for (const row of db.prepare('SELECT track_id, artist_id FROM artist_track_links').all()) {
+    if (!linked.has(row.track_id)) linked.set(row.track_id, new Set())
+    linked.get(row.track_id).add(row.artist_id)
+  }
+  const byExactName = db.prepare('SELECT id FROM artists WHERE name = ? LIMIT 1')
+  const byName = db.prepare('SELECT id FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1')
+  const byId = db.prepare('SELECT id FROM artists WHERE id = ?')
+  const unlink = db.prepare('DELETE FROM artist_track_links WHERE track_id = ?')
+  const addArtist = db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)')
+  const rename = db.prepare('UPDATE OR IGNORE artists SET name = ? WHERE id = ? AND name <> ?')
+  const link = db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)')
+  const resolved = new Map()
+  // The artist row a name belongs to: the one already carrying that name
+  // (names are unique, so its id may not be the slug of this spelling), else
+  // the one with its slug ("A.B" and "A B"), else a new row. Null only if no
+  // row could be made, so a link never points at a missing artist.
+  const artistIdFor = (name) => {
+    const key = name.toLowerCase()
+    if (resolved.has(key)) return resolved.get(key)
+    let id = byExactName.get(name)?.id || byName.get(name)?.id
+    if (!id) {
+      const slugId = 'a-' + slugify(name)
+      addArtist.run(slugId, name)
+      id = byId.get(slugId)?.id || null
+    }
+    resolved.set(key, id)
+    return id
+  }
+  let changed = 0
+  db.transaction(() => {
+    for (const track of tracks) {
+      const names = splitArtists(track.artist, keepComma)
+      const want = new Map()
+      for (const name of names) {
+        const id = artistIdFor(name)
+        if (id && !want.has(id)) want.set(id, name)
+      }
+      const have = linked.get(track.id) || new Set()
+      if (want.size === have.size && [...want.keys()].every(id => have.has(id))) continue
+      unlink.run(track.id)
+      for (const [id, name] of want) {
+        // Same artist spelled differently ("ARTIST" -> "Artist"): the row
+        // takes this track's spelling, as a scan would.
+        if (byName.get(name)?.id === id) rename.run(name, id, name)
+        link.run(id, track.id)
+      }
+      changed++
+    }
+    if (changed) db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+  })()
+  return changed
+}
+
+/**
+ * relinkArtists, but only when the splitter or the keep-comma list changed
+ * since the last pass, so a routine scan doesn't walk every track.
+ */
+function relinkArtistsIfNeeded(db = getDB()) {
+  const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
+  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}`
+  const last = db.prepare("SELECT value FROM settings WHERE key = 'artist_relink_fingerprint'").get()?.value
+  if (last === fingerprint) return 0
+  const changed = relinkArtists(db)
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_relink_fingerprint', ?)").run(fingerprint)
+  return changed
 }
 
 async function extractArtwork(metadata, trackId) {
@@ -261,6 +365,10 @@ async function scanFolder(folderPath) {
   const db = getDB()
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
+  try {
+    const relinked = relinkArtistsIfNeeded(db)
+    if (relinked) console.log(`[scanFolder] Re-linked artists for ${relinked} track(s)`)
+  } catch (e) { console.warn('[scanFolder] Artist re-link skipped:', e.message) }
   const files = walkDir(folderPath)
   scanStatus.total = files.length
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
@@ -291,6 +399,7 @@ async function scanFolder(folderPath) {
       }
       if (item.quality) quality.saveFields(db, trackId, item.quality, { fileChanged: true })
       db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
+      unlockArtistLinks(db, trackId)
       const artistNames = splitArtists(item.artist)
       for (const name of artistNames) {
         const aid = 'a-' + slugify(name)
@@ -930,6 +1039,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 
       if (Object.prototype.hasOwnProperty.call(nextValues, 'artist')) {
         db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(track.id)
+        unlockArtistLinks(db, track.id)
         const artistNames = splitArtists(nextValues.artist)
         for (const name of artistNames) {
           const artistId = 'a-' + slugify(name)
@@ -1070,9 +1180,18 @@ function registerScannerHandlers(ipcMain) {
       const enabled = db.prepare("SELECT value FROM settings WHERE key = 'auto_fetch_artist_metadata'").get()?.value === '1'
       if (!enabled) return addArtistFallback(db, artist)
     }
+    // overwrite: replace what was fetched before (Manage > Lookup > auto match);
+    // otherwise only what's missing is filled in.
+    if (opts?.overwrite === true) {
+      await refreshArtistMetadata(db, artist, { source: opts.source })
+      return addArtistFallback(db, findArtistById(db, artistId) || artist)
+    }
     const refreshed = await cacheArtistMetadata(db, artist, opts || {})
     return addArtistFallback(db, refreshed)
   })
+  ipcMain.handle('artists:refreshAllMetadata', (_, opts = {}) => startRefreshAll(getDB(), { source: opts?.source }))
+  ipcMain.handle('artists:refreshAllStatus', () => refreshAllStatus())
+  ipcMain.handle('artists:refreshAllCancel', () => cancelRefreshAll())
   ipcMain.handle('artist:searchMetadata', async (_, query, opts = {}) => searchArtistMetadataCandidates(query, opts || {}))
   ipcMain.handle('artist:applyMetadataSelection', async (_, artistId, selection, mode) => {
     const db = getDB()
@@ -1185,12 +1304,13 @@ function registerScannerHandlers(ipcMain) {
   })
   ipcMain.handle('artist:updateBio', (_, artistId, bio) => getDB().prepare('UPDATE artists SET bio = ?, bio_source = ?, bio_fetched_at = ? WHERE id = ?').run(bio, 'manual', Date.now(), artistId))
   ipcMain.handle('artist:setImage', async (_, artistId, imageData) => { const buf = Buffer.from(imageData.split(',')[1], 'base64'); const imgPath = path.join(getStorageDir(), 'artwork', `artist-${artistId}.jpg`); await fs.writeFile(imgPath, buf); getDB().prepare('UPDATE artists SET image_path = ?, image_source = ?, image_fetched_at = ? WHERE id = ?').run(imgPath, 'manual', Date.now(), artistId); return imgPath })
-  ipcMain.handle('artist:rename', (_, artistId, newName) => { const db = getDB(); const newId = 'a-' + newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); db.prepare('UPDATE tracks SET artist = ? WHERE artist = (SELECT name FROM artists WHERE id = ?)').run(newName, artistId); db.prepare('UPDATE artists SET id = ?, name = ? WHERE id = ?').run(newId, newName, artistId); db.prepare('UPDATE artist_track_links SET artist_id = ? WHERE artist_id = ?').run(newId, artistId) })
+  ipcMain.handle('artist:rename', (_, artistId, newName) => { const db = getDB(); lockArtistLinks(db, artistId); const newId = 'a-' + newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); db.prepare('UPDATE tracks SET artist = ? WHERE artist = (SELECT name FROM artists WHERE id = ?)').run(newName, artistId); db.prepare('UPDATE artists SET id = ?, name = ? WHERE id = ?').run(newId, newName, artistId); db.prepare('UPDATE artist_track_links SET artist_id = ? WHERE artist_id = ?').run(newId, artistId) })
   ipcMain.handle('artist:merge', (_, sourceId, targetId) => {
     const db = getDB();
     const target = db.prepare('SELECT name FROM artists WHERE id = ?').get(targetId);
     const source = db.prepare('SELECT name FROM artists WHERE id = ?').get(sourceId);
     if (!target || !source) return;
+    lockArtistLinks(db, sourceId);
     const performMerge = db.transaction(() => {
       db.prepare('UPDATE tracks SET artist = ? WHERE artist = ?').run(target.name, source.name);
       db.prepare(`
@@ -1209,7 +1329,7 @@ function registerScannerHandlers(ipcMain) {
       throw err;
     }
   });
-  ipcMain.handle('artist:delete', (_, artistId) => { const db = getDB(); db.prepare('DELETE FROM artist_track_links WHERE artist_id = ?').run(artistId); db.prepare('DELETE FROM artists WHERE id = ?').run(artistId) })
+  ipcMain.handle('artist:delete', (_, artistId) => { const db = getDB(); lockArtistLinks(db, artistId); db.prepare('DELETE FROM artist_track_links WHERE artist_id = ?').run(artistId); db.prepare('DELETE FROM artists WHERE id = ?').run(artistId) })
   ipcMain.handle('track:setArtwork', async (_, trackId, imageData) => {
     const buf = Buffer.from(imageData.split(',')[1], 'base64')
     const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
@@ -1669,7 +1789,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS }
+module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
 
 
 function registerExtraHandlers(ipcMain) {
@@ -1695,8 +1815,8 @@ function registerExtraHandlers(ipcMain) {
     const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
     return buildPossibleDuplicateGroups(tracks)
   })
-  ipcMain.handle('scanner:deleteTrack', (_, trackId) => { const db = getDB(); db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId) })
-  ipcMain.handle('scanner:deleteTrackByPath', (_, filePath) => { 
+  ipcMain.handle('scanner:deleteTrack', async (_, trackId) => { const db = getDB(); const filePath = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)?.file_path; db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId); return { success: true, files: await removeTrackFiles(db, [filePath]) } })
+  ipcMain.handle('scanner:deleteTrackByPath', async (_, filePath) => { 
     const db = getDB()
     const track = db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(filePath)
     if (!track) return { error: 'Track not found' }
@@ -1708,8 +1828,9 @@ function registerExtraHandlers(ipcMain) {
     try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId)
     db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
+    try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
-    return { success: true, trackId }
+    return { success: true, trackId, files: await removeTrackFiles(db, [filePath]) }
   })
 }
 
@@ -1833,7 +1954,7 @@ function registerV4Handlers(ipcMain) {
     const rows = getDB().prepare(`${albumRowsQuery("AND (album LIKE ? OR album_artist LIKE ? OR artist LIKE ?)")} ORDER BY album ASC`).all(term, term, term)
     return enrichAlbumRows(rows)
   })
-  ipcMain.handle('scanner:deleteTracks', (_, ids) => { const db = getDB(); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids) })
+  ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })
   ipcMain.handle('scanner:mergeDuplicates', (_, keepId, removeIds) => {
     const db = getDB()
     const merge = db.transaction(() => {

@@ -7,7 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const { readInfo, applyTags, stripArtistPrefix } = require('./tagger')
 const { toPortableLyrics, toPrivateTag } = require('../lyrics/embedded')
-const { isYouTube } = require('./args')
+const { isYouTube, isSoundCloud } = require('./args')
 
 const LYRICS_TIMEOUT_MS = 30000
 
@@ -32,11 +32,13 @@ async function findLyrics(db, info, signal) {
 }
 
 // ---------------------------------------------------------------- who sang it
-// A YouTube video's channel is often not the artist: labels, VEVO accounts,
-// fan uploads. The title usually is: "Artist - Song (Official Video)". The
-// catalogue itself (YouTube Music, "Artist - Topic" channels) is trusted as-is:
-// its titles are just the song, and a dash there belongs to the song
-// ("Song - Remastered 2011").
+// A YouTube video's channel or a SoundCloud uploader is often not the artist:
+// labels, VEVO accounts, fan uploads, re-uploaders. The title usually is:
+// "Artist - Song (Official Video)". The catalogue itself (YouTube Music,
+// "Artist - Topic" channels) is trusted as-is: its titles are just the song,
+// and a dash there belongs to the song ("Song - Remastered 2011"). SoundCloud
+// always fills `track` with the upload's title, so there only its publisher
+// metadata (`artists`, on label releases) counts as a real credit.
 
 const DASH = /^(.{1,80}?)\s+[-–—|]\s+(.+)$/
 const NOT_AN_ARTIST = /^(?:official|lyrics?|audio|video|full album|live|remix|remastered|\d{4})$/i
@@ -45,18 +47,142 @@ function unquote(s) {
   return String(s || '').trim().replace(/^["'“”‘’«]+|["'“”‘’»]+$/g, '').trim()
 }
 
+// "A, B - Song" / "A & B - Song": the whole credit comes off the title, not
+// just the first name (stripArtistPrefix only knows "A - Song").
+function stripCredit(title, artists) {
+  const names = artists.map(a => String(a || '').trim()).filter(Boolean)
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const list = names.map(esc).join('(?:\\s*[,&+]\\s*|\\s+(?:and|x)\\s+)')
+  const full = new RegExp(`^${list}\\s+[-–—]\\s+`, 'i')
+  const stripped = title.replace(full, '').trim()
+  return stripped && stripped !== title ? stripped : stripArtistPrefix(title, names.join(', '))
+}
+
 /** { artist, title } from the video, or null to keep what the tags say. */
-function artistAndTitle(meta, tags) {
+function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
   if (!meta) return null
   const channel = String(meta.channel || meta.uploader || '')
-  if (meta.track || /\s-\sTopic$/i.test(channel)) return null
   const title = String(tags.title || meta.title || '').trim()
+  if (soundcloud) {
+    const credited = (Array.isArray(meta.artists) ? meta.artists : []).map(a => String(a || '').trim()).filter(Boolean).join(', ')
+    if (credited) return { artist: credited, title: stripCredit(title, meta.artists) || title }
+  } else if (meta.track || /\s-\sTopic$/i.test(channel)) return null
   const m = title.match(DASH)
   if (!m) return null
   const artist = unquote(m[1])
   const song = unquote(m[2])
   if (!artist || !song || NOT_AN_ARTIST.test(artist)) return null
-  return { artist, title: song }
+  return { artist, title: song, fromDash: true }
+}
+
+// "Song - Artist (Someone Edit)" uploads exist too: a dash alone can't tell
+// which side is the artist. When the right side is an artist already in the
+// library and the left side isn't, they're swapped; a trailing "(… Edit)" /
+// "[… Remix]" stays with the song.
+const TRAILING_TAGS = /((?:\s*[([][^()[\]]*[)\]])+)\s*$/
+
+// First credited artist of "A feat. B", "A & B", "A x B", "A, B". Like the
+// scanner, a split on &/x/vs that leaves one-letter pieces is one stylised
+// name ("h x m x d"), not a collaboration.
+function firstArtistOf(s) {
+  const lead = String(s || '').split(/\s+(?:feat\.?|ft\.?|featuring)\s+|,\s*/i)[0].trim()
+  const parts = lead.split(/\s+(?:&|x|vs\.?)\s+/i)
+  return (parts.some(part => part.trim().length < 2) ? lead : parts[0]).trim()
+}
+
+function knownArtist(db, name) {
+  const first = firstArtistOf(name)
+  if (!db || !first) return false
+  try { return !!db.prepare('SELECT 1 FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1').get(first) } catch { return false }
+}
+
+const FEATURING = /^[([]\s*(?:feat\.?|ft\.?|featuring|with)\s+([^()[\]]+?)\s*[)\]]$/i
+
+/**
+ * The same parse read the other way round: "Song - Artist (… Edit)". Version
+ * tags ("(… Edit)", "[… Remix]") stay with the song; a featured credit
+ * ("(feat. Guest)") goes with the artist, written the way the artist splitter
+ * reads it: "Artist feat. Guest".
+ */
+function swapped(parsed) {
+  const tags = parsed.title.match(TRAILING_TAGS)
+  const other = tags ? parsed.title.slice(0, tags.index).trim() : parsed.title
+  if (!other) return null
+  const guests = [], versions = []
+  const sort = (groups) => {
+    for (const group of groups) {
+      const feat = group.match(FEATURING)
+      if (feat) guests.push(feat[1].trim())
+      else versions.push(group)
+    }
+  }
+  // The song side can carry the credit too: "Song (feat. Guest) - Artist".
+  const songTags = parsed.artist.match(TRAILING_TAGS)
+  const song = songTags ? parsed.artist.slice(0, songTags.index).trim() || parsed.artist : parsed.artist
+  const songVersions = []
+  if (songTags && song !== parsed.artist) {
+    for (const group of songTags[1].match(/[([][^()[\]]*[)\]]/g) || []) {
+      const feat = group.match(FEATURING)
+      if (feat) guests.push(feat[1].trim())
+      else songVersions.push(group)
+    }
+  }
+  sort(tags ? tags[1].match(/[([][^()[\]]*[)\]]/g) || [] : [])
+  return {
+    artist: guests.length ? `${other} feat. ${guests.join(', ')}` : other,
+    title: [songTags && song !== parsed.artist ? song : parsed.artist, ...songVersions, ...versions].join(' '),
+    fromDash: true,
+  }
+}
+
+function preferKnownArtist(parsed, db) {
+  if (!parsed?.fromDash || !db) return parsed
+  const other = swapped(parsed)
+  if (!other || knownArtist(db, parsed.artist) || !knownArtist(db, other.artist)) return parsed
+  return other
+}
+
+// MusicBrainz settles it when it knows the song: whichever reading it has a
+// recording for (that title, by that artist) wins. Shares the app's
+// one-request-a-second MusicBrainz queue; unsure or unreachable -> null, and
+// the library check above decides.
+const ORDER_LOOKUP_MS = 8000
+const loose = (s) => String(s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/['’`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const lucene = (s) => String(s || '').replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
+
+// Uploaded titles are rarely spelled like the catalogue ("Im Really Really
+// Hot" for "I'm Really Hot"): most of the words in common is enough, as long
+// as the credited artist matches exactly.
+function sameSong(a, b) {
+  const x = new Set(loose(a).split(' ').filter(Boolean)), y = new Set(loose(b).split(' ').filter(Boolean))
+  if (!x.size || !y.size) return false
+  let shared = 0
+  for (const word of x) if (y.has(word)) shared++
+  return shared / Math.min(x.size, y.size) >= 0.75
+}
+
+async function recordingExists(artist, title, get, signal) {
+  const who = firstArtistOf(artist)
+  const words = loose(title.replace(TRAILING_TAGS, ''))
+  if (!who || !words) return false
+  const query = `recording:(${lucene(words)}) AND artist:"${lucene(who).replace(/"/g, '')}"`
+  if (signal?.aborted) return false
+  const found = await get(`/recording?query=${encodeURIComponent(query)}&limit=10`, signal)
+  return (found?.recordings || []).some(rec =>
+    Number(rec.score) >= 70 && sameSong(rec.title, title) &&
+    (rec['artist-credit'] || []).some(credit => loose(credit?.name || credit?.artist?.name) === loose(who)))
+}
+
+// `signal`: aborted once the download stops waiting (ORDER_LOOKUP_MS), so
+// requests still queued behind other MusicBrainz work are dropped.
+async function orderByLookup(parsed, { get, signal } = {}) {
+  if (!parsed?.fromDash) return parsed
+  const other = swapped(parsed)
+  if (!other) return parsed
+  const lookup = get || ((q, sig) => require('../quality/stores').mbGet(q, fetch, { signal: sig }))
+  if (await recordingExists(parsed.artist, parsed.title, lookup, signal)) return parsed
+  if (await recordingExists(other.artist, other.title, lookup, signal)) return other
+  return null
 }
 
 function safeName(s) {
@@ -144,7 +270,17 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   if (known) return finishKnownFile(filePath, info, { db, settings, known, outputDir, out })
   const clean = settings.clean_download_metadata !== '0'
   // "Artist - Song" videos: the artist is in the title, not the channel.
-  const fromTitle = clean && isYouTube(url) ? artistAndTitle(meta, info) : null
+  // YouTube and SoundCloud: the artist from the title ("Artist - Song"), not
+  // the uploader. (Addons bring their own tags; Soulseek files have theirs.)
+  const soundcloud = isSoundCloud(url)
+  let fromTitle = clean && (isYouTube(url) || soundcloud) ? artistAndTitle(meta, info, { soundcloud }) : null
+  // "Artist - Song" or "Song - Artist"? MusicBrainz if it knows, else the library.
+  if (fromTitle?.fromDash) {
+    const controller = new AbortController()
+    const ordered = await withTimeout(orderByLookup(fromTitle, { signal: controller.signal }), ORDER_LOOKUP_MS)
+    controller.abort()
+    fromTitle = ordered || preferKnownArtist(fromTitle, db)
+  }
   const lookupInfo = fromTitle
     ? { ...info, ...fromTitle }
     : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
@@ -166,10 +302,16 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   if (done.lyrics) { out.lyrics = lyrics.sync; out.lyricsSource = lyrics.source }
   out.cover = done.cover
   if (fromTitle && (done.title || done.artist)) {
-    out.artist = fromTitle.artist
+    // Filed by what the file now says: a tag that couldn't be written keeps
+    // the file's own value.
+    const written = {
+      title: done.title === fromTitle.title ? fromTitle.title : info.title,
+      artist: done.artist === fromTitle.artist ? fromTitle.artist : info.artist,
+    }
+    out.artist = written.artist || undefined
     out.filePath = kind === 'single'
-      ? refile(filePath, { ...fromTitle, album: info.album, outputDir })
-      : refile(filePath, { title: fromTitle.title }) // playlists keep their folder
+      ? refile(filePath, { ...written, album: info.album, outputDir })
+      : refile(filePath, { title: written.title }) // playlists keep their folder
   } else if (clean) out.filePath = renameWithoutArtist(filePath, info.artist)
   return out
 }
@@ -206,10 +348,17 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   const done = await applyTags(filePath, changes)
   if (!done.lyrics) { out.lyrics = null; out.lyricsSource = null }
   out.cover = done.cover
-  out.artist = tags.artist || undefined
+  // Filed by what the file now says: a tag that couldn't be written keeps
+  // the file's own value, so the path never disagrees with the tags.
+  const final = {
+    title: changes.title && done.title !== changes.title ? info.title : tags.title,
+    artist: changes.artist && done.artist !== changes.artist ? info.artist : tags.artist,
+    album: changes.album && done.album !== changes.album ? info.album : tags.album,
+  }
+  out.artist = final.artist || undefined
   // Named and filed like any single: Music/Artist/Album/Title.ext.
-  out.filePath = tags.title ? refile(filePath, { artist: tags.artist, title: tags.title, album: tags.album, outputDir }) : filePath
+  out.filePath = final.title ? refile(filePath, { artist: final.artist, title: final.title, album: final.album, outputDir }) : filePath
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle, knownTagsOf }
+module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, swapped, knownTagsOf }
