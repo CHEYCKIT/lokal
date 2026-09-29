@@ -60,7 +60,9 @@ export const useDownloads = create((set, get) => ({
       if (!Array.isArray(queue)) return
       const before = get().jobs
       set({ jobs: sortJobs(queue), loaded: true })
-      if (loadedAt == null) loadedAt = Date.now()
+      // The baseline is the newest finish already in the queue (the server's
+      // clock, like finishedAt), so a web client's clock doesn't matter.
+      if (loadedAt == null) loadedAt = Math.max(0, ...queue.map(j => j.finishedAt || 0)) || Date.now()
       else if (addedSongs(before, queue, loadedAt)) refreshLibrarySoon()
     } catch {}
   },

@@ -7,6 +7,9 @@ import { RefreshCw, ScanLine } from 'lucide-react'
 import { api, peekSettings } from '../api'
 
 const refreshLibrary = () => window.dispatchEvent(new Event('lokal:refresh'))
+// The desktop app reports the scan's end (progress `complete`), which
+// refreshes; the web server has no progress events, so its request does.
+const refreshAfterRequest = () => { if (!api.isElectron) refreshLibrary() }
 
 export default function ScanBanner() {
   // From the settings already read, so the folder doesn't show "Not set" first.
@@ -24,11 +27,14 @@ export default function ScanBanner() {
   }, [])
 
   const scan = async () => {
-    let f = folder
-    if (api.isElectron) f = (await api.openFolder()) || folder
-    if (!f) f = 'C:\\Users\\sipbuu\\Music'
+    // Desktop: the folder picker (cancelling it scans nothing). Web: the
+    // server's folder, or a path typed in when there's none yet.
+    const f = api.isElectron
+      ? await api.openFolder()
+      : folder || window.prompt('Path to your music folder on the server')?.trim()
+    if (!f) return
     setFolder(f)
-    api.scanFolder(f)
+    api.scanFolder(f).then(refreshAfterRequest)
   }
 
   return (
@@ -48,7 +54,7 @@ export default function ScanBanner() {
       </div>
       <div className="flex gap-2 flex-shrink-0">
         {folder && (
-          <button onClick={() => api.scanFolder(folder).then(refreshLibrary)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted hover:text-white transition-colors">
+          <button onClick={() => api.scanFolder(folder).then(refreshAfterRequest)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted hover:text-white transition-colors">
             <RefreshCw size={12} /> Rescan
           </button>
         )}
