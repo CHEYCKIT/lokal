@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { removeTrackFiles } = require('../../electron/ipc/trackFiles')
+const { removeTrackFiles, forgetDownloads } = require('../../electron/ipc/trackFiles')
 const { getDB } = require('../../electron/ipc/db')
 const { recordListeningEvent } = require('../../electron/ipc/recaps')
 const path = require('path')
@@ -977,6 +977,7 @@ router.post('/batch-delete', async (req, res, next) => {
       try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}
       db.prepare('DELETE FROM tracks WHERE id = ?').run(id)
     }
+    forgetDownloads(ids)
     res.json({ ok: true, files: await removeTrackFiles(db, filePaths) })
   } catch (e) { next(e) }
 })
@@ -998,6 +999,7 @@ router.post('/delete-by-path', async (req, res, next) => {
     db.prepare('DELETE FROM lyrics_cache WHERE file_path = ?').run(filePath)
     try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
     db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
+    forgetDownloads([trackId])
     res.json({ success: true, trackId, files: await removeTrackFiles(db, [filePath]) })
   } catch (e) { next(e) }
 })

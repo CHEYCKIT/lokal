@@ -16,6 +16,30 @@ function sortJobs(jobs) {
     ((b.finishedAt || b.createdAt || 0) - (a.finishedAt || a.createdAt || 0)))
 }
 
+// A download that adds songs to the library (desktop and web alike): the
+// pages showing the library reload, once, shortly after.
+let refreshTimer = null
+function refreshLibrarySoon() {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => window.dispatchEvent(new Event('lokal:refresh')), 600)
+}
+
+/** Did any job add songs to the library since `before`? */
+function addedSongs(before, after, knownSince) {
+  const prev = new Map(before.map(j => [j.id, j]))
+  return after.some(job => {
+    const count = job.indexedTracks?.length || 0
+    if (!count) return false
+    const old = prev.get(job.id)
+    // A job first seen already finished (web polling can miss the middle):
+    // it counts if it finished after the queue was first loaded.
+    if (!old) return knownSince != null && (job.finishedAt || 0) > knownSince
+    return count > (old.indexedTracks?.length || 0)
+  })
+}
+
+let loadedAt = null
+
 function merge(jobs, incoming) {
   const map = new Map(jobs.map(j => [j.id, j]))
   for (const job of incoming) {
@@ -33,11 +57,19 @@ export const useDownloads = create((set, get) => ({
   load: async () => {
     try {
       const queue = await api.getDownloadQueue()
-      if (Array.isArray(queue)) set({ jobs: sortJobs(queue), loaded: true })
+      if (!Array.isArray(queue)) return
+      const before = get().jobs
+      set({ jobs: sortJobs(queue), loaded: true })
+      if (loadedAt == null) loadedAt = Date.now()
+      else if (addedSongs(before, queue, loadedAt)) refreshLibrarySoon()
     } catch {}
   },
 
-  upsert: (job) => set(state => ({ jobs: merge(state.jobs, [job]) })),
+  upsert: (job) => {
+    const before = get().jobs
+    set(state => ({ jobs: merge(state.jobs, [job]) }))
+    if (loadedAt != null && addedSongs(before, [job], loadedAt)) refreshLibrarySoon()
+  },
 
   /** @returns the server's answer ({ downloadId } or { error }) */
   enqueue: async (kind, url, opts = {}) => {

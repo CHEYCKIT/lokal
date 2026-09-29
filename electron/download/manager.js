@@ -213,6 +213,7 @@ class DownloadManager {
         finishedAt: data.finishedAt || null,
         output: data.output || '',
         seen: data.seen !== false,
+        removed: !!data.removed,
       })
       if (ACTIVE.has(row.status)) {
         job.status = 'queued'
@@ -314,6 +315,7 @@ class DownloadManager {
       createdAt: job.createdAt,
       finishedAt: job.finishedAt || null,
       seen: !!job.seen,
+      removed: !!job.removed,
     }
   }
 
@@ -452,6 +454,24 @@ class DownloadManager {
     this.jobs.delete(id)
     this.unpersist(id)
     return { success: true }
+  }
+
+  /**
+   * Songs deleted from the library: a finished download no longer counts as
+   * saved once all of its songs are gone, so it can be downloaded again.
+   */
+  forgetTracks(trackIds) {
+    const gone = new Set((trackIds || []).filter(Boolean))
+    if (!gone.size) return 0
+    let changed = 0
+    for (const job of this.jobs.values()) {
+      if (ACTIVE.has(job.status) || !job.indexedTracks?.some(t => gone.has(t.id))) continue
+      const indexedTracks = job.indexedTracks.filter(t => !gone.has(t.id))
+      const removed = indexedTracks.length === 0
+      this.update(job, { indexedTracks, removed, ...(removed ? { message: 'Deleted from your library' } : {}) }, { persist: true, force: true })
+      changed++
+    }
+    return changed
   }
 
   clearFinished() {
