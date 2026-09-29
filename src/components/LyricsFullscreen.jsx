@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Download, RotateCcw, Search } from 'lucide-react'
+import { X, Download, RotateCcw, Search, Disc3 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import SearchDrawer from './LyricsSearchDrawer'
 import { api } from '../api'
 
 export default function LyricsFullscreen() {
-  const { showLyricsFullscreen, toggleLyricsFullscreen, currentTrack, progress } = usePlayerStore()
+  const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore()
   const [refreshKey, setRefreshKey] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
   const [searchSessions, setSearchSessions] = useState({})
@@ -124,6 +124,12 @@ export default function LyricsFullscreen() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {currentTrack && (
+                <button onClick={() => switchFullscreenView('player')} title="Switch to the full-screen player"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
+                  <Disc3 size={12} /> Player
+                </button>
+              )}
               {currentTrack && (
                 <button onClick={() => setShowSearch(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
