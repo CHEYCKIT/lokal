@@ -48,8 +48,10 @@ async function getJson(url, fetchImpl, headers = {}) {
 
 // MusicBrainz, one request a second across the whole app.
 let mbQueue = Promise.resolve()
-function mbGet(pathAndQuery, fetchImpl, { gapMs = MB_GAP_MS } = {}) {
+function mbGet(pathAndQuery, fetchImpl, { gapMs = MB_GAP_MS, signal } = {}) {
   const run = mbQueue.then(async () => {
+    // Its caller gave up while it waited in line: skip it, don't hold the queue.
+    if (signal?.aborted) return null
     const result = await getJson(`${MB}${pathAndQuery}${pathAndQuery.includes('?') ? '&' : '?'}fmt=json`, fetchImpl, { 'User-Agent': USER_AGENT })
     await new Promise(resolve => setTimeout(resolve, gapMs))
     return result

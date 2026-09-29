@@ -47,6 +47,17 @@ function unquote(s) {
   return String(s || '').trim().replace(/^["'“”‘’«]+|["'“”‘’»]+$/g, '').trim()
 }
 
+// "A, B - Song" / "A & B - Song": the whole credit comes off the title, not
+// just the first name (stripArtistPrefix only knows "A - Song").
+function stripCredit(title, artists) {
+  const names = artists.map(a => String(a || '').trim()).filter(Boolean)
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const list = names.map(esc).join('(?:\\s*[,&+]\\s*|\\s+(?:and|x)\\s+)')
+  const full = new RegExp(`^${list}\\s+[-–—]\\s+`, 'i')
+  const stripped = title.replace(full, '').trim()
+  return stripped && stripped !== title ? stripped : stripArtistPrefix(title, names.join(', '))
+}
+
 /** { artist, title } from the video, or null to keep what the tags say. */
 function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
   if (!meta) return null
@@ -54,7 +65,7 @@ function artistAndTitle(meta, tags, { soundcloud = false } = {}) {
   const title = String(tags.title || meta.title || '').trim()
   if (soundcloud) {
     const credited = (Array.isArray(meta.artists) ? meta.artists : []).map(a => String(a || '').trim()).filter(Boolean).join(', ')
-    if (credited) return { artist: credited, title: stripArtistPrefix(title, credited) || title }
+    if (credited) return { artist: credited, title: stripCredit(title, meta.artists) || title }
   } else if (meta.track || /\s-\sTopic$/i.test(channel)) return null
   const m = title.match(DASH)
   if (!m) return null
@@ -85,11 +96,30 @@ function knownArtist(db, name) {
   try { return !!db.prepare('SELECT 1 FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1').get(first) } catch { return false }
 }
 
-/** The same parse read the other way round: "Song - Artist (… Edit)". */
+const FEATURING = /^[([]\s*(?:feat\.?|ft\.?|featuring|with)\s+([^()[\]]+?)\s*[)\]]$/i
+
+/**
+ * The same parse read the other way round: "Song - Artist (… Edit)". Version
+ * tags ("(… Edit)", "[… Remix]") stay with the song; a featured credit
+ * ("(feat. Guest)") goes with the artist, written the way the artist splitter
+ * reads it: "Artist feat. Guest".
+ */
 function swapped(parsed) {
   const tags = parsed.title.match(TRAILING_TAGS)
   const other = tags ? parsed.title.slice(0, tags.index).trim() : parsed.title
-  return other ? { artist: other, title: `${parsed.artist}${tags ? ' ' + tags[1].trim() : ''}`, fromDash: true } : null
+  if (!other) return null
+  const groups = tags ? tags[1].match(/[([][^()[\]]*[)\]]/g) || [] : []
+  const guests = [], versions = []
+  for (const group of groups) {
+    const feat = group.match(FEATURING)
+    if (feat) guests.push(feat[1].trim())
+    else versions.push(group)
+  }
+  return {
+    artist: guests.length ? `${other} feat. ${guests.join(', ')}` : other,
+    title: [parsed.artist, ...versions].join(' '),
+    fromDash: true,
+  }
 }
 
 function preferKnownArtist(parsed, db) {
@@ -118,24 +148,27 @@ function sameSong(a, b) {
   return shared / Math.min(x.size, y.size) >= 0.75
 }
 
-async function recordingExists(artist, title, get) {
+async function recordingExists(artist, title, get, signal) {
   const who = firstArtistOf(artist)
   const words = loose(title.replace(TRAILING_TAGS, ''))
   if (!who || !words) return false
   const query = `recording:(${lucene(words)}) AND artist:"${lucene(who).replace(/"/g, '')}"`
-  const found = await get(`/recording?query=${encodeURIComponent(query)}&limit=10`)
+  if (signal?.aborted) return false
+  const found = await get(`/recording?query=${encodeURIComponent(query)}&limit=10`, signal)
   return (found?.recordings || []).some(rec =>
     Number(rec.score) >= 70 && sameSong(rec.title, title) &&
     (rec['artist-credit'] || []).some(credit => loose(credit?.name || credit?.artist?.name) === loose(who)))
 }
 
-async function orderByLookup(parsed, { get } = {}) {
+// `signal`: aborted once the download stops waiting (ORDER_LOOKUP_MS), so
+// requests still queued behind other MusicBrainz work are dropped.
+async function orderByLookup(parsed, { get, signal } = {}) {
   if (!parsed?.fromDash) return parsed
   const other = swapped(parsed)
   if (!other) return parsed
-  const lookup = get || ((q) => require('../quality/stores').mbGet(q, fetch))
-  if (await recordingExists(parsed.artist, parsed.title, lookup)) return parsed
-  if (await recordingExists(other.artist, other.title, lookup)) return other
+  const lookup = get || ((q, sig) => require('../quality/stores').mbGet(q, fetch, { signal: sig }))
+  if (await recordingExists(parsed.artist, parsed.title, lookup, signal)) return parsed
+  if (await recordingExists(other.artist, other.title, lookup, signal)) return other
   return null
 }
 
@@ -229,7 +262,12 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   const soundcloud = isSoundCloud(url)
   let fromTitle = clean && (isYouTube(url) || soundcloud) ? artistAndTitle(meta, info, { soundcloud }) : null
   // "Artist - Song" or "Song - Artist"? MusicBrainz if it knows, else the library.
-  if (fromTitle?.fromDash) fromTitle = (await withTimeout(orderByLookup(fromTitle), ORDER_LOOKUP_MS)) || preferKnownArtist(fromTitle, db)
+  if (fromTitle?.fromDash) {
+    const controller = new AbortController()
+    const ordered = await withTimeout(orderByLookup(fromTitle, { signal: controller.signal }), ORDER_LOOKUP_MS)
+    controller.abort()
+    fromTitle = ordered || preferKnownArtist(fromTitle, db)
+  }
   const lookupInfo = fromTitle
     ? { ...info, ...fromTitle }
     : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
@@ -297,4 +335,4 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, knownTagsOf }
+module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, swapped, knownTagsOf }
