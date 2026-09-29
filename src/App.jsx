@@ -32,6 +32,7 @@ import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
+import Toaster from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, streamRef } from './onlineTracks'
 import { THEMES, applyTheme } from './theme'
@@ -1955,6 +1956,7 @@ export default function App() {
             
             {renderYtDlpNotice()}
             {renderUpdateToast()}
+            <Toaster />
             <AnimatePresence>
               {streamError && (
                 <motion.div
