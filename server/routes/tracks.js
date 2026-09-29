@@ -285,7 +285,12 @@ function splitArtists(raw) {
   let artists = [raw]
   artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
   artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => a.split(/\s+(?:&|x|vs\.?)\s+/i))
+  artists = artists.flatMap(a => {
+    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
+    // A split that leaves one-letter pieces isn't a collaboration but one
+    // stylised name ("h x m x d" was becoming the artists h, m and d).
+    return parts.some(part => part.trim().length < 2) ? [a] : parts
+  })
   return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
 }
 

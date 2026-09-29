@@ -67,10 +67,10 @@ function getKeepCommaArtists() {
   return keepComma
 }
 
-function splitArtists(raw) {
+function splitArtists(raw, keepComma = null) {
   if (!raw) return []
   const lower = raw.toLowerCase().trim()
-  const KEEP_COMMA_ARTISTS = getKeepCommaArtists()
+  const KEEP_COMMA_ARTISTS = keepComma || getKeepCommaArtists()
   for (const known of KEEP_COMMA_ARTISTS) {
     if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
   }
@@ -79,8 +79,51 @@ function splitArtists(raw) {
   let artists = [raw]
   artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
   artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => a.split(/\s+(?:&|x|vs\.?)\s+/i))
+  artists = artists.flatMap(a => {
+    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
+    // A split that leaves one-letter pieces isn't a collaboration but one
+    // stylised name ("h x m x d" was becoming the artists h, m and d).
+    return parts.some(part => part.trim().length < 2) ? [a] : parts
+  })
   return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+}
+
+/**
+ * Brings every track's artist links in line with splitArtists (e.g. after it
+ * learned that "h x m x d" is one artist, not h, m and d), then drops the
+ * artists left without tracks. A rescan skips unchanged files, so this is
+ * what fixes songs already in the library. Only tracks whose links differ
+ * are touched.
+ */
+function relinkArtists(db = getDB()) {
+  const keepComma = getKeepCommaArtists()
+  const tracks = db.prepare('SELECT id, artist FROM tracks').all()
+  const linked = new Map()
+  for (const row of db.prepare('SELECT track_id, artist_id FROM artist_track_links').all()) {
+    if (!linked.has(row.track_id)) linked.set(row.track_id, new Set())
+    linked.get(row.track_id).add(row.artist_id)
+  }
+  const unlink = db.prepare('DELETE FROM artist_track_links WHERE track_id = ?')
+  const addArtist = db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)')
+  const link = db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)')
+  let changed = 0
+  db.transaction(() => {
+    for (const track of tracks) {
+      const names = splitArtists(track.artist, keepComma)
+      const want = new Set(names.map(name => 'a-' + slugify(name)))
+      const have = linked.get(track.id) || new Set()
+      if (want.size === have.size && [...want].every(id => have.has(id))) continue
+      unlink.run(track.id)
+      for (const name of names) {
+        const id = 'a-' + slugify(name)
+        addArtist.run(id, name)
+        link.run(id, track.id)
+      }
+      changed++
+    }
+    if (changed) db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+  })()
+  return changed
 }
 
 async function extractArtwork(metadata, trackId) {
@@ -261,6 +304,10 @@ async function scanFolder(folderPath) {
   const db = getDB()
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
+  try {
+    const relinked = relinkArtists(db)
+    if (relinked) console.log(`[scanFolder] Re-linked artists for ${relinked} track(s)`)
+  } catch (e) { console.warn('[scanFolder] Artist re-link skipped:', e.message) }
   const files = walkDir(folderPath)
   scanStatus.total = files.length
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
@@ -1669,7 +1716,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS }
+module.exports = { registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists }
 
 
 function registerExtraHandlers(ipcMain) {
