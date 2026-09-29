@@ -76,12 +76,59 @@ function knownArtist(db, name) {
   try { return !!db.prepare('SELECT 1 FROM artists WHERE name = ? COLLATE NOCASE LIMIT 1').get(first) } catch { return false }
 }
 
-function preferKnownArtist(parsed, db) {
-  if (!parsed?.fromDash || !db) return parsed
+/** The same parse read the other way round: "Song - Artist (… Edit)". */
+function swapped(parsed) {
   const tags = parsed.title.match(TRAILING_TAGS)
   const other = tags ? parsed.title.slice(0, tags.index).trim() : parsed.title
-  if (!other || knownArtist(db, parsed.artist) || !knownArtist(db, other)) return parsed
-  return { artist: other, title: `${parsed.artist}${tags ? ' ' + tags[1].trim() : ''}`, fromDash: true }
+  return other ? { artist: other, title: `${parsed.artist}${tags ? ' ' + tags[1].trim() : ''}`, fromDash: true } : null
+}
+
+function preferKnownArtist(parsed, db) {
+  if (!parsed?.fromDash || !db) return parsed
+  const other = swapped(parsed)
+  if (!other || knownArtist(db, parsed.artist) || !knownArtist(db, other.artist)) return parsed
+  return other
+}
+
+// MusicBrainz settles it when it knows the song: whichever reading it has a
+// recording for (that title, by that artist) wins. Shares the app's
+// one-request-a-second MusicBrainz queue; unsure or unreachable -> null, and
+// the library check above decides.
+const ORDER_LOOKUP_MS = 8000
+const loose = (s) => String(s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/['’`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const firstArtistOf = (s) => String(s || '').split(/\s+(?:feat\.?|ft\.?|featuring|&|x|vs\.?)\s+|,\s*/i)[0].trim()
+const lucene = (s) => String(s || '').replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
+
+// Uploaded titles are rarely spelled like the catalogue ("Im Really Really
+// Hot" for "I'm Really Hot"): most of the words in common is enough, as long
+// as the credited artist matches exactly.
+function sameSong(a, b) {
+  const x = new Set(loose(a).split(' ').filter(Boolean)), y = new Set(loose(b).split(' ').filter(Boolean))
+  if (!x.size || !y.size) return false
+  let shared = 0
+  for (const word of x) if (y.has(word)) shared++
+  return shared / Math.min(x.size, y.size) >= 0.75
+}
+
+async function recordingExists(artist, title, get) {
+  const who = firstArtistOf(artist)
+  const words = loose(title.replace(TRAILING_TAGS, ''))
+  if (!who || !words) return false
+  const query = `recording:(${lucene(words)}) AND artist:"${lucene(who).replace(/"/g, '')}"`
+  const found = await get(`/recording?query=${encodeURIComponent(query)}&limit=10`)
+  return (found?.recordings || []).some(rec =>
+    Number(rec.score) >= 70 && sameSong(rec.title, title) &&
+    (rec['artist-credit'] || []).some(credit => loose(credit?.name || credit?.artist?.name) === loose(who)))
+}
+
+async function orderByLookup(parsed, { get } = {}) {
+  if (!parsed?.fromDash) return parsed
+  const other = swapped(parsed)
+  if (!other) return parsed
+  const lookup = get || ((q) => require('../quality/stores').mbGet(q, fetch))
+  if (await recordingExists(parsed.artist, parsed.title, lookup)) return parsed
+  if (await recordingExists(other.artist, other.title, lookup)) return other
+  return null
 }
 
 function safeName(s) {
@@ -172,7 +219,9 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   // YouTube and SoundCloud: the artist from the title ("Artist - Song"), not
   // the uploader. (Addons bring their own tags; Soulseek files have theirs.)
   const soundcloud = isSoundCloud(url)
-  const fromTitle = clean && (isYouTube(url) || soundcloud) ? preferKnownArtist(artistAndTitle(meta, info, { soundcloud }), db) : null
+  let fromTitle = clean && (isYouTube(url) || soundcloud) ? artistAndTitle(meta, info, { soundcloud }) : null
+  // "Artist - Song" or "Song - Artist"? MusicBrainz if it knows, else the library.
+  if (fromTitle?.fromDash) fromTitle = (await withTimeout(orderByLookup(fromTitle), ORDER_LOOKUP_MS)) || preferKnownArtist(fromTitle, db)
   const lookupInfo = fromTitle
     ? { ...info, ...fromTitle }
     : { ...info, title: clean ? stripArtistPrefix(info.title, info.artist) : info.title }
@@ -240,4 +289,4 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, knownTagsOf }
+module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, knownTagsOf }

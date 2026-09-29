@@ -163,4 +163,4 @@ async function buyLinks(track, { fetchImpl = fetch, mbGapMs } = {}) {
   return value
 }
 
-module.exports = { buyLinks, searchLinks, losslessStore, isrcFromDeezer }
+module.exports = { buyLinks, searchLinks, losslessStore, isrcFromDeezer, mbGet }
