@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Music, Play, Clock, Sparkles, Radio, History } from 'lucide-react'
+import { Music, Play, Clock, Sparkles, Radio, History, ListEnd, ListPlus, Plus, Disc3, User } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
@@ -9,8 +9,18 @@ import SectionSwap from '../components/SectionSwap'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { plural } from '../plural'
+import ContextMenu, { useContextMenu } from '../components/ContextMenu'
+import { showToast } from '../components/Toaster'
+import { addToPlaylistMany, addToQueueMany, playNextMany, saveAsPlaylist } from '../trackActions'
+import { artistPath } from '../releaseActions'
 
-function MixCard({ mix, onClick }) {
+// "30 September 2026": saved mixes and suggestions change daily, so the
+// playlist says which day's it is.
+const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+/** A mix's name as a playlist's ("Radiohead" → "Radiohead Mix"). */
+const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
+
+function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
     : null
@@ -28,33 +38,43 @@ function MixCard({ mix, onClick }) {
   }
 
   return (
-    <motion.button
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      className="flex flex-col gap-3 p-3 bg-elevated border border-border rounded-xl hover:border-accent/30 transition-all text-left group"
-    >
-      <div className="w-full aspect-square rounded-lg overflow-hidden bg-card relative">
-        {arts.length === 0 && <div className="w-full h-full flex items-center justify-center text-subtle"><Radio size={36} /></div>}
-        {arts.length === 1 && <FadeImg src={artSrc({ artwork_path: arts[0] })} className="w-full h-full object-cover" />}
-        {arts.length > 1 && (
-          <div className="w-full h-full grid grid-cols-2">
-            {arts.slice(0, 4).map((art, i) => (
-              <FadeImg key={i} src={artSrc({ artwork_path: art })} className="w-full h-full object-cover" />
-            ))}
-          </div>
-        )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center shadow-xl">
-            <Play size={16} fill="currentColor" className="text-base translate-x-0.5" />
+    <motion.div whileHover={{ scale: 1.03 }} className="relative group" onContextMenu={onContextMenu}>
+      <motion.button
+        whileTap={{ scale: 0.98 }}
+        onClick={onClick}
+        className="w-full flex flex-col gap-3 p-3 bg-elevated border border-border rounded-xl hover:border-accent/30 transition-all text-left"
+      >
+        <div className="w-full aspect-square rounded-lg overflow-hidden bg-card relative">
+          {arts.length === 0 && <div className="w-full h-full flex items-center justify-center text-subtle"><Radio size={36} /></div>}
+          {arts.length === 1 && <FadeImg src={artSrc({ artwork_path: arts[0] })} className="w-full h-full object-cover" />}
+          {arts.length > 1 && (
+            <div className="w-full h-full grid grid-cols-2">
+              {arts.slice(0, 4).map((art, i) => (
+                <FadeImg key={i} src={artSrc({ artwork_path: art })} className="w-full h-full object-cover" />
+              ))}
+            </div>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center shadow-xl">
+              <Play size={16} fill="currentColor" className="text-base translate-x-0.5" />
+            </div>
           </div>
         </div>
-      </div>
-      <div>
-        <p className="text-sm font-medium text-white truncate">{mix.name}</p>
-        <p className="text-xs text-muted">{plural(mix.tracks.length, 'track')} · {getMixTypeLabel(mix.type)}</p>
-      </div>
-    </motion.button>
+        <div>
+          <p className="text-sm font-medium text-white truncate">{mix.name}</p>
+          <p className="text-xs text-muted">{plural(mix.tracks.length, 'track')} · {getMixTypeLabel(mix.type)}</p>
+        </div>
+      </motion.button>
+      <button
+        onClick={onSave}
+        disabled={saving}
+        title="Save as playlist"
+        aria-label={`Save ${mixTitle(mix)} as a playlist`}
+        className={`absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white/85 backdrop-blur transition-all hover:bg-black/80 hover:text-accent focus:opacity-100 ${saving ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+      >
+        {saving ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}
+      </button>
+    </motion.div>
   )
 }
 
@@ -79,6 +99,39 @@ function HomeContent({ user }) {
   const location = useLocation()
   const [tab, setTab] = useState(() => (location.state?.tab === 'history' ? 'history' : 'home'))
   const { playQueue } = usePlayerStore()
+  const navigate = useNavigate()
+  const menu = useContextMenu()
+  // What's being saved as a playlist ('mix:<id>' or 'suggestions'), one at a time.
+  const [saving, setSaving] = useState(null)
+  const saveList = async (key, name, tracks, description) => {
+    if (saving) return
+    setSaving(key)
+    const playlist = await saveAsPlaylist(name, tracks, { userId: user?.id, description }).catch(() => null)
+    setSaving(null)
+    showToast(playlist ? `Saved "${name}" (${plural(new Set(tracks.map(t => t.id)).size, 'song')})` : 'Could not create playlist')
+  }
+  const saveMix = (mix) => saveList(`mix:${mix.id}`, `${mixTitle(mix)} - ${today()}`, mix.tracks, `Your ${mixTitle(mix)} from Home`)
+  const saveSuggestions = () => saveList('suggestions', `Suggested for You - ${today()}`, suggestions, 'Suggested for you on Home')
+
+  const openMixMenu = (event, mix) => menu.open(event, [
+    { label: 'Play', icon: Play, onSelect: () => playQueue(mix.tracks, 0) },
+    { label: 'Play next', icon: Clock, onSelect: () => playNextMany(mix.tracks) },
+    { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(mix.tracks) },
+    { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(mix.tracks) },
+    { separator: true },
+    { label: 'Save as playlist', icon: ListPlus, onSelect: () => saveMix(mix), disabled: !!saving },
+  ])
+  const openSuggestionMenu = (event, track, index) => menu.open(event, [
+    { label: 'Play', icon: Play, onSelect: () => playQueue(suggestions, index) },
+    { label: 'Play next', icon: Clock, onSelect: () => playNextMany([track]) },
+    { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany([track]) },
+    { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany([track]) },
+    { separator: true },
+    track.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: track.album, album_artist: track.album_artist || track.artist } } }) },
+    track.artist && { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(track.album_artist || track.artist)) },
+    { separator: true },
+    { label: `Save all ${suggestions.length} as playlist`, icon: ListPlus, onSelect: saveSuggestions, disabled: !!saving },
+  ].filter(Boolean))
   const nonGhost = (items) => (Array.isArray(items) ? items.filter(item => !String(item?.file_path || '').startsWith('ghost://')) : [])
 
   const load = () => {
@@ -156,7 +209,7 @@ function HomeContent({ user }) {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {mixes.slice(0, 6).map(mix => (
-                  <MixCard key={mix.id} mix={mix} onClick={() => playQueue(mix.tracks, 0)} />
+                  <MixCard key={mix.id} mix={mix} onClick={() => playQueue(mix.tracks, 0)} onSave={() => saveMix(mix)} saving={saving === `mix:${mix.id}`} onContextMenu={(event) => openMixMenu(event, mix)} />
                 ))}
               </div>
             </section>
@@ -167,12 +220,18 @@ function HomeContent({ user }) {
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles size={14} className="text-accent" />
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">Suggested for You</h2>
+                <button onClick={saveSuggestions} disabled={!!saving} title={`Save all ${suggestions.length} suggestions as a playlist`}
+                  className="ml-auto flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors disabled:opacity-50">
+                  {saving === 'suggestions' ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={13} />}
+                  Save as playlist
+                </button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {suggestions.slice(0, 8).map((t, i) => (
                   <motion.button
                     key={t.id}
                     onDoubleClick={() => playQueue(suggestions, i)}
+                    onContextMenu={(event) => openSuggestionMenu(event, t, i)}
                     className="flex items-center gap-3 p-3 bg-elevated rounded-xl border border-border hover:border-accent/30 transition-all group text-left"
                   >
                     <div className="w-10 h-10 rounded-lg bg-card overflow-hidden flex-shrink-0 flex items-center justify-center text-subtle">
@@ -210,6 +269,7 @@ function HomeContent({ user }) {
         </>
       )}
       </SectionSwap>
+      <ContextMenu menu={menu} />
     </div>
   )
 }
