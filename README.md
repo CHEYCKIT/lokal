@@ -173,7 +173,7 @@ Know what you're actually listening to:
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) v18+
+- [Node.js](https://nodejs.org/) v22.12+ (24 recommended, see `.nvmrc`)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp): for downloading and streaming online songs (optional)
 - [ffmpeg](https://ffmpeg.org/): for audio conversion and the spectrum check (optional)
 - [slskd](https://github.com/slskd/slskd): for Soulseek (optional)
