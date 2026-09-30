@@ -69,9 +69,10 @@ function fmtAddedAt(ts) {
 // actionsWidth). Album and Quality show from @md up.
 function gridCols({ playlistId, showAlbum, showQuality }) {
   if (playlistId) {
-    return showAlbum
-      ? 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
-      : 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_4rem]'
+    if (showAlbum && showQuality) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_4.5rem_auto_4rem]'
+    if (showAlbum) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
+    if (showQuality) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_4.5rem_auto_4rem]'
+    return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_4rem]'
   }
   if (showAlbum && showQuality) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_4.5rem_auto_4rem]'
   if (showAlbum) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
@@ -747,7 +748,10 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
                 )}
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
+                {/* Clipped at the column's edge: on a very narrow page the
+                    title's minimum and its badges can't spill into the
+                    next column. */}
+                <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                   <p className={`min-w-[3.5rem] text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
                   {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
