@@ -9,7 +9,7 @@ jobs:
   discord-announcement:
     # Announce real releases only, never the nightly pre-release.
     if: github.event_name != 'release' || github.event.release.prerelease != true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Debug Event Data
         run: |
