@@ -188,6 +188,9 @@ async function getLyrics(db, args) {
   const instrumental = instrumentalResult(db, trackId)
   if (instrumental) return instrumental
   const settings = readSettings(db)
+  // Cached lyrics with untimed stamps, as plain text: kept when the fresh
+  // lookup finds nothing better (every source down, say).
+  let untimedFallback = null
 
   if (!args.refresh) {
     const row = readRow(db, trackId, filePath)
@@ -200,13 +203,14 @@ async function getLyrics(db, args) {
         } else if (row.lyrics_type === 'synced' && isUntimed(fromRow(row, meta).lines)) {
           // Cached before untimed stamps were recognised (see isUntimed). A
           // source the user picked stays, as the plain text it really is;
-          // anything else is looked up again so a truly synced source can win.
-          const cached = fromRow(row, meta)
+          // anything else is looked up again so a truly synced source can win,
+          // falling back to that plain text.
+          const plain = finish(fromRow(row, meta).lines.map(l => ({ text: l.text, time: null, words: [] })), { source: row.source })
           if (meta.pinned) {
-            const plain = { ...finish(cached.lines.map(l => ({ text: l.text, time: null, words: [] })), { source: row.source }), attempts: meta.attempts || null, pinned: true }
             writeRow(db, trackId || row.track_id, filePath || row.file_path, plain, { attempts: meta.attempts, pinned: true })
-            return plain
+            return { ...plain, attempts: meta.attempts || null, pinned: true }
           }
+          if (plain.type) untimedFallback = { result: plain, attempts: meta.attempts || null }
         } else {
           if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, fromRow(row, meta), { attempts: meta.attempts, pinned: meta.pinned })
           return fromRow(row, meta)
@@ -232,6 +236,11 @@ async function getLyrics(db, args) {
     return { ...result, attempts }
   }
   if (result?.instrumental) return result
+  if (untimedFallback) {
+    const kept = { ...(untimedFallback.attempts || {}), ...attempts }
+    writeRow(db, trackId, filePath, untimedFallback.result, { attempts: kept })
+    return { ...untimedFallback.result, attempts: kept }
+  }
   writeRow(db, trackId, filePath, null, { attempts, settingsKey: settings.settingsKey })
   return null
 }
