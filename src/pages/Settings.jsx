@@ -362,7 +362,7 @@ export default function Settings() {
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
   // hardwareAcceleration is what the next launch uses; running is what this
   // launch started with (main only applies it at startup).
-  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, running: null })
+  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto', platform: null, running: null })
   const [perfSaveError, setPerfSaveError] = useState('')
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
@@ -677,7 +677,21 @@ export default function Settings() {
       setPerfSaveError(e.message || 'unknown error')
     }
   }
-  const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
+  const setGraphicsBackend = async (graphicsBackend) => {
+    const before = perfSettings
+    setPerfSettings(p => ({ ...p, graphicsBackend }))
+    setPerfSaveError('')
+    try {
+      const res = await api.savePerfSettings({ graphicsBackend })
+      if (res?.error) throw new Error(res.error)
+    } catch (e) {
+      setPerfSettings(before)
+      setPerfSaveError(e.message || 'unknown error')
+    }
+  }
+  const perfRestartNeeded = !!perfSettings.running && (
+    perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
+    || (perfSettings.running.graphicsBackend || 'auto') !== (perfSettings.graphicsBackend || 'auto'))
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
@@ -1379,6 +1393,18 @@ export default function Settings() {
               </button>
             </div>
           </Row>
+          {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
+            <Row label="Graphics Backend" desc="How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar">
+              <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
+                aria-label="Graphics backend"
+                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                <option value="auto">Automatic (OpenGL)</option>
+                <option value="gl">OpenGL</option>
+                <option value="d3d11">Direct3D 11</option>
+                <option value="d3d9">Direct3D 9</option>
+              </select>
+            </Row>
+          )}
         </Section>
       )}
 

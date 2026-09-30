@@ -176,11 +176,12 @@ autoUpdater.on('error', (err) => {
 
 const settingsPath = path.join(app.getPath('userData'), 'performance-settings.json')
 
-// Settings > About > Hardware Acceleration. Read once at startup: Chromium
-// only takes the GPU switches before the app is ready, so a change needs a
-// restart.
+// Settings > About > Hardware Acceleration and Graphics Backend. Read once at
+// startup: Chromium only takes the GPU switches before the app is ready, so a
+// change needs a restart.
+const GRAPHICS_BACKENDS = ['auto', 'gl', 'd3d11', 'd3d9']
 function loadPerformanceSettings() {
-  const defaults = { hardwareAcceleration: true, performanceMode: false }
+  const defaults = { hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto' }
   try {
     if (fs.existsSync(settingsPath)) {
       const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
@@ -200,6 +201,20 @@ if (perfSettings.hardwareAcceleration === false) {
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
+
+// Windows: with Chromium's default Direct3D 11 backend, a window restored from
+// the taskbar shows white for a moment before its first new frame (the
+// occlusion and background-throttling switches here didn't stop it). Drawing
+// through OpenGL or Direct3D 9 doesn't; OpenGL is the newer of the two.
+// Direct3D 11 stays one setting away for drivers with poor OpenGL, and a
+// --use-angle given on the command line wins.
+function angleBackend() {
+  if (process.platform !== 'win32' || perfSettings.hardwareAcceleration === false) return null
+  const chosen = GRAPHICS_BACKENDS.includes(perfSettings.graphicsBackend) ? perfSettings.graphicsBackend : 'auto'
+  return chosen === 'auto' ? 'gl' : chosen
+}
+const runningAngle = app.commandLine.hasSwitch('use-angle') ? app.commandLine.getSwitchValue('use-angle') : angleBackend()
+if (runningAngle && !app.commandLine.hasSwitch('use-angle')) app.commandLine.appendSwitch('use-angle', runningAngle)
 
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
 // Windows: Chromium drops a minimized window's frames (it counts as
@@ -424,6 +439,7 @@ app.whenReady().then(() => {
       const next = { ...loadPerformanceSettings() }
       if (typeof newSettings?.hardwareAcceleration === 'boolean') next.hardwareAcceleration = newSettings.hardwareAcceleration
       if (typeof newSettings?.performanceMode === 'boolean') next.performanceMode = newSettings.performanceMode
+      if (GRAPHICS_BACKENDS.includes(newSettings?.graphicsBackend)) next.graphicsBackend = newSettings.graphicsBackend
       fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2))
       return { success: true }
     } catch (e) {
@@ -438,7 +454,17 @@ app.whenReady().then(() => {
   // What's saved (the next launch) plus what this launch is running with, so
   // Settings can say a restart is still needed.
   ipcMain.handle('perf:load', async () => {
-    return { ...loadPerformanceSettings(), running: { hardwareAcceleration: perfSettings.hardwareAcceleration !== false } }
+    const saved = loadPerformanceSettings()
+    return {
+      ...saved,
+      graphicsBackend: GRAPHICS_BACKENDS.includes(saved.graphicsBackend) ? saved.graphicsBackend : 'auto',
+      platform: process.platform,
+      running: {
+        hardwareAcceleration: perfSettings.hardwareAcceleration !== false,
+        graphicsBackend: GRAPHICS_BACKENDS.includes(perfSettings.graphicsBackend) ? perfSettings.graphicsBackend : 'auto',
+        angle: runningAngle || null,
+      },
+    }
   })
   ipcMain.handle('mediaKeys:setPreferred', async (_, flag) => {
     const result = setPreferredMediaKeys(flag)
