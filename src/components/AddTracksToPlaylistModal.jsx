@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Music, Plus, Search } from 'lucide-react'
+import { AlertCircle, Check, Music, Plus, RefreshCw, Search } from 'lucide-react'
 import Modal from './Modal'
 import FadeImg from './FadeImg'
 import { api } from '../api'
@@ -21,25 +21,52 @@ export default function AddTracksToPlaylistModal({ open, onClose, playlistId, ex
   const [addingId, setAddingId] = useState(null)
   const [added, setAdded] = useState(() => new Set())
   const [error, setError] = useState('')
+  // The library couldn't be read (shown only when nothing is cached).
+  const [loadError, setLoadError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   // The songs already in the playlist when it opened. One added now stays in
   // its place, marked Added, instead of vanishing and shifting every row
   // under it.
   const [hidden, setHidden] = useState(() => new Set())
 
   useEffect(() => {
-    if (!open) { setEntered(false); return undefined }
+    if (!open) { setEntered(false); return }
     setQuery('')
     setAdded(new Set())
     setError('')
-    setHidden(new Set(existingTrackIds))
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    setLoadError('')
     let alive = true
     Promise.resolve(api.getTracks({ limit: 5000 })).then(result => {
-      if (!alive || !Array.isArray(result)) return
+      if (!alive) return
+      if (!Array.isArray(result)) throw new Error(result?.error || 'Could not read your library.')
       writeCache(LIBRARY_KEY, result)
       setTracks(result)
-    }).catch(() => {}).finally(() => { if (alive) setLoaded(true) })
+      setLoaded(true)
+    }).catch(e => {
+      if (!alive) return
+      // With a cached library the list stays usable; without one, say so.
+      if (peekCache(LIBRARY_KEY)) setLoaded(true)
+      else setLoadError(e?.message || 'Could not read your library.')
+    })
     return () => { alive = false }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, attempt])
+
+  // The playlist can change while this is open (a song added elsewhere):
+  // follow it, so no row adds a song twice. Songs added here stay listed,
+  // marked Added.
+  useEffect(() => {
+    if (!open) return
+    setHidden(current => {
+      const next = new Set(existingTrackIds)
+      for (const trackId of added) next.delete(trackId)
+      if (next.size === current.size && [...next].every(trackId => current.has(trackId))) return current
+      return next
+    })
+  }, [open, existingTrackIds, added])
 
   const filteredTracks = useMemo(() => {
     const available = tracks.filter(track => !hidden.has(track.id))
@@ -91,7 +118,16 @@ export default function AddTracksToPlaylistModal({ open, onClose, playlistId, ex
 
         {/* A fixed height, so the window never resizes as the list loads or filters. */}
         <div className="h-[28rem] max-h-[55vh] overflow-y-auto">
-          {!showRows ? (
+          {loadError && !loaded ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted">
+              <AlertCircle size={26} className="text-red-400/80" />
+              <p className="max-w-xs text-sm">Couldn't read your library: {loadError}</p>
+              <button onClick={() => setAttempt(n => n + 1)}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-white transition-colors hover:border-accent/40">
+                <RefreshCw size={12} /> Try again
+              </button>
+            </div>
+          ) : !showRows ? (
             <div className="space-y-2" aria-hidden="true">
               {Array.from({ length: SKELETON_ROWS }, (_, i) => (
                 <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-card/40 px-3 py-2">

@@ -24,9 +24,11 @@ export default function Playlist() {
   // 0 tracks · This playlist is empty" first. The route remounts per
   // playlist, so the keys never change while mounted.
   const cacheKey = isLiked ? `playlist:liked:${user?.id || 'guest'}` : `playlist:${id}`
-  const [tracks, setTracks, wasCached] = useCachedState(`${cacheKey}:tracks`, [])
-  const [playlist, setPlaylist] = useCachedState(`${cacheKey}:meta`, null)
-  const [loaded, setLoaded] = useState(wasCached)
+  const [tracks, setTracks, tracksCached] = useCachedState(`${cacheKey}:tracks`, [])
+  const [playlist, setPlaylist, metaCached] = useCachedState(`${cacheKey}:meta`, null)
+  // A playlist is ready from the cache only with its name too (left before
+  // that came in, it would show "Playlist" until it did).
+  const [loaded, setLoaded] = useState(tracksCached && (isLiked || metaCached))
   usePageReady(loaded)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(() => playlist?.name || '')
@@ -205,6 +207,17 @@ export default function Playlist() {
       fetchRecommendations()
     }
   }, [tracks.length, isLiked, recommendations.length, fetchRecommendations])
+
+  // A recommended song that's now in the playlist (added from Add Songs, say)
+  // leaves the recommendations, cached ones included; an emptied list is
+  // refilled by the effect above.
+  useEffect(() => {
+    if (!recommendations.length) return
+    const inPlaylist = new Set(tracks.map(track => track.id))
+    if (recommendations.some(track => inPlaylist.has(track.id))) {
+      setRecommendations(current => current.filter(track => !inPlaylist.has(track.id)))
+    }
+  }, [tracks, recommendations, setRecommendations])
 
   const addRecommendation = async (track) => {
     await api.addToPlaylist(id, track.id)
