@@ -78,7 +78,8 @@ function SessionCard({ session, onPlay, onSave }) {
 
   return (
     <div className="group overflow-hidden rounded-xl border border-border bg-elevated transition-colors hover:border-accent/35">
-      <div className="grid items-start gap-4 p-4 @sm:grid-cols-[1fr_8rem]">
+      {/* Two cards a row from a large page on (both sidebars open included): a smaller cover mosaic until the cards get wide. */}
+      <div className="grid items-start gap-4 p-4 @sm:grid-cols-[minmax(0,1fr)_8rem] @lg:grid-cols-[minmax(0,1fr)_6.5rem] @2xl:grid-cols-[minmax(0,1fr)_8rem]">
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -648,7 +649,7 @@ function RecapContent({ user }) {
                 </div>
                 <span className="text-xs text-muted">{recap.sessions.length} named sessions</span>
               </div>
-              <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @xl:grid-cols-2">
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @lg:grid-cols-2">
                 {recap.sessions.slice(0, 8).map((session, index) => (
                   <SessionCard
                     key={session.id || index}
