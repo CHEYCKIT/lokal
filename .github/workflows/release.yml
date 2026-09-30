@@ -99,10 +99,40 @@ jobs:
           if [ -f .github/banner/render.js ]; then
             BANNER_VERSION="$RELEASE_TAG" BANNER_TYPE=release node .github/banner/render.js
           fi
+          # The release starts as a draft, and GitHub doesn't serve a draft's
+          # files: a link to its own release-banner.png showed as a broken
+          # image in the draft and in the Discord message sent now (the
+          # nightly, published at once, never had the problem). So the banner
+          # is also committed to the "release-banners" branch, and linked
+          # from there by commit (an address that works at once and never
+          # changes). The release keeps its copy of the file too.
+          URL=""
+          if [ -f release-banner.png ]; then
+            URL="https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/release-banner.png"
+            (
+              set -e
+              export GIT_INDEX_FILE="$RUNNER_TEMP/banner-index"
+              rm -f "$GIT_INDEX_FILE"
+              PARENT=""
+              if git fetch --quiet --depth=1 origin refs/heads/release-banners 2>/dev/null; then
+                PARENT=$(git rev-parse FETCH_HEAD)
+                git read-tree "$PARENT"
+              fi
+              BLOB=$(git hash-object -w release-banner.png)
+              git update-index --add --cacheinfo "100644,$BLOB,$RELEASE_TAG.png"
+              TREE=$(git write-tree)
+              COMMIT=$(git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                commit-tree "$TREE" ${PARENT:+-p "$PARENT"} -m "Banner for $RELEASE_TAG")
+              git push --quiet origin "$COMMIT:refs/heads/release-banners"
+              echo "https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$RELEASE_TAG.png" > "$RUNNER_TEMP/banner-url"
+            ) && URL=$(cat "$RUNNER_TEMP/banner-url") \
+              || echo "::warning title=Release banner::Couldn't save the banner to the release-banners branch: the draft and Discord will link the release's own copy, which shows once the release is published."
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
           # Only reference the banner in the release body when it exists, so
           # a skipped banner doesn't leave a broken image at the top.
-          if [ -f release-banner.png ]; then
-            echo "md=![Release Banner](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/release-banner.png)" >> "$GITHUB_OUTPUT"
+          if [ -n "$URL" ]; then
+            echo "md=![Release Banner]($URL)" >> "$GITHUB_OUTPUT"
           else
             echo "md=" >> "$GITHUB_OUTPUT"
           fi
@@ -238,7 +268,8 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           LATEST_MSG="${{ steps.latest_commit.outputs.LATEST }}"
-          BANNER_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/release-banner.png"
+          BANNER_URL="${{ steps.banner.outputs.url }}"
+          BANNER_URL="${BANNER_URL:-https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/release-banner.png}"
           
           PAYLOAD=$(jq -n \
             --arg version "${{ github.ref_name }}" \
