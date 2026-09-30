@@ -425,11 +425,14 @@ function RecapContent({ user }) {
     loadRecap()
   }, [selectedId, user?.id])
 
+  // Opened once its recap is actually on screen (shownId only follows a
+  // successful load): not when it's picked, nor for one whose load failed
+  // or that was left before it arrived.
   useEffect(() => {
-    if (!selectedId) return
-    markRecapOpened(selectedId)
-    window.dispatchEvent(new CustomEvent('lokal:recap-viewed', { detail: { periodId: selectedId } }))
-  }, [selectedId])
+    if (!shownId || !recap) return
+    markRecapOpened(shownId, user?.id)
+    window.dispatchEvent(new CustomEvent('lokal:recap-viewed', { detail: { periodId: shownId } }))
+  }, [shownId, !!recap, user?.id])
 
   const topTracks = recap?.topTracks || []
   const replayQueue = recap?.replayQueue || topTracks

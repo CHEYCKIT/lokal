@@ -253,34 +253,46 @@ export function listenerTimeZone() {
   return localTimeZone()
 }
 
-// The recaps the listener has opened. The sidebar's "new recap" badge is for
-// a recap nobody has looked at yet: opening an older one afterwards (or a
-// month "so far") mustn't bring it back, as keeping only the last one seen did.
+// The recaps the listener has opened, per user (recap ids are the same for
+// every account). The sidebar's "new recap" badge is for a recap nobody has
+// looked at yet: opening an older one afterwards (or a month "so far")
+// mustn't bring it back, as keeping only the last one seen did.
 const OPENED_KEY = 'lokal-recap-opened'
 const OPENED_MAX = 200
+// Before this list: the one recap last looked at, not tied to a user.
+const LEGACY_KEY = 'lokal-recap-last-viewed'
 
-function readOpened() {
+const openedKey = (userId) => `${OPENED_KEY}:${userId || 'guest'}`
+
+function readOpened(userId) {
   try {
-    const list = JSON.parse(localStorage.getItem(OPENED_KEY) || '[]')
-    const opened = Array.isArray(list) ? list.filter(id => typeof id === 'string') : []
-    // Before this list: the one recap last looked at.
-    const legacy = localStorage.getItem('lokal-recap-last-viewed')
-    if (legacy && !opened.includes(legacy)) opened.push(legacy)
-    return opened
+    const key = openedKey(userId)
+    const stored = localStorage.getItem(key)
+    if (stored === null) {
+      // First read for this user: the old key, if any, becomes their list,
+      // once (then it's gone, so it can't count for a second account).
+      const legacy = localStorage.getItem(LEGACY_KEY)
+      if (!legacy) return []
+      localStorage.setItem(key, JSON.stringify([legacy]))
+      localStorage.removeItem(LEGACY_KEY)
+      return [legacy]
+    }
+    const list = JSON.parse(stored)
+    return Array.isArray(list) ? list.filter(id => typeof id === 'string') : []
   } catch {
     return []
   }
 }
 
-/** Remember that the recap `id` was opened. */
-export function markRecapOpened(id) {
+/** Remember that `userId` opened the recap `id`. */
+export function markRecapOpened(id, userId) {
   if (!id) return
-  const opened = readOpened().filter(other => other !== id)
+  const opened = readOpened(userId).filter(other => other !== id)
   opened.push(id)
-  try { localStorage.setItem(OPENED_KEY, JSON.stringify(opened.slice(-OPENED_MAX))) } catch {}
+  try { localStorage.setItem(openedKey(userId), JSON.stringify(opened.slice(-OPENED_MAX))) } catch {}
 }
 
-/** Has the recap `id` been opened? */
-export function recapOpened(id) {
-  return !!id && readOpened().includes(id)
+/** Has `userId` opened the recap `id`? */
+export function recapOpened(id, userId) {
+  return !!id && readOpened(userId).includes(id)
 }

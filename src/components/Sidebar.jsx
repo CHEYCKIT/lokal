@@ -120,7 +120,7 @@ export default function Sidebar() {
       } catch {}
       if (!alive) return
       // Only for a new recap that hasn't been opened yet.
-      setShowRecapBadge(Boolean(latest) && !recapOpened(latest))
+      setShowRecapBadge(Boolean(latest) && !recapOpened(latest, user?.id))
     }
     // Check again when the next period ends (e.g. Monday 00:00), and when
     // the app comes back (a timer doesn't fire while the computer sleeps).
