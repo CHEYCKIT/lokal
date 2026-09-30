@@ -1,0 +1,125 @@
+<!doctype html>
+<!--
+  The release / nightly banner, drawn from this repo (it used to come from
+  an outside page, which stopped answering). render.js opens this file with
+  ?v=<version>&type=release|nightly&date=<YYYY-MM-DD>&ref=<branch> and
+  screenshots .title-card (1200 x 600).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lokal banner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=block" rel="stylesheet">
+<style>
+  :root { --bg: #0a0a0a; --surface: #141414; --border: #2a2a2a; --text: #e8e8e8; --muted: #8a8a8a; --accent: #e8ff57; --purple: #7c6aff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; }
+  body { width: 1200px; height: 600px; font-family: 'DM Sans', system-ui, sans-serif; }
+
+  .title-card {
+    position: relative; width: 1200px; height: 600px; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; justify-content: space-between; padding: 64px 72px;
+  }
+  /* Soft accent light, top right and bottom left. */
+  .glow { position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none; }
+  .glow.a { width: 560px; height: 560px; right: -160px; top: -220px; background: var(--glow-a); opacity: .22; }
+  .glow.b { width: 520px; height: 520px; left: -220px; bottom: -300px; background: var(--glow-b); opacity: .16; }
+  /* Fine grid, fading out to the left. */
+  .grid {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
+  }
+  /* An equalizer along the bottom right. */
+  .eq { position: absolute; right: 72px; bottom: 64px; display: flex; align-items: flex-end; gap: 7px; height: 112px; }
+  .eq span { width: 9px; border-radius: 5px; background: var(--eq); }
+
+  .top, .bottom { position: relative; display: flex; align-items: center; gap: 18px; }
+  .logo { width: 64px; height: 64px; border-radius: 16px; }
+  .word { font-family: 'DM Mono', ui-monospace, monospace; font-size: 30px; letter-spacing: .32em; }
+  .pill {
+    margin-left: auto; font-family: 'DM Mono', ui-monospace, monospace; font-size: 18px; letter-spacing: .22em; text-transform: uppercase;
+    padding: 10px 22px; border-radius: 999px; border: 1.5px solid var(--pill-border); color: var(--pill-text); background: var(--pill-bg);
+  }
+
+  .middle { position: relative; }
+  .kicker { font-family: 'DM Mono', ui-monospace, monospace; font-size: 20px; letter-spacing: .3em; text-transform: uppercase; color: var(--kicker); }
+  .version { margin-top: 14px; font-family: 'DM Mono', ui-monospace, monospace; font-weight: 500; font-size: 112px; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
+  .version .v { color: var(--muted); }
+  .version .suffix { color: var(--kicker); font-size: .5em; letter-spacing: 0; margin-left: 10px; }
+
+  .bottom { color: var(--muted); font-size: 22px; gap: 14px; }
+  .bottom .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+
+  /* Release: lime. Nightly: violet. */
+  .release { --glow-a: var(--accent); --glow-b: var(--accent); --eq: var(--accent); --kicker: var(--accent); --pill-bg: var(--accent); --pill-text: #0a0a0a; --pill-border: var(--accent); }
+  .nightly { --glow-a: var(--purple); --glow-b: var(--accent); --eq: var(--purple); --kicker: #a99cff; --pill-bg: rgba(124,106,255,.12); --pill-text: #c4bbff; --pill-border: rgba(124,106,255,.6); }
+</style>
+</head>
+<body>
+  <div class="title-card" id="card">
+    <div class="glow a"></div><div class="glow b"></div><div class="grid"></div>
+    <div class="eq" id="eq"></div>
+
+    <div class="top">
+      <img class="logo" src="../../public/lokal-icon.png" alt="">
+      <span class="word">LOKAL</span>
+      <span class="pill" id="pill">Release</span>
+    </div>
+
+    <div class="middle">
+      <div class="kicker" id="kicker">New release</div>
+      <div class="version" id="version"></div>
+    </div>
+
+    <div class="bottom" id="bottom"></div>
+  </div>
+
+<script>
+  const q = new URLSearchParams(location.search)
+  const type = q.get('type') === 'nightly' ? 'nightly' : 'release'
+  const raw = String(q.get('v') || '').trim().replace(/^v/i, '') || 'dev'
+  const date = q.get('date') || new Date().toISOString().slice(0, 10)
+  const ref = q.get('ref') || ''
+
+  document.getElementById('card').classList.add(type)
+  document.getElementById('pill').textContent = type === 'nightly' ? 'Nightly' : 'Release'
+  document.getElementById('kicker').textContent = type === 'nightly' ? 'Nightly build' : 'New release'
+
+  // "3.2.2-nightly.4" -> 3.2.2 with "nightly.4" smaller beside it.
+  const [main, ...rest] = raw.split('-')
+  const version = document.getElementById('version')
+  const v = document.createElement('span'); v.className = 'v'; v.textContent = 'v'
+  version.append(v, document.createTextNode(main))
+  if (rest.length) {
+    const s = document.createElement('span'); s.className = 'suffix'; s.textContent = rest.join('-')
+    version.append(s)
+  }
+
+  const bits = [new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })]
+  if (type === 'nightly' && ref && ref !== 'main') bits.push(ref)
+  bits.push('Your music, local first')
+  const bottom = document.getElementById('bottom')
+  bits.forEach((text, i) => {
+    if (i) { const d = document.createElement('span'); d.className = 'dot'; bottom.append(d) }
+    const t = document.createElement('span'); t.textContent = text; bottom.append(t)
+  })
+
+  // Equalizer bars from the version string, so each banner differs a little.
+  let seed = [...raw].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
+  const rand = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 4294967296 }
+  const eq = document.getElementById('eq')
+  for (let i = 0; i < 22; i++) {
+    const bar = document.createElement('span')
+    const wave = 0.35 + 0.65 * Math.abs(Math.sin(i * 0.45 + rand()))
+    bar.style.height = `${Math.round(16 + wave * 96)}px`
+    bar.style.opacity = (0.25 + 0.75 * (i / 21)).toFixed(2)
+    eq.append(bar)
+  }
+</script>
+</body>
+</html>

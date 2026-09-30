@@ -203,48 +203,14 @@ jobs:
           # containing quote/statement syntax would otherwise land in this
           # heredoc as executable code (CWE-94) rather than as data.
           NIGHTLY_REF: ${{ inputs.ref || 'main' }}
+          NIGHTLY_TAG: ${{ needs.version.outputs.tag }}
         run: |
-          node - <<'EOF'
-          const { chromium } = require("playwright");
-
-          (async () => {
-            let browser;
-            try {
-              browser = await chromium.launch();
-              const page = await browser.newPage({
-                viewport: { width: 1200, height: 600 }
-              });
-
-              const bannerUrl = new URL("https://sipbuu.me/lokalver/");
-              bannerUrl.search = new URLSearchParams({
-                v: process.env.NIGHTLY_REF || "main",
-                type: "nightly",
-                app: "lokal",
-              }).toString();
-
-              await page.goto(bannerUrl.toString(), {
-                waitUntil: "networkidle", timeout: 20000
-              });
-
-              await page.locator(".title-card").screenshot({
-                path: "release-banner.png",
-                timeout: 15000
-              });
-            } catch (err) {
-              // sipbuu.me is a third-party site outside this repo's control --
-              // if it's down, slow, or its markup changed, that shouldn't block
-              // publishing the actual nightly binaries below. Log it and move
-              // on without a banner image instead of failing the whole job
-              // (the release step below already tolerates a missing banner:
-              // action-gh-release doesn't fail on an unmatched files entry,
-              // and a missing image in the release body markdown just renders
-              // as a broken image, not an error).
-              console.warn("[nightly-banner] Skipping banner, could not generate it:", err.message);
-            } finally {
-              if (browser) await browser.close();
-            }
-          })();
-          EOF
+          # Drawn from this repo (.github/banner): the outside page it used to
+          # be taken from stopped answering. Never fails the job.
+          # (A build of an older commit doesn't have the drawing: no banner then.)
+          if [ -f .github/banner/render.js ]; then
+            BANNER_VERSION="$NIGHTLY_TAG" BANNER_TYPE=nightly BANNER_REF="$NIGHTLY_REF" node .github/banner/render.js
+          fi
           # The release is re-created each run (see below), so only link a
           # banner this run actually made.
           if [ -f release-banner.png ]; then
