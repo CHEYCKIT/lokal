@@ -363,7 +363,7 @@ export default function Settings() {
   // hardwareAcceleration is what the next launch uses; running is what this
   // launch started with (main only applies it at startup).
   const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto', platform: null, running: null })
-  const [perfSaveError, setPerfSaveError] = useState('')
+  const [perfSaveError, setPerfSaveError] = useState(null) // { key, message }
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
   // the Side Panels toggle's saves -- see their declaration for why this
@@ -665,30 +665,22 @@ export default function Settings() {
     }
   }
 
-  const setHardwareAcceleration = async (on) => {
-    const before = perfSettings
-    setPerfSettings(p => ({ ...p, hardwareAcceleration: on }))
-    setPerfSaveError('')
+  // Saves one performance field. On failure only that field (and its error)
+  // changes, so overlapping saves of the two fields can't undo each other.
+  const savePerfField = async (key, value) => {
+    const before = perfSettings[key]
+    setPerfSettings(p => ({ ...p, [key]: value }))
+    setPerfSaveError(err => (err?.key === key ? null : err))
     try {
-      const res = await api.savePerfSettings({ hardwareAcceleration: on })
+      const res = await api.savePerfSettings({ [key]: value })
       if (res?.error) throw new Error(res.error)
     } catch (e) {
-      setPerfSettings(before)
-      setPerfSaveError(e.message || 'unknown error')
+      setPerfSettings(p => ({ ...p, [key]: before }))
+      setPerfSaveError({ key, message: e.message || 'unknown error' })
     }
   }
-  const setGraphicsBackend = async (graphicsBackend) => {
-    const before = perfSettings
-    setPerfSettings(p => ({ ...p, graphicsBackend }))
-    setPerfSaveError('')
-    try {
-      const res = await api.savePerfSettings({ graphicsBackend })
-      if (res?.error) throw new Error(res.error)
-    } catch (e) {
-      setPerfSettings(before)
-      setPerfSaveError(e.message || 'unknown error')
-    }
-  }
+  const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
+  const setGraphicsBackend = (graphicsBackend) => savePerfField('graphicsBackend', graphicsBackend)
   const perfRestartNeeded = !!perfSettings.running && (
     perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
     || (perfSettings.running.graphicsBackend || 'auto') !== (perfSettings.graphicsBackend || 'auto'))
@@ -1376,7 +1368,7 @@ export default function Settings() {
               <FolderOpen size={14} /> Show Logs
             </button>
           </Row>
-          <Row label="Hardware Acceleration" desc={perfSaveError ? `Couldn't save (${perfSaveError})` : perfRestartNeeded ? 'Restart Lokal to apply this change' : 'Draw the app with the graphics card. Turn off if the window flickers, flashes or shows glitches'}>
+          <Row label="Hardware Acceleration" desc={perfSaveError?.key === 'hardwareAcceleration' ? `Couldn't save (${perfSaveError.message})` : perfRestartNeeded ? 'Restart Lokal to apply this change' : 'Draw the app with the graphics card. Turn off if the window flickers, flashes or shows glitches'}>
             <div className="flex items-center gap-3">
               {perfRestartNeeded && (
                 <button
@@ -1394,7 +1386,7 @@ export default function Settings() {
             </div>
           </Row>
           {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
-            <Row label="Graphics Backend" desc="How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar">
+            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar'}>
               <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
                 aria-label="Graphics backend"
                 className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
