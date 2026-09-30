@@ -575,6 +575,20 @@ function sourceFilter(source) {
   return null
 }
 
+/**
+ * Library > Genre: songs with that genre, as their main genre or one of
+ * their genres ("J-Pop, City Pop"), ignoring case. Nothing given: no filter.
+ */
+function genreFilter(genre) {
+  const value = String(genre || '').trim()
+  if (!value) return null
+  const escaped = value.replace(/[\\%_]/g, char => `\\${char}`)
+  return {
+    sql: "(LOWER(TRIM(genre)) = LOWER(?) OR (',' || REPLACE(REPLACE(LOWER(genres), ', ', ','), ' ,', ',') || ',') LIKE LOWER(?) ESCAPE '\\')",
+    params: [value, `%,${escaped},%`],
+  }
+}
+
 function findArtistById(db, id) {
   let artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(id)
   if (!artist) {
@@ -1159,6 +1173,8 @@ function registerScannerHandlers(ipcMain) {
     if (opts.artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(opts.artistId) }
     const source = sourceFilter(opts.source)
     if (source) { where.push(source.sql); params.push(...source.params) }
+    const genre = genreFilter(opts.genre)
+    if (genre) { where.push(genre.sql); params.push(...genre.params) }
     if (where.length) sql += ' WHERE ' + where.join(' AND ')
     sql += ` ORDER BY ${opts.sort || 'added_at DESC'} LIMIT ${limit} OFFSET ${offset}`
     return db.prepare(sql).all(...params)
@@ -1819,7 +1835,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
+module.exports = { sourceFilter, genreFilter, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
 
 
 function registerExtraHandlers(ipcMain) {
