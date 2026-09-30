@@ -58,9 +58,14 @@ export default function OnlineCollections({ query }) {
   }
 
   const [failed, setFailed] = useState({}) // url -> error, for a download that couldn't start
+  // Being queued (a second click meanwhile would queue it twice).
+  const [starting, setStarting] = useState(() => new Set())
   const download = async (item) => {
+    if (starting.has(item.url)) return
+    setStarting(current => new Set(current).add(item.url))
     setFailed(f => ({ ...f, [item.url]: null }))
     const result = await enqueue('playlist', item.url, { title: item.title, from: 'Search', thumbnail: item.thumbnail || undefined }).catch(e => ({ error: e.message }))
+    setStarting(current => { const next = new Set(current); next.delete(item.url); return next })
     if (result?.error) setFailed(f => ({ ...f, [item.url]: result.error }))
   }
 
@@ -76,7 +81,7 @@ export default function OnlineCollections({ query }) {
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item, i) => {
           const job = jobs.find(j => !j.removed && j.kind === 'playlist' && j.url === item.url)
-          const active = isActive(job)
+          const active = isActive(job) || starting.has(item.url)
           const done = job?.status === 'done'
           const problem = failed[item.url] || (job?.status === 'error' ? job.error || 'Failed' : null)
           return (
@@ -104,7 +109,7 @@ export default function OnlineCollections({ query }) {
               <button
                 onClick={() => download(item)}
                 disabled={active || done}
-                title={done ? 'Downloaded to your library' : active ? job.message || 'Downloading…' : `Download all of ${item.title} to your library`}
+                title={done ? 'Downloaded to your library' : active ? job?.message || 'Downloading…' : `Download all of ${item.title} to your library`}
                 aria-label={done ? `${item.title} downloaded` : `Download all of ${item.title}`}
                 className={`flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors ${done ? 'text-green-400' : active ? 'text-accent' : 'bg-accent/15 text-accent hover:bg-accent/25'}`}
               >

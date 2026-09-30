@@ -84,7 +84,7 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
   }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const latestText = useRef(text)
-  latestText.current = text
+  useEffect(() => { latestText.current = text }, [text])
   const run = async (text) => {
     stopRunning()
     setError('')

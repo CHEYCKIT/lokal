@@ -2,7 +2,7 @@
 // album / channel) and a button to download it into the library, then its
 // progress right there. Enter in the search box starts the first choice.
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Disc3, Download, Library, Link2, ListMusic } from 'lucide-react'
 import { useDownloads, startDownloadSync } from '../store/downloads'
@@ -60,14 +60,14 @@ export default function LinkDownload({ link }) {
     if (result?.error) setError(result.error)
   }
 
-  // Enter in the search box: the first choice (the song, for a song in a playlist).
+  // Enter in the search box: the first choice (the song, for a song in a
+  // playlist). Pressed on this link, even before this was shown (the page
+  // still appearing), it's taken once.
   const submitSeq = useSearchStore(s => s.submitSeq)
-  const seenSubmit = useRef(submitSeq)
+  const takeSubmit = useSearchStore(s => s.takeSubmit)
   useEffect(() => {
-    if (submitSeq === seenSubmit.current) return
-    seenSubmit.current = submitSeq
-    start(choices[0])
-  }) // eslint-disable-line react-hooks/exhaustive-deps
+    if (takeSubmit(link)) start(choices[0])
+  }, [submitSeq, link]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const started = choices.map(jobFor).filter(Boolean)
   const what = kind === 'single' ? 'Song' : kind === 'both' ? 'Song from a playlist' : 'Playlist, album or channel'

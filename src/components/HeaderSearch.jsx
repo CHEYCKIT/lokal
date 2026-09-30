@@ -95,7 +95,8 @@ export default function HeaderSearch() {
     try { input.setSelectionRange(end, end) } catch {}
   }, [focusSeq])
 
-  const isLink = !!asLink(query)
+  const link = asLink(query)
+  const isLink = !!link
   // No past searches under a pasted link (and links aren't kept as searches).
   const suggestions = useMemo(() => (isLink ? [] : matchRecentSearches(history, query)), [history, query, isLink])
   useEffect(() => { setActive(-1) }, [query, dropdownOpen])
@@ -156,7 +157,7 @@ export default function HeaderSearch() {
     }
     if (e.key === 'Enter') {
       if (dropdownOpen && active >= 0 && suggestions[active]) { e.preventDefault(); pick(suggestions[active]); return }
-      if (isLink) { e.preventDefault(); openSearchPage(); submit(); return }
+      if (isLink) { e.preventDefault(); openSearchPage(); submit(link); return }
       if (query.trim()) saveRecentSearch(query)
       setDropdownOpen(false)
       return

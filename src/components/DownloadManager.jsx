@@ -192,6 +192,7 @@ function DownloadedPlaylists() {
   const [list, setList] = useState(() => peekCache('dl:playlists') || [])
   const [loaded, setLoaded] = useState(() => peekCache('dl:playlists') !== undefined)
   const [confirming, setConfirming] = useState(null) // a playlist's id, asked "Remove?"
+  const [problem, setProblem] = useState('') // why the last download again / remove failed
   const load = () => Promise.resolve(api.getDownloadedPlaylists())
     .then(response => {
       if (!Array.isArray(response)) return
@@ -202,23 +203,32 @@ function DownloadedPlaylists() {
     .finally(() => setLoaded(true))
   useEffect(() => { load() }, [])
 
+  // Both answer { error } or throw when they fail: say so.
+  const attempt = (call) => Promise.resolve().then(call).then(result => result?.error || null, e => e?.message || 'Something went wrong')
   const redownload = async (id) => {
-    await Promise.resolve(api.redownloadPlaylist(id)).catch(() => {})
+    setProblem('')
+    const failed = await attempt(() => api.redownloadPlaylist(id))
+    if (failed) setProblem(`Couldn't download it again: ${failed}`)
     useDownloads.getState().load()
     load()
   }
   const remove = async (id) => {
     setConfirming(null)
+    setProblem('')
     setList(current => current.filter(playlist => playlist.id !== id))
-    await Promise.resolve(api.deleteDownloadedPlaylist(id)).catch(() => {})
+    const failed = await attempt(() => api.deleteDownloadedPlaylist(id))
+    // Reloading brings it back when it wasn't removed.
+    if (failed) setProblem(`Couldn't remove it: ${failed}`)
     load()
   }
+  const problemLine = problem ? <p role="alert" className="px-2 pb-1 text-[11px] text-red-400">{problem}</p> : null
 
   if (!list.length) {
-    return <p className="px-3 py-8 text-center text-xs text-muted">{loaded ? 'No playlists downloaded yet. Search for one, or paste its link.' : 'Loading…'}</p>
+    return <>{problemLine}<p className="px-3 py-8 text-center text-xs text-muted">{loaded ? 'No playlists downloaded yet. Search for one, or paste its link.' : 'Loading…'}</p></>
   }
   return (
     <div className="space-y-0.5">
+      {problemLine}
       {list.map(playlist => {
         const downloading = jobs.some(job => isActive(job) && job.kind === 'playlist' && (job.playlistId === playlist.id || (playlist.url && job.url === playlist.url)))
         const title = displayTitle(playlist, 'Playlist')

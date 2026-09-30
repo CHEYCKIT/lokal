@@ -149,7 +149,8 @@ export function splitLink(link) {
   try {
     const url = new URL(link)
     const list = url.searchParams.get('list')
-    const id = url.hostname.replace(/^www\./, '') === 'youtu.be' ? url.pathname.slice(1) : url.searchParams.get('v')
+    // youtu.be/<id>: only the first part of the path is the video.
+    const id = url.hostname.replace(/^www\./, '') === 'youtu.be' ? url.pathname.split('/').filter(Boolean)[0] : url.searchParams.get('v')
     return {
       song: id ? `https://www.youtube.com/watch?v=${id}` : link,
       list: list ? `https://www.youtube.com/playlist?list=${list}` : link,
