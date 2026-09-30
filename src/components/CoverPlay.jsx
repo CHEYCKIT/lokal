@@ -20,7 +20,7 @@ export default function CoverPlay({ label, onPlay, rounded = '' }) {
       type="button"
       aria-label={label}
       title={label}
-      onClick={(event) => { event.stopPropagation(); onPlay?.() }}
+      onClick={(event) => { event.stopPropagation(); onPlay?.(event) }}
       className={`group/play absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 outline-none transition duration-200 hover:bg-black/45 hover:opacity-100 focus-visible:bg-black/45 focus-visible:opacity-100 ${rounded}`}
     >
       <PlayGlyph className="h-12 w-12 scale-90 drop-shadow-[0_4px_14px_rgba(0,0,0,0.6)] transition-transform duration-200 group-hover/play:scale-100 group-active/play:scale-90" />

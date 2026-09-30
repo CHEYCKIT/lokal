@@ -28,6 +28,9 @@ export default function Modal({ open, onClose, title, children, width = 'max-w-m
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 8 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={typeof title === 'string' ? title : undefined}
             className={`relative z-10 flex max-h-[calc(100vh-1.5rem)] w-full flex-col ${width} bg-elevated border border-border rounded-2xl shadow-2xl overflow-hidden sm:max-h-[calc(100vh-2rem)]`}
             onClick={(e) => e.stopPropagation()}
           >

@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Disc3, Loader2, Play, Search } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Disc3, ExternalLink, ListEnd, Loader2, Play, Plus, Search, Trash2, User } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 import FadeImg from '../components/FadeImg'
 import CoverPlay from '../components/CoverPlay'
+import ContextMenu, { useContextMenu } from '../components/ContextMenu'
+import SelectionBar from '../components/SelectionBar'
+import DeleteTracksDialog from '../components/DeleteTracksDialog'
+import { useSelection } from '../selection'
+import { addToPlaylistMany, addToQueueMany, libraryTracks, playNextMany } from '../trackActions'
 import { plural } from '../plural'
 
 const PAGE_SIZE = 48
@@ -134,7 +139,7 @@ const FIRST_SCREEN_CARDS = 24
  * plays the release (darkened, with a play glyph, on hover); the name and
  * the text under it open it.
  */
-function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
+function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false, animateIn = true }) {
   const artSrc = getAlbumArtwork(album)
 
   return (
@@ -143,7 +148,9 @@ function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
       whileHover={{ y: -3 }}
-      className="group overflow-hidden rounded-[1.5rem] border border-border bg-card/60 transition-colors hover:border-accent/35"
+      onContextMenu={onContextMenu}
+      aria-selected={selected}
+      className={`group overflow-hidden rounded-[1.5rem] border bg-card/60 transition-colors ${selected ? 'border-accent ring-2 ring-accent/60' : 'border-border hover:border-accent/35'}`}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
       <div className="relative aspect-square overflow-hidden bg-black/20">
@@ -157,8 +164,13 @@ function AlbumCard({ album, onClick, onPlay, animateIn = true }) {
           </div>
         )}
         <CoverPlay label={`Play ${album.title}`} onPlay={onPlay} />
+        {selected && (
+          <span className="pointer-events-none absolute left-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-base shadow-lg">
+            <Check size={14} strokeWidth={3} />
+          </span>
+        )}
       </div>
-      <button type="button" onClick={onClick} className="group/open relative block w-full overflow-hidden px-4 py-3 text-left">
+      <button type="button" onClick={(event) => onClick?.(event)} className="group/open relative block w-full overflow-hidden px-4 py-3 text-left">
         <div
           className="absolute inset-0 scale-110 blur-xl"
           style={{
@@ -409,6 +421,62 @@ export default function Albums() {
     playTrack(track, albumTracks, albumContext)
   }
 
+  // ---- Selecting releases (grid) and songs (album page), and what can be
+  // done with them: a right click, or the bar shown while some are selected.
+  const menu = useContextMenu()
+  const [deleteRequest, setDeleteRequest] = useState(null)
+  const releaseKey = (album) => `${String(album.title || '').toLowerCase()}|${String(album.album_artist || album.artists || '').toLowerCase()}`
+  const shownAlbums = useMemo(() => groupedAlbums.flatMap(group => group.items), [groupedAlbums])
+  const shownKeys = useMemo(() => shownAlbums.map(releaseKey), [shownAlbums])
+  const releasesFor = (keys) => shownAlbums.filter(album => keys.includes(releaseKey(album)))
+  const tracksOf = async (albums) => (await Promise.all(albums.map(album => api.getAlbumTracks(album).catch(() => []))))
+    .flatMap(list => (Array.isArray(list) ? list : []))
+  const askDeleteReleases = async (albums) => {
+    const tracks = libraryTracks(await tracksOf(albums))
+    if (!tracks.length) return
+    setDeleteRequest({ tracks, what: albums.length === 1 ? albums[0].title : `${albums.length} releases` })
+  }
+  const releaseSelection = useSelection(shownKeys, { onDelete: (keys) => askDeleteReleases(releasesFor(keys)) })
+  const selectedReleases = () => releasesFor([...releaseSelection.selected])
+  const releaseActions = (albums) => {
+    const count = albums.length > 1 ? ` ${albums.length} releases` : ''
+    const withTracks = (use) => async () => use(await tracksOf(albums))
+    return [
+      { label: `Play${count}`, icon: Play, onSelect: withTracks(tracks => tracks.length && playQueue(tracks, 0, albums.length === 1 ? makeAlbumContext(albums[0]) : null)) },
+      { label: 'Play next', icon: Clock, onSelect: withTracks(playNextMany) },
+      { label: 'Add to queue', icon: ListEnd, onSelect: withTracks(addToQueueMany) },
+      { label: 'Add to playlist…', icon: Plus, onSelect: withTracks(addToPlaylistMany) },
+      albums.length === 1 && { separator: true },
+      albums.length === 1 && { label: 'Open', icon: ExternalLink, onSelect: () => navigate('/albums', { state: { album: albums[0] } }) },
+      albums.length === 1 && { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(albums[0].album_artist || albums[0].artists)) },
+      { separator: true },
+      { label: albums.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDeleteReleases(albums) },
+    ].filter(Boolean)
+  }
+  const openReleaseMenu = (event, album) => menu.open(event, releaseActions(releasesFor(releaseSelection.contextSelect(releaseKey(album)))))
+
+  // Songs on the album page: click selects, double click plays.
+  const albumTrackIds = useMemo(() => albumTracks.map(track => track.id), [albumTracks])
+  const askDeleteTracks = (tracks) => {
+    const deletable = libraryTracks(tracks)
+    if (deletable.length) setDeleteRequest({ tracks: deletable, title: deletable.length === 1 ? deletable[0].title : null })
+  }
+  const trackSelection = useSelection(albumTrackIds, { onDelete: (ids) => askDeleteTracks(albumTracks.filter(track => ids.includes(String(track.id)))) })
+  const selectedAlbumTracks = () => albumTracks.filter(track => trackSelection.has(track.id))
+  const openTrackMenu = (event, track) => {
+    const ids = trackSelection.contextSelect(track.id)
+    const list = albumTracks.filter(item => ids.includes(String(item.id)))
+    const count = list.length > 1 ? ` ${list.length} songs` : ''
+    menu.open(event, [
+      { label: `Play${count}`, icon: Play, onSelect: () => (list.length === 1 ? playQueue(albumTracks, albumTracks.indexOf(list[0]), albumContext) : playQueue(list, 0, albumContext)) },
+      { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
+      { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
+      { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+      { separator: true },
+      { label: list.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDeleteTracks(list) },
+    ])
+  }
+
   const playAlbumRelease = async (album) => {
     const tracks = await api.getAlbumTracks(album)
     if (Array.isArray(tracks) && tracks.length) {
@@ -500,31 +568,55 @@ export default function Albums() {
               ) : albumTracks.length === 0 ? (
                 <div className="px-6 py-16 text-center text-sm text-muted">No tracks found for this release.</div>
               ) : (
-                <div className="divide-y divide-border/60">
+                <div className="divide-y divide-border/60" onClick={trackSelection.clear}>
+                  {trackSelection.count > 0 && (
+                    <div className="px-4 pt-3">
+                      <SelectionBar
+                        label={`${trackSelection.count} selected`}
+                        onClear={trackSelection.clear}
+                        actions={[
+                          { label: 'Play', icon: Play, onClick: () => playQueue(selectedAlbumTracks(), 0, albumContext) },
+                          { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedAlbumTracks()) },
+                          { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedAlbumTracks()) },
+                          { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedAlbumTracks()) },
+                          { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDeleteTracks(selectedAlbumTracks()) },
+                        ]}
+                      />
+                    </div>
+                  )}
                   {albumTracks.map((track, index) => {
                     const isCurrent = currentTrack?.id === track.id
                     const isHovered = hoveredTrack === track.id
                     const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
+                    const isSelected = trackSelection.has(track.id)
                     return (
-                      <button
+                      // Click selects (Ctrl/Cmd adds, Shift a range), double click
+                      // or the number's play button plays, right click for more.
+                      <div
                         key={track.id}
                         ref={isHighlighted ? highlightRowRef : undefined}
-                        type="button"
-                        onClick={(event) => handleTrackPlay(track, index, event)}
+                        role="row"
+                        tabIndex={0}
+                        aria-selected={isSelected}
+                        onClick={(event) => { event.stopPropagation(); trackSelection.click(track.id, event, { always: true }) }}
                         onDoubleClick={() => playQueue(albumTracks, index, albumContext)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') playQueue(albumTracks, index, albumContext) }}
+                        onContextMenu={(event) => openTrackMenu(event, track)}
                         onMouseEnter={() => setHoveredTrack(track.id)}
                         onMouseLeave={() => setHoveredTrack(null)}
-                        className={`flex w-full items-center gap-4 px-6 py-3 text-left transition-colors ${isCurrent ? 'bg-accent/10' : 'hover:bg-elevated/80'} ${isHighlighted ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''}`}
+                        className={`flex w-full cursor-default select-none items-center gap-4 px-6 py-3 text-left outline-none transition-colors focus-visible:bg-elevated/80 ${isSelected ? 'bg-accent/15' : isCurrent ? 'bg-accent/10' : 'hover:bg-elevated/80'} ${isHighlighted ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''}`}
                       >
                         <div className="flex w-8 items-center justify-center">
                           {isHovered || isCurrent ? (
-                            <span className={isCurrent ? 'text-accent' : 'text-white'}>
+                            <button type="button" onClick={(event) => handleTrackPlay(track, index, event)}
+                              aria-label={isCurrent && isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+                              className={isCurrent ? 'text-accent' : 'text-white'}>
                               {isCurrent && isPlaying ? (
                                 <Disc3 size={14} className="animate-spin" />
                               ) : (
                                 <Play size={14} fill="currentColor" className="translate-x-px" />
                               )}
-                            </span>
+                            </button>
                           ) : (
                             <span className={`text-xs font-display ${isCurrent ? 'text-accent' : 'text-muted'}`}>
                               {track.display_track_num || track.track_num || index + 1}
@@ -538,7 +630,7 @@ export default function Albums() {
                         <span className="text-xs text-muted">
                           {track.duration ? `${Math.floor(track.duration / 60)}:${String(Math.floor(track.duration % 60)).padStart(2, '0')}` : ''}
                         </span>
-                      </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -556,6 +648,13 @@ export default function Albums() {
           </div>
         ) : (
           <div className="space-y-10">
+            {releaseSelection.count > 0 && (
+              <SelectionBar
+                label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+                onClear={releaseSelection.clear}
+                actions={releaseActions(selectedReleases()).filter(item => !item.separator && item.label !== 'Open' && item.label !== 'Go to artist').map(item => ({ label: item.label.replace(/ \d+ releases/, '').replace('…', '').replace(' from library', ''), icon: item.icon, onClick: item.onSelect, danger: item.danger }))}
+              />
+            )}
             {groupedAlbums.map((group) => (
               <section key={group.key} className="space-y-4">
                 <div className="flex items-end justify-between gap-4">
@@ -569,10 +668,15 @@ export default function Albums() {
                     <AlbumCard
                       key={`${group.key}-${album.title}-${album.album_artist || album.artists || 'release'}-${index}`}
                       album={album}
-                      onClick={() => {
-                        navigate('/albums', { state: { album } })
+                      selected={releaseSelection.has(releaseKey(album))}
+                      // Ctrl/Cmd or Shift + click selects instead of opening or playing.
+                      onClick={(event) => {
+                        if (!releaseSelection.click(releaseKey(album), event)) navigate('/albums', { state: { album } })
                       }}
-                      onPlay={() => playAlbumRelease(album)}
+                      onPlay={(event) => {
+                        if (!releaseSelection.click(releaseKey(album), event)) playAlbumRelease(album)
+                      }}
+                      onContextMenu={(event) => openReleaseMenu(event, album)}
                       animateIn={index >= FIRST_SCREEN_CARDS}
                     />
                   ))}
@@ -587,6 +691,17 @@ export default function Albums() {
           </div>
         )}
       </div>
+      <DeleteTracksDialog
+        request={deleteRequest}
+        onClose={() => setDeleteRequest(null)}
+        onDone={(ids) => {
+          const gone = new Set(ids.map(String))
+          setAlbumTracks(current => current.filter(track => !gone.has(String(track.id))))
+          releaseSelection.clear()
+          trackSelection.clear()
+        }}
+      />
+      <ContextMenu menu={menu} />
     </div>
   )
 }
