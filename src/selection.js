@@ -5,8 +5,14 @@
 // selection, Ctrl/Cmd+A selects everything, Escape clears it and Delete
 // (or Backspace) calls onDelete. A right click on an unselected item
 // selects just that one first, so the menu acts on what's highlighted.
+// One selection at a time: starting one (say in an artist's releases)
+// clears any other on the page (their popular songs), so there's only ever
+// one selection bar and it's clear what it acts on.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+// Every selection's clear(), so a new one can clear the others.
+const selections = new Set()
 
 const typing = (target) => !!target?.closest?.('input, textarea, select, [contenteditable="true"]')
 
@@ -29,7 +35,17 @@ export function useSelection(keys, { onDelete } = {}) {
     })
   }, [keyList])
 
-  const clear = useCallback(() => { anchor.current = null; setSelected(new Set()) }, [])
+  const clear = useCallback(() => { anchor.current = null; setSelected(current => (current.size ? new Set() : current)) }, [])
+
+  useEffect(() => {
+    selections.add(clear)
+    return () => { selections.delete(clear) }
+  }, [clear])
+  const active = selected.size > 0
+  useEffect(() => {
+    if (active) selections.forEach(other => { if (other !== clear) other() })
+  }, [active, clear])
+
   const selectAll = useCallback(() => setSelected(new Set(keyList)), [keyList])
 
   /**
