@@ -173,7 +173,7 @@ function HomeContent({ user }) {
   }
 
   return (
-    <div className="p-6 space-y-7 max-w-5xl pb-10">
+    <div className="p-6 space-y-7 w-full max-w-5xl mx-auto pb-10">
       <div>
         <h1 className="text-2xl font-display text-white">{greeting()}</h1>
         <p className="text-sm text-muted mt-1">Here's what's happening with your music</p>

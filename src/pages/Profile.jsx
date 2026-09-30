@@ -179,7 +179,7 @@ export default function Profile() {
         <div className="relative h-56 overflow-hidden">
           <div className="w-full h-full bg-gradient-to-b from-accent/10 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
-          <div className="absolute bottom-5 left-8 flex items-end gap-5">
+          <div className="absolute bottom-5 inset-x-0 mx-auto w-full max-w-6xl px-8 flex items-end gap-5">
             <div className="w-24 h-24 rounded-full border-2 border-border overflow-hidden bg-elevated flex items-center justify-center">
               <UserRound size={34} className="text-muted" />
             </div>
@@ -191,7 +191,7 @@ export default function Profile() {
           </div>
         </div>
 
-        <div className="px-8 py-5 space-y-7 max-w-4xl">
+        <div className="px-8 py-5 space-y-7 w-full max-w-6xl mx-auto">
           <div className="flex items-center gap-3">
             <button
               onClick={() => openAuth('login')}
@@ -363,7 +363,7 @@ export default function Profile() {
             <ImageIcon size={12} /> {uploadingBanner ? 'Uploading banner...' : 'Upload banner'}
           </span>
         </button>
-        <div className="absolute bottom-5 left-8 flex items-end gap-5">
+        <div className="absolute bottom-5 inset-x-0 mx-auto w-full max-w-6xl px-8 flex items-end gap-5">
           <button onClick={() => avatarInputRef.current?.click()} className="relative flex-shrink-0 group/avatar">
             <div className="w-24 h-24 rounded-full border-2 border-border overflow-hidden bg-elevated flex items-center justify-center">
               {user.avatar_path ? (
@@ -400,7 +400,7 @@ export default function Profile() {
         </div>
       </div>
 
-      <div className="px-8 py-5 space-y-7">
+      <div className="px-8 py-5 space-y-7 w-full max-w-6xl mx-auto">
         <section>
           <div className="flex items-center justify-between gap-3 mb-2">
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">About</h2>

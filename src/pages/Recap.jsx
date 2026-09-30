@@ -497,7 +497,7 @@ function RecapContent({ user }) {
   })
 
   return (
-    <div className="p-6 pb-10 space-y-6 max-w-6xl">
+    <div className="p-6 pb-10 space-y-6 w-full max-w-6xl mx-auto">
       <div className="flex flex-col gap-4 @lg:flex-row @lg:items-end @lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-accent">
