@@ -422,7 +422,7 @@ function RecapContent({ user }) {
   return (
     <div className="p-6 pb-10 space-y-6 max-w-6xl">
       <div className="flex flex-col gap-4 @lg:flex-row @lg:items-end @lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-accent">
             <Sparkles size={13} />
             Listening Recaps
@@ -431,18 +431,20 @@ function RecapContent({ user }) {
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
           <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday) and month, plus each year, built from your local listening sessions.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50">
+        {/* One row, always: short labels that never wrap, and on a narrow
+            page the icons alone (named on hover and for screen readers). */}
+        <div className="flex flex-shrink-0 flex-nowrap gap-2">
+          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} title="Replay this era" aria-label="Replay this era" className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50 @md:px-4">
             <Play size={14} fill="currentColor" />
-            Replay Era
+            <span className="hidden @sm:inline">Replay</span>
           </button>
-          <button onClick={savePlaylist} disabled={loading || !replayQueue.length} className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50">
+          <button onClick={savePlaylist} disabled={loading || !replayQueue.length} title="Save as a playlist" aria-label="Save as a playlist" className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-accent/40 bg-accent/15 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50 @md:px-4">
             <Plus size={14} />
-            Add To Playlists
+            <span className="hidden @sm:inline">Save as playlist</span>
           </button>
-          <button onClick={() => setStoryOpen(true)} disabled={loading || !recap || recap.totalPlays === 0} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50">
+          <button onClick={() => setStoryOpen(true)} disabled={loading || !recap || recap.totalPlays === 0} title="Show the story" aria-label="Show the story" className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-border bg-elevated px-3 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50 @md:px-4">
             <Sparkles size={14} />
-            Show Story
+            <span className="hidden @sm:inline">Story</span>
           </button>
         </div>
       </div>
