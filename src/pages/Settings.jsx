@@ -674,13 +674,21 @@ export default function Settings() {
     try {
       const res = await api.savePerfSettings({ [key]: value })
       if (res?.error) throw new Error(res.error)
+      return true
     } catch (e) {
       setPerfSettings(p => ({ ...p, [key]: before }))
       setPerfSaveError({ key, message: e.message || 'unknown error' })
+      return false
     }
   }
   const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
-  const setGraphicsBackend = (graphicsBackend) => savePerfField('graphicsBackend', graphicsBackend)
+  // Picking a backend also clears the OpenGL crash fallback (see main.js), so
+  // Automatic means OpenGL again.
+  const setGraphicsBackend = async (graphicsBackend) => {
+    if (await savePerfField('graphicsBackend', graphicsBackend)) {
+      setPerfSettings(p => (p.autoBackend ? { ...p, autoBackend: 'gl' } : p))
+    }
+  }
   const perfRestartNeeded = !!perfSettings.running && (
     perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
     || (perfSettings.running.graphicsBackend || 'auto') !== (perfSettings.graphicsBackend || 'auto'))
@@ -1386,11 +1394,13 @@ export default function Settings() {
             </div>
           </Row>
           {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
-            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar'}>
+            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})`
+              : (perfSettings.graphicsBackend || 'auto') === 'auto' && perfSettings.autoBackend === 'd3d11' ? 'OpenGL crashed on this PC, so Automatic uses Direct3D 11 (which flashes white when the window comes back from the taskbar). Pick OpenGL to try it again'
+              : 'How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar'}>
               <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
                 aria-label="Graphics backend"
                 className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-                <option value="auto">Automatic (OpenGL)</option>
+                <option value="auto">Automatic ({perfSettings.autoBackend === 'd3d11' ? 'Direct3D 11' : 'OpenGL'})</option>
                 <option value="gl">OpenGL</option>
                 <option value="d3d11">Direct3D 11</option>
                 <option value="d3d9">Direct3D 9</option>
