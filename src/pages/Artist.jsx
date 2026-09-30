@@ -214,13 +214,12 @@ export default function Artist() {
         {artist.albums?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
-            {releaseSelection.count > 0 && (
-              <SelectionBar
-                label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
-                onClear={releaseSelection.clear}
-                actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
-              />
-            )}
+            <SelectionBar
+              open={releaseSelection.count > 0}
+              label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+              onClear={releaseSelection.clear}
+              actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
+            />
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
               {releaseList.map((album) => {
                 const firstTrack = artist.tracks?.find((track) => track.album === album.title)

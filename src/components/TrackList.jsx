@@ -596,21 +596,20 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
 
   return (
     <div className="w-full" onClick={handleContainerClick}>
-      {selection.count > 0 && (
-        <SelectionBar
-          label={`${selection.count} selected`}
-          onClear={selection.clear}
-          actions={[
-            { label: 'Play', icon: Play, onClick: () => playMany(selectedTracks()) },
-            { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedTracks()) },
-            { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedTracks()) },
-            { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedTracks()) },
-            { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true) },
-            { label: 'Remove', icon: ListMinus, onClick: () => removeMany(selectedTracks()), hidden: !onRemove },
-            { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !libraryTracks(selectedTracks()).length },
-          ]}
-        />
-      )}
+      <SelectionBar
+        open={selection.count > 0}
+        label={`${selection.count} selected`}
+        onClear={selection.clear}
+        actions={[
+          { label: 'Play', icon: Play, onClick: () => playMany(selectedTracks()) },
+          { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedTracks()) },
+          { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedTracks()) },
+          { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedTracks()) },
+          { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true) },
+          { label: 'Remove', icon: ListMinus, onClick: () => removeMany(selectedTracks()), hidden: !onRemove },
+          { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !libraryTracks(selectedTracks()).length },
+        ]}
+      />
 
       <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}>
         {playlistId && <span></span>}

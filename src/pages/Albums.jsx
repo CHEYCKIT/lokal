@@ -541,21 +541,18 @@ export default function Albums() {
                 <div className="px-6 py-16 text-center text-sm text-muted">No tracks found for this release.</div>
               ) : (
                 <div className="divide-y divide-border/60" onClick={trackSelection.clear}>
-                  {trackSelection.count > 0 && (
-                    <div className="px-4 pt-3">
-                      <SelectionBar
-                        label={`${trackSelection.count} selected`}
-                        onClear={trackSelection.clear}
-                        actions={[
-                          { label: 'Play', icon: Play, onClick: () => playQueue(selectedAlbumTracks(), 0, albumContext) },
-                          { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedAlbumTracks()) },
-                          { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedAlbumTracks()) },
-                          { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedAlbumTracks()) },
-                          { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDeleteTracks(selectedAlbumTracks()) },
-                        ]}
-                      />
-                    </div>
-                  )}
+                  <SelectionBar
+                    open={trackSelection.count > 0}
+                    label={`${trackSelection.count} selected`}
+                    onClear={trackSelection.clear}
+                    actions={[
+                      { label: 'Play', icon: Play, onClick: () => playQueue(selectedAlbumTracks(), 0, albumContext) },
+                      { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedAlbumTracks()) },
+                      { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedAlbumTracks()) },
+                      { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedAlbumTracks()) },
+                      { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDeleteTracks(selectedAlbumTracks()) },
+                    ]}
+                  />
                   {albumTracks.map((track, index) => {
                     const isCurrent = currentTrack?.id === track.id
                     const isHovered = hoveredTrack === track.id
@@ -620,13 +617,12 @@ export default function Albums() {
           </div>
         ) : (
           <div className="space-y-10">
-            {releaseSelection.count > 0 && (
-              <SelectionBar
-                label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
-                onClear={releaseSelection.clear}
-                actions={releases.barActions(selectedReleases())}
-              />
-            )}
+            <SelectionBar
+              open={releaseSelection.count > 0}
+              label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+              onClear={releaseSelection.clear}
+              actions={releases.barActions(selectedReleases())}
+            />
             {groupedAlbums.map((group) => (
               <section key={group.key} className="space-y-4">
                 <div className="flex items-end justify-between gap-4">
