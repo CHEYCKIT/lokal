@@ -95,9 +95,9 @@ export default function Library() {
 
   return (
     <div className="p-6 space-y-4 pb-10">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-lg uppercase tracking-widest text-white">Library</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button onClick={() => navigate('/albums')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-elevated border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">
             <Disc3 size={13} /> Albums
@@ -142,7 +142,7 @@ export default function Library() {
       )}
 
       {tracks.length > 0 && view === 'grid' && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
           {tracks.map((t, i) => {
             const src = artSrc(t)
             return (

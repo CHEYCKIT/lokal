@@ -19,13 +19,13 @@ const tourSteps = [
     id: 'downloader',
     dataTour: 'downloader',
     title: 'Your Downloads',
-    description: 'Search for anything (or paste a link) to stream it or save it to your library. Downloads show up here.',
+    description: 'Search for anything (or paste a link) to stream it or save it to your library. Your downloads are up here.',
   },
   {
     id: 'settings',
     dataTour: 'settings',
     title: 'Customize Settings',
-    description: 'Adjust themes, audio settings, and external tools.',
+    description: 'Themes, audio, download format and external tools, up here next to Downloads.',
   }
 ]
 
@@ -88,9 +88,10 @@ export default function PostOnboardingTour() {
           pointerEvents: 'none',
         })
 
+        // Kept on screen: the header's Downloads and Settings are at its right end.
         setTooltipPosition({
           top: rect.bottom + 12,
-          left: inSidebar ? sidebarRect.left + rect.width + 16 : rect.left,
+          left: inSidebar ? sidebarRect.left + rect.width + 16 : Math.max(12, Math.min(rect.left, window.innerWidth - 292)),
         })
       }
     }

@@ -1,13 +1,15 @@
-// Download manager, after BitChord's: a ring on the sidebar's Downloads entry
-// shows the whole batch's progress and stays until you've seen how it ended.
-// The entry opens a panel with every download, where each can be cancelled,
-// retried or cleared, and the playlists downloaded so far (to download again
-// for what's new, or remove). Downloads start from Search.
+// Download manager, after BitChord's: the Downloads button in the window
+// header turns into a ring showing the whole batch's progress, and stays so
+// until you've seen how it ended. It opens a panel with every download, where
+// each can be cancelled, retried or cleared, and the playlists downloaded so
+// far (to download again for what's new, or remove). The panel drops down
+// from the button and grows inwards (to the left), so the Settings button
+// next to it, nearer the edge, stays in reach. Downloads start from Search.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
@@ -37,34 +39,41 @@ export function ProgressRing({ value = 0, size = 18, stroke = 2.25, settled = fa
   )
 }
 
-/** Sits at the end of the sidebar's Download entry; nothing when there's no batch. */
-export function DownloadIndicator() {
+/**
+ * The header's Downloads button: a download icon, or while there's a batch,
+ * its progress ring with how many are left (a check or "!" once it's over).
+ */
+export function DownloadsButton() {
   const jobs = useDownloads(s => s.jobs)
+  const panelOpen = useDownloads(s => s.panelOpen)
   const togglePanel = useDownloads(s => s.togglePanel)
-  const ref = useRef(null)
   useEffect(() => { startDownloadSync() }, [])
   const { batch, active, failed, progress, settled } = batchOf(jobs)
-  if (!batch.length) return null
-  const label = settled
-    ? failed.length ? `${failed.length} download${failed.length === 1 ? '' : 's'} failed` : 'Downloads finished'
-    : `${active.length} download${active.length === 1 ? '' : 's'} in progress`
+  const label = !batch.length ? 'Downloads'
+    : settled
+      ? failed.length ? `Downloads: ${failed.length} failed` : 'Downloads finished'
+      : `Downloads: ${active.length} in progress`
   return (
-    <span
-      ref={ref}
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
+      data-downloads-toggle
+      data-tour="downloader"
+      onClick={togglePanel}
       title={label}
       aria-label={label}
-      data-download-indicator
-      onClick={(e) => { e.stopPropagation(); togglePanel() }}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); togglePanel() } }}
-      className={`relative flex h-5 w-5 items-center justify-center rounded-full ${settled && failed.length ? 'text-red-400' : 'text-accent'} hover:bg-white/10`}
+      aria-expanded={panelOpen}
+      aria-haspopup="dialog"
+      className={`relative flex h-7 w-7 items-center justify-center rounded-full transition-colors ${panelOpen ? 'bg-accent/15 text-accent' : batch.length ? (settled && failed.length ? 'text-red-400 hover:bg-elevated' : 'text-accent hover:bg-elevated') : 'text-muted hover:bg-elevated hover:text-text'}`}
     >
-      <ProgressRing value={settled ? 100 : progress} settled={settled} failed={failed.length > 0} />
-      <span className="absolute inset-0 flex items-center justify-center text-[8.5px] font-bold leading-none">
-        {settled ? (failed.length ? '!' : <Check size={9} strokeWidth={3.5} />) : active.length}
-      </span>
-    </span>
+      {batch.length ? (
+        <>
+          <ProgressRing value={settled ? 100 : progress} size={20} settled={settled} failed={failed.length > 0} />
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold leading-none">
+            {settled ? (failed.length ? '!' : <Check size={10} strokeWidth={3.5} />) : active.length}
+          </span>
+        </>
+      ) : <Download size={15} />}
+    </button>
   )
 }
 
@@ -267,8 +276,9 @@ function DownloadedPlaylists() {
   )
 }
 
-// What opens the panel: the ring, and the sidebar's Downloads entry.
-const OPENERS = '[data-download-indicator], [data-downloads-toggle]'
+// What opens the panel: the header's Downloads button.
+const OPENERS = '[data-downloads-toggle]'
+const PANEL_WIDTH = 340
 
 export function DownloadManagerPanel() {
   const panelOpen = useDownloads(s => s.panelOpen)
@@ -276,16 +286,24 @@ export function DownloadManagerPanel() {
   const { closePanel, cancelAll, clearFinished } = useDownloads.getState()
   const requestFocus = useSearchStore(s => s.requestFocus)
   const nav = useNavigate()
-  const [anchor, setAnchor] = useState({ top: 80, left: 232 })
+  const [anchor, setAnchor] = useState({ top: 44, left: 12, width: PANEL_WIDTH })
   const [tab, setTab] = useState('queue')
   const panelRef = useRef(null)
 
+  // Under the button, its right edge lined up with the button's: it grows
+  // to the left, never over the Settings button further right.
   useLayoutEffect(() => {
-    if (!panelOpen) return
-    const el = document.querySelector('[data-download-indicator]') || document.querySelector('[data-downloads-toggle]')
-    const rect = el?.getBoundingClientRect()
-    const aside = el?.closest('aside')?.getBoundingClientRect()
-    if (rect) setAnchor({ top: Math.max(12, Math.min(rect.top - 12, window.innerHeight - 460)), left: (aside?.right ?? rect.right) + 8 })
+    if (!panelOpen) return undefined
+    const place = () => {
+      const rect = document.querySelector(OPENERS)?.getBoundingClientRect()
+      if (!rect) return
+      // Narrower than the panel (the web app on a phone): it narrows to fit.
+      const width = Math.min(PANEL_WIDTH, window.innerWidth - 24)
+      setAnchor({ top: rect.bottom + 8, width, left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)) })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
   }, [panelOpen])
 
   useEffect(() => {
@@ -317,12 +335,12 @@ export function DownloadManagerPanel() {
           ref={panelRef}
           role="dialog"
           aria-label="Downloads"
-          initial={{ opacity: 0, x: -6, scale: 0.98 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: -6, scale: 0.98 }}
+          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -6, scale: 0.98 }}
           transition={{ duration: 0.16 }}
-          style={{ top: anchor.top, left: anchor.left, backgroundColor: 'rgba(var(--surface-rgb), 0.97)' }}
-          className="fixed z-[80] flex max-h-[440px] w-[340px] flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+          style={{ top: anchor.top, left: anchor.left, width: anchor.width, maxHeight: `min(440px, calc(100vh - ${anchor.top + 12}px))`, transformOrigin: 'top right', backgroundColor: 'rgba(var(--surface-rgb), 0.97)' }}
+          className="fixed z-[80] flex flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         >
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             <div role="tablist" aria-label="Downloads" className="flex flex-1 items-center gap-1">

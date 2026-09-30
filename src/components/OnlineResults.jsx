@@ -25,7 +25,8 @@ const BUILT_IN = [
   { id: 'yt', label: 'YouTube Music' },
   { id: 'sc', label: 'SoundCloud' },
 ]
-// Always last: files people share, downloaded through slskd (not streamed).
+// After the built-in sources, before addons: files people share, downloaded
+// through slskd (not streamed).
 const SOULSEEK = { id: 'slsk', label: 'Soulseek' }
 
 function fmtDuration(seconds) {
@@ -65,7 +66,9 @@ function useProviders() {
  *                     there replaces the stream / the track's file
  */
 export default function OnlineResults({ query, soulseekFor = null }) {
-  const providers = [...useProviders(), SOULSEEK]
+  // YouTube Music and SoundCloud, then Soulseek, then installed addons.
+  const loaded = useProviders()
+  const providers = [...loaded.filter(p => !p.addon), SOULSEEK, ...loaded.filter(p => p.addon)]
   const [chosen, setProvider] = useState(storedProvider)
   // Asked to find a song on Soulseek: shown until another source is picked.
   const [forSoulseek, setForSoulseek] = useState(!!soulseekFor)
@@ -131,13 +134,13 @@ export default function OnlineResults({ query, soulseekFor = null }) {
 
   return (
     <section>
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 mb-3">
         <div className="flex items-center gap-3 min-w-0 flex-wrap">
           <h2 className="text-xs font-display text-muted uppercase tracking-widest flex items-center gap-2 flex-shrink-0">
             Online
             {loading && !soulseek && <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
           </h2>
-          <div role="tablist" aria-label="Online source" className="flex items-center gap-1 rounded-full border border-border p-0.5">
+          <div role="tablist" aria-label="Online source" className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl border border-border p-0.5">
             {providers.map(p => (
               <button
                 key={p.id}
@@ -145,7 +148,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
                 aria-selected={provider === p.id}
                 onClick={() => choose(p.id)}
                 title={p.addon ? `${p.label} (addon)` : p.label}
-                className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${provider === p.id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${provider === p.id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
               >
                 {p.icon && <img src={p.icon} alt="" className="h-3.5 w-3.5 rounded-sm object-cover" referrerPolicy="no-referrer" />}
                 {p.label}
@@ -153,7 +156,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
             ))}
           </div>
         </div>
-        <span className="text-[10px] text-muted/80 truncate">{soulseek ? 'Files people share, through slskd' : providers.find(p => p.id === provider)?.addon ? 'From an addon you installed' : 'Streams with yt-dlp'} · not in your library</span>
+        <span className="min-w-0 text-[10px] text-muted/80 truncate">{soulseek ? 'Files people share, through slskd' : providers.find(p => p.id === provider)?.addon ? 'From an addon you installed' : 'Streams with yt-dlp'} · not in your library</span>
       </div>
       <div className="mb-3 empty:hidden"><DownloadNotices youtube={provider === 'yt'} /></div>
       {soulseek ? (

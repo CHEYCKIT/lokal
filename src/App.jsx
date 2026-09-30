@@ -4,13 +4,13 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
 import TitleBar from './components/TitleBar'
+import { usePageWidth } from './pageWidth'
 import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
 import QueuePanel from './components/QueuePanel'
 import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
 import ProfileModal from './components/ProfileModal'
-import StatsModal from './components/StatsModal'
 import AddToPlaylistModal from './components/AddToPlaylistModal'
 import MiniPlayer from './components/MiniPlayer'
 import RecapStories from './components/RecapStories'
@@ -246,6 +246,8 @@ function AnimatedRoutes() {
 
 /** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
+  // Pages lay out by the space they get between the sidebars (pageWidth.js).
+  const pageWidthRef = usePageWidth()
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
 
@@ -1946,7 +1948,7 @@ export default function App() {
             <TitleBar />
             <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
-              <main className="flex-1 overflow-y-auto bg-transparent">
+              <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent">
                 <AnimatedRoutes />
               </main>
               <RightSidebar />
@@ -1958,7 +1960,6 @@ export default function App() {
             <FullscreenPlayer />
             <AuthModal />
             <ProfileModal />
-            <StatsModal />
             <AddToPlaylistModal />
             <LosslessModal />
             <RecapStories

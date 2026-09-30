@@ -270,13 +270,13 @@ export default function Artists() {
   }, [query])
 
   const gridClass = density === 'compact'
-    ? 'grid grid-cols-4 gap-3 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10'
-    : 'grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8'
+    ? 'grid grid-cols-4 gap-3 @sm:grid-cols-6 @md:grid-cols-8 @lg:grid-cols-10'
+    : 'grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8'
 
   return (
     <div className="min-h-full p-6 pb-10">
       <div className="mx-auto max-w-7xl space-y-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-4 @md:flex-row @md:flex-wrap @md:items-end @md:justify-between">
           <div>
             <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
             <div className="mt-2 flex items-center gap-2.5">
@@ -302,7 +302,7 @@ export default function Artists() {
             </p>
           </div>
 
-          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end md:w-auto">
+          <div className="flex w-full flex-col gap-3 @sm:flex-row @sm:flex-wrap @sm:items-center @sm:justify-end @md:w-auto">
             <select
               value={sort}
               onChange={(event) => changeSort(event.target.value)}
@@ -326,7 +326,7 @@ export default function Artists() {
                 </button>
               ))}
             </div>
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full @sm:w-64 @sm:max-w-full">
               <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 value={query}
@@ -344,7 +344,7 @@ export default function Artists() {
               <Sparkles size={14} className="text-accent" />
               <h2 className="text-xs font-display text-muted uppercase tracking-widest">Top Artists</h2>
             </div>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
+            <div className="grid grid-cols-2 gap-4 @sm:grid-cols-3 @md:grid-cols-4 @lg:grid-cols-8">
               {topArtists.map((artist, index) => (
                 <ArtistCard
                   key={artist.id}
@@ -375,7 +375,7 @@ export default function Artists() {
           ) : (
             <div className="space-y-6">
               {density === 'list' ? (
-                <div className="columns-1 gap-6 lg:columns-2">
+                <div className="columns-1 gap-6 @lg:columns-2">
                   {listRows.map((row) => row.type === 'letter' ? (
                     <h3 key={`letter-${row.letter}`} className="break-after-avoid px-3 pb-1 pt-4 font-display text-xs uppercase tracking-[0.3em] text-accent first:pt-0">{row.letter}</h3>
                   ) : (

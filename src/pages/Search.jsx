@@ -193,7 +193,7 @@ export default function Search() {
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3 flex items-center gap-2">
                 <Clock size={12} /> Recent
               </h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+              <div className="grid grid-cols-3 @sm:grid-cols-5 gap-3">
                 {recentItems.map((item, i) => (
                   <motion.button
                     key={`${item.id}-${i}`}
@@ -267,7 +267,7 @@ export default function Search() {
           {artists.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Artists</h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-3">
+              <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
                 {artists.map((a, i) => (
                   <motion.button key={a.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.04 }}
                     onClick={() => handleArtistClick(a)} className="flex flex-col items-center gap-2 group">
@@ -284,7 +284,7 @@ export default function Search() {
           {albums.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Albums</h2>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
                 {albums.map((a, i) => (
                   <motion.button key={`${a.title}-${i}`} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }}
                     onClick={() => handleAlbumClick(a)}

@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Camera, Save, BarChart2 } from 'lucide-react'
+import { Camera, Save } from 'lucide-react'
 import Modal from './Modal'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 
 export default function ProfileModal() {
-  const { showProfileModal, closeProfile, openStats, user, setUser } = useAppStore()
+  const { showProfileModal, closeProfile, user, setUser } = useAppStore()
   const fileInputRef = useRef(null)
   const [form, setForm] = useState({ display_name: '', bio: '' })
   const [saving, setSaving] = useState(false)
@@ -113,10 +113,6 @@ export default function ProfileModal() {
         </div>
 
         <div className="flex gap-2">
-          <button onClick={() => { closeProfile(); openStats() }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white transition-colors">
-            <BarChart2 size={13} /> Stats
-          </button>
           <button onClick={saveProfile} disabled={saving || uploading}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-accent text-base rounded-xl text-sm font-medium hover:bg-accent/80 disabled:opacity-50 transition-colors">
             <Save size={13} /> {uploading ? 'Uploading...' : saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
