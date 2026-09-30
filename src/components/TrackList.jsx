@@ -391,10 +391,19 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     setDeleteRequest({ tracks: deletable, title: deletable.length === 1 ? deletable[0].title : null })
   }
 
+  // One removal at a time: a second Delete / Remove while it runs is ignored.
+  const removingRef = useRef(false)
   const removeMany = async (list) => {
-    if (!onRemove) return
-    for (const track of list) await onRemove(track)
-    selection.clear()
+    if (!onRemove || removingRef.current) return
+    removingRef.current = true
+    try {
+      for (const track of list) await onRemove(track)
+    } catch (e) {
+      showToast(`Couldn't remove: ${e?.message || e}`)
+    } finally {
+      removingRef.current = false
+      selection.clear()
+    }
   }
 
   const playMany = (list) => {

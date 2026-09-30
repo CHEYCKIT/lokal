@@ -431,16 +431,27 @@ export default function Albums() {
   const releasesFor = (keys) => shownAlbums.filter(album => keys.includes(releaseKey(album)))
   const tracksOf = async (albums) => (await Promise.all(albums.map(album => api.getAlbumTracks(album).catch(() => []))))
     .flatMap(list => (Array.isArray(list) ? list : []))
-  const askDeleteReleases = async (albums) => {
-    const tracks = libraryTracks(await tracksOf(albums))
-    if (!tracks.length) return
-    setDeleteRequest({ tracks, what: albums.length === 1 ? albums[0].title : `${albums.length} releases` })
+  // Release actions fetch the releases' songs first: one at a time, so a
+  // second click while that runs doesn't queue (or ask to delete) them twice.
+  const releaseBusyRef = useRef(false)
+  const withReleaseTracks = async (albums, use) => {
+    if (releaseBusyRef.current) return
+    releaseBusyRef.current = true
+    try {
+      await use(await tracksOf(albums))
+    } finally {
+      releaseBusyRef.current = false
+    }
   }
+  const askDeleteReleases = (albums) => withReleaseTracks(albums, (all) => {
+    const tracks = libraryTracks(all)
+    if (tracks.length) setDeleteRequest({ tracks, what: albums.length === 1 ? albums[0].title : `${albums.length} releases` })
+  })
   const releaseSelection = useSelection(shownKeys, { onDelete: (keys) => askDeleteReleases(releasesFor(keys)) })
   const selectedReleases = () => releasesFor([...releaseSelection.selected])
   const releaseActions = (albums) => {
     const count = albums.length > 1 ? ` ${albums.length} releases` : ''
-    const withTracks = (use) => async () => use(await tracksOf(albums))
+    const withTracks = (use) => () => withReleaseTracks(albums, use)
     return [
       { label: `Play${count}`, icon: Play, onSelect: withTracks(tracks => tracks.length && playQueue(tracks, 0, albums.length === 1 ? makeAlbumContext(albums[0]) : null)) },
       { label: 'Play next', icon: Clock, onSelect: withTracks(playNextMany) },
