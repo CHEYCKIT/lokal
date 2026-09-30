@@ -17,7 +17,8 @@ const { pathToFileURL } = require('url')
   try {
     const { chromium } = require('playwright')
     browser = await chromium.launch(process.env.BANNER_CHROMIUM ? { executablePath: process.env.BANNER_CHROMIUM } : {})
-    const page = await browser.newPage({ viewport: { width: 1200, height: 600 } })
+    // 1200 x 300 CSS px at 2x: sharp on high-DPI screens, 2400 x 600 PNG.
+    const page = await browser.newPage({ viewport: { width: 1200, height: 300 }, deviceScaleFactor: 2 })
     const url = pathToFileURL(path.join(__dirname, 'banner.html'))
     url.search = new URLSearchParams({
       v: process.env.BANNER_VERSION || '',
