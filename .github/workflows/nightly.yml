@@ -17,7 +17,7 @@ jobs:
     # build runners (and the release) use the same version from the same tag
     # snapshot, even if main or the tags move while they run.
     name: Work out the nightly version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.calc.outputs.version }}
       tag: ${{ steps.calc.outputs.tag }}
@@ -94,7 +94,7 @@ jobs:
     needs: version
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -159,7 +159,7 @@ jobs:
 
   release:
     needs: [version, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
