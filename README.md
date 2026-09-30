@@ -3,146 +3,186 @@
 ![convient photo of toro](https://i.imgur.com/KgjwTvk.png)
 
 
-Local-first music player built w/ Electron and React. Designed for people with large local music libraries who'd like a modern listening experience w/o the burdens of streaming subscriptions.
+**Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, listening recaps, smart mixes, an audio-quality checker, and one search bar that finds, streams and downloads.
 
 ![Lokal Music](https://img.shields.io/badge/version-3.1.0-blue) ![Electron](https://img.shields.io/badge/Electron-latest-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB) ![License](https://img.shields.io/badge/license-MIT-green) [![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/Wv3zfpG6UT)
 
+![Lokal's home page: mixes built from your listening, the song playing in the side panel, and its audio quality under the artist](docs/screenshots/home.webp)
+
+<sub>Screenshots show a demo library: the artists, songs and artwork are made up.</sub>
+
 ---
-## Before reading further, check the Common links:
-
-If you are wondering why you have to create an account or other general questions, please [read the FAQ](https://github.com/sipbuu/lokal/blob/main/FAQ.md)
-
->Interested in creating TTML lyrics, then check out [our side TTML editor!](https://github.com/sipbuu/lokal-ttml) 
-
->See [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) for known issues. 
-
->Report any [issues/bugs](https://github.com/sipbuu/lokal/issues) you find.
+## Before reading further, check the common links:
 
 >Download the [latest up-to-date release.](https://github.com/sipbuu/lokal/releases/latest)
 
->Read the [contribution guide](./CONTRIBUTING.md) if you'd want to help!
+>If you are wondering why you have to create an account or other general questions, please [read the FAQ](./FAQ.md).
 
->Read the [FAQ](./FAQ.md) for any questions you have.
+>Interested in creating TTML lyrics? Check out [our side TTML editor!](https://github.com/sipbuu/lokal-ttml)
+
+>See [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) for known issues, and report any [issues/bugs](https://github.com/sipbuu/lokal/issues) you find.
+
+>Read the [contribution guide](./CONTRIBUTING.md) if you'd like to help!
 ---
 
-## Major Features
+## Highlights
 
-**Library**
-
-Your local music folder indexed and scanned for files that have metadata. Lokal tries to filter out drum kits, sample packs, and loop files, with the option to opt out if some get incorrectly flagged (*via the minimum time requirement*).
-
-![library example](https://i.imgur.com/n26m1Xr.png)
-
----
-
-**Synced Lyrics**
-
-Line level (or word-level with a toggle) karaoke animation powered by LRCLIB. Supports manual search if the auto-fetch is wrong, and local import of `.lrc` and `.ttml` files for an Apple Music-style syllable sync.
-
-(*note: most word-level lyrics are estimation based on the time between lines, if it is a slow song with many pauses, the word-sync will be off*)
-
-![synced lyrics gif](https://i.imgur.com/1tEycTU.gif)
-
-`.ttml` file example: 
-
-![apple music lyris gif](https://i.imgur.com/iXFGywW.gif)
----
-
-**Downloader**
-
-![downloader screenshot](https://i.imgur.com/4vM8RS0.png)
-
-Downloading lives in the search bar: find a song on YouTube Music, SoundCloud or Soulseek and save it to your library, download a whole playlist or channel from the results, or paste a link (YouTube, SoundCloud, Bandcamp and anything else yt-dlp supports) and press Enter. Downloads go through yt-dlp and are indexed as soon as they land, no need to rescan your whole library. The Downloads entry in the sidebar shows the queue and the playlists you've downloaded; the download format is in Settings → Library.
-
-(*yt-dlp not included on install*)
+- **Synced lyrics from 9 sources**, word by word, with translation, romanization and duets
+- **One search bar** for your library, YouTube Music, SoundCloud, Soulseek and addons: stream, save or paste a link to download
+- **Listening recaps** for every week, month and year, with a story you can tap through
+- **Audio quality checker** that sorts your files into Hi-res, Lossless, High and Low, and spots fake FLACs
+- **Mixes, playlists and stats** built from your own listening history
+- **Full-screen player** with moving canvas covers, a colour backdrop, a mini player and crossfade
+- **Last.fm, ListenBrainz and Discord** integrations, plus a phone remote
 
 ---
 
-**Online results in search**
+## Synced Lyrics
 
-Songs that aren't in your library show up under your own results, from YouTube Music or SoundCloud (switch between them above the results). Play them straight away (streamed with your own yt-dlp, nothing is hosted by Lokal), add them to playlists, or save them to your library with one click (right-click to find them on Soulseek instead). The saved file takes the stream's place in your playlists.
+![Full-screen lyrics lighting up word by word](docs/screenshots/lyrics.webp)
 
-(*needs yt-dlp*)
+Lyrics light up **word by word** (or syllable by syllable) like Apple Music, in the side panel or full screen. Lokal asks every source at the same time and uses them in the order you set (drag to reorder, or turn sources off, in Settings → Playback). The first source with lyrics wins. With **Prioritize syllable lyrics** on, it keeps looking past line-timed lyrics for word-timed ones.
 
----
+| Source | What it's good for |
+|---|---|
+| Local file | Lyrics embedded in the file, or a `.lrc` / `.ttml` next to it |
+| BiniLyrics, BetterLyrics | Apple Music timings, word by word |
+| BetterLyrics Portato | QQ Music karaoke timings |
+| LyricsPlus | Syllable timings from community mirrors |
+| Unison | Lyrics contributed by listeners |
+| LRCLIB, KuGou | Whole lines; LRCLIB is reliably up, KuGou is strong outside English |
+| lyrics.ovh | Plain-text fallback |
 
-**Addons**
-
-Add your own online sources in Settings → Addons by pasting an addon's manifest URL. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work: their tracks appear as another source in search and can be played, added to playlists and saved to your library. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add.
-
-*https://ultramax.vip/eclipse.html* has been tested and is functional, Tido requires whitelisting so it won't be compatible
-
----
-
-**Soulseek/slskd**
-
-<img width="810" height="632" alt="image" src="https://github.com/user-attachments/assets/6954fd9e-9f14-45fb-bc4f-c1475bc8300c" />
-  
-Search and download from Soulseek via slskd where lossless FLAC files are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
-
-(*slskd not included on install*)
+- **Translate** lyrics into your language (or turn on auto-translate), and see **romanization** for Japanese, Korean, Chinese and more.
+- **Duets and background vocals** are laid out left and right, and background lines appear under the lead.
+- **Pick another source** from the lyrics panel if the first match is wrong, or import your own `.lrc` / `.ttml` (make one with the [TTML editor](https://github.com/sipbuu/lokal-ttml)).
+- **Lyrics are written into files you download**, so they come with the song.
 
 ---
 
-**Canvas Covers**
+## Search, Stream and Download in One Place
 
-<img width="262" height="662" alt="image" src="https://github.com/user-attachments/assets/5ff9f978-a77f-4ef8-a821-46fdf679aa63" />
+| Search everything | Paste a link |
+|---|---|
+| ![Search results for "neon": albums and songs from the library](docs/screenshots/search.webp) | ![A pasted SoundCloud playlist link, ready to download](docs/screenshots/link.webp) |
 
-Display track canvas from multiple sources: Apple Music, Tidal, Community lists or Spotify Canvas
+The search bar at the top covers your own library, then songs that aren't in it yet:
 
-(*Spotify's implementation requires a personal cookie from a Spotify account*)
+- **Online results** from YouTube Music, SoundCloud, **Soulseek** (via slskd) and any **addons** you've added. Play them right away (streamed with your own yt-dlp, nothing is hosted by Lokal), add them to playlists, or save them to your library with one click. The saved file takes the stream's place in your likes and playlists.
+- **Playlists and channels** from YouTube Music, downloadable whole.
+- **Paste a link** (YouTube, SoundCloud, Bandcamp and anything else yt-dlp supports) and press Enter to download a song, an album or a whole playlist.
+- **Downloads land in your library as they finish**, tagged, with a square cover and lyrics. No rescan needed. Choose the format (Original, MP3, M4A or Opus) in Settings → Library.
+- **The Downloads button** (top left, next to Settings) shows the queue and the playlists you've downloaded.
 
----
+(*yt-dlp and slskd are not included on install; see [Downloader Setup](#downloader-setup)*)
 
-**Artist & Album Pages**
+**Addons:** paste an addon's manifest URL in Settings → Addons. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work as another source in search. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add. (*https://ultramax.vip/eclipse.html has been tested and works; Tido requires whitelisting, so it isn't compatible.*)
 
-![artist page screenshot](https://i.imgur.com/Wab0iFI.png)
-
-Dedicated artist and album pages with artwork, bio, top tracks, and discography view.
-
-(*artists will use the most recent indexed song's image, however you can freely adjust their profile to match their spotify page if you'd like*) 
-
----
-
-**Mixes**
-
-![home screenshot](https://i.imgur.com/jZPLDgB.png)
-
-Auto-generated mixes built from your listening history and liked tracks, as well as some random artists as well. Includes a Discovery Weekly of tracks you haven't played yet. 
-
-(*may auto-regenerate on restart, will likely be fixed/set on a later date*)
+**Soulseek:** search and download from Soulseek through slskd, where lossless FLAC files are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
 
 ---
 
-## Other Features
+## Listening Recaps
 
-- **Playlist Importer (beta/half-complete)** — import playlists from other platforms (once you have indexed your music) to a playlist.  
-- **Crossfade** — smooth transitions between tracks, configurable within **settings**
-- **Discord Rich Presence** — shows what you're listening to in real time. (use the one provided, or grab your custom id from discord's development panel)
-- **Duplicate detection** — smart merge that scores each copy by bitrate, artwork, and metadata completeness, then keeps the best one. (best for situations where you can contain duplicates of the same music)
-- **Playlists** — create, manage, reorder, download
-- **Play history & stats** — tracks listening time, top artists, top genres (top left)
-- **Web mode** — run as a web server to access your library from another device on your network (currently in hiatus, main focus on app ver.)
-- **Artist name exceptions** — prevents names like "Tyler, the Creator" from being incorrectly split into multiple artists, configurable via **settings**. 
-- **Queue & Shuffling** — move around your queue as needed and shuffle with the ability to fully go back without issue.
-- **Last.fm Scrobbling** — sends "now playing" and scrobbles to *last.fm* (after half the track or 4 minutes), in the app and in web mode. Scrobbles made while offline are kept and sent later.
-- **ListenBrainz** — the same for *ListenBrainz* (the open alternative by MetaBrainz): paste your user token in **Settings → Integrations**. Listens made while offline are kept and sent later.
+| Every week, month and year | …and a story to tap through |
+|---|---|
+| ![The Recap page: a week's minutes, tracks, artists and peak hour](docs/screenshots/recap.webp) | ![The recap story: 7h 46m of music in one week](docs/screenshots/recap-story.webp) |
+
+Lokal builds a recap from your own listening for every finished week (Monday to Sunday), every month and every year:
+- minutes, tracks, artists and your peak listening hour
+- top tracks, artists, albums and genres
+- your **listening sessions**, named by what they were ("Late night listening", "Neon Harbor deep dive")
+
+Play any recap, save it as a playlist, or watch it as a **full-screen story**. New recaps appear on their own when a week or month ends.
+
+---
+
+## Audio Quality
+
+![The Audio Quality page: how much of the library is Hi-res, Lossless, High and Low, and the songs worth upgrading](docs/screenshots/quality.webp)
+
+Know what you're actually listening to:
+
+| Tier | Meaning |
+|---|---|
+| **Hi-res** | Above CD quality (lossless, more than 16-bit or 48 kHz) |
+| **Lossless** | CD quality |
+| **High** | Lossy at 256 kbps and up (160 kbps and up for Opus/Vorbis) |
+| **Low** | Lossy below that |
+
+- **Spectrum check:** looks at the spectrum of your lossless files to catch **fake FLACs**, ones converted from an MP3 (needs ffmpeg).
+- **Worth upgrading:** lists your lossy and suspect files, lowest quality first.
+- **Get it in lossless:** finds a better copy through MusicBrainz store links, Qobuz, Bandcamp, 7digital and Soulseek.
+- **Pill in the player bar:** the playing song's tier shows under the artist, and hovering says what it means.
+
+---
+
+## Your Library
+
+| Library, filtered by genre | Albums |
+|---|---|
+| ![The Library filtered to Synthwave](docs/screenshots/library.webp) | ![An album page with its tracklist](docs/screenshots/album.webp) |
+
+| Artists | Playlists |
+|---|---|
+| ![An artist page with bio, popular songs and releases](docs/screenshots/artist.webp) | ![A playlist with its songs](docs/screenshots/playlist.webp) |
+
+- **Library:** your music folder indexed from the files' own tags. Drum kits, sample packs and loops are filtered out, and you can opt out if something gets flagged by mistake (*via the minimum duration*). Filter by **source** (music folder, YouTube, SoundCloud, Soulseek, addons) and by **genre**, and sort by date, title, artist, plays or length.
+- **Albums:** albums, EPs and singles are kept apart; hover a cover to play the whole release.
+- **Artists:** each artist gets a page with a **photo and bio**, fetched automatically from Deezer, TheAudioDB, MusicBrainz or Wikipedia, or set by hand. Top songs and releases are on the same page. Names like "Tyler, the Creator" stay one artist.
+- **Playlists:** create, reorder, download, and get recommendations. Import them from Spotify (Exportify), Apple Music, YouTube Music, Last.fm or a CSV/JSON/M3U file.
+- **Select several songs** with Ctrl/Cmd+click (Shift for a range) to queue, add to a playlist or delete them all at once.
+- **Duplicate detection:** a smart merge scores each copy by bitrate, artwork and metadata completeness, then keeps the best one.
+
+---
+
+## Mixes, Profile and Stats
+
+![The profile page: plays, hours listened, likes and this week, top genres, top artists and tracks](docs/screenshots/profile.webp)
+
+- **Mixes on Home** are built from your history and likes: a Daily Mix, New Arrivals, Most Played and Discovery (songs you haven't played yet). Save any mix, or a suggested song, as a playlist.
+- **History** shows what you played recently, streamed songs included.
+- **Your profile** shows your total plays, hours listened, likes and this week's plays, plus your top genres, artists and tracks.
+
+---
+
+## Now Playing
+
+- **Full-screen player** with the cover, or full-screen lyrics; switch between them with one click.
+- **Canvas covers:** looping video covers from Apple Music, Tidal, community lists or Spotify Canvas (*Spotify needs your own account cookie*).
+- **Colour backdrop** taken from the cover.
+- **Mini player** to keep the music in a corner.
+- **Sleep timer.**
+- **Crossfade** between tracks.
+- **Queue:** play next and add to queue, with shuffle you can fully step back through.
+- **Collapsible sidebar**, down to icons only.
+
+---
+
+## Integrations
+
+- **Last.fm:** "now playing" and scrobbles (after half the track or 4 minutes). Scrobbles made offline are kept and sent later.
+- **ListenBrainz:** the same for the open alternative by MetaBrainz. Paste your user token in **Settings → Integrations**.
+- **Discord Rich Presence:** shows what you're listening to. Use the built-in app, or your own from Discord's developer portal.
+- **Phone remote:** open `http://<your computer>:3421/remote` on your phone to control playback. It installs as a web app.
+- **Web mode:** run Lokal as a server and listen to your library from another device (see [Web Mode Setup](#web-mode-setup)).
+- **Plugins:** install plugins from a folder in **Settings → Plugins**.
+- **Backups:** full app export and import, play-history export, and track metadata import.
 
 ---
 
 ## Possible Features to Come
 
-- **"Replay" feature** — ability to recieve a "replay" for each quarter of the year, allowing you to look back at your history.
-- **Custom Plugins** — Give users the ability to create custom add-ons for the program to give more accessibility.
-- **TTML API** — An API (*like Spicy Lyrics for Spotify*) that automatically provides TTML files for the best-sync possible. 
-   
+- **TTML API:** an API (*like Spicy Lyrics for Spotify*) that automatically provides TTML files for the best sync possible.
+
 ---
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v18+
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — for the downloader (optional)
-- [ffmpeg](https://ffmpeg.org/) — for audio conversion via yt-dlp (optional)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp): for downloading and streaming online songs (optional)
+- [ffmpeg](https://ffmpeg.org/): for audio conversion and the spectrum check (optional)
+- [slskd](https://github.com/slskd/slskd): for Soulseek (optional)
 
 ---
 
@@ -157,7 +197,7 @@ npm install
 **Electron app (desktop):**
 ```bash
 # rebuild sqlite3 for electron
-npm run rebuild:electron 
+npm run rebuild:electron
 
 npm run dev
 ```
@@ -166,11 +206,11 @@ npm run dev
 ```bash
 # Copy .env.example to .env and set LOKAL_DATA_DIR to your Electron app's data folder
 # copy .env.example .env (for windows)
-cp .env.example .env 
+cp .env.example .env
 
 
-# rebuild sqlite 3 for web
-npm run rebuild:web 
+# rebuild sqlite3 for web
+npm run rebuild:web
 
 npm run dev:web
 # Open http://localhost:3421
@@ -187,7 +227,10 @@ If you want to access your library from another device (e.g. devices on the go/l
    - Windows: `C:\Users\<you>\AppData\Roaming\lokal-music\data`
    - macOS: `~/Library/Application Support/lokal-music/data`
    - Linux: `~/.config/lokal-music/data`
-3. Optionally set `API_KEY` to a random string to protect remote access: every `/api` request then needs it. The web app asks for it once per browser (it's kept in a cookie); other clients send it as an `x-api-key` header. To reach Lokal from outside your network, put it behind HTTPS (a reverse proxy or tunnel with TLS): with `API_KEY` set, plain HTTP is only accepted from this machine and your local network
+3. Optionally set `API_KEY` to a random string to protect remote access. Every `/api` request then needs it:
+   - **In the web app:** it's asked once per browser and kept in a cookie.
+   - **Other clients:** send it as an `x-api-key` header.
+   - **From outside your network:** put Lokal behind HTTPS (a reverse proxy or tunnel with TLS). With `API_KEY` set, plain HTTP is only accepted from this machine and your local network.
 4. Run `npm run dev:web`
 
 ---
@@ -196,14 +239,16 @@ If you want to access your library from another device (e.g. devices on the go/l
 
 *Lokal will attempt an auto install, but if it fails, please refer to the following below*
 
-The downloader requires `yt-dlp` and `ffmpeg` to be installed and available on your PATH
+The downloader requires `yt-dlp` and `ffmpeg` to be installed and available on your PATH:
 
 - **yt-dlp:** https://github.com/yt-dlp/yt-dlp#installation
 - **ffmpeg:** https://ffmpeg.org/download.html
 
 On Windows, the easiest way is to drop both `.exe` files somewhere and add that folder to your PATH, or place them in the project root.
 
-If Lokal still struggles to find your *ffmpeg* or *yt-dlp*, then you can point to it manually in settings as well.
+If Lokal still struggles to find your *ffmpeg* or *yt-dlp*, you can point to them manually in Settings as well.
+
+YouTube often asks downloaders to "confirm you're not a bot". Setting up your YouTube cookie in **Settings → Library → Use YouTube Cookies** fixes that (Lokal reminds you when it's missing).
 
 ---
 
@@ -211,9 +256,12 @@ If Lokal still struggles to find your *ffmpeg* or *yt-dlp*, then you can point t
 
 ```
 electron/         Electron main process
-  ipc/            IPC handlers (scanner, lyrics, downloader, discord)
+  ipc/            IPC handlers (scanner, downloader, recaps, discord, ...)
+  lyrics/         Lyrics sources and the shared lyrics pipeline
+  online/         Online search, streaming and addons
+  quality/        Audio quality tiers and the spectrum check
   preload.js      Context bridge
-server/           Express web server (web mode)
+server/           Express web server (web mode, phone remote)
   routes/         API routes
 src/              React frontend
   components/     Reusable components
@@ -233,7 +281,9 @@ src/              React frontend
 - [Framer Motion](https://www.framer.com/motion/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [LRCLIB](https://lrclib.net/) — lyrics provider
+- [slskd](https://github.com/slskd/slskd)
+- Lyrics: [LRCLIB](https://lrclib.net/), BiniLyrics, BetterLyrics, LyricsPlus, Unison, KuGou and lyrics.ovh
+- Artist info: [MusicBrainz](https://musicbrainz.org/), [TheAudioDB](https://www.theaudiodb.com/), [Deezer](https://www.deezer.com/) and [Wikipedia](https://www.wikipedia.org/)
 
 ---
 
