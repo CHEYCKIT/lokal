@@ -341,7 +341,11 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   if (range.error) return { error: range.error }
   const now = Math.floor(Date.now() / 1000)
   if (['week', 'month', 'quarter', 'year'].includes(range.scope) && range.to >= now) {
-    return { error: 'This recap period has not finished yet.' }
+    // A month or year still going can be asked for "so far" (partial=1): up to now.
+    const partial = ['1', 'true'].includes(String(opts.partial)) && ['month', 'year'].includes(range.scope) && range.from <= now
+    if (!partial) return { error: 'This recap period has not finished yet.' }
+    range.to = now
+    range.partial = true
   }
   try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
   const COUNTED = COUNTED_TRACKS

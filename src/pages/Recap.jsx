@@ -221,19 +221,26 @@ function RecapContent({ user }) {
     if (place) { setNavYear(place.year); setNavMonth(place.monthKey) }
   }
 
-  // Picking a year shows the whole year when it's over, else its latest month or week.
+  // Picking a year shows the whole year when it's over, else its latest
+  // month or week; picking it again (it's already the one open) shows the
+  // year so far.
   const pickYear = (entry) => {
-    const latestMonth = [...entry.months].reverse().find(m => m.period || m.weeks.length)
     if (entry.period) { setSelectedId(entry.period.id); setNavYear(entry.year); setNavMonth(null); return }
-    select(latestMonth?.period || latestMonth?.weeks[latestMonth.weeks.length - 1])
+    if (entry.soFar && navYear === entry.year) { setSelectedId(entry.soFar.id); setNavMonth(null); return }
+    const latestMonth = [...entry.months].reverse().find(m => m.period || m.weeks.length || m.soFar)
+    select(latestMonth?.period || latestMonth?.weeks[latestMonth.weeks.length - 1] || latestMonth?.soFar || entry.soFar)
   }
 
-  // Picking a month shows it (or, while it's going, its latest finished week).
+  // Picking a month shows it; while it's going, its latest finished week,
+  // then the month so far when it's picked again.
   const pickMonth = (entry) => {
+    const again = navMonth === entry.key
     setNavMonth(entry.key)
     if (entry.period) setSelectedId(entry.period.id)
+    else if (entry.soFar && (again || !entry.weeks.length)) setSelectedId(entry.soFar.id)
     else if (entry.weeks.length) setSelectedId(entry.weeks[entry.weeks.length - 1].id)
   }
+  const wholeOf = (entry) => entry.period || entry.soFar
 
   // Worked out on each load, so a period that just ended shows up.
   const loadPeriodList = async () => {
@@ -265,7 +272,9 @@ function RecapContent({ user }) {
     setTree(nextTree)
     const latest = latestPeriod(nextTree)
     const keep = available.find(period => period.id === selectedId)
-    select(keep || latest, nextTree)
+    // Nothing finished yet: the newest month (or year) so far.
+    const soFar = available.find(period => period.partial && period.scope === 'month') || available.find(period => period.partial)
+    select(keep || latest || soFar, nextTree)
     // Same period still selected: its recap is fetched again in the
     // background (the one on screen stays until the fresh one arrives).
     if (keep) refreshRecap(keep)
@@ -429,7 +438,7 @@ function RecapContent({ user }) {
             {(checkingPeriods || loading) && <RefreshCw size={11} className="animate-spin text-muted" aria-label="Checking for new recaps" />}
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday) and month, plus each year, built from your local listening sessions.</p>
+          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), month and year, built from your local listening sessions. Click a month or year again to see it so far.</p>
         </div>
         {/* One row, always: short labels that never wrap, and on a narrow
             page the icons alone (named on hover and for screen readers). */}
@@ -458,8 +467,8 @@ function RecapContent({ user }) {
             <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Year</span>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               {tree.map(entry => (
-                <PeriodChip key={entry.year} active={selectedId === entry.period?.id} context={navYear === entry.year && selectedId !== entry.period?.id} onClick={() => pickYear(entry)}
-                  title={entry.period ? `The whole of ${entry.year}` : `${entry.year} is still going: pick a month or a week`}>
+                <PeriodChip key={entry.year} active={selectedId === wholeOf(entry)?.id} context={navYear === entry.year && selectedId !== wholeOf(entry)?.id} onClick={() => pickYear(entry)}
+                  title={entry.period ? `The whole of ${entry.year}` : navYear === entry.year ? `${entry.year} so far` : `${entry.year} is still going: click again for the year so far`}>
                   {entry.year}
                 </PeriodChip>
               ))}
@@ -470,8 +479,8 @@ function RecapContent({ user }) {
               <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Month</span>
               <div className="flex gap-2 overflow-x-auto pb-0.5">
                 {yearEntry.months.map(entry => (
-                  <PeriodChip key={entry.key} active={selectedId === entry.period?.id} context={navMonth === entry.key && selectedId !== entry.period?.id}
-                    dashed={!entry.period} title={entry.period ? undefined : 'Still going: pick one of its finished weeks'} onClick={() => pickMonth(entry)}>
+                  <PeriodChip key={entry.key} active={selectedId === wholeOf(entry)?.id} context={navMonth === entry.key && selectedId !== wholeOf(entry)?.id}
+                    dashed={!entry.period} title={entry.period ? undefined : navMonth === entry.key ? 'This month so far' : 'Still going: click again for the month so far'} onClick={() => pickMonth(entry)}>
                     {SHORT_MONTH_NAMES[entry.month - 1]}
                   </PeriodChip>
                 ))}

@@ -58,8 +58,9 @@ function weekRangeText(period, withYear = false) {
 export function periodTitle(period) {
   if (!period) return 'Recap'
   if (period.scope === 'week') return `Week of ${weekRangeText(period, true)} Recap`
-  if (period.scope === 'month') return `${MONTHS[period.month - 1]} ${period.year} Recap`
-  return `${period.year} Recap`
+  const soFar = period.partial ? ' So Far' : ''
+  if (period.scope === 'month') return `${MONTHS[period.month - 1]} ${period.year}${soFar} Recap`
+  return `${period.year}${soFar} Recap`
 }
 
 /**
@@ -75,8 +76,9 @@ export function periodPlaylistText(period) {
     thursday.setDate(thursday.getDate() + 3)
     return `${MONTHS[thursday.getMonth()]} ${thursday.getFullYear()} - Week ${Math.ceil(thursday.getDate() / 7)}`
   }
-  if (period.scope === 'month') return `${MONTHS[period.month - 1]} ${period.year}`
-  return String(period.year)
+  const soFar = period.partial ? ' so far' : ''
+  if (period.scope === 'month') return `${MONTHS[period.month - 1]} ${period.year}${soFar}`
+  return `${period.year}${soFar}`
 }
 
 /** "J-Pop - September 2026 - Week 3": a playlist made from part of a recap. */
@@ -137,8 +139,9 @@ export function nextPeriodBoundary(now = new Date()) {
 /** What the backend needs to build a period's recap. */
 export function periodQuery(period, extra = {}) {
   if (period.scope === 'week') return { scope: 'week', weekStart: period.weekStart, tz: localTimeZone(), ...extra }
-  if (period.scope === 'month') return { scope: 'month', year: period.year, month: period.month, tz: localTimeZone(), ...extra }
-  return { scope: 'year', year: period.year, tz: localTimeZone(), ...extra }
+  const partial = period.partial ? { partial: 1 } : {}
+  if (period.scope === 'month') return { scope: 'month', year: period.year, month: period.month, tz: localTimeZone(), ...partial, ...extra }
+  return { scope: 'year', year: period.year, tz: localTimeZone(), ...partial, ...extra }
 }
 
 // ---------------------------------------------------------------- navigation
@@ -157,7 +160,7 @@ function parseDay(day) {
 /**
  * [{ year, period (the whole year, or null while it's going), months: [
  *    { year, month, key, period (or null while it's going), weeks: [period] }
- * ] }], newest year first, months and weeks in calendar order. Only
+ * ] }], newest year first (soFar: a month or year still going, up to now), months and weeks in calendar order. Only
  * periods that have plays and have ended are offered; a month still going
  * is listed when it has finished weeks, so they can be reached.
  */
@@ -191,13 +194,25 @@ export function recapTree(days = [], now = new Date()) {
       const period = { id: `m-${month.key}`, scope: 'month', year: month.year, month: month.month }
       const finished = periodEnd(period) <= now
       const weeks = [...month.weeks.values()].sort((a, b) => a.completedAt - b.completedAt)
-      if (!(finished && month.hasPlays) && !weeks.length) continue
-      months.push({ year: month.year, month: month.month, key: month.key, period: finished && month.hasPlays ? withText(period) : null, weeks })
+      if (!month.hasPlays && !weeks.length) continue
+      months.push({
+        year: month.year, month: month.month, key: month.key,
+        period: finished && month.hasPlays ? withText(period) : null,
+        // A month still going: its recap so far (picked with a second click).
+        soFar: !finished && month.hasPlays ? withText({ ...period, id: `${period.id}-so-far`, partial: true }) : null,
+        weeks,
+      })
     }
     if (!months.length) continue
     months.sort((a, b) => a.month - b.month)
     const yearPeriod = { id: `year-${entry.year}`, scope: 'year', year: entry.year }
-    tree.push({ year: entry.year, period: periodEnd(yearPeriod) <= now && months.some(m => m.period || m.weeks.length) ? withText(yearPeriod) : null, months })
+    const yearFinished = periodEnd(yearPeriod) <= now
+    tree.push({
+      year: entry.year,
+      period: yearFinished && months.some(m => m.period || m.weeks.length) ? withText(yearPeriod) : null,
+      soFar: !yearFinished ? withText({ ...yearPeriod, id: `${yearPeriod.id}-so-far`, partial: true }) : null,
+      months,
+    })
   }
   return tree.sort((a, b) => b.year - a.year)
 }
@@ -207,25 +222,27 @@ export function treePeriods(tree = []) {
   const all = []
   for (const year of tree) {
     if (year.period) all.push(year.period)
+    if (year.soFar) all.push(year.soFar)
     for (const month of year.months) {
       if (month.period) all.push(month.period)
+      if (month.soFar) all.push(month.soFar)
       all.push(...month.weeks)
     }
   }
   return all
 }
 
-/** The period that ended last (what to show first). */
+/** The period that ended last (what to show first). "So far" ones never count. */
 export function latestPeriod(tree = []) {
-  return treePeriods(tree).sort((a, b) => b.completedAt - a.completedAt)[0] || null
+  return treePeriods(tree).filter(period => !period.partial).sort((a, b) => b.completedAt - a.completedAt)[0] || null
 }
 
 /** Where a period sits: { year, monthKey } (monthKey null for a whole year). */
 export function periodPlace(tree = [], id) {
   for (const year of tree) {
-    if (year.period?.id === id) return { year: year.year, monthKey: null }
+    if (year.period?.id === id || year.soFar?.id === id) return { year: year.year, monthKey: null }
     for (const month of year.months) {
-      if (month.period?.id === id || month.weeks.some(w => w.id === id)) return { year: year.year, monthKey: month.key }
+      if (month.period?.id === id || month.soFar?.id === id || month.weeks.some(w => w.id === id)) return { year: year.year, monthKey: month.key }
     }
   }
   return null

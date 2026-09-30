@@ -56,6 +56,7 @@ const TYPE_LABELS = {
   library: 'Playing from library',
   search: 'Playing from search',
   recap: 'Playing from recap',
+  genre: 'Playing from genre',
 }
 
 export function contextLabel(context) {
