@@ -90,42 +90,12 @@ jobs:
           # Read via process.env rather than interpolated into the JS source.
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          node - <<'EOF'
-          const { chromium } = require("playwright");
-
-          (async () => {
-            let browser;
-            try {
-              browser = await chromium.launch();
-              const page = await browser.newPage({
-                viewport: { width: 1200, height: 600 }
-              });
-
-              const bannerUrl = new URL("https://sipbuu.me/lokalver/");
-              bannerUrl.search = new URLSearchParams({
-                v: process.env.RELEASE_TAG,
-                type: "release",
-                app: "lokal",
-              }).toString();
-
-              await page.goto(bannerUrl.toString(), {
-                waitUntil: "networkidle", timeout: 20000
-              });
-
-              await page.locator(".title-card").screenshot({
-                path: "release-banner.png",
-                timeout: 15000
-              });
-            } catch (err) {
-              // Same as the nightly: sipbuu.me is outside this repo, and it
-              // being down, slow or changed must not block publishing the
-              // release. Carry on without a banner.
-              console.warn("[release-banner] Skipping banner, could not generate it:", err.message);
-            } finally {
-              if (browser) await browser.close();
-            }
-          })();
-          EOF
+          # Drawn from this repo (.github/banner): the outside page it used to
+          # be taken from stopped answering. Never fails the job.
+          # (A build of an older commit doesn't have the drawing: no banner then.)
+          if [ -f .github/banner/render.js ]; then
+            BANNER_VERSION="$RELEASE_TAG" BANNER_TYPE=release node .github/banner/render.js
+          fi
           # Only reference the banner in the release body when it exists, so
           # a skipped banner doesn't leave a broken image at the top.
           if [ -f release-banner.png ]; then
