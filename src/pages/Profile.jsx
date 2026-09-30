@@ -510,6 +510,8 @@ export default function Profile() {
             <section className="rounded-2xl border border-border bg-elevated px-5 py-4 @md:col-span-2">
               <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:gap-5">
                 <h2 className="flex-shrink-0 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h2>
+                {/* Always there, so screen readers announce the change. */}
+                <span role="status" aria-live="polite" className="sr-only">{playingGenre ? `Loading ${playingGenre} songs` : ''}</span>
                 <div className="flex min-w-0 flex-wrap gap-2">
                   {topGenres.map((genre, index) => (
                     <button
@@ -523,7 +525,7 @@ export default function Profile() {
                       style={{ opacity: 1 - index * 0.15 }}
                     >
                       {playingGenre === genre.genre
-                        ? <Loader2 size={11} className="flex-shrink-0 animate-spin" />
+                        ? <Loader2 size={11} aria-hidden="true" className="flex-shrink-0 animate-spin" />
                         : <Play size={11} fill="currentColor" className="hidden flex-shrink-0 group-hover:block group-focus-visible:block" />}
                       <span className="truncate">{genre.genre} · {genre.plays}</span>
                     </button>

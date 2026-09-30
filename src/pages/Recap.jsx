@@ -291,6 +291,12 @@ function RecapContent({ user }) {
       const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
       if (!result || result.error) return
       setRecapsById(current => ({ ...current, [period.id]: result }))
+      // A recap "so far" has changed since: its artists' and genres' songs are read again too.
+      if (period.partial) {
+        for (const key of [...subjectTracksRef.current.keys()]) {
+          if (key.startsWith(`${period.id}|`)) subjectTracksRef.current.delete(key)
+        }
+      }
       // Not over a load started since (it has the newer answer on its way).
       if (selectedIdRef.current === period.id && !loadingRef.current) { setRecap(result); setShownId(period.id) }
     } catch {}
