@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -60,14 +60,29 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-// Column templates (whole class names, so Tailwind sees them). The Time
-// column is always the last one; the Quality column only shows where the
-// Album one does (@md and up).
-function gridCols(playlistId, showQuality) {
-  if (playlistId) return 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]'
-  if (showQuality) return 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_4.5rem_5rem]'
-  return 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'
+// Column templates (whole class names, so Tailwind sees them). Every row
+// is its own grid, so each column has a width that doesn't depend on the
+// row's content (an 'auto' column sized to one row's album text or buttons
+// moved the columns from row to row, and put the Album header somewhere
+// else again). Order: [grip] # Title [Album] [Quality] actions Time. The
+// actions column is 'auto' but its content has a fixed width (see
+// actionsWidth). Album and Quality show from @md up.
+function gridCols({ playlistId, showAlbum, showQuality }) {
+  if (playlistId) {
+    return showAlbum
+      ? 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
+      : 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_4rem]'
+  }
+  if (showAlbum && showQuality) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_4.5rem_auto_4rem]'
+  if (showAlbum) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
+  if (showQuality) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,1fr)_4.5rem_auto_4rem]'
+  return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,1fr)_auto_4rem]'
 }
+// Width of the actions cell, the same on every row and on the header (set
+// as CSS variables on the list). Below @lg: the heart and the "More" menu.
+// From @lg: every button (slots of 1.25rem), the heart, and a playlist's
+// "added" date.
+const ACTIONS_CLASS = 'w-[var(--tl-actions)] @lg:w-[var(--tl-actions-lg)]'
 
 export default function TrackList({ tracks = [], showAlbum = true, showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
   // Downloads from an addon are tagged with its name.
@@ -117,6 +132,14 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
   // below for why the request key needs to be part of the state itself.
   const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
+  const cols = gridCols({ playlistId, showAlbum, showQuality })
+  const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
+  const actionsWidth = useMemo(() => {
+    // Play next, Save (streams), Add to queue, Quick add, Lossless, Add to
+    // playlist, Edit, Remove/Delete.
+    const slots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
+    return { '--tl-actions': '2.5rem', '--tl-actions-lg': `calc(${slots} * 1.25rem + 1.5rem${playlistId ? ' + 5rem' : ''})` }
+  }, [showPlayNext, anyStreamed, showAddToQueue, onQuickAdd, playlistId])
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
@@ -627,7 +650,7 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
   }
 
   return (
-    <div className="w-full" onClick={handleContainerClick}>
+    <div className="w-full" style={actionsWidth} onClick={handleContainerClick}>
       <SelectionBar
         open={selection.count > 0}
         label={`${selection.count} selected`}
@@ -643,15 +666,13 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
         ]}
       />
 
-      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${gridCols(playlistId, showQuality)}`}>
+      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${cols}`}>
         {playlistId && <span></span>}
-        <span>#</span><span>Title</span>
-        <span className="hidden @md:inline">{showAlbum ? 'Album' : ''}</span>
-        {showQuality && <span className="hidden text-center @md:inline">Quality</span>}
-        {/* Always the last column: below @md the Album header is hidden, and
-            auto-placed this landed in the actions column instead, left of
-            the times. */}
-        <span className="col-end-[-1] text-right">Time</span>
+        <span className="text-center">#</span><span>Title</span>
+        {showAlbum && <span className="hidden truncate @md:block">Album</span>}
+        {showQuality && <span className="hidden text-center @md:block">Quality</span>}
+        <span aria-hidden="true" className={ACTIONS_CLASS} />
+        <span className="text-right">Time</span>
       </div>
 
       <div ref={rowsRef}>
@@ -696,7 +717,7 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
             onContextMenu={(e) => openTrackMenu(e, track)}
             aria-selected={isSelected}
             style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
-            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${gridCols(playlistId, showQuality)}`}
+            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${cols}`}
           >
             {playlistId && (
               <div className="flex items-center justify-center w-6 text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
@@ -727,40 +748,116 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <p className={`text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
+                  <p className={`min-w-[3.5rem] text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
                   {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
-                  {streamed && <span title={`Streamed from ${streamLabel(track)}, not in your library yet`} className="px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-[10px] uppercase tracking-wide text-accent flex-shrink-0">{streamLabel(track)}</span>}
+                  {streamed && <span title={`Streamed from ${streamLabel(track)}, not in your library yet`} className="hidden px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-[10px] uppercase tracking-wide text-accent flex-shrink-0 @md:inline">{streamLabel(track)}</span>}
                   {!isGhost && downloadSourceLabel(track.download_source, addonNames) && (
-                    <span title={`Downloaded from ${downloadSourceLabel(track.download_source, addonNames)}`} className="px-1.5 py-0.5 rounded-full bg-card border border-border text-[10px] uppercase tracking-wide text-muted flex-shrink-0">{downloadSourceLabel(track.download_source, addonNames)}</span>
+                    <span title={`Downloaded from ${downloadSourceLabel(track.download_source, addonNames)}`} className="hidden px-1.5 py-0.5 rounded-full bg-card border border-border text-[10px] uppercase tracking-wide text-muted flex-shrink-0 @md:inline">{downloadSourceLabel(track.download_source, addonNames)}</span>
                   )}
                 </div>
                 <p className="text-xs text-muted truncate">{track.artist}</p>
               </div>
             </div>
 
-            {/* A narrow page (a small window, the right sidebar open) keeps the
-                room for the title: the buttons only take space on hover
-                (they're all in the right-click menu too). */}
-            <div className="hidden items-center gap-1.5 pr-1 group-hover:flex @md:flex">
-              {showAlbum && <p className="text-xs text-muted truncate max-w-32 hidden @md:block mr-2">{track.album}</p>}
-              {playlistId && track.added_at && (
-                <p className="text-xs text-muted/60 mr-2 hidden @lg:block">{fmtAddedAt(track.added_at)}</p>
-              )}
-              {showPlayNext && !isGhost && (
-                <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
-                  <Clock size={14} />
+            {showAlbum && (
+              <p className="hidden truncate text-xs text-muted @md:block" title={track.album || undefined}>{track.album}</p>
+            )}
+            {showQuality && (() => {
+              // Same badge as the Audio Quality page; opens that page on its list.
+              const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
+              if (tier === 'unknown') return <span className="hidden text-center text-xs text-muted/50 @md:block">—</span>
+              const info = TIERS[tier]
+              return (
+                <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
+                  title={`${info.label}: ${info.desc}${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`}
+                  className={`hidden justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 @md:block ${info.className}`}>
+                  {info.label}
                 </button>
+              )
+            })()}
+            {/* The same width on every row (ACTIONS_CLASS). Below @lg: the
+                heart and "More" (every action is in that menu and the
+                right-click one); from @lg the buttons show on hover. */}
+            <div className={`flex items-center justify-end gap-1.5 ${ACTIONS_CLASS}`}>
+              {playlistId && (
+                <p className="hidden w-[4.5rem] flex-shrink-0 truncate text-right text-xs text-muted/60 @lg:block">{track.added_at ? fmtAddedAt(track.added_at) : ''}</p>
               )}
-              {streamed && <SaveToLibraryButton track={track} className="opacity-0 group-hover:opacity-100" />}
-              {showAddToQueue && !isGhost && (
-                <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
-                  <ListEnd size={14} />
+              <div className="hidden items-center justify-end gap-1.5 @lg:flex">
+                {showPlayNext && !isGhost && (
+                  <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
+                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
+                    <Clock size={14} />
+                  </button>
+                )}
+                {streamed && <SaveToLibraryButton track={track} className="opacity-0 group-hover:opacity-100" />}
+                {showAddToQueue && !isGhost && (
+                  <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
+                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
+                    <ListEnd size={14} />
+                  </button>
+                )}
+                {onQuickAdd && (
+                  <div className="relative">
+                    <button onClick={e => handleQuickAdd(track, e)}
+                      className={`opacity-0 group-hover:opacity-100 transition-all ${quickAddAnim === track.id ? 'text-green-400' : 'text-muted hover:text-green-400'}`}>
+                      {quickAddAnim === track.id ? <Check size={14} /> : <LibraryBig size={14} />}
+                    </button>
+                    <AnimatePresence>
+                      {quickAddAnim === track.id && (
+                        <motion.div 
+                          initial={{ scale: 0.5, opacity: 1 }} 
+                          animate={{ scale: 2, opacity: 0 }} 
+                          exit={{}}
+                          transition={{ duration: 0.4 }}
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <Check size={14} className="text-green-400" />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+                {(() => {
+                  // On every row, so the columns line up; greyed out where it can't be used.
+                  const upgradable = !isGhost && isUpgradable(track)
+                  const why = upgradable ? `Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
+                    : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
+                      : track.lossless === null || track.lossless === undefined ? 'Get it in lossless: quality not read yet (Audio Quality → Read details)'
+                        : `Already lossless${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`
+                  return (
+                    <button onClick={e => { e.stopPropagation(); if (upgradable) openLossless(track) }}
+                      aria-disabled={!upgradable} title={why} aria-label={why}
+                      className={`opacity-0 group-hover:opacity-100 transition-all ${upgradable ? 'text-muted hover:text-accent' : 'text-muted/30 cursor-not-allowed'}`}>
+                      <Gem size={13} />
+                    </button>
+                  )
+                })()}
+                <button onClick={e => { e.stopPropagation(); openAddToPlaylist(track) }}
+                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
+                  title="Add to another playlist">
+                  <Plus size={14} />
                 </button>
-              )}
-              <div className="relative">
+                <button 
+                  onClick={e => { e.stopPropagation(); setEditingTrack(track) }}
+                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
+                  title="Edit track info"
+                >
+                  <Edit2 size={14} />
+                </button>
+                {onRemove && (
+                  <button onClick={e => { e.stopPropagation(); onRemove(track) }}
+                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all">
+                    <Trash2 size={12} />
+                  </button>
+                )}
+                {!playlistId && !onRemove && (
+                  <button onClick={e => { e.stopPropagation(); askDelete([track]) }}
+                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title="Delete from Library">
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+              <div className="relative flex-shrink-0">
                 <button onClick={e => toggleLike(track, e)}
                   className={`transition-all ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
                   <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
@@ -775,82 +872,6 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
                   )}
                 </AnimatePresence>
               </div>
-              {onQuickAdd && (
-                <div className="relative">
-                  <button onClick={e => handleQuickAdd(track, e)}
-                    className={`opacity-0 group-hover:opacity-100 transition-all ${quickAddAnim === track.id ? 'text-green-400' : 'text-muted hover:text-green-400'}`}>
-                    {quickAddAnim === track.id ? <Check size={14} /> : <LibraryBig size={14} />}
-                  </button>
-                  <AnimatePresence>
-                    {quickAddAnim === track.id && (
-                      <motion.div 
-                        initial={{ scale: 0.5, opacity: 1 }} 
-                        animate={{ scale: 2, opacity: 0 }} 
-                        exit={{}}
-                        transition={{ duration: 0.4 }}
-                        className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <Check size={14} className="text-green-400" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-              {(() => {
-                // On every row, so the columns line up; greyed out where it can't be used.
-                const upgradable = !isGhost && isUpgradable(track)
-                const why = upgradable ? `Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
-                  : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
-                    : track.lossless === null || track.lossless === undefined ? 'Get it in lossless: quality not read yet (Audio Quality → Read details)'
-                      : `Already lossless${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`
-                return (
-                  <button onClick={e => { e.stopPropagation(); if (upgradable) openLossless(track) }}
-                    aria-disabled={!upgradable} title={why} aria-label={why}
-                    className={`opacity-0 group-hover:opacity-100 transition-all ${upgradable ? 'text-muted hover:text-accent' : 'text-muted/30 cursor-not-allowed'}`}>
-                    <Gem size={13} />
-                  </button>
-                )
-              })()}
-              <button onClick={e => { e.stopPropagation(); openAddToPlaylist(track) }}
-                className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
-                title="Add to another playlist">
-                <Plus size={14} />
-              </button>
-              <button 
-                onClick={e => { e.stopPropagation(); setEditingTrack(track) }}
-                className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
-                title="Edit track info"
-              >
-                <Edit2 size={14} />
-              </button>
-              {onRemove && (
-                <button onClick={e => { e.stopPropagation(); onRemove(track) }}
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all">
-                  <Trash2 size={12} />
-                </button>
-              )}
-              {!playlistId && !onRemove && (
-                <button onClick={e => { e.stopPropagation(); askDelete([track]) }}
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title="Delete from Library">
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-            {showQuality && (() => {
-              // Same badge as the Audio Quality page; opens that page on its list.
-              const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
-              if (tier === 'unknown') return <span className="hidden text-center text-xs text-muted/50 @md:block">—</span>
-              const info = TIERS[tier]
-              return (
-                <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
-                  title={`${info.label}: ${info.desc}${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`}
-                  className={`hidden justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 @md:block ${info.className}`}>
-                  {info.label}
-                </button>
-              )
-            })()}
-            <div className="col-end-[-1] flex items-center justify-end gap-1.5">
-              {/* Narrow page: the row's buttons only show on hover, so this
-                  (always there, and reachable with Tab) opens them all. */}
               <button
                 type="button"
                 onClick={e => {
@@ -864,12 +885,12 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
                 aria-haspopup="menu"
                 aria-expanded={!!menu.state && menuFor === track.id}
                 aria-controls={menu.state && menuFor === track.id ? menuId : undefined}
-                className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text @md:hidden"
+                className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text @lg:hidden"
               >
                 <MoreHorizontal size={14} />
               </button>
-              <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
             </div>
+            <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
           </RowComponent>
         )
       })}
