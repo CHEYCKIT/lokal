@@ -168,9 +168,29 @@ function dropCredits(lines, { title, artist } = {}) {
 
 // ---------------------------------------------------------------- finish
 
+/**
+ * Stamps that don't time anything: most sung lines start at the same moment.
+ * LyricsPlus answers some songs with untimed lyrics dressed up as synced
+ * (every line at 0), and files tagged from such an answer carry the same;
+ * shown as synced, every line has "started" and only the last one lights up.
+ */
+function isUntimed(lines) {
+  const sung = (lines || []).filter(l => l && !l.gap && l.text)
+  if (sung.length < 3) return false
+  const starts = new Map()
+  for (const line of sung) {
+    const start = line.words?.length ? line.words[0].time : line.time
+    if (start == null) continue
+    const key = Math.round(start * 100)
+    starts.set(key, (starts.get(key) || 0) + 1)
+  }
+  return Math.max(0, ...starts.values()) > sung.length / 2
+}
+
 function classify(lines) {
   const sung = lines.filter(l => !l.gap && l.text)
   if (!sung.length) return 'none'
+  if (isUntimed(sung)) return 'none'
   if (sung.some(l => l.words?.length)) return 'syllable'
   if (sung.some(l => l.time != null)) return 'line'
   return 'none'
@@ -229,4 +249,4 @@ function finish(rawLines, { source, doc = null, isrc = null, language = null, ti
   }
 }
 
-module.exports = { finish, dropCredits, splitTrailingBracket, assignSides, withInstrumentalGaps, attachEmbedded, MIN_GAP_SECONDS }
+module.exports = { finish, isUntimed, dropCredits, splitTrailingBracket, assignSides, withInstrumentalGaps, attachEmbedded, MIN_GAP_SECONDS }

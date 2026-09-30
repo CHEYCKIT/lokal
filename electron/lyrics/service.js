@@ -14,7 +14,7 @@
 
 const { lookup, parseImported, DEFAULT_ORDER } = require('./repository')
 const { describe } = require('./providers')
-const { finish } = require('./postprocess')
+const { finish, isUntimed } = require('./postprocess')
 const translation = require('./translate')
 
 const META_VERSION = 2
@@ -197,6 +197,16 @@ async function getLyrics(db, args) {
         if (row.source === 'no-results') {
           const fresh = row.fetched_at && Date.now() - row.fetched_at < NEGATIVE_TTL_MS
           if (fresh && meta.settingsKey === settings.settingsKey) return null
+        } else if (row.lyrics_type === 'synced' && isUntimed(fromRow(row, meta).lines)) {
+          // Cached before untimed stamps were recognised (see isUntimed). A
+          // source the user picked stays, as the plain text it really is;
+          // anything else is looked up again so a truly synced source can win.
+          const cached = fromRow(row, meta)
+          if (meta.pinned) {
+            const plain = { ...finish(cached.lines.map(l => ({ text: l.text, time: null, words: [] })), { source: row.source }), attempts: meta.attempts || null, pinned: true }
+            writeRow(db, trackId || row.track_id, filePath || row.file_path, plain, { attempts: meta.attempts, pinned: true })
+            return plain
+          }
         } else {
           if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, fromRow(row, meta), { attempts: meta.attempts, pinned: meta.pinned })
           return fromRow(row, meta)
@@ -208,7 +218,7 @@ async function getLyrics(db, args) {
           return upgraded
         }
       }
-      // Legacy non-imported rows and stale negatives fall through to a fresh lookup.
+      // Legacy non-imported rows, stale negatives and untimed answers fall through to a fresh lookup.
     }
   }
 
