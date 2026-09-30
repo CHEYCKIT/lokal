@@ -486,7 +486,7 @@ export default function Playlist() {
           title="Resolve Ghost Songs"
           width="max-w-5xl"
         >
-          <div className="grid @md:grid-cols-[260px_1fr] gap-4">
+          <div className="grid md:grid-cols-[260px_1fr] gap-4">
             <div className="rounded-2xl border border-border bg-card/40 overflow-hidden">
               <div className="px-4 py-3 border-b border-border">
                 <p className="text-xs font-display uppercase tracking-[0.24em] text-muted">Unresolved Tracks</p>
@@ -540,7 +540,7 @@ export default function Playlist() {
                     </button>
                   </div>
 
-                  <div className="grid @lg:grid-cols-2 gap-4">
+                  <div className="grid lg:grid-cols-2 gap-4">
                     <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-border">
                         <p className="text-xs font-display uppercase tracking-[0.22em] text-muted">Nearest Local Matches</p>

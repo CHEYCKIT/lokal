@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel } from '../quality'
@@ -9,7 +9,7 @@ import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
-import { trackArtURL, isPlayable, isStreamed, streamLabel, downloadSourceLabel, loadAddonNames, isAddonProvider } from '../onlineTracks'
+import { trackArtURL, isPlayable, isStreamed, streamLabel, downloadSourceLabel, loadAddonNames, isAddonProvider, saveToLibrary } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
@@ -415,18 +415,36 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     usePlayerStore.getState().playQueue(playable, 0, context)
   }
 
-  /** The songs a row's menu acts on: the selection when the row is in it, else just the row. */
+  /** Save a streamed song to the library, from the menu (the row's ⬇ does the same). */
+  const saveStreamed = async (track) => {
+    const result = await saveToLibrary(track).catch(e => ({ error: e.message }))
+    if (result?.alreadyInLibrary) { window.dispatchEvent(new Event('lokal:refresh')); showToast('Already in your library'); return }
+    showToast(result?.error ? `Couldn't save: ${result.error}` : `Saving ${track.title || 'the song'} to your library`)
+  }
+
+  /**
+   * The songs a row's menu acts on: the selection when the row is in it, else
+   * just the row. For one song it also has what the row's buttons do (like,
+   * lossless, save, quick add), so on a narrow page, where those buttons only
+   * show on hover, the ⋯ button (and a right click) still reaches them all.
+   */
   const openTrackMenu = (event, track) => {
     const ids = selection.contextSelect(track.id)
     const list = mergedTracks.filter(item => ids.includes(String(item.id)))
     const one = list.length === 1 ? list[0] : null
     const count = list.length > 1 ? ` ${list.length} songs` : ''
     const deletable = libraryTracks(list)
+    const oneGhost = one && isGhostTrack(one)
+    const liked = one && likedIds.has(one.id)
     menu.open(event, [
       { label: one ? 'Play' : `Play${count}`, icon: Play, onSelect: () => (one ? handlePlay(one, { stopPropagation() {} }) : playMany(list)) },
       { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+      one && onQuickAdd && { label: 'Add to this playlist', icon: LibraryBig, onSelect: () => handleQuickAdd(one) },
+      one && !oneGhost && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
+      one && isStreamed(one) && { label: 'Save to library', icon: Download, onSelect: () => saveStreamed(one) },
+      one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
       one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) },
@@ -799,7 +817,25 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 </button>
               )}
             </div>
-            <span className="col-end-[-1] text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
+            <div className="col-end-[-1] flex items-center justify-end gap-1.5">
+              {/* Narrow page: the row's buttons only show on hover, so this
+                  (always there, and reachable with Tab) opens them all. */}
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  const r = e.currentTarget.getBoundingClientRect()
+                  openTrackMenu({ preventDefault() {}, stopPropagation() {}, clientX: r.left, clientY: r.bottom + 4 }, track)
+                }}
+                title="More"
+                aria-label={`More for ${track.title || 'this song'}`}
+                aria-haspopup="menu"
+                className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text @md:hidden"
+              >
+                <MoreHorizontal size={14} />
+              </button>
+              <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
+            </div>
           </RowComponent>
         )
       })}
