@@ -1,6 +1,7 @@
-// Selecting several items in a list or grid, the way file managers and
-// Spotify do: a click selects one item, Ctrl/Cmd+click adds or removes one,
-// Shift+click selects the range from the last clicked item. With a
+// Selecting several items in a list or grid: Ctrl/Cmd+click adds or removes
+// one, Shift+click selects the range from the last clicked item. A plain
+// click never selects (it clears the selection and does the item's usual
+// thing), so nothing gets selected by accident. With a
 // selection, Ctrl/Cmd+A selects everything, Escape clears it and Delete
 // (or Backspace) calls onDelete. A right click on an unselected item
 // selects just that one first, so the menu acts on what's highlighted.
@@ -33,10 +34,10 @@ export function useSelection(keys, { onDelete } = {}) {
 
   /**
    * A click on an item. Returns true when it only changed the selection
-   * (Ctrl/Cmd or Shift held, or `always`), so the caller skips its usual
-   * action (play, open).
+   * (Ctrl/Cmd or Shift held), so the caller skips its usual action (play,
+   * open); a plain click clears the selection and returns false.
    */
-  const click = useCallback((key, event, { always = false } = {}) => {
+  const click = useCallback((key, event) => {
     key = String(key)
     if (event.shiftKey && anchor.current !== null) {
       const from = keyList.indexOf(anchor.current)
@@ -61,7 +62,7 @@ export function useSelection(keys, { onDelete } = {}) {
       })
       return true
     }
-    if (event.shiftKey || always) {
+    if (event.shiftKey) {
       setSelected(new Set([key]))
       return true
     }

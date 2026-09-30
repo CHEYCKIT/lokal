@@ -112,9 +112,9 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const navigate = useNavigate()
   const menu = useContextMenu()
   const trackIds = React.useMemo(() => mergedTracks.map(track => track.id), [tracks, trackOverrides]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Click selects a song, Ctrl/Cmd+click adds one, Shift+click a range (see
-  // selection.js); Delete removes the selection from the playlist, or from
-  // the library in other lists.
+  // Ctrl/Cmd+click selects songs, Shift+click a range (see selection.js);
+  // Delete removes the selection from the playlist, or from the library in
+  // other lists.
   const selection = useSelection(trackIds, {
     onDelete: (ids) => {
       const chosen = mergedTracks.filter(track => ids.includes(String(track.id)))
@@ -376,9 +376,11 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
   }
 
+  // Only Ctrl/Cmd+click (or Shift+click, a range) selects: a plain click
+  // doesn't, so songs aren't selected by accident. Double click plays.
   const handleTrackClick = (track, e) => {
     e.stopPropagation()
-    selection.click(track.id, e, { always: true })
+    selection.click(track.id, e)
   }
 
   const handleContainerClick = (e) => {

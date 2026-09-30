@@ -1,18 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Clock, Disc3, ExternalLink, ListEnd, Loader2, Play, Plus, Search, Trash2, User } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Disc3, ListEnd, Loader2, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 import FadeImg from '../components/FadeImg'
 import CoverPlay from '../components/CoverPlay'
-import ContextMenu, { useContextMenu } from '../components/ContextMenu'
 import SelectionBar from '../components/SelectionBar'
-import DeleteTracksDialog from '../components/DeleteTracksDialog'
 import { useSelection } from '../selection'
-import { addToPlaylistMany, addToQueueMany, libraryTracks, playNextMany } from '../trackActions'
+import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
+import { artistPath, releaseKey, useReleaseActions } from '../releaseActions'
 import { plural } from '../plural'
 
 const PAGE_SIZE = 48
@@ -25,14 +24,6 @@ function releaseLabel(type) {
   if (type === 'single') return 'Single'
   if (type === 'ep') return 'EP'
   return 'Album'
-}
-
-function artistPath(name) {
-  const slug = String(name || 'unknown')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '') || 'unknown'
-  return `/artist/a-${slug}`
 }
 
 function AlbumHero({ album, trackCount, onPlay, onArtist }) {
@@ -421,57 +412,27 @@ export default function Albums() {
     playTrack(track, albumTracks, albumContext)
   }
 
-  // ---- Selecting releases (grid) and songs (album page), and what can be
-  // done with them: a right click, or the bar shown while some are selected.
-  const menu = useContextMenu()
-  const [deleteRequest, setDeleteRequest] = useState(null)
-  const releaseKey = (album) => `${String(album.title || '').toLowerCase()}|${String(album.album_artist || album.artists || '').toLowerCase()}`
+  // ---- Selecting releases (grid) and songs (album page): Ctrl/Cmd+click
+  // or Shift+click selects, a right click or the bar acts on them.
+  const releases = useReleaseActions({
+    onDeleted: (ids) => {
+      const gone = new Set(ids.map(String))
+      setAlbumTracks(current => current.filter(track => !gone.has(String(track.id))))
+      releaseSelection.clear()
+      trackSelection.clear()
+    },
+  })
+  const { menu } = releases
   const shownAlbums = useMemo(() => groupedAlbums.flatMap(group => group.items), [groupedAlbums])
   const shownKeys = useMemo(() => shownAlbums.map(releaseKey), [shownAlbums])
   const releasesFor = (keys) => shownAlbums.filter(album => keys.includes(releaseKey(album)))
-  const tracksOf = async (albums) => (await Promise.all(albums.map(album => api.getAlbumTracks(album).catch(() => []))))
-    .flatMap(list => (Array.isArray(list) ? list : []))
-  // Release actions fetch the releases' songs first: one at a time, so a
-  // second click while that runs doesn't queue (or ask to delete) them twice.
-  const releaseBusyRef = useRef(false)
-  const withReleaseTracks = async (albums, use) => {
-    if (releaseBusyRef.current) return
-    releaseBusyRef.current = true
-    try {
-      await use(await tracksOf(albums))
-    } finally {
-      releaseBusyRef.current = false
-    }
-  }
-  const askDeleteReleases = (albums) => withReleaseTracks(albums, (all) => {
-    const tracks = libraryTracks(all)
-    if (tracks.length) setDeleteRequest({ tracks, what: albums.length === 1 ? albums[0].title : `${albums.length} releases` })
-  })
-  const releaseSelection = useSelection(shownKeys, { onDelete: (keys) => askDeleteReleases(releasesFor(keys)) })
+  const releaseSelection = useSelection(shownKeys, { onDelete: (keys) => releases.askDelete(releasesFor(keys)) })
   const selectedReleases = () => releasesFor([...releaseSelection.selected])
-  const releaseActions = (albums) => {
-    const count = albums.length > 1 ? ` ${albums.length} releases` : ''
-    const withTracks = (use) => () => withReleaseTracks(albums, use)
-    return [
-      { label: `Play${count}`, icon: Play, onSelect: withTracks(tracks => tracks.length && playQueue(tracks, 0, albums.length === 1 ? makeAlbumContext(albums[0]) : null)) },
-      { label: 'Play next', icon: Clock, onSelect: withTracks(playNextMany) },
-      { label: 'Add to queue', icon: ListEnd, onSelect: withTracks(addToQueueMany) },
-      { label: 'Add to playlist…', icon: Plus, onSelect: withTracks(addToPlaylistMany) },
-      albums.length === 1 && { separator: true },
-      albums.length === 1 && { label: 'Open', icon: ExternalLink, onSelect: () => navigate('/albums', { state: { album: albums[0] } }) },
-      albums.length === 1 && { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(albums[0].album_artist || albums[0].artists)) },
-      { separator: true },
-      { label: albums.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDeleteReleases(albums) },
-    ].filter(Boolean)
-  }
-  const openReleaseMenu = (event, album) => menu.open(event, releaseActions(releasesFor(releaseSelection.contextSelect(releaseKey(album)))))
+  const openReleaseMenu = (event, album) => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))
 
-  // Songs on the album page: click selects, double click plays.
+  // Songs on the album page: double click (or the number's button) plays.
   const albumTrackIds = useMemo(() => albumTracks.map(track => track.id), [albumTracks])
-  const askDeleteTracks = (tracks) => {
-    const deletable = libraryTracks(tracks)
-    if (deletable.length) setDeleteRequest({ tracks: deletable, title: deletable.length === 1 ? deletable[0].title : null })
-  }
+  const askDeleteTracks = releases.askDeleteTracks
   const trackSelection = useSelection(albumTrackIds, { onDelete: (ids) => askDeleteTracks(albumTracks.filter(track => ids.includes(String(track.id)))) })
   const selectedAlbumTracks = () => albumTracks.filter(track => trackSelection.has(track.id))
   const openTrackMenu = (event, track) => {
@@ -601,15 +562,15 @@ export default function Albums() {
                     const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
                     const isSelected = trackSelection.has(track.id)
                     return (
-                      // Click selects (Ctrl/Cmd adds, Shift a range), double click
-                      // or the number's play button plays, right click for more.
+                      // Ctrl/Cmd+click selects (Shift a range), double click or the
+                      // number's play button plays, right click for more.
                       <div
                         key={track.id}
                         ref={isHighlighted ? highlightRowRef : undefined}
                         role="row"
                         tabIndex={0}
                         aria-selected={isSelected}
-                        onClick={(event) => { event.stopPropagation(); trackSelection.click(track.id, event, { always: true }) }}
+                        onClick={(event) => { event.stopPropagation(); trackSelection.click(track.id, event) }}
                         onDoubleClick={() => playQueue(albumTracks, index, albumContext)}
                         onKeyDown={(event) => { if (event.key === 'Enter') playQueue(albumTracks, index, albumContext) }}
                         onContextMenu={(event) => openTrackMenu(event, track)}
@@ -663,7 +624,7 @@ export default function Albums() {
               <SelectionBar
                 label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
                 onClear={releaseSelection.clear}
-                actions={releaseActions(selectedReleases()).filter(item => !item.separator && item.label !== 'Open' && item.label !== 'Go to artist').map(item => ({ label: item.label.replace(/ \d+ releases/, '').replace('…', '').replace(' from library', ''), icon: item.icon, onClick: item.onSelect, danger: item.danger }))}
+                actions={releases.barActions(selectedReleases())}
               />
             )}
             {groupedAlbums.map((group) => (
@@ -702,17 +663,7 @@ export default function Albums() {
           </div>
         )}
       </div>
-      <DeleteTracksDialog
-        request={deleteRequest}
-        onClose={() => setDeleteRequest(null)}
-        onDone={(ids) => {
-          const gone = new Set(ids.map(String))
-          setAlbumTracks(current => current.filter(track => !gone.has(String(track.id))))
-          releaseSelection.clear()
-          trackSelection.clear()
-        }}
-      />
-      <ContextMenu menu={menu} />
+      {releases.elements}
     </div>
   )
 }
