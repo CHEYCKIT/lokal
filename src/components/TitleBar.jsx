@@ -1,15 +1,21 @@
 import React from 'react'
-import { Minus, Square, X } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Minus, Settings, Square, X } from 'lucide-react'
 import { api } from '../api'
 import HeaderSearch from './HeaderSearch'
+import { DownloadManagerPanel, DownloadsButton } from './DownloadManager'
 
 /**
  * The window header: app name (the draggable part in the desktop app), the
- * Home button and search in the middle, window controls on the right. In the
- * browser it's the same bar without the window controls.
+ * Home button and search in the middle; on the right Downloads, then Settings
+ * nearest the edge (the downloads panel opens inwards, so Settings stays in
+ * reach), then the window controls. In the browser it's the same bar without
+ * the window controls.
  */
 export default function TitleBar() {
   const desktop = api.isElectron
+  const nav = useNavigate()
+  const onSettings = useLocation().pathname === '/settings'
   return (
     <div
       className={`${desktop ? 'titlebar' : ''} relative z-40 h-[35px] grid items-center gap-3 px-3 border-b border-border flex-shrink-0`}
@@ -19,9 +25,23 @@ export default function TitleBar() {
 
       <HeaderSearch />
 
-      <div className="flex gap-1 justify-end">
+      <div className="flex items-center gap-1 justify-end">
+        <DownloadsButton />
+        <button
+          type="button"
+          data-tour="settings"
+          onClick={() => nav('/settings')}
+          title="Settings"
+          aria-label="Settings"
+          aria-current={onSettings ? 'page' : undefined}
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${onSettings ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-elevated hover:text-text'}`}
+        >
+          <Settings size={15} />
+        </button>
+        <DownloadManagerPanel />
         {desktop && (
           <>
+            <span className="mx-1 h-4 w-px bg-border2" aria-hidden="true" />
             <button
               onClick={() => window.electron?.minimize()}
               className="w-7 h-7 rounded flex items-center justify-center text-muted hover:text-text hover:bg-elevated transition-colors"

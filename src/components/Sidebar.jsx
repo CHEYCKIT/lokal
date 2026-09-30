@@ -1,20 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Library, Download, Plus, Music, Heart, Settings, LogIn, LogOut, BarChart2, Disc3, Users, User, AudioWaveform } from 'lucide-react'
+import { Home, Library, Plus, Music, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
-import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
-import { useDownloads } from '../store/downloads'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
   { icon: Library, label: 'Library', path: '/library' },
-  // Not a page: opens the downloads panel (downloads start from Search).
-  { icon: Download, label: 'Downloads', panel: 'downloads' },
   { icon: BarChart2, label: 'Recap', path: '/recap' },
-  { icon: Settings, label: 'Settings', path: '/settings' },
 ]
 
 /** Left sidebar: account, navigation and playlists. */
@@ -28,12 +23,9 @@ export default function Sidebar() {
   const [showRecapBadge, setShowRecapBadge] = useState(false)
   
   const { user, openAuth, logout, openStats } = useAppStore()
-  const downloadsOpen = useDownloads(s => s.panelOpen)
-  const toggleDownloads = useDownloads(s => s.togglePanel)
 
-  const navItems = user
-    ? [{ icon: User, label: 'Profile', path: '/profile' }, ...NAV]
-    : NAV
+  // Your profile opens from your name and picture in the account row.
+  const navItems = NAV
 
   const isNavItemActive = (path) => {
     if (path === '/artists') {
@@ -202,7 +194,12 @@ export default function Sidebar() {
         {user ? (
           <div className="space-y-2 rounded-lg px-2 py-2">
             <div className="flex items-center gap-2">
-              <button onClick={() => nav('/profile')} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+              <button
+                onClick={() => nav('/profile')}
+                title="Your profile"
+                aria-current={loc.pathname === '/profile' ? 'page' : undefined}
+                className={`-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors ${loc.pathname === '/profile' ? 'bg-accent/15' : 'hover:bg-elevated'}`}
+              >
                 <img 
                   src={api.getAvatarSrc(user)} 
                   alt="Profile" 
@@ -212,7 +209,6 @@ export default function Sidebar() {
               </button>
               
               <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => nav('/profile')} title="Profile" className="text-muted hover:text-white transition-colors"><User size={13} /></button>
                 <button onClick={openStats} title="Stats" className="text-muted hover:text-white transition-colors"><BarChart2 size={13} /></button>
                 <button
                   onClick={handleSignOut}
@@ -253,17 +249,14 @@ export default function Sidebar() {
       </div>
 
       <nav className="px-3 space-y-0.5 flex-shrink-0">
-        {navItems.map(({ icon: Icon, label, path, panel }) => (
+        {navItems.map(({ icon: Icon, label, path }) => (
           <button 
-            key={path || panel} 
-            data-tour={path === '/library' ? 'library' : panel === 'downloads' ? 'downloader' : path === '/settings' ? 'settings' : null}
-            data-downloads-toggle={panel === 'downloads' ? '' : undefined}
-            aria-expanded={panel === 'downloads' ? downloadsOpen : undefined}
-            onClick={() => (panel === 'downloads' ? toggleDownloads() : nav(path))}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${(panel ? downloadsOpen : isNavItemActive(path)) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
+            key={path} 
+            data-tour={path === '/library' ? 'library' : null}
+            onClick={() => nav(path)}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive(path) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
             <Icon size={15} />
             <span className="flex-1 text-left">{label}</span>
-            {panel === 'downloads' && <DownloadIndicator />}
             {path === '/recap' && showRecapBadge && (
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-base">!</span>
             )}
@@ -288,7 +281,6 @@ export default function Sidebar() {
           <AudioWaveform size={15} /> Audio Quality
         </button>
       </nav>
-      <DownloadManagerPanel />
 
       <div className="mx-4 my-2 border-t border-border flex-shrink-0" />
 
