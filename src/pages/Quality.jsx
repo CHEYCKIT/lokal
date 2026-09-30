@@ -3,6 +3,7 @@
 // spectrum check), and a list of what's worth getting again in lossless.
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { AudioWaveform, Gem, Loader2, Play, RefreshCw, ScanLine, Square } from 'lucide-react'
 import { api } from '../api'
 import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCache'
@@ -11,14 +12,16 @@ import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import { usePlayerStore } from '../store/player'
 import { TIERS, formatLabel, isSuspect, openLossless, tierOf, verdictText } from '../quality'
 
+// Worst to best after "Worth upgrading".
 const FILTERS = [
   ['upgradable', 'Worth upgrading'],
+  ['suspect', 'Suspect'],
   ['low', 'Low'],
   ['high', 'High'],
-  ['suspect', 'Suspect'],
   ['lossless', 'Lossless'],
   ['hires', 'Hi-res'],
 ]
+const FILTER_IDS = new Set(FILTERS.map(([id]) => id))
 const PAGE = 200
 
 // Every tile has the same rows, each one line high (badge, number, share,
@@ -41,7 +44,20 @@ export default function Quality() {
   // roll to any new value); the first visit counts them up from zero.
   const [summary, setSummary, summaryWasCached] = useCachedState('quality:summary', null)
   const [job, setJob] = useState({ running: false })
-  const [filter, setFilter] = useCachedState('quality:filter', 'upgradable')
+  // The player bar's quality badge opens this page on that badge's list
+  // (navigation state { tier }). Applied before the first render, so the
+  // page doesn't show the last list first and then switch.
+  const location = useLocation()
+  const linkedTier = FILTER_IDS.has(location.state?.tier) ? location.state.tier : null
+  const appliedLinkRef = useRef(null)
+  if (linkedTier && appliedLinkRef.current !== location.key && peekCache('quality:filter') !== linkedTier) writeCache('quality:filter', linkedTier)
+  const [filter, setFilter] = useCachedState('quality:filter', linkedTier || 'upgradable')
+  // Already on this page when the badge is clicked: switch to its list.
+  useEffect(() => {
+    if (!linkedTier || appliedLinkRef.current === location.key) return
+    appliedLinkRef.current = location.key
+    setFilter(linkedTier)
+  }, [linkedTier, location.key, setFilter])
   const [rows, setRowsState] = useState(() => peekCache(`quality:rows:${filter}`) || [])
   const [rowsLoaded, setRowsLoaded] = useState(() => !!peekCache(`quality:rows:${filter}`))
   // The filter the rows on screen belong to: a switched-to filter shows (and
@@ -245,9 +261,12 @@ export default function Quality() {
                     {tier === 'suspect' && track.spectral_cutoff ? <span className="text-red/80"> · nothing above {track.spectral_cutoff / 1000} kHz</span> : null}
                   </p>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <span className="hidden text-[11px] text-muted @sm:inline">{formatLabel(track)}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
+                {/* Fixed-width columns: the format, badge and button sit at the
+                    same place on every row and in every list (sized to their
+                    content they moved with each list's widest format). */}
+                <div className="grid grid-cols-[4.75rem_auto] items-center gap-2.5 @sm:grid-cols-[10rem_4.75rem_auto]">
+                  <span className="hidden truncate text-right text-[11px] text-muted tabular-nums @sm:block" title={formatLabel(track)}>{formatLabel(track)}</span>
+                  <span className={`justify-self-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
                   <button onClick={() => openLossless(track)} title="Get it in lossless"
                     className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted opacity-70 transition-all hover:text-accent group-hover:opacity-100">
                     <Gem size={12} /> Lossless

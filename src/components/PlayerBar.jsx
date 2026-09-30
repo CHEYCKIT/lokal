@@ -172,7 +172,7 @@ export default function PlayerBar() {
               ) : <p className="text-xs text-muted">No track playing</p>}
               {quality && (
                 // The Audio Quality page's pill (same colours), what it means on hover.
-                <button onClick={() => nav('/quality')}
+                <button onClick={() => nav('/quality', { state: { tier: qualityTier } })}
                   title={`${quality.info.label}: ${quality.info.desc}${quality.format ? ` (${quality.format})` : ''}${quality.info.hint ? `\n${quality.info.hint}` : ''}`}
                   aria-label={`Audio quality: ${quality.info.label}, ${quality.info.desc}`}
                   className={`mt-1 block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 ${quality.info.className}`}>
