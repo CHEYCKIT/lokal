@@ -3,7 +3,8 @@
   The release / nightly banner, drawn from this repo (it used to come from
   an outside page, which stopped answering). render.js opens this file with
   ?v=<version>&type=release|nightly&date=<YYYY-MM-DD>&ref=<branch> and
-  screenshots .title-card (1200 x 600).
+  screenshots .title-card: a 1200 x 300 strip (4:1), drawn at 2x. GitHub
+  shows it at the release's full width, so a taller one filled the screen.
 -->
 <html lang="en">
 <head>
@@ -15,45 +16,45 @@
   :root { --bg: #0a0a0a; --surface: #141414; --border: #2a2a2a; --text: #e8e8e8; --muted: #8a8a8a; --accent: #e8ff57; --purple: #7c6aff; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent; }
-  body { width: 1200px; height: 600px; font-family: 'DM Sans', system-ui, sans-serif; }
+  body { width: 1200px; height: 300px; font-family: 'DM Sans', system-ui, sans-serif; }
 
   .title-card {
-    position: relative; width: 1200px; height: 600px; overflow: hidden;
+    position: relative; width: 1200px; height: 300px; overflow: hidden;
     background: var(--bg); color: var(--text);
-    display: flex; flex-direction: column; justify-content: space-between; padding: 64px 72px;
+    display: flex; flex-direction: column; justify-content: space-between; padding: 36px 56px;
   }
   /* Soft accent light, top right and bottom left. */
   .glow { position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none; }
-  .glow.a { width: 560px; height: 560px; right: -160px; top: -220px; background: var(--glow-a); opacity: .22; }
-  .glow.b { width: 520px; height: 520px; left: -220px; bottom: -300px; background: var(--glow-b); opacity: .16; }
+  .glow.a { width: 460px; height: 460px; right: -120px; top: -260px; background: var(--glow-a); opacity: .22; }
+  .glow.b { width: 420px; height: 420px; left: -200px; bottom: -320px; background: var(--glow-b); opacity: .16; }
   /* Fine grid, fading out to the left. */
   .grid {
     position: absolute; inset: 0; pointer-events: none;
     background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-size: 32px 32px;
     mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
     -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
   }
   /* An equalizer along the bottom right. */
-  .eq { position: absolute; right: 72px; bottom: 64px; display: flex; align-items: flex-end; gap: 7px; height: 112px; }
-  .eq span { width: 9px; border-radius: 5px; background: var(--eq); }
+  .eq { position: absolute; right: 56px; bottom: 36px; display: flex; align-items: flex-end; gap: 6px; height: 96px; }
+  .eq span { width: 7px; border-radius: 4px; background: var(--eq); }
 
-  .top, .bottom { position: relative; display: flex; align-items: center; gap: 18px; }
-  .logo { width: 64px; height: 64px; border-radius: 16px; }
-  .word { font-family: 'DM Mono', ui-monospace, monospace; font-size: 30px; letter-spacing: .32em; }
+  .top, .bottom { position: relative; display: flex; align-items: center; gap: 14px; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; }
+  .word { font-family: 'DM Mono', ui-monospace, monospace; font-size: 20px; letter-spacing: .32em; }
   .pill {
-    margin-left: auto; font-family: 'DM Mono', ui-monospace, monospace; font-size: 18px; letter-spacing: .22em; text-transform: uppercase;
-    padding: 10px 22px; border-radius: 999px; border: 1.5px solid var(--pill-border); color: var(--pill-text); background: var(--pill-bg);
+    margin-left: auto; font-family: 'DM Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .22em; text-transform: uppercase;
+    padding: 7px 16px; border-radius: 999px; border: 1.5px solid var(--pill-border); color: var(--pill-text); background: var(--pill-bg);
   }
 
-  .middle { position: relative; }
-  .kicker { font-family: 'DM Mono', ui-monospace, monospace; font-size: 20px; letter-spacing: .3em; text-transform: uppercase; color: var(--kicker); }
-  .version { margin-top: 14px; font-family: 'DM Mono', ui-monospace, monospace; font-weight: 500; font-size: 112px; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
+  .middle { position: relative; display: flex; align-items: baseline; gap: 22px; }
+  .kicker { order: 2; font-family: 'DM Mono', ui-monospace, monospace; font-size: 14px; letter-spacing: .3em; text-transform: uppercase; color: var(--kicker); }
+  .version { font-family: 'DM Mono', ui-monospace, monospace; font-weight: 500; font-size: 68px; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
   .version .v { color: var(--muted); }
   .version .suffix { color: var(--kicker); font-size: .5em; letter-spacing: 0; margin-left: 10px; }
 
-  .bottom { color: var(--muted); font-size: 22px; gap: 14px; }
-  .bottom .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .bottom { color: var(--muted); font-size: 15px; gap: 12px; }
+  .bottom .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--border); }
 
   /* Release: lime. Nightly: violet. */
   .release { --glow-a: var(--accent); --glow-b: var(--accent); --eq: var(--accent); --kicker: var(--accent); --pill-bg: var(--accent); --pill-text: #0a0a0a; --pill-border: var(--accent); }
@@ -116,7 +117,7 @@
   for (let i = 0; i < 22; i++) {
     const bar = document.createElement('span')
     const wave = 0.35 + 0.65 * Math.abs(Math.sin(i * 0.45 + rand()))
-    bar.style.height = `${Math.round(16 + wave * 96)}px`
+    bar.style.height = `${Math.round(12 + wave * 84)}px`
     bar.style.opacity = (0.25 + 0.75 * (i / 21)).toFixed(2)
     eq.append(bar)
   }
