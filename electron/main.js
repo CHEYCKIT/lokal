@@ -176,20 +176,25 @@ autoUpdater.on('error', (err) => {
 
 const settingsPath = path.join(app.getPath('userData'), 'performance-settings.json')
 
+// Settings > About > Hardware Acceleration. Read once at startup: Chromium
+// only takes the GPU switches before the app is ready, so a change needs a
+// restart.
 function loadPerformanceSettings() {
+  const defaults = { hardwareAcceleration: true, performanceMode: false }
   try {
     if (fs.existsSync(settingsPath)) {
-      return JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      if (saved && typeof saved === 'object') return { ...defaults, ...saved }
     }
   } catch (e) {}
-  return { hardwareAcceleration: true, performanceMode: false }
+  return defaults
 }
 
 
 const perfSettings = loadPerformanceSettings()
 
 
-if (!perfSettings.hardwareAcceleration) {
+if (perfSettings.hardwareAcceleration === false) {
   app.disableHardwareAcceleration()
   
   app.commandLine.appendSwitch('disable-software-rasterizer')
@@ -416,7 +421,10 @@ app.whenReady().then(() => {
   
   ipcMain.handle('perf:save', async (_, newSettings) => {
     try {
-      fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2))
+      const next = { ...loadPerformanceSettings() }
+      if (typeof newSettings?.hardwareAcceleration === 'boolean') next.hardwareAcceleration = newSettings.hardwareAcceleration
+      if (typeof newSettings?.performanceMode === 'boolean') next.performanceMode = newSettings.performanceMode
+      fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2))
       return { success: true }
     } catch (e) {
       return { error: e.message }
@@ -427,8 +435,10 @@ app.whenReady().then(() => {
   return await autoUpdater.downloadUpdate()
 })
 
+  // What's saved (the next launch) plus what this launch is running with, so
+  // Settings can say a restart is still needed.
   ipcMain.handle('perf:load', async () => {
-    return perfSettings
+    return { ...loadPerformanceSettings(), running: { hardwareAcceleration: perfSettings.hardwareAcceleration !== false } }
   })
   ipcMain.handle('mediaKeys:setPreferred', async (_, flag) => {
     const result = setPreferredMediaKeys(flag)

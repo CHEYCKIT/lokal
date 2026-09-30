@@ -360,8 +360,10 @@ export default function Settings() {
   const [playlistImportEntries, setPlaylistImportEntries] = useState('')
   const [playlistImportStatus, setPlaylistImportStatus] = useState('')
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
-  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false })
-  const [relaunchMsg, setRelaunchMsg] = useState('')
+  // hardwareAcceleration is what the next launch uses; running is what this
+  // launch started with (main only applies it at startup).
+  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, running: null })
+  const [perfSaveError, setPerfSaveError] = useState('')
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
   // the Side Panels toggle's saves -- see their declaration for why this
@@ -479,12 +481,7 @@ export default function Settings() {
       api.getToolsStatus().then(setToolsStatus)
       api.getVersion().then(v => setAppVersion(v || '1.0.0'))
 
-      /*api.getPerfSettings().then(s => {
-
-        if (s) setPerfSettings(s)             comment out for now, need to rethink how we handle perfomance settings eventually (original test failed)
-
-      })
-      */
+      api.getPerfSettings().then(s => { if (s) setPerfSettings(p => ({ ...p, ...s })) }).catch(() => {})
     }
 
     try {
@@ -668,15 +665,19 @@ export default function Settings() {
     }
   }
 
-  const savePerfSettings = async (newSettings) => {
-    const changed = newSettings.hardwareAcceleration !== perfSettings.hardwareAcceleration
-    setPerfSettings(newSettings)
-    await api.savePerfSettings(newSettings)
-    if (changed) {
-      setRelaunchMsg('Restart required to apply hardware acceleration change')
-      setTimeout(() => setRelaunchMsg(''), 5000)
+  const setHardwareAcceleration = async (on) => {
+    const before = perfSettings
+    setPerfSettings(p => ({ ...p, hardwareAcceleration: on }))
+    setPerfSaveError('')
+    try {
+      const res = await api.savePerfSettings({ hardwareAcceleration: on })
+      if (res?.error) throw new Error(res.error)
+    } catch (e) {
+      setPerfSettings(before)
+      setPerfSaveError(e.message || 'unknown error')
     }
   }
+  const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
@@ -1360,6 +1361,23 @@ export default function Settings() {
             >
               <FolderOpen size={14} /> Show Logs
             </button>
+          </Row>
+          <Row label="Hardware Acceleration" desc={perfSaveError ? `Couldn't save (${perfSaveError})` : perfRestartNeeded ? 'Restart Lokal to apply this change' : 'Draw the app with the graphics card. Turn off if the window flickers, flashes or shows glitches'}>
+            <div className="flex items-center gap-3">
+              {perfRestartNeeded && (
+                <button
+                  onClick={() => api.relaunchApp()}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white hover:border-accent/30 transition-colors"
+                >
+                  <RefreshCcw size={12} /> Restart now
+                </button>
+              )}
+              <button
+                onClick={() => setHardwareAcceleration(!perfSettings.hardwareAcceleration)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${perfSettings.hardwareAcceleration ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {perfSettings.hardwareAcceleration ? 'On' : 'Off'}
+              </button>
+            </div>
           </Row>
         </Section>
       )}
