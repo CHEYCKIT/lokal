@@ -10,6 +10,7 @@ import { plural } from '../plural'
 import { filteredGenres, fmtDate, fmtHour, fmtMinutes, trackArt } from '../recapText'
 import RecapStory from '../components/RecapStory'
 import { showToast } from '../components/Toaster'
+import { saveAsPlaylist } from '../trackActions'
 
 
 function Metric({ label, value, icon: Icon }) {
@@ -338,13 +339,8 @@ function RecapContent({ user }) {
 
   /** Save `tracks` as a new playlist called `name`. Returns the name, or null. */
   const saveTracks = async (name, tracks) => {
-    const ids = [...new Set((tracks || []).map(track => track?.id).filter(Boolean))]
-    if (!ids.length) return null
-    const playlist = await api.createPlaylist(name, user?.id, `From your ${shownPeriod?.title || 'listening recap'}`)
-    if (!playlist?.id) return null
-    await api.addMultipleToPlaylist(playlist.id, ids)
-    window.dispatchEvent(new CustomEvent('lokal:playlists-changed', { detail: { playlistId: playlist.id, action: 'created' } }))
-    return name
+    const playlist = await saveAsPlaylist(name, tracks, { userId: user?.id, description: `From your ${shownPeriod?.title || 'listening recap'}` }).catch(() => null)
+    return playlist ? name : null
   }
 
   // Playlists are named after what they hold and the recap they're from

@@ -449,7 +449,8 @@ class DownloadManager {
     this.jobs.set(job.id, job)
     this.persist(job)
     this.emit(job, true)
-    if (kind === 'playlist' && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
+    // Named after its link ("YouTube Track"): ask the source for the real name.
+    if ((kind === 'playlist' || kind === 'single') && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
     this.pump()
     return { downloadId: job.id, playlistId: job.playlistId, queued: true }
   }
@@ -465,6 +466,7 @@ class DownloadManager {
         const parsed = JSON.parse(stdout)
         const title = parsed?.title || parsed?.playlist_title || parsed?.uploader
         if (title && this.jobs.get(job.id) === job) {
+          if (job.kind !== 'playlist') { this.update(job, { title }, { persist: true }); return }
           this.update(job, { title, from: `${sourceLabel(job.url)} playlist` }, { persist: true })
           try { this.db().prepare('UPDATE downloaded_playlists SET title = ? WHERE id = ?').run(title, job.playlistId) } catch {}
         }

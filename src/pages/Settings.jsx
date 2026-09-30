@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
 import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
 import { api, peekSettings } from '../api'
+import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
@@ -1407,6 +1408,23 @@ export default function Settings() {
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.delete_files_from_disk === '1' ? 'bg-red-500/15 border-red-500/40 text-red-300' : 'border-border text-muted hover:text-white'}`}>
             {settings.delete_files_from_disk === '1' ? 'On' : 'Off'}
           </button>
+        </Row>
+        <Row label="Download Format" desc={`What songs downloaded from YouTube, SoundCloud and links are saved as. ${(FORMATS.find(f => f.id === savedFormat(settings)) || FORMATS[0]).hint}`}>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {FORMATS.map(option => (
+              <button key={option.id} onClick={() => set('download_format', option.id)} title={option.hint}
+                className={`px-3 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${savedFormat(settings) === option.id ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {option.label}
+              </button>
+            ))}
+            {savedFormat(settings) === 'mp3' && (
+              <select value={MP3_BITRATES.includes(String(settings.download_quality)) ? String(settings.download_quality) : '320'} onChange={e => set('download_quality', e.target.value)}
+                aria-label="MP3 bitrate"
+                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                {MP3_BITRATES.map(rate => <option key={rate} value={rate}>{rate} kbps</option>)}
+              </select>
+            )}
+          </div>
         </Row>
         <Row label="Use YouTube Cookies" desc="Pass cookies to yt-dlp to bypass rate limiting, access private playlists and liked music. Not shared elsewhere.">
           <div className="flex items-center gap-2">
@@ -3256,7 +3274,7 @@ Stairway to Heaven"
                   <>
                     <p>Matched songs go straight into the playlist using your existing local tracks.</p>
                     <p>Unmatched songs become ghost entries so the playlist stays complete.</p>
-                    <p>Ghost songs can later be replaced by a local file or downloaded with the YouTube downloader.</p>
+                    <p>Ghost songs can later be replaced by a local file or downloaded from Search.</p>
                   </>
                 )}
               </div>

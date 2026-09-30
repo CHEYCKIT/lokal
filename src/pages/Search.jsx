@@ -1,21 +1,36 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Music, Disc3, Clock, User, Play, Search as SearchIcon } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import { useSearchStore } from '../store/search'
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
+import LinkDownload from '../components/LinkDownload'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import { isStreamed } from '../onlineTracks'
 import { plural } from '../plural'
+import { asLink } from '../downloadLinks'
 
 // Results for what's typed in the header search box (HeaderSearch.jsx); with
-// nothing typed, the things recently opened from a search.
+// nothing typed, the things recently opened from a search. It's also where
+// music is found to download: online results (YouTube Music, SoundCloud,
+// addons, Soulseek) save to the library, and a pasted link downloads.
 /** The Search page: results for the header query, or recently opened items when it's empty. */
 export default function Search() {
   const query = useSearchStore(s => s.query)
+  const setQuery = useSearchStore(s => s.setQuery)
+  // "Find on Soulseek…" (a streamed song) or "Get it in lossless" (a library
+  // track): the song searched, on Soulseek, the file picked there replacing it.
+  const location = useLocation()
+  const [soulseekFor, setSoulseekFor] = useState(null)
+  useEffect(() => {
+    const request = location.state?.soulseek
+    if (!request) return
+    setSoulseekFor(request)
+    setQuery(request.query || '')
+  }, [location.key]) // eslint-disable-line react-hooks/exhaustive-deps
   const [tracks, setTracks] = useState([])
   const [artists, setArtists] = useState([])
   const [albums, setAlbums] = useState([])
@@ -27,6 +42,8 @@ export default function Search() {
   const nav = useNavigate()
   const { playQueue, queue, playTrack } = usePlayerStore()
   const isSearchStarted = !!query.trim()
+  // A pasted link isn't searched for: it's offered for download.
+  const link = asLink(query)
 
   useEffect(() => {
     const refresh = () => setRecentItems(getRecentItems())
@@ -66,16 +83,16 @@ export default function Search() {
   // Results follow the text as it's typed. A new query makes any search
   // still in flight stale straight away, not only when the debounce ends.
   useEffect(() => {
-    if (!query.trim()) { doSearch(''); return }
+    if (!query.trim() || link) { doSearch(''); return }
     searchSeqRef.current++
     setSearching(true)
     const t = setTimeout(() => doSearch(query), 200)
     return () => clearTimeout(t)
-  }, [query, doSearch])
+  }, [query, link, doSearch])
 
   useEffect(() => {
     const handleRefresh = () => {
-      if (query.trim()) {
+      if (query.trim() && !asLink(query)) {
         doSearch(query)
       }
       setRecentItems(getRecentItems())
@@ -235,15 +252,17 @@ export default function Search() {
           {recentItems.length === 0 && (
             <div className="text-center py-16 text-muted">
               <SearchIcon size={36} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">Search your library from the bar at the top.</p>
-              <p className="text-xs mt-1 opacity-70">Or just start typing anywhere in Lokal.</p>
+              <p className="text-sm">Search your library, and online, from the bar at the top.</p>
+              <p className="text-xs mt-1 opacity-70">Or just start typing anywhere in Lokal. Paste a link to download it.</p>
             </div>
           )}
           
         </div>
       )}
 
-      {showSearchResults && (
+      {showSearchResults && link && <LinkDownload link={link} />}
+
+      {showSearchResults && !link && (
         <>
           {artists.length > 0 && (
             <section>
@@ -330,7 +349,7 @@ export default function Search() {
             </div>
           )}
 
-          <OnlineResults query={query} />
+          <OnlineResults query={query} soulseekFor={soulseekFor} />
         </>
       )}
     </div>

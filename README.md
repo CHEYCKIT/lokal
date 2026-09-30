@@ -52,7 +52,7 @@ Line level (or word-level with a toggle) karaoke animation powered by LRCLIB. Su
 
 ![downloader screenshot](https://i.imgur.com/4vM8RS0.png)
 
-Search and download from YouTube via yt-dlp. Auto-indexes the track immediately after download, no need to rescan your whole library.
+Downloading lives in the search bar: find a song on YouTube Music, SoundCloud or Soulseek and save it to your library, download a whole playlist or channel from the results, or paste a link (YouTube, SoundCloud, Bandcamp and anything else yt-dlp supports) and press Enter. Downloads go through yt-dlp and are indexed as soon as they land, no need to rescan your whole library. The Downloads entry in the sidebar shows the queue and the playlists you've downloaded; the download format is in Settings → Library.
 
 (*yt-dlp not included on install*)
 

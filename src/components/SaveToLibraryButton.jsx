@@ -1,6 +1,6 @@
 // "Save to library" for a streamed song. Click: download it from where it
 // streams (YouTube or SoundCloud). Right-click: choose, including "Find on
-// Soulseek…", which opens the Soulseek tab searched for the song; the file
+// Soulseek…", which opens Search on Soulseek, searched for the song; the file
 // picked there replaces the stream. The button follows the download:
 // saving → saved (or failed, click to try again).
 
@@ -95,13 +95,13 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     useDownloads.getState().load?.()
   }
 
-  /** Open the Soulseek tab searched for this song; the picked file replaces the stream. */
+  /** Open Search on Soulseek for this song; the picked file replaces the stream. */
   const findOnSoulseek = async () => {
     setMenu(null)
     const target = await resolveTrack().catch(() => null)
     const title = target?.title || meta?.title || ''
     const artist = target?.artist || meta?.artist || ''
-    nav('/downloader', { state: { soulseek: { query: [artist, title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/i, ''), replaceTrackId: target?.id, title, artist } } })
+    nav('/search', { state: { soulseek: { query: [artist, title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/i, ''), replaceTrackId: target?.id, title, artist } } })
   }
 
   const label = state === 'saved' ? 'Saved to library'

@@ -18,8 +18,8 @@ const tourSteps = [
   {
     id: 'downloader',
     dataTour: 'downloader',
-    title: 'Download Music',
-    description: 'Get music from YouTube using the built-in downloader.',
+    title: 'Your Downloads',
+    description: 'Search for anything (or paste a link) to stream it or save it to your library. Downloads show up here.',
   },
   {
     id: 'settings',

@@ -6,11 +6,13 @@ import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { DownloadIndicator, DownloadManagerPanel } from './DownloadManager'
+import { useDownloads } from '../store/downloads'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
   { icon: Library, label: 'Library', path: '/library' },
-  { icon: Download, label: 'Download', path: '/downloader' },
+  // Not a page: opens the downloads panel (downloads start from Search).
+  { icon: Download, label: 'Downloads', panel: 'downloads' },
   { icon: BarChart2, label: 'Recap', path: '/recap' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ]
@@ -26,6 +28,8 @@ export default function Sidebar() {
   const [showRecapBadge, setShowRecapBadge] = useState(false)
   
   const { user, openAuth, logout, openStats } = useAppStore()
+  const downloadsOpen = useDownloads(s => s.panelOpen)
+  const toggleDownloads = useDownloads(s => s.togglePanel)
 
   const navItems = user
     ? [{ icon: User, label: 'Profile', path: '/profile' }, ...NAV]
@@ -249,15 +253,17 @@ export default function Sidebar() {
       </div>
 
       <nav className="px-3 space-y-0.5 flex-shrink-0">
-        {navItems.map(({ icon: Icon, label, path }) => (
+        {navItems.map(({ icon: Icon, label, path, panel }) => (
           <button 
-            key={path} 
-            data-tour={path === '/library' ? 'library' : path === '/downloader' ? 'downloader' : path === '/settings' ? 'settings' : null}
-            onClick={() => nav(path)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isNavItemActive(path) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
+            key={path || panel} 
+            data-tour={path === '/library' ? 'library' : panel === 'downloads' ? 'downloader' : path === '/settings' ? 'settings' : null}
+            data-downloads-toggle={panel === 'downloads' ? '' : undefined}
+            aria-expanded={panel === 'downloads' ? downloadsOpen : undefined}
+            onClick={() => (panel === 'downloads' ? toggleDownloads() : nav(path))}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${(panel ? downloadsOpen : isNavItemActive(path)) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
             <Icon size={15} />
             <span className="flex-1 text-left">{label}</span>
-            {path === '/downloader' && <DownloadIndicator />}
+            {panel === 'downloads' && <DownloadIndicator />}
             {path === '/recap' && showRecapBadge && (
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-base">!</span>
             )}

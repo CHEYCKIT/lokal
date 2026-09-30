@@ -1,14 +1,20 @@
-// Download manager, after BitChord's: a ring on the sidebar's Download entry
-// shows the whole batch's progress and stays until you've seen how it ended;
-// clicking it opens a panel with every download, where each can be cancelled,
-// retried or cleared.
+// Download manager, after BitChord's: a ring on the sidebar's Downloads entry
+// shows the whole batch's progress and stays until you've seen how it ended.
+// The entry opens a panel with every download, where each can be cancelled,
+// retried or cleared, and the playlists downloaded so far (to download again
+// for what's new, or remove). Downloads start from Search.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
+import { useSearchStore } from '../store/search'
+import { api } from '../api'
+import { peekCache, writeCache } from '../pageCache'
+import { displayTitle } from '../downloadLinks'
+import { plural } from '../plural'
 
 // ------------------------------------------------------------------ ring
 
@@ -180,17 +186,103 @@ export function DownloadList({ jobs, detailed = false, empty = null }) {
 
 // ------------------------------------------------------------------ panel
 
+/** The playlists downloaded so far: download again (for what's new) or remove. */
+function DownloadedPlaylists() {
+  const jobs = useDownloads(s => s.jobs)
+  const [list, setList] = useState(() => peekCache('dl:playlists') || [])
+  const [loaded, setLoaded] = useState(() => peekCache('dl:playlists') !== undefined)
+  const [confirming, setConfirming] = useState(null) // a playlist's id, asked "Remove?"
+  const [problem, setProblem] = useState('') // why the last download again / remove failed
+  const load = () => Promise.resolve(api.getDownloadedPlaylists())
+    .then(response => {
+      if (!Array.isArray(response)) return
+      writeCache('dl:playlists', response)
+      setList(response)
+    })
+    .catch(() => {})
+    .finally(() => setLoaded(true))
+  useEffect(() => { load() }, [])
+
+  // Both answer { error } or throw when they fail: say so.
+  const attempt = (call) => Promise.resolve().then(call).then(result => result?.error || null, e => e?.message || 'Something went wrong')
+  const redownload = async (id) => {
+    setProblem('')
+    const failed = await attempt(() => api.redownloadPlaylist(id))
+    if (failed) setProblem(`Couldn't download it again: ${failed}`)
+    useDownloads.getState().load()
+    load()
+  }
+  const remove = async (id) => {
+    setConfirming(null)
+    setProblem('')
+    setList(current => current.filter(playlist => playlist.id !== id))
+    const failed = await attempt(() => api.deleteDownloadedPlaylist(id))
+    // Reloading brings it back when it wasn't removed.
+    if (failed) setProblem(`Couldn't remove it: ${failed}`)
+    load()
+  }
+  const problemLine = problem ? <p role="alert" className="px-2 pb-1 text-[11px] text-red-400">{problem}</p> : null
+
+  if (!list.length) {
+    return <>{problemLine}<p className="px-3 py-8 text-center text-xs text-muted">{loaded ? 'No playlists downloaded yet. Search for one, or paste its link.' : 'Loading…'}</p></>
+  }
+  return (
+    <div className="space-y-0.5">
+      {problemLine}
+      {list.map(playlist => {
+        const downloading = jobs.some(job => isActive(job) && job.kind === 'playlist' && (job.playlistId === playlist.id || (playlist.url && job.url === playlist.url)))
+        const title = displayTitle(playlist, 'Playlist')
+        return (
+          <div key={playlist.id} className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/[0.04]">
+            <div className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/25">
+              <Library size={16} className="text-muted" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-white" title={playlist.url || title}>{title}</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted">{plural(playlist.downloaded_count, 'track')}{playlist.status ? ` · ${playlist.status}` : ''}</p>
+            </div>
+            {confirming === playlist.id ? (
+              <div className="flex flex-shrink-0 items-center gap-1">
+                <button onClick={() => remove(playlist.id)} className="rounded-lg bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25">Remove</button>
+                <button onClick={() => setConfirming(null)} className="rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:text-white">Keep</button>
+              </div>
+            ) : (
+              <div className="flex flex-shrink-0 items-center gap-1">
+                <button onClick={() => redownload(playlist.id)} disabled={downloading}
+                  title={downloading ? 'Downloading' : 'Download again (gets what was added since)'}
+                  aria-label={`Download ${title} again`}
+                  className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
+                  <RotateCcw size={13} className={downloading ? 'animate-spin' : ''} />
+                </button>
+                <button onClick={() => setConfirming(playlist.id)} title="Remove from this list" aria-label={`Remove ${title}`}
+                  className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-red-300">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// What opens the panel: the ring, and the sidebar's Downloads entry.
+const OPENERS = '[data-download-indicator], [data-downloads-toggle]'
+
 export function DownloadManagerPanel() {
   const panelOpen = useDownloads(s => s.panelOpen)
   const jobs = useDownloads(s => s.jobs)
   const { closePanel, cancelAll, clearFinished } = useDownloads.getState()
+  const requestFocus = useSearchStore(s => s.requestFocus)
   const nav = useNavigate()
   const [anchor, setAnchor] = useState({ top: 80, left: 232 })
+  const [tab, setTab] = useState('queue')
   const panelRef = useRef(null)
 
   useLayoutEffect(() => {
     if (!panelOpen) return
-    const el = document.querySelector('[data-download-indicator]')
+    const el = document.querySelector('[data-download-indicator]') || document.querySelector('[data-downloads-toggle]')
     const rect = el?.getBoundingClientRect()
     const aside = el?.closest('aside')?.getBoundingClientRect()
     if (rect) setAnchor({ top: Math.max(12, Math.min(rect.top - 12, window.innerHeight - 460)), left: (aside?.right ?? rect.right) + 8 })
@@ -201,7 +293,7 @@ export function DownloadManagerPanel() {
     const onKey = (e) => { if (e.key === 'Escape') closePanel() }
     const onDown = (e) => {
       if (panelRef.current?.contains(e.target)) return
-      if (e.target.closest?.('[data-download-indicator]')) return
+      if (e.target.closest?.(OPENERS)) return
       closePanel()
     }
     window.addEventListener('keydown', onKey)
@@ -212,11 +304,19 @@ export function DownloadManagerPanel() {
   const active = jobs.filter(isActive)
   const finished = jobs.filter(j => !isActive(j))
 
+  const findMore = () => {
+    closePanel()
+    nav('/search')
+    requestFocus()
+  }
+
   return createPortal(
     <AnimatePresence>
       {panelOpen && (
         <motion.div
           ref={panelRef}
+          role="dialog"
+          aria-label="Downloads"
           initial={{ opacity: 0, x: -6, scale: 0.98 }}
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: -6, scale: 0.98 }}
@@ -224,23 +324,32 @@ export function DownloadManagerPanel() {
           style={{ top: anchor.top, left: anchor.left, backgroundColor: 'rgba(var(--surface-rgb), 0.97)' }}
           className="fixed z-[80] flex max-h-[440px] w-[340px] flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         >
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <p className="flex-1 text-xs font-display uppercase tracking-[0.22em] text-white">Downloads</p>
-            {active.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+            <div role="tablist" aria-label="Downloads" className="flex flex-1 items-center gap-1">
+              {[['queue', 'Queue'], ['playlists', 'Playlists']].map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
+                  {label}{id === 'queue' && active.length ? ` · ${active.length}` : ''}
+                </button>
+              ))}
+            </div>
+            {tab === 'queue' && active.length > 0 && (
               <button onClick={cancelAll} className="text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">Cancel all</button>
             )}
-            {finished.length > 0 && (
+            {tab === 'queue' && finished.length > 0 && (
               <button onClick={clearFinished} className="flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />Clear</button>
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
+            {tab === 'queue'
+              ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
+              : <DownloadedPlaylists />}
           </div>
           <button
-            onClick={() => { closePanel(); nav('/downloader') }}
-            className="border-t border-border px-4 py-2.5 text-left text-[11px] uppercase tracking-[0.18em] text-accent transition-colors hover:bg-white/[0.04]"
+            onClick={findMore}
+            className="flex items-center gap-2 border-t border-border px-4 py-2.5 text-left text-[11px] uppercase tracking-[0.18em] text-accent transition-colors hover:bg-white/[0.04]"
           >
-            Open Downloader
+            <Search size={12} /> Find music to download
           </button>
         </motion.div>
       )}

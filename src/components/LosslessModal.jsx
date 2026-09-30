@@ -65,7 +65,7 @@ export default function LosslessModal() {
 
   const findOnSoulseek = () => {
     const query = [String(track.artist || '').split(/\s*,\s*/)[0], track.title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/i, '')
-    nav('/downloader', { state: { soulseek: { query, losslessOnly: true, upgradeTrackId: track.id, title: track.title, artist: track.artist, current: formatLabel(track) || null } } })
+    nav('/search', { state: { soulseek: { query, losslessOnly: true, upgradeTrackId: track.id, title: track.title, artist: track.artist, current: formatLabel(track) || null } } })
     close()
   }
 
