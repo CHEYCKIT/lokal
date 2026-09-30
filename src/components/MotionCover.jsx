@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { onWindowVisibility } from '../windowVisibility'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 
 const lookups = new Map() // trackId -> Promise<{ src, source } | null>
 
@@ -74,7 +74,9 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   useEffect(() => () => { onActiveRef.current?.(false) }, [])
 
   // Don't spend the GPU on a clip nobody can see.
-  // (Minimized counts too: see windowVisibility.js.)
+  // (Minimized counts too: see windowVisibility.js.) A clip that arrives
+  // while nobody can see it (loaded or changed while minimized) doesn't
+  // autoplay; it starts when the window is back.
   useEffect(() => onWindowVisibility((hidden) => {
     const v = videoRef.current
     if (!v) return
@@ -90,7 +92,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
       src={clip.src}
       muted
       loop
-      autoPlay
+      autoPlay={!isWindowHidden()}
       playsInline
       preload="auto"
       disablePictureInPicture

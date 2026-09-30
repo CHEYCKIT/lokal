@@ -7,13 +7,23 @@
 let windowHidden = false
 let listening = false
 
+function set(hidden) {
+  if (windowHidden === !!hidden) return
+  windowHidden = !!hidden
+  window.dispatchEvent(new Event('lokal:window-visibility'))
+}
+
 function listen() {
   if (listening || typeof window === 'undefined') return
   listening = true
-  window.electron?.onWindowVisibility?.((hidden) => {
-    windowHidden = !!hidden
-    window.dispatchEvent(new Event('lokal:window-visibility'))
-  })
+  // Subscribed first, then asked: a change sent before this ran (minimized
+  // while the page was starting) isn't missed, and one arriving meanwhile
+  // isn't overwritten by an older answer.
+  let changed = false
+  window.electron?.onWindowVisibility?.((hidden) => { changed = true; set(hidden) })
+  Promise.resolve(window.electron?.isWindowHidden?.())
+    .then((hidden) => { if (!changed && typeof hidden === 'boolean') set(hidden) })
+    .catch(() => {})
 }
 
 /** Can nobody see the window right now (minimized, hidden or a background tab)? */

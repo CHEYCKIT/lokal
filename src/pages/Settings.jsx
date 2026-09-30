@@ -360,8 +360,10 @@ export default function Settings() {
   const [playlistImportEntries, setPlaylistImportEntries] = useState('')
   const [playlistImportStatus, setPlaylistImportStatus] = useState('')
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
-  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false })
-  const [relaunchMsg, setRelaunchMsg] = useState('')
+  // hardwareAcceleration is what the next launch uses; running is what this
+  // launch started with (main only applies it at startup).
+  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto', platform: null, running: null })
+  const [perfSaveError, setPerfSaveError] = useState(null) // { key, message }
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
   // the Side Panels toggle's saves -- see their declaration for why this
@@ -479,12 +481,7 @@ export default function Settings() {
       api.getToolsStatus().then(setToolsStatus)
       api.getVersion().then(v => setAppVersion(v || '1.0.0'))
 
-      /*api.getPerfSettings().then(s => {
-
-        if (s) setPerfSettings(s)             comment out for now, need to rethink how we handle perfomance settings eventually (original test failed)
-
-      })
-      */
+      api.getPerfSettings().then(s => { if (s) setPerfSettings(p => ({ ...p, ...s })) }).catch(() => {})
     }
 
     try {
@@ -668,15 +665,25 @@ export default function Settings() {
     }
   }
 
-  const savePerfSettings = async (newSettings) => {
-    const changed = newSettings.hardwareAcceleration !== perfSettings.hardwareAcceleration
-    setPerfSettings(newSettings)
-    await api.savePerfSettings(newSettings)
-    if (changed) {
-      setRelaunchMsg('Restart required to apply hardware acceleration change')
-      setTimeout(() => setRelaunchMsg(''), 5000)
+  // Saves one performance field. On failure only that field (and its error)
+  // changes, so overlapping saves of the two fields can't undo each other.
+  const savePerfField = async (key, value) => {
+    const before = perfSettings[key]
+    setPerfSettings(p => ({ ...p, [key]: value }))
+    setPerfSaveError(err => (err?.key === key ? null : err))
+    try {
+      const res = await api.savePerfSettings({ [key]: value })
+      if (res?.error) throw new Error(res.error)
+    } catch (e) {
+      setPerfSettings(p => ({ ...p, [key]: before }))
+      setPerfSaveError({ key, message: e.message || 'unknown error' })
     }
   }
+  const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
+  const setGraphicsBackend = (graphicsBackend) => savePerfField('graphicsBackend', graphicsBackend)
+  const perfRestartNeeded = !!perfSettings.running && (
+    perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
+    || (perfSettings.running.graphicsBackend || 'auto') !== (perfSettings.graphicsBackend || 'auto'))
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
@@ -1361,6 +1368,35 @@ export default function Settings() {
               <FolderOpen size={14} /> Show Logs
             </button>
           </Row>
+          <Row label="Hardware Acceleration" desc={perfSaveError?.key === 'hardwareAcceleration' ? `Couldn't save (${perfSaveError.message})` : perfRestartNeeded ? 'Restart Lokal to apply this change' : 'Draw the app with the graphics card. Turn off if the window flickers, flashes or shows glitches'}>
+            <div className="flex items-center gap-3">
+              {perfRestartNeeded && (
+                <button
+                  onClick={() => api.relaunchApp()}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white hover:border-accent/30 transition-colors"
+                >
+                  <RefreshCcw size={12} /> Restart now
+                </button>
+              )}
+              <button
+                onClick={() => setHardwareAcceleration(!perfSettings.hardwareAcceleration)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${perfSettings.hardwareAcceleration ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {perfSettings.hardwareAcceleration ? 'On' : 'Off'}
+              </button>
+            </div>
+          </Row>
+          {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
+            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar'}>
+              <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
+                aria-label="Graphics backend"
+                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                <option value="auto">Automatic (OpenGL)</option>
+                <option value="gl">OpenGL</option>
+                <option value="d3d11">Direct3D 11</option>
+                <option value="d3d9">Direct3D 9</option>
+              </select>
+            </Row>
+          )}
         </Section>
       )}
 
