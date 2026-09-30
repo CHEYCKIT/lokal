@@ -321,7 +321,7 @@ function RecapContent({ user }) {
   // the app comes back (a timer doesn't fire while the computer sleeps), or
   // the library changes. No Refresh button needed.
   const loadPeriodListRef = useRef(loadPeriodList)
-  loadPeriodListRef.current = loadPeriodList
+  useLayoutEffect(() => { loadPeriodListRef.current = loadPeriodList })
   useEffect(() => {
     const check = () => loadPeriodListRef.current()
     let timer = null
