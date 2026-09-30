@@ -190,6 +190,13 @@ function loadPerformanceSettings() {
   } catch (e) {}
   return defaults
 }
+// Written to a temporary file and renamed over the old one, so an interrupted
+// write can't leave a truncated file (which would load as the defaults).
+function writePerformanceSettings(next) {
+  const tmp = `${settingsPath}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2))
+  fs.renameSync(tmp, settingsPath)
+}
 
 
 const perfSettings = loadPerformanceSettings()
@@ -203,24 +210,21 @@ if (perfSettings.hardwareAcceleration === false) {
 }
 
 // Windows: with Chromium's default Direct3D 11 backend, a window restored from
-// the taskbar shows white for a moment before its first new frame (the
-// occlusion and background-throttling switches here didn't stop it). Drawing
-// through OpenGL or Direct3D 9 doesn't; OpenGL is the newer of the two.
-// Direct3D 11 stays one setting away for drivers with poor OpenGL, and a
+// the taskbar shows white for a moment before its first new frame (turning
+// off native occlusion or background throttling didn't stop it). OpenGL and
+// Direct3D 9 don't flash, but felt laggy in testing (so did Vulkan, which
+// also shows a stretched frame on restore, and d3d11on12), so Automatic keeps
+// Chromium's Direct3D 11 and the others are a choice in Settings. A
 // --use-angle given on the command line wins.
 function angleBackend() {
   if (process.platform !== 'win32' || perfSettings.hardwareAcceleration === false) return null
   const chosen = GRAPHICS_BACKENDS.includes(perfSettings.graphicsBackend) ? perfSettings.graphicsBackend : 'auto'
-  return chosen === 'auto' ? 'gl' : chosen
+  return chosen === 'auto' ? null : chosen
 }
 const runningAngle = app.commandLine.hasSwitch('use-angle') ? app.commandLine.getSwitchValue('use-angle') : angleBackend()
 if (runningAngle && !app.commandLine.hasSwitch('use-angle')) app.commandLine.appendSwitch('use-angle', runningAngle)
 
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
-// Windows: Chromium drops a minimized window's frames (it counts as
-// occluded), so bringing it back from the taskbar showed a white flash until
-// it painted again. Kept, the last frame is there at once.
-if (process.platform === 'win32') app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 
 // The window's own colour, shown before the page paints (start-up, resizing):
 // the theme's background, remembered from the last run so a light theme
@@ -327,12 +331,10 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, webSecurity: false,
-      // Minimizing hid the page, and a hidden page drops what it drew: on
-      // Windows, bringing the window back from the taskbar then showed a
-      // blank (white) window until it painted again. Never hidden, the last
-      // frame stays. (A music player's timers shouldn't slow down while
-      // minimized either.) The page learns it's minimized through
-      // 'window:visibility' instead, to pause what nobody sees.
+      // A music player's timers shouldn't slow down while minimized. (This
+      // didn't cause the white flash on restore; see angleBackend.) The page
+      // learns it's minimized through 'window:visibility' instead, to pause
+      // what nobody sees.
       backgroundThrottling: false,
     },
   })
@@ -341,6 +343,33 @@ function createWindow() {
   mainWindow.on('hide', () => sendVisibility(true))
   mainWindow.on('restore', () => sendVisibility(false))
   mainWindow.on('show', () => sendVisibility(false))
+
+  // Windows, Direct3D 11: the restored window shows white until its first new
+  // frame (see angleBackend). So it goes fully transparent while minimized
+  // (the taskbar preview of a minimized Electron window is blank anyway) and
+  // becomes opaque again once the page has drawn after the restore: the
+  // page's ack (two animation frames) plus a frame for the compositor, or
+  // 250 ms at most.
+  if (process.platform === 'win32' && perfSettings.hardwareAcceleration !== false) {
+    let revealTimer = null
+    let waitingForPaint = false
+    const reveal = () => {
+      clearTimeout(revealTimer)
+      waitingForPaint = false
+      if (!mainWindow.isDestroyed() && !mainWindow.isMinimized()) mainWindow.setOpacity(1)
+    }
+    mainWindow.on('minimize', () => { clearTimeout(revealTimer); waitingForPaint = false; mainWindow.setOpacity(0) })
+    mainWindow.on('restore', () => {
+      clearTimeout(revealTimer)
+      waitingForPaint = true
+      revealTimer = setTimeout(reveal, 250)
+    })
+    ipcMain.on('window:painted', (event) => {
+      if (!waitingForPaint || event.sender !== mainWindow.webContents) return
+      clearTimeout(revealTimer)
+      revealTimer = setTimeout(reveal, 34)
+    })
+  }
   
   
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -440,7 +469,7 @@ app.whenReady().then(() => {
       if (typeof newSettings?.hardwareAcceleration === 'boolean') next.hardwareAcceleration = newSettings.hardwareAcceleration
       if (typeof newSettings?.performanceMode === 'boolean') next.performanceMode = newSettings.performanceMode
       if (GRAPHICS_BACKENDS.includes(newSettings?.graphicsBackend)) next.graphicsBackend = newSettings.graphicsBackend
-      fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2))
+      writePerformanceSettings(next)
       return { success: true }
     } catch (e) {
       return { error: e.message }

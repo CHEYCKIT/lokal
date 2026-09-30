@@ -1386,11 +1386,11 @@ export default function Settings() {
             </div>
           </Row>
           {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
-            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is faster on some PCs but flashes white when the window comes back from the taskbar'}>
+            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is the smoothest but flashes white when the window comes back from the taskbar; OpenGL and Direct3D 9 don\'t flash but can feel laggy'}>
               <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
                 aria-label="Graphics backend"
                 className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-                <option value="auto">Automatic (OpenGL)</option>
+                <option value="auto">Automatic (Direct3D 11)</option>
                 <option value="gl">OpenGL</option>
                 <option value="d3d11">Direct3D 11</option>
                 <option value="d3d9">Direct3D 9</option>
