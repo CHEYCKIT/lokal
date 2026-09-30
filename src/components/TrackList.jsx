@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast } from './Toaster'
-import { isUpgradable, openLossless, formatLabel } from '../quality'
+import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
@@ -60,7 +60,16 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-export default function TrackList({ tracks = [], showAlbum = true, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
+// Column templates (whole class names, so Tailwind sees them). The Time
+// column is always the last one; the Quality column only shows where the
+// Album one does (@md and up).
+function gridCols(playlistId, showQuality) {
+  if (playlistId) return 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]'
+  if (showQuality) return 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_4.5rem_5rem]'
+  return 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'
+}
+
+export default function TrackList({ tracks = [], showAlbum = true, showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
   // Downloads from an addon are tagged with its name.
   const [addonNames, setAddonNames] = useState({})
   const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source))
@@ -634,11 +643,15 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         ]}
       />
 
-      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'}`}>
+      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${gridCols(playlistId, showQuality)}`}>
         {playlistId && <span></span>}
         <span>#</span><span>Title</span>
         <span className="hidden @md:inline">{showAlbum ? 'Album' : ''}</span>
-        <span className="text-right">Time</span>
+        {showQuality && <span className="hidden text-center @md:inline">Quality</span>}
+        {/* Always the last column: below @md the Album header is hidden, and
+            auto-placed this landed in the actions column instead, left of
+            the times. */}
+        <span className="col-end-[-1] text-right">Time</span>
       </div>
 
       <div ref={rowsRef}>
@@ -683,7 +696,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onContextMenu={(e) => openTrackMenu(e, track)}
             aria-selected={isSelected}
             style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
-            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'}`}
+            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${gridCols(playlistId, showQuality)}`}
           >
             {playlistId && (
               <div className="flex items-center justify-center w-6 text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
@@ -822,6 +835,19 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 </button>
               )}
             </div>
+            {showQuality && (() => {
+              // Same badge as the Audio Quality page; opens that page on its list.
+              const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
+              if (tier === 'unknown') return <span className="hidden text-center text-xs text-muted/50 @md:block">—</span>
+              const info = TIERS[tier]
+              return (
+                <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
+                  title={`${info.label}: ${info.desc}${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`}
+                  className={`hidden justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 @md:block ${info.className}`}>
+                  {info.label}
+                </button>
+              )
+            })()}
             <div className="col-end-[-1] flex items-center justify-end gap-1.5">
               {/* Narrow page: the row's buttons only show on hover, so this
                   (always there, and reachable with Tab) opens them all. */}

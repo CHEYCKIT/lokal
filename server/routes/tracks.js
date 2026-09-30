@@ -531,7 +531,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 
 router.get('/', (req, res) => {
   const db = getDB()
-  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre } = req.query
+  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre, quality } = req.query
   if (album) {
     const params = [album]
     let sql = "SELECT * FROM tracks WHERE album = ? AND file_path NOT LIKE 'ghost://%'"
@@ -552,6 +552,8 @@ router.get('/', (req, res) => {
   if (sourceWhere) { where.push(sourceWhere.sql); params.push(...sourceWhere.params) }
   const genreWhere = require('../../electron/ipc/scanner').genreFilter(typeof genre === 'string' ? genre : '')
   if (genreWhere) { where.push(genreWhere.sql); params.push(...genreWhere.params) }
+  const qualityWhere = typeof quality === 'string' && quality ? require('../../electron/quality').tierFilter(db, quality) : null
+  if (qualityWhere) { where.push(qualityWhere.sql); params.push(...qualityWhere.params) }
   if (where.length) sql += ' WHERE ' + where.join(' AND ')
   sql += ` ORDER BY ${sort} LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`
   res.json(db.prepare(sql).all(...params))

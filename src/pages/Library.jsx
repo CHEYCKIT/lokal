@@ -22,6 +22,8 @@ export default function Library() {
   // One genre, or '' for all (matches a song's main genre or any of its genres).
   const [genre, setGenre] = useCachedState('library:genre', '')
   const [genres, setGenres] = useCachedState('library:genres', [])
+  // One audio quality tier, or '' for all (the Audio Quality page's tiers).
+  const [quality, setQuality] = useCachedState('library:quality', '')
   const [view, setView] = useCachedState('library:view', 'list')
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
@@ -45,7 +47,7 @@ export default function Library() {
     loadingRef.current = true
     setLoading(true)
     try {
-      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}) })
+      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}), ...(quality ? { quality } : {}) })
       if (requestId !== requestIdRef.current) return
       // A failed request keeps the list already shown (and cached).
       if (!Array.isArray(result)) return
@@ -71,13 +73,13 @@ export default function Library() {
     offsetRef.current = 0
     setHasMore(false)
     load(false)
-  }, [sort, source, genre])
+  }, [sort, source, genre, quality])
 
   useEffect(() => {
     const handleRefresh = () => { load(false); loadGenres() }
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [sort, source, genre])
+  }, [sort, source, genre, quality])
 
   // The genres to pick from: every one in the library, on opening and after a refresh.
   const loadGenres = () => Promise.resolve(api.getAllGenres())
@@ -96,7 +98,7 @@ export default function Library() {
     }, { rootMargin: '300px 0px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, sort, source, genre, tracks.length])
+  }, [hasMore, loading, sort, source, genre, quality, tracks.length])
 
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
@@ -128,6 +130,15 @@ export default function Library() {
             {genre && !genres.some(g => g.toLowerCase() === genre.toLowerCase()) && <option value={genre}>{genre}</option>}
             {genres.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
+          <select value={quality} onChange={e => setQuality(e.target.value)} aria-label="Quality"
+            className={`bg-elevated border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent/50 ${quality ? 'border-accent/40 text-accent' : 'border-border text-muted'}`}>
+            <option value="">All qualities</option>
+            <option value="hires">Hi-res</option>
+            <option value="lossless">Lossless</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+            <option value="suspect">Suspect</option>
+          </select>
           <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort"
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="added_at DESC">Recently Added</option>
@@ -153,7 +164,7 @@ export default function Library() {
           </div>
           {/* No per-row entrance: the page fades in as a whole, and 50 row
               animations in the same frames made that fade stutter. */}
-          <TrackList tracks={tracks} showAlbum reduceMotion />
+          <TrackList tracks={tracks} showAlbum showQuality reduceMotion />
         </>
       )}
 
@@ -191,9 +202,12 @@ export default function Library() {
       {loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
-          <p>{source === 'all' && !genre ? 'No tracks yet — pick your music folder above.' : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : 'No songs from this source.'}</p>
+          <p>{source === 'all' && !genre && !quality ? 'No tracks yet — pick your music folder above.' : quality ? 'No songs of this quality with these filters.' : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : 'No songs from this source.'}</p>
           {genre && (
             <button onClick={() => setGenre('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">Show all genres</button>
+          )}
+          {quality && (
+            <button onClick={() => setQuality('')} className="mt-3 ml-3 text-xs text-accent transition-colors hover:text-accent/70">Show all qualities</button>
           )}
         </div>
       )}
