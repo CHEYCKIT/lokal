@@ -77,6 +77,27 @@ function readExclusiveSidePanelsSetting() {
   }
 }
 
+// Settings > Appearance > Layout > "Open the side panel on play". On unless
+// switched off; read synchronously here (the backend copy is synced by
+// Settings).
+function readAutoOpenSidePanelSetting() {
+  try {
+    return localStorage.getItem('lokal-auto-open-side-panel') !== '0'
+  } catch {
+    return true
+  }
+}
+
+// Starting playback yourself (a track, album, playlist, mix...) opens the
+// Now Playing panel when it's closed, as Spotify does. Only playTrack and
+// playQueue call this -- the queue moving on, resuming, skipping don't --
+// so closing the panel while music plays keeps it closed until you start
+// something else. Not in the mini player, which has no room for it.
+function sidePanelOnPlay(s) {
+  if (!s.autoOpenSidePanel || s.showMiniPlayer || s.showRightSidebar) return {}
+  return s.exclusiveSidePanels ? { showRightSidebar: true, sidePanelView: 'info' } : { showRightSidebar: true }
+}
+
 function loadQueue() {
   try {
     const data = localStorage.getItem('lokal-queue')
@@ -153,6 +174,7 @@ export const usePlayerStore = create((set, get) => ({
   // the setting changes, without needing a reload. Initialized from
   // localStorage so the choice persists across sessions.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
+  autoOpenSidePanel: readAutoOpenSidePanelSetting(),
   // True once the user has explicitly picked a Side Panels mode this
   // session (via the Settings toggle). Lets hydrateExclusiveSidePanels
   // (the backend-persisted value, fetched async at app boot and again on
@@ -254,15 +276,16 @@ export const usePlayerStore = create((set, get) => ({
       get().initShuffleQueue(q, idx)
     }
     
-    set({ 
+    set(s => ({ 
       currentTrack: playableTrack, 
       queue: q, 
       queueIndex: idx, 
       isPlaying: true, 
       playbackContext: context || null,
       playHistory: [playableTrack.id],
-      futureHistory: []
-    })
+      futureHistory: [],
+      ...sidePanelOnPlay(s),
+    }))
   },
 
   playQueue: (tracks, startIndex = 0, context = null) => {
@@ -276,15 +299,16 @@ export const usePlayerStore = create((set, get) => ({
       get().initShuffleQueue(sanitizedTracks, safeIndex)
     }
     
-    set({ 
+    set(s => ({ 
       queue: sanitizedTracks, 
       queueIndex: safeIndex, 
       currentTrack: startTrack, 
       isPlaying: true,
       playbackContext: context || null,
       playHistory: startTrack ? [startTrack.id] : [],
-      futureHistory: []
-    })
+      futureHistory: [],
+      ...sidePanelOnPlay(s),
+    }))
   },
 
   togglePlay: () => {
@@ -694,6 +718,10 @@ export const usePlayerStore = create((set, get) => ({
     return { sidePanelView: s.sidePanelView === 'lyrics' ? 'info' : 'lyrics' }
   }),
   setSidePanelView: (view) => set({ sidePanelView: view }),
+  setAutoOpenSidePanel: (value) => {
+    try { localStorage.setItem('lokal-auto-open-side-panel', value ? '1' : '0') } catch {}
+    set({ autoOpenSidePanel: !!value })
+  },
   // The user's own explicit mode choice (the Settings toggle). Carries
   // over whichever panel is currently open instead of just dropping it:
   // switching to merged mode folds a visible standalone Queue panel into

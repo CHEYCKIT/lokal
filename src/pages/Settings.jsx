@@ -401,6 +401,8 @@ export default function Settings() {
   
   const { openAlbums, user, logout } = useAppStore()
   const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
+  const autoOpenSidePanel = usePlayerStore(s => s.autoOpenSidePanel)
+  const setAutoOpenSidePanel = usePlayerStore(s => s.setAutoOpenSidePanel)
   const hydrateExclusiveSidePanels = usePlayerStore(s => s.hydrateExclusiveSidePanels)
   const exclusiveSidePanels = usePlayerStore(s => s.exclusiveSidePanels)
   const fileInputRef = useRef(null)
@@ -453,6 +455,11 @@ export default function Settings() {
       // -- which can resolve after a selection the user already made
       // while it was loading -- can never overwrite a fresher choice.
       hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
+      // Same for "Open the Side Panel on Play", unless it was clicked while
+      // this was loading.
+      if (!touchedSettingsRef.current.has('auto_open_side_panel') && (s?.auto_open_side_panel === '0' || s?.auto_open_side_panel === '1')) {
+        setAutoOpenSidePanel(s.auto_open_side_panel === '1')
+      }
     }).catch(e => {
       setSettingsLoadError(e?.message || 'No answer')
       setSettingsLoaded(true)
@@ -2803,6 +2810,13 @@ module.exports = {
             </p>
           )}
           </div>
+        </Row>
+        <Row label="Open the Side Panel on Play" desc="Starting a song, album or playlist opens the Now Playing panel when it's closed. The queue moving on doesn't reopen it.">
+          <button
+            onClick={() => { const v = !autoOpenSidePanel; setAutoOpenSidePanel(v); set('auto_open_side_panel', v ? '1' : '0') }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${autoOpenSidePanel ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {autoOpenSidePanel ? 'On' : 'Off'}
+          </button>
         </Row>
       </Section>
       )}
