@@ -175,6 +175,9 @@ export const usePlayerStore = create((set, get) => ({
   // localStorage so the choice persists across sessions.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
   autoOpenSidePanel: readAutoOpenSidePanelSetting(),
+  // True once the switch was clicked this session, so a settings load that
+  // resolves later (even from a Settings page since closed) can't undo it.
+  autoOpenSidePanelUserSet: false,
   // True once the user has explicitly picked a Side Panels mode this
   // session (via the Settings toggle). Lets hydrateExclusiveSidePanels
   // (the backend-persisted value, fetched async at app boot and again on
@@ -719,6 +722,12 @@ export const usePlayerStore = create((set, get) => ({
   }),
   setSidePanelView: (view) => set({ sidePanelView: view }),
   setAutoOpenSidePanel: (value) => {
+    try { localStorage.setItem('lokal-auto-open-side-panel', value ? '1' : '0') } catch {}
+    set({ autoOpenSidePanel: !!value, autoOpenSidePanelUserSet: true })
+  },
+  // The backend's copy, applied unless the user already chose this session.
+  hydrateAutoOpenSidePanel: (value) => {
+    if (get().autoOpenSidePanelUserSet) return
     try { localStorage.setItem('lokal-auto-open-side-panel', value ? '1' : '0') } catch {}
     set({ autoOpenSidePanel: !!value })
   },

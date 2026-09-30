@@ -403,6 +403,7 @@ export default function Settings() {
   const setExclusiveSidePanels = usePlayerStore(s => s.setExclusiveSidePanels)
   const autoOpenSidePanel = usePlayerStore(s => s.autoOpenSidePanel)
   const setAutoOpenSidePanel = usePlayerStore(s => s.setAutoOpenSidePanel)
+  const hydrateAutoOpenSidePanel = usePlayerStore(s => s.hydrateAutoOpenSidePanel)
   const hydrateExclusiveSidePanels = usePlayerStore(s => s.hydrateExclusiveSidePanels)
   const exclusiveSidePanels = usePlayerStore(s => s.exclusiveSidePanels)
   const fileInputRef = useRef(null)
@@ -455,10 +456,10 @@ export default function Settings() {
       // -- which can resolve after a selection the user already made
       // while it was loading -- can never overwrite a fresher choice.
       hydrateExclusiveSidePanels(s?.exclusive_side_panels !== '0')
-      // Same for "Open the Side Panel on Play", unless it was clicked while
-      // this was loading.
-      if (!touchedSettingsRef.current.has('auto_open_side_panel') && (s?.auto_open_side_panel === '0' || s?.auto_open_side_panel === '1')) {
-        setAutoOpenSidePanel(s.auto_open_side_panel === '1')
+      // Same for "Open the Side Panel on Play": the store ignores it once
+      // the switch was clicked this session, on this page or a later one.
+      if (s?.auto_open_side_panel === '0' || s?.auto_open_side_panel === '1') {
+        hydrateAutoOpenSidePanel(s.auto_open_side_panel === '1')
       }
     }).catch(e => {
       setSettingsLoadError(e?.message || 'No answer')
