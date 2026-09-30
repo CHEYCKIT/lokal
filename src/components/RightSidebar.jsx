@@ -179,6 +179,7 @@ export default function RightSidebar() {
           initial={{ width: 0 }}
           animate={{ width: 300 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+          aria-label="Now playing"
           className="overflow-hidden flex-shrink-0"
           style={{ minWidth: 300 }}
         >
@@ -203,7 +204,7 @@ export default function RightSidebar() {
                 </button>
               ))}
             </div>
-            <button onClick={toggleRightSidebar} className="text-muted hover:text-white transition-colors ml-2">
+            <button onClick={toggleRightSidebar} aria-label="Close the side panel" className="text-muted hover:text-white transition-colors ml-2">
               <ChevronRight size={16} />
             </button>
           </div>

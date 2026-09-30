@@ -1948,7 +1948,7 @@ export default function App() {
             <TitleBar />
             <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
-              <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent">
+              <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent [scrollbar-gutter:stable]">
                 <AnimatedRoutes />
               </main>
               <RightSidebar />

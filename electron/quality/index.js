@@ -118,6 +118,16 @@ function summary(db) {
   }
 }
 
+/**
+ * Library > Quality: the WHERE clause for one tier (the Audio Quality page's
+ * lists use the same ones), or null for no filter.
+ */
+function tierFilter(db, tier) {
+  if (!Object.prototype.hasOwnProperty.call(TIER_SQL, tier) || tier === 'unknown' || tier === 'upgradable') return null
+  ensureColumns(db)
+  return { sql: `(${TIER_SQL[tier]})`, params: [] }
+}
+
 /** Tracks of a tier, worst first within it (lowest bitrate, then most played). */
 function list(db, { tier = 'upgradable', limit = 200, offset = 0 } = {}) {
   ensureColumns(db)
@@ -349,6 +359,6 @@ async function checkOne(db, trackId, { ffmpeg = null } = {}) {
 
 module.exports = {
   normalizeIsrc, qualityFields, ensureColumns, saveFields, readFile,
-  tierOf, summary, list, status, cancel, startReading,
+  tierOf, tierFilter, summary, list, status, cancel, startReading,
   verdictFromLevels, measureBands, spectralCheck, startChecking, checkOne, findFfmpeg, BANDS,
 }

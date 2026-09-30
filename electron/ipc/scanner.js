@@ -1189,6 +1189,8 @@ function registerScannerHandlers(ipcMain) {
     if (source) { where.push(source.sql); params.push(...source.params) }
     const genre = genreFilter(opts.genre)
     if (genre) { where.push(genre.sql); params.push(...genre.params) }
+    const quality = opts.quality ? require('../quality').tierFilter(db, opts.quality) : null
+    if (quality) { where.push(quality.sql); params.push(...quality.params) }
     if (where.length) sql += ' WHERE ' + where.join(' AND ')
     sql += ` ORDER BY ${opts.sort || 'added_at DESC'} LIMIT ${limit} OFFSET ${offset}`
     return db.prepare(sql).all(...params)
