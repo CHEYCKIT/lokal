@@ -15,7 +15,7 @@ const steps = [
   {
     id: 'local-only',
     title: 'Important: Local Music Only',
-    description: 'Lokal is NOT a streaming service. You need to either: (1) Download music using the built-in YouTube downloader, or (2) Import your existing music files from a folder on your computer.',
+    description: 'Lokal is NOT a streaming service. You need to either: (1) Download music from Search (YouTube, SoundCloud, Soulseek or a pasted link), or (2) Import your existing music files from a folder on your computer.',
     icon: AlertCircle,
   },
   {
@@ -341,7 +341,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                           <p><strong>NOT a streaming service!</strong></p>
                           <p>Lokal doesn't have any built-in music. You must:</p>
                           <ul className="list-disc list-inside space-y-1 ml-1">
-                            <li>Download music using the Downloader (requires yt-dlp)</li>
+                            <li>Download music from Search (requires yt-dlp)</li>
                             <li>OR import music files from a folder on your computer</li>
                           </ul>
                         </div>
@@ -619,7 +619,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                     <div className="bg-card/50 rounded-xl p-3 text-xs text-muted">
                       <p>Next steps:</p>
                       <ul className="list-disc list-inside mt-2 space-y-1">
-                        <li>Use Downloader to get music from YouTube</li>
+                        <li>Search for music online, or paste a link, to download it</li>
                         <li>Use the Player to play your tracks</li>
                         <li>Search for tracks, artists, albums, and genres</li>
                       </ul>

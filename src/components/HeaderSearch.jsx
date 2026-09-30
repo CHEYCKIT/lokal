@@ -4,6 +4,7 @@
 // - Focusing the box opens the Search page; its results follow the text live.
 // - While the box is focused, past searches drop down under it: all of them
 //   when it's empty, then only the closest matches as letters are typed.
+// - A pasted link is offered for download on the Search page; Enter starts it.
 // - Typing anywhere in the app (outside a text field, with nothing like the
 //   fullscreen player or a dialog on top) starts a search; "/" or Ctrl/Cmd+K
 //   just focus the box.
@@ -18,6 +19,7 @@ import { api } from '../api'
 import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
 } from '../searchHistory'
+import { asLink } from '../downloadLinks'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 
@@ -57,6 +59,7 @@ export default function HeaderSearch() {
   const setQuery = useSearchStore(s => s.setQuery)
   const focusSeq = useSearchStore(s => s.focusSeq)
   const requestFocus = useSearchStore(s => s.requestFocus)
+  const submit = useSearchStore(s => s.submit)
   const playQueue = usePlayerStore(s => s.playQueue)
 
   const inputRef = useRef(null)
@@ -92,7 +95,9 @@ export default function HeaderSearch() {
     try { input.setSelectionRange(end, end) } catch {}
   }, [focusSeq])
 
-  const suggestions = useMemo(() => matchRecentSearches(history, query), [history, query])
+  const isLink = !!asLink(query)
+  // No past searches under a pasted link (and links aren't kept as searches).
+  const suggestions = useMemo(() => (isLink ? [] : matchRecentSearches(history, query)), [history, query, isLink])
   useEffect(() => { setActive(-1) }, [query, dropdownOpen])
 
   /** Go to the Search page unless already there. */
@@ -151,6 +156,7 @@ export default function HeaderSearch() {
     }
     if (e.key === 'Enter') {
       if (dropdownOpen && active >= 0 && suggestions[active]) { e.preventDefault(); pick(suggestions[active]); return }
+      if (isLink) { e.preventDefault(); openSearchPage(); submit(); return }
       if (query.trim()) saveRecentSearch(query)
       setDropdownOpen(false)
       return
@@ -201,11 +207,11 @@ export default function HeaderSearch() {
             value={query}
             onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true); openSearchPage() }}
             onFocus={() => { setFocused(true); setDropdownOpen(true); openSearchPage() }}
-            onBlur={() => { setFocused(false); setDropdownOpen(false); if (query.trim().length >= 2 && onSearchPage) saveRecentSearch(query) }}
+            onBlur={() => { setFocused(false); setDropdownOpen(false); if (query.trim().length >= 2 && onSearchPage && !isLink) saveRecentSearch(query) }}
             onKeyDown={onKeyDown}
-            placeholder="What do you want to play?"
+            placeholder="What do you want to play? Or paste a link"
             spellCheck={false}
-            aria-label="Search your library"
+            aria-label="Search, or paste a link to download"
             aria-expanded={showDropdown}
             aria-controls="header-search-history"
             aria-activedescendant={active >= 0 ? `header-search-history-${active}` : undefined}

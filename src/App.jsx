@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
-import { MemoryRouter as Router, Routes, Route, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
+import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
@@ -23,7 +23,6 @@ import Library from './pages/Library'
 import Search from './pages/Search'
 import Artist from './pages/Artist'
 import Playlist from './pages/Playlist'
-import Downloader from './pages/Downloader'
 import Settings from './pages/Settings'
 import Profile from './pages/Profile'
 import Recap from './pages/Recap'
@@ -234,7 +233,8 @@ function AnimatedRoutes() {
         <Route path="/search" element={<PageTransition><Search /></PageTransition>} />
         <Route path="/artist/:id" element={<PageTransition><Artist /></PageTransition>} />
         <Route path="/playlist/:id" element={<PageTransition><Playlist /></PageTransition>} />
-        <Route path="/downloader" element={<PageTransition gated><Downloader /></PageTransition>} />
+        {/* The Downloader lives in Search now; what asked for it (a Soulseek search) is passed on. */}
+        <Route path="/downloader" element={<Navigate to="/search" replace state={location.state} />} />
         <Route path="/profile" element={<PageTransition><Profile /></PageTransition>} />
         <Route path="/quality" element={<PageTransition gated><Quality /></PageTransition>} />
         <Route path="/recap" element={<PageTransition gated><Recap /></PageTransition>} />

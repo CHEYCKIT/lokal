@@ -1,8 +1,10 @@
 // Online results: songs that aren't in the library, under the local results
-// on the Search page, from YouTube Music or SoundCloud (switch in the section
-// header, remembered). They stream with the user's yt-dlp; + adds one to a
-// playlist and ⬇ saves it to the library (right-click ⬇ for Soulseek). Both
-// keep it as a ghost track until the file is in.
+// on the Search page, from YouTube Music, SoundCloud, installed addons or
+// Soulseek (switch in the section header, remembered). The streaming sources
+// play with the user's yt-dlp; + adds one to a playlist and ⬇ saves it to the
+// library (right-click ⬇ for Soulseek), both keeping it as a ghost track
+// until the file is in. YouTube Music also lists matching playlists and
+// channels to download whole; Soulseek lists shared files to download.
 
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
@@ -12,6 +14,9 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import { sameStream } from '../onlineTracks'
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
+import SoulseekSearch from './SoulseekSearch'
+import OnlineCollections from './OnlineCollections'
+import DownloadNotices from './DownloadNotices'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -20,6 +25,8 @@ const BUILT_IN = [
   { id: 'yt', label: 'YouTube Music' },
   { id: 'sc', label: 'SoundCloud' },
 ]
+// Always last: files people share, downloaded through slskd (not streamed).
+const SOULSEEK = { id: 'slsk', label: 'Soulseek' }
 
 function fmtDuration(seconds) {
   const s = Math.round(Number(seconds) || 0)
@@ -51,12 +58,21 @@ function useProviders() {
   return providers
 }
 
-/** Online songs for `query`, with play / add to playlist / save to library. */
-export default function OnlineResults({ query }) {
-  const providers = useProviders()
+/**
+ * Online songs for `query`, with play / add to playlist / save to library.
+ * @param soulseekFor  a song to find on Soulseek ("Find on Soulseek…", "Get it
+ *                     in lossless"): Soulseek is shown, and the file picked
+ *                     there replaces the stream / the track's file
+ */
+export default function OnlineResults({ query, soulseekFor = null }) {
+  const providers = [...useProviders(), SOULSEEK]
   const [chosen, setProvider] = useState(storedProvider)
+  // Asked to find a song on Soulseek: shown until another source is picked.
+  const [forSoulseek, setForSoulseek] = useState(!!soulseekFor)
+  useEffect(() => { if (soulseekFor) setForSoulseek(true) }, [soulseekFor])
   // A removed / turned-off addon falls back to YouTube Music.
-  const provider = providers.some(p => p.id === chosen) ? chosen : 'yt'
+  const provider = forSoulseek ? 'slsk' : providers.some(p => p.id === chosen) ? chosen : 'yt'
+  const soulseek = provider === 'slsk'
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -67,13 +83,14 @@ export default function OnlineResults({ query }) {
   const providerLabel = providers.find(p => p.id === provider)?.label || 'YouTube Music'
 
   const choose = (id) => {
+    setForSoulseek(false)
     setProvider(id)
     try { localStorage.setItem(PROVIDER_KEY, id) } catch {}
   }
 
   useEffect(() => {
     const seq = ++seqRef.current
-    if (q.length < 2) { setResults([]); setLoading(false); setError(null); return undefined }
+    if (q.length < 2 || soulseek) { setResults([]); setLoading(false); setError(null); return undefined }
     setLoading(true)
     setResults([])
     const t = setTimeout(async () => {
@@ -85,7 +102,7 @@ export default function OnlineResults({ query }) {
       setLoading(false)
     }, DEBOUNCE_MS)
     return () => clearTimeout(t)
-  }, [q, provider])
+  }, [q, provider, soulseek])
 
   if (q.length < 2) return null
 
@@ -118,7 +135,7 @@ export default function OnlineResults({ query }) {
         <div className="flex items-center gap-3 min-w-0 flex-wrap">
           <h2 className="text-xs font-display text-muted uppercase tracking-widest flex items-center gap-2 flex-shrink-0">
             Online
-            {loading && <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
+            {loading && !soulseek && <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
           </h2>
           <div role="tablist" aria-label="Online source" className="flex items-center gap-1 rounded-full border border-border p-0.5">
             {providers.map(p => (
@@ -136,60 +153,74 @@ export default function OnlineResults({ query }) {
             ))}
           </div>
         </div>
-        <span className="text-[10px] text-muted/80 truncate">{providers.find(p => p.id === provider)?.addon ? 'From an addon you installed' : 'Streams with yt-dlp'} · not in your library</span>
+        <span className="text-[10px] text-muted/80 truncate">{soulseek ? 'Files people share, through slskd' : providers.find(p => p.id === provider)?.addon ? 'From an addon you installed' : 'Streams with yt-dlp'} · not in your library</span>
       </div>
-      {error && !results.length && <p className="text-xs text-muted py-2">{error}</p>}
-      {!loading && !error && !results.length && <p className="text-xs text-muted py-2">No songs found on {providerLabel}.</p>}
-      <div className="space-y-0.5">
-        {results.map((item, i) => {
-          const current = currentTrack && sameStream(currentTrack, item)
-          return (
-            <motion.div
-              key={`${item.provider}:${item.id}`}
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i, 10) * 0.02 }}
-              onDoubleClick={() => play(item, i)}
-              className={`group grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-3 py-1.5 rounded-lg transition-colors ${current ? 'bg-accent/10' : 'hover:bg-elevated'}`}
-            >
-              <button
-                onClick={() => play(item, i)}
-                title={current && isPlaying ? 'Pause' : 'Play'}
-                aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${item.title}`}
-                className="relative w-10 h-10 rounded overflow-hidden bg-card flex items-center justify-center text-muted"
+      <div className="mb-3 empty:hidden"><DownloadNotices youtube={provider === 'yt'} /></div>
+      {soulseek ? (
+        <SoulseekSearch
+          query={q}
+          key={soulseekFor?.replaceTrackId || soulseekFor?.upgradeTrackId || 'soulseek'}
+          initialLosslessOnly={!!soulseekFor?.losslessOnly}
+          replaceTrack={soulseekFor?.replaceTrackId ? soulseekFor : null}
+          upgradeTrack={soulseekFor?.upgradeTrackId ? soulseekFor : null}
+        />
+      ) : (
+        <>
+        {error && !results.length && <p className="text-xs text-muted py-2">{error}</p>}
+        {!loading && !error && !results.length && <p className="text-xs text-muted py-2">No songs found on {providerLabel}.</p>}
+        <div className="space-y-0.5">
+          {results.map((item, i) => {
+            const current = currentTrack && sameStream(currentTrack, item)
+            return (
+              <motion.div
+                key={`${item.provider}:${item.id}`}
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, 10) * 0.02 }}
+                onDoubleClick={() => play(item, i)}
+                className={`group grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-3 py-1.5 rounded-lg transition-colors ${current ? 'bg-accent/10' : 'hover:bg-elevated'}`}
               >
-                {item.thumbnail ? <img src={item.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" /> : <Music size={14} />}
-                <span className={`absolute inset-0 flex items-center justify-center bg-black/50 text-white transition-opacity ${current ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                  {current && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
-                </span>
-              </button>
-              <div className="min-w-0">
-                <p className={`text-sm font-medium truncate ${current ? 'text-accent' : 'text-text'}`}>{item.title}</p>
-                <p className="text-xs text-muted truncate">
-                  {[item.artist, item.album].filter(Boolean).join(' · ')}
-                  {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">Video</span>}
-                  {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
-                  {item.preview && <span title="SoundCloud only lets non-subscribers play 30 seconds of this track" className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">30 s preview</span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button onClick={() => addToPlaylist(item)} title="Add to playlist" aria-label={`Add ${item.title} to a playlist`}
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
-                  <Plus size={15} />
+                <button
+                  onClick={() => play(item, i)}
+                  title={current && isPlaying ? 'Pause' : 'Play'}
+                  aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${item.title}`}
+                  className="relative w-10 h-10 rounded overflow-hidden bg-card flex items-center justify-center text-muted"
+                >
+                  {item.thumbnail ? <img src={item.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" /> : <Music size={14} />}
+                  <span className={`absolute inset-0 flex items-center justify-center bg-black/50 text-white transition-opacity ${current ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    {current && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
+                  </span>
                 </button>
-                <SaveToLibraryButton
-                  source={{ provider: item.provider, id: String(item.id) }}
-                  meta={{ title: item.title, artist: item.artist }}
-                  getTrack={async () => (await asTracks([item]))[0]}
-                  size={15}
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100"
-                />
-                <span className="text-xs text-muted font-display w-10 text-right">{fmtDuration(item.duration)}</span>
-              </div>
-            </motion.div>
-          )
-        })}
-      </div>
+                <div className="min-w-0">
+                  <p className={`text-sm font-medium truncate ${current ? 'text-accent' : 'text-text'}`}>{item.title}</p>
+                  <p className="text-xs text-muted truncate">
+                    {[item.artist, item.album].filter(Boolean).join(' · ')}
+                    {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">Video</span>}
+                    {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
+                    {item.preview && <span title="SoundCloud only lets non-subscribers play 30 seconds of this track" className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">30 s preview</span>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button onClick={() => addToPlaylist(item)} title="Add to playlist" aria-label={`Add ${item.title} to a playlist`}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
+                    <Plus size={15} />
+                  </button>
+                  <SaveToLibraryButton
+                    source={{ provider: item.provider, id: String(item.id) }}
+                    meta={{ title: item.title, artist: item.artist }}
+                    getTrack={async () => (await asTracks([item]))[0]}
+                    size={15}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  />
+                  <span className="text-xs text-muted font-display w-10 text-right">{fmtDuration(item.duration)}</span>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
+        {provider === 'yt' && <OnlineCollections query={q} />}
+        </>
+      )}
     </section>
   )
 }

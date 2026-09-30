@@ -1,17 +1,20 @@
-// Soulseek tab of the Downloader: search through slskd, results grouped by the
-// uploader's folder (usually an album), best quality first. Picks go into the
-// same download queue as everything else.
+// Soulseek, as a source in the Search page's online results: searches slskd
+// for what's typed in the search box (once typing settles), results grouped
+// by the uploader's folder (usually an album), best quality first. Picks go
+// into the same download queue as everything else.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Download, CheckCircle, Clock, RefreshCw, Folder, User, Zap, AlertTriangle } from 'lucide-react'
+import { Download, CheckCircle, Clock, RefreshCw, Folder, User, Zap, AlertTriangle } from 'lucide-react'
 import { api } from '../api'
 import { useDownloads, isActive } from '../store/downloads'
-import { peekCache, usePageReady, writeCache } from '../pageCache'
+import { peekCache, writeCache } from '../pageCache'
 
 const fmtSize = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${(b / 1024 ** 2).toFixed(1)} MB`)
 const fmtTime = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '')
 const fmtSpeed = (bps) => (bps > 1024 * 1024 ? `${(bps / 1024 / 1024).toFixed(1)} MB/s` : `${Math.round((bps || 0) / 1024)} KB/s`)
+// A Soulseek search asks the whole network: only once typing has settled.
+const SETTLE_MS = 900
 const jobUrl = (f) => `soulseek://${encodeURIComponent(f.username)}/${encodeURIComponent(f.filename)}`
 
 function groupResults(results, losslessOnly) {
@@ -31,22 +34,20 @@ function groupResults(results, losslessOnly) {
 }
 
 /**
- * @param initialQuery         searched right away (e.g. "Artist Title" from a streamed song or "Get it in lossless")
+ * @param query                what to search for (the search box's text)
  * @param initialLosslessOnly  start with "Lossless only" on
  * @param replaceTrack         { replaceTrackId, title, artist }: a streamed song the first single
  *                             file picked here replaces once it's downloaded
  * @param upgradeTrack         { upgradeTrackId, title, artist, current }: a library track whose
  *                             file the first single file picked here replaces once downloaded
  */
-export default function SoulseekSearch({ onQueued, initialQuery = '', initialLosslessOnly = false, replaceTrack = null, upgradeTrack = null }) {
+export default function SoulseekSearch({ query = '', onQueued, initialLosslessOnly = false, replaceTrack = null, upgradeTrack = null }) {
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
-  // Last known connection status shows at once; the tab fades in once known.
+  // The last known connection status shows at once.
   const [status, setStatusState] = useState(() => peekCache('soulseek:status') ?? null)
   const setStatus = (value) => { writeCache('soulseek:status', value); setStatusState(value) }
-  usePageReady(status !== null)
-  const [query, setQuery] = useState(initialQuery || '')
   const [replacing, setReplacing] = useState(replaceTrack)
   const [upgrading, setUpgrading] = useState(upgradeTrack)
   const [search, setSearch] = useState(null) // { id, complete, results, error }
@@ -63,22 +64,36 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
 
   useEffect(() => {
     api.soulseekStatus().then(setStatus).catch(e => setStatus({ error: e.message }))
-    return () => { clearTimeout(pollRef.current) }
   }, [])
 
-  // Opened for a song: search for it straight away.
-  useEffect(() => {
-    if (initialQuery) run(initialQuery)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const run = async (override) => {
-    const text = String(typeof override === 'string' ? override : query).trim()
-    if (!text) return
+  // The search running on slskd, stopped when another starts or this goes away.
+  const runningRef = useRef(null)
+  const stopRunning = () => {
     clearTimeout(pollRef.current)
-    if (search?.id && !search.complete) api.soulseekStopSearch(search.id)
+    if (runningRef.current) api.soulseekStopSearch(runningRef.current)
+    runningRef.current = null
+  }
+  useEffect(() => stopRunning, [])
+
+  // Follows the search box: a new search once the text has settled.
+  const text = String(query || '').trim()
+  useEffect(() => {
+    if (text.length < 2) { stopRunning(); setSearch(null); setError(''); return undefined }
+    const t = setTimeout(() => run(text), SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const latestText = useRef(text)
+  latestText.current = text
+  const run = async (text) => {
+    stopRunning()
     setError('')
+    setSearch({ id: null, complete: false, results: [], fileCount: 0, responseCount: 0 })
     const started = await api.soulseekSearch(text)
+    // Typing went on while slskd was starting it: this one is already stale.
+    if (latestText.current !== text) { if (started?.id) api.soulseekStopSearch(started.id); return }
     if (started?.error || !started?.id) { setError(started?.error || 'slskd did not start the search.'); setSearch(null); return }
+    runningRef.current = started.id
     finishing.current = false
     setSearch({ id: started.id, complete: false, results: [], fileCount: 0, responseCount: 0 })
     const startedAt = Date.now()
@@ -87,9 +102,11 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
       // slskd ends a search 15 s after the last reply; never wait forever.
       // (Ending it rather than deleting it: slskd then hands over its results.)
       if (r && !r.error && !r.complete && Date.now() - startedAt > 60000 && !finishing.current) { finishing.current = true; api.soulseekFinishSearch(started.id) }
-      if (r?.error) { setError(r.error); setSearch(s => (s?.id === started.id ? { ...s, complete: true } : s)); return }
+      if (runningRef.current !== started.id) return
+      if (r?.error) { setError(r.error); runningRef.current = null; setSearch(s => (s?.id === started.id ? { ...s, complete: true } : s)); return }
       setSearch(s => (s?.id === started.id ? { ...s, ...r } : s))
       if (!r.complete) pollRef.current = setTimeout(poll, 1000)
+      else runningRef.current = null
     }
     pollRef.current = setTimeout(poll, 700)
   }
@@ -120,13 +137,7 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
   const notReady = status?.error || (status && !status.loggedIn)
 
   return (
-    <section className="rounded-[28px] border border-border bg-card/60 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-      <div className="mb-4 flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted">
-        <Search size={14} />
-        <span>Soulseek</span>
-        {status?.loggedIn && <span className="normal-case tracking-normal text-green-400/80">· connected{status.username ? ` as ${status.username}` : ''}</span>}
-      </div>
-
+    <div>
       {replacing && (
         <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm">
           <Download size={15} className="flex-shrink-0 text-accent" />
@@ -159,23 +170,7 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
         </div>
       )}
 
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && run()}
-            placeholder="Artist and album or song..."
-            className="w-full rounded-2xl border border-border bg-black/20 py-3 pl-10 pr-4 text-sm text-white outline-none transition-colors focus:border-accent/50 placeholder:text-muted"
-          />
-        </div>
-        <button onClick={() => run()} disabled={!query.trim()} className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:opacity-40">
-          Search
-        </button>
-      </div>
-
-      <div className="mt-3 flex items-center gap-3 text-xs text-muted">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
         <button onClick={() => setLosslessOnly(v => !v)} className={`rounded-full px-3 py-1 font-semibold transition-colors ${losslessOnly ? 'bg-accent/15 text-accent border border-accent/30' : 'border border-border hover:text-white'}`}>
           Lossless only
         </button>
@@ -195,6 +190,7 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
           </>
         )}
         {search?.complete && <span>{search.results?.length || 0} audio files from {search.responseCount ?? '?'} users</span>}
+        {status?.loggedIn && <span className="ml-auto text-green-400/80">Connected{status.username ? ` as ${status.username}` : ''}</span>}
       </div>
 
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
@@ -261,6 +257,6 @@ export default function SoulseekSearch({ onQueued, initialQuery = '', initialLos
           <p className="py-8 text-center text-sm text-muted">{losslessOnly && search.results?.length ? 'No lossless files. Turn off "Lossless only".' : 'Nothing found. Try fewer words.'}</p>
         )}
       </div>
-    </section>
+    </div>
   )
 }
