@@ -252,3 +252,35 @@ export function periodPlace(tree = [], id) {
 export function listenerTimeZone() {
   return localTimeZone()
 }
+
+// The recaps the listener has opened. The sidebar's "new recap" badge is for
+// a recap nobody has looked at yet: opening an older one afterwards (or a
+// month "so far") mustn't bring it back, as keeping only the last one seen did.
+const OPENED_KEY = 'lokal-recap-opened'
+const OPENED_MAX = 200
+
+function readOpened() {
+  try {
+    const list = JSON.parse(localStorage.getItem(OPENED_KEY) || '[]')
+    const opened = Array.isArray(list) ? list.filter(id => typeof id === 'string') : []
+    // Before this list: the one recap last looked at.
+    const legacy = localStorage.getItem('lokal-recap-last-viewed')
+    if (legacy && !opened.includes(legacy)) opened.push(legacy)
+    return opened
+  } catch {
+    return []
+  }
+}
+
+/** Remember that the recap `id` was opened. */
+export function markRecapOpened(id) {
+  if (!id) return
+  const opened = readOpened().filter(other => other !== id)
+  opened.push(id)
+  try { localStorage.setItem(OPENED_KEY, JSON.stringify(opened.slice(-OPENED_MAX))) } catch {}
+}
+
+/** Has the recap `id` been opened? */
+export function recapOpened(id) {
+  return !!id && readOpened().includes(id)
+}
