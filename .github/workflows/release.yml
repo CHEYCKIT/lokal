@@ -9,6 +9,9 @@ jobs:
   build:
     strategy:
       matrix:
+        # Linux stays on a fixed, older Ubuntu: native modules compiled here
+        # only run on systems at least this new, so a newer image would
+        # lock older distros out of the AppImage/deb.
         os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     permissions:
@@ -161,10 +164,31 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
+            // What changed since the previous official version: the highest
+            // vX.Y.Z tag below this one. Nightly tags (v3.2.1-nightly.11) and
+            // other pre-release tags are skipped, and so is "latest release",
+            // which GitHub would otherwise use and which misses a version
+            // that was published late or left as a draft.
+            const { execSync } = require('child_process');
+            const tag = context.ref.replace('refs/tags/', '');
+            const parts = (t) => t.replace(/^v/, '').split(/[.-]/).map(n => parseInt(n, 10)).filter(n => !Number.isNaN(n));
+            const below = (a, b) => {
+              const x = parts(a), y = parts(b);
+              for (let i = 0; i < Math.max(x.length, y.length); i++) {
+                if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+              }
+              return false;
+            };
+            const previous = execSync("git tag --list 'v*'").toString().split('\n')
+              .map(t => t.trim())
+              .filter(t => /^v\d+(\.\d+)*$/.test(t) && below(t, tag))
+              .sort((a, b) => (below(a, b) ? 1 : -1))[0];
+            core.info(`Release notes for ${tag}, since ${previous || 'the first commit'}`);
             const response = await github.rest.repos.generateReleaseNotes({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: context.payload.ref.replace('refs/tags/', ''),
+              tag_name: tag,
+              ...(previous ? { previous_tag_name: previous } : {}),
             });
             core.setOutput('body', response.data.body);
 

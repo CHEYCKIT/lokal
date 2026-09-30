@@ -94,6 +94,9 @@ jobs:
     needs: version
     strategy:
       matrix:
+        # Linux stays on a fixed, older Ubuntu: native modules compiled here
+        # only run on systems at least this new, so a newer image would
+        # lock older distros out of the AppImage/deb.
         os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
 
