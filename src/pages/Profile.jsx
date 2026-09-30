@@ -86,9 +86,13 @@ export default function Profile() {
       setPlaylists([])
       return
     }
-    api.getPlaylists(user.id).then((result) => {
+    const load = () => api.getPlaylists(user.id).then((result) => {
       setPlaylists(Array.isArray(result) ? result.slice(0, 6) : [])
     }).catch(() => setPlaylists([]))
+    load()
+    // A playlist renamed, re-covered, made or deleted elsewhere shows here too.
+    window.addEventListener('lokal:playlists-changed', load)
+    return () => window.removeEventListener('lokal:playlists-changed', load)
   }, [user?.id])
 
   useEffect(() => {
@@ -423,19 +427,6 @@ export default function Profile() {
               <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
               <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
             </div>
-            {/* Top genres, as the Stats window showed them: themed chips, fading down the ranking. */}
-            {topGenres.length > 0 && (
-              <div className="mt-5">
-                <h3 className="mb-2 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h3>
-                <div className="flex flex-wrap gap-2">
-                  {topGenres.map((genre, index) => (
-                    <span key={genre.genre} title={`${genre.plays} plays`} className="max-w-full truncate rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-display text-accent" style={{ opacity: 1 - index * 0.15 }}>
-                      {genre.genre} · {genre.plays}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </section>
 
           {stats?.topArtists?.length > 0 ? (
@@ -479,6 +470,23 @@ export default function Profile() {
           ) : (
             <section className="flex min-h-full items-center justify-center rounded-2xl border border-border bg-elevated p-5">
               <p className="text-sm text-muted">No artist listening data yet.</p>
+            </section>
+          )}
+
+          {/* Top genres: a wide card of its own between the two rows (it
+              used to make the Snapshot card taller than Top Artists). */}
+          {topGenres.length > 0 && (
+            <section className="rounded-2xl border border-border bg-elevated px-5 py-4 @md:col-span-2">
+              <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:gap-5">
+                <h2 className="flex-shrink-0 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h2>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {topGenres.map((genre, index) => (
+                    <span key={genre.genre} title={`${genre.plays} plays`} className="max-w-full truncate rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-display text-accent" style={{ opacity: 1 - index * 0.15 }}>
+                      {genre.genre} · {genre.plays}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </section>
           )}
 
@@ -603,7 +611,7 @@ export default function Profile() {
                   className="overflow-hidden rounded-xl border border-border bg-elevated text-left transition-all hover:border-accent/30"
                 >
                   <div className="p-3">
-                    <PlaylistCover playlistId={playlist.id} size={128} className="mx-auto h-32 w-32 rounded-lg" />
+                    <PlaylistCover playlistId={playlist.id} coverPath={playlist.cover_path} size={128} className="mx-auto h-32 w-32 rounded-lg" />
                   </div>
                   <div className="px-3 pb-3">
                     <p className="truncate text-sm font-medium text-white">{playlist.name}</p>
