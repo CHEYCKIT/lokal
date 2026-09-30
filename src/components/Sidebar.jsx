@@ -22,7 +22,7 @@ export default function Sidebar() {
   const [confirmSignOut, setConfirmSignOut] = useState(false)
   const [showRecapBadge, setShowRecapBadge] = useState(false)
   
-  const { user, openAuth, logout, openStats } = useAppStore()
+  const { user, openAuth, logout } = useAppStore()
 
   // Your profile opens from your name and picture in the account row.
   const navItems = NAV
@@ -209,7 +209,6 @@ export default function Sidebar() {
               </button>
               
               <div className="flex gap-1 flex-shrink-0">
-                <button onClick={openStats} title="Stats" className="text-muted hover:text-white transition-colors"><BarChart2 size={13} /></button>
                 <button
                   onClick={handleSignOut}
                   title={confirmSignOut ? 'Confirm sign out' : 'Sign out'}

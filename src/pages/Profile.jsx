@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil } from 'lucide-react'
+import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil, Tags } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
 import PlaylistCover from '../components/PlaylistCover'
+import { filteredGenres } from '../recapText'
 
 function StatTile({ icon: Icon, label, value }) {
   return (
@@ -38,7 +39,7 @@ export default function Profile() {
   const avatarInputRef = useRef(null)
   const bannerInputRef = useRef(null)
   const bioInputRef = useRef(null)
-  const { user, openAuth, openStats, openProfile, logout } = useAppStore()
+  const { user, openAuth, openProfile, logout } = useAppStore()
   const [bannerData, setBannerData] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingBanner, setUploadingBanner] = useState(false)
@@ -179,6 +180,8 @@ export default function Profile() {
   const bannerSrc = bannerData || avatarSrc || ''
   const hours = stats ? Math.round((stats.totalMinutes || 0) / 60) : 0
   const topArtist = stats?.topArtists?.[0]?.artist || 'No listening data yet'
+  // Genres the way the recap counts them (not "Unknown" and the like).
+  const topGenres = filteredGenres(stats?.topGenres || []).slice(0, 5)
   const topArtistImageSrc = topArtistProfile?.id && topArtistProfile?.image_path
     ? (api.isElectron ? `file://${topArtistProfile.image_path}` : `/api/artist-image/${encodeURIComponent(topArtistProfile.id)}`)
     : null
@@ -352,12 +355,6 @@ export default function Profile() {
             <Pencil size={12} /> Edit Profile
           </button>
           <button
-            onClick={openStats}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white/60 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
-          >
-            <BarChart2 size={12} /> Stats
-          </button>
-          <button
             onClick={logout}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white/60 hover:text-red-300 hover:border-white/20 transition-all backdrop-blur-sm"
           >
@@ -424,6 +421,36 @@ export default function Profile() {
               <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
               <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
             </div>
+            {/* Top genres (what used to be only in the Stats window), under the numbers. */}
+            {topGenres.length > 0 && (
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-xs font-display uppercase tracking-widest text-muted">Top Genres</h3>
+                  <Tags size={14} className="text-accent/70" />
+                </div>
+                <div className="space-y-1">
+                  {topGenres.map((genre, index) => (
+                    <div key={genre.genre} className="flex items-center gap-3 px-2 py-1">
+                      <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm text-white">{genre.genre}</span>
+                          <span className="flex-shrink-0 text-xs text-muted">{genre.plays} plays</span>
+                        </div>
+                        <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-border">
+                          <motion.div
+                            className="h-full rounded-full bg-accent"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(genre.plays / (topGenres[0]?.plays || 1)) * 100}%` }}
+                            transition={{ delay: index * 0.05, duration: 0.45 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {stats?.topArtists?.length > 0 ? (

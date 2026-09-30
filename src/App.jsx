@@ -10,7 +10,6 @@ import QueuePanel from './components/QueuePanel'
 import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
 import ProfileModal from './components/ProfileModal'
-import StatsModal from './components/StatsModal'
 import AddToPlaylistModal from './components/AddToPlaylistModal'
 import MiniPlayer from './components/MiniPlayer'
 import RecapStories from './components/RecapStories'
@@ -1958,7 +1957,6 @@ export default function App() {
             <FullscreenPlayer />
             <AuthModal />
             <ProfileModal />
-            <StatsModal />
             <AddToPlaylistModal />
             <LosslessModal />
             <RecapStories
