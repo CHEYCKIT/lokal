@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electron', {
   onNavigationHistory: (fn) => on('navigation:history', (_, direction) => fn(direction)),
   onWindowVisibility: (fn) => on('window:visibility', (_, hidden) => fn(!!hidden)),
   isWindowHidden: () => invoke('window:isHidden'),
+  windowPainted: () => ipcRenderer.send('window:painted'),
   openExternal: (url) => invoke('shell:openExternal', url),
   openFolder: () => invoke('dialog:openFolder'),
   openFile: (f) => invoke('dialog:openFile', f),

@@ -1,8 +1,11 @@
 // Whether anyone can see the window. In the browser that's document.hidden.
 // The desktop app's page never reports hidden (backgroundThrottling is off,
-// see electron/main.js: minimizing hid the renderer, which dropped its
-// frames and flashed white on restore), so the main process says when the
-// window is minimized or hidden instead.
+// see electron/main.js), so the main process says when the window is
+// minimized or hidden instead.
+//
+// On a restore, the page also tells main once it has drawn again (two
+// animation frames), so main can show a Windows window it kept transparent
+// while minimized without flashing white.
 
 let windowHidden = false
 let listening = false
@@ -20,7 +23,11 @@ function listen() {
   // while the page was starting) isn't missed, and one arriving meanwhile
   // isn't overwritten by an older answer.
   let changed = false
-  window.electron?.onWindowVisibility?.((hidden) => { changed = true; set(hidden) })
+  window.electron?.onWindowVisibility?.((hidden) => {
+    changed = true
+    set(hidden)
+    if (!hidden) requestAnimationFrame(() => requestAnimationFrame(() => window.electron?.windowPainted?.()))
+  })
   Promise.resolve(window.electron?.isWindowHidden?.())
     .then((hidden) => { if (!changed && typeof hidden === 'boolean') set(hidden) })
     .catch(() => {})
