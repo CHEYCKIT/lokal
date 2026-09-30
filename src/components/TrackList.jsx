@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
@@ -13,6 +14,11 @@ import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
 import { plural } from '../plural'
+import ContextMenu, { useContextMenu } from './ContextMenu'
+import SelectionBar from './SelectionBar'
+import DeleteTracksDialog from './DeleteTracksDialog'
+import { useSelection } from '../selection'
+import { addToPlaylistMany, addToQueueMany, libraryTracks, playNextMany } from '../trackActions'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -69,12 +75,12 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [hoveredId, setHoveredId] = useState(null)
   const [likeAnim, setLikeAnim] = useState(null)
   const [quickAddAnim, setQuickAddAnim] = useState(null)
-  const [selectedIds, setSelectedIds] = useState(new Set())
   const [draggedId, setDraggedId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [editingTrack, setEditingTrack] = useState(null)
   const [showBatchEdit, setShowBatchEdit] = useState(false)
-  const [trackToDelete, setTrackToDelete] = useState(null)
+  // { tracks, title? }: the Delete from Library confirmation.
+  const [deleteRequest, setDeleteRequest] = useState(null)
   const [trackOverrides, setTrackOverrides] = useState({})
   // [start, end) slice of mergedTracks currently mounted (large lists only).
   const [windowRange, setWindowRange] = useState({ start: 0, end: LARGE_LIST_STEP })
@@ -103,6 +109,21 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
+  const navigate = useNavigate()
+  const menu = useContextMenu()
+  const trackIds = React.useMemo(() => mergedTracks.map(track => track.id), [tracks, trackOverrides]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Click selects a song, Ctrl/Cmd+click adds one, Shift+click a range (see
+  // selection.js); Delete removes the selection from the playlist, or from
+  // the library in other lists.
+  const selection = useSelection(trackIds, {
+    onDelete: (ids) => {
+      const chosen = mergedTracks.filter(track => ids.includes(String(track.id)))
+      if (onRemove) removeMany(chosen)
+      else askDelete(chosen)
+    },
+  })
+  const selectedIds = selection.selected
+  const selectedTracks = () => mergedTracks.filter(track => selectedIds.has(String(track.id)))
   const totalTracks = mergedTracks.length
   const isLargeList = totalTracks > LARGE_LIST_STEP
   // Clamp against the current length: the stored range can outlive a list
@@ -356,37 +377,61 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   }
 
   const handleTrackClick = (track, e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.stopPropagation()
-      const newSelected = new Set(selectedIds)
-      if (newSelected.has(track.id)) {
-        newSelected.delete(track.id)
-      } else {
-        newSelected.add(track.id)
-      }
-      setSelectedIds(newSelected)
-    } else if (e.shiftKey && selectedIds.size > 0) {
-      e.stopPropagation()
-      const trackIds = mergedTracks.map(t => t.id)
-      const lastSelected = Array.from(selectedIds).pop()
-      const lastIndex = trackIds.indexOf(lastSelected)
-      const currentIndex = trackIds.indexOf(track.id)
-      const start = Math.min(lastIndex, currentIndex)
-      const end = Math.max(lastIndex, currentIndex)
-      const newSelected = new Set(selectedIds)
-      for (let i = start; i <= end; i++) {
-        newSelected.add(trackIds[i])
-      }
-      setSelectedIds(newSelected)
-    } else if (!e.shiftKey) {
-      setSelectedIds(new Set())
-    }
+    e.stopPropagation()
+    selection.click(track.id, e, { always: true })
   }
 
   const handleContainerClick = (e) => {
-    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      setSelectedIds(new Set())
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) selection.clear()
+  }
+
+  const askDelete = (list) => {
+    const deletable = libraryTracks(list)
+    if (!deletable.length) { showToast('Streamed and imported songs aren\'t in your library to delete'); return }
+    setDeleteRequest({ tracks: deletable, title: deletable.length === 1 ? deletable[0].title : null })
+  }
+
+  // One removal at a time: a second Delete / Remove while it runs is ignored.
+  const removingRef = useRef(false)
+  const removeMany = async (list) => {
+    if (!onRemove || removingRef.current) return
+    removingRef.current = true
+    try {
+      for (const track of list) await onRemove(track)
+    } catch (e) {
+      showToast(`Couldn't remove: ${e?.message || e}`)
+    } finally {
+      removingRef.current = false
+      selection.clear()
     }
+  }
+
+  const playMany = (list) => {
+    const playable = list.filter(track => !isGhostTrack(track))
+    if (!playable.length) return
+    saveRecentTrack(playable[0])
+    usePlayerStore.getState().playQueue(playable, 0, context)
+  }
+
+  /** The songs a row's menu acts on: the selection when the row is in it, else just the row. */
+  const openTrackMenu = (event, track) => {
+    const ids = selection.contextSelect(track.id)
+    const list = mergedTracks.filter(item => ids.includes(String(item.id)))
+    const one = list.length === 1 ? list[0] : null
+    const count = list.length > 1 ? ` ${list.length} songs` : ''
+    const deletable = libraryTracks(list)
+    menu.open(event, [
+      { label: one ? 'Play' : `Play${count}`, icon: Play, onSelect: () => (one ? handlePlay(one, { stopPropagation() {} }) : playMany(list)) },
+      { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
+      { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
+      { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+      { separator: true },
+      one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
+      one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) },
+      { separator: true },
+      onRemove && { label: one ? 'Remove from this playlist' : `Remove${count} from this playlist`, icon: ListMinus, onSelect: () => removeMany(list) },
+      deletable.length > 0 && { label: deletable.length > 1 ? `Delete ${deletable.length} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(deletable) },
+    ].filter(Boolean).filter((item, index, all) => !(item.separator && (index === 0 || index === all.length - 1 || all[index - 1]?.separator))))
   }
 
   const handleDragStart = (e, track) => {
@@ -394,8 +439,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', track.id)
     
-    const tracksToDrag = selectedIds.has(track.id) 
-      ? tracks.filter(t => selectedIds.has(t.id)).map(t => ({ id: t.id, title: t.title, artist: t.artist }))
+    const tracksToDrag = selectedIds.has(String(track.id))
+      ? tracks.filter(t => selectedIds.has(String(t.id))).map(t => ({ id: t.id, title: t.title, artist: t.artist }))
       : [{ id: track.id, title: track.title, artist: track.artist }]
     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'tracks', tracks: tracksToDrag }))
   }
@@ -421,8 +466,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     }
 
     let tracksToMove
-    if (selectedIds.has(draggedId)) {
-      tracksToMove = tracks.filter(t => selectedIds.has(t.id))
+    if (selectedIds.has(String(draggedId))) {
+      tracksToMove = tracks.filter(t => selectedIds.has(String(t.id)))
     } else {
       const draggedTrack = tracks.find(t => t.id === draggedId)
       tracksToMove = draggedTrack ? [draggedTrack] : []
@@ -465,21 +510,16 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
     setDragOverId(null)
   }
 
+  // A row's buttons act on the whole selection when the row is part of it.
+  const rowTargets = (track) => (selectedIds.size > 1 && selectedIds.has(String(track.id)) ? selectedTracks() : [track])
+
   const handlePlayNext = (track, e) => {
     e.stopPropagation()
     if (isGhostTrack(track)) {
       setGhostTrack(track)
       return
     }
-    if (selectedIds.size > 1) {
-      const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
-      const playable = selectedTracks.filter(t => !isGhostTrack(t))
-      playable.forEach(t => playNext(t))
-      showToast(`${plural(playable.length, 'track')} will play next`)
-    } else {
-      playNext(track)
-      showToast(`Playing next: ${track.title || 'Unknown track'}`)
-    }
+    playNextMany(rowTargets(track))
   }
 
   const handleAddToQueue = (track, e) => {
@@ -488,38 +528,10 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       setGhostTrack(track)
       return
     }
-    if (selectedIds.size > 1) {
-      const selectedTracks = mergedTracks.filter(t => selectedIds.has(t.id))
-      const playable = selectedTracks.filter(t => !isGhostTrack(t))
-      playable.forEach(t => addToQueue(t))
-      showToast(`Added ${plural(playable.length, 'track')} to queue`)
-    } else {
-      addToQueue(track)
-      showToast(`Added to queue: ${track.title || 'Unknown track'}`)
-    }
+    addToQueueMany(rowTargets(track))
   }
 
   const artSrc = (t) => trackArtURL(t)
-
-  const handleSelectedAddToPlaylist = () => {
-      const trackIds = Array.from(selectedIds)
-      if (trackIds.length === 1) {
-      const track = mergedTracks.find(t => t.id === trackIds[0])
-      if (track) openAddToPlaylist(track)
-    } else if (trackIds.length > 1) {
-      openAddMultipleToPlaylist(trackIds)
-    }
-  }
-
-  const handleSelectedDelete = async () => {
-    if (onRemove && selectedIds.size > 0) {
-      for (const trackId of selectedIds) {
-        const track = mergedTracks.find(t => t.id === trackId)
-        if (track) await onRemove(track)
-      }
-      setSelectedIds(new Set())
-    }
-  }
 
   const handleBatchSave = (updatedTracks) => {
     if (!Array.isArray(updatedTracks) || !updatedTracks.length) return
@@ -530,7 +542,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       nextOverrides[updatedTrack.id] = updatedTrack
     }
     setTrackOverrides(prev => ({ ...prev, ...nextOverrides }))
-    setSelectedIds(new Set())
+    selection.clear()
     window.dispatchEvent(new Event('lokal:refresh'))
   }
 
@@ -582,26 +594,20 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
 
   return (
     <div className="w-full" onClick={handleContainerClick}>
-      {selectedIds.size > 0 && (
-        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 px-4 py-2 mb-2 bg-accent/10 border border-accent/30 rounded-xl">
-          <span className="text-sm text-accent font-medium">{selectedIds.size} selected</span>
-          <div className="flex items-center gap-2 ml-auto">
-            <button onClick={(e) => { e.stopPropagation(); handleSelectedAddToPlaylist() }} className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/20 text-accent rounded-lg text-xs hover:bg-accent/30 transition-colors">
-              <Plus size={12} /> Add to Playlist
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); setShowBatchEdit(true) }} className="flex items-center gap-1.5 px-3 py-1.5 bg-card border border-border text-muted rounded-lg text-xs hover:text-white transition-colors">
-              <Edit2 size={12} /> Batch Edit
-            </button>
-            {onRemove && (
-              <button onClick={(e) => { e.stopPropagation(); handleSelectedDelete() }} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition-colors">
-                <Trash2 size={12} /> Remove
-              </button>
-            )}
-            <button onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set()) }} className="p-1.5 text-muted hover:text-white transition-colors">
-              <X size={14} />
-            </button>
-          </div>
-        </div>
+      {selection.count > 0 && (
+        <SelectionBar
+          label={`${selection.count} selected`}
+          onClear={selection.clear}
+          actions={[
+            { label: 'Play', icon: Play, onClick: () => playMany(selectedTracks()) },
+            { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedTracks()) },
+            { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedTracks()) },
+            { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedTracks()) },
+            { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true) },
+            { label: 'Remove', icon: ListMinus, onClick: () => removeMany(selectedTracks()), hidden: !onRemove },
+            { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !libraryTracks(selectedTracks()).length },
+          ]}
+        />
       )}
 
       <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}>
@@ -621,7 +627,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         const isHighlighted = !!highlightTrackId && track.id === highlightTrackId
         const isFlashing = !!flash && track.id === flash.id
         const isHov = hoveredId === track.id
-        const isSelected = selectedIds.has(track.id)
+        const isSelected = selectedIds.has(String(track.id))
         const isDragging = draggedId === track.id
         const isDragOver = dragOverId === track.id
         const liked = likedIds.has(track.id)
@@ -650,6 +656,8 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onMouseLeave={() => setHoveredId(null)}
             onClick={(e) => handleTrackClick(track, e)}
             onDoubleClick={e => handlePlay(track, e)}
+            onContextMenu={(e) => openTrackMenu(e, track)}
+            aria-selected={isSelected}
             style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
             className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
           >
@@ -781,7 +789,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 </button>
               )}
               {!playlistId && !onRemove && (
-                <button onClick={e => { e.stopPropagation(); setTrackToDelete(track) }}
+                <button onClick={e => { e.stopPropagation(); askDelete([track]) }}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title="Delete from Library">
                   <Trash2 size={12} />
                 </button>
@@ -809,41 +817,14 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       />
 
       <BatchEditModal
-        tracks={mergedTracks.filter(track => selectedIds.has(track.id))}
+        tracks={selectedTracks()}
         open={showBatchEdit}
         onClose={() => setShowBatchEdit(false)}
         onSave={handleBatchSave}
       />
 
-      <Modal 
-        open={!!trackToDelete} 
-        onClose={() => setTrackToDelete(null)} 
-        title="Delete from Library?" 
-        width="max-w-sm"
-      >
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <div className="p-3 bg-red-500/10 rounded-full h-fit flex-shrink-0">
-              <Trash2 size={20} className="text-red-400" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-white font-medium">{trackToDelete?.title}</p>
-              <p className="text-xs text-muted leading-relaxed">
-                Are you sure you want to delete this track? This will remove it from your library, playlists, and play history.
-              </p>
-              <p className={`text-[10px] pt-1 ${peekSettings()?.delete_files_from_disk === '1' ? 'text-red-300/80' : 'text-muted/60'}`}>
-                {peekSettings()?.delete_files_from_disk === '1'
-                  ? (api.isElectron ? 'The file will also be moved to the Recycle Bin / Trash (Settings > Library).' : 'The file will also be deleted from the server for good (Settings > Library).')
-                  : 'The file on your computer will NOT be deleted.'}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setTrackToDelete(null)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
-            <button onClick={async () => { if (trackToDelete?.file_path) { await api.deleteTrackByPath(trackToDelete.file_path); window.dispatchEvent(new Event('lokal:refresh')) }; setTrackToDelete(null) }} className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">Delete</button>
-          </div>
-        </div>
-      </Modal>
+      <DeleteTracksDialog request={deleteRequest} onClose={() => setDeleteRequest(null)} onDone={() => selection.clear()} />
+      <ContextMenu menu={menu} />
 
       <Modal
         open={!!ghostTrack}
