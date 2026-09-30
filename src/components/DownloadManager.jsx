@@ -3,8 +3,9 @@
 // until you've seen how it ended. It opens a panel with every download, where
 // each can be cancelled, retried or cleared, and the playlists downloaded so
 // far (to download again for what's new, or remove). The panel drops down
-// from the button and grows inwards (to the left), so the Settings button
-// next to it, nearer the edge, stays in reach. Downloads start from Search.
+// from the button and grows inwards (away from the window's edge), so the
+// Settings button next to it, nearer the edge, stays in reach. Downloads
+// start from Search.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -63,7 +64,7 @@ export function DownloadsButton() {
       aria-label={label}
       aria-expanded={panelOpen}
       aria-haspopup="dialog"
-      className={`relative flex h-7 w-7 items-center justify-center rounded-full transition-colors ${panelOpen ? 'bg-accent/15 text-accent' : batch.length ? (settled && failed.length ? 'text-red-400 hover:bg-elevated' : 'text-accent hover:bg-elevated') : 'text-muted hover:bg-elevated hover:text-text'}`}
+      className={`relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${panelOpen ? 'bg-accent/15 text-accent' : batch.length ? (settled && failed.length ? 'text-red-400 hover:bg-elevated' : 'text-accent hover:bg-elevated') : 'text-muted hover:bg-elevated hover:text-text'}`}
     >
       {batch.length ? (
         <>
@@ -286,12 +287,14 @@ export function DownloadManagerPanel() {
   const { closePanel, cancelAll, clearFinished } = useDownloads.getState()
   const requestFocus = useSearchStore(s => s.requestFocus)
   const nav = useNavigate()
-  const [anchor, setAnchor] = useState({ top: 44, left: 12, width: PANEL_WIDTH })
+  const [anchor, setAnchor] = useState({ top: 44, left: 12, width: PANEL_WIDTH, origin: 'top left' })
   const [tab, setTab] = useState('queue')
   const panelRef = useRef(null)
 
-  // Under the button, its right edge lined up with the button's: it grows
-  // to the left, never over the Settings button further right.
+  // Under the button, growing inwards: from a button on the left of the
+  // window its left edge lines up with the button's (it grows rightwards),
+  // from one on the right its right edge does. Either way it never covers the
+  // Settings button, which sits between it and the edge.
   useLayoutEffect(() => {
     if (!panelOpen) return undefined
     const place = () => {
@@ -299,7 +302,9 @@ export function DownloadManagerPanel() {
       if (!rect) return
       // Narrower than the panel (the web app on a phone): it narrows to fit.
       const width = Math.min(PANEL_WIDTH, window.innerWidth - 24)
-      setAnchor({ top: rect.bottom + 8, width, left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)) })
+      const fromLeft = rect.left + rect.width / 2 < window.innerWidth / 2
+      const wanted = fromLeft ? rect.left : rect.right - width
+      setAnchor({ top: rect.bottom + 8, width, origin: fromLeft ? 'top left' : 'top right', left: Math.max(12, Math.min(wanted, window.innerWidth - width - 12)) })
     }
     place()
     window.addEventListener('resize', place)
@@ -339,7 +344,7 @@ export function DownloadManagerPanel() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.98 }}
           transition={{ duration: 0.16 }}
-          style={{ top: anchor.top, left: anchor.left, width: anchor.width, maxHeight: `min(440px, calc(100vh - ${anchor.top + 12}px))`, transformOrigin: 'top right', backgroundColor: 'rgba(var(--surface-rgb), 0.97)' }}
+          style={{ top: anchor.top, left: anchor.left, width: anchor.width, maxHeight: `min(440px, calc(100vh - ${anchor.top + 12}px))`, transformOrigin: anchor.origin, backgroundColor: 'rgba(var(--surface-rgb), 0.97)' }}
           className="fixed z-[80] flex flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         >
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
