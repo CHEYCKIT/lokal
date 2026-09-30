@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Plus, Image as ImageIcon, AlertCircle, Search, Download } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
@@ -10,15 +11,28 @@ import { api } from '../api'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
 import { plural } from '../plural'
+import { useCachedState, usePageReady } from '../pageCache'
 
 export default function Playlist() {
   const { id } = useParams()
   const nav = useNavigate()
-  const [tracks, setTracks] = useState([])
-  const [playlist, setPlaylist] = useState(null)
+  const { user } = useAppStore()
+  const isLiked = id === 'liked'
+  // Kept across visits, like the other pages: coming back to a playlist
+  // paints it at once (and it still refetches quietly), and a new one stays
+  // hidden until its songs and name are in, instead of showing "Playlist ·
+  // 0 tracks · This playlist is empty" first. The route remounts per
+  // playlist, so the keys never change while mounted.
+  const cacheKey = isLiked ? `playlist:liked:${user?.id || 'guest'}` : `playlist:${id}`
+  const [tracks, setTracks, tracksCached] = useCachedState(`${cacheKey}:tracks`, [])
+  const [playlist, setPlaylist, metaCached] = useCachedState(`${cacheKey}:meta`, null)
+  // A playlist is ready from the cache only with its name too (left before
+  // that came in, it would show "Playlist" until it did).
+  const [loaded, setLoaded] = useState(tracksCached && (isLiked || metaCached))
+  usePageReady(loaded)
   const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal] = useState('')
-  const [recommendations, setRecommendations] = useState([])
+  const [nameVal, setNameVal] = useState(() => playlist?.name || '')
+  const [recommendations, setRecommendations] = useCachedState(`${cacheKey}:recs`, [])
   const [loadingRecs, setLoadingRecs] = useState(false)
   const [showAddSongs, setShowAddSongs] = useState(false)
   const [showResolveGhosts, setShowResolveGhosts] = useState(false)
@@ -29,9 +43,7 @@ export default function Playlist() {
   const [ghostSearchLoading, setGhostSearchLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
   const { playQueue } = usePlayerStore()
-  const { user } = useAppStore()
   const location = useLocation()
-  const isLiked = id === 'liked'
   // load() below re-fetches on every id change but doesn't clear `playlist`
   // first, so right after navigating from one playlist to another, `playlist`
   // still holds the PREVIOUS playlist's data for as long as the new fetch is
@@ -70,23 +82,26 @@ export default function Playlist() {
   const selectedGhost = ghostTracks.find(track => getGhostKey(track) === selectedGhostKey) || ghostTracks[0] || null
 
   const load = useCallback(() => {
+    // The page shows once both the songs and the name are in (or failed).
+    const done = () => setLoaded(true)
     if (isLiked) {
-      api.getLikedTracks(user?.id).then(t => {
+      Promise.resolve(api.getLikedTracks(user?.id)).then(t => {
         setTracks(Array.isArray(t) ? t : [])
-      })
+      }).catch(() => {}).finally(done)
       return
     }
-    api.getPlaylistTracks(id).then(t => {
+    const songs = Promise.resolve(api.getPlaylistTracks(id)).then(t => {
       setTracks(Array.isArray(t) ? t : [])
     })
-    api.getPlaylists(user?.id).then(pls => {
+    const meta = Promise.resolve(api.getPlaylists(user?.id)).then(pls => {
       const pl = (Array.isArray(pls) ? pls : []).find(p => String(p.id) === String(id))
       if (pl) {
         setPlaylist(pl)
         setNameVal(pl.name)
       }
     })
-  }, [id, user?.id, isLiked])
+    Promise.allSettled([songs, meta]).then(done)
+  }, [id, user?.id, isLiked, setTracks, setPlaylist])
 
   useEffect(() => { load() }, [load])
 
@@ -192,6 +207,17 @@ export default function Playlist() {
       fetchRecommendations()
     }
   }, [tracks.length, isLiked, recommendations.length, fetchRecommendations])
+
+  // A recommended song that's now in the playlist (added from Add Songs, say)
+  // leaves the recommendations, cached ones included; an emptied list is
+  // refilled by the effect above.
+  useEffect(() => {
+    if (!recommendations.length) return
+    const inPlaylist = new Set(tracks.map(track => track.id))
+    if (recommendations.some(track => inPlaylist.has(track.id))) {
+      setRecommendations(current => current.filter(track => !inPlaylist.has(track.id)))
+    }
+  }, [tracks, recommendations, setRecommendations])
 
   const addRecommendation = async (track) => {
     await api.addToPlaylist(id, track.id)
@@ -429,9 +455,11 @@ export default function Playlist() {
         )}
       </div>
 
+      {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
         tracks={tracks}
         showAlbum
+        reduceMotion
         onRemove={!isLiked ? removeTrack : null}
         playlistId={!isLiked ? id : null}
         onReorder={!isLiked ? handleReorder : null}
@@ -453,16 +481,20 @@ export default function Playlist() {
             </button>
           </div>
 
-          <TrackList
-            tracks={recommendations}
-            showAlbum={false}
-            playlistId={null}
-            onQuickAdd={!isLiked ? addRecommendation : null}
-          />
+          {/* A new set fades in as a whole instead of its rows popping in. */}
+          <motion.div key={recommendations[0]?.id ?? 'none'} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+            <TrackList
+              tracks={recommendations}
+              showAlbum={false}
+              playlistId={null}
+              reduceMotion
+              onQuickAdd={!isLiked ? addRecommendation : null}
+            />
+          </motion.div>
         </div>
       )}
 
-      {!tracks.length && (
+      {loaded && !tracks.length && (
         <div className="text-center py-20 text-muted">
           <Music size={40} className="mx-auto mb-3 opacity-20" />
           <p className="text-sm">{isLiked ? 'Like some tracks to see them here.' : 'This playlist is empty. Use Add Songs to build it.'}</p>

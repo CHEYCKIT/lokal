@@ -232,7 +232,7 @@ function AnimatedRoutes() {
         <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
         <Route path="/search" element={<PageTransition><Search /></PageTransition>} />
         <Route path="/artist/:id" element={<PageTransition><Artist /></PageTransition>} />
-        <Route path="/playlist/:id" element={<PageTransition><Playlist /></PageTransition>} />
+        <Route path="/playlist/:id" element={<PageTransition gated><Playlist /></PageTransition>} />
         {/* The Downloader lives in Search now; what asked for it (a Soulseek search) is passed on. */}
         <Route path="/downloader" element={<Navigate to="/search" replace state={location.state} />} />
         <Route path="/profile" element={<PageTransition><Profile /></PageTransition>} />

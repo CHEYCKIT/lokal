@@ -3,7 +3,12 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 
-export default function Modal({ open, onClose, title, children, width = 'max-w-md' }) {
+/**
+ * @param onEntered  called once the opening animation has finished, so heavy
+ *                   content (long lists with artwork) can mount after it
+ *                   instead of stuttering it.
+ */
+export default function Modal({ open, onClose, title, children, width = 'max-w-md', onEntered }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose?.() }
     if (open) document.addEventListener('keydown', handler)
@@ -28,6 +33,7 @@ export default function Modal({ open, onClose, title, children, width = 'max-w-m
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 8 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            onAnimationComplete={(target) => { if (target?.opacity === 1) onEntered?.() }}
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : undefined}
