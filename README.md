@@ -5,7 +5,7 @@
 
 **Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, listening recaps, smart mixes, an audio-quality checker, and one search bar that finds, streams and downloads.
 
-![Lokal Music](https://img.shields.io/badge/version-3.2.0-blue) ![Electron](https://img.shields.io/badge/Electron-latest-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB) ![License](https://img.shields.io/badge/license-MIT-green) [![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/Wv3zfpG6UT)
+![Lokal Music](https://img.shields.io/badge/version-4.0.0-blue) ![Electron](https://img.shields.io/badge/Electron-latest-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB) ![License](https://img.shields.io/badge/license-MIT-green) [![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/Wv3zfpG6UT)
 
 ![Lokal's home page: mixes built from your listening, the song playing in the side panel, and its audio quality under the artist](docs/screenshots/home.webp)
 
@@ -173,7 +173,7 @@ Know what you're actually listening to:
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) v18+
+- [Node.js](https://nodejs.org/) v22.12+ (24 recommended, see `.nvmrc`)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp): for downloading and streaming online songs (optional)
 - [ffmpeg](https://ffmpeg.org/): for audio conversion and the spectrum check (optional)
 - [slskd](https://github.com/slskd/slskd): for Soulseek (optional)
