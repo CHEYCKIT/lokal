@@ -7,6 +7,9 @@
 // - Slides advance by themselves; the bars show the time left. Hold the card,
 //   press Space or the pause button to stop; hidden windows pause too.
 // - Each slide can play one of its songs (the sound toggle is remembered).
+// - "Play this session" and "Play top N" start those songs and close the
+//   story, so the player bar shows them (the next slide's song would
+//   otherwise replace them, hidden behind the story).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -126,6 +129,12 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
   const [hidden, setHidden] = useState(() => document.visibilityState === 'hidden')
   const [sound, setSound] = useState(readSound)
   const playQueue = usePlayerStore(state => state.playQueue)
+  // A button's songs: played, and the story closes (see the top).
+  const playAndClose = useCallback((tracks, name) => {
+    if (!tracks?.length) return
+    playQueue(tracks, 0, { type: 'recap', id: `${period?.id || 'recap'}:${name}`, name })
+    onClose()
+  }, [playQueue, onClose, period?.id])
   const last = slides.length - 1
   const slide = slides[Math.min(index, last)]
   const topTracks = recap?.topTracks || []
@@ -348,7 +357,7 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
                   className="mt-auto pt-[5cqw]"
                 >
                   <SlideVisual slide={slide} recap={recap} topTracks={topTracks} replayQueue={replayQueue}
-                    playQueue={playQueue} onSavePlaylist={onSavePlaylist} playlistStatus={playlistStatus} />
+                    playAndClose={playAndClose} periodTitle={period?.title} onSavePlaylist={onSavePlaylist} playlistStatus={playlistStatus} />
                 </motion.div>
               </motion.div>
             </AnimatePresence>
@@ -406,7 +415,7 @@ function TrackChip({ track }) {
   )
 }
 
-function SlideVisual({ slide, recap, topTracks, replayQueue, playQueue, onSavePlaylist, playlistStatus }) {
+function SlideVisual({ slide, recap, topTracks, replayQueue, playAndClose, periodTitle, onSavePlaylist, playlistStatus }) {
   if (slide.key === 'overview') {
     const stats = [
       [recap.totalPlays || 0, 'plays'],
@@ -465,7 +474,7 @@ function SlideVisual({ slide, recap, topTracks, replayQueue, playQueue, onSavePl
             </div>
           ))}
         </div>
-        <button data-interactive onClick={() => playQueue(session.tracks, 0)}
+        <button data-interactive onClick={() => playAndClose(session.tracks, session.label || 'Listening session')}
           className="flex w-full items-center justify-center gap-[2cqw] rounded-[4cqw] border border-white/10 bg-white/[0.08] py-[3cqw] text-[3.4cqw] hover:bg-white/[0.14]">
           <Play size={14} fill="currentColor" /> play this session
         </button>
@@ -560,7 +569,7 @@ function SlideVisual({ slide, recap, topTracks, replayQueue, playQueue, onSavePl
         ))}
       </div>
       <div className="space-y-[2cqw]">
-        <button data-interactive onClick={() => replayQueue.length && playQueue(replayQueue, 0)}
+        <button data-interactive onClick={() => playAndClose(replayQueue.slice(0, 50), `Top ${Math.min(replayQueue.length, 50)}${periodTitle ? ` · ${periodTitle}` : ''}`)}
           className="flex w-full items-center justify-center gap-[2cqw] rounded-[4cqw] bg-accent py-[3.6cqw] text-[3.6cqw] font-semibold text-base hover:bg-accent/85">
           <Play size={15} fill="currentColor" /> play top {Math.min(replayQueue.length, 50)}
         </button>

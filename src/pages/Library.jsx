@@ -19,6 +19,9 @@ export default function Library() {
   const [sort, setSort] = useCachedState('library:sort', 'added_at DESC')
   // Where the songs came from (see sourceFilter in electron/ipc/scanner.js).
   const [source, setSource] = useCachedState('library:source', 'all')
+  // One genre, or '' for all (matches a song's main genre or any of its genres).
+  const [genre, setGenre] = useCachedState('library:genre', '')
+  const [genres, setGenres] = useCachedState('library:genres', [])
   const [view, setView] = useCachedState('library:view', 'list')
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
@@ -42,7 +45,7 @@ export default function Library() {
     loadingRef.current = true
     setLoading(true)
     try {
-      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}) })
+      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}) })
       if (requestId !== requestIdRef.current) return
       // A failed request keeps the list already shown (and cached).
       if (!Array.isArray(result)) return
@@ -68,13 +71,19 @@ export default function Library() {
     offsetRef.current = 0
     setHasMore(false)
     load(false)
-  }, [sort, source])
+  }, [sort, source, genre])
 
   useEffect(() => {
-    const handleRefresh = () => load(false)
+    const handleRefresh = () => { load(false); loadGenres() }
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [sort, source])
+  }, [sort, source, genre])
+
+  // The genres to pick from: every one in the library, on opening and after a refresh.
+  const loadGenres = () => Promise.resolve(api.getAllGenres())
+    .then(list => { if (Array.isArray(list)) setGenres(list.filter(g => typeof g === 'string' && g.trim())) })
+    .catch(() => {})
+  useEffect(() => { loadGenres() }, [])
 
   useEffect(() => {
     if (!hasMore || loading) return
@@ -87,7 +96,7 @@ export default function Library() {
     }, { rootMargin: '300px 0px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, sort, source, tracks.length])
+  }, [hasMore, loading, sort, source, genre, tracks.length])
 
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
@@ -112,7 +121,14 @@ export default function Library() {
             <option value="soulseek">Soulseek</option>
             <option value="web">Other sites</option>
           </select>
-          <select value={sort} onChange={e => setSort(e.target.value)}
+          <select value={genre} onChange={e => setGenre(e.target.value)} aria-label="Genre"
+            className={`max-w-[11rem] truncate bg-elevated border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent/50 ${genre ? 'border-accent/40 text-accent' : 'border-border text-muted'}`}>
+            <option value="">All genres</option>
+            {/* The one picked stays listed even if no song has it any more. */}
+            {genre && !genres.some(g => g.toLowerCase() === genre.toLowerCase()) && <option value={genre}>{genre}</option>}
+            {genres.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort"
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="added_at DESC">Recently Added</option>
             <option value="title ASC">Title A-Z</option>
@@ -175,7 +191,10 @@ export default function Library() {
       {loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
-          <p>{source === 'all' ? 'No tracks yet — pick your music folder above.' : 'No songs from this source.'}</p>
+          <p>{source === 'all' && !genre ? 'No tracks yet — pick your music folder above.' : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : 'No songs from this source.'}</p>
+          {genre && (
+            <button onClick={() => setGenre('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">Show all genres</button>
+          )}
         </div>
       )}
     </div>

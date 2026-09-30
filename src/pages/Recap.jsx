@@ -5,7 +5,7 @@ import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
-import { latestPeriod, listenerTimeZone, periodPlace, periodQuery, recapPlaylistName, recapTree, treePeriods } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, nextPeriodBoundary, periodPlace, periodQuery, recapPlaylistName, recapTree, treePeriods } from '../recapPeriods'
 import { plural } from '../plural'
 import { filteredGenres, fmtDate, fmtHour, fmtMinutes, trackArt } from '../recapText'
 import RecapStory from '../components/RecapStory'
@@ -235,7 +235,7 @@ function RecapContent({ user }) {
     else if (entry.weeks.length) setSelectedId(entry.weeks[entry.weeks.length - 1].id)
   }
 
-  // Worked out on each load, so Refresh picks up a period that just ended.
+  // Worked out on each load, so a period that just ended shows up.
   const loadPeriodList = async () => {
     // Quietly when the chips are already on screen (only the icon spins).
     setCheckingPeriods(true)
@@ -316,8 +316,36 @@ function RecapContent({ user }) {
     }
   }
 
+  // Checked (quietly) on opening, like the other pages, and again whenever
+  // it could have changed while the page stays open: a week or month ends,
+  // the app comes back (a timer doesn't fire while the computer sleeps), or
+  // the library changes. No Refresh button needed.
+  const loadPeriodListRef = useRef(loadPeriodList)
+  useLayoutEffect(() => { loadPeriodListRef.current = loadPeriodList })
   useEffect(() => {
-    loadPeriodList()
+    const check = () => loadPeriodListRef.current()
+    let timer = null
+    const scheduleNext = () => {
+      clearTimeout(timer)
+      const wait = Math.max(1000, nextPeriodBoundary().getTime() - Date.now() + 1000)
+      timer = setTimeout(() => { check(); scheduleNext() }, Math.min(wait, 2 ** 31 - 1))
+    }
+    const onResume = () => {
+      if (document.visibilityState === 'hidden') return
+      check()
+      scheduleNext()
+    }
+    check()
+    scheduleNext()
+    window.addEventListener('lokal:refresh', check)
+    window.addEventListener('focus', onResume)
+    document.addEventListener('visibilitychange', onResume)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('lokal:refresh', check)
+      window.removeEventListener('focus', onResume)
+      document.removeEventListener('visibilitychange', onResume)
+    }
   }, [user?.id])
 
   useEffect(() => {
@@ -398,15 +426,12 @@ function RecapContent({ user }) {
           <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-accent">
             <Sparkles size={13} />
             Listening Recaps
+            {(checkingPeriods || loading) && <RefreshCw size={11} className="animate-spin text-muted" aria-label="Checking for new recaps" />}
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
           <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday) and month, plus each year, built from your local listening sessions.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={loadPeriodList} disabled={checkingPeriods || loading} className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2 text-sm text-muted transition-colors hover:text-white disabled:opacity-50">
-            <RefreshCw size={14} className={checkingPeriods || loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
           <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50">
             <Play size={14} fill="currentColor" />
             Replay Era

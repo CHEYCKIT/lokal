@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil, Tags } from 'lucide-react'
+import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
@@ -10,13 +10,15 @@ import PlaylistCover from '../components/PlaylistCover'
 import { filteredGenres } from '../recapText'
 
 function StatTile({ icon: Icon, label, value }) {
+  // Side by side when there's room, the icon above the numbers when the
+  // Snapshot card is narrow (the page split in two beside open sidebars).
   return (
-    <div className="bg-elevated border border-border rounded-xl p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-accent/15 text-accent flex items-center justify-center flex-shrink-0">
+    <div className="bg-elevated border border-border rounded-xl p-3 @xl:p-4 flex flex-col items-start gap-2 @xl:flex-row @xl:items-center @xl:gap-3 min-w-0">
+      <div className="w-9 h-9 @xl:w-10 @xl:h-10 rounded-lg bg-accent/15 text-accent flex items-center justify-center flex-shrink-0">
         <Icon size={16} />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-display text-white">{value}</p>
+        <p className="text-lg font-display text-white truncate">{value}</p>
         <p className="text-xs text-muted">{label}</p>
       </div>
     </div>
@@ -412,41 +414,24 @@ export default function Profile() {
           )}
         </section>
 
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 @xl:grid-cols-2 max-w-6xl items-stretch">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @md:grid-cols-2 @lg:gap-6 max-w-6xl items-stretch">
           <section className="rounded-2xl border border-border bg-elevated p-5">
             <h2 className="mb-4 text-xs font-display uppercase tracking-widest text-muted">Snapshot</h2>
-            <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3">
               <StatTile icon={Music4} label="Total Plays" value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
               <StatTile icon={Clock3} label="Hours Listened" value={statsLoading ? '...' : `${hours}h`} />
               <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
               <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
             </div>
-            {/* Top genres (what used to be only in the Stats window), under the numbers. */}
+            {/* Top genres, as the Stats window showed them: themed chips, fading down the ranking. */}
             {topGenres.length > 0 && (
               <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h3 className="text-xs font-display uppercase tracking-widest text-muted">Top Genres</h3>
-                  <Tags size={14} className="text-accent/70" />
-                </div>
-                <div className="space-y-1">
+                <h3 className="mb-2 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h3>
+                <div className="flex flex-wrap gap-2">
                   {topGenres.map((genre, index) => (
-                    <div key={genre.genre} className="flex items-center gap-3 px-2 py-1">
-                      <span className="w-4 flex-shrink-0 text-xs font-display text-muted">{index + 1}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="truncate text-sm text-white">{genre.genre}</span>
-                          <span className="flex-shrink-0 text-xs text-muted">{genre.plays} plays</span>
-                        </div>
-                        <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-border">
-                          <motion.div
-                            className="h-full rounded-full bg-accent"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(genre.plays / (topGenres[0]?.plays || 1)) * 100}%` }}
-                            transition={{ delay: index * 0.05, duration: 0.45 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <span key={genre.genre} title={`${genre.plays} plays`} className="max-w-full truncate rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-display text-accent" style={{ opacity: 1 - index * 0.15 }}>
+                      {genre.genre} · {genre.plays}
+                    </span>
                   ))}
                 </div>
               </div>

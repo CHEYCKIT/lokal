@@ -10,6 +10,7 @@ import Waveform from './Waveform'
 import Modal from './Modal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
+import { TIERS, formatLabel, isSuspect, tierOf } from '../quality'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -115,6 +116,10 @@ export default function PlayerBar() {
     navigateToTrackAlbum(nav, currentTrack)
   }
 
+  // The playing song's audio quality, when it's been read (not for streams).
+  const qualityTier = currentTrack && !streamed ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
+  const quality = qualityTier !== 'unknown' ? { info: TIERS[qualityTier], format: formatLabel(currentTrack) } : null
+
   return (
     <>
       <div className="h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
@@ -165,6 +170,15 @@ export default function PlayerBar() {
                   </button>
                 </div>
               ) : <p className="text-xs text-muted">No track playing</p>}
+              {quality && (
+                // The Audio Quality page's pill (same colours), what it means on hover.
+                <button onClick={() => nav('/quality')}
+                  title={`${quality.info.label}: ${quality.info.desc}${quality.format ? ` (${quality.format})` : ''}${quality.info.hint ? `\n${quality.info.hint}` : ''}`}
+                  aria-label={`Audio quality: ${quality.info.label}, ${quality.info.desc}`}
+                  className={`mt-1 block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 ${quality.info.className}`}>
+                  {quality.info.label}
+                </button>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
