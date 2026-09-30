@@ -73,7 +73,13 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
     if (runningRef.current) api.soulseekStopSearch(runningRef.current)
     runningRef.current = null
   }
-  useEffect(() => stopRunning, [])
+  // Gone (another source picked, the page left) while slskd was still
+  // starting a search: that search is stopped as soon as it's known.
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false; stopRunning() }
+  }, [])
 
   // Follows the search box: a new search once the text has settled.
   const text = String(query || '').trim()
@@ -90,8 +96,8 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
     setError('')
     setSearch({ id: null, complete: false, results: [], fileCount: 0, responseCount: 0 })
     const started = await api.soulseekSearch(text)
-    // Typing went on while slskd was starting it: this one is already stale.
-    if (latestText.current !== text) { if (started?.id) api.soulseekStopSearch(started.id); return }
+    // Gone, or typing went on while slskd was starting it: already stale.
+    if (!alive.current || latestText.current !== text) { if (started?.id) api.soulseekStopSearch(started.id); return }
     if (started?.error || !started?.id) { setError(started?.error || 'slskd did not start the search.'); setSearch(null); return }
     runningRef.current = started.id
     finishing.current = false

@@ -42,15 +42,25 @@ export function addToPlaylistMany(tracks) {
 }
 
 /**
- * Save `tracks` as a new playlist called `name`, in their order.
- * @returns the playlist, or null when there was nothing to save or it failed
+ * Save `tracks` as a new playlist called `name`, in their order. All or
+ * nothing: if a song can't be added, the new playlist is deleted again and
+ * this throws (so trying again doesn't leave half-made playlists behind).
+ * @returns the playlist, or null when there was nothing to save or it wasn't created
  */
 export async function saveAsPlaylist(name, tracks, { description, userId = useAppStore.getState().user?.id } = {}) {
   const ids = [...new Set((tracks || []).map(track => track?.id).filter(Boolean))]
   if (!ids.length) return null
   const playlist = await api.createPlaylist(name, userId, description)
   if (!playlist?.id) return null
-  await api.addMultipleToPlaylist(playlist.id, ids)
+  try {
+    for (const id of ids) {
+      const added = await api.addToPlaylist(playlist.id, id)
+      if (added?.error) throw new Error(added.error)
+    }
+  } catch (error) {
+    await Promise.resolve(api.deletePlaylist(playlist.id)).catch(() => {})
+    throw error
+  }
   window.dispatchEvent(new CustomEvent('lokal:playlists-changed', { detail: { playlistId: playlist.id, action: 'created' } }))
   return playlist
 }
