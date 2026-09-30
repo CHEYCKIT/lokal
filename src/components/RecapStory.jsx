@@ -18,6 +18,7 @@ import { ChevronLeft, ChevronRight, Disc3, Pause, Play, Plus, Volume2, VolumeX, 
 import { usePlayerStore } from '../store/player'
 import { plural } from '../plural'
 import { albumArt, artistAlbumName, daysText, filteredGenres, fmtHour, fmtMinutes, genreComment, hourComment, sessionComment, trackArt } from '../recapText'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 
 const SOUND_KEY = 'lokal-recap-story-sound'
 // A press this long pauses (like holding a story) instead of turning the page.
@@ -126,7 +127,7 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const [held, setHeld] = useState(false)
-  const [hidden, setHidden] = useState(() => document.visibilityState === 'hidden')
+  const [hidden, setHidden] = useState(isWindowHidden)
   const [sound, setSound] = useState(readSound)
   const playQueue = usePlayerStore(state => state.playQueue)
   // A button's songs: played, and the story closes (see the top).
@@ -164,11 +165,8 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
     return () => cancelAnimationFrame(frame)
   }, [running, index, slide.duration, progress, go])
 
-  useEffect(() => {
-    const onVisibility = () => setHidden(document.visibilityState === 'hidden')
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [])
+  // Paused while nobody can see it, minimized included (windowVisibility.js).
+  useEffect(() => onWindowVisibility(setHidden), [])
 
   // The rest of the app can't be reached (Tab, screen readers) while it's open;
   // focus goes back where it was on close. The story itself takes focus (not

@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { onWindowVisibility } from '../windowVisibility'
 
 const lookups = new Map() // trackId -> Promise<{ src, source } | null>
 
@@ -73,16 +74,13 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   useEffect(() => () => { onActiveRef.current?.(false) }, [])
 
   // Don't spend the GPU on a clip nobody can see.
-  useEffect(() => {
-    const onVisibility = () => {
-      const v = videoRef.current
-      if (!v) return
-      if (document.hidden) v.pause()
-      else v.play().catch(() => {})
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [])
+  // (Minimized counts too: see windowVisibility.js.)
+  useEffect(() => onWindowVisibility((hidden) => {
+    const v = videoRef.current
+    if (!v) return
+    if (hidden) v.pause()
+    else v.play().catch(() => {})
+  }), [])
 
   if (!clip) return null
   return (
