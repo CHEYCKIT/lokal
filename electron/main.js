@@ -344,37 +344,13 @@ function createWindow() {
   mainWindow.on('restore', () => sendVisibility(false))
   mainWindow.on('show', () => sendVisibility(false))
 
-  // Windows, Direct3D 11: the restored window shows white until its first new
-  // frame (see angleBackend). So it goes fully transparent while minimized
-  // (the taskbar preview of a minimized Electron window is blank anyway) and
-  // becomes opaque again once the page has drawn after the restore: the
-  // page's ack (two animation frames) plus a frame for the compositor, or
-  // 250 ms at most.
-  if (process.platform === 'win32' && perfSettings.hardwareAcceleration !== false) {
-    let revealTimer = null
-    let waitingForPaint = false
-    const reveal = () => {
-      clearTimeout(revealTimer)
-      waitingForPaint = false
-      if (!mainWindow.isDestroyed() && !mainWindow.isMinimized()) mainWindow.setOpacity(1)
-    }
-    mainWindow.on('minimize', () => { clearTimeout(revealTimer); waitingForPaint = false; mainWindow.setOpacity(0) })
-    mainWindow.on('restore', () => {
-      clearTimeout(revealTimer)
-      waitingForPaint = true
-      revealTimer = setTimeout(reveal, 250)
-    })
-    ipcMain.on('window:painted', (event) => {
-      if (!waitingForPaint || event.sender !== mainWindow.webContents) return
-      clearTimeout(revealTimer)
-      revealTimer = setTimeout(reveal, 34)
-    })
-  }
   
   
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    const logLevel = ['debug', 'info', 'warn', 'error'][level] || 'info'
-    log[logLevel](`[Renderer:${sourceId}:${line}] ${message}`)
+  // Electron 35+ passes one details object (level as 'info' | 'warning' |
+  // 'error' | 'debug'); the old positional arguments are gone.
+  mainWindow.webContents.on('console-message', (event) => {
+    const logLevel = { debug: 'debug', info: 'info', warning: 'warn', error: 'error' }[event.level] || 'info'
+    log[logLevel](`[Renderer:${event.sourceId}:${event.lineNumber}] ${event.message}`)
   })
   
   mainWindow.webContents.on('did-finish-load', () => {
