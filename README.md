@@ -230,7 +230,7 @@ If you want to access your library from another device (e.g. devices on the go/l
 3. Optionally set `API_KEY` to a random string to protect remote access. Every `/api` request then needs it:
    - **In the web app:** it's asked once per browser and kept in a cookie.
    - **Other clients:** send it as an `x-api-key` header.
-   - **From outside your network:** put Lokal behind HTTPS (a reverse proxy or tunnel with TLS). With `API_KEY` set, plain HTTP is only accepted from this machine and your local network.
+   - **Use HTTPS on any network you don't fully trust** (a reverse proxy or tunnel with TLS): plain HTTP sends the key unencrypted, so anyone on the same network could read it. With `API_KEY` set, plain HTTP is only accepted from this machine and your local network, and reaching Lokal from outside needs HTTPS.
 4. Run `npm run dev:web`
 
 ---
