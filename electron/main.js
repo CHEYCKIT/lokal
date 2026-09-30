@@ -307,8 +307,20 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, webSecurity: false,
+      // Minimizing hid the page, and a hidden page drops what it drew: on
+      // Windows, bringing the window back from the taskbar then showed a
+      // blank (white) window until it painted again. Never hidden, the last
+      // frame stays. (A music player's timers shouldn't slow down while
+      // minimized either.) The page learns it's minimized through
+      // 'window:visibility' instead, to pause what nobody sees.
+      backgroundThrottling: false,
     },
   })
+  const sendVisibility = (hidden) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:visibility', hidden) }
+  mainWindow.on('minimize', () => sendVisibility(true))
+  mainWindow.on('hide', () => sendVisibility(true))
+  mainWindow.on('restore', () => sendVisibility(false))
+  mainWindow.on('show', () => sendVisibility(false))
   
   
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
