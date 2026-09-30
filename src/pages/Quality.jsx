@@ -154,7 +154,7 @@ export default function Quality() {
   }
 
   return (
-    <div className="max-w-5xl space-y-6 px-4 pb-12 pt-6">
+    <div className="w-full max-w-5xl mx-auto space-y-6 px-4 pb-12 pt-6">
       <section className="rounded-[24px] border border-border bg-card/60 p-5">
         <div className="flex flex-wrap items-center gap-3">
           <AudioWaveform size={18} className="text-accent" />
