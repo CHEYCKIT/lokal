@@ -1,11 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, ListPlus, Play, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
-import { latestPeriod, listenerTimeZone, nextPeriodBoundary, periodPlace, periodQuery, recapPlaylistName, recapTree, treePeriods } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, nextPeriodBoundary, periodPlace, periodQuery, recapPlaylistName, recapTree, treePeriods, markRecapOpened } from '../recapPeriods'
 import { plural } from '../plural'
 import { filteredGenres, fmtDate, fmtHour, fmtMinutes, trackArt } from '../recapText'
 import RecapStory from '../components/RecapStory'
@@ -157,12 +158,35 @@ function RankedList({ title, items, nameKey, emptyText, busyKey, onPlay, onSave 
 const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** One chip of the period picker. */
-function PeriodChip({ active, context, dashed, onClick, children, title }) {
+function PeriodChip({ active, context, dashed, onClick, onPrefetch, children, title }) {
   return (
-    <button onClick={onClick} title={title}
+    <button onClick={onClick} title={title} onPointerEnter={onPrefetch} onFocus={onPrefetch}
       className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-display uppercase tracking-wider transition-colors ${active ? 'border-accent bg-accent text-base' : context ? 'border-accent/60 bg-accent/10 text-accent' : `${dashed ? 'border-dashed' : ''} border-border bg-elevated text-muted hover:text-white`}`}>
       {children}
     </button>
+  )
+}
+
+/** A row of period chips under the year row, opening and closing smoothly. */
+function ChipRow({ label, contentKey, reduceMotion, children }) {
+  const ease = [0.22, 1, 0.36, 1]
+  return (
+    // Height only: framer draws it frame by frame. Its opacity animations
+    // run on the compositor and blinked for a frame at their end, so the
+    // row's fade-in is CSS (.chips-swap) and closing just folds it away.
+    <motion.div
+      initial={{ height: 0 }}
+      animate={{ height: 'auto' }}
+      exit={{ height: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.22, ease }}
+      className="chips-swap overflow-hidden">
+      <div className="flex items-center gap-3 pt-3">
+        <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">{label}</span>
+        <div key={contentKey} className="chips-swap flex gap-2 overflow-x-auto pb-0.5">
+          {children}
+        </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -187,6 +211,14 @@ function RecapContent({ user }) {
   const [shownId, setShownId] = useCachedState(`${k}:shownId`, '')
   const [periodsError, setPeriodsError] = useState('')
   const [loading, setLoading] = useState(false)
+  // The recap on screen dims only when the next one takes a moment to build.
+  const [slowLoad, setSlowLoad] = useState(false)
+  useEffect(() => {
+    if (!loading) { setSlowLoad(false); return undefined }
+    const timer = setTimeout(() => setSlowLoad(true), 180)
+    return () => clearTimeout(timer)
+  }, [loading])
+  const reduceMotion = useReducedMotion()
   const [checkingPeriods, setCheckingPeriods] = useState(!treeWasCached)
   const [status, setStatus] = useState('')
   const [storyOpen, setStoryOpen] = useState(false)
@@ -241,6 +273,32 @@ function RecapContent({ user }) {
     else if (entry.weeks.length) setSelectedId(entry.weeks[entry.weeks.length - 1].id)
   }
   const wholeOf = (entry) => entry.period || entry.soFar
+
+  // What picking a year or month would open (the same rules as above), so
+  // it can be built while the pointer is on its chip.
+  const yearTarget = (entry) => {
+    if (entry.period) return entry.period
+    if (entry.soFar && navYear === entry.year) return entry.soFar
+    const latestMonth = [...entry.months].reverse().find(m => m.period || m.weeks.length || m.soFar)
+    return latestMonth?.period || latestMonth?.weeks[latestMonth.weeks.length - 1] || latestMonth?.soFar || entry.soFar
+  }
+  const monthTarget = (entry) => {
+    if (entry.period) return entry.period
+    if (entry.soFar && (navMonth === entry.key || !entry.weeks.length)) return entry.soFar
+    return entry.weeks[entry.weeks.length - 1]
+  }
+  // A recap built ahead (on hover or focus) swaps in at once when picked.
+  const prefetching = useRef(new Set())
+  const prefetch = (period) => {
+    if (!period || recapsById[period.id] || prefetching.current.has(period.id)) return
+    prefetching.current.add(period.id)
+    Promise.resolve(api.getListeningRecap(user?.id || 'guest', periodQuery(period)))
+      .then(result => {
+        if (result && !result.error) setRecapsById(current => (current[period.id] ? current : { ...current, [period.id]: result }))
+      })
+      .catch(() => {})
+      .finally(() => prefetching.current.delete(period.id))
+  }
 
   // Worked out on each load, so a period that just ended shows up.
   const loadPeriodList = async () => {
@@ -367,11 +425,14 @@ function RecapContent({ user }) {
     loadRecap()
   }, [selectedId, user?.id])
 
+  // Opened once its recap is actually on screen (shownId only follows a
+  // successful load): not when it's picked, nor for one whose load failed
+  // or that was left before it arrived.
   useEffect(() => {
-    if (!selectedId) return
-    localStorage.setItem('lokal-recap-last-viewed', selectedId)
-    window.dispatchEvent(new CustomEvent('lokal:recap-viewed', { detail: { periodId: selectedId } }))
-  }, [selectedId])
+    if (!shownId || !recap) return
+    markRecapOpened(shownId, user?.id)
+    window.dispatchEvent(new CustomEvent('lokal:recap-viewed', { detail: { periodId: shownId } }))
+  }, [shownId, !!recap, user?.id])
 
   const topTracks = recap?.topTracks || []
   const replayQueue = recap?.replayQueue || topTracks
@@ -468,43 +529,42 @@ function RecapContent({ user }) {
         <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">Looking for finished recaps with listening data...</div>
       ) : periods.length > 0 ? (
         // Year, then month, then week: only periods with plays are listed.
-        <div className="space-y-3 rounded-xl border border-border bg-elevated/60 p-4">
+        <div className="rounded-xl border border-border bg-elevated/60 p-4">
           <div className="flex items-center gap-3">
             <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Year</span>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               {tree.map(entry => (
-                <PeriodChip key={entry.year} active={selectedId === wholeOf(entry)?.id} context={navYear === entry.year && selectedId !== wholeOf(entry)?.id} onClick={() => pickYear(entry)}
+                <PeriodChip key={entry.year} active={selectedId === wholeOf(entry)?.id} context={navYear === entry.year && selectedId !== wholeOf(entry)?.id} onClick={() => pickYear(entry)} onPrefetch={() => prefetch(yearTarget(entry))}
                   title={entry.period ? `The whole of ${entry.year}` : navYear === entry.year ? `${entry.year} so far` : `${entry.year} is still going: click again for the year so far`}>
                   {entry.year}
                 </PeriodChip>
               ))}
             </div>
           </div>
-          {yearEntry && (
-            <div className="flex items-center gap-3">
-              <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Month</span>
-              <div className="flex gap-2 overflow-x-auto pb-0.5">
+          {/* The Month and Week rows open and close smoothly (the recap
+              below glides instead of jumping), and another year's months or
+              another month's weeks fade in rather than popping. */}
+          <AnimatePresence initial={false}>
+            {yearEntry && (
+              <ChipRow key="month" label="Month" contentKey={yearEntry.year} reduceMotion={reduceMotion}>
                 {yearEntry.months.map(entry => (
                   <PeriodChip key={entry.key} active={selectedId === wholeOf(entry)?.id} context={navMonth === entry.key && selectedId !== wholeOf(entry)?.id}
-                    dashed={!entry.period} title={entry.period ? undefined : navMonth === entry.key ? 'This month so far' : 'Still going: click again for the month so far'} onClick={() => pickMonth(entry)}>
+                    dashed={!entry.period} title={entry.period ? undefined : navMonth === entry.key ? 'This month so far' : 'Still going: click again for the month so far'} onClick={() => pickMonth(entry)} onPrefetch={() => prefetch(monthTarget(entry))}>
                     {SHORT_MONTH_NAMES[entry.month - 1]}
                   </PeriodChip>
                 ))}
-              </div>
-            </div>
-          )}
-          {monthEntry && monthEntry.weeks.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Week</span>
-              <div className="flex gap-2 overflow-x-auto pb-0.5">
+              </ChipRow>
+            )}
+            {monthEntry && monthEntry.weeks.length > 0 && (
+              <ChipRow key="week" label="Week" contentKey={monthEntry.key} reduceMotion={reduceMotion}>
                 {monthEntry.weeks.map(period => (
-                  <PeriodChip key={period.id} active={selectedId === period.id} onClick={() => setSelectedId(period.id)}>
+                  <PeriodChip key={period.id} active={selectedId === period.id} onClick={() => setSelectedId(period.id)} onPrefetch={() => prefetch(period)}>
                     {period.label}
                   </PeriodChip>
                 ))}
-              </div>
-            </div>
-          )}
+              </ChipRow>
+            )}
+          </AnimatePresence>
         </div>
       ) : periodsError ? (
         <div className="flex items-center gap-3 rounded-xl border border-border bg-elevated p-6 text-sm text-muted">
@@ -526,8 +586,11 @@ function RecapContent({ user }) {
           <p className="mt-1 text-xs text-muted">Once a completed period has enough listening data, it will show up here.</p>
         </div>
       ) : (
-        // Switching period keeps the current recap (dimmed, not clickable) until the next is built.
-        <div ref={recapBodyRef} aria-busy={loading} className={`space-y-6 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
+        // Switching period keeps the current recap until the next is built:
+        // not clickable, and dimmed only if that takes a moment (a recap
+        // that's ready swaps at once). The next one then fades in (.recap-swap).
+        <div ref={recapBodyRef} aria-busy={loading} className={`transition-opacity duration-300 ${loading ? 'pointer-events-none' : ''} ${slowLoad ? 'opacity-60' : ''}`}>
+          <div key={shownId} className="recap-swap space-y-6">
           <section className="relative overflow-hidden rounded-xl border border-border bg-elevated">
             {heroArt && <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl scale-110" style={{ backgroundImage: `url("${heroArt}")` }} />}
             <div className="relative grid grid-cols-[minmax(0,1fr)] gap-6 p-6 @lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -597,6 +660,7 @@ function RecapContent({ user }) {
               </div>
             </section>
           )}
+          </div>
         </div>
       )}
 

@@ -6,6 +6,7 @@ const on = (ch, fn) => { ipcRenderer.on(ch, fn); return () => ipcRenderer.remove
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   minimize: () => invoke('window:minimize'),
+  setBackgroundColor: (color) => invoke('window:setBackgroundColor', color),
   maximize: () => invoke('window:maximize'),
   close: () => invoke('window:close'),
   setAlwaysOnTop: (flag) => invoke('window:setAlwaysOnTop', flag),

@@ -197,6 +197,23 @@ if (!perfSettings.hardwareAcceleration) {
 }
 
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
+// Windows: Chromium drops a minimized window's frames (it counts as
+// occluded), so bringing it back from the taskbar showed a white flash until
+// it painted again. Kept, the last frame is there at once.
+if (process.platform === 'win32') app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
+// The window's own colour, shown before the page paints (start-up, resizing):
+// the theme's background, remembered from the last run so a light theme
+// doesn't open on a dark frame (or the other way round).
+const windowBgPath = path.join(app.getPath('userData'), 'window-background.txt')
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+function savedWindowBackground() {
+  try {
+    const value = fs.readFileSync(windowBgPath, 'utf8').trim()
+    if (HEX_COLOR.test(value)) return value
+  } catch {}
+  return '#0a0a0a'
+}
 
 let mainWindow
 const NORMAL_MIN_WIDTH = 960
@@ -286,7 +303,7 @@ function createWindow() {
     width: 1400, height: 860, minWidth: NORMAL_MIN_WIDTH, minHeight: NORMAL_MIN_HEIGHT,
     useContentSize: true,
     resizable: true,
-    frame: false, backgroundColor: '#0a0a0a',
+    frame: false, backgroundColor: savedWindowBackground(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, webSecurity: false,
@@ -465,6 +482,13 @@ app.whenReady().then(() => {
 });
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
+// Follows the theme (see savedWindowBackground).
+ipcMain.handle('window:setBackgroundColor', (_, color) => {
+  if (typeof color !== 'string' || !HEX_COLOR.test(color)) return false
+  mainWindow?.setBackgroundColor(color)
+  try { if (savedWindowBackground() !== color) fs.writeFileSync(windowBgPath, color) } catch {}
+  return true
+})
 ipcMain.handle('window:maximize', () => mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize())
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:setAlwaysOnTop', (_, flag) => { 

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
-import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapTree } from '../recapPeriods'
+import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 
 const NAV = [
@@ -119,8 +119,8 @@ export default function Sidebar() {
         if (latest) localStorage.setItem('lokal-recap-latest-completed', latest)
       } catch {}
       if (!alive) return
-      const viewed = localStorage.getItem('lokal-recap-last-viewed') || ''
-      setShowRecapBadge(Boolean(latest && latest !== viewed))
+      // Only for a new recap that hasn't been opened yet.
+      setShowRecapBadge(Boolean(latest) && !recapOpened(latest, user?.id))
     }
     // Check again when the next period ends (e.g. Monday 00:00), and when
     // the app comes back (a timer doesn't fire while the computer sleeps).

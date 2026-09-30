@@ -252,3 +252,47 @@ export function periodPlace(tree = [], id) {
 export function listenerTimeZone() {
   return localTimeZone()
 }
+
+// The recaps the listener has opened, per user (recap ids are the same for
+// every account). The sidebar's "new recap" badge is for a recap nobody has
+// looked at yet: opening an older one afterwards (or a month "so far")
+// mustn't bring it back, as keeping only the last one seen did.
+const OPENED_KEY = 'lokal-recap-opened'
+const OPENED_MAX = 200
+// Before this list: the one recap last looked at, not tied to a user.
+const LEGACY_KEY = 'lokal-recap-last-viewed'
+
+const openedKey = (userId) => `${OPENED_KEY}:${userId || 'guest'}`
+
+function readOpened(userId) {
+  try {
+    const key = openedKey(userId)
+    const stored = localStorage.getItem(key)
+    if (stored === null) {
+      // First read for this user: the old key, if any, becomes their list,
+      // once (then it's gone, so it can't count for a second account).
+      const legacy = localStorage.getItem(LEGACY_KEY)
+      if (!legacy) return []
+      localStorage.setItem(key, JSON.stringify([legacy]))
+      localStorage.removeItem(LEGACY_KEY)
+      return [legacy]
+    }
+    const list = JSON.parse(stored)
+    return Array.isArray(list) ? list.filter(id => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** Remember that `userId` opened the recap `id`. */
+export function markRecapOpened(id, userId) {
+  if (!id) return
+  const opened = readOpened(userId).filter(other => other !== id)
+  opened.push(id)
+  try { localStorage.setItem(openedKey(userId), JSON.stringify(opened.slice(-OPENED_MAX))) } catch {}
+}
+
+/** Has `userId` opened the recap `id`? */
+export function recapOpened(id, userId) {
+  return !!id && readOpened(userId).includes(id)
+}
