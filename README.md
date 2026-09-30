@@ -171,12 +171,6 @@ Know what you're actually listening to:
 
 ---
 
-## Possible Features to Come
-
-- **TTML API:** an API (*like Spicy Lyrics for Spotify*) that automatically provides TTML files for the best sync possible.
-
----
-
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v18+
