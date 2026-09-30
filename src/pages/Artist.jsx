@@ -1,13 +1,16 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Play, Music, Settings, Camera } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
 import { makeAlbumContext, makeArtistContext } from '../playbackContext'
 import { plural } from '../plural'
+import SelectionBar from '../components/SelectionBar'
+import { useSelection } from '../selection'
+import { releaseKey, useReleaseActions } from '../releaseActions'
 
 export default function Artist() {
   const { id } = useParams()
@@ -125,6 +128,16 @@ export default function Artist() {
     }
   }
 
+  // Releases: Ctrl/Cmd+click (or Shift+click) selects, a right click or the
+  // bar plays, queues, adds to a playlist or deletes them. Their artist is
+  // this page's when a release doesn't name one (so its songs are found by
+  // title and artist, not title alone).
+  const releaseList = useMemo(() => (artist?.albums || []).map(album => ({ ...album, album_artist: album.album_artist || artist?.name })), [artist])
+  const releaseKeys = useMemo(() => releaseList.map(releaseKey), [releaseList])
+  const releases = useReleaseActions({ goToArtist: false, onDeleted: () => releaseSelection.clear() })
+  const releasesFor = (keys) => releaseList.filter(album => keys.includes(releaseKey(album)))
+  const releaseSelection = useSelection(releaseKeys, { onDelete: (keys) => releases.askDelete(releasesFor(keys)) })
+
   if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
 
   // Web mode previously hardcoded this to null, so the artist detail page
@@ -201,19 +214,36 @@ export default function Artist() {
         {artist.albums?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
+            {releaseSelection.count > 0 && (
+              <SelectionBar
+                label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+                onClear={releaseSelection.clear}
+                actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
+              />
+            )}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {artist.albums.map((album) => {
+              {releaseList.map((album) => {
                 const firstTrack = artist.tracks?.find((track) => track.album === album.title)
                 const cover = firstTrack ? artSrc(firstTrack) : null
+                const selected = releaseSelection.has(releaseKey(album))
                 return (
                   <motion.button
                     key={album.title}
-                    onClick={() => nav('/albums', { state: { album, from: location.pathname } })}
+                    onClick={(event) => {
+                      if (!releaseSelection.click(releaseKey(album), event)) nav('/albums', { state: { album, from: location.pathname } })
+                    }}
+                    onContextMenu={(event) => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))}
+                    aria-selected={selected}
                     whileHover={{ scale: 1.02 }}
-                    className={`flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
+                    className={`relative flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selected ? 'border-accent ring-2 ring-accent/60 bg-accent/10' : selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
-                    <div className="flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
+                    <div className="relative flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
                       {cover ? <img src={cover} className="h-full w-full object-cover" /> : <Music size={28} />}
+                      {selected && (
+                        <span className="pointer-events-none absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-base shadow-lg">
+                          <Check size={14} strokeWidth={3} />
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0 overflow-hidden">
                       <p className="block truncate text-sm font-medium text-white">{album.title}</p>
@@ -233,6 +263,7 @@ export default function Artist() {
 
         {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />}
       </div>
+      {releases.elements}
 
       <ArtistManageModal
         artist={artist}
