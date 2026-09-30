@@ -494,6 +494,9 @@ app.whenReady().then(() => {
 });
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
+// Whether the window is minimized or hidden now, for a page that subscribes
+// to 'window:visibility' after the last change was sent.
+ipcMain.handle('window:isHidden', () => !mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized() || !mainWindow.isVisible())
 // Follows the theme (see savedWindowBackground).
 ipcMain.handle('window:setBackgroundColor', (_, color) => {
   if (typeof color !== 'string' || !HEX_COLOR.test(color)) return false
