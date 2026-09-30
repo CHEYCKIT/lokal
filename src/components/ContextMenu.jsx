@@ -23,7 +23,8 @@ export function useContextMenu() {
   return { state, open, close }
 }
 
-export default function ContextMenu({ menu }) {
+/** @param id  the menu element's id (for a button's aria-controls) */
+export default function ContextMenu({ menu, id }) {
   const { state, close } = menu
   const ref = useRef(null)
   const [position, setPosition] = useState(null)
@@ -86,6 +87,7 @@ export default function ContextMenu({ menu }) {
   return createPortal(
     <div
       ref={ref}
+      id={id}
       role="menu"
       tabIndex={-1}
       onKeyDown={onKeyDown}

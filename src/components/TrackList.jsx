@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -111,6 +111,10 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
+  // The row whose ⋯ opened the menu (its aria-expanded), until the menu closes.
+  const menuId = useId()
+  const [menuFor, setMenuFor] = useState(null)
+  useEffect(() => { if (!menu.state) setMenuFor(null) }, [menu.state])
   const trackIds = React.useMemo(() => mergedTracks.map(track => track.id), [tracks, trackOverrides]) // eslint-disable-line react-hooks/exhaustive-deps
   // Ctrl/Cmd+click selects songs, Shift+click a range (see selection.js);
   // Delete removes the selection from the playlist, or from the library in
@@ -429,6 +433,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
    * show on hover, the ⋯ button (and a right click) still reaches them all.
    */
   const openTrackMenu = (event, track) => {
+    setMenuFor(null) // a right click; the ⋯ marks its row after this
     const ids = selection.contextSelect(track.id)
     const list = mergedTracks.filter(item => ids.includes(String(item.id)))
     const one = list.length === 1 ? list[0] : null
@@ -826,10 +831,13 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                   e.stopPropagation()
                   const r = e.currentTarget.getBoundingClientRect()
                   openTrackMenu({ preventDefault() {}, stopPropagation() {}, clientX: r.left, clientY: r.bottom + 4 }, track)
+                  setMenuFor(track.id)
                 }}
                 title="More"
                 aria-label={`More for ${track.title || 'this song'}`}
                 aria-haspopup="menu"
+                aria-expanded={!!menu.state && menuFor === track.id}
+                aria-controls={menu.state && menuFor === track.id ? menuId : undefined}
                 className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text @md:hidden"
               >
                 <MoreHorizontal size={14} />
@@ -864,7 +872,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
       />
 
       <DeleteTracksDialog request={deleteRequest} onClose={() => setDeleteRequest(null)} onDone={() => selection.clear()} />
-      <ContextMenu menu={menu} />
+      <ContextMenu menu={menu} id={menuId} />
 
       <Modal
         open={!!ghostTrack}
