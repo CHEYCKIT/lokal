@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil } from 'lucide-react'
-import { useAppStore } from '../store/player'
+import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, TrendingUp, Disc3, Image as ImageIcon, Pencil, Play, Loader2 } from 'lucide-react'
+import { useAppStore, usePlayerStore } from '../store/player'
+import { showToast } from '../components/Toaster'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
@@ -38,6 +39,24 @@ function normalizeBio(text) {
 
 export default function Profile() {
   const nav = useNavigate()
+  const playQueue = usePlayerStore(s => s.playQueue)
+  // Top Genres chips play that genre's songs from the library, most played
+  // first. One at a time; a second click while it loads is ignored.
+  const [playingGenre, setPlayingGenre] = useState(null)
+  const playGenre = async (genre) => {
+    if (!genre || playingGenre) return
+    setPlayingGenre(genre)
+    try {
+      const result = await api.getTracks({ genre, sort: 'play_count DESC', limit: 500 })
+      const tracks = Array.isArray(result) ? result : []
+      if (tracks.length) playQueue(tracks, 0, { type: 'genre', id: genre, name: genre })
+      else showToast(`No ${genre} songs in your library`)
+    } catch {
+      showToast(`Could not play ${genre}`)
+    } finally {
+      setPlayingGenre(null)
+    }
+  }
   const avatarInputRef = useRef(null)
   const bannerInputRef = useRef(null)
   const bioInputRef = useRef(null)
@@ -491,11 +510,25 @@ export default function Profile() {
             <section className="rounded-2xl border border-border bg-elevated px-5 py-4 @md:col-span-2">
               <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:gap-5">
                 <h2 className="flex-shrink-0 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h2>
+                {/* Always there, so screen readers announce the change. */}
+                <span role="status" aria-live="polite" className="sr-only">{playingGenre ? `Loading ${playingGenre} songs` : ''}</span>
                 <div className="flex min-w-0 flex-wrap gap-2">
                   {topGenres.map((genre, index) => (
-                    <span key={genre.genre} title={`${genre.plays} plays`} className="max-w-full truncate rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-display text-accent" style={{ opacity: 1 - index * 0.15 }}>
-                      {genre.genre} · {genre.plays}
-                    </span>
+                    <button
+                      key={genre.genre}
+                      type="button"
+                      onClick={() => playGenre(genre.genre)}
+                      disabled={!!playingGenre}
+                      title={`Play ${genre.genre} (${genre.plays} plays)`}
+                      aria-label={`Play ${genre.genre}`}
+                      className="group flex max-w-full items-center gap-1.5 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-display text-accent transition-colors hover:border-accent/60 hover:bg-accent/20 hover:!opacity-100 focus-visible:!opacity-100 disabled:cursor-default"
+                      style={{ opacity: 1 - index * 0.15 }}
+                    >
+                      {playingGenre === genre.genre
+                        ? <Loader2 size={11} aria-hidden="true" className="flex-shrink-0 animate-spin" />
+                        : <Play size={11} fill="currentColor" className="hidden flex-shrink-0 group-hover:block group-focus-visible:block" />}
+                      <span className="truncate">{genre.genre} · {genre.plays}</span>
+                    </button>
                   ))}
                 </div>
               </div>
