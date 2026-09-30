@@ -283,6 +283,12 @@ export function applyTheme(vars) {
       root.style.setProperty(`${k}-rgb`, hexToRgbNumbers(v));
     }
   }
+  // The desktop window's own colour follows the theme, so what shows before
+  // the page paints matches it instead of flashing another colour.
+  const bg = vars['--bg'];
+  if (typeof bg === 'string' && /^#[0-9a-f]{6}$/i.test(bg)) {
+    try { window.electron?.setBackgroundColor?.(bg)?.catch?.(() => {}); } catch {}
+  }
 }
 
 export function getAccentColors(accent) {
