@@ -78,6 +78,24 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
 .word-past { opacity: 0.35; }
 .word-future { opacity: 0.45; }
 
+/* A recap swapping in for another (Recap page). A CSS animation rather than
+   framer's: its compositor opacity handed back to a stale inline value for
+   one frame at the end, a visible flicker. `backwards` leaves no transform
+   behind once it's done (a transform would make the recap the containing
+   block of its fixed overlays). */
+@keyframes recap-swap {
+  from { opacity: 0.4; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.recap-swap { animation: recap-swap 0.24s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+/* Another year's months, or another month's weeks, in the Recap chip rows. */
+@keyframes chips-swap { from { opacity: 0; } to { opacity: 1; } }
+.chips-swap { animation: chips-swap 0.18s ease-out backwards; }
+@media (prefers-reduced-motion: reduce) {
+  @keyframes recap-swap-fade { from { opacity: 0.4; } to { opacity: 1; } }
+  .recap-swap { animation-name: recap-swap-fade; }
+}
+
 @keyframes eq-bar {
   0%, 100% { transform: scaleY(0.3); }
   50% { transform: scaleY(1); }
