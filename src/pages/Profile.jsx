@@ -86,13 +86,25 @@ export default function Profile() {
       setPlaylists([])
       return
     }
-    const load = () => api.getPlaylists(user.id).then((result) => {
-      setPlaylists(Array.isArray(result) ? result.slice(0, 6) : [])
-    }).catch(() => setPlaylists([]))
+    // Only the latest request's answer (or failure) is shown: quick
+    // successive changes can't leave an older list on screen.
+    let latest = 0
+    const load = () => {
+      const request = ++latest
+      api.getPlaylists(user.id).then((result) => {
+        if (request === latest) setPlaylists(Array.isArray(result) ? result.slice(0, 6) : [])
+      }).catch(() => {
+        if (request === latest) setPlaylists([])
+      })
+    }
     load()
     // A playlist renamed, re-covered, made or deleted elsewhere shows here too.
-    window.addEventListener('lokal:playlists-changed', load)
-    return () => window.removeEventListener('lokal:playlists-changed', load)
+    const events = ['lokal:playlists-changed', 'lokal:playlist-updated', 'lokal:playlist-created', 'lokal:playlist-deleted']
+    events.forEach(name => window.addEventListener(name, load))
+    return () => {
+      latest = -1 // answers arriving after unmount or a user change are dropped
+      events.forEach(name => window.removeEventListener(name, load))
+    }
   }, [user?.id])
 
   useEffect(() => {
