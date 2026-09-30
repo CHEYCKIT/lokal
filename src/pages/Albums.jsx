@@ -71,9 +71,9 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/35 to-black/80" />
-      <div className="relative grid gap-6 p-6 md:grid-cols-[280px_minmax(0,1fr)] md:items-stretch md:p-8">
+      <div className="relative grid gap-6 p-6 @md:grid-cols-[280px_minmax(0,1fr)] @md:items-stretch @md:p-8">
         <div className="justify-self-start">
-          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl md:h-[280px] md:w-[280px]">
+          <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl @md:h-[280px] @md:w-[280px]">
             {artSrc ? (
               <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
             ) : (
@@ -83,7 +83,7 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             )}
           </div>
         </div>
-        <div className="min-w-0 overflow-hidden rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl md:h-[280px]">
+        <div className="min-w-0 overflow-hidden rounded-[1.8rem] border border-white/10 bg-black/25 p-6 backdrop-blur-xl @md:h-[280px]">
           <p className="text-[11px] font-display uppercase tracking-[0.34em] text-white/55">{releaseLabel(album.release_type)}</p>
           <h1
             ref={titleRef}
@@ -96,12 +96,12 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
             <button
               type="button"
               onClick={onArtist}
-              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent hover:underline hover:decoration-accent hover:underline-offset-4 md:text-base"
+              className="mt-4 inline-flex max-w-full truncate text-left text-sm !text-white transition-colors hover:!text-accent hover:underline hover:decoration-accent hover:underline-offset-4 @md:text-base"
             >
               {artistName}
             </button>
           ) : (
-            <p className="mt-4 truncate text-sm text-white/45 md:text-base">Unknown Artist</p>
+            <p className="mt-4 truncate text-sm text-white/45 @md:text-base">Unknown Artist</p>
           )}
           <p className="mt-3 text-xs uppercase tracking-[0.24em] text-white/45">
             {plural(trackCount, 'track')}{album.year ? ` • ${album.year}` : ''}
@@ -459,7 +459,7 @@ export default function Albums() {
   return (
     <div className="min-h-full p-6 pb-10">
       <div className="mx-auto max-w-7xl space-y-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-4 @md:flex-row @md:items-end @md:justify-between">
           <div>
             <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
             <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">Albums</h1>
@@ -467,7 +467,7 @@ export default function Albums() {
               {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
             </p>
           </div>
-          <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex w-full max-w-xl flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-end">
             {selectedAlbum && (
               <button
                 onClick={() => navigate(-1)}
@@ -487,7 +487,7 @@ export default function Albums() {
               />
             </div>
 
-            <div className="flex items-center gap-2 justify-start sm:justify-end">
+            <div className="flex items-center gap-2 justify-start @sm:justify-end">
               <label className="text-[11px] text-muted uppercase tracking-[0.16em]">Sort</label>
               <select
                 value={settings.album_sort_mode || 'default'}
@@ -631,7 +631,7 @@ export default function Albums() {
                     <p className="mt-1 text-sm text-white/60">{group.items.length} shown</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-4 @sm:grid-cols-3 @lg:grid-cols-5 @xl:grid-cols-6">
                   {group.items.map((album, index) => (
                     <AlbumCard
                       key={`${group.key}-${album.title}-${album.album_artist || album.artists || 'release'}-${index}`}

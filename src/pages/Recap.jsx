@@ -77,7 +77,7 @@ function SessionCard({ session, onPlay, onSave }) {
 
   return (
     <div className="group overflow-hidden rounded-xl border border-border bg-elevated transition-colors hover:border-accent/35">
-      <div className="grid items-start gap-4 p-4 sm:grid-cols-[1fr_8rem]">
+      <div className="grid items-start gap-4 p-4 @sm:grid-cols-[1fr_8rem]">
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -112,7 +112,7 @@ function SessionCard({ session, onPlay, onSave }) {
         </div>
 
         <button onClick={onPlay} disabled={!hasTracks} title="Play this session" aria-label={`Play ${session.label}`}
-          className="hidden transition-opacity hover:opacity-90 sm:block">
+          className="hidden transition-opacity hover:opacity-90 @sm:block">
           <CoverMosaic tracks={session.tracks} />
         </button>
       </div>
@@ -393,7 +393,7 @@ function RecapContent({ user }) {
 
   return (
     <div className="p-6 pb-10 space-y-6 max-w-6xl">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 @lg:flex-row @lg:items-end @lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-accent">
             <Sparkles size={13} />
@@ -488,17 +488,17 @@ function RecapContent({ user }) {
         <div ref={recapBodyRef} aria-busy={loading} className={`space-y-6 transition-opacity duration-200 ${loading ? 'pointer-events-none opacity-50' : ''}`}>
           <section className="relative overflow-hidden rounded-xl border border-border bg-elevated">
             {heroArt && <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl scale-110" style={{ backgroundImage: `url("${heroArt}")` }} />}
-            <div className="relative grid gap-6 p-6 lg:grid-cols-[1fr_260px]">
-              <div>
+            <div className="relative grid grid-cols-[minmax(0,1fr)] gap-6 p-6 @lg:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted">
                   <CalendarRange size={12} />
                   {fmtDate(recap.from)} - {fmtDate(recap.to)}
                 </div>
-                <h2 className="mt-3 text-4xl font-display text-white">{shownPeriod?.title}</h2>
+                <h2 className="mt-3 break-words text-3xl font-display text-white @sm:text-4xl">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
                   You played {plural(recap.totalPlays, 'track')} for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
                 </p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 @sm:grid-cols-2 @xl:grid-cols-4">
                   <Metric label="Minutes" value={fmtMinutes(recap.totalMinutes)} icon={Clock3} />
                   <Metric label="Tracks" value={recap.uniqueTracks || 0} icon={ListMusic} />
                   <Metric label="Artists" value={recap.uniqueArtists || 0} icon={BarChart3} />
@@ -515,8 +515,8 @@ function RecapContent({ user }) {
             </div>
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-            <section className="space-y-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 @lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+            <section className="min-w-0 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
                 <button onClick={() => playQueue(topTracks, 0)} className="text-xs font-display uppercase tracking-wider text-accent hover:text-accent/70">Play Top 50</button>
@@ -524,7 +524,7 @@ function RecapContent({ user }) {
               <TrackList tracks={topTracks.slice(0, 20)} showAlbum reduceMotion />
             </section>
 
-            <aside className="space-y-4">
+            <aside className="min-w-0 space-y-4">
               <RankedList title="Top Artists" items={(recap.topArtists || []).slice(0, 5)} nameKey="artist"
                 emptyText="No artist stood out yet." busyKey={busySubject}
                 onPlay={(name) => playSubject('artist', name)} onSave={(name) => saveSubject('artist', name)} />
@@ -536,14 +536,14 @@ function RecapContent({ user }) {
 
           {recap.sessions?.length > 0 && (
             <section className="space-y-3">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-col gap-1 @sm:flex-row @sm:items-end @sm:justify-between">
                 <div>
                   <h2 className="text-xs font-display uppercase tracking-widest text-muted">Listening Sessions</h2>
                   <p className="mt-1 text-sm text-muted">Your strongest runs from this recap, grouped by listening shape.</p>
                 </div>
                 <span className="text-xs text-muted">{recap.sessions.length} named sessions</span>
               </div>
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @xl:grid-cols-2">
                 {recap.sessions.slice(0, 8).map((session, index) => (
                   <SessionCard
                     key={session.id || index}

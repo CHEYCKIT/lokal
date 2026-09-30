@@ -192,7 +192,7 @@ export default function Quality() {
           <p className="mt-3 text-xs text-muted">{unread.toLocaleString()} tracks were added before Lokal kept their format: read their details to see them here.</p>
         )}
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2 @sm:grid-cols-3 @lg:grid-cols-5">
           {['hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
             <StatTile key={tier} tier={tier} count={tiers[tier]} rollFrom={rollFrom(tiers[tier] || 0)} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
           ))}
@@ -246,7 +246,7 @@ export default function Quality() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <span className="hidden text-[11px] text-muted sm:inline">{formatLabel(track)}</span>
+                  <span className="hidden text-[11px] text-muted @sm:inline">{formatLabel(track)}</span>
                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
                   <button onClick={() => openLossless(track)} title="Get it in lossless"
                     className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted opacity-70 transition-all hover:text-accent group-hover:opacity-100">

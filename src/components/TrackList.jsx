@@ -611,10 +611,10 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
         ]}
       />
 
-      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}>
+      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'}`}>
         {playlistId && <span></span>}
         <span>#</span><span>Title</span>
-        <span>{showAlbum ? 'Album' : ''}</span>
+        <span className="hidden @md:inline">{showAlbum ? 'Album' : ''}</span>
         <span className="text-right">Time</span>
       </div>
 
@@ -660,7 +660,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
             onContextMenu={(e) => openTrackMenu(e, track)}
             aria-selected={isSelected}
             style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
-            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_5rem]'}`}
+            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${playlistId ? 'grid-cols-[2rem_1.5rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1.5rem_1fr_auto_5rem]' : 'grid-cols-[2rem_1fr_auto_3.5rem] @md:grid-cols-[2rem_1fr_auto_5rem]'}`}
           >
             {playlistId && (
               <div className="flex items-center justify-center w-6 text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
@@ -703,10 +703,13 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 pr-1">
-              {showAlbum && <p className="text-xs text-muted truncate max-w-32 hidden md:block mr-2">{track.album}</p>}
+            {/* A narrow page (a small window, the right sidebar open) keeps the
+                room for the title: the buttons only take space on hover
+                (they're all in the right-click menu too). */}
+            <div className="hidden items-center gap-1.5 pr-1 group-hover:flex @md:flex">
+              {showAlbum && <p className="text-xs text-muted truncate max-w-32 hidden @md:block mr-2">{track.album}</p>}
               {playlistId && track.added_at && (
-                <p className="text-xs text-muted/60 mr-2 hidden lg:block">{fmtAddedAt(track.added_at)}</p>
+                <p className="text-xs text-muted/60 mr-2 hidden @lg:block">{fmtAddedAt(track.added_at)}</p>
               )}
               {showPlayNext && !isGhost && (
                 <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
@@ -796,7 +799,7 @@ export default function TrackList({ tracks = [], showAlbum = true, onRemove = nu
                 </button>
               )}
             </div>
-            <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
+            <span className="col-end-[-1] text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
           </RowComponent>
         )
       })}

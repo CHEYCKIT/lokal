@@ -207,7 +207,7 @@ function HomeContent({ user }) {
                 <Radio size={14} className="text-accent" />
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">Your Mixes</h2>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 @md:grid-cols-3 gap-3">
                 {mixes.slice(0, 6).map(mix => (
                   <MixCard key={mix.id} mix={mix} onClick={() => playQueue(mix.tracks, 0)} onSave={() => saveMix(mix)} saving={saving === `mix:${mix.id}`} onContextMenu={(event) => openMixMenu(event, mix)} />
                 ))}
@@ -226,7 +226,7 @@ function HomeContent({ user }) {
                   Save as playlist
                 </button>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 @md:grid-cols-4 gap-3">
                 {suggestions.slice(0, 8).map((t, i) => (
                   <motion.button
                     key={t.id}

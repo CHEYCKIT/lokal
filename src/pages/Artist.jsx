@@ -158,7 +158,7 @@ export default function Artist() {
       <div className="relative h-56 overflow-hidden">
         <button
           onClick={() => nav(-1)}
-          className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white md:left-8 md:top-5"
+          className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white @md:left-8 @md:top-5"
         >
           <ArrowLeft size={14} />
           Back
@@ -220,7 +220,7 @@ export default function Artist() {
               onClear={releaseSelection.clear}
               actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
             />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
               {releaseList.map((album) => {
                 const firstTrack = artist.tracks?.find((track) => track.album === album.title)
                 const cover = firstTrack ? artSrc(firstTrack) : null

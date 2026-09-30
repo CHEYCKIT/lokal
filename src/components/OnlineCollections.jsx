@@ -78,7 +78,7 @@ export default function OnlineCollections({ query }) {
         {loading && <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />}
       </h3>
       {error && !items.length && <p className="text-xs text-muted">{error}</p>}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-2 @sm:grid-cols-2 @xl:grid-cols-3">
         {items.map((item, i) => {
           const job = jobs.find(j => !j.removed && j.kind === 'playlist' && j.url === item.url)
           const active = isActive(job) || starting.has(item.url)

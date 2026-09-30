@@ -1,3 +1,6 @@
+import plugin from 'tailwindcss/plugin'
+import { PAGE_BREAKPOINTS } from './src/pageBreakpoints.js'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
@@ -22,5 +25,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // @sm: @md: @lg: @xl: @2xl: — like sm: md: …, but by the page's width (src/pageWidth.js, src/pageBreakpoints.js).
+    plugin(({ addVariant }) => {
+      for (const name of Object.keys(PAGE_BREAKPOINTS)) addVariant(`@${name}`, `[data-page~="${name}"] &`)
+    }),
+  ],
 }

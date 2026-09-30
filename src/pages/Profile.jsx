@@ -412,10 +412,10 @@ export default function Profile() {
           )}
         </section>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 max-w-6xl items-stretch">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 @xl:grid-cols-2 max-w-6xl items-stretch">
           <section className="rounded-2xl border border-border bg-elevated p-5">
             <h2 className="mb-4 text-xs font-display uppercase tracking-widest text-muted">Snapshot</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
               <StatTile icon={Music4} label="Total Plays" value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
               <StatTile icon={Clock3} label="Hours Listened" value={statsLoading ? '...' : `${hours}h`} />
               <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
@@ -497,7 +497,7 @@ export default function Profile() {
             </section>
           )}
 
-          <div className="grid min-h-0 grid-rows-2 gap-6">
+          <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-2 gap-6">
             <motion.button
               type="button"
               initial={{ opacity: 0, y: -8 }}
@@ -609,7 +609,7 @@ export default function Profile() {
         {!!playlists.length && (
           <section className="mt-6 max-w-6xl">
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Playlists</h2>
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 @lg:grid-cols-4">
               {playlists.map((playlist) => (
                 <motion.button
                   key={playlist.id}
