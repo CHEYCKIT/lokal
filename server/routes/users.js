@@ -78,6 +78,12 @@ router.put('/:id/settings', (req, res) => {
   res.json({ ok: true })
 })
 
+// Profile numbers (plays, hours, likes, this week, top artists, tracks and
+// genres), the same as the desktop app's.
+router.get('/:id/stats', (req, res) => {
+  res.json(require('../../electron/ipc/scanner').userStats(getDB(), req.params.id))
+})
+
 router.get('/:id/recap', (req, res) => {
   const db = getDB()
   const uid = req.params.id || 'guest'
