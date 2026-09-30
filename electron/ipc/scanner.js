@@ -589,6 +589,20 @@ function genreFilter(genre) {
   }
 }
 
+/** Profile numbers for a user (the desktop app and the web server share it). */
+function userStats(db, userId) {
+  const uid = userId || 'guest'
+  try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
+  const totalPlays = db.prepare(`SELECT COUNT(*) as c FROM play_history WHERE user_id = ? AND COALESCE(seconds_played, 999) >= 30`).get(uid)?.c || 0
+  const totalSecs = db.prepare(`SELECT SUM(COALESCE(seconds_played, 0)) as s FROM play_history WHERE user_id = ?`).get(uid)?.s || 0
+  const topArtists = db.prepare(`SELECT t.artist, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.artist ORDER BY plays DESC LIMIT 5`).all(uid)
+  const topTracks = db.prepare(`SELECT t.*, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.id ORDER BY plays DESC LIMIT 5`).all(uid)
+  const topGenres = db.prepare(`SELECT t.genre, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND t.genre IS NOT NULL AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.genre ORDER BY plays DESC LIMIT 5`).all(uid)
+  const likedCount = db.prepare('SELECT COUNT(*) as c FROM user_likes WHERE user_id = ?').get(uid)?.c || 0
+  const weeklyPlays = db.prepare(`SELECT COUNT(*) as c FROM play_history WHERE user_id = ? AND played_at > unixepoch() - 604800 AND COALESCE(seconds_played, 999) >= 30`).get(uid)?.c || 0
+  return { totalPlays, totalMinutes: Math.round(totalSecs / 60), topArtists, topTracks, topGenres, likedCount, weeklyPlays }
+}
+
 function findArtistById(db, id) {
   let artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(id)
   if (!artist) {
@@ -1835,7 +1849,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, genreFilter, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
 
 
 function registerExtraHandlers(ipcMain) {
@@ -2032,19 +2046,7 @@ function registerV4Handlers(ipcMain) {
     }
     return { merged: mergedCount, groups: groups.length }
   }),
-  ipcMain.handle('user:getStats', (_, userId) => {
-    const db = getDB()
-    const uid = userId || 'guest'
-    try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
-    const totalPlays = db.prepare(`SELECT COUNT(*) as c FROM play_history WHERE user_id = ? AND COALESCE(seconds_played, 999) >= 30`).get(uid)?.c || 0
-    const totalSecs = db.prepare(`SELECT SUM(COALESCE(seconds_played, 0)) as s FROM play_history WHERE user_id = ?`).get(uid)?.s || 0
-    const topArtists = db.prepare(`SELECT t.artist, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.artist ORDER BY plays DESC LIMIT 5`).all(uid)
-    const topTracks = db.prepare(`SELECT t.*, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.id ORDER BY plays DESC LIMIT 5`).all(uid)
-    const topGenres = db.prepare(`SELECT t.genre, COUNT(*) as plays FROM play_history ph JOIN tracks t ON t.id = ph.track_id WHERE ph.user_id = ? AND t.genre IS NOT NULL AND COALESCE(ph.seconds_played, 999) >= 30 GROUP BY t.genre ORDER BY plays DESC LIMIT 5`).all(uid)
-    const likedCount = db.prepare('SELECT COUNT(*) as c FROM user_likes WHERE user_id = ?').get(uid)?.c || 0
-    const weeklyPlays = db.prepare(`SELECT COUNT(*) as c FROM play_history WHERE user_id = ? AND played_at > unixepoch() - 604800 AND COALESCE(seconds_played, 999) >= 30`).get(uid)?.c || 0
-    return { totalPlays, totalMinutes: Math.round(totalSecs / 60), topArtists, topTracks, topGenres, likedCount, weeklyPlays }
-  })
+  ipcMain.handle('user:getStats', (_, userId) => userStats(getDB(), userId))
   ipcMain.handle('user:getRecap', (_, userId) => {
     const db = getDB()
     const uid = userId || 'guest'

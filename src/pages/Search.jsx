@@ -102,7 +102,8 @@ export default function Search() {
   }, [query, doSearch])
 
   const artSrc = (a) => a.image_path ? (api.isElectron ? `file://${a.image_path}` : null) : null
-  const albumArt = (a) => a.artwork_path ? (api.isElectron ? `file://${a.artwork_path}` : api.artworkURL(a.id)) : null
+  // By the album's cover track in the web app (an album has no id of its own).
+  const albumArt = (a) => api.albumArtURL(a)
 
   /** Open an artist from the results and remember it. */
   const handleArtistClick = (artist) => {

@@ -25,7 +25,9 @@ function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
     ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
     : null
 
-  const arts = [...new Set(mix.tracks.filter(t => t.artwork_path).map(t => t.artwork_path))].slice(0, 4)
+  // One track per distinct cover: the web app asks for a cover by track id
+  // (a bare path came out as /artwork/undefined, so mixes showed no art).
+  const arts = [...new Map(mix.tracks.filter(t => t.artwork_path).map(t => [t.artwork_path, t])).values()].slice(0, 4)
 
   const getMixTypeLabel = (type) => {
     switch (type) {
@@ -46,11 +48,11 @@ function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
       >
         <div className="w-full aspect-square rounded-lg overflow-hidden bg-card relative">
           {arts.length === 0 && <div className="w-full h-full flex items-center justify-center text-subtle"><Radio size={36} /></div>}
-          {arts.length === 1 && <FadeImg src={artSrc({ artwork_path: arts[0] })} className="w-full h-full object-cover" />}
+          {arts.length === 1 && <FadeImg src={artSrc(arts[0])} className="w-full h-full object-cover" />}
           {arts.length > 1 && (
             <div className="w-full h-full grid grid-cols-2">
-              {arts.slice(0, 4).map((art, i) => (
-                <FadeImg key={i} src={artSrc({ artwork_path: art })} className="w-full h-full object-cover" />
+              {arts.map((track, i) => (
+                <FadeImg key={i} src={artSrc(track)} className="w-full h-full object-cover" />
               ))}
             </div>
           )}
