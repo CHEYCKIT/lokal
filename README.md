@@ -14,7 +14,7 @@
 ---
 ## Before reading further, check the common links:
 
->Download the [latest up-to-date release.](https://github.com/sipbuu/lokal/releases/latest)
+>Download the [latest up-to-date release.](https://github.com/sipbuu/lokal/releases/latest) Windows releases are code-signed through [SignPath Foundation](https://signpath.org/) (see the [code signing policy](#code-signing-policy)).
 
 >If you are wondering why you have to create an account or other general questions, please [read the FAQ](./FAQ.md).
 
@@ -283,8 +283,7 @@ src/              React frontend
 
 ## Code Signing Policy
 
-<!-- Once SignPath Foundation approves the project, this line goes here:
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). -->
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
 Official Windows releases are built from this repository's source by GitHub Actions. Only those builds are signed: never a file built on someone's own computer, and never third-party programs (yt-dlp, ffmpeg and slskd are not part of the installer).
 

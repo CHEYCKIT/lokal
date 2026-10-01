@@ -245,6 +245,8 @@ jobs:
 
             ## Changelog
 
+            Windows builds: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) ([code signing policy](https://github.com/${{ github.repository }}#code-signing-policy)).
+
             FYI:
             **Lokal is 100% local; the library, history, anything in database, or any info that is used for API's such as yt-dlp, LRCLIB, is *NOT* seen by us.**
 
