@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('electron', {
   getPlaylists: (uid) => invoke('scanner:getPlaylists', uid),
   createPlaylist: (n, uid, d) => invoke('scanner:createPlaylist', n, uid, d),
   updatePlaylist: (id, d) => invoke('scanner:updatePlaylist', id, d),
+  smartPlaylistPreview: (rules, uid) => invoke('playlist:smartPreview', rules, uid),
   addToPlaylist: (pl, t) => invoke('scanner:addToPlaylist', pl, t),
   removeFromPlaylist: (pl, t) => invoke('scanner:removeFromPlaylist', pl, t),
   getPlaylistTracks: (pl) => invoke('scanner:getPlaylistTracks', pl),

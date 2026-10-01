@@ -19,7 +19,8 @@ export default function AddToPlaylistModal() {
 
   useEffect(() => {
     if (!track && addToPlaylistTrackIds.length === 0) { setAdded(new Set()); return }
-    api.getPlaylists(user?.id).then(p => setPlaylists(Array.isArray(p) ? p : []))
+    // Smart playlists fill themselves from their rules: nothing to add to.
+    api.getPlaylists(user?.id).then(p => setPlaylists(Array.isArray(p) ? p.filter(pl => !pl.smart_rules) : []))
   }, [track?.id, addToPlaylistTrackIds.length, user?.id])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 1800) }
