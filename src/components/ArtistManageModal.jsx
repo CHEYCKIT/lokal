@@ -259,12 +259,12 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
       {tab === 'lookup' && (
         <div className="space-y-4">
           <p className="text-xs text-muted leading-relaxed">Pick a photo and a bio separately, from any source. Artists who share a name are listed apart: the line under each name says who it is. What you pick is kept as your choice.</p>
-          <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
+          <div className="grid grid-cols-3 gap-1 p-0.5 bg-card rounded-lg border border-border">
             {ARTIST_SOURCES.map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => { setLookupSource(id); runLookup(id) }}
-                className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
+                className={`min-w-0 truncate px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors ${lookupSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}
               >
                 {label}
               </button>

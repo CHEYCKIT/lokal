@@ -58,14 +58,16 @@ function Section({ title, children }) {
     </div>
   )
 }
-function Row({ label, desc, children }) {
+// `stacked`: the control goes under the text, full width (a wide control
+// beside it would squeeze the description into a narrow column).
+function Row({ label, desc, children, stacked = false }) {
   return (
-    <div className="flex items-center justify-between gap-6">
+    <div className={stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'}>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{label}</p>
         {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{desc}</p>}
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div className={stacked ? '' : 'flex-shrink-0'}>{children}</div>
     </div>
   )
 }
@@ -1634,8 +1636,8 @@ export default function Settings() {
 
       {inCategory('artists') && (
       <Section title="Artist Photos">
-        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB, then Wikidata; bios from Wikidata (the artist's own Wikipedia article), then TheAudioDB, then MusicBrainz, then Wikipedia (only a page that's surely the artist's).">
-          <div className="flex flex-wrap justify-end gap-1 p-0.5 bg-card rounded-lg border border-border">
+        <Row stacked label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB, then Wikidata; bios from Wikidata (the artist's own Wikipedia article), then TheAudioDB, then MusicBrainz, then Wikipedia (only a page that's surely the artist's).">
+          <div className="inline-flex flex-wrap gap-1 p-0.5 bg-card rounded-lg border border-border">
             {ARTIST_SOURCES.map(([id, label]) => (
               <button key={id} onClick={() => set('artist_metadata_source', id)}
                 className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>

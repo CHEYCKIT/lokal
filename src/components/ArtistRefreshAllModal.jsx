@@ -75,10 +75,10 @@ export default function ArtistRefreshAllModal({ open, onClose, onStatus }) {
           {source === 'deezer' && ' Deezer only has pictures, so bios stay as they are.'}
         </p>
 
-        <div className="flex gap-1 p-0.5 bg-card rounded-lg border border-border">
+        <div className="grid grid-cols-3 gap-1 p-0.5 bg-card rounded-lg border border-border">
           {SOURCES.map(([id, label]) => (
             <button key={id} onClick={() => setSource(id)} disabled={running}
-              className={`flex-1 min-w-0 px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors disabled:opacity-50 ${source === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+              className={`min-w-0 truncate px-1 py-1.5 !text-[10px] font-display uppercase tracking-wide rounded transition-colors disabled:opacity-50 ${source === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
               {label}
             </button>
           ))}
