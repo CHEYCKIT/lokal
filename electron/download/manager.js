@@ -246,6 +246,7 @@ class DownloadManager {
       this.jobs.set(job.id, job)
     }
     this.trimHistory()
+    this.repairGhostIndexed()
     if (resumed) setTimeout(() => this.pump(), 4000)
     setTimeout(() => this.backfillSources(), 7000)
     setTimeout(() => this.indexLeftovers(), 6000)
@@ -262,6 +263,32 @@ class DownloadManager {
       const ghost = this.db().prepare("SELECT id, file_path, source_url FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'").get(trackId)
       return !!ghost && sourceRefOfTrack(ghost) === ref
     } catch { return false }
+  }
+
+  /**
+   * Downloads that were taken for the streamed (ghost) copy of their song
+   * instead of being added to the library (the duplicate check matched the
+   * ghost): their files are added again (indexLeftovers), and until then the
+   * download doesn't count as saved.
+   */
+  repairGhostIndexed() {
+    try {
+      const isGhost = this.db().prepare("SELECT 1 FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'")
+      const untag = this.db().prepare("UPDATE tracks SET download_source = NULL WHERE id = ? AND file_path LIKE 'ghost://%'")
+      for (const job of this.jobs.values()) {
+        if (ACTIVE.has(job.status) || !job.indexedTracks?.length) continue
+        const ghosts = job.indexedTracks.filter(t => t?.id && isGhost.get(t.id))
+        if (!ghosts.length) continue
+        for (const t of ghosts) untag.run(t.id)
+        const files = ghosts.map(t => t.filepath).filter(fp => { try { return fp && fs.existsSync(fp) } catch { return false } })
+        const indexedTracks = job.indexedTracks.filter(t => !ghosts.includes(t))
+        this.update(job, {
+          indexedTracks,
+          pendingIndex: [...new Set([...(job.pendingIndex || []), ...files])],
+          removed: indexedTracks.length === 0 && !files.length,
+        }, { persist: true })
+      }
+    } catch {}
   }
 
   /** Songs downloaded before sources were kept: their source, from the download history. */

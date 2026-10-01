@@ -1996,8 +1996,12 @@ export default function App() {
           </>
         )}
 
+        {/* crossOrigin: both players feed the Web Audio graph (EQ, analyser).
+            Without it, Chromium treats lokal-stream:// media as cross-origin
+            and the graph outputs silence. */}
         <audio
           ref={audioRef}
+          crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
           onEnded={handlePrimaryEnded}
@@ -2007,6 +2011,7 @@ export default function App() {
         />
         <audio
           ref={cfAudioRef}
+          crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}
           onEnded={handleCfEnded}
