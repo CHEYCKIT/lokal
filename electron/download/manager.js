@@ -276,7 +276,8 @@ class DownloadManager {
       const isGhost = this.db().prepare("SELECT 1 FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'")
       const untag = this.db().prepare("UPDATE tracks SET download_source = NULL WHERE id = ? AND file_path LIKE 'ghost://%'")
       for (const job of this.jobs.values()) {
-        if (ACTIVE.has(job.status) || !job.indexedTracks?.length) continue
+        // Jobs resuming after a restart too: their pendingIndex is added when they finish.
+        if (!job.indexedTracks?.length) continue
         const ghosts = job.indexedTracks.filter(t => t?.id && isGhost.get(t.id))
         if (!ghosts.length) continue
         for (const t of ghosts) untag.run(t.id)
@@ -285,7 +286,8 @@ class DownloadManager {
         this.update(job, {
           indexedTracks,
           pendingIndex: [...new Set([...(job.pendingIndex || []), ...files])],
-          removed: indexedTracks.length === 0,
+          // (A resuming job still shows as saving, not as never saved.)
+          removed: !ACTIVE.has(job.status) && indexedTracks.length === 0,
         }, { persist: true })
       }
     } catch {}
