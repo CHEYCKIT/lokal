@@ -1,5 +1,6 @@
 
 const router = require('express').Router()
+const { smartTracks, smartPreview, normalizeRules, playlistRules } = require('../../electron/playlists/smart')
 const fs = require('fs-extra')
 const path = require('path')
 const { getDB, getStorageDir } = require('../../electron/ipc/db')
@@ -569,9 +570,14 @@ router.put('/:id', async (req, res) => {
   const db = getDB()
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id)
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
-  const { name, description, coverData, clearCover } = req.body || {}
+  const { name, description, coverData, clearCover, smartRules } = req.body || {}
   if (name !== undefined) db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(name, req.params.id)
   if (description !== undefined) db.prepare('UPDATE playlists SET description = ? WHERE id = ?').run(description, req.params.id)
+  // Smart playlist rules (null: a regular playlist again).
+  if (smartRules !== undefined) {
+    const rules = smartRules === null ? null : normalizeRules(smartRules)
+    db.prepare('UPDATE playlists SET smart_rules = ? WHERE id = ?').run(rules ? JSON.stringify(rules) : null, req.params.id)
+  }
   if (coverData) {
     if (playlist.cover_path && fs.existsSync(playlist.cover_path)) {
       try { fs.removeSync(playlist.cover_path) } catch {}
@@ -790,8 +796,15 @@ router.post('/resolve-ghost', (req, res) => {
   }
 })
 
+router.post('/smart-preview', (req, res) => {
+  try { res.json(smartPreview(getDB(), req.body?.rules, req.body?.userId)) } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
 router.get('/:id/tracks', (req, res) => {
-  res.json(getDB().prepare(`
+  const db = getDB()
+  const playlist = db.prepare('SELECT user_id, smart_rules FROM playlists WHERE id = ?').get(req.params.id)
+  if (playlistRules(playlist)) return res.json(smartTracks(db, playlist.smart_rules, playlist.user_id))
+  res.json(db.prepare(`
     SELECT t.*, pt.added_by, pt.added_at FROM tracks t 
     JOIN playlist_tracks pt ON pt.track_id = t.id
     WHERE pt.playlist_id = ? 

@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
 import { makeAlbumContext, makeArtistContext } from '../playbackContext'
 import { plural } from '../plural'
+import { openShareCard, artistArtSource, coversOf } from '../shareCard'
 import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
@@ -147,6 +148,23 @@ export default function Artist() {
     ? (api.isElectron ? `file://${artist.image_path}` : `/api/artist-image/${encodeURIComponent(artist.id)}`)
     : null
   const artSrc = (track) => track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null
+  // The share card: the artist's photo (else a cover), their songs and plays.
+  const shareArtist = () => {
+    const tracks = artist.tracks || []
+    const albums = new Set(tracks.map(track => track.album).filter(Boolean))
+    const plays = tracks.reduce((sum, track) => sum + (Number(track.play_count) || 0), 0)
+    const top = artist.topTracks?.length ? artist.topTracks : tracks
+    const photo = artistArtSource(artist)
+    openShareCard({
+      kind: 'Artist',
+      title: artist.name,
+      round: !!photo,
+      art: photo ? [photo] : coversOf(tracks, 1),
+      stats: [['Songs', tracks.length.toLocaleString()], ['Albums', albums.size.toLocaleString()], ['Plays', plays.toLocaleString()]],
+      list: { title: 'Top songs', items: top.slice(0, 5).map(track => [track.title, track.album && track.album !== track.title ? track.album : null]) },
+    })
+  }
+
   const releaseLabel = (type) => {
     if (type === 'single') return 'Single'
     if (type === 'ep') return 'EP'
@@ -187,6 +205,10 @@ export default function Artist() {
         <div className="flex items-center gap-3">
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
+          </button>
+          <button onClick={shareArtist} title="Share as a picture"
+            className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
+            <Share2 size={14} /> Share
           </button>
         </div>
 

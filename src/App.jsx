@@ -28,6 +28,8 @@ import Profile from './pages/Profile'
 import Recap from './pages/Recap'
 import Quality from './pages/Quality'
 import LosslessModal from './components/LosslessModal'
+import SmartPlaylistModal from './components/SmartPlaylistModal'
+import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
 import Toaster from './components/Toaster'
@@ -1962,6 +1964,8 @@ export default function App() {
             <ProfileModal />
             <AddToPlaylistModal />
             <LosslessModal />
+            <SmartPlaylistModal />
+            <ShareCardModal />
             <RecapStories
               open={showRecapStories}
               onClose={() => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, ListPlus, Play, Plus, RefreshCw, Sparkles } from 'lucide-react'
+import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, ListPlus, Play, Plus, RefreshCw, Sparkles, Share2 } from 'lucide-react'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
@@ -12,6 +12,7 @@ import { filteredGenres, fmtDate, fmtHour, fmtMinutes, trackArt } from '../recap
 import RecapStory from '../components/RecapStory'
 import { showToast } from '../components/Toaster'
 import { saveAsPlaylist } from '../trackActions'
+import { openShareCard, coversOf } from '../shareCard'
 
 
 function Metric({ label, value, icon: Icon }) {
@@ -439,6 +440,22 @@ function RecapContent({ user }) {
   const replayQueue = recap?.replayQueue || topTracks
   const heroTrack = topTracks[0]
   const heroArt = trackArt(heroTrack)
+
+  // The share card: the period's top covers, its numbers and top artists.
+  const shareRecap = () => {
+    if (!recap) return
+    openShareCard({
+      kind: 'Recap',
+      title: shownPeriod?.title || 'My recap',
+      subtitle: `${fmtDate(recap.from)} – ${fmtDate(recap.to)}`,
+      art: coversOf(topTracks, 4),
+      stats: [['Listened', fmtMinutes(recap.totalMinutes)], ['Tracks', (recap.uniqueTracks || 0).toLocaleString()], ['Artists', (recap.uniqueArtists || 0).toLocaleString()], ['Peak hour', fmtHour(recap.peakHour?.hour)]],
+      list: (recap.topArtists || []).length
+        ? { title: 'Top artists', items: recap.topArtists.slice(0, 5).map(item => [item.artist, plural(item.plays, 'play')]) }
+        : { title: 'Top tracks', items: topTracks.slice(0, 5).map(track => [track.title, track.artist]) },
+      fileName: `Recap ${shownPeriod?.title || ''}`,
+    })
+  }
   // This recap's genres, counted the same way as its top artists.
   const topGenres = filteredGenres(recap?.topGenres || [])
 
@@ -599,6 +616,10 @@ function RecapContent({ user }) {
                 <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted">
                   <CalendarRange size={12} />
                   {fmtDate(recap.from)} - {fmtDate(recap.to)}
+                  <button onClick={shareRecap} title="Share as a picture"
+                    className="ml-auto flex items-center gap-1.5 rounded-full border border-border bg-black/20 px-3 py-1 text-[10px] font-display uppercase tracking-widest text-muted transition-colors hover:border-accent/30 hover:text-white">
+                    <Share2 size={11} /> Share
+                  </button>
                 </div>
                 <h2 className="mt-3 break-words text-3xl font-display text-white @sm:text-4xl">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
