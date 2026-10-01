@@ -76,7 +76,7 @@ The search bar at the top covers your own library, then songs that aren't in it 
 
 (*yt-dlp and slskd are not included on install; see [Downloader Setup](#downloader-setup)*)
 
-**Addons:** paste an addon's manifest URL in Settings → Addons. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work as another source in search. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add. (*https://ultramax.vip/eclipse.html has been tested and works; Tido requires whitelisting, so it isn't compatible.*)
+**Addons:** paste an addon's manifest URL in Settings → Addons. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work as another source in search. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add. (*[Ultramax](https://ultramax.vip/eclipse.html) and [LastWave](https://lastwaveaddons.clashprojects.qd.je/)has been tested and work; Tido requires whitelisting, so it isn't compatible.*)
 
 **Soulseek:** search and download from Soulseek through slskd, where lossless FLAC files are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
 
