@@ -58,14 +58,16 @@ function Section({ title, children }) {
     </div>
   )
 }
-function Row({ label, desc, children }) {
+// `stacked`: the control goes under the text, full width (a wide control
+// beside it would squeeze the description into a narrow column).
+function Row({ label, desc, children, stacked = false }) {
   return (
-    <div className="flex items-center justify-between gap-6">
+    <div className={stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'}>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{label}</p>
         {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{desc}</p>}
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div className={stacked ? '' : 'flex-shrink-0'}>{children}</div>
     </div>
   )
 }
@@ -1516,13 +1518,13 @@ export default function Settings() {
           </Row>
         )}
         {settings.yt_cookies === '1' && (settings.yt_cookie_browser || 'paste') === 'paste' && (
-          <Row label="YouTube Cookie" desc={"Like the Spotify cookie: paste your own YouTube session, and yt-dlp uses it for downloads and streaming. With a YouTube Premium account, streaming at Best quality gets Premium's 256 kbps AAC.\n\nTo get it:\n1. Install the \"Get cookies.txt LOCALLY\" browser extension (Chrome, Edge or Firefox).\n2. Open music.youtube.com, signed in.\n3. Click the extension, then Copy, and paste it here. (Or Export, and pick \"cookies.txt file\" as the source above.)\nOnly the YouTube cookies are kept.\n\nTip: YouTube renews the cookies of a tab you keep open. Copy them from a private window (allow the extension there in its settings) and close it without signing out: they then last for months.\n\n"+(api.isElectron
+          <Row stacked label="YouTube Cookie" desc={"Like the Spotify cookie: paste your own YouTube session, and yt-dlp uses it for downloads and streaming. With a YouTube Premium account, streaming at Best quality gets Premium's 256 kbps AAC.\n\nTo get it:\n1. Install the \"Get cookies.txt LOCALLY\" browser extension (Chrome, Edge or Firefox).\n2. Open music.youtube.com, signed in.\n3. Click the extension, then Copy, and paste it here. (Or Export, and pick \"cookies.txt file\" as the source above.)\nOnly the YouTube cookies are kept.\n\nTip: YouTube renews the cookies of a tab you keep open. Copy them from a private window (allow the extension there in its settings) and close it without signing out: they then last for months.\n\n"+(api.isElectron
             ? "It stays on this computer (a private cookies.txt in Lokal's data folder, deleted when you clear it) and is only given to yt-dlp for YouTube links. It's your real account."
             : "In the web app it is sent to the Lokal server and stored there (in its settings and a private cookies.txt in its data folder, deleted when you clear it), and only given to yt-dlp for YouTube links. Only paste it into a Lokal server you run or trust. It's your real account.")}>
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col items-start gap-1">
               <input type="password" value={settings.yt_cookie_header || ''} onChange={e => set('yt_cookie_header', e.target.value)}
                 placeholder="Paste from Get cookies.txt LOCALLY" spellCheck={false} autoComplete="off"
-                className="w-56 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                className="w-full max-w-md bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
               {settings.yt_cookie_header && (
                 settings.yt_cookie_header === '••••••••'
                   ? <span className="text-[11px] text-muted">Saved</span>
@@ -1634,8 +1636,8 @@ export default function Settings() {
 
       {inCategory('artists') && (
       <Section title="Artist Photos">
-        <Row label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB, then Wikidata; bios from Wikidata (the artist's own Wikipedia article), then TheAudioDB, then MusicBrainz, then Wikipedia (only a page that's surely the artist's).">
-          <div className="flex flex-wrap justify-end gap-1 p-0.5 bg-card rounded-lg border border-border">
+        <Row stacked label="Artist Info Source" desc="Where artist bios and pictures come from: automatic fetches, Refresh artist info on the Artists page, and the Lookup tab's default. Auto picks each separately: photos from Deezer, then TheAudioDB, then Wikidata; bios from Wikidata (the artist's own Wikipedia article), then TheAudioDB, then MusicBrainz, then Wikipedia (only a page that's surely the artist's).">
+          <div className="inline-flex flex-wrap gap-1 p-0.5 bg-card rounded-lg border border-border">
             {ARTIST_SOURCES.map(([id, label]) => (
               <button key={id} onClick={() => set('artist_metadata_source', id)}
                 className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
@@ -2153,7 +2155,7 @@ export default function Settings() {
             {settings.lastfm_scrobbling === '1' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Authorization" desc="Open Last.fm in your browser and let Lokal finish the connection automatically">
+        <Row stacked label="Authorization" desc="Open Last.fm in your browser and let Lokal finish the connection automatically">
           <div className="flex flex-col items-start gap-2">
             <div className="flex items-center gap-2">
               <button
@@ -2698,8 +2700,8 @@ module.exports = {
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
           return (
             <>
-            <Row label="Where to Look" desc="Tried in this order (Spotify first if you prioritize it below); the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
-              <div className="flex flex-col items-end gap-1.5">
+            <Row stacked label="Where to Look" desc="Tried in this order (Spotify first if you prioritize it below); the first exact match (same title, artist and album) wins. None of these are official APIs, so any of them can stop working without notice.">
+              <div className="flex flex-wrap gap-1.5">
                 {all.map(([id, label, hint]) => (
                   <button key={id} onClick={() => toggle(id)} title={hint}
                     className={`px-3 py-1 rounded-lg text-xs border transition-colors ${chosen.includes(id) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
@@ -2710,10 +2712,10 @@ module.exports = {
             </Row>
             {chosen.includes('spotify') && (
               <>
-                <Row label="Spotify Cookie" desc={"Spotify only shares canvases with a signed-in account, so this uses your own session cookie (sp_dc). To get it: sign in on open.spotify.com in your browser, open the developer tools (F12) > Application (Storage in Firefox) > Cookies > https://open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify. This uses Spotify's private web player endpoints, like BitChord does -- it can stop working at any time, and it's your real account."}>
+                <Row stacked label="Spotify Cookie" desc={"Spotify only shares canvases with a signed-in account, so this uses your own session cookie (sp_dc). To get it: sign in on open.spotify.com in your browser, open the developer tools (F12) > Application (Storage in Firefox) > Cookies > https://open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify. This uses Spotify's private web player endpoints, like BitChord does -- it can stop working at any time, and it's your real account."}>
                   <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
                     placeholder="sp_dc value" spellCheck={false} autoComplete="off"
-                    className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+                    className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
                 </Row>
                 <Row label="Prioritize Spotify Canvas" desc="Ask Spotify first and use Apple Music, Tidal and the community list only when it has nothing. Spotify has canvases for far more songs, but they're vertical, so they're cropped to a square here.">
                   <button
