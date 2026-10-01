@@ -285,7 +285,7 @@ class DownloadManager {
         this.update(job, {
           indexedTracks,
           pendingIndex: [...new Set([...(job.pendingIndex || []), ...files])],
-          removed: indexedTracks.length === 0 && !files.length,
+          removed: indexedTracks.length === 0,
         }, { persist: true })
       }
     } catch {}
@@ -309,7 +309,13 @@ class DownloadManager {
       if (ACTIVE.has(job.status) || !job.pendingIndex?.length || !this.deps.index) continue
       const files = job.pendingIndex.filter(fp => { try { return fs.existsSync(fp) } catch { return false } })
       job.pendingIndex = []
-      for (const fp of files) await this.indexOne(job, fp)
+      // A file stays pending until it's in the library, so a failed attempt
+      // is tried again next time.
+      for (const fp of files) {
+        const before = job.indexedTracks.length
+        await this.indexOne(job, fp)
+        if (job.indexedTracks.length === before) job.pendingIndex.push(fp)
+      }
       this.persist(job)
     }
   }
