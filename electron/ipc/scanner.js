@@ -1786,7 +1786,9 @@ async function indexSingleFile(filePath, opts = {}) {
 
   const replaygain = c.replaygain_track_gain || null
   const album = c.album?.trim() || 'Unknown Album'
-  const dupe = db.prepare('SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? AND (album IS NULL OR album = ? OR ? IS NULL OR album IS NULL) AND ABS(duration - ?) < 2').get(title.toLowerCase(), artist.toLowerCase(), album, album, duration)
+  // A streamed (ghost) copy of the song isn't a copy in the library: the file
+  // is added, and then takes the ghost's place.
+  const dupe = db.prepare("SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? AND (album IS NULL OR album = ? OR ? IS NULL OR album IS NULL) AND ABS(duration - ?) < 2 AND file_path NOT LIKE 'ghost://%'").get(title.toLowerCase(), artist.toLowerCase(), album, album, duration)
   if (dupe) return { duplicate: true, id: dupe.id }
   
   const insertTransaction = db.transaction(() => {
