@@ -281,6 +281,31 @@ src/              React frontend
 
 ---
 
+## Code Signing Policy
+
+<!-- Once SignPath Foundation approves the project, this line goes here:
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). -->
+
+Official Windows releases are built from this repository's source by GitHub Actions. Only those builds are signed: never a file built on someone's own computer, and never third-party programs (yt-dlp, ffmpeg and slskd are not part of the installer).
+
+**Team roles**
+
+- Committers and reviewers: [sipbuu](https://github.com/sipbuu), [CHEYCKIT](https://github.com/CHEYCKIT)
+- Approvers (who approve each signing request): [sipbuu](https://github.com/sipbuu)
+
+Everyone with these roles signs in to GitHub with two-factor authentication.
+
+**Privacy**
+
+Lokal has no accounts, analytics or telemetry. Your library, listening history and settings stay on your computer. It only connects to other services for the features that need them:
+
+- checking GitHub Releases for a new version (stable builds only);
+- looking up lyrics, artwork and artist information (the services listed above under *Built With*);
+- Last.fm, ListenBrainz and Discord, if you connect them;
+- searching, streaming and downloading, if you use those features.
+
+---
+
 ## License
 
 [MIT](https://opensource.org/license/mit)
