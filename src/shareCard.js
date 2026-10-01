@@ -18,6 +18,7 @@ import { api } from './api'
 const W = 1080
 const H = 1350
 const M = 90 // side margin
+const IMAGE_TIMEOUT_MS = 8000
 
 /** Where a track's cover can be read from. */
 export function trackArtSource(track) {
@@ -54,10 +55,17 @@ async function loadImage(source) {
   try {
     if (source.path && api.isElectron) src = await api.readFileAsDataURL(source.path)
     if (!src && source.url) {
-      const res = await fetch(source.url)
-      if (!res.ok) return null
-      src = URL.createObjectURL(await res.blob())
-      revoke = src
+      // A server that stalls mustn't hold up the card: it's drawn without this picture.
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS)
+      try {
+        const res = await fetch(source.url, { signal: controller.signal })
+        if (!res.ok) return null
+        src = URL.createObjectURL(await res.blob())
+        revoke = src
+      } finally {
+        clearTimeout(timer)
+      }
     }
     if (!src) return null
     const image = new Image()
@@ -124,7 +132,7 @@ function wrap(ctx, text, width, max) {
     const next = line ? `${line} ${words[i]}` : words[i]
     if (ctx.measureText(next).width <= width || !line) { line = next; continue }
     if (lines.length === max - 1) { lines.push(fit(ctx, [line, ...words.slice(i)].join(' '), width)); return lines }
-    lines.push(line)
+    lines.push(fit(ctx, line, width))
     line = words[i]
   }
   if (line) lines.push(fit(ctx, line, width))

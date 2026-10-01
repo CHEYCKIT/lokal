@@ -134,7 +134,12 @@ export default function SmartPlaylistModal() {
       if (!playlist?.id) throw new Error(playlist?.error || 'Could not create the playlist')
       const update = { smartRules: saved }
       if (editing && title !== editing.name) update.name = title
-      await api.updatePlaylist(playlist.id, update)
+      const result = await api.updatePlaylist(playlist.id, update)
+      if (!result || result.error) {
+        // A new one that didn't get its rules would be an empty regular playlist: remove it.
+        if (!editing) await Promise.resolve(api.deletePlaylist(playlist.id)).catch(() => {})
+        throw new Error(result?.error || 'Could not save the rules')
+      }
       window.dispatchEvent(new CustomEvent(editing ? 'lokal:playlist-updated' : 'lokal:playlists-changed', { detail: { playlistId: playlist.id, action: editing ? 'updated' : 'created' } }))
       if (editing) window.dispatchEvent(new CustomEvent('lokal:playlists-changed', { detail: { playlistId: playlist.id, action: 'updated' } }))
       setOpen(false)

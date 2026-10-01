@@ -286,8 +286,11 @@ async function findWikidataArtist(name) {
   const [entity] = await searchWikidataArtists(name)
   if (entity) return entity
   try {
-    const artist = (await searchMusicBrainzArtists(name)).find(found => wikiNameKey(found?.name) === wikiNameKey(name) && (found.score ?? 100) >= 90)
-    if (!artist) return null
+    // Only when the name is one artist's: several same-name artists, and
+    // picking the first could give another one's bio.
+    const matches = (await searchMusicBrainzArtists(name)).filter(found => wikiNameKey(found?.name) === wikiNameKey(name) && (found.score ?? 100) >= 90)
+    if (matches.length !== 1) return null
+    const [artist] = matches
     const data = await getJson(`https://musicbrainz.org/ws/2/artist/${encodeURIComponent(artist.id)}?fmt=json&inc=url-rels`)
     const link = (Array.isArray(data?.relations) ? data.relations : []).find(relation => relation?.type === 'wikidata')
     return link ? await getWikidataEntity(wikidataId(link.url?.resource)) : null

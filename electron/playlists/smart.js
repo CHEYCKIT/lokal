@@ -131,13 +131,13 @@ function normalizeRules(input) {
   return { match: rules.match === 'any' ? 'any' : 'all', rules: list, sort: SORTS[rules.sort] ? rules.sort : 'artist', limit }
 }
 
-/** { sql, params } selecting the playlist's tracks. */
-function smartQuery(db, input, userId) {
+/** { sql, params } selecting the playlist's tracks (`columns` of them). */
+function smartQuery(db, input, userId, columns = 't.*') {
   const rules = normalizeRules(input) || normalizeRules({})
   const params = []
   const conditions = rules.rules.map(rule => FIELDS[rule.field](rule.op, rule.value, params, db)).filter(Boolean)
   const where = conditions.length ? `AND (${conditions.join(rules.match === 'any' ? ' OR ' : ' AND ')})` : ''
-  const sql = `SELECT t.* FROM tracks t WHERE t.file_path NOT LIKE 'ghost://%' ${where} ORDER BY ${SORTS[rules.sort]}${rules.limit ? ` LIMIT ${rules.limit}` : ''}`
+  const sql = `SELECT ${columns} FROM tracks t WHERE t.file_path NOT LIKE 'ghost://%' ${where} ORDER BY ${SORTS[rules.sort]}${rules.limit ? ` LIMIT ${rules.limit}` : ''}`
   return { sql, params, named: { uid: userId || 'guest' } }
 }
 
@@ -154,14 +154,23 @@ function smartTracks(db, rules, userId) {
   return run(db, smartQuery(db, rules, userId), 'all')
 }
 
-/** What the rules give, for the editor: { count, duration, sample: first few songs }. */
+/**
+ * What the rules give, for the editor: { count, duration, sample: first few
+ * songs }. Asked for on every change, so only the totals and five songs are
+ * read, from one selection (the same random draw for both).
+ */
 function smartPreview(db, rules, userId) {
-  const tracks = smartTracks(db, rules, userId)
-  return {
-    count: tracks.length,
-    duration: tracks.reduce((sum, t) => sum + (Number(t.duration) || 0), 0),
-    sample: tracks.slice(0, 5).map(t => ({ id: t.id, title: t.title, artist: t.artist })),
-  }
+  const query = smartQuery(db, rules, userId, 't.id, t.title, t.artist, t.duration')
+  const row = run(db, {
+    ...query,
+    sql: `WITH picked AS MATERIALIZED (${query.sql})
+      SELECT (SELECT COUNT(*) FROM picked) AS count,
+             (SELECT IFNULL(SUM(duration), 0) FROM picked) AS duration,
+             (SELECT json_group_array(json_object('id', id, 'title', title, 'artist', artist)) FROM (SELECT * FROM picked LIMIT 5)) AS sample`,
+  }, 'get')
+  let sample = []
+  try { sample = JSON.parse(row?.sample || '[]') } catch {}
+  return { count: row?.count || 0, duration: row?.duration || 0, sample }
 }
 
 /** The playlist's rules (parsed), or null for a regular playlist. */
