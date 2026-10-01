@@ -14,7 +14,7 @@
 ---
 ## Before reading further, check the common links:
 
->Download the [latest up-to-date release.](https://github.com/sipbuu/lokal/releases/latest)
+>Download the [latest up-to-date release.](https://github.com/sipbuu/lokal/releases/latest) Windows releases are code-signed through [SignPath Foundation](https://signpath.org/) (see the [code signing policy](#code-signing-policy)).
 
 >If you are wondering why you have to create an account or other general questions, please [read the FAQ](./FAQ.md).
 
@@ -278,6 +278,30 @@ src/              React frontend
 - [slskd](https://github.com/slskd/slskd)
 - Lyrics: [LRCLIB](https://lrclib.net/), BiniLyrics, BetterLyrics, LyricsPlus, Unison, KuGou and lyrics.ovh
 - Artist info: [MusicBrainz](https://musicbrainz.org/), [TheAudioDB](https://www.theaudiodb.com/), [Deezer](https://www.deezer.com/) and [Wikipedia](https://www.wikipedia.org/)
+
+---
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+Official Windows releases are built from this repository's source by GitHub Actions. Only those builds are signed: never a file built on someone's own computer, and never third-party programs (yt-dlp, ffmpeg and slskd are not part of the installer).
+
+**Team roles**
+
+- Committers and reviewers: [sipbuu](https://github.com/sipbuu), [CHEYCKIT](https://github.com/CHEYCKIT)
+- Approvers (who approve each signing request): [sipbuu](https://github.com/sipbuu)
+
+Everyone with these roles signs in to GitHub with two-factor authentication.
+
+**Privacy**
+
+Lokal has no accounts, analytics or telemetry. Your library, listening history and settings stay on your computer. It only connects to other services for the features that need them:
+
+- checking GitHub Releases for a new version (stable builds only);
+- looking up lyrics, artwork and artist information (the services listed above under *Built With*);
+- Last.fm, ListenBrainz and Discord, if you connect them;
+- searching, streaming and downloading, if you use those features.
 
 ---
 
