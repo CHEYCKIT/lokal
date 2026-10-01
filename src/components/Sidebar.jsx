@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
+import { openSmartPlaylistEditor } from '../smartPlaylists'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
@@ -325,10 +326,16 @@ export default function Sidebar() {
       <div className="flex-1 overflow-y-auto px-3 min-h-0">
         <div className={`flex items-center py-2 ${collapsed ? 'justify-center' : 'justify-between px-1'}`}>
           {!collapsed && <p className="text-xs font-display text-muted uppercase tracking-widest">Playlists</p>}
-          <button onClick={startNewPlaylist} title="New playlist" aria-label="New playlist"
-            className="text-muted hover:text-white transition-colors p-0.5 rounded">
-            <Plus size={14} />
-          </button>
+          <div className={`flex items-center ${collapsed ? 'flex-col gap-1' : 'gap-1'}`}>
+            <button onClick={() => openSmartPlaylistEditor()} title="New smart playlist" aria-label="New smart playlist"
+              className="text-muted hover:text-white transition-colors p-0.5 rounded">
+              <Sparkles size={13} />
+            </button>
+            <button onClick={startNewPlaylist} title="New playlist" aria-label="New playlist"
+              className="text-muted hover:text-white transition-colors p-0.5 rounded">
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
 
         {showNewPlaylist && !collapsed && (
@@ -353,9 +360,10 @@ export default function Sidebar() {
         </button>
 
         {playlists.map(pl => (
-          <div key={pl.id} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+          <div key={pl.id} onDragOver={(e) => { if (pl.smart_rules) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
             onDrop={async (e) => {
               e.preventDefault()
+              if (pl.smart_rules) return
               try {
                 const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}')
                 if (data.type === 'tracks' && data.tracks) {
@@ -372,6 +380,7 @@ export default function Sidebar() {
               className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-xs transition-all group ${collapsed ? 'justify-center px-0' : 'px-2'} ${loc.pathname === `/playlist/${pl.id}` ? 'bg-accent/10 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
               <PlaylistCover playlistId={pl.id} coverPath={pl.cover_path} size={28} className="flex-shrink-0 rounded" />
               {!collapsed && <span className="truncate">{pl.name}</span>}
+              {!collapsed && pl.smart_rules && <Sparkles size={11} className="ml-auto flex-shrink-0 text-accent/70" aria-label="Smart playlist" />}
             </button>
           </div>
         ))}

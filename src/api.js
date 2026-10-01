@@ -176,6 +176,7 @@ export const api = {
   getPlaylists: (uid) => isE() ? el().getPlaylists(uid) : apiFetch(`/playlists?userId=${uid||'guest'}`),
   createPlaylist: (n, uid, d) => isE() ? el().createPlaylist(n, uid, d) : apiFetch('/playlists', { method:'POST', body:{name:n,userId:uid,description:d} }),
   updatePlaylist: (id, d) => isE() ? el().updatePlaylist(id, d) : apiFetch(`/playlists/${id}`, { method:'PUT', body:d }),
+  smartPlaylistPreview: (rules, uid) => isE() ? el().smartPlaylistPreview(rules, uid) : apiFetch('/playlists/smart-preview', { method:'POST', body:{ rules, userId: uid } }),
   addToPlaylist: (pl, tid) => isE() ? el().addToPlaylist(pl, tid) : apiFetch(`/playlists/${pl}/tracks`, { method:'POST', body:{trackId:tid} }),
   addMultipleToPlaylist: async (pl, trackIds) => {
     if (!trackIds || trackIds.length === 0) return

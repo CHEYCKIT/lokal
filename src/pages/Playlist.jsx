@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Plus, Image as ImageIcon, AlertCircle, Search, Download } from 'lucide-react'
+import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Plus, Image as ImageIcon, AlertCircle, Search, Download, Sparkles, SlidersHorizontal, Share2 } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import PlaylistCover from '../components/PlaylistCover'
 import AddTracksToPlaylistModal from '../components/AddTracksToPlaylistModal'
 import Modal from '../components/Modal'
 import { api } from '../api'
+import { describeRules, openSmartPlaylistEditor } from '../smartPlaylists'
+import { openShareCard, coversOf } from '../shareCard'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
 import { plural } from '../plural'
@@ -80,6 +82,9 @@ export default function Playlist() {
   const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://')), [tracks])
   const getGhostKey = useCallback((track) => String(track?.playlist_track_id || track?.added_at || track?.id || ''), [])
   const selectedGhost = ghostTracks.find(track => getGhostKey(track) === selectedGhostKey) || ghostTracks[0] || null
+
+  // A smart playlist fills itself from its rules: no adding, removing or reordering by hand.
+  const smart = !isLiked && !!playlist?.smart_rules
 
   const load = useCallback(() => {
     // The page shows once both the songs and the name are in (or failed).
@@ -203,10 +208,10 @@ export default function Playlist() {
   }, [tracks, isLiked])
 
   useEffect(() => {
-    if (!isLiked && tracks.length > 0 && tracks.length <= 300 && recommendations.length === 0) {
+    if (!isLiked && !smart && tracks.length > 0 && tracks.length <= 300 && recommendations.length === 0) {
       fetchRecommendations()
     }
-  }, [tracks.length, isLiked, recommendations.length, fetchRecommendations])
+  }, [tracks.length, isLiked, smart, recommendations.length, fetchRecommendations])
 
   // A recommended song that's now in the playlist (added from Add Songs, say)
   // leaves the recommendations, cached ones included; an emptied list is
@@ -227,6 +232,19 @@ export default function Playlist() {
 
   const totalDuration = tracks.reduce((sum, track) => sum + (track.duration || 0), 0)
   const fmt = (seconds) => `${Math.floor(seconds / 3600) > 0 ? `${Math.floor(seconds / 3600)}h ` : ''}${Math.floor((seconds % 3600) / 60)}m`
+
+  // The share card: its photo (or the first four covers), name and first songs.
+  const sharePlaylist = () => {
+    const artists = new Set(tracks.map(track => String(track.artist || '').split(/\s*,\s*/)[0]).filter(Boolean))
+    openShareCard({
+      kind: smart ? 'Smart playlist' : 'Playlist',
+      title: isLiked ? 'Liked Songs' : (playlist?.name || 'Playlist'),
+      subtitle: smart ? describeRules(playlist.smart_rules) : (playlist?.description || ''),
+      art: playlist?.cover_path ? [{ path: playlist.cover_path, url: api.isElectron ? null : api.playlistCoverURL(id) }] : coversOf(tracks, 4),
+      stats: [['Songs', tracks.length.toLocaleString()], ['Length', fmt(totalDuration)], ['Artists', artists.size.toLocaleString()]],
+      list: { title: 'Songs', items: tracks.slice(0, 5).map(track => [track.title, track.artist]) },
+    })
+  }
 
   const shuffleTracks = () => {
     if (!playableTracks.length) return
@@ -378,7 +396,9 @@ export default function Playlist() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-display text-muted uppercase tracking-widest mb-2">Playlist</p>
+          <p className="text-xs font-display text-muted uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            {smart && <Sparkles size={11} className="text-accent" />}{smart ? 'Smart playlist' : 'Playlist'}
+          </p>
           {!isLiked && editingName ? (
             <div className="flex items-center gap-2 mb-2">
               <input
@@ -407,6 +427,7 @@ export default function Playlist() {
             </div>
           )}
           <p className="text-sm text-muted">{plural(tracks.length, 'track')}{totalDuration > 0 ? ` · ${fmt(totalDuration)}` : ''}</p>
+          {smart && <p className="mt-1 text-xs text-muted/80 line-clamp-2" title={describeRules(playlist.smart_rules)}>{describeRules(playlist.smart_rules)}</p>}
         </div>
       </div>
 
@@ -427,6 +448,15 @@ export default function Playlist() {
           <Shuffle size={15} /> Shuffle
         </button>
 
+        <button
+          onClick={sharePlaylist}
+          disabled={!tracks.length}
+          title="Share as a picture"
+          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Share2 size={15} /> Share
+        </button>
+
         {!isLiked && (
           <>
             {!!ghostTracks.length && (
@@ -438,12 +468,21 @@ export default function Playlist() {
               </button>
             )}
 
-            <button
-              onClick={() => setShowAddSongs(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors"
-            >
-              <Plus size={15} /> Add Songs
-            </button>
+            {smart ? (
+              <button
+                onClick={() => openSmartPlaylistEditor(playlist)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors"
+              >
+                <SlidersHorizontal size={15} /> Edit Rules
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowAddSongs(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors"
+              >
+                <Plus size={15} /> Add Songs
+              </button>
+            )}
 
             <button
               onClick={deletePlaylist}
@@ -460,15 +499,15 @@ export default function Playlist() {
         tracks={tracks}
         showAlbum
         reduceMotion
-        onRemove={!isLiked ? removeTrack : null}
-        playlistId={!isLiked ? id : null}
-        onReorder={!isLiked ? handleReorder : null}
+        onRemove={!isLiked && !smart ? removeTrack : null}
+        playlistId={!isLiked && !smart ? id : null}
+        onReorder={!isLiked && !smart ? handleReorder : null}
         context={playbackContext}
         highlightTrackId={highlightTrackId}
         highlightRequestKey={highlightRequestKey}
       />
 
-      {!isLiked && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (
+      {!isLiked && !smart && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (
         <div className="mt-12 mb-6">
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-lg font-display text-white">Recommended Songs</h2>
@@ -497,7 +536,7 @@ export default function Playlist() {
       {loaded && !tracks.length && (
         <div className="text-center py-20 text-muted">
           <Music size={40} className="mx-auto mb-3 opacity-20" />
-          <p className="text-sm">{isLiked ? 'Like some tracks to see them here.' : 'This playlist is empty. Use Add Songs to build it.'}</p>
+          <p className="text-sm">{isLiked ? 'Like some tracks to see them here.' : smart ? 'No songs match these rules yet. Use Edit Rules to change them.' : 'This playlist is empty. Use Add Songs to build it.'}</p>
         </div>
       )}
 

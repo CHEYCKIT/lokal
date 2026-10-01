@@ -6,22 +6,22 @@
 
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Search, Activity, ShoppingBag, Gift, Loader2 } from 'lucide-react'
+import { ExternalLink, Search, Activity, ShoppingBag, Gift, Loader2, BookOpen } from 'lucide-react'
 import Modal from './Modal'
 import { api } from '../api'
 import { TIERS, tierOf, isSuspect, formatLabel, verdictText, storeSearches } from '../quality'
 
 function LinkRow({ link }) {
-  const Icon = link.kind === 'free' ? Gift : link.kind === 'search' ? Search : ShoppingBag
+  const Icon = link.kind === 'free' ? Gift : link.kind === 'search' ? Search : link.kind === 'info' ? BookOpen : ShoppingBag
   return (
     <button
       onClick={() => api.openExternal(link.url)}
       className="w-full flex items-center gap-3 rounded-xl border border-border bg-card/60 px-3 py-2 text-left transition-colors hover:border-accent/40 hover:bg-card"
     >
-      <Icon size={14} className={link.kind === 'search' ? 'text-muted' : 'text-accent'} />
+      <Icon size={14} className={link.kind === 'search' || link.kind === 'info' ? 'text-muted' : 'text-accent'} />
       <span className="min-w-0 flex-1">
         <span className="block text-sm text-white truncate">
-          {link.kind === 'search' ? `Search ${link.store}` : link.store}
+          {link.kind === 'search' || link.kind === 'info' ? `Search ${link.store}` : link.store}
           {link.release ? <span className="text-muted"> · {link.release}</span> : null}
         </span>
         <span className="block text-[11px] text-muted truncate">{link.format}</span>

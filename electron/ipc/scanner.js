@@ -10,6 +10,7 @@ const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
 const { removeTrackFiles, forgetDownloads } = require('./trackFiles')
+const { smartTracks, smartPreview, normalizeRules, playlistRules } = require('../playlists/smart')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
@@ -1318,6 +1319,11 @@ function registerScannerHandlers(ipcMain) {
     if (!existing) return { error: 'Playlist not found' }
     if (data.name !== undefined) db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(data.name, plId)
     if (data.description !== undefined) db.prepare('UPDATE playlists SET description = ? WHERE id = ?').run(data.description, plId)
+    // Smart playlist rules (null: a regular playlist again).
+    if (data.smartRules !== undefined) {
+      const rules = data.smartRules === null ? null : normalizeRules(data.smartRules)
+      db.prepare('UPDATE playlists SET smart_rules = ? WHERE id = ?').run(rules ? JSON.stringify(rules) : null, plId)
+    }
     if (data.coverData) {
       if (existing.cover_path && fs.existsSync(existing.cover_path)) {
         try { fs.removeSync(existing.cover_path) } catch {}
@@ -1345,7 +1351,15 @@ function registerScannerHandlers(ipcMain) {
     
     getDB().prepare('DELETE FROM playlist_tracks WHERE id = ?').run(rowId)
   })
-  ipcMain.handle('scanner:getPlaylistTracks', (_, plId) => getDB().prepare(`SELECT t.*, pt.id as playlist_track_id, pt.added_by, pt.added_at FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id WHERE pt.playlist_id = ? ORDER BY pt.position`).all(plId))
+  ipcMain.handle('scanner:getPlaylistTracks', (_, plId) => {
+    const db = getDB()
+    const playlist = db.prepare('SELECT user_id, smart_rules FROM playlists WHERE id = ?').get(plId)
+    if (playlistRules(playlist)) return smartTracks(db, playlist.smart_rules, playlist.user_id)
+    return db.prepare(`SELECT t.*, pt.id as playlist_track_id, pt.added_by, pt.added_at FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id WHERE pt.playlist_id = ? ORDER BY pt.position`).all(plId)
+  })
+  ipcMain.handle('playlist:smartPreview', (_, rules, userId) => {
+    try { return smartPreview(getDB(), rules, userId) } catch (e) { return { error: e.message } }
+  })
   ipcMain.handle('scanner:deletePlaylist', (_, plId) => {
     const db = getDB()
     const playlist = db.prepare('SELECT cover_path FROM playlists WHERE id = ?').get(plId)

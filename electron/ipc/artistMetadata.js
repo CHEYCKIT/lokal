@@ -50,7 +50,7 @@ function getArtistFetchSettings(db) {
 
 // 'either' (shown as Auto) combines them: the bio and the picture each come
 // from the first provider that has one.
-const ARTIST_SOURCES = ['either', 'theaudiodb', 'deezer', 'musicbrainz', 'wikipedia']
+const ARTIST_SOURCES = ['either', 'theaudiodb', 'deezer', 'wikidata', 'musicbrainz', 'wikipedia']
 
 function normalizeSource(source) {
   return ARTIST_SOURCES.includes(source) ? source : 'either'
@@ -98,7 +98,11 @@ async function getMusicBrainzArtistMetadataById(id) {
     const data = await getJson(`https://musicbrainz.org/ws/2/artist/${encodeURIComponent(id)}?fmt=json&inc=url-rels+tags`)
     const relations = Array.isArray(data?.relations) ? data.relations : []
     const wikipediaRelation = relations.find((relation) => relation?.type === 'wikipedia' || /wikipedia\.org\/wiki\//i.test(relation?.url?.resource || ''))
+    // MusicBrainz now links most artists to Wikidata rather than to Wikipedia:
+    // the article is the one the Wikidata item links to.
+    const wikidataRelation = wikipediaRelation ? null : relations.find((relation) => relation?.type === 'wikidata')
     const wikipediaTitle = getWikipediaTitleFromUrl(wikipediaRelation?.url?.resource)
+      || (wikidataRelation ? wikidataEnglishTitle(await getWikidataEntity(wikidataId(wikidataRelation.url?.resource))) : null)
     const summary = wikipediaTitle ? await getWikipediaSummary(wikipediaTitle) : null
     const article = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
     const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || null
@@ -156,7 +160,9 @@ async function searchAudioDbArtists(query) {
 
 function audioDbMetadata(artist) {
   if (!artist?.strArtist) return null
-  const bio = typeof artist.strBiographyEN === 'string' && artist.strBiographyEN.trim() ? artist.strBiographyEN.trim() : null
+  // The English bio is strBiography now (strBiographyEN on older entries).
+  const english = [artist.strBiographyEN, artist.strBiography].find(text => typeof text === 'string' && text.trim())
+  const bio = english ? english.trim() : null
   return {
     id: artist.idArtist,
     title: artist.strArtist,
@@ -204,6 +210,104 @@ async function fetchDeezerArtistMetadata(name) {
   const artists = await searchDeezerArtists(name)
   const match = artists.find(artist => sameName(artist?.name, name))
   return match ? deezerMetadata(match) : null
+}
+
+// ---------------------------------------------------------------- Wikidata
+// The item for the artist: only items with a MusicBrainz artist id (P434)
+// count, so a same-name city, film or footballer never does. The bio is the
+// lead of the English article the item links to (no guessing by title), the
+// picture its Commons image (P18).
+const WIKIDATA = 'https://www.wikidata.org/w/api.php'
+const wikidataId = (value) => String(value || '').match(/\b(Q\d+)\b/)?.[1] || null
+
+async function getWikidataEntities(ids) {
+  const wanted = [...new Set((ids || []).filter(Boolean))].slice(0, 50)
+  if (!wanted.length) return []
+  try {
+    const data = await getJson(`${WIKIDATA}?action=wbgetentities&ids=${wanted.join('|')}&props=claims|sitelinks|descriptions|labels|aliases&languages=en&sitefilter=enwiki&format=json`)
+    return wanted.map(id => data?.entities?.[id]).filter(entity => entity && !entity.missing)
+  } catch {
+    return []
+  }
+}
+
+async function getWikidataEntity(id) {
+  return id ? (await getWikidataEntities([id]))[0] || null : null
+}
+
+const wikidataClaim = (entity, property) => entity?.claims?.[property]?.find(claim => claim?.rank !== 'deprecated')?.mainsnak?.datavalue?.value ?? null
+const wikidataEnglishTitle = (entity) => entity?.sitelinks?.enwiki?.title || null
+const isWikidataArtist = (entity) => !!wikidataClaim(entity, 'P434')
+const wikidataNames = (entity) => [entity?.labels?.en?.value, ...(entity?.aliases?.en || []).map(alias => alias?.value)].filter(Boolean)
+
+/** A Commons file name as a picture URL (Commons scales it down to `width`). */
+function commonsImageUrl(fileName, width = 1000) {
+  return fileName ? `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(String(fileName).replace(/ /g, '_'))}?width=${width}` : null
+}
+
+async function wikidataMetadata(entity) {
+  if (!entity?.id) return null
+  const description = entity.descriptions?.en?.value || ''
+  const title = wikidataEnglishTitle(entity)
+  const summary = title ? await getWikipediaSummary(title) : null
+  const article = typeof summary?.extract === 'string' && summary.extract.trim() ? summary.extract.trim() : null
+  return {
+    id: entity.id,
+    title: entity.labels?.en?.value || title || entity.id,
+    // No English article: only the one-line description ("French electronic music duo").
+    bio: article || (description ? description.charAt(0).toUpperCase() + description.slice(1) + '.' : null),
+    shortBio: !article,
+    imageUrl: commonsImageUrl(wikidataClaim(entity, 'P18')),
+    snippet: description,
+    source: 'wikidata',
+  }
+}
+
+/** Music artists named `query`, most notable first (Wikidata's own ranking). */
+async function searchWikidataArtists(query, { exact = true } = {}) {
+  const normalized = String(query || '').trim()
+  if (!normalized) return []
+  try {
+    const data = await getJson(`${WIKIDATA}?action=wbsearchentities&search=${encodeURIComponent(normalized)}&language=en&uselang=en&type=item&limit=20&format=json`)
+    const ids = (Array.isArray(data?.search) ? data.search : []).map(result => result?.id)
+    const entities = (await getWikidataEntities(ids)).filter(isWikidataArtist)
+    return exact ? entities.filter(entity => wikidataNames(entity).some(name => wikiNameKey(name) === wikiNameKey(normalized))) : entities
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The artist's Wikidata item: by name, else through MusicBrainz, whose
+ * artists link to their item (a common name like "Muse" can rank below
+ * Wikidata's first 20 results).
+ */
+async function findWikidataArtist(name) {
+  const [entity] = await searchWikidataArtists(name)
+  if (entity) return entity
+  try {
+    // Only when the name is one artist's: several same-name artists, and
+    // picking the first could give another one's bio.
+    const matches = (await searchMusicBrainzArtists(name)).filter(found => wikiNameKey(found?.name) === wikiNameKey(name) && (found.score ?? 100) >= 90)
+    if (matches.length !== 1) return null
+    const [artist] = matches
+    const data = await getJson(`https://musicbrainz.org/ws/2/artist/${encodeURIComponent(artist.id)}?fmt=json&inc=url-rels`)
+    const link = (Array.isArray(data?.relations) ? data.relations : []).find(relation => relation?.type === 'wikidata')
+    return link ? await getWikidataEntity(wikidataId(link.url?.resource)) : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchWikidataArtistMetadata(name) {
+  const entity = await findWikidataArtist(name)
+  return entity ? wikidataMetadata(entity) : null
+}
+
+async function searchWikidataMetadataCandidates(query) {
+  const entities = (await searchWikidataArtists(query, { exact: false })).slice(0, 5)
+  const candidates = await Promise.all(entities.map(wikidataMetadata))
+  return candidates.filter(Boolean).map(candidate => ({ ...candidate, key: `wikidata:${candidate.id}` }))
 }
 
 async function getWikipediaSummary(title) {
@@ -306,20 +410,24 @@ async function fetchWikipediaArtistMetadata(name) {
 const FETCHERS = {
   theaudiodb: fetchAudioDbArtistMetadata,
   deezer: fetchDeezerArtistMetadata,
+  wikidata: fetchWikidataArtistMetadata,
   musicbrainz: fetchMusicBrainzArtistMetadata,
   wikipedia: fetchWikipediaArtistMetadata,
 }
 
 // Auto picks the photo and the bio separately, best source first.
-// Photos: Deezer's are large square artist photos; TheAudioDB's are curated.
-// Never Wikipedia's: its lead images are small stage shots that don't read
-// as an artist photo, even from the right page.
-const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb']
-// Bios: TheAudioDB's are written for music; then MusicBrainz, which follows
-// the artist's own linked Wikipedia article; then a Wikipedia page found by
-// name, only when it's surely the artist's (findWikipediaArtistPage); last,
-// MusicBrainz's tag line when nothing has a real bio.
-const AUTO_BIO_ORDER = ['theaudiodb', 'musicbrainz', 'wikipedia']
+// Photos: Deezer's are large square artist photos; TheAudioDB's are curated;
+// last, the Wikidata item's Commons photo (often a stage shot, but of the
+// right artist). Never a Wikipedia page found by name: it can be another
+// artist's.
+const AUTO_IMAGE_ORDER = ['deezer', 'theaudiodb', 'wikidata']
+// Bios: Wikidata's first (the English article its item links to: the right
+// artist, in English, for the most artists); then TheAudioDB's, written for
+// music; then MusicBrainz, which also follows its link to Wikidata; then a
+// Wikipedia page found by name, only when it's surely the artist's
+// (findWikipediaArtistPage); last, a one-line description when nothing has
+// a real bio.
+const AUTO_BIO_ORDER = ['wikidata', 'theaudiodb', 'musicbrainz', 'wikipedia']
 
 /**
  * { bio, imageUrl, source, bioSource, imageSource } for an artist, or null.
@@ -421,6 +529,7 @@ async function searchDeezerMetadataCandidates(query) {
 const CANDIDATE_SEARCHES = {
   theaudiodb: searchAudioDbMetadataCandidates,
   deezer: searchDeezerMetadataCandidates,
+  wikidata: searchWikidataMetadataCandidates,
   musicbrainz: searchMusicBrainzMetadataCandidates,
   wikipedia: searchWikipediaMetadataCandidates,
 }
@@ -606,7 +715,7 @@ function startRefreshAll(db, { source } = {}) {
   `).all()
   Object.assign(refreshAll, { running: true, cancel: false, source: chosen, total: artists.length, done: 0, bios: 0, images: 0, failed: 0, startedAt: Date.now(), finishedAt: 0 })
   // MusicBrainz: one request a second. TheAudioDB paces itself (audioDbGet).
-  const gapMs = chosen === 'wikipedia' || chosen === 'deezer' || chosen === 'theaudiodb' ? 250 : 1100
+  const gapMs = chosen === 'wikipedia' || chosen === 'deezer' || chosen === 'theaudiodb' ? 250 : chosen === 'wikidata' ? 500 : 1100
   ;(async () => {
     try {
       for (const artist of artists) {

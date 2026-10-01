@@ -12,8 +12,8 @@ function stripHtml(value) {
 }
 
 // Lookup lists photos and bios apart, best sources first (as Auto picks).
-const PHOTO_RANK = { deezer: 0, theaudiodb: 1, musicbrainz: 2, wikipedia: 3 }
-const BIO_RANK = { theaudiodb: 0, musicbrainz: 1, wikipedia: 2 }
+const PHOTO_RANK = { deezer: 0, theaudiodb: 1, wikidata: 2, musicbrainz: 3, wikipedia: 4 }
+const BIO_RANK = { wikidata: 0, theaudiodb: 1, musicbrainz: 2, wikipedia: 3 }
 const resultKey = (result) => result.key || `${result.source}:${result.title}`
 const sourceLabel = (source) => ARTIST_SOURCES.find(([id]) => id === source)?.[1] || source || 'web'
 const byRank = (rank, extra = () => 0) => (a, b) => ((rank[a.source] ?? 9) + extra(a)) - ((rank[b.source] ?? 9) + extra(b))
