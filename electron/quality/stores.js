@@ -33,6 +33,8 @@ function searchLinks({ artist, title }) {
     { store: 'Qobuz', kind: 'search', format: 'FLAC, up to 24-bit', url: `https://www.qobuz.com/us-en/search/albums/${e}` },
     { store: 'Bandcamp', kind: 'search', format: 'FLAC, when the artist sells there', url: `https://bandcamp.com/search?q=${e}&item_type=t` },
     { store: '7digital', kind: 'search', format: 'FLAC for many releases', url: `https://us.7digital.com/search?q=${e}` },
+    { store: 'Discogs', kind: 'info', format: 'Releases, pressings, credits · CDs and vinyl for sale', url: `https://www.discogs.com/search/?q=${e}&type=all` },
+    { store: 'AllMusic', kind: 'info', format: 'Reviews, credits, discography', url: `https://www.allmusic.com/search/all/${e}` },
   ]
 }
 
