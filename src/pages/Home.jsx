@@ -367,6 +367,7 @@ function HomeContent({ user }) {
       const lastfmItems = searchResponses.map(response => response?.results?.[0]).filter(Boolean)
       const saved = await api.onlineSave([...accountItems, ...lastfmItems]).catch(() => null)
       const tracks = Array.isArray(saved) ? saved.filter(Boolean) : []
+      if (requestId !== discoveryRequestRef.current) return
       const youtubeConnected = !youtube?.error
       const lastfmConnected = !lastfm?.error
       const next = {

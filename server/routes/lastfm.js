@@ -244,7 +244,7 @@ async function lovedTracks(startPage = 1) {
     page++
   }
   const partial = page > endPage
-  return { tracks, partial, nextPage: partial ? page + 1 : null }
+  return { tracks, partial, nextPage: partial ? page : null }
 }
 
 async function setLoved(artist, track, loved) {

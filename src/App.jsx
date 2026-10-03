@@ -1031,6 +1031,8 @@ export default function App() {
   const likedRevisionRef = useRef(0)
   useEffect(() => {
     let cancelled = false
+    let syncTimer = null
+    const syncCooldownMs = 10 * 60 * 1000
     // Each liked song with every id it goes by (its streamed copies too).
     const load = () => {
       const revision = likedRevisionRef.current
@@ -1043,19 +1045,44 @@ export default function App() {
     const syncKey = `lokal-lastfm-like-sync:${user?.id || 'guest'}`
     const nextPageKey = `lokal-lastfm-like-sync-page:${user?.id || 'guest'}`
     const lastSync = Number(localStorage.getItem(syncKey) || 0)
-    if (Date.now() - lastSync > 10 * 60 * 1000) {
-      const syncPage = Number(localStorage.getItem(nextPageKey) || 1)
-      api.lastfmSyncLikes(user?.id, syncPage).then(result => {
-        if (result?.partial && result.nextPage) localStorage.setItem(nextPageKey, String(result.nextPage))
-        else if (!result?.error) localStorage.removeItem(nextPageKey)
-      }).catch(() => {}).finally(() => {
-        try { localStorage.setItem(syncKey, String(Date.now())) } catch {}
-        if (!cancelled) load()
-      })
+    const pendingPage = Number(localStorage.getItem(nextPageKey) || 0)
+    const scheduleSync = (page, delay = syncCooldownMs) => {
+      if (cancelled) return
+      clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => {
+        syncTimer = null
+        if (cancelled) return
+        api.lastfmSyncLikes(user?.id, page).then(result => {
+          if (cancelled) return
+          if (result?.partial && result.nextPage) {
+            try { localStorage.setItem(nextPageKey, String(result.nextPage)) } catch {}
+            scheduleSync(Number(result.nextPage) || page)
+          } else if (result?.error) {
+            try { localStorage.setItem(nextPageKey, String(page)) } catch {}
+            scheduleSync(page)
+          } else {
+            try { localStorage.removeItem(nextPageKey) } catch {}
+          }
+        }).catch(() => {
+          if (cancelled) return
+          try { localStorage.setItem(nextPageKey, String(page)) } catch {}
+          scheduleSync(page)
+        }).finally(() => {
+          try { localStorage.setItem(syncKey, String(Date.now())) } catch {}
+          if (!cancelled) load()
+        })
+      }, Math.max(0, delay))
+    }
+    const elapsed = Date.now() - lastSync
+    if (elapsed > syncCooldownMs || pendingPage) {
+      scheduleSync(pendingPage || 1, Math.max(0, syncCooldownMs - Math.max(0, elapsed)))
     } else {
       load()
     }
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      clearTimeout(syncTimer)
+    }
   }, [user?.id])
 
   // A like from any heart: the song's other ids follow (see api.toggleLike).

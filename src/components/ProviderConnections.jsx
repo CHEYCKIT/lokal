@@ -230,7 +230,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
             Use your Last.fm profile for scrobbling and future personalized discovery.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <ActionButton onClick={authorizeLastfm} disabled={lastfmAuthorizing}>
+            <ActionButton onClick={authorizeLastfm} disabled={lastfmAuthorizing || disableLastfmAuth}>
               <ExternalLink size={13} />
               {lastfmAuthorizing ? 'Waiting…' : lastfmConnected ? 'Reconnect' : 'Authorize in Browser'}
             </ActionButton>
