@@ -480,6 +480,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
       one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) },
+      one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
       { separator: true },
       onRemove && { label: one ? 'Remove from this playlist' : `Remove${count} from this playlist`, icon: ListMinus, onSelect: () => removeMany(list) },
       deletable.length > 0 && { label: deletable.length > 1 ? `Delete ${deletable.length} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(deletable) },
