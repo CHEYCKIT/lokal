@@ -8,13 +8,14 @@
 
 import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, ExternalLink, ListEnd, Play, Plus, Trash2, User } from 'lucide-react'
+import { Clock, ExternalLink, ListEnd, Play, Plus, Trash2, User, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './components/ContextMenu'
 import DeleteTracksDialog from './components/DeleteTracksDialog'
 import { api } from './api'
-import { usePlayerStore } from './store/player'
+import { usePlayerStore, useAppStore } from './store/player'
 import { makeAlbumContext } from './playbackContext'
 import { addToPlaylistMany, addToQueueMany, libraryTracks, playNextMany } from './trackActions'
+import { openRadio } from './radioActions'
 
 /** An artist's page from their name ("/artist/a-the-beatles"). */
 export function artistPath(name) {
@@ -70,6 +71,7 @@ export function useReleaseActions({ onDeleted, goToArtist = true } = {}) {
       one && { separator: true },
       one && { label: 'Open', icon: ExternalLink, onSelect: () => navigate('/albums', { state: { album: one } }) },
       one && goToArtist && { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(one.album_artist || one.artists)) },
+      one && { label: 'Start album radio', icon: Radio, onSelect: () => openRadio(navigate, { title: one.title, artist: one.album_artist || one.artists }, useAppStore.getState().user?.id) },
       { separator: true },
       { label: albums.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(albums) },
     ].filter(Boolean)

@@ -27,6 +27,7 @@ import Settings from './pages/Settings'
 import Profile from './pages/Profile'
 import Recap from './pages/Recap'
 import Quality from './pages/Quality'
+import Radio from './pages/Radio'
 import LosslessModal from './components/LosslessModal'
 import SmartPlaylistModal from './components/SmartPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
@@ -239,6 +240,7 @@ function AnimatedRoutes() {
         <Route path="/downloader" element={<Navigate to="/search" replace state={location.state} />} />
         <Route path="/profile" element={<PageTransition><Profile /></PageTransition>} />
         <Route path="/quality" element={<PageTransition gated><Quality /></PageTransition>} />
+        <Route path="/radio" element={<PageTransition gated><Radio /></PageTransition>} />
         <Route path="/recap" element={<PageTransition gated><Recap /></PageTransition>} />
         <Route path="/settings" element={<PageTransition gated><Settings /></PageTransition>} />
       </Routes>

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2 } from 'lucide-react'
-import { usePlayerStore } from '../store/player'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio } from 'lucide-react'
+import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
@@ -12,6 +12,7 @@ import { openShareCard, artistArtSource, coversOf } from '../shareCard'
 import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
+import { openRadio } from '../radioActions'
 
 export default function Artist() {
   const { id } = useParams()
@@ -205,6 +206,9 @@ export default function Artist() {
         <div className="flex items-center gap-3">
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
+          </button>
+          <button onClick={() => openRadio(nav, { title: artist.name, artist: artist.name }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
+            <Radio size={14} /> Radio
           </button>
           <button onClick={shareArtist} title="Share as a picture"
             className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">

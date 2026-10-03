@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Clock, Disc3, ListEnd, Loader2, Play, Plus, Search, Trash2 } from 'lucide-react'
-import { usePlayerStore } from '../store/player'
+import { ArrowLeft, Check, Clock, Disc3, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio } from 'lucide-react'
+import { usePlayerStore, useAppStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
@@ -13,6 +13,7 @@ import { useSelection } from '../selection'
 import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
 import { artistPath, releaseKey, useReleaseActions } from '../releaseActions'
 import { plural } from '../plural'
+import { openRadio } from '../radioActions'
 
 const PAGE_SIZE = 48
 
@@ -444,6 +445,7 @@ export default function Albums() {
       { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+      list.length === 1 && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(navigate, list[0], useAppStore.getState().user?.id) },
       { separator: true },
       { label: list.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDeleteTracks(list) },
     ])

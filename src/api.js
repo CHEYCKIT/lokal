@@ -294,6 +294,7 @@ export const api = {
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
   youtubeAccount: () => isE() ? el().youtubeAccount() : apiFetch('/online/account'),
   youtubeAccountPlaylist: (playlistId) => isE() ? el().youtubeAccountPlaylist(playlistId) : apiFetch(`/online/account-playlist/${encodeURIComponent(playlistId)}`),
+  youtubeRadio: (videoId) => isE() ? el().youtubeRadio(videoId) : apiFetch(`/online/radio/${encodeURIComponent(videoId)}`),
   youtubeSetLiked: (videoId, liked) => isE() ? el().youtubeSetLiked(videoId, liked) : apiFetch('/online/account-liked', { method: 'POST', body: { videoId, liked } }),
   onlineDownloadUrl: (provider, id) => isE() ? el().onlineDownloadUrl(provider, id) : apiFetch(`/online/download-url/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`, { method:'POST' }),
   // Addons: online sources added by manifest URL (Settings → Addons).
@@ -379,6 +380,9 @@ export const api = {
   youtubeLogin: () => isE() && typeof el().youtubeLogin === 'function'
     ? el().youtubeLogin()
     : Promise.resolve({ error: 'Internal YouTube sign-in is available in the desktop app.' }),
+  youtubeDisconnect: () => isE() && typeof el().youtubeDisconnect === 'function'
+    ? el().youtubeDisconnect()
+    : Promise.resolve({ error: 'YouTube disconnect is available in the desktop app.' }),
   lastfmConnect: (apiKey, apiSecret, token) => isE() ? el().lastfmConnect(apiKey, apiSecret, token) : apiFetch('/lastfm/connect', { method:'POST', body:{apiKey, apiSecret, token} }),
   lastfmAuthorize: (apiKey) => {
     const url = buildLastfmAuthUrl(apiKey)
@@ -389,6 +393,7 @@ export const api = {
   lastfmGetSimilarArtists: (artist, limit) => isE() ? el().lastfmGetSimilarArtists(artist, limit) : apiFetch(`/lastfm/similar/${encodeURIComponent(artist)}?limit=${limit || 5}`),
   lastfmScrobble: (artist, track, album, duration, timestamp) => isE() ? el().lastfmScrobble(artist, track, album, duration, timestamp) : apiFetch('/lastfm/scrobble', { method:'POST', body:{artist, track, album, duration, timestamp} }),
   lastfmDiscovery: () => isE() ? el().lastfmDiscovery() : apiFetch('/lastfm/discovery'),
+  lastfmSimilar: (artist, track, limit = 24) => isE() ? el().lastfmSimilar(artist, track, limit) : apiFetch(`/lastfm/similar-music?${new URLSearchParams({ artist, ...(track ? { track } : {}), limit: String(limit) })}`),
   lastfmLoved: (page) => isE() ? el().lastfmLoved(page) : apiFetch(`/lastfm/loved${page ? `?page=${encodeURIComponent(page)}` : ''}`),
   lastfmSetLoved: (artist, track, loved) => isE() ? el().lastfmSetLoved(artist, track, loved) : apiFetch('/lastfm/loved', { method:'POST', body:{ artist, track, loved } }),
   lastfmSyncLikes: (uid, page) => isE() ? el().lastfmSyncLikes(uid || 'guest', page) : apiFetch('/lastfm/sync-likes', { method:'POST', body:{ userId: uid || 'guest', page } }),

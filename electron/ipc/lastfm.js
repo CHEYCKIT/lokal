@@ -118,6 +118,34 @@ async function fetchSimilarArtists(artistName, apiKey, limit = 5) {
   return lastfmCall('artist.getSimilar', { artist: artistName, limit: limit.toString() }, apiKey, null)
 }
 
+function normalizeSimilarArtist(artist) {
+  return {
+    name: artist?.name || '',
+    image: imageUrl(artist?.image),
+    url: artist?.url || '',
+    match: Number(artist?.match) || 0,
+  }
+}
+
+async function fetchSimilar({ artist, track, limit = 24 } = {}) {
+  const settings = storedLastfmSettings()
+  const apiKey = settings.lastfm_api_key
+  const artistName = String(artist || '').trim()
+  const trackName = String(track || '').trim()
+  if (!apiKey || !artistName) return { error: 'Connect Last.fm before loading similar music.' }
+  limit = Math.min(50, Math.max(1, Number(limit) || 24))
+  const method = trackName ? 'track.getSimilar' : 'artist.getSimilar'
+  const result = await lastfmCall(method, trackName
+    ? { artist: artistName, track: trackName, limit: String(limit) }
+    : { artist: artistName, limit: String(limit) }, apiKey, null)
+  if (result?.error) return { error: result.message || result.error || 'Last.fm similar music failed.' }
+  if (trackName) {
+    return { tracks: asArray(result?.similartracks?.track).map(normalizeLastfmTrack).filter(item => item.title && item.artist) }
+  }
+  return { artists: asArray(result?.similarartists?.artist).map(normalizeSimilarArtist).filter(item => item.name) }
+}
+
+
 
 async function scrobbleTrack(artist, track, album, duration, timestamp, apiKey, apiSecret, sessionKey) {
   if (!sessionKey || !apiKey || !apiSecret) {
@@ -205,6 +233,35 @@ async function fetchDiscovery() {
     return { error: topTracks.message || topTracks.error || recentTracks.message || recentTracks.error || topArtists.message || topArtists.error || 'Last.fm Discovery failed.' }
   }
 
+  const trackSeeds = asArray(topTracks?.toptracks?.track).slice(0, 4)
+  const artistSeeds = asArray(topArtists?.topartists?.artist).slice(0, 4)
+  const [similarTrackResults, similarArtistResults] = await Promise.all([
+    Promise.all(trackSeeds.map(seed => safe(lastfmCall('track.getSimilar', {
+      artist: typeof seed?.artist === 'string' ? seed.artist : seed?.artist?.name || '',
+      track: seed?.name || '',
+      limit: '8',
+    }, apiKey, null)))),
+    Promise.all(artistSeeds.map(seed => safe(lastfmCall('artist.getSimilar', { artist: seed?.name || '', limit: '8' }, apiKey, null)))),
+  ])
+  const seenSimilarTracks = new Set()
+  const similarTracks = similarTrackResults.flatMap(result => asArray(result?.similartracks?.track).map(normalizeLastfmTrack))
+    .filter(track => track.title && track.artist)
+    .filter(track => {
+      const key = `${track.title.toLowerCase()}|${track.artist.toLowerCase()}`
+      if (seenSimilarTracks.has(key)) return false
+      seenSimilarTracks.add(key)
+      return true
+    })
+  const seenSimilarArtists = new Set()
+  const similarArtists = similarArtistResults.flatMap(result => asArray(result?.similarartists?.artist).map(normalizeSimilarArtist))
+    .filter(artist => artist.name)
+    .filter(artist => {
+      const key = artist.name.toLowerCase()
+      if (seenSimilarArtists.has(key)) return false
+      seenSimilarArtists.add(key)
+      return true
+    })
+
   return {
     tracks: asArray(topTracks?.toptracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist),
     recent: asArray(recentTracks?.recenttracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist),
@@ -214,6 +271,8 @@ async function fetchDiscovery() {
       playcount: Number(artist?.playcount) || 0,
       url: artist?.url || '',
     })).filter(artist => artist.name),
+    similarTracks,
+    similarArtists,
   }
 }
 
@@ -383,6 +442,8 @@ function registerLastFmHandlers(ipcMain) {
     
     return await fetchSimilarArtists(artistName, apiKey, limit)
   })
+
+  ipcMain.handle('lastfm:similar', (_, artist, track, limit) => fetchSimilar({ artist, track, limit }).catch(e => ({ error: e.message })))
   
   
   // Scrobbling and "now playing" go through the shared scrobbler (also used
@@ -403,4 +464,4 @@ function registerLastFmHandlers(ipcMain) {
   setTimeout(() => { try { scrobbler.flushQueue(getDB()).catch(() => {}) } catch {} }, 20000)
 }
 
-module.exports = { registerLastFmHandlers, getPrimaryLastfmArtist, syncLovedTracks }
+module.exports = { registerLastFmHandlers, getPrimaryLastfmArtist, syncLovedTracks, fetchSimilar, fetchDiscovery }

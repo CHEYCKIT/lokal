@@ -68,6 +68,7 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('online:providers', () => providers())
   ipcMain.handle('online:account', () => youtube.fetchAccountData({ cookies: accountCookies() }))
   ipcMain.handle('online:accountPlaylist', (_, playlistId) => youtube.fetchAccountPlaylist(playlistId, accountCookies()))
+  ipcMain.handle('online:radio', (_, videoId) => youtube.fetchRadio(videoId, { cookies: accountCookies() }).catch(() => []))
   ipcMain.handle('online:setAccountLiked', (_, videoId, liked) => youtube.setAccountLiked(videoId, liked, accountCookies()))
   // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
