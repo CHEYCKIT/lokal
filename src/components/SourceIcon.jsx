@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bird, Globe, HardDrive, Puzzle, Youtube } from 'lucide-react'
+import { Bird, Globe, Puzzle, Youtube } from 'lucide-react'
 import { downloadSourceLabel, streamRef } from '../onlineTracks'
 
 // Quiet, single-colour marks at list sizes. Soulseek uses its bird motif;
@@ -13,8 +13,7 @@ export default function SourceIcon({ source, size = 14, className = '' }) {
   )
   const Icon = source === 'yt' ? Youtube
     : source === 'soulseek' || source === 'slsk' ? Bird
-      : source === 'local' ? HardDrive
-        : source?.startsWith('a-') ? Puzzle : Globe
+      : source?.startsWith('a-') ? Puzzle : Globe
   return <Icon {...props} />
 }
 
@@ -23,10 +22,11 @@ export function TrackSourceIcon({ track, addonNames, className = '' }) {
   const source = stream?.provider || track.download_source
   const label = downloadSourceLabel(source, addonNames)
   const local = !source && !String(track.file_path || '').startsWith('ghost://')
-  const description = label ? `${stream ? 'Streamed' : 'Downloaded'} from ${label}${stream ? ' · not in your library yet' : ''}` : local ? 'Local file' : 'Source unknown'
+  if (local) return null
+  const description = label ? `${stream ? 'Streamed' : 'Downloaded'} from ${label}${stream ? ' · not in your library yet' : ''}` : 'Source unknown'
   return (
     <span role="img" aria-label={description} title={description} className={`inline-flex shrink-0 items-center justify-center text-muted ${className}`}>
-      <SourceIcon source={local ? 'local' : source} />
+      <SourceIcon source={source} />
     </span>
   )
 }

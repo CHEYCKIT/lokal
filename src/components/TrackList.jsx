@@ -778,7 +778,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             {layout.album && (
               <p className="truncate text-xs text-muted" title={track.album || undefined}>{track.album || '—'}</p>
             )}
-            {layout.source && <TrackSourceIcon track={track} addonNames={addonNames} className="justify-self-center" />}
+            {layout.source && <span className="flex items-center justify-center"><TrackSourceIcon track={track} addonNames={addonNames} /></span>}
             {layout.quality && (() => {
               // Same badge as the Audio Quality page; opens that page on its list.
               const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
