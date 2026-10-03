@@ -222,14 +222,14 @@ export default function Artist() {
         {artist.topTracks?.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
-            <TrackList tracks={artist.topTracks} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+            <TrackList tracks={artist.topTracks} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
 
         {standaloneTrack && (
           <section>
             <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Track</h2>
-            <TrackList tracks={[standaloneTrack]} showAlbum={false} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+            <TrackList tracks={[standaloneTrack]} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
 
@@ -326,7 +326,7 @@ function AlbumTracks({ album, artistName = null, highlightTrackId = null, highli
         <h3 className="text-sm font-medium text-white">{album.title}</h3>
         <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
       </div>
-      <TrackList tracks={tracks} showAlbum={false} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+      <TrackList tracks={tracks} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
     </motion.div>
   )
 }

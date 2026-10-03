@@ -497,7 +497,7 @@ export default function Playlist() {
       {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
         tracks={tracks}
-        showAlbum
+        showQuality
         reduceMotion
         onRemove={!isLiked && !smart ? removeTrack : null}
         playlistId={!isLiked && !smart ? id : null}
@@ -524,7 +524,7 @@ export default function Playlist() {
           <motion.div key={recommendations[0]?.id ?? 'none'} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
             <TrackList
               tracks={recommendations}
-              showAlbum={false}
+              showQuality
               playlistId={null}
               reduceMotion
               onQuickAdd={!isLiked ? addRecommendation : null}

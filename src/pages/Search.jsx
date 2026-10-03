@@ -309,7 +309,7 @@ export default function Search() {
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">Tracks</h2>
                 <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
               </div>
-              <TrackList tracks={tracks} showAlbum />
+              <TrackList tracks={tracks} />
             </section>
           )}
 

@@ -164,7 +164,7 @@ export default function Library() {
           </div>
           {/* No per-row entrance: the page fades in as a whole, and 50 row
               animations in the same frames made that fade stutter. */}
-          <TrackList tracks={tracks} showAlbum showQuality reduceMotion />
+          <TrackList tracks={tracks} showQuality reduceMotion />
         </>
       )}
 

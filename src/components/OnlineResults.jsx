@@ -17,6 +17,7 @@ import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
 import OnlineCollections from './OnlineCollections'
 import DownloadNotices from './DownloadNotices'
+import SourceIcon from './SourceIcon'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -148,10 +149,10 @@ export default function OnlineResults({ query, soulseekFor = null }) {
                 aria-selected={provider === p.id}
                 onClick={() => choose(p.id)}
                 title={p.addon ? `${p.label} (addon)` : p.label}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${provider === p.id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
+                className={`flex max-w-full min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${provider === p.id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
               >
-                {p.icon && <img src={p.icon} alt="" className="h-3.5 w-3.5 rounded-sm object-cover" referrerPolicy="no-referrer" />}
-                {p.label}
+                {p.addon && p.icon ? <img src={p.icon} alt="" className="h-3.5 w-3.5 shrink-0 rounded-sm object-cover" referrerPolicy="no-referrer" /> : <SourceIcon source={p.id} />}
+                <span className="truncate">{p.label}</span>
               </button>
             ))}
           </div>
