@@ -24,10 +24,10 @@ export function trackColumnPreferences(saved, showQuality = false, playlist = fa
   return result
 }
 
-export function trackColumnLayout(width, columns, { playlist = false, actionSlots = 0 } = {}) {
+export function trackColumnLayout(width, columns, { playlist = false, actionSlots = 0, likedTrack = false } = {}) {
   const visible = {}
   // Padding, a readable Title, and the always-reachable More menu.
-  let remaining = width - 2 - 11 - 1.25 - 0.5
+  let remaining = width - 2 - 11 - 1.25 - 0.5 - (likedTrack ? 1.25 : 0)
   const fit = (key, size, enabled = true) => {
     visible[key] = enabled && remaining >= size + 0.5
     if (visible[key]) remaining -= size + 0.5
@@ -42,7 +42,9 @@ export function trackColumnLayout(width, columns, { playlist = false, actionSlot
   fit('grip', 1, playlist && columns.grip)
   const extraActions = actionSlots * 1.25 + 1.5
   fit('actions', extraActions, columns.actions)
-  const actionsWidth = visible.actions ? extraActions + 1.25 : 1.25
+  // The More button is always present. A liked track also needs room for its
+  // persistent heart even when optional quick actions are hidden.
+  const actionsWidth = (visible.actions ? extraActions + 1.25 : 1.25) + (likedTrack ? 1.25 : 0)
   const template = [
     visible.grip && '1rem',
     visible.number && '2rem',
@@ -54,5 +56,5 @@ export function trackColumnLayout(width, columns, { playlist = false, actionSlot
     visible.time && '3rem',
     `${actionsWidth}rem`,
   ].filter(Boolean).join(' ')
-  return { ...visible, template }
+  return { ...visible, likedTrack, template }
 }

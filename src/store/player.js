@@ -88,6 +88,10 @@ function readAutoOpenSidePanelSetting() {
   }
 }
 
+function readOutputDevice() {
+  try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
+}
+
 // Starting playback yourself (a track, album, playlist, mix...) opens the
 // Now Playing panel when it's closed, as Spotify does. Only playTrack and
 // playQueue call this -- the queue moving on, resuming, skipping don't --
@@ -187,6 +191,7 @@ export const usePlayerStore = create((set, get) => ({
   exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
   activeAudioElement: 'primary',
+  outputDeviceId: readOutputDevice(),
 
   originalQueue: [], 
   shuffleQueue: [], 
@@ -200,6 +205,11 @@ export const usePlayerStore = create((set, get) => ({
   setAudioRef: (ref) => set({ audioRef: ref }),
   setCfAudioRef: (ref) => set({ cfAudioRef: ref }),
   setActiveAudioElement: (el) => set({ activeAudioElement: el }),
+  setOutputDevice: (id) => {
+    const value = String(id || 'default')
+    try { localStorage.setItem('lokal-output-device', value) } catch {}
+    set({ outputDeviceId: value })
+  },
   setFetchingRelated: (v) => set({ _fetchingRelated: v }),
   appendRelated: (tracks) => {
     const { queue } = get()

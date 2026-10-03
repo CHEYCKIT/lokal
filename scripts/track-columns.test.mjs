@@ -34,18 +34,31 @@ test('turning every optional column off still leaves title, album, and the More 
   assert.equal(trackColumnLayout(18, columns).template, 'minmax(0,3fr) 1.25rem')
 })
 
+test('a liked track keeps its heart when optional quick actions are hidden', () => {
+  const columns = trackColumnDefaults(false, false)
+  columns.actions = false
+  const withoutLike = trackColumnLayout(24, columns, { actionSlots: 8 })
+  const withLike = trackColumnLayout(24, columns, { actionSlots: 8, likedTrack: true })
+  assert.equal(withoutLike.actions, false)
+  assert.equal(withoutLike.likedTrack, false)
+  assert.equal(withLike.likedTrack, true)
+  assert.equal(withLike.template.split(' ').at(-1), '2.5rem')
+})
+
 test('all preference combinations keep header/row grids within the available width', () => {
   const keys = TRACK_COLUMN_OPTIONS.map(([key]) => key)
   for (let mask = 0; mask < 2 ** keys.length; mask++) {
     const columns = Object.fromEntries(keys.map((key, i) => [key, !!(mask & (1 << i))]))
     for (const width of [18, 22, 24, 32, 44, 60, 90]) {
       for (const playlist of [false, true]) {
-        const layout = trackColumnLayout(width, columns, { playlist, actionSlots: 8 })
-        const cells = layout.template.split(' ')
-        const fixed = cells.filter(cell => cell.endsWith('rem')).reduce((sum, cell) => sum + parseFloat(cell), 0)
-        const roomForText = width - 2 - (cells.length - 1) * 0.5 - fixed
-        assert.ok(roomForText >= 11 + (layout.album ? 8 : 0) - 0.001, `${mask}: ${width}rem ${layout.template}`)
-        assert.ok(playlist || !layout.grip)
+        for (const likedTrack of [false, true]) {
+          const layout = trackColumnLayout(width, columns, { playlist, actionSlots: 8, likedTrack })
+          const cells = layout.template.split(' ')
+          const fixed = cells.filter(cell => cell.endsWith('rem')).reduce((sum, cell) => sum + parseFloat(cell), 0)
+          const roomForText = width - 2 - (cells.length - 1) * 0.5 - fixed
+          assert.ok(roomForText >= 11 + (layout.album ? 8 : 0) - 0.001, `${mask}: ${width}rem ${layout.template}`)
+          assert.ok(playlist || !layout.grip)
+        }
       }
     }
   }

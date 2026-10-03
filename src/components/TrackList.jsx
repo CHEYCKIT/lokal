@@ -133,8 +133,9 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
+  const anyLiked = useMemo(() => tracks.some(track => likedIds.has(track.id)), [tracks, likedIds])
   const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
-  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots })
+  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked })
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
@@ -871,7 +872,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   </button>
                 )}
               </div>
-              <div className={`${layout.actions ? '' : 'hidden'} relative flex-shrink-0`}>
+              <div className={`${layout.actions || layout.likedTrack ? '' : 'hidden'} relative flex-shrink-0`}>
                 <button onClick={e => toggleLike(track, e)}
                   aria-label={liked ? 'Unlike song' : 'Like song'} className={`transition-all focus:opacity-100 ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
                   <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
