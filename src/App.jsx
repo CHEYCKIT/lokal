@@ -1075,6 +1075,7 @@ export default function App() {
     }
     const elapsed = Date.now() - lastSync
     if (elapsed > syncCooldownMs || pendingPage) {
+      if (pendingPage) load()
       scheduleSync(pendingPage || 1, Math.max(0, syncCooldownMs - Math.max(0, elapsed)))
     } else {
       load()

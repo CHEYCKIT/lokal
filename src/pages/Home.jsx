@@ -383,7 +383,9 @@ function HomeContent({ user }) {
       // continue to flow back through api.toggleLike when the user changes a
       // heart, so a refresh never silently re-likes an intentional choice.
       if (accountItems.length) {
-        const localLiked = new Set((await api.getLikedTracks(user?.id).catch(() => [])).map(track => track.id))
+        const likedTracks = await api.getLikedTracks(user?.id).catch(() => [])
+        if (requestId !== discoveryRequestRef.current) return
+        const localLiked = new Set(likedTracks.map(track => track.id))
         const remoteLikedIds = new Set((youtube?.liked || []).map(track => track.videoId).filter(videoId => videoId && !api.isYoutubeLocallyUnliked(videoId, user?.id)))
         const importKey = `lokal-youtube-imported-likes:${uidKey}`
         let importedIds = new Set()
@@ -393,12 +395,15 @@ function HomeContent({ user }) {
           return id && remoteLikedIds.has(id) && !importedIds.has(id)
         })
         for (const track of remoteSaved.slice(0, 100)) {
+          if (requestId !== discoveryRequestRef.current) return
           const id = String(track.file_path || '').match(/^ghost:\/\/youtube\/online\/([\w-]+)$/)?.[1]
           if (!localLiked.has(track.id)) {
             const result = await api.setLike(track.id, user?.id, true).catch(() => null)
+            if (requestId !== discoveryRequestRef.current) return
             if (result?.liked) importedIds.add(id)
           } else if (id) importedIds.add(id)
         }
+        if (requestId !== discoveryRequestRef.current) return
         try { localStorage.setItem(importKey, JSON.stringify([...importedIds].slice(-500))) } catch {}
       }
       if (!tracks.length && !youtubeConnected && !lastfmConnected) setDiscoveryError(lastfm?.error || youtube?.error || '')
@@ -470,7 +475,10 @@ function HomeContent({ user }) {
   }
 
   useEffect(() => { load() }, [user?.id])
-  useEffect(() => { loadDiscovery() }, [user?.id])
+  useEffect(() => {
+    loadDiscovery()
+    return () => { discoveryRequestRef.current += 1 }
+  }, [user?.id])
 
   useEffect(() => {
     window.addEventListener('lokal:refresh', load)
