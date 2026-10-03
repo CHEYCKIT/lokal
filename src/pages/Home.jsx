@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Music, Play, Clock, Sparkles, Radio, History, ListEnd, ListPlus, Plus, Disc3, User } from 'lucide-react'
+import { Music, Play, Clock, Sparkles, Radio, History, ListEnd, ListPlus, Plus, Disc3, User, ExternalLink, RefreshCw, Youtube } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
@@ -13,6 +13,7 @@ import ContextMenu, { useContextMenu } from '../components/ContextMenu'
 import { showToast } from '../components/Toaster'
 import { addToPlaylistMany, addToQueueMany, playNextMany, saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
+import ProviderConnections from '../components/ProviderConnections'
 
 // "30 September 2026": saved mixes and suggestions change daily, so the
 // playlist says which day's it is.
@@ -80,6 +81,176 @@ function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
   )
 }
 
+function discoveryOnlineItem(item) {
+  if (!item?.videoId || !item.title || !item.artist) return null
+  return {
+    provider: 'yt',
+    id: item.videoId,
+    videoId: item.videoId,
+    title: item.title,
+    artist: item.artist,
+    artists: item.artists || [item.artist],
+    album: item.album || null,
+    duration: item.duration || null,
+    thumbnail: item.thumbnail || null,
+  }
+}
+
+function discoveryEmptyMessage(error) {
+  if (!error) return 'Connect Last.fm or YouTube Music to build a personal discovery shelf.'
+  if (/connect|sign in/i.test(error)) return error
+  return 'Discovery could not be refreshed right now. Your last cached shelf remains available when one exists.'
+}
+
+function DiscoveryPanel({ data, loading, error, onRefresh, onSave, onImportPlaylist, importingPlaylist, onOpenSettings }) {
+  const tracks = Array.isArray(data?.tracks) ? data.tracks : []
+  const playlists = Array.isArray(data?.playlists) ? data.playlists : []
+  const hasAccount = Boolean(data?.youtubeConnected || data?.lastfmConnected)
+  return (
+    <div className="space-y-7">
+      <section>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-accent" />
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest">For You</h2>
+            </div>
+            <p className="text-sm text-muted mt-1">Last.fm taste and YouTube Music account signals, resolved into playable tracks.</p>
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            title="Refresh Discovery"
+            aria-label="Refresh Discovery"
+            className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+        {tracks.length > 0 ? (
+          <>
+            <div className="flex items-center justify-end mb-2">
+              <button onClick={onSave} className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider">
+                <ListPlus size={13} /> Save as playlist
+              </button>
+            </div>
+            <TrackList tracks={tracks} reduceMotion />
+          </>
+        ) : loading ? (
+          <div className="rounded-xl border border-border bg-elevated px-4 py-8 text-center text-sm text-muted">Building your Discovery shelf…</div>
+        ) : !hasAccount ? (
+          <div className="rounded-xl border border-border bg-elevated p-4">
+            <ProviderConnections compact onOpenSettings={onOpenSettings} />
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-elevated px-4 py-8 text-center text-sm text-muted">{discoveryEmptyMessage(error)}</div>
+        )}
+      </section>
+
+      {playlists.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Youtube size={14} className="text-red-300" />
+            <h2 className="text-xs font-display text-muted uppercase tracking-widest">Your YouTube Music Playlists</h2>
+          </div>
+          <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
+            {playlists.map(playlist => (
+              <div key={playlist.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-white">{playlist.title}</p>
+                  <p className="truncate text-xs text-muted">{[playlist.author, playlist.trackCount].filter(Boolean).join(' · ') || 'YouTube Music playlist'}</p>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-1.5">
+                  <button onClick={() => onImportPlaylist(playlist)} disabled={importingPlaylist === playlist.id} className="rounded-lg border border-accent/40 bg-accent/15 px-2.5 py-1.5 text-xs text-accent hover:bg-accent/25 disabled:opacity-50">
+                    {importingPlaylist === playlist.id ? 'Importing…' : 'Import'}
+                  </button>
+                  <button onClick={() => api.openExternal(playlist.url)} title="Open in YouTube Music" aria-label={`Open ${playlist.title} in YouTube Music`} className="rounded-lg p-1.5 text-muted hover:bg-card hover:text-white">
+                    <ExternalLink size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function MixLabPanel({ candidates, seed, tracks, generating, radioLoading, onSelectSeed, onGenerate, onRadio, onSave }) {
+  const artwork = (track) => track?.artwork_path
+    ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id))
+    : track?.artwork_url || null
+
+  return (
+    <div className="space-y-7">
+      <section>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Radio size={14} className="text-accent" />
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest">Mix Lab</h2>
+            </div>
+            <p className="text-sm text-muted mt-1">Shape a fresh mix from your library, listening history, and related tracks.</p>
+          </div>
+          <button onClick={onGenerate} disabled={generating || !seed} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-base transition-colors hover:bg-accent/85 disabled:cursor-not-allowed disabled:opacity-50">
+            {generating ? 'Generating…' : 'Generate Mix'}
+          </button>
+        </div>
+
+        {candidates.length > 0 ? (
+          <div className="space-y-3 rounded-xl border border-border bg-elevated p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-white">Choose a starting point</p>
+                <p className="mt-0.5 text-xs text-muted">Radio and Mix Lab use this seed to keep the queue coherent.</p>
+              </div>
+              <select value={seed?.id || candidates[0]?.id || ''} onChange={event => onSelectSeed(event.target.value)} className="max-w-[48%] rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                {candidates.map(track => <option key={track.id} value={track.id}>{track.artist} — {track.title}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 @md:grid-cols-4 gap-2">
+              {candidates.slice(0, 4).map(track => (
+                <button key={track.id} onClick={() => onSelectSeed(track.id)} className={`flex items-center gap-2 rounded-lg border p-2 text-left transition-colors ${seed?.id === track.id ? 'border-accent/60 bg-accent/10' : 'border-border bg-card hover:border-accent/30'}`}>
+                  <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded bg-elevated">
+                    {artwork(track) && <img src={artwork(track)} alt="" className="h-full w-full object-cover" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs text-white">{track.title}</p>
+                    <p className="truncate text-[11px] text-muted">{track.artist}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-elevated px-4 py-8 text-center text-sm text-muted">Play or scan a few tracks first and Mix Lab will use them as seeds.</div>
+        )}
+      </section>
+
+      {seed && (
+        <section className="rounded-xl border border-border bg-elevated p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-sm font-medium text-white">{tracks.length ? 'Your generated mix' : `${seed.title} Radio`}</p>
+              <p className="mt-0.5 text-xs text-muted">Seed: {seed.artist} — {seed.title}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => onRadio(seed)} disabled={radioLoading} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/15 px-3 py-1.5 text-xs text-accent hover:bg-accent/25 disabled:opacity-50">
+                <Radio size={13} />
+                {radioLoading ? 'Starting…' : 'Start Radio'}
+              </button>
+              {tracks.length > 0 && <button onClick={onSave} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted hover:text-white"><ListPlus size={13} /> Save</button>}
+            </div>
+          </div>
+          {tracks.length > 0 ? <TrackList tracks={tracks} reduceMotion /> : <p className="py-8 text-center text-sm text-muted">Generate the mix to see related tracks.</p>}
+        </section>
+      )}
+    </div>
+  )
+}
+
 // Remounted per user, so one user's cached sections never show for another
 // (and a late answer for the previous user can't land in the new one's cache).
 export default function Home() {
@@ -94,17 +265,25 @@ function HomeContent({ user }) {
   const [suggestions, setSuggestions] = useCachedState(`home:suggestions:${uidKey}`, [])
   const [history, setHistory] = useCachedState(`home:history:${uidKey}`, [])
   const [mixes, setMixes] = useCachedState(`home:mixes:${uidKey}`, [])
+  const [discovery, setDiscovery] = useCachedState(`home:discovery:${uidKey}`, null)
+  const [mixLab, setMixLab] = useCachedState(`home:mixlab:${uidKey}`, { seedId: '', tracks: [] })
   // Sections appear together once everything is in (not mixes, then
   // suggestions, then recent), and "No tracks yet" only when it's true.
   const [loaded, setLoaded, wasCached] = useCachedState(`home:loaded:${uidKey}`, false)
   usePageReady(loaded || wasCached)
   const location = useLocation()
-  const [tab, setTab] = useState(() => (location.state?.tab === 'history' ? 'history' : 'home'))
+  const [tab, setTab] = useState(() => (location.state?.tab === 'history' ? 'history' : location.state?.tab === 'discovery' ? 'discovery' : location.state?.tab === 'mixlab' ? 'mixlab' : 'home'))
   const { playQueue } = usePlayerStore()
   const navigate = useNavigate()
   const menu = useContextMenu()
   // What's being saved as a playlist ('mix:<id>' or 'suggestions'), one at a time.
   const [saving, setSaving] = useState(null)
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState('')
+  const [importingPlaylist, setImportingPlaylist] = useState(null)
+  const [mixLabGenerating, setMixLabGenerating] = useState(false)
+  const [radioLoading, setRadioLoading] = useState(false)
+  const discoveryRequestRef = useRef(0)
   const saveList = async (key, name, tracks, description) => {
     if (saving) return
     setSaving(key)
@@ -114,6 +293,139 @@ function HomeContent({ user }) {
   }
   const saveMix = (mix) => saveList(`mix:${mix.id}`, `${mixTitle(mix)} - ${today()}`, mix.tracks, `Your ${mixTitle(mix)} from Home`)
   const saveSuggestions = () => saveList('suggestions', `Suggested for You - ${today()}`, suggestions, 'Suggested for you on Home')
+
+  const mixCandidates = [...suggestions, ...recentTracks, ...history]
+    .filter(track => track?.id && track?.title && track?.artist)
+    .filter((track, index, list) => list.findIndex(candidate => candidate.id === track.id) === index)
+    .slice(0, 20)
+  const mixSeed = mixCandidates.find(track => track.id === mixLab?.seedId) || mixCandidates[0] || null
+
+  const selectMixSeed = (id) => setMixLab(prev => ({ ...(prev || {}), seedId: id, tracks: prev?.tracks || [] }))
+
+  const generateMixLab = async () => {
+    if (!mixSeed || mixLabGenerating) return
+    setMixLabGenerating(true)
+    try {
+      const related = await api.getRelated(mixSeed.id, user?.id).catch(() => [])
+      const list = [mixSeed, ...(Array.isArray(related) ? related : [])]
+        .filter(track => track?.id && track.id !== mixSeed.id)
+        .filter((track, index, all) => all.findIndex(candidate => candidate.id === track.id) === index)
+        .slice(0, 25)
+      setMixLab({ seedId: mixSeed.id, tracks: [mixSeed, ...list] })
+    } finally {
+      setMixLabGenerating(false)
+    }
+  }
+
+  const startRadio = async (seed) => {
+    if (!seed || radioLoading) return
+    setRadioLoading(true)
+    try {
+      let related = await api.getRelated(seed.id, user?.id).catch(() => [])
+      if (!Array.isArray(related) || !related.length) {
+        const online = await api.onlineSearch(`${seed.artist} ${seed.title} radio`, 'yt').catch(() => null)
+        const saved = online?.results?.length ? await api.onlineSave(online.results.slice(0, 20)).catch(() => []) : []
+        related = Array.isArray(saved) ? saved : []
+      }
+      const queue = [seed, ...(Array.isArray(related) ? related : [])]
+        .filter(track => track?.id)
+        .filter((track, index, all) => all.findIndex(candidate => candidate.id === track.id) === index)
+        .slice(0, 25)
+      if (queue.length) playQueue(queue, 0, { type: 'radio', id: seed.id, name: `${seed.title} Radio` })
+    } finally {
+      setRadioLoading(false)
+    }
+  }
+
+  const loadDiscovery = async (force = false) => {
+    if (!force && discovery?.updatedAt && Date.now() - discovery.updatedAt < 5 * 60 * 1000) return
+    const requestId = ++discoveryRequestRef.current
+    setDiscoveryLoading(true)
+    setDiscoveryError('')
+    try {
+      const [lastfm, youtube] = await Promise.all([
+        Promise.resolve(api.lastfmDiscovery()).catch(() => ({ error: 'Last.fm Discovery unavailable.' })),
+        Promise.resolve(api.youtubeAccount()).catch(() => ({ error: 'YouTube Music account unavailable.' })),
+      ])
+      if (requestId !== discoveryRequestRef.current) return
+      const youtubeItems = [...(youtube?.liked || []), ...(youtube?.home || [])]
+      const seenYoutube = new Set()
+      const accountItems = youtubeItems.map(discoveryOnlineItem).filter(item => item && !seenYoutube.has(item.id) && seenYoutube.add(item.id))
+      const lastfmTracks = [...(lastfm?.tracks || []), ...(lastfm?.recent || [])]
+      const seenLastfm = new Set()
+      const searches = lastfmTracks
+        .filter(track => track?.title && track?.artist)
+        .filter(track => {
+          const key = `${track.title.toLowerCase()}|${track.artist.toLowerCase()}`
+          if (seenLastfm.has(key)) return false
+          seenLastfm.add(key)
+          return true
+        })
+        .slice(0, 8)
+        .map(track => Promise.resolve(api.onlineSearch(`${track.artist} ${track.title}`, 'yt')).catch(() => null))
+      const searchResponses = await Promise.all(searches)
+      const lastfmItems = searchResponses.map(response => response?.results?.[0]).filter(Boolean)
+      const saved = await api.onlineSave([...accountItems, ...lastfmItems]).catch(() => null)
+      const tracks = Array.isArray(saved) ? saved.filter(Boolean) : []
+      // Merge remote YouTube Music likes into the local liked collection
+      // without toggling songs that are already liked locally. Local unlikes
+      // continue to flow back through api.toggleLike when the user changes a
+      // heart, so a refresh never silently re-likes an intentional choice.
+      if (accountItems.length) {
+        const localLiked = new Set((await api.getLikedTracks(user?.id).catch(() => [])).map(track => track.id))
+        const remoteLikedIds = new Set((youtube?.liked || []).map(track => track.videoId).filter(videoId => videoId && !api.isYoutubeLocallyUnliked(videoId, user?.id)))
+        const importKey = `lokal-youtube-imported-likes:${uidKey}`
+        let importedIds = new Set()
+        try { importedIds = new Set(JSON.parse(localStorage.getItem(importKey) || '[]').map(String)) } catch {}
+        const remoteSaved = tracks.filter(track => {
+          const id = String(track.file_path || '').match(/^ghost:\/\/youtube\/online\/([\w-]+)$/)?.[1]
+          return id && remoteLikedIds.has(id) && !importedIds.has(id)
+        })
+        for (const track of remoteSaved.slice(0, 100)) {
+          const id = String(track.file_path || '').match(/^ghost:\/\/youtube\/online\/([\w-]+)$/)?.[1]
+          if (!localLiked.has(track.id)) {
+            const result = await api.setLike(track.id, user?.id, true).catch(() => null)
+            if (result?.liked) importedIds.add(id)
+          } else if (id) importedIds.add(id)
+        }
+        try { localStorage.setItem(importKey, JSON.stringify([...importedIds].slice(-500))) } catch {}
+      }
+      const youtubeConnected = !youtube?.error && (youtubeItems.length > 0 || youtube?.playlists?.length > 0)
+      const lastfmConnected = !lastfm?.error && (lastfmTracks.length > 0 || lastfm?.artists?.length > 0)
+      const next = {
+        updatedAt: Date.now(),
+        tracks,
+        playlists: Array.isArray(youtube?.playlists) ? youtube.playlists : [],
+        youtubeConnected,
+        lastfmConnected,
+      }
+      setDiscovery(next)
+      if (!tracks.length && !youtubeConnected && !lastfmConnected) setDiscoveryError(lastfm?.error || youtube?.error || '')
+    } finally {
+      if (requestId === discoveryRequestRef.current) setDiscoveryLoading(false)
+    }
+  }
+
+  const importYoutubePlaylist = async (playlist) => {
+    if (!playlist?.id || importingPlaylist) return
+    setImportingPlaylist(playlist.id)
+    try {
+      const detail = await api.youtubeAccountPlaylist(playlist.id)
+      const items = (detail?.tracks || []).map(discoveryOnlineItem).filter(Boolean)
+      const saved = items.length ? await api.onlineSave(items) : []
+      if (!Array.isArray(saved) || !saved.length) {
+        showToast(detail?.error || 'Could not import this YouTube Music playlist')
+        return
+      }
+      const local = await saveAsPlaylist(playlist.title, saved, { userId: user?.id, description: `Imported from YouTube Music` }).catch(() => null)
+      showToast(local ? `Imported "${playlist.title}"` : 'Could not create local playlist')
+      if (local) window.dispatchEvent(new Event('lokal:playlists-changed'))
+    } catch (error) {
+      showToast(error?.message || 'Could not import this YouTube Music playlist')
+    } finally {
+      setImportingPlaylist(null)
+    }
+  }
 
   const openMixMenu = (event, mix) => menu.open(event, [
     { label: 'Play', icon: Play, onSelect: () => playQueue(mix.tracks, 0) },
@@ -157,10 +469,16 @@ function HomeContent({ user }) {
   }
 
   useEffect(() => { load() }, [user?.id])
+  useEffect(() => { loadDiscovery() }, [user?.id])
 
   useEffect(() => {
     window.addEventListener('lokal:refresh', load)
-    return () => window.removeEventListener('lokal:refresh', load)
+    const refreshDiscovery = () => loadDiscovery(true)
+    window.addEventListener('lokal:refresh', refreshDiscovery)
+    return () => {
+      window.removeEventListener('lokal:refresh', load)
+      window.removeEventListener('lokal:refresh', refreshDiscovery)
+    }
   }, [user?.id])
 
   const trackArt = (t) => t.artwork_path ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id)) : null
@@ -181,7 +499,7 @@ function HomeContent({ user }) {
 
 
       <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">
-        {[['home', 'Home'], ['history', 'History']].map(([id, label]) => (
+         {[['home', 'Home'], ['discovery', 'Discovery'], ['mixlab', 'Mix Lab'], ['history', 'History']].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
             {label}
           </button>
@@ -201,6 +519,29 @@ function HomeContent({ user }) {
             : loaded && <p className="text-muted text-sm text-center py-12">No listen history yet.</p>
           }
         </section>
+      ) : tab === 'discovery' ? (
+        <DiscoveryPanel
+          data={discovery}
+          loading={discoveryLoading}
+          error={discoveryError}
+          onRefresh={() => loadDiscovery(true)}
+          onSave={() => saveList('discovery', `Discovery - ${today()}`, discovery?.tracks || [], 'Personal Discovery from Last.fm and YouTube Music')}
+          onImportPlaylist={importYoutubePlaylist}
+          importingPlaylist={importingPlaylist}
+          onOpenSettings={(provider) => navigate('/settings', { state: { category: provider === 'youtube' ? 'library' : 'integrations' } })}
+        />
+      ) : tab === 'mixlab' ? (
+        <MixLabPanel
+          candidates={mixCandidates}
+          seed={mixSeed}
+          tracks={mixLab?.tracks || []}
+          generating={mixLabGenerating}
+          radioLoading={radioLoading}
+          onSelectSeed={selectMixSeed}
+          onGenerate={generateMixLab}
+          onRadio={startRadio}
+          onSave={() => saveList('mixlab', `Mix Lab - ${today()}`, mixLab?.tracks || [], `Generated from ${mixSeed?.artist || 'your listening'}`)}
+        />
       ) : (
         <>
           {mixes.length > 0 && (

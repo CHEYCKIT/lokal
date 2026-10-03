@@ -9,6 +9,7 @@ const { getDB } = require('../../electron/ipc/db')
 const { cookieArgs } = require('../../electron/ipc/ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../../electron/download/search')
 const sources = require('../../electron/online/sources')
+const youtube = require('../../electron/online/youtube')
 
 /** yt-dlp, found the same way the web downloader finds it. */
 function ytdlp() {
@@ -26,6 +27,10 @@ function streamOptions() {
   // Only YouTube streams go through yt-dlp with cookies.
   const cookies = cookieArgs(all, { url: 'https://music.youtube.com/' })
   return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: ytdlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+}
+
+function accountCookies() {
+  return settings().yt_cookie_header || ''
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
@@ -57,6 +62,10 @@ router.get('/providers', (req, res) => {
     ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true })),
   ])
 })
+
+router.get('/account', async (req, res) => res.json(await youtube.fetchAccountData({ cookies: accountCookies() }).catch(e => ({ error: e.message }))))
+router.get('/account-playlist/:id', async (req, res) => res.json(await youtube.fetchAccountPlaylist(req.params.id, accountCookies()).catch(e => ({ error: e.message }))))
+router.post('/account-liked', async (req, res) => res.json(await youtube.setAccountLiked(req.body?.videoId, !!req.body?.liked, accountCookies()).catch(e => ({ error: e.message }))))
 
 // Direct audio link of an addon track, for "Save to library".
 router.post('/download-url/:provider/:id', async (req, res) => {

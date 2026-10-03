@@ -1287,6 +1287,7 @@ function registerScannerHandlers(ipcMain) {
   })
   // A streamed song you already have is that song: see toggleSongLike.
   ipcMain.handle('scanner:toggleLike', (_, trackId, userId) => require('../online/sources').toggleSongLike(getDB(), userId || 'guest', trackId))
+  ipcMain.handle('scanner:setLike', (_, trackId, userId, liked) => require('../online/sources').setSongLike(getDB(), userId || 'guest', trackId, !!liked))
   ipcMain.handle('scanner:getLikedTracks', (_, userId) => {
     const db = getDB()
     const { songIds, foldStreamedLikes } = require('../online/sources')

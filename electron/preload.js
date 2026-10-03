@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electron', {
   onWindowVisibility: (fn) => on('window:visibility', (_, hidden) => fn(!!hidden)),
   isWindowHidden: () => invoke('window:isHidden'),
   openExternal: (url) => invoke('shell:openExternal', url),
+  youtubeLogin: () => invoke('youtube:login'),
   openFolder: () => invoke('dialog:openFolder'),
   openFile: (f) => invoke('dialog:openFile', f),
   readFileBinary: (fp) => invoke('dialog:readFileBinary', fp),
@@ -88,6 +89,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   
   toggleLike: (t, uid) => invoke('scanner:toggleLike', t, uid),
+  setLike: (t, uid, liked) => invoke('scanner:setLike', t, uid, liked),
   getLikedTracks: (uid) => invoke('scanner:getLikedTracks', uid),
   historyExport: (uid, format) => invoke('history:export', uid, format),
 
@@ -131,6 +133,9 @@ contextBridge.exposeInMainWorld('electron', {
   onlineSave: (items) => invoke('online:save', items),
   onlinePrepare: (provider, id, force) => invoke('online:prepare', provider, id, force),
   onlineProviders: () => invoke('online:providers'),
+  youtubeAccount: () => invoke('online:account'),
+  youtubeAccountPlaylist: (playlistId) => invoke('online:accountPlaylist', playlistId),
+  youtubeSetLiked: (videoId, liked) => invoke('online:setAccountLiked', videoId, liked),
   onlineDownloadUrl: (provider, id) => invoke('online:downloadUrl', provider, id),
   addonsList: () => invoke('addons:list'),
   addonsInstall: (url) => invoke('addons:install', url),
@@ -231,6 +236,10 @@ contextBridge.exposeInMainWorld('electron', {
   lastfmGetSimilarArtists: (artist, limit) => invoke('lastfm:getSimilarArtists', artist, limit),
   lastfmScrobble: (artist, track, album, duration, timestamp) => invoke('lastfm:scrobble', artist, track, album, duration, timestamp),
   lastfmUpdateNowPlaying: (artist, track, album, duration) => invoke('lastfm:updateNowPlaying', artist, track, album, duration),
+  lastfmDiscovery: () => invoke('lastfm:discovery'),
+  lastfmLoved: (page) => invoke('lastfm:loved', page),
+  lastfmSetLoved: (artist, track, loved) => invoke('lastfm:setLoved', artist, track, loved),
+  lastfmSyncLikes: (userId, page) => invoke('lastfm:syncLikes', userId, page),
   listenbrainzStatus: () => invoke('listenbrainz:status'),
   listenbrainzConnect: (token) => invoke('listenbrainz:connect', token),
   listenbrainzDisconnect: () => invoke('listenbrainz:disconnect'),

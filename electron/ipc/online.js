@@ -7,6 +7,7 @@ const { findYtDlp } = require('./tools')
 const { cookieArgs } = require('./ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../download/search')
 const sources = require('../online/sources')
+const youtube = require('../online/youtube')
 
 const SCHEME = 'lokal-stream'
 
@@ -21,6 +22,10 @@ function streamOptions() {
   // Only YouTube streams go through yt-dlp with cookies.
   const cookies = cookieArgs(all, { url: 'https://music.youtube.com/' })
   return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+}
+
+function accountCookies() {
+  return settings().yt_cookie_header || ''
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
@@ -61,6 +66,9 @@ function registerOnlineHandlers(ipcMain) {
   })
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
+  ipcMain.handle('online:account', () => youtube.fetchAccountData({ cookies: accountCookies() }))
+  ipcMain.handle('online:accountPlaylist', (_, playlistId) => youtube.fetchAccountPlaylist(playlistId, accountCookies()))
+  ipcMain.handle('online:setAccountLiked', (_, videoId, liked) => youtube.setAccountLiked(videoId, liked, accountCookies()))
   // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
     try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }

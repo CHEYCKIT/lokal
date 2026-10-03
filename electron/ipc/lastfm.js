@@ -4,6 +4,8 @@ const crypto = require('crypto')
 
 
 const API_ROOT = 'https://ws.audioscrobbler.com/2.0/'
+const REQUEST_TIMEOUT_MS = 15000
+const MAX_LOVED_PAGES = 25
 
 function getKeepCommaArtists() {
   const keepComma = new Set([
@@ -64,6 +66,7 @@ async function lastfmCall(method, params, apiKey, apiSecret) {
   return new Promise((resolve, reject) => {
     const body = new URLSearchParams(baseParams).toString()
     const requestUrl = apiSecret ? API_ROOT : `${API_ROOT}?${body}`
+    let timer
     const req = https.request(requestUrl, {
       method: apiSecret ? 'POST' : 'GET',
       headers: apiSecret
@@ -78,7 +81,9 @@ async function lastfmCall(method, params, apiKey, apiSecret) {
     }, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
+      res.on('error', (error) => { clearTimeout(timer); reject(error) })
       res.on('end', () => {
+        clearTimeout(timer)
         try {
           resolve(JSON.parse(data))
         } catch {
@@ -87,7 +92,8 @@ async function lastfmCall(method, params, apiKey, apiSecret) {
       })
     })
 
-    req.on('error', reject)
+    timer = setTimeout(() => req.destroy(new Error('Last.fm request timed out')), REQUEST_TIMEOUT_MS)
+    req.on('error', (error) => { clearTimeout(timer); reject(error) })
 
     if (apiSecret) {
       req.write(body)
@@ -149,6 +155,120 @@ async function updateNowPlaying(artist, track, album, duration, apiKey, apiSecre
   if (duration) params.duration = duration.toString()
   
   return lastfmCall('track.updateNowPlaying', params, apiKey, apiSecret)
+}
+
+function storedLastfmSettings() {
+  const rows = getDB().prepare('SELECT key, value FROM settings').all()
+  return Object.fromEntries(rows.map(row => [row.key, row.value]))
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value
+  return value && typeof value === 'object' ? [value] : []
+}
+
+function imageUrl(images) {
+  const list = asArray(images)
+  return list.find(image => image?.size === 'extralarge')?.['#text']
+    || list.find(image => image?.size === 'large')?.['#text']
+    || list.find(image => image?.['#text'])?.['#text']
+    || ''
+}
+
+function normalizeLastfmTrack(track) {
+  const artist = typeof track?.artist === 'string' ? track.artist : track?.artist?.name || ''
+  return {
+    title: track?.name || track?.title || '',
+    artist,
+    album: typeof track?.album === 'string' ? track.album : track?.album?.name || track?.album?.['#text'] || '',
+    artwork_url: imageUrl(track?.image),
+    url: track?.url || '',
+    playcount: Number(track?.playcount) || 0,
+    rank: Number(track?.['@attr']?.rank) || null,
+  }
+}
+
+async function fetchDiscovery() {
+  const settings = storedLastfmSettings()
+  const apiKey = settings.lastfm_api_key
+  const username = settings.lastfm_username
+  if (!apiKey || !username) return { error: 'Connect Last.fm before loading Discovery.' }
+
+  const safe = (request) => request.catch(error => ({ error: error.message || 'Last.fm request failed.' }))
+  const [topTracks, recentTracks, topArtists] = await Promise.all([
+    safe(lastfmCall('user.getTopTracks', { user: username, period: '1month', limit: '12' }, apiKey, null)),
+    safe(lastfmCall('user.getRecentTracks', { user: username, limit: '8', extended: '1' }, apiKey, null)),
+    safe(lastfmCall('user.getTopArtists', { user: username, period: '3month', limit: '8' }, apiKey, null)),
+  ])
+
+  if (topTracks?.error && recentTracks?.error && topArtists?.error) {
+    return { error: topTracks.message || recentTracks.message || topArtists.message || 'Last.fm Discovery failed.' }
+  }
+
+  return {
+    tracks: asArray(topTracks?.toptracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist),
+    recent: asArray(recentTracks?.recenttracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist),
+    artists: asArray(topArtists?.topartists?.artist).map(artist => ({
+      name: artist?.name || '',
+      image: imageUrl(artist?.image),
+      playcount: Number(artist?.playcount) || 0,
+      url: artist?.url || '',
+    })).filter(artist => artist.name),
+  }
+}
+
+async function fetchLovedTracks(startPage = 1) {
+  const settings = storedLastfmSettings()
+  if (!settings.lastfm_api_key || !settings.lastfm_username) return { error: 'Connect Last.fm before syncing liked tracks.' }
+  const tracks = []
+  const firstPage = Math.max(1, Number(startPage) || 1)
+  const endPage = firstPage + MAX_LOVED_PAGES - 1
+  let page = firstPage
+  while (page <= endPage) {
+    const result = await lastfmCall('user.getLovedTracks', { user: settings.lastfm_username, limit: '200', page: String(page) }, settings.lastfm_api_key, null)
+    if (result?.error) return { error: result.message || 'Could not load Last.fm loved tracks.' }
+    const current = asArray(result?.lovedtracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist)
+    tracks.push(...current)
+    const totalPages = Number(result?.lovedtracks?.['@attr']?.totalPages) || page
+    if (!current.length || page >= totalPages) break
+    page++
+  }
+  const partial = page > endPage
+  return { tracks, partial, nextPage: partial ? page : null }
+}
+
+async function setLovedTrack(artist, track, loved) {
+  const settings = storedLastfmSettings()
+  if (settings.lastfm_enabled === '0' || !settings.lastfm_api_key || !settings.lastfm_api_secret || !settings.lastfm_session_key) return { skipped: true }
+  return lastfmCall(loved ? 'track.love' : 'track.unlove', {
+    artist: getPrimaryLastfmArtist(artist),
+    track,
+    sk: settings.lastfm_session_key,
+  }, settings.lastfm_api_key, settings.lastfm_api_secret)
+}
+
+async function syncLovedTracks(userId = 'guest', startPage = 1) {
+  const loved = await fetchLovedTracks(startPage)
+  if (loved.error) return loved
+  const db = getDB()
+  const insert = db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)')
+  const titleCandidates = db.prepare(`SELECT id, artist, album FROM tracks WHERE lower(trim(title)) = lower(trim(?))`)
+  let matched = 0
+  const transaction = db.transaction((tracks) => {
+    for (const track of tracks) {
+      const artist = getPrimaryLastfmArtist(track.artist)
+      let rows = titleCandidates.all(track.title).filter(row => getPrimaryLastfmArtist(row.artist).toLowerCase() === artist.toLowerCase())
+      if (rows.length > 1 && track.album) {
+        rows = rows.filter(row => String(row.album || '').trim().toLowerCase() === String(track.album).trim().toLowerCase())
+      }
+      if (rows.length === 1) {
+        insert.run(userId || 'guest', rows[0].id)
+        matched++
+      }
+    }
+  })
+  transaction(loved.tracks)
+  return { ok: true, matched, remote: loved.tracks.length, partial: !!loved.partial, nextPage: loved.nextPage || null }
 }
 
 function registerLastFmHandlers(ipcMain) {
@@ -274,8 +394,13 @@ function registerLastFmHandlers(ipcMain) {
   ipcMain.handle('lastfm:updateNowPlaying', (_, artist, track, album, duration) =>
     scrobbler.updateNowPlaying(getDB(), { artist, track, album, duration }).catch(e => ({ error: e.message })))
 
+  ipcMain.handle('lastfm:discovery', () => fetchDiscovery().catch(e => ({ error: e.message })))
+  ipcMain.handle('lastfm:loved', (_, page) => fetchLovedTracks(page).catch(e => ({ error: e.message })))
+  ipcMain.handle('lastfm:setLoved', (_, artist, track, loved) => setLovedTrack(artist, track, loved).catch(e => ({ error: e.message })))
+  ipcMain.handle('lastfm:syncLikes', (_, userId, page) => syncLovedTracks(userId, page).catch(e => ({ error: e.message })))
+
   // Scrobbles queued while offline: try once shortly after start-up.
   setTimeout(() => { try { scrobbler.flushQueue(getDB()).catch(() => {}) } catch {} }, 20000)
 }
 
-module.exports = { registerLastFmHandlers }
+module.exports = { registerLastFmHandlers, getPrimaryLastfmArtist }

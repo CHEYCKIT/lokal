@@ -837,7 +837,7 @@ export default function App() {
         const track = state.currentTrack
         if (!track) return
         const userId = useAppStore.getState().user?.id
-        api.toggleLike(track.id, userId).then((r) => {
+        api.toggleLike(track.id, userId, track).then((r) => {
           const liked = typeof r === 'boolean' ? r : r?.liked ?? false
           usePlayerStore.getState().setLiked(track.id, liked)
         })
@@ -1003,7 +1003,7 @@ export default function App() {
         return
       }
       if (action === 'toggleLike' && state.currentTrack?.id) {
-        const r = await api.toggleLike(state.currentTrack.id, userRef.current?.id)
+        const r = await api.toggleLike(state.currentTrack.id, userRef.current?.id, state.currentTrack)
         const liked = typeof r === 'boolean' ? r : r?.liked ?? false
         state.setLiked(state.currentTrack.id, liked)
       }
@@ -1040,7 +1040,21 @@ export default function App() {
         initLiked((t || []).flatMap(x => [x.id, ...(x.also_ids || [])]))
       }).catch(() => {})
     }
-    load()
+    const syncKey = `lokal-lastfm-like-sync:${user?.id || 'guest'}`
+    const nextPageKey = `lokal-lastfm-like-sync-page:${user?.id || 'guest'}`
+    const lastSync = Number(localStorage.getItem(syncKey) || 0)
+    if (Date.now() - lastSync > 10 * 60 * 1000) {
+      const syncPage = Number(localStorage.getItem(nextPageKey) || 1)
+      api.lastfmSyncLikes(user?.id, syncPage).then(result => {
+        if (result?.partial && result.nextPage) localStorage.setItem(nextPageKey, String(result.nextPage))
+        else if (!result?.error) localStorage.removeItem(nextPageKey)
+      }).catch(() => {}).finally(() => {
+        try { localStorage.setItem(syncKey, String(Date.now())) } catch {}
+        if (!cancelled) load()
+      })
+    } else {
+      load()
+    }
     return () => { cancelled = true }
   }, [user?.id])
 

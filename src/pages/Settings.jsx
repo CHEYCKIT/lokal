@@ -1,12 +1,14 @@
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDeferredValue } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
+import ProviderConnections from '../components/ProviderConnections'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
 import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
@@ -216,6 +218,7 @@ function withSettingDefaults(s) {
 }
 
 export default function Settings() {
+  const location = useLocation()
   // Seeded from the settings already read (and the version / tools found on
   // the last visit), so the first frame already has the real values: rows
   // used to appear, change text and push everything below them down.
@@ -385,7 +388,14 @@ export default function Settings() {
   const [pluginsLoading, setPluginsLoading] = useState(false)
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
-  const [activeCategory, setActiveCategory] = useState('library')
+  const [activeCategory, setActiveCategory] = useState(() => {
+    const requested = location.state?.category
+    return SETTINGS_CATEGORIES.some(category => category.key === requested) ? requested : 'library'
+  })
+  useEffect(() => {
+    const requested = location.state?.category
+    if (SETTINGS_CATEGORIES.some(category => category.key === requested)) setActiveCategory(requested)
+  }, [location.state?.category])
   // Load the ListenBrainz connection state when Integrations is opened.
   useEffect(() => { if (activeCategory === 'integrations') refreshListenBrainz() }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   // Every category shares the page's one scroll container (App's <main>), so
@@ -1472,7 +1482,7 @@ export default function Settings() {
             )}
           </div>
         </Row>
-        <Row label="Use YouTube Cookies" desc="Pass cookies to yt-dlp to bypass rate limiting, access private playlists and liked music. Not shared elsewhere.">
+        <Row label="YouTube Playback Access" desc="The Account Connections panel can sign in to YouTube Music inside Lokal and configure this automatically. These controls remain as a cookies.txt/manual fallback for yt-dlp playback, private playlists and liked music. Nothing is shared elsewhere.">
           <div className="flex items-center gap-2">
             <button
               onClick={() => set('yt_cookies', settings.yt_cookies === '0' ? '1' : '0')}
@@ -2032,6 +2042,15 @@ export default function Settings() {
       )}
 
       {inCategory('integrations') && (
+      <Section title="Account Connections">
+        <ProviderConnections settingsOverride={settings} disableLastfmAuth onOpenSettings={(provider) => {
+          setActiveCategory(provider === 'youtube' ? 'library' : 'integrations')
+          if (provider === 'lastfm') setTimeout(() => document.getElementById('lastfm-api-key')?.focus(), 0)
+        }} />
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
       <Section title="Discord Rich Presence">
         <Row label="Use Default App ID" desc="Uses your built-in Discord app ID by default">
           <button
@@ -2104,7 +2123,7 @@ export default function Settings() {
         </div>
         <Row label="API Key" desc="Open API Dashboard if you need to copy it from your Last.fm app settings">
           <div className="flex items-center gap-2">
-            <input value={settings.lastfm_api_key || ''} onChange={e => set('lastfm_api_key', e.target.value)}
+            <input id="lastfm-api-key" value={settings.lastfm_api_key || ''} onChange={e => set('lastfm_api_key', e.target.value)}
               placeholder="Your Last.fm API key"
               className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
             <button
