@@ -27,6 +27,9 @@ export default function Radio() {
     if (incomingTracks.length) playQueue(incomingTracks, 0, { type: 'radio', name: location.state?.name || 'Radio' })
     // The queue should start only when this radio session changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      if (sessionKeyRef.current === location.key) sessionKeyRef.current = null
+    }
   }, [location.key])
 
   const regenerate = async () => {
