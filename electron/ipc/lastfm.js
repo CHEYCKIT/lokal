@@ -202,7 +202,7 @@ async function fetchDiscovery() {
   ])
 
   if (topTracks?.error && recentTracks?.error && topArtists?.error) {
-    return { error: topTracks.message || recentTracks.message || topArtists.message || 'Last.fm Discovery failed.' }
+    return { error: topTracks.message || topTracks.error || recentTracks.message || recentTracks.error || topArtists.message || topArtists.error || 'Last.fm Discovery failed.' }
   }
 
   return {

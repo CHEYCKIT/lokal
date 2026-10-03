@@ -219,7 +219,7 @@ async function discovery() {
     safe(lastfmCall('user.getRecentTracks', { user: saved.lastfm_username, limit: '8', extended: '1' }, saved.lastfm_api_key, null)),
     safe(lastfmCall('user.getTopArtists', { user: saved.lastfm_username, period: '3month', limit: '8' }, saved.lastfm_api_key, null)),
   ])
-  if (topTracks?.error && recentTracks?.error && topArtists?.error) return { error: topTracks.message || 'Last.fm Discovery failed.' }
+  if (topTracks?.error && recentTracks?.error && topArtists?.error) return { error: topTracks.message || topTracks.error || recentTracks.message || recentTracks.error || topArtists.message || topArtists.error || 'Last.fm Discovery failed.' }
   return {
     tracks: asArray(topTracks?.toptracks?.track).map(normalizeTrack).filter(track => track.title && track.artist),
     recent: asArray(recentTracks?.recenttracks?.track).map(normalizeTrack).filter(track => track.title && track.artist),

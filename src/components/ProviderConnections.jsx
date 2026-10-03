@@ -42,6 +42,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
   const [youtubeState, setYoutubeState] = useState('')
+  const [settingsError, setSettingsError] = useState('')
   const lastfmAuthTimeoutRef = useRef(null)
   const settingsRef = useRef(settings)
 
@@ -64,7 +65,12 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
       if (next && !next.error) {
         setSettings(next)
         settingsRef.current = next
+        setSettingsError('')
+      } else if (next?.error) {
+        setSettingsError(next.error)
       }
+    } catch (error) {
+      setSettingsError(error?.message || 'Could not load account settings.')
     } finally {
       if (quiet) setRefreshing(false)
       else setLoading(false)
@@ -174,6 +180,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
             Connect in your browser. {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
           </p>
+          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">Retry</button></p>}
         </div>
         <button
           type="button"
