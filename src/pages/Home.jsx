@@ -383,8 +383,9 @@ function HomeContent({ user }) {
       // continue to flow back through api.toggleLike when the user changes a
       // heart, so a refresh never silently re-likes an intentional choice.
       if (accountItems.length) {
-        const likedTracks = await api.getLikedTracks(user?.id).catch(() => [])
+        const likedTracks = await api.getLikedTracks(user?.id).catch(() => null)
         if (requestId !== discoveryRequestRef.current) return
+        if (!Array.isArray(likedTracks)) return
         const localLiked = new Set(likedTracks.map(track => track.id))
         const remoteLikedIds = new Set((youtube?.liked || []).map(track => track.videoId).filter(videoId => videoId && !api.isYoutubeLocallyUnliked(videoId, user?.id)))
         const importKey = `lokal-youtube-imported-likes:${uidKey}`
