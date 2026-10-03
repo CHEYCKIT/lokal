@@ -197,7 +197,7 @@ function HomeContent({ user }) {
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">Listen History</h2>
           </div>
           {history.length > 0
-            ? <TrackList tracks={history} showAlbum reduceMotion />
+            ? <TrackList tracks={history} reduceMotion />
             : loaded && <p className="text-muted text-sm text-center py-12">No listen history yet.</p>
           }
         </section>

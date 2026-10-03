@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
@@ -9,7 +9,7 @@ import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
-import { trackArtURL, isPlayable, isStreamed, streamLabel, downloadSourceLabel, loadAddonNames, isAddonProvider, saveToLibrary } from '../onlineTracks'
+import { trackArtURL, isPlayable, isStreamed, streamRef, loadAddonNames, isAddonProvider, saveToLibrary } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
@@ -19,6 +19,10 @@ import SelectionBar from './SelectionBar'
 import DeleteTracksDialog from './DeleteTracksDialog'
 import { useSelection } from '../selection'
 import { addToPlaylistMany, addToQueueMany, libraryTracks, playNextMany } from '../trackActions'
+import { trackColumnLayout, trackColumnPreferences } from '../trackColumns'
+import { useTrackColumnsStore } from '../store/trackColumns'
+import TrackColumnPicker from './TrackColumnPicker'
+import { TrackSourceIcon } from './SourceIcon'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -48,9 +52,12 @@ function saveRecentTrack(track) {
 
 function fmt(s) { return s ? `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}` : '' }
 
+// Library timestamps are seconds; playlist membership timestamps are ms.
+function addedDate(ts) { return new Date(Number(ts) < 1e12 ? Number(ts) * 1000 : Number(ts)) }
+
 function fmtAddedAt(ts) {
   if (!ts) return ''
-  const date = new Date(ts)
+  const date = addedDate(ts)
   const now = new Date()
   const diffMs = now - date
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
@@ -60,35 +67,10 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-// Column templates (whole class names, so Tailwind sees them). Every row
-// is its own grid, so each column has a width that doesn't depend on the
-// row's content (an 'auto' column sized to one row's album text or buttons
-// moved the columns from row to row, and put the Album header somewhere
-// else again). Order: [grip] # Title [Album] [Quality] actions Time. The
-// actions column is 'auto' but its content has a fixed width (see
-// actionsWidth). Album and Quality show from @md up.
-function gridCols({ playlistId, showAlbum, showQuality }) {
-  if (playlistId) {
-    if (showAlbum && showQuality) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_4.5rem_auto_4rem]'
-    if (showAlbum) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
-    if (showQuality) return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_4.5rem_auto_4rem]'
-    return 'grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[1.5rem_2rem_minmax(0,1fr)_auto_4rem]'
-  }
-  if (showAlbum && showQuality) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_4.5rem_auto_4rem]'
-  if (showAlbum) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_auto_4rem]'
-  if (showQuality) return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,1fr)_4.5rem_auto_4rem]'
-  return 'grid-cols-[2rem_minmax(0,1fr)_auto_3.5rem] @md:grid-cols-[2rem_minmax(0,1fr)_auto_4rem]'
-}
-// Width of the actions cell, the same on every row and on the header (set
-// as CSS variables on the list). Below @lg: the heart and the "More" menu.
-// From @lg: every button (slots of 1.25rem), the heart, and a playlist's
-// "added" date.
-const ACTIONS_CLASS = 'w-[var(--tl-actions)] @lg:w-[var(--tl-actions-lg)]'
-
-export default function TrackList({ tracks = [], showAlbum = true, showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
+export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
   // Downloads from an addon are tagged with its name.
   const [addonNames, setAddonNames] = useState({})
-  const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source))
+  const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source) || isAddonProvider(streamRef(t)?.provider))
   useEffect(() => {
     if (!hasAddonDownloads) return undefined
     let live = true
@@ -97,6 +79,23 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
   }, [hasAddonDownloads])
   const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore()
   const { user, openAddToPlaylist, openAddMultipleToPlaylist } = useAppStore()
+  const profile = String(user?.id || 'guest')
+  const savedColumns = useTrackColumnsStore(state => state.profiles[profile])
+  const setColumn = useTrackColumnsStore(state => state.setColumn)
+  const resetColumns = useTrackColumnsStore(state => state.resetColumns)
+  const columns = trackColumnPreferences(savedColumns, showQuality, !!playlistId)
+  const listRef = useRef(null)
+  const [listWidth, setListWidth] = useState(0)
+  useLayoutEffect(() => {
+    const node = listRef.current
+    const measure = () => setListWidth(node.clientWidth / (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    const themeObserver = new MutationObserver(measure)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] })
+    return () => { observer.disconnect(); themeObserver.disconnect() }
+  }, [])
   const [hoveredId, setHoveredId] = useState(null)
   const [likeAnim, setLikeAnim] = useState(null)
   const [quickAddAnim, setQuickAddAnim] = useState(null)
@@ -133,14 +132,10 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
   // below for why the request key needs to be part of the state itself.
   const [flash, setFlash] = useState(null)
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
-  const cols = gridCols({ playlistId, showAlbum, showQuality })
   const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
-  const actionsWidth = useMemo(() => {
-    // Play next, Save (streams), Add to queue, Quick add, Lossless, Add to
-    // playlist, Edit, Remove/Delete.
-    const slots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
-    return { '--tl-actions': '2.5rem', '--tl-actions-lg': `calc(${slots} * 1.25rem + 1.5rem${playlistId ? ' + 5rem' : ''})` }
-  }, [showPlayNext, anyStreamed, showAddToQueue, onQuickAdd, playlistId])
+  const anyLiked = useMemo(() => tracks.some(track => likedIds.has(track.id)), [tracks, likedIds])
+  const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
+  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked })
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
@@ -486,6 +481,7 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
       one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) },
+      one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
       { separator: true },
       onRemove && { label: one ? 'Remove from this playlist' : `Remove${count} from this playlist`, icon: ListMinus, onSelect: () => removeMany(list) },
       deletable.length > 0 && { label: deletable.length > 1 ? `Delete ${deletable.length} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(deletable) },
@@ -651,7 +647,7 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
   }
 
   return (
-    <div className="w-full" style={actionsWidth} onClick={handleContainerClick}>
+    <div ref={listRef} className="w-full min-w-0" style={{ '--tl-columns': layout.template }} onClick={handleContainerClick}>
       <SelectionBar
         open={selection.count > 0}
         label={`${selection.count} selected`}
@@ -667,13 +663,21 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
         ]}
       />
 
-      <div className={`grid gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5 ${cols}`}>
-        {playlistId && <span></span>}
-        <span className="text-center">#</span><span>Title</span>
-        {showAlbum && <span className="hidden truncate @md:block">Album</span>}
-        {showQuality && <span className="hidden text-center @md:block">Quality</span>}
-        <span aria-hidden="true" className={ACTIONS_CLASS} />
-        <span className="text-right">Time</span>
+      <div className="mb-1 flex justify-end px-2">
+        <TrackColumnPicker columns={columns} playlist={!!playlistId}
+          onChange={(key, value) => setColumn(profile, key, value)} onReset={() => resetColumns(profile)} />
+      </div>
+      <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
+        {layout.grip && <span />}
+        {layout.number && <span className="text-center">#</span>}
+        <span>{layout.album ? 'Title' : 'Title / Album'}</span>
+        {layout.album && <span className="truncate">Album</span>}
+        {layout.source && <span className="flex justify-center" title="Source"><Globe size={12} aria-hidden="true" /><span className="sr-only">Source</span></span>}
+        {layout.quality && <span className="text-center">Quality</span>}
+        {layout.added && <span className="truncate text-right tracking-normal">Date added</span>}
+        {layout.time && <span className="text-right">Time</span>}
+        <span className="sr-only">Actions</span>
+        <span aria-hidden="true" />
       </div>
 
       <div ref={rowsRef}>
@@ -718,76 +722,83 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
             onContextMenu={(e) => openTrackMenu(e, track)}
             aria-selected={isSelected}
             style={isHighlighted ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${rowContentHeight}px` }}
-            className={`grid gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''} ${cols}`}
+            className={`grid grid-cols-[var(--tl-columns)] gap-2 px-4 py-1.5 rounded-lg items-center cursor-default group transition-colors ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'} ${isSelected ? 'bg-accent/15' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-accent' : ''} ${isGhost ? 'opacity-75' : ''} ${isFlashing ? 'ring-2 ring-accent bg-accent/15 animate-pulse' : ''}`}
           >
-            {playlistId && (
-              <div className="flex items-center justify-center w-6 text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
+            {layout.grip && (
+              <div className="flex items-center justify-center text-muted opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing">
                 <GripVertical size={14} />
               </div>
             )}
 
-            <div className="flex items-center justify-center w-7 h-7 text-xs text-muted font-display">
+            {layout.number && <div className="flex items-center justify-center h-7 text-xs text-muted font-display">
               {isGhost ? (
                 <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} className="text-yellow-300 hover:text-yellow-200 transition-colors" title="Ghost song">
                   <AlertCircle size={14} />
                 </button>
               ) : isHov || isCurrent ? (
-                <button onClick={e => handlePlay(track, e)} className={isCurrent ? 'text-accent' : 'text-white'}>
+                <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`} className={isCurrent ? 'text-accent' : 'text-white'}>
                   {isCurrent && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
                 </button>
               ) : <span className={isCurrent ? 'text-accent' : ''}>{trackIndex + 1}</span>}
-            </div>
+            </div>}
 
             <div className="min-w-0 flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded flex-shrink-0 overflow-hidden bg-card relative">
+              {columns.artwork ? <div className="w-8 h-8 rounded flex-shrink-0 overflow-hidden bg-card relative">
                 {src ? <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center text-muted"><Music size={11} /></div>}
-                {api.isElectron && isHov && (
-                  <button onClick={e => replaceArtwork(track, e)} className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {!layout.number && <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`}
+                  className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 text-white">
+                  {isCurrent && isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                </button>}
+                {layout.number && api.isElectron && isHov && (
+                  <button onClick={e => replaceArtwork(track, e)} title="Replace artwork" className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera size={10} className="text-white" />
                   </button>
                 )}
-              </div>
-              <div className="min-w-0">
+              </div> : !layout.number && <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`} className="shrink-0 text-muted hover:text-accent">
+                {isCurrent && isPlaying ? <Pause size={14} /> : <Play size={14} />}
+              </button>}
+              <div className="min-w-0 flex-1">
                 {/* Clipped at the column's edge: on a very narrow page the
                     title's minimum and its badges can't spill into the
                     next column. */}
                 <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                  <p className={`min-w-[3.5rem] text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
-                  {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
-                  {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
-                  {streamed && <span title={`Streamed from ${streamLabel(track)}, not in your library yet`} className="hidden px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-[10px] uppercase tracking-wide text-accent flex-shrink-0 @md:inline">{streamLabel(track)}</span>}
-                  {!isGhost && downloadSourceLabel(track.download_source, addonNames) && (
-                    <span title={`Downloaded from ${downloadSourceLabel(track.download_source, addonNames)}`} className="hidden px-1.5 py-0.5 rounded-full bg-card border border-border text-[10px] uppercase tracking-wide text-muted flex-shrink-0 @md:inline">{downloadSourceLabel(track.download_source, addonNames)}</span>
-                  )}
+                  {columns.source && !layout.source && <TrackSourceIcon track={track} addonNames={addonNames} />}
+                  <p title={track.title} className={`min-w-0 text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
+                  {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] leading-[14px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
+                  {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
                 </div>
-                <p className="text-xs text-muted truncate">{track.artist}</p>
+                <div className="flex min-w-0 items-center text-xs text-muted leading-4 h-4">
+                  {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
+                  {!layout.album && <>
+                    {columns.artist && track.artist && <span className="mx-1 shrink-0">·</span>}
+                    <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || 'Unknown album'}>{track.album || 'Unknown album'}</span>
+                  </>}
+                </div>
               </div>
             </div>
 
-            {showAlbum && (
-              <p className="hidden truncate text-xs text-muted @md:block" title={track.album || undefined}>{track.album}</p>
+            {layout.album && (
+              <p className="truncate text-xs text-muted" title={track.album || undefined}>{track.album || '—'}</p>
             )}
-            {showQuality && (() => {
+            {layout.source && <span className="flex items-center justify-center"><TrackSourceIcon track={track} addonNames={addonNames} /></span>}
+            {layout.quality && (() => {
               // Same badge as the Audio Quality page; opens that page on its list.
               const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
-              if (tier === 'unknown') return <span className="hidden text-center text-xs text-muted/50 @md:block">—</span>
+              if (tier === 'unknown') return <span title="Quality unknown" className="text-center text-xs text-muted/50">—</span>
               const info = TIERS[tier]
               return (
                 <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
                   title={`${info.label}: ${info.desc}${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`}
-                  className={`hidden justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 @md:block ${info.className}`}>
+                  className={`justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide transition-opacity hover:opacity-80 ${info.className}`}>
                   {info.label}
                 </button>
               )
             })()}
-            {/* The same width on every row (ACTIONS_CLASS). Below @lg: the
-                heart and "More" (every action is in that menu and the
-                right-click one); from @lg the buttons show on hover. */}
-            <div className={`flex items-center justify-end gap-1.5 ${ACTIONS_CLASS}`}>
-              {playlistId && (
-                <p className="hidden w-[4.5rem] flex-shrink-0 truncate text-right text-xs text-muted/60 @lg:block">{track.added_at ? fmtAddedAt(track.added_at) : ''}</p>
-              )}
-              <div className="hidden items-center justify-end gap-1.5 @lg:flex">
+            {layout.added && <p className="truncate text-right text-xs text-muted/60" title={track.added_at ? addedDate(track.added_at).toLocaleString() : undefined}>{fmtAddedAt(track.added_at)}</p>}
+            {layout.time && <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>}
+            {/* More stays reachable even with every optional column off. */}
+            <div className="flex items-center justify-end gap-1.5">
+              <div className={`${layout.actions ? 'flex' : 'hidden'} items-center justify-end gap-1.5`}>
                 {showPlayNext && !isGhost && (
                   <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
@@ -861,9 +872,9 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
                   </button>
                 )}
               </div>
-              <div className="relative flex-shrink-0">
+              <div className={`${layout.actions || layout.likedTrack ? '' : 'hidden'} relative flex-shrink-0`}>
                 <button onClick={e => toggleLike(track, e)}
-                  className={`transition-all ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
+                  aria-label={liked ? 'Unlike song' : 'Like song'} className={`transition-all focus:opacity-100 ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
                   <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
                 </button>
                 <AnimatePresence>
@@ -889,12 +900,11 @@ export default function TrackList({ tracks = [], showAlbum = true, showQuality =
                 aria-haspopup="menu"
                 aria-expanded={!!menu.state && menuFor === track.id}
                 aria-controls={menu.state && menuFor === track.id ? menuId : undefined}
-                className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text @lg:hidden"
+                className="flex-shrink-0 rounded text-muted transition-colors hover:text-text focus-visible:text-text"
               >
                 <MoreHorizontal size={14} />
               </button>
             </div>
-            <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>
           </RowComponent>
         )
       })}

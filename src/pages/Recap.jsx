@@ -648,7 +648,7 @@ function RecapContent({ user }) {
                 <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
                 <button onClick={() => playQueue(topTracks, 0)} className="text-xs font-display uppercase tracking-wider text-accent hover:text-accent/70">Play Top 50</button>
               </div>
-              <TrackList tracks={topTracks.slice(0, 20)} showAlbum reduceMotion />
+              <TrackList tracks={topTracks.slice(0, 20)} reduceMotion />
             </section>
 
             <aside className="min-w-0 space-y-4">

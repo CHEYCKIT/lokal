@@ -388,6 +388,7 @@ export default function App() {
 
   const {
     currentTrack, isPlaying, progress, duration, volume, repeat,
+    outputDeviceId,
     autoNext, setProgress, setDuration, setIsPlaying,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
@@ -395,12 +396,47 @@ export default function App() {
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   } = usePlayerStore()
   const volumeRef = useRef(volume)
+  const [audioOutputReady, setAudioOutputReady] = useState(0)
   const { user } = useAppStore()
   const { showOnboarding, completeOnboarding, loading: onboardingLoading } = useOnboarding()
 
   useEffect(() => {
     volumeRef.current = volume
   }, [volume])
+
+  const applyAudioOutput = useCallback(async (deviceId = 'default') => {
+    const id = String(deviceId || 'default')
+    const context = audioCtxRef.current
+    if (context && typeof context.setSinkId === 'function') {
+      try {
+        await context.setSinkId(id)
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e?.message || 'Could not change audio output' }
+      }
+    }
+    const elements = [audioRef.current, cfAudioRef.current].filter(Boolean)
+    const settable = elements.filter(element => typeof element.setSinkId === 'function')
+    if (!settable.length) return { ok: true, pending: true }
+    try {
+      await Promise.all(settable.map(element => element.setSinkId(id)))
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e?.message || 'Could not change audio output' }
+    }
+  }, [])
+
+  useEffect(() => {
+    window.__lokalSetAudioOutput = applyAudioOutput
+    return () => {
+      if (window.__lokalSetAudioOutput === applyAudioOutput) delete window.__lokalSetAudioOutput
+    }
+  }, [applyAudioOutput])
+
+  useEffect(() => {
+    if (!audioOutputReady) return
+    applyAudioOutput(outputDeviceId).catch(() => {})
+  }, [audioOutputReady, outputDeviceId, applyAudioOutput])
 
   const isEventFromActive = useCallback((e) => {
     const activeSide = usePlayerStore.getState().activeAudioElement
@@ -704,6 +740,7 @@ export default function App() {
     }
 
     audioSourcesInitializedRef.current = true
+    setAudioOutputReady(value => value + 1)
   } catch (e) {
     console.error('Failed to initialize AudioContext:', e)
   }

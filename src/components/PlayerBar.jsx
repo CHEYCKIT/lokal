@@ -11,6 +11,7 @@ import Modal from './Modal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import { TIERS, formatLabel, isSuspect, tierOf } from '../quality'
+import AudioOutputPicker from './AudioOutputPicker'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -241,6 +242,7 @@ export default function PlayerBar() {
               <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
           )}
+          <AudioOutputPicker />
           <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-subtle hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
           <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
           <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Now Playing">< PanelRight size={16} /></button>
@@ -320,4 +322,3 @@ export default function PlayerBar() {
     </>
   )
 }
-
