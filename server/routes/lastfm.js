@@ -182,6 +182,10 @@ router.post('/update-now-playing', async (req, res) => {
   res.json(await scrobbler.updateNowPlaying(getDB(), { artist, track, album, duration }).catch(e => ({ error: e.message })))
 })
 
+router.get('/similar-music', async (req, res) => {
+  res.json(await similarMusic(req.query?.artist, req.query?.track, req.query?.limit || 24).catch(e => ({ error: e.message })))
+})
+
 function asArray(value) {
   if (Array.isArray(value)) return value
   return value && typeof value === 'object' ? [value] : []
@@ -206,6 +210,15 @@ function normalizeTrack(track) {
   }
 }
 
+function normalizeSimilarArtist(artist) {
+  return {
+    name: artist?.name || '',
+    image: imageUrl(artist?.image),
+    url: artist?.url || '',
+    match: Number(artist?.match) || 0,
+  }
+}
+
 function settings() {
   return Object.fromEntries(getDB().prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value]))
 }
@@ -220,11 +233,55 @@ async function discovery() {
     safe(lastfmCall('user.getTopArtists', { user: saved.lastfm_username, period: '3month', limit: '8' }, saved.lastfm_api_key, null)),
   ])
   if (topTracks?.error && recentTracks?.error && topArtists?.error) return { error: topTracks.message || topTracks.error || recentTracks.message || recentTracks.error || topArtists.message || topArtists.error || 'Last.fm Discovery failed.' }
+  const trackSeeds = asArray(topTracks?.toptracks?.track).slice(0, 4)
+  const artistSeeds = asArray(topArtists?.topartists?.artist).slice(0, 4)
+  const [similarTrackResults, similarArtistResults] = await Promise.all([
+    Promise.all(trackSeeds.map(seed => safe(lastfmCall('track.getSimilar', {
+      artist: typeof seed?.artist === 'string' ? seed.artist : seed?.artist?.name || '',
+      track: seed?.name || '',
+      limit: '8',
+    }, saved.lastfm_api_key, null)))),
+    Promise.all(artistSeeds.map(seed => safe(lastfmCall('artist.getSimilar', { artist: seed?.name || '', limit: '8' }, saved.lastfm_api_key, null)))),
+  ])
+  const seenSimilarTracks = new Set()
+  const similarTracks = similarTrackResults.flatMap(result => asArray(result?.similartracks?.track).map(normalizeTrack))
+    .filter(track => track.title && track.artist)
+    .filter(track => {
+      const key = `${track.title.toLowerCase()}|${track.artist.toLowerCase()}`
+      if (seenSimilarTracks.has(key)) return false
+      seenSimilarTracks.add(key)
+      return true
+    })
+  const seenSimilarArtists = new Set()
+  const similarArtists = similarArtistResults.flatMap(result => asArray(result?.similarartists?.artist).map(normalizeSimilarArtist))
+    .filter(artist => artist.name)
+    .filter(artist => {
+      const key = artist.name.toLowerCase()
+      if (seenSimilarArtists.has(key)) return false
+      seenSimilarArtists.add(key)
+      return true
+    })
   return {
     tracks: asArray(topTracks?.toptracks?.track).map(normalizeTrack).filter(track => track.title && track.artist),
     recent: asArray(recentTracks?.recenttracks?.track).map(normalizeTrack).filter(track => track.title && track.artist),
     artists: asArray(topArtists?.topartists?.artist).map(artist => ({ name: artist?.name || '', image: imageUrl(artist?.image), playcount: Number(artist?.playcount) || 0 })).filter(artist => artist.name),
+    similarTracks,
+    similarArtists,
   }
+}
+
+async function similarMusic(artist, track, limit = 24) {
+  const saved = settings()
+  const artistName = String(artist || '').trim()
+  const trackName = String(track || '').trim()
+  if (!saved.lastfm_api_key || !artistName) return { error: 'Connect Last.fm before loading similar music.' }
+  const result = await lastfmCall(trackName ? 'track.getSimilar' : 'artist.getSimilar', trackName
+    ? { artist: artistName, track: trackName, limit: String(limit) }
+    : { artist: artistName, limit: String(limit) }, saved.lastfm_api_key, null)
+  if (result?.error) return { error: result.message || result.error || 'Last.fm similar music failed.' }
+  return trackName
+    ? { tracks: asArray(result?.similartracks?.track).map(normalizeTrack).filter(item => item.title && item.artist) }
+    : { artists: asArray(result?.similarartists?.artist).map(normalizeSimilarArtist).filter(item => item.name) }
 }
 
 async function lovedTracks(startPage = 1) {

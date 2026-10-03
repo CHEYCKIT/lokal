@@ -1482,7 +1482,11 @@ export default function Settings() {
             )}
           </div>
         </Row>
-        <Row label="YouTube Playback Access" desc="The Account Connections panel can sign in to YouTube Music inside Lokal and configure this automatically. These controls remain as a cookies.txt/manual fallback for yt-dlp playback, private playlists and liked music. Nothing is shared elsewhere.">
+        <details className="rounded-xl border border-border bg-card/30 p-4">
+          <summary className="cursor-pointer text-sm font-medium text-white">Advanced YouTube cookie fallback</summary>
+          <p className="mt-1 text-xs leading-relaxed text-muted">Account Connections is the normal way to connect YouTube. Use these controls only when browser-session sync is unavailable or when running web mode with your own trusted server.</p>
+          <div className="mt-4 space-y-4">
+          <Row label="Use YouTube Cookies" desc="Provide a cookies.txt source for yt-dlp playback and downloads. This is not needed after a successful browser-session sync.">
           <div className="flex items-center gap-2">
             <button
               onClick={() => set('yt_cookies', settings.yt_cookies === '0' ? '1' : '0')}
@@ -1504,7 +1508,7 @@ export default function Settings() {
               </select>
             )}
           </div>
-        </Row>
+          </Row>
         {settings.yt_cookies === '1' && settings.yt_cookie_browser === 'file' && (
           <Row label="Cookies File" desc="A Netscape-format cookies.txt exported from a browser where you're signed in to YouTube (e.g. with a “Get cookies.txt” extension).">
             <div className="flex items-center gap-2">
@@ -1545,6 +1549,8 @@ export default function Settings() {
             </div>
           </Row>
         )}
+          </div>
+        </details>
         <Row label="Streaming Quality" desc={"For songs played from YouTube Music in search. Best: highest bitrate available (Opus ~160 kbps; 256 kbps AAC with a Premium cookie). Data saver: lowest Opus (~50–70 kbps). SoundCloud always streams 128 kbps MP3, the only format it offers for direct playback. Addons have their own quality setting in Settings → Addons."}>
           <select
             value={settings.online_quality || 'best'}

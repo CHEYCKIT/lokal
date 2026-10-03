@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
@@ -23,6 +23,7 @@ import { trackColumnLayout, trackColumnPreferences } from '../trackColumns'
 import { useTrackColumnsStore } from '../store/trackColumns'
 import TrackColumnPicker from './TrackColumnPicker'
 import { TrackSourceIcon } from './SourceIcon'
+import { openRadio } from '../radioActions'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -473,7 +474,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       { label: one ? 'Play' : `Play${count}`, icon: Play, onSelect: () => (one ? handlePlay(one, { stopPropagation() {} }) : playMany(list)) },
       { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
-      { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+       { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+       one && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(navigate, one, useAppStore.getState().user?.id) },
       one && onQuickAdd && { label: 'Add to this playlist', icon: LibraryBig, onSelect: () => handleQuickAdd(one) },
       one && !oneGhost && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
       one && isStreamed(one) && { label: 'Save to library', icon: Download, onSelect: () => saveStreamed(one) },

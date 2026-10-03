@@ -172,15 +172,25 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
       return
     }
     setYoutubeAuthorizing(true)
-    setYoutubeState('Sign in to YouTube in the Lokal browser window. Close it when you are finished.')
     const result = await api.youtubeLogin().catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
     if (result?.ok) {
       await loadSettings(true)
-      setYoutubeState(`YouTube playback access saved${result.cookieCount ? ` (${result.cookieCount} cookies)` : ''}.`)
-    } else if (result?.error) {
-      setYoutubeState(result.error)
+      setYoutubeState('YouTube connected. Your browser session is now available to Lokal.')
+    } else {
+      setYoutubeState(result?.error || 'Could not connect YouTube.')
     }
+  }
+
+  const disconnectYouTube = async () => {
+    if (!api.isElectron || !window.confirm('Disconnect YouTube from Lokal and clear its saved session?')) return
+    setYoutubeAuthorizing(true)
+    const result = await api.youtubeDisconnect().catch(error => ({ error: error.message }))
+    setYoutubeAuthorizing(false)
+    if (result?.ok) {
+      await loadSettings(true)
+      setYoutubeState('YouTube disconnected from Lokal.')
+    } else setYoutubeState(result?.error || 'Could not disconnect YouTube.')
   }
 
   if (loading) {
@@ -262,25 +272,26 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
           </div>
           <p className="text-xs leading-relaxed text-muted">
             {api.isElectron
-              ? "Sign in to Google/YouTube in Lokal's internal browser. Lokal keeps this session separate from your other browsers and only collects YouTube-domain cookies for playback."
+              ? 'Lokal opens a real Chrome/Edge browser window for Google/YouTube sign-in instead of embedding Google. After sign-in, it imports only the YouTube cookies needed for account features and playback.'
               : 'Open Google/YouTube in your normal browser. Web mode cannot read browser cookies, so playback access is configured separately in Settings.'}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <ActionButton onClick={openYouTube} disabled={youtubeAuthorizing}>
               <ExternalLink size={13} />
-              {youtubeAuthorizing ? 'Waiting…' : api.isElectron ? 'Sign in inside Lokal' : 'Open YouTube in Browser'}
+              {youtubeAuthorizing ? 'Working…' : 'Open YouTube in Browser'}
             </ActionButton>
             <ActionButton onClick={() => onOpenSettings?.('youtube')} muted>
               <Settings2 size={13} />
               {youtubePlaybackReady ? 'Manage playback access' : 'Configure playback access'}
             </ActionButton>
+            {api.isElectron && youtubePlaybackReady && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
           </div>
           <p className="text-[11px] leading-relaxed text-muted/80">
             {api.isElectron
-              ? 'After you sign in, close the internal browser window. Lokal stores only YouTube-domain cookies locally and passes them only to yt-dlp for YouTube URLs.'
+              ? 'Lokal never embeds the Google sign-in page. It uses a private browser profile and passes only YouTube-domain cookies to YouTube account APIs and yt-dlp.'
               : 'To use Premium/private playback, return to Lokal and provide a YouTube cookies.txt export in Settings. This stays local and is only passed to yt-dlp for YouTube URLs.'}
           </p>
-          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('saved') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
+          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('connected') || youtubeState.includes('disconnected') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
         </div>
       </div>
     </div>

@@ -168,7 +168,7 @@ function cookieValue(header, names) {
 }
 
 function accountHeaders(cookieHeader) {
-  const sapisid = cookieValue(cookieHeader, ['SAPISID', '__Secure-3PAPISID', 'APISID'])
+  const sapisid = cookieValue(cookieHeader, ['SAPISID', '__Secure-3PAPISID', '__Secure-1PAPISID'])
   if (!sapisid) return null
   const timestamp = Math.floor(Date.now() / 1000)
   const hash = crypto.createHash('sha1').update(`${timestamp} ${sapisid} https://music.youtube.com`).digest('hex')
@@ -244,7 +244,13 @@ function parseAccountTracks(root, limit = 200) {
   })
   walkObjects(root, node => {
     if (tracks.length >= limit) return
-    const item = parseTrackCard(node.musicTwoRowItemRenderer)
+    const panel = node.playlistPanelVideoRenderer
+    const item = panel ? {
+      videoId: panel.videoId, title: textOf(panel.title), artist: textOf(panel.longBylineText || panel.shortBylineText).split(' • ')[0],
+      thumbnail: thumbnailsOf(panel.thumbnail), duration: parseDuration(textOf(panel.lengthText)),
+      url: `https://music.youtube.com/watch?v=${panel.videoId}`,
+    } : parseTrackCard(node.musicTwoRowItemRenderer)
+    if (item && (!VIDEO_ID.test(item.videoId || '') || !item.title || !item.artist)) return
     if (!item || seen.has(item.videoId)) return
     seen.add(item.videoId)
     tracks.push(item)
@@ -311,12 +317,12 @@ function isLoggedOutResponse(json) {
 }
 
 /** Authenticated YouTube Music account surfaces backed by the internal login. */
-async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100 } = {}) {
+async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100, force = false } = {}) {
   const cookieHeader = String(cookies || '').trim()
   if (!cookieHeader) return { error: 'Sign in to YouTube Music to load account data.' }
   const key = accountKey(cookieHeader)
   const cached = accountCache.get(key)
-  if (cached && Date.now() - cached.at < ACCOUNT_TTL_MS) return cached.data
+  if (!force && cached && Date.now() - cached.at < ACCOUNT_TTL_MS) return cached.data
 
   const [likedResult, playlistsResult, homeResult] = await Promise.allSettled([
     accountBrowse('VLLM', cookieHeader, fetchImpl),
@@ -330,12 +336,35 @@ async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100 } = {}
   if (!liked.length && !playlists.length && !home.length && errors.length === 3) {
     return { error: errors[0].reason?.message || 'Could not load YouTube Music account data.' }
   }
-  const data = { liked, playlists, home }
+  const homePlaylists = homeResult.status === 'fulfilled' ? parseAccountPlaylists(homeResult.value, 12) : []
+  const data = { liked, playlists, home, homePlaylists }
   if (!errors.length) {
     accountCache.set(key, { at: Date.now(), data })
     if (accountCache.size > 4) accountCache.delete(accountCache.keys().next().value)
   }
   return data
+}
+
+/** YouTube Music's own song radio, rather than searching for the word "radio". */
+async function fetchRadio(videoId, { cookies = '', fetchImpl = fetch, limit = 50 } = {}) {
+  if (!VIDEO_ID.test(String(videoId || ''))) return []
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    const response = await fetchImpl('https://music.youtube.com/youtubei/v1/next?prettyPrint=false', {
+      method: 'POST', signal: controller.signal,
+      headers: accountHeaders(cookies) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
+      body: JSON.stringify({ context: { client: CLIENT }, videoId, playlistId: `RDAMVM${videoId}`, isAudioOnly: true, enablePersistentPlaylistPanel: true }),
+    })
+    if (!response.ok) throw new Error(`YouTube Music radio failed (${response.status}).`)
+    const json = await response.json()
+    return parseAccountTracks(json, limit)
+  } finally { clearTimeout(timer) }
+}
+
+function clearAccountCache() {
+  accountCache.clear()
+  streamCache.clear()
 }
 
 async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
@@ -507,5 +536,6 @@ function videoIdFromUrl(url) {
 module.exports = {
   searchSongs, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked,
+  fetchRadio, parseAccountTracks, clearAccountCache,
   resolveStream, fetchStream, streamError, videoIdFromUrl,
 }
