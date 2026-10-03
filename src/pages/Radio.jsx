@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ListPlus, Play, Radio as RadioIcon, RefreshCw } from 'lucide-react'
 import TrackList from '../components/TrackList'
@@ -17,8 +17,11 @@ export default function Radio() {
   const seed = location.state?.seed || location.state?.tracks?.[0]
   const [tracks, setTracks] = useState(() => location.state?.tracks || [])
   const [loading, setLoading] = useState(false)
+  const sessionKeyRef = useRef(location.key)
 
   useEffect(() => {
+    sessionKeyRef.current = location.key
+    setLoading(false)
     const incomingTracks = Array.isArray(location.state?.tracks) ? location.state.tracks : []
     setTracks(incomingTracks)
     if (incomingTracks.length) playQueue(incomingTracks, 0, { type: 'radio', name: location.state?.name || 'Radio' })
@@ -28,8 +31,10 @@ export default function Radio() {
 
   const regenerate = async () => {
     if (!seed || loading) return
+    const sessionKey = sessionKeyRef.current
     setLoading(true)
     const next = await buildRadio(seed, user?.id)
+    if (sessionKey !== sessionKeyRef.current) return
     setLoading(false)
     if (next.length) {
       setTracks(next)
