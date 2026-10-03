@@ -57,6 +57,15 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     setLoading(false)
   }, [settingsOverride])
 
+  useEffect(() => {
+    if (!disableLastfmAuth) return undefined
+    clearTimeout(lastfmAuthTimeoutRef.current)
+    lastfmAuthTimeoutRef.current = null
+    setLastfmAuthorizing(false)
+    setLastfmState('')
+    return undefined
+  }, [disableLastfmAuth, settingsOverride?.lastfm_session_key])
+
   const loadSettings = async (quiet = false) => {
     if (quiet) setRefreshing(true)
     else setLoading(true)
@@ -135,11 +144,13 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     setLastfmAuthorizing(true)
     setLastfmState('Waiting for Last.fm authorization in your browser…')
     clearTimeout(lastfmAuthTimeoutRef.current)
-    lastfmAuthTimeoutRef.current = setTimeout(() => {
-      setLastfmAuthorizing(false)
-      setLastfmState('Authorization timed out. Try again.')
-      lastfmAuthTimeoutRef.current = null
-    }, 120000)
+    if (!disableLastfmAuth) {
+      lastfmAuthTimeoutRef.current = setTimeout(() => {
+        setLastfmAuthorizing(false)
+        setLastfmState('Authorization timed out. Try again.')
+        lastfmAuthTimeoutRef.current = null
+      }, 120000)
+    }
     try {
       await api.lastfmAuthorize(settings.lastfm_api_key)
     } catch (error) {
@@ -152,8 +163,12 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
 
   const openYouTube = async () => {
     if (!api.isElectron) {
-      await api.openExternal(GOOGLE_YOUTUBE_URL)
-      setYoutubeState('Sign in in your browser, then configure playback access in Settings.')
+      try {
+        await api.openExternal(GOOGLE_YOUTUBE_URL)
+        setYoutubeState('Sign in in your browser, then configure playback access in Settings.')
+      } catch (error) {
+        setYoutubeState(error?.message || 'Could not open YouTube in your browser.')
+      }
       return
     }
     setYoutubeAuthorizing(true)

@@ -2,7 +2,7 @@ const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
 const crypto = require('crypto')
 const scrobbler = require('../../electron/lastfmScrobbler')
-const { getPrimaryLastfmArtist } = require('../../electron/ipc/lastfm')
+const { getPrimaryLastfmArtist, syncLovedTracks } = require('../../electron/ipc/lastfm')
 
 const API_ROOT = 'https://ws.audioscrobbler.com/2.0/'
 const REQUEST_TIMEOUT_MS = 15000
@@ -239,12 +239,12 @@ async function lovedTracks(startPage = 1) {
     if (result?.error) return { error: result.message || 'Could not load Last.fm loved tracks.' }
     const current = asArray(result?.lovedtracks?.track).map(normalizeTrack).filter(track => track.title && track.artist)
     tracks.push(...current)
-    const totalPages = Number(result?.lovedtracks?.['@attr']?.totalPages) || page
-    if (!current.length || page >= totalPages) break
+    const totalPages = Number(result?.lovedtracks?.['@attr']?.totalPages)
+    if (!current.length || (totalPages && page >= totalPages)) break
     page++
   }
   const partial = page > endPage
-  return { tracks, partial, nextPage: partial ? page : null }
+  return { tracks, partial, nextPage: partial ? page + 1 : null }
 }
 
 async function setLoved(artist, track, loved) {
@@ -257,23 +257,7 @@ router.get('/discovery', async (req, res) => res.json(await discovery().catch(e 
 router.get('/loved', async (req, res) => res.json(await lovedTracks(req.query?.page).catch(e => ({ error: e.message }))))
 router.post('/loved', async (req, res) => res.json(await setLoved(req.body?.artist, req.body?.track, !!req.body?.loved).catch(e => ({ error: e.message }))))
 router.post('/sync-likes', async (req, res) => {
-  const loved = await lovedTracks(req.body?.page).catch(e => ({ error: e.message }))
-  if (loved.error) return res.json(loved)
-  const userId = req.body?.userId || 'guest'
-  const db = getDB()
-  const insert = db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)')
-  const titleCandidates = db.prepare(`SELECT id, artist, album FROM tracks WHERE lower(trim(title)) = lower(trim(?))`)
-  let matched = 0
-  const transaction = db.transaction((tracks) => {
-    for (const track of tracks) {
-      const artist = getPrimaryLastfmArtist(track.artist)
-      let rows = titleCandidates.all(track.title).filter(row => getPrimaryLastfmArtist(row.artist).toLowerCase() === artist.toLowerCase())
-      if (rows.length > 1 && track.album) rows = rows.filter(row => String(row.album || '').trim().toLowerCase() === String(track.album).trim().toLowerCase())
-      if (rows.length === 1) { insert.run(userId, rows[0].id); matched++ }
-    }
-  })
-  transaction(loved.tracks)
-  res.json({ ok: true, matched, remote: loved.tracks.length, partial: !!loved.partial, nextPage: loved.nextPage || null })
+  res.json(await syncLovedTracks(req.body?.userId || 'guest', req.body?.page).catch(e => ({ error: e.message })))
 })
 
 module.exports = router

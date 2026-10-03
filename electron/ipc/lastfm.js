@@ -229,12 +229,12 @@ async function fetchLovedTracks(startPage = 1) {
     if (result?.error) return { error: result.message || 'Could not load Last.fm loved tracks.' }
     const current = asArray(result?.lovedtracks?.track).map(normalizeLastfmTrack).filter(track => track.title && track.artist)
     tracks.push(...current)
-    const totalPages = Number(result?.lovedtracks?.['@attr']?.totalPages) || page
-    if (!current.length || page >= totalPages) break
+    const totalPages = Number(result?.lovedtracks?.['@attr']?.totalPages)
+    if (!current.length || (totalPages && page >= totalPages)) break
     page++
   }
   const partial = page > endPage
-  return { tracks, partial, nextPage: partial ? page : null }
+  return { tracks, partial, nextPage: partial ? page + 1 : null }
 }
 
 async function setLovedTrack(artist, track, loved) {
@@ -403,4 +403,4 @@ function registerLastFmHandlers(ipcMain) {
   setTimeout(() => { try { scrobbler.flushQueue(getDB()).catch(() => {}) } catch {} }, 20000)
 }
 
-module.exports = { registerLastFmHandlers, getPrimaryLastfmArtist }
+module.exports = { registerLastFmHandlers, getPrimaryLastfmArtist, syncLovedTracks }

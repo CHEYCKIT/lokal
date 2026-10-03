@@ -307,10 +307,10 @@ function HomeContent({ user }) {
     setMixLabGenerating(true)
     try {
       const related = await api.getRelated(mixSeed.id, user?.id).catch(() => [])
-      const list = [mixSeed, ...(Array.isArray(related) ? related : [])]
+      const list = (Array.isArray(related) ? related : [])
         .filter(track => track?.id && track.id !== mixSeed.id)
         .filter((track, index, all) => all.findIndex(candidate => candidate.id === track.id) === index)
-        .slice(0, 25)
+        .slice(0, 24)
       setMixLab({ seedId: mixSeed.id, tracks: [mixSeed, ...list] })
     } finally {
       setMixLabGenerating(false)
@@ -367,6 +367,16 @@ function HomeContent({ user }) {
       const lastfmItems = searchResponses.map(response => response?.results?.[0]).filter(Boolean)
       const saved = await api.onlineSave([...accountItems, ...lastfmItems]).catch(() => null)
       const tracks = Array.isArray(saved) ? saved.filter(Boolean) : []
+      const youtubeConnected = !youtube?.error
+      const lastfmConnected = !lastfm?.error
+      const next = {
+        updatedAt: Date.now(),
+        tracks,
+        playlists: Array.isArray(youtube?.playlists) ? youtube.playlists : [],
+        youtubeConnected,
+        lastfmConnected,
+      }
+      setDiscovery(next)
       // Merge remote YouTube Music likes into the local liked collection
       // without toggling songs that are already liked locally. Local unlikes
       // continue to flow back through api.toggleLike when the user changes a
@@ -390,16 +400,6 @@ function HomeContent({ user }) {
         }
         try { localStorage.setItem(importKey, JSON.stringify([...importedIds].slice(-500))) } catch {}
       }
-      const youtubeConnected = !youtube?.error && (youtubeItems.length > 0 || youtube?.playlists?.length > 0)
-      const lastfmConnected = !lastfm?.error && (lastfmTracks.length > 0 || lastfm?.artists?.length > 0)
-      const next = {
-        updatedAt: Date.now(),
-        tracks,
-        playlists: Array.isArray(youtube?.playlists) ? youtube.playlists : [],
-        youtubeConnected,
-        lastfmConnected,
-      }
-      setDiscovery(next)
       if (!tracks.length && !youtubeConnected && !lastfmConnected) setDiscoveryError(lastfm?.error || youtube?.error || '')
     } finally {
       if (requestId === discoveryRequestRef.current) setDiscoveryLoading(false)
