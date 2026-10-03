@@ -58,17 +58,34 @@ async function launchLogin() {
     let pollTimer
     let lastHeader = ''
     const requests = new Map()
-    const finish = result => {
-      if (done) return
-      done = true
+    let finishStarted = false
+    let finalResult = null
+    let graceTimer = null
+    let resolved = false
+    const resolveOnce = result => {
+      if (resolved) return
+      resolved = true
+      resolve(result)
+    }
+    const cleanup = () => {
       clearTimeout(deadline)
       clearTimeout(pollTimer)
       for (const request of requests.values()) { clearTimeout(request.timer); request.reject(new Error('Sign-in closed.')) }
       requests.clear()
+    }
+    const finish = result => {
+      if (finishStarted) return
+      finishStarted = true
+      done = true
+      finalResult = result
+      cleanup()
       cancelLogin = null
       // Close only the browser instance launched with our dedicated profile.
       try { child.stdio[3].write(JSON.stringify({ id: ++sequence, method: 'Browser.close' }) + '\0') } catch {}
-      resolve(result)
+      graceTimer = setTimeout(() => {
+        try { child.kill() } catch {}
+        setTimeout(() => resolveOnce(finalResult), 500)
+      }, 2500)
     }
     const send = (method, params = {}) => new Promise((resolveCall, reject) => {
       if (done) return reject(new Error('Sign-in closed.'))
@@ -83,7 +100,16 @@ async function launchLogin() {
     const deadline = setTimeout(() => finish({ error: 'Sign-in timed out. You can try again.' }), 5 * 60 * 1000)
     cancelLogin = () => finish({ cancelled: true })
     child.on('error', () => finish({ error: 'Could not start the YouTube sign-in browser.' }))
-    child.on('close', () => finish({ cancelled: true }))
+    child.on('close', () => {
+      clearTimeout(graceTimer)
+      if (!finishStarted) {
+        finishStarted = true
+        done = true
+        cleanup()
+        cancelLogin = null
+        resolveOnce({ cancelled: true })
+      } else resolveOnce(finalResult)
+    })
     child.stdio[3].on('error', () => finish({ error: 'The sign-in browser disconnected.' }))
     child.stdio[4].on('error', () => finish({ error: 'The sign-in browser disconnected.' }))
     child.stdio[4].on('data', chunk => {

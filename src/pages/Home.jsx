@@ -108,13 +108,15 @@ function discoveryEmptyMessage(error) {
 function DiscoveryTrack({ track, onPlay, onRadio }) {
   const artwork = trackArtURL(track)
   return (
-    <button type="button" onClick={() => onPlay(track)} className="group flex min-w-0 items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-white/[0.06]">
-      <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card">
-        {artwork ? <FadeImg src={artwork} className="h-full w-full object-cover" /> : <Music size={17} className="m-4 text-muted" />}
-      </div>
-      <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}</p></div>
-      {onRadio && <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onRadio(track) }} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100" title="Start radio"><Radio size={14} /></span>}
-    </button>
+    <div className="group flex min-w-0 items-center gap-1 rounded-xl p-2 transition-colors hover:bg-white/[0.06]">
+      <button type="button" onClick={() => onPlay(track)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card">
+          {artwork ? <FadeImg src={artwork} className="h-full w-full object-cover" /> : <Music size={17} className="m-4 text-muted" />}
+        </div>
+        <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}</p></div>
+      </button>
+      {onRadio && <button type="button" aria-label={`Start radio for ${track.title}`} onClick={() => onRadio(track)} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100" title="Start radio"><Radio size={14} /></button>}
+    </div>
   )
 }
 
@@ -153,7 +155,7 @@ function DiscoveryPanel({ data, loading, error, onRefresh, onSave, onPlay, onRad
 function MixPanel({ tracks, size, generating, onSize, onGenerate, onPlay, onSave }) {
   return <div className="space-y-7">
     <section>
-      <div className="mb-4 flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Radio size={14} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Mix</h2></div><p className="mt-1 text-sm text-muted">A fresh provider-driven mix from your taste, built to go beyond your library.</p></div><div className="flex items-center gap-2"><div className="flex gap-1 rounded-lg bg-card p-1">{[24, 32, 40].map(value => <button key={value} type="button" onClick={() => onSize(value)} className={`rounded-md px-3 py-1.5 text-sm ${size === value ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{value}</button>)}</div><button onClick={onGenerate} disabled={generating} className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-base disabled:opacity-50"><RefreshCw size={14} className={generating ? 'animate-spin' : ''} />{generating ? 'Refreshing…' : 'Regenerate'}</button></div></div>
+       <div className="mb-4 flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Radio size={14} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Mix</h2></div><p className="mt-1 text-sm text-muted">A fresh provider-driven mix from your taste, built to go beyond your library.</p></div><div className="flex items-center gap-2"><div className="flex gap-1 rounded-lg bg-card p-1">{[24, 32, 40].map(value => <button key={value} type="button" onClick={() => onSize(value)} disabled={generating} className={`rounded-md px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${size === value ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{value}</button>)}</div><button onClick={onGenerate} disabled={generating} className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-base disabled:opacity-50"><RefreshCw size={14} className={generating ? 'animate-spin' : ''} />{generating ? 'Refreshing…' : 'Regenerate'}</button></div></div>
     </section>
     {tracks.length > 0 ? <section className="rounded-xl border border-border bg-elevated p-4"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium text-white">Your {tracks.length}-track mix</p><p className="mt-0.5 text-xs text-muted">Picked from Last.fm and YouTube Music recommendations.</p></div><div className="flex gap-2"><button onClick={() => onPlay(tracks)} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs text-black"><Play size={13} fill="currentColor" />Play mix</button><button onClick={onSave} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted hover:text-white"><ListPlus size={13} />Save</button></div></div><TrackList tracks={tracks} reduceMotion /></section> : <div className="rounded-xl border border-border bg-elevated px-4 py-10 text-center text-sm text-muted">Connect Last.fm or YouTube Music, then regenerate a mix.</div>}
   </div>

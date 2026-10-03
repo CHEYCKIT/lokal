@@ -275,9 +275,13 @@ async function similarMusic(artist, track, limit = 24) {
   const artistName = String(artist || '').trim()
   const trackName = String(track || '').trim()
   if (!saved.lastfm_api_key || !artistName) return { error: 'Connect Last.fm before loading similar music.' }
+  const parsedLimit = Number(limit)
+  const normalizedLimit = Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? Math.min(50, Math.max(1, Math.trunc(parsedLimit)))
+    : 24
   const result = await lastfmCall(trackName ? 'track.getSimilar' : 'artist.getSimilar', trackName
-    ? { artist: artistName, track: trackName, limit: String(limit) }
-    : { artist: artistName, limit: String(limit) }, saved.lastfm_api_key, null)
+    ? { artist: artistName, track: trackName, limit: String(normalizedLimit) }
+    : { artist: artistName, limit: String(normalizedLimit) }, saved.lastfm_api_key, null)
   if (result?.error) return { error: result.message || result.error || 'Last.fm similar music failed.' }
   return trackName
     ? { tracks: asArray(result?.similartracks?.track).map(normalizeTrack).filter(item => item.title && item.artist) }

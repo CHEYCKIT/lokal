@@ -291,7 +291,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
               ? 'Lokal never embeds the Google sign-in page. It uses a private browser profile and passes only YouTube-domain cookies to YouTube account APIs and yt-dlp.'
               : 'To use Premium/private playback, return to Lokal and provide a YouTube cookies.txt export in Settings. This stays local and is only passed to yt-dlp for YouTube URLs.'}
           </p>
-          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('connected') || youtubeState.includes('disconnected') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
+          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.startsWith('YouTube connected.') || youtubeState === 'YouTube disconnected from Lokal.' ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
         </div>
       </div>
     </div>

@@ -19,7 +19,9 @@ export default function Radio() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (tracks.length) playQueue(tracks, 0, { type: 'radio', name: location.state?.name || 'Radio' })
+    const incomingTracks = Array.isArray(location.state?.tracks) ? location.state.tracks : []
+    setTracks(incomingTracks)
+    if (incomingTracks.length) playQueue(incomingTracks, 0, { type: 'radio', name: location.state?.name || 'Radio' })
     // The queue should start only when this radio session changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
