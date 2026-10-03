@@ -207,7 +207,7 @@ export default function Artist() {
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
           </button>
-          <button onClick={() => openRadio(nav, { title: artist.name, artist: artist.name }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
+          <button onClick={() => openRadio(nav, { artist: artist.name, type: 'artist' }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Radio size={14} /> Radio
           </button>
           <button onClick={shareArtist} title="Share as a picture"

@@ -197,10 +197,12 @@ function asArray(value) {
 
 function imageUrl(images) {
   const list = asArray(images)
-  return list.find(image => image?.size === 'extralarge')?.['#text']
+  const value = list.find(image => image?.size === 'extralarge')?.['#text']
     || list.find(image => image?.size === 'large')?.['#text']
     || list.find(image => image?.['#text'])?.['#text']
     || ''
+  if (!value || /2a96cbd8b46e442fc41c2b86b821562f/i.test(value)) return ''
+  return String(value).replace(/^http:\/\//i, 'https://')
 }
 
 function normalizeLastfmTrack(track) {
@@ -233,13 +235,21 @@ async function fetchDiscovery() {
     return { error: topTracks.message || topTracks.error || recentTracks.message || recentTracks.error || topArtists.message || topArtists.error || 'Last.fm Discovery failed.' }
   }
 
-  const trackSeeds = asArray(topTracks?.toptracks?.track).slice(0, 4)
-  const artistSeeds = asArray(topArtists?.topartists?.artist).slice(0, 4)
+  const trackSeeds = [...asArray(topTracks?.toptracks?.track), ...asArray(recentTracks?.recenttracks?.track)]
+    .filter((seed, index, list) => {
+      const artist = typeof seed?.artist === 'string' ? seed.artist : seed?.artist?.name || ''
+      const key = `${artist}|${seed?.name || ''}`.toLowerCase()
+      return artist && seed?.name && list.findIndex(item => `${typeof item?.artist === 'string' ? item.artist : item?.artist?.name || ''}|${item?.name || ''}`.toLowerCase() === key) === index
+    })
+    .slice(0, 6)
+  const artistSeeds = [...asArray(topArtists?.topartists?.artist), ...trackSeeds.map(seed => ({ name: typeof seed?.artist === 'string' ? seed.artist : seed?.artist?.name || '' }))]
+    .filter((seed, index, list) => seed?.name && list.findIndex(item => String(item?.name || '').toLowerCase() === String(seed.name).toLowerCase()) === index)
+    .slice(0, 6)
   const [similarTrackResults, similarArtistResults] = await Promise.all([
     Promise.all(trackSeeds.map(seed => safe(lastfmCall('track.getSimilar', {
       artist: typeof seed?.artist === 'string' ? seed.artist : seed?.artist?.name || '',
       track: seed?.name || '',
-      limit: '8',
+      limit: '12',
     }, apiKey, null)))),
     Promise.all(artistSeeds.map(seed => safe(lastfmCall('artist.getSimilar', { artist: seed?.name || '', limit: '8' }, apiKey, null)))),
   ])
