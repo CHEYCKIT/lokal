@@ -28,7 +28,7 @@ export default function Radio() {
     // The queue should start only when this radio session changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => {
-      if (sessionKeyRef.current === location.key) sessionKeyRef.current = null
+      sessionKeyRef.current = null
     }
   }, [location.key])
 
