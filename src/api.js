@@ -7,6 +7,30 @@ const isE = () => {
 }
 const el = () => window.electron
 const BASE = '/api'
+const YOUTUBE_LOCAL_UNLIKES_KEY = 'lokal-youtube-local-unlikes'
+
+function youtubeLocalUnlikes(userId = 'guest') {
+  try {
+    const value = JSON.parse(localStorage.getItem(YOUTUBE_LOCAL_UNLIKES_KEY) || '{}')
+    if (Array.isArray(value)) return userId === 'guest' ? new Set(value.map(String)) : new Set()
+    return new Set(Array.isArray(value?.[userId || 'guest']) ? value[userId || 'guest'].map(String) : [])
+  } catch { return new Set() }
+}
+
+function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
+  if (!videoId) return
+  const key = userId || 'guest'
+  let stored = {}
+  try {
+    const value = JSON.parse(localStorage.getItem(YOUTUBE_LOCAL_UNLIKES_KEY) || '{}')
+    stored = Array.isArray(value) ? { guest: value } : (value && typeof value === 'object' ? value : {})
+  } catch {}
+  const ids = new Set(Array.isArray(stored[key]) ? stored[key].map(String) : [])
+  if (unlike) ids.add(String(videoId))
+  else ids.delete(String(videoId))
+  stored[key] = [...ids].slice(-500)
+  try { localStorage.setItem(YOUTUBE_LOCAL_UNLIKES_KEY, JSON.stringify(stored)) } catch {}
+}
 
 function buildLastfmAuthUrl(apiKey) {
   const callback = isE()
@@ -119,15 +143,31 @@ export const api = {
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
   searchTracks: (q) => isE() ? el().searchTracks(q) : apiFetch(`/tracks/search?q=${encodeURIComponent(q)}`),
   searchLyrics: (q) => isE() ? el().searchLyrics(q) : apiFetch(`/tracks/search-lyrics?q=${encodeURIComponent(q)}`),
-  toggleLike: async (tid, uid) => {
+  toggleLike: async (tid, uid, track = null) => {
     const r = await (isE() ? el().toggleLike(tid, uid) : apiFetch(`/tracks/${tid}/like`, { method:'POST', body:{userId:uid} }))
     // The like went to the song, whichever copy was clicked: every id it goes
     // by (library copy, streamed copies) follows, so all its hearts agree.
     // Tagged with the user it was for: a late answer after switching user
     // mustn't touch the new user's hearts.
     if (r && typeof r === 'object' && Array.isArray(r.ids)) window.dispatchEvent(new CustomEvent('lokal:liked', { detail: { ids: r.ids, liked: !!r.liked, userId: uid ?? null } }))
+    if (r && typeof r === 'object' && typeof r.liked === 'boolean' && track) {
+      // Account-backed likes are best-effort mirrors. A local like remains
+      // successful when a provider is offline or signed out.
+      const youtubeId = String(track.file_path || '').match(/^ghost:\/\/youtube\/online\/([\w-]+)$/)?.[1]
+      if (youtubeId) {
+        rememberYoutubeUnlike(youtubeId, !r.liked, uid)
+        Promise.resolve(api.youtubeSetLiked(youtubeId, r.liked)).catch(() => {})
+      }
+      if (track.artist && track.title) Promise.resolve(api.lastfmSetLoved(track.artist, track.title, r.liked)).catch(() => {})
+    }
     return r
   },
+  setLike: async (tid, uid, liked) => {
+    const r = await (isE() ? el().setLike(tid, uid, liked) : apiFetch(`/tracks/${tid}/like-state`, { method:'POST', body:{userId:uid, liked:!!liked} }))
+    if (r && typeof r === 'object' && Array.isArray(r.ids)) window.dispatchEvent(new CustomEvent('lokal:liked', { detail: { ids: r.ids, liked: !!r.liked, userId: uid ?? null } }))
+    return r
+  },
+  isYoutubeLocallyUnliked: (videoId, uid) => youtubeLocalUnlikes(uid || 'guest').has(String(videoId || '')),
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),
   getHistory: (uid, l) => isE() ? el().getHistory(uid, l) : apiFetch(`/tracks/history?userId=${uid||'guest'}&limit=${l||30}`),
@@ -252,6 +292,9 @@ export const api = {
   onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
   onlinePrepare: (provider, id, force = false) => isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }),
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
+  youtubeAccount: () => isE() ? el().youtubeAccount() : apiFetch('/online/account'),
+  youtubeAccountPlaylist: (playlistId) => isE() ? el().youtubeAccountPlaylist(playlistId) : apiFetch(`/online/account-playlist/${encodeURIComponent(playlistId)}`),
+  youtubeSetLiked: (videoId, liked) => isE() ? el().youtubeSetLiked(videoId, liked) : apiFetch('/online/account-liked', { method: 'POST', body: { videoId, liked } }),
   onlineDownloadUrl: (provider, id) => isE() ? el().onlineDownloadUrl(provider, id) : apiFetch(`/online/download-url/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`, { method:'POST' }),
   // Addons: online sources added by manifest URL (Settings → Addons).
   addonsList: () => isE() ? el().addonsList() : apiFetch('/online/addons'),
@@ -333,6 +376,9 @@ export const api = {
   discordConnect: (id) => isE() ? el().discordConnect(id) : Promise.resolve(false),
   discordDisconnect: () => isE() ? el().discordDisconnect() : Promise.resolve(),
   openExternal: (url) => isE() ? el().openExternal(url) : Promise.resolve(window.open(url, '_blank', 'noopener,noreferrer')),
+  youtubeLogin: () => isE() && typeof el().youtubeLogin === 'function'
+    ? el().youtubeLogin()
+    : Promise.resolve({ error: 'Internal YouTube sign-in is available in the desktop app.' }),
   lastfmConnect: (apiKey, apiSecret, token) => isE() ? el().lastfmConnect(apiKey, apiSecret, token) : apiFetch('/lastfm/connect', { method:'POST', body:{apiKey, apiSecret, token} }),
   lastfmAuthorize: (apiKey) => {
     const url = buildLastfmAuthUrl(apiKey)
@@ -342,6 +388,10 @@ export const api = {
   lastfmGetTrackInfo: (artist, track) => isE() ? el().lastfmGetTrackInfo(artist, track) : apiFetch(`/lastfm/track?${new URLSearchParams({artist, track})}`),
   lastfmGetSimilarArtists: (artist, limit) => isE() ? el().lastfmGetSimilarArtists(artist, limit) : apiFetch(`/lastfm/similar/${encodeURIComponent(artist)}?limit=${limit || 5}`),
   lastfmScrobble: (artist, track, album, duration, timestamp) => isE() ? el().lastfmScrobble(artist, track, album, duration, timestamp) : apiFetch('/lastfm/scrobble', { method:'POST', body:{artist, track, album, duration, timestamp} }),
+  lastfmDiscovery: () => isE() ? el().lastfmDiscovery() : apiFetch('/lastfm/discovery'),
+  lastfmLoved: (page) => isE() ? el().lastfmLoved(page) : apiFetch(`/lastfm/loved${page ? `?page=${encodeURIComponent(page)}` : ''}`),
+  lastfmSetLoved: (artist, track, loved) => isE() ? el().lastfmSetLoved(artist, track, loved) : apiFetch('/lastfm/loved', { method:'POST', body:{ artist, track, loved } }),
+  lastfmSyncLikes: (uid, page) => isE() ? el().lastfmSyncLikes(uid || 'guest', page) : apiFetch('/lastfm/sync-likes', { method:'POST', body:{ userId: uid || 'guest', page } }),
   listenbrainzStatus: () => isE() ? el().listenbrainzStatus() : apiFetch('/listenbrainz/status'),
   listenbrainzConnect: (token) => isE() ? el().listenbrainzConnect(token) : apiFetch('/listenbrainz/connect', { method: 'POST', body: { token } }),
   listenbrainzDisconnect: () => isE() ? el().listenbrainzDisconnect() : apiFetch('/listenbrainz/disconnect', { method: 'POST' }),

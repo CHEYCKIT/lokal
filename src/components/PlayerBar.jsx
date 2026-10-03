@@ -94,7 +94,7 @@ export default function PlayerBar() {
 
   const toggleLike = async () => {
     if (!currentTrack) return
-    const r = await api.toggleLike(currentTrack.id, user?.id)
+    const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
     setLiked(currentTrack.id, liked)
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }

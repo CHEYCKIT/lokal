@@ -384,7 +384,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   const toggleLike = async (track, e) => {
     e.stopPropagation()
-    const r = await api.toggleLike(track.id, user?.id)
+    const r = await api.toggleLike(track.id, user?.id, track)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
     setLiked(track.id, liked)
     if (liked) { setLikeAnim(track.id); setTimeout(() => setLikeAnim(null), 600) }

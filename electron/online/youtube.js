@@ -12,6 +12,7 @@
 //     is shared with the other sources: see sources.js.
 
 const { spawn } = require('child_process')
+const crypto = require('crypto')
 const { isCookieError, markUnreadable } = require('../ipc/ytCookies')
 
 const SEARCH_URL = 'https://music.youtube.com/youtubei/v1/search?prettyPrint=false'
@@ -23,10 +24,14 @@ const DURATION = /^(?:\d+:)?\d{1,2}:\d{2}$/
 const SEARCH_TTL_MS = 10 * 60 * 1000
 const STREAM_MARGIN_MS = 10 * 60 * 1000
 const RESOLVE_TIMEOUT_MS = 30000
+const BROWSE_URL = 'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false'
+const LIKE_URL = 'https://music.youtube.com/youtubei/v1/like'
+const ACCOUNT_TTL_MS = 5 * 60 * 1000
 
 const searchCache = new Map() // query -> { at, results }
 const streamCache = new Map() // videoId -> { url, headers, mime, expiresAt }
 const resolving = new Map()   // videoId -> Promise
+const accountCache = new Map() // cookie fingerprint -> { at, data }
 
 /** "3:07" or "1:02:03" -> seconds; null when it isn't a duration. */
 function parseDuration(text) {
@@ -148,6 +153,227 @@ async function searchSongs(query, { limit = 10, fetchImpl = fetch } = {}) {
   if (searchCache.size > 100) searchCache.delete(searchCache.keys().next().value)
   searchCache.set(key, { at: Date.now(), results })
   return results.slice(0, limit)
+}
+
+// -------------------------------------------------------------- account data
+
+function cookieValue(header, names) {
+  const values = new Map()
+  for (const part of String(header || '').split(';')) {
+    const index = part.indexOf('=')
+    if (index <= 0) continue
+    values.set(part.slice(0, index).trim(), part.slice(index + 1).trim())
+  }
+  return names.map(name => values.get(name)).find(Boolean) || ''
+}
+
+function accountHeaders(cookieHeader) {
+  const sapisid = cookieValue(cookieHeader, ['SAPISID', '__Secure-3PAPISID', 'APISID'])
+  if (!sapisid) return null
+  const timestamp = Math.floor(Date.now() / 1000)
+  const hash = crypto.createHash('sha1').update(`${timestamp} ${sapisid} https://music.youtube.com`).digest('hex')
+  return {
+    'Content-Type': 'application/json',
+    Origin: 'https://music.youtube.com',
+    Referer: 'https://music.youtube.com/',
+    'User-Agent': 'Mozilla/5.0',
+    Cookie: cookieHeader,
+    Authorization: `SAPISIDHASH ${timestamp}_${hash}`,
+    'X-YouTube-Client-Name': '67',
+    'X-YouTube-Client-Version': CLIENT.clientVersion,
+    'X-Goog-AuthUser': '0',
+  }
+}
+
+function textOf(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (value.simpleText) return String(value.simpleText)
+  if (Array.isArray(value.runs)) return value.runs.map(run => String(run.text || '')).join('')
+  return ''
+}
+
+function thumbnailsOf(value) {
+  const thumbnails = value?.thumbnails || value?.musicThumbnailRenderer?.thumbnail?.thumbnails || []
+  return Array.isArray(thumbnails) && thumbnails.length ? largerThumbnail(thumbnails[thumbnails.length - 1].url) : null
+}
+
+function walkObjects(root, visitor) {
+  if (!root || typeof root !== 'object') return
+  if (Array.isArray(root)) {
+    root.forEach(item => walkObjects(item, visitor))
+    return
+  }
+  visitor(root)
+  Object.values(root).forEach(value => walkObjects(value, visitor))
+}
+
+function parseTrackCard(renderer) {
+  const videoId = renderer?.navigationEndpoint?.watchEndpoint?.videoId
+    || renderer?.onTap?.watchEndpoint?.videoId
+    || ''
+  const title = textOf(renderer?.title)
+  const subtitle = textOf(renderer?.subtitle)
+  if (!VIDEO_ID.test(videoId) || !title) return null
+  const artist = subtitle.split('•').map(value => value.trim()).filter(Boolean)[0] || 'Unknown Artist'
+  return {
+    videoId,
+    title,
+    artists: [artist],
+    artist,
+    album: null,
+    duration: null,
+    thumbnail: thumbnailsOf(renderer?.thumbnail),
+    kind: 'song',
+    official: true,
+    url: `https://music.youtube.com/watch?v=${videoId}`,
+  }
+}
+
+function parseAccountTracks(root, limit = 200) {
+  const tracks = []
+  const seen = new Set()
+  walkObjects(root, node => {
+    const renderer = node.musicResponsiveListItemRenderer
+    if (!renderer || tracks.length >= limit) return
+    const item = parseItem(renderer)
+    if (!item || seen.has(item.videoId)) return
+    seen.add(item.videoId)
+    tracks.push(item)
+    return
+  })
+  walkObjects(root, node => {
+    if (tracks.length >= limit) return
+    const item = parseTrackCard(node.musicTwoRowItemRenderer)
+    if (!item || seen.has(item.videoId)) return
+    seen.add(item.videoId)
+    tracks.push(item)
+  })
+  return tracks
+}
+
+function parseAccountPlaylists(root, limit = 100) {
+  const playlists = []
+  const seen = new Set()
+  walkObjects(root, node => {
+    const renderer = node.gridPlaylistRenderer || node.musicTwoRowItemRenderer
+    if (!renderer || playlists.length >= limit) return
+    const endpoint = renderer.navigationEndpoint?.browseEndpoint
+    const rawId = renderer.playlistId || endpoint?.browseId || ''
+    const id = String(rawId).replace(/^VL/, '')
+    if (!id || /^UC|^MPRE/.test(id) || seen.has(id)) return
+    const title = textOf(renderer.title)
+    if (!title) return
+    seen.add(id)
+    playlists.push({
+      id,
+      title,
+      author: textOf(renderer.shortBylineText || renderer.subtitle),
+      trackCount: textOf(renderer.videoCountText || renderer.secondLine),
+      thumbnail: thumbnailsOf(renderer.thumbnail),
+      url: `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`,
+    })
+  })
+  return playlists
+}
+
+async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch) {
+  const headers = accountHeaders(cookieHeader)
+  if (!headers) throw new Error('YouTube account cookies are missing SAPISID.')
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    const res = await fetchImpl(BROWSE_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ context: { client: CLIENT }, browseId }),
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`YouTube Music account request failed (${res.status}).`)
+    const json = await res.json()
+    if (isLoggedOutResponse(json)) {
+      throw new Error('YouTube Music returned a signed-out account response.')
+    }
+    return json
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function accountKey(cookieHeader) {
+  return crypto.createHash('sha256').update(String(cookieHeader || '')).digest('hex').slice(0, 24)
+}
+
+function isLoggedOutResponse(json) {
+  return (json?.responseContext?.serviceTrackingParams || [])
+    .flatMap(service => Array.isArray(service?.params) ? service.params : [])
+    .some(param => param?.key === 'logged_in' && String(param.value) === '0')
+}
+
+/** Authenticated YouTube Music account surfaces backed by the internal login. */
+async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100 } = {}) {
+  const cookieHeader = String(cookies || '').trim()
+  if (!cookieHeader) return { error: 'Sign in to YouTube Music to load account data.' }
+  const key = accountKey(cookieHeader)
+  const cached = accountCache.get(key)
+  if (cached && Date.now() - cached.at < ACCOUNT_TTL_MS) return cached.data
+
+  const [likedResult, playlistsResult, homeResult] = await Promise.allSettled([
+    accountBrowse('VLLM', cookieHeader, fetchImpl),
+    accountBrowse('FEmusic_liked_playlists', cookieHeader, fetchImpl),
+    accountBrowse('FEmusic_home', cookieHeader, fetchImpl),
+  ])
+  const liked = likedResult.status === 'fulfilled' ? parseAccountTracks(likedResult.value, limit) : []
+  const playlists = playlistsResult.status === 'fulfilled' ? parseAccountPlaylists(playlistsResult.value, limit) : []
+  const home = homeResult.status === 'fulfilled' ? parseAccountTracks(homeResult.value, limit) : []
+  const errors = [likedResult, playlistsResult, homeResult].filter(result => result.status === 'rejected')
+  if (!liked.length && !playlists.length && !home.length && errors.length === 3) {
+    return { error: errors[0].reason?.message || 'Could not load YouTube Music account data.' }
+  }
+  const data = { liked, playlists, home }
+  if (!errors.length) {
+    accountCache.set(key, { at: Date.now(), data })
+    if (accountCache.size > 4) accountCache.delete(accountCache.keys().next().value)
+  }
+  return data
+}
+
+async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
+  const id = String(playlistId || '').replace(/^VL/, '')
+  if (!id) return { error: 'A YouTube Music playlist id is required.' }
+  try {
+    const root = await accountBrowse(`VL${id}`, cookies, fetchImpl)
+    return { id, tracks: parseAccountTracks(root, 500) }
+  } catch (error) {
+    return { error: error.message }
+  }
+}
+
+async function setAccountLiked(videoId, liked, cookies, fetchImpl = fetch) {
+  if (!VIDEO_ID.test(String(videoId || ''))) return { error: 'Invalid YouTube track id.' }
+  const headers = accountHeaders(cookies)
+  if (!headers) return { skipped: true }
+  const endpoint = liked ? 'like' : 'removelike'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    const res = await fetchImpl(`${LIKE_URL}/${endpoint}?prettyPrint=false`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ context: { client: CLIENT }, target: { videoId } }),
+      signal: controller.signal,
+    })
+    if (!res.ok) return { error: `YouTube Music like request failed (${res.status}).` }
+    const body = await res.json().catch(() => null)
+    if (!body || typeof body !== 'object') return { error: 'YouTube Music returned an invalid like response.' }
+    if (isLoggedOutResponse(body)) return { error: 'YouTube Music returned a signed-out response.' }
+    accountCache.clear()
+    return { ok: true, liked: !!liked }
+  } catch (error) {
+    return { error: error.message || 'YouTube Music like request failed.' }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ---------------------------------------------------------------- streams
@@ -280,5 +506,6 @@ function videoIdFromUrl(url) {
 
 module.exports = {
   searchSongs, parseSearch, parseItem, parseDuration,
+  fetchAccountData, fetchAccountPlaylist, setAccountLiked,
   resolveStream, fetchStream, streamError, videoIdFromUrl,
 }

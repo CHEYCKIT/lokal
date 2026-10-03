@@ -43,7 +43,7 @@ export default function AddToPlaylistModal() {
       }
       showToast(`Added ${plural(addToPlaylistTrackIds.length, 'track')} to Liked Songs`)
     } else if (track) {
-      const r = await api.toggleLike(track.id, user?.id)
+      const r = await api.toggleLike(track.id, user?.id, track)
       const liked = typeof r === 'boolean' ? r : r?.liked ?? false
       setLiked(track.id, liked)
       showToast(liked ? 'Added to Liked Songs' : 'Removed from Liked Songs')

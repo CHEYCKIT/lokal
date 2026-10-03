@@ -20,6 +20,7 @@ const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
 const { registerUserHandlers } = require('./ipc/users')
 const { registerDiscordHandlers } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
+const { registerYouTubeAuthHandlers } = require('./ipc/youtubeAuth')
 const { registerListenBrainzHandlers } = require('./ipc/listenbrainz')
 const { registerToolsHandlers } = require('./ipc/tools')
 const { registerPlaylistHandlers } = require('./ipc/playlists')
@@ -430,6 +431,7 @@ app.whenReady().then(() => {
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
   try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
   try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
+  try { registerYouTubeAuthHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerYouTubeAuthHandlers:', e.message) }
   try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
 
 

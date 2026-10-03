@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Music, FolderOpen, Disc3, Sparkles, ChevronRight, SkipForward, Play, Check, User, AlertCircle, Download, Settings, Zap, Palette } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Music, FolderOpen, Disc3, Sparkles, ChevronRight, SkipForward, Play, Check, User, AlertCircle, Download, Settings, Zap, Palette, Link2 } from 'lucide-react'
 import { api } from '../api'
 import { useAppStore } from '../store/player'
 import { THEMES, applyTheme } from '../theme'
+import ProviderConnections from './ProviderConnections'
 
 const steps = [
   {
@@ -30,6 +32,12 @@ const steps = [
     description: 'To download music from YouTube, you need yt-dlp and ffmpeg. You can download them now or later from Settings.',
     icon: Zap,
     isElectron: true,
+  },
+  {
+    id: 'accounts',
+    title: 'Connect Your Music Accounts',
+    description: 'Connect Last.fm for scrobbling and future discovery, and open YouTube Music in your browser. Both connections are optional and can be finished later from Settings.',
+    icon: Link2,
   },
   {
     id: 'user',
@@ -68,6 +76,7 @@ export default function Onboarding({ isOpen, onComplete }) {
   const [settings, setSettings] = useState({})
   
   const { openAuth } = useAppStore()
+  const navigate = useNavigate()
   const scanProgressRef = useRef(null)
 
   const updateSetting = (key, value) => {
@@ -149,7 +158,7 @@ export default function Onboarding({ isOpen, onComplete }) {
     try {
       await api.scanFolder(folder)
       setScanProgress({ current: 0, total: 0, isActive: false })
-      setCurrentStep(6) 
+      setCurrentStep(steps.findIndex(s => s.id === 'complete'))
     } catch (e) {
       console.error('Scan error:', e)
       setScanProgress({ current: 0, total: 0, isActive: false })
@@ -274,6 +283,12 @@ export default function Onboarding({ isOpen, onComplete }) {
 
   const handleSkipUser = () => {
     handleNext()
+  }
+
+  const openIntegrationSettings = (provider = 'lastfm') => {
+    localStorage.setItem('lokal-onboarding-complete', 'true')
+    onComplete()
+    navigate('/settings', { state: { category: provider === 'youtube' ? 'library' : 'integrations' } })
   }
 
   if (!isOpen) return null
@@ -503,6 +518,10 @@ export default function Onboarding({ isOpen, onComplete }) {
                   </div>
                 )}
 
+                {step.id === 'accounts' && (
+                  <ProviderConnections compact onOpenSettings={openIntegrationSettings} />
+                )}
+
                 {step.id === 'user' && (
                   <div className="space-y-4">
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
@@ -713,6 +732,25 @@ export default function Onboarding({ isOpen, onComplete }) {
                 >
                   <SkipForward size={16} />
                   Skip (Use Locally)
+                </button>
+                <button
+                  onClick={handleNext}
+                  className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
+                >
+                  Continue
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+
+            {step.id === 'accounts' && (
+              <div className="flex gap-3">
+                <button
+                  onClick={handleNext}
+                  className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
+                >
+                  <SkipForward size={16} />
+                  Do This Later
                 </button>
                 <button
                   onClick={handleNext}

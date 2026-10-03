@@ -794,6 +794,12 @@ router.post('/:id/like', (req, res) => {
   res.json(require('../../electron/online/sources').toggleSongLike(db, userId, req.params.id))
 })
 
+router.post('/:id/like-state', (req, res) => {
+  const db = getDB()
+  const { userId = 'guest', liked = false } = req.body || {}
+  res.json(require('../../electron/online/sources').setSongLike(db, userId, req.params.id, !!liked))
+})
+
 router.post('/:id/playtime', (req, res) => {
   try {
     const { userId = 'guest', seconds = 0 } = req.body

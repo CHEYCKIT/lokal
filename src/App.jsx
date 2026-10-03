@@ -837,7 +837,7 @@ export default function App() {
         const track = state.currentTrack
         if (!track) return
         const userId = useAppStore.getState().user?.id
-        api.toggleLike(track.id, userId).then((r) => {
+        api.toggleLike(track.id, userId, track).then((r) => {
           const liked = typeof r === 'boolean' ? r : r?.liked ?? false
           usePlayerStore.getState().setLiked(track.id, liked)
         })
@@ -1003,7 +1003,7 @@ export default function App() {
         return
       }
       if (action === 'toggleLike' && state.currentTrack?.id) {
-        const r = await api.toggleLike(state.currentTrack.id, userRef.current?.id)
+        const r = await api.toggleLike(state.currentTrack.id, userRef.current?.id, state.currentTrack)
         const liked = typeof r === 'boolean' ? r : r?.liked ?? false
         state.setLiked(state.currentTrack.id, liked)
       }
@@ -1031,6 +1031,8 @@ export default function App() {
   const likedRevisionRef = useRef(0)
   useEffect(() => {
     let cancelled = false
+    let syncTimer = null
+    const syncCooldownMs = 10 * 60 * 1000
     // Each liked song with every id it goes by (its streamed copies too).
     const load = () => {
       const revision = likedRevisionRef.current
@@ -1040,8 +1042,48 @@ export default function App() {
         initLiked((t || []).flatMap(x => [x.id, ...(x.also_ids || [])]))
       }).catch(() => {})
     }
-    load()
-    return () => { cancelled = true }
+    const syncKey = `lokal-lastfm-like-sync:${user?.id || 'guest'}`
+    const nextPageKey = `lokal-lastfm-like-sync-page:${user?.id || 'guest'}`
+    const lastSync = Number(localStorage.getItem(syncKey) || 0)
+    const pendingPage = Number(localStorage.getItem(nextPageKey) || 0)
+    const scheduleSync = (page, delay = syncCooldownMs) => {
+      if (cancelled) return
+      clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => {
+        syncTimer = null
+        if (cancelled) return
+        api.lastfmSyncLikes(user?.id, page).then(result => {
+          if (cancelled) return
+          if (result?.partial && result.nextPage) {
+            try { localStorage.setItem(nextPageKey, String(result.nextPage)) } catch {}
+            scheduleSync(Number(result.nextPage) || page)
+          } else if (result?.error) {
+            try { localStorage.setItem(nextPageKey, String(page)) } catch {}
+            scheduleSync(page)
+          } else {
+            try { localStorage.removeItem(nextPageKey) } catch {}
+          }
+        }).catch(() => {
+          if (cancelled) return
+          try { localStorage.setItem(nextPageKey, String(page)) } catch {}
+          scheduleSync(page)
+        }).finally(() => {
+          try { localStorage.setItem(syncKey, String(Date.now())) } catch {}
+          if (!cancelled) load()
+        })
+      }, Math.max(0, delay))
+    }
+    const elapsed = Date.now() - lastSync
+    if (elapsed > syncCooldownMs || pendingPage) {
+      if (pendingPage) load()
+      scheduleSync(pendingPage || 1, Math.max(0, syncCooldownMs - Math.max(0, elapsed)))
+    } else {
+      load()
+    }
+    return () => {
+      cancelled = true
+      clearTimeout(syncTimer)
+    }
   }, [user?.id])
 
   // A like from any heart: the song's other ids follow (see api.toggleLike).

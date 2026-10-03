@@ -325,6 +325,24 @@ function toggleSongLike(db, userId, trackId) {
   return { liked: !liked, trackId: id, ids }
 }
 
+/** Set a song's local like state without toggling it. */
+function setSongLike(db, userId, trackId, liked) {
+  const id = libraryTrackId(db, trackId)
+  const ids = [...new Set([trackId, ...songIds(db, id)])]
+  const marks = ids.map(() => '?').join(', ')
+  if (liked) {
+    const otherIds = ids.filter(candidate => candidate !== id)
+    if (otherIds.length) {
+      const otherMarks = otherIds.map(() => '?').join(', ')
+      db.prepare(`DELETE FROM user_likes WHERE user_id = ? AND track_id IN (${otherMarks})`).run(userId, ...otherIds)
+    }
+    db.prepare('INSERT OR IGNORE INTO user_likes (user_id, track_id) VALUES (?, ?)').run(userId, id)
+  } else {
+    db.prepare(`DELETE FROM user_likes WHERE user_id = ? AND track_id IN (${marks})`).run(userId, ...ids)
+  }
+  return { liked: !!liked, trackId: id, ids }
+}
+
 /**
  * Keep online songs as ghost tracks, so they can be played, liked and added
  * to playlists. Returns the track rows (null for unusable items), in order.
@@ -397,5 +415,5 @@ module.exports = {
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
   onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks, streamedTwins,
-  sameSong, sourceRefOf, sourceRefOfTrack, libraryCopyOf, libraryTrackId, songIds, toggleSongLike, foldStreamedLikes,
+  sameSong, sourceRefOf, sourceRefOfTrack, libraryCopyOf, libraryTrackId, songIds, toggleSongLike, setSongLike, foldStreamedLikes,
 }
