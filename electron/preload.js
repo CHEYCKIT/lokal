@@ -19,8 +19,6 @@ contextBridge.exposeInMainWorld('electron', {
   onWindowVisibility: (fn) => on('window:visibility', (_, hidden) => fn(!!hidden)),
   isWindowHidden: () => invoke('window:isHidden'),
   openExternal: (url) => invoke('shell:openExternal', url),
-  youtubeLogin: () => invoke('youtube:login'),
-  youtubeDisconnect: () => invoke('youtube:disconnect'),
   openFolder: () => invoke('dialog:openFolder'),
   openFile: (f) => invoke('dialog:openFile', f),
   readFileBinary: (fp) => invoke('dialog:readFileBinary', fp),

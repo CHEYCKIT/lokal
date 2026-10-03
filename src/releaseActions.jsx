@@ -71,7 +71,7 @@ export function useReleaseActions({ onDeleted, goToArtist = true } = {}) {
       one && { separator: true },
       one && { label: 'Open', icon: ExternalLink, onSelect: () => navigate('/albums', { state: { album: one } }) },
       one && goToArtist && { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(one.album_artist || one.artists)) },
-      one && { label: 'Start album radio', icon: Radio, onSelect: () => openRadio(navigate, { title: one.title, artist: one.album_artist || one.artists }, useAppStore.getState().user?.id) },
+      one && { label: 'Start album radio', icon: Radio, onSelect: () => openRadio(navigate, { title: one.title, artist: one.album_artist || one.artists, type: 'album' }, useAppStore.getState().user?.id) },
       { separator: true },
       { label: albums.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(albums) },
     ].filter(Boolean)

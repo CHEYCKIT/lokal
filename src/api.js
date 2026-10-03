@@ -377,12 +377,6 @@ export const api = {
   discordConnect: (id) => isE() ? el().discordConnect(id) : Promise.resolve(false),
   discordDisconnect: () => isE() ? el().discordDisconnect() : Promise.resolve(),
   openExternal: (url) => isE() ? el().openExternal(url) : Promise.resolve(window.open(url, '_blank', 'noopener,noreferrer')),
-  youtubeLogin: () => isE() && typeof el().youtubeLogin === 'function'
-    ? el().youtubeLogin()
-    : Promise.resolve({ error: 'Internal YouTube sign-in is available in the desktop app.' }),
-  youtubeDisconnect: () => isE() && typeof el().youtubeDisconnect === 'function'
-    ? el().youtubeDisconnect()
-    : Promise.resolve({ error: 'YouTube disconnect is available in the desktop app.' }),
   lastfmConnect: (apiKey, apiSecret, token) => isE() ? el().lastfmConnect(apiKey, apiSecret, token) : apiFetch('/lastfm/connect', { method:'POST', body:{apiKey, apiSecret, token} }),
   lastfmAuthorize: (apiKey) => {
     const url = buildLastfmAuthUrl(apiKey)

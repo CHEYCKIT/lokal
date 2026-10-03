@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, ExternalLink, KeyRound, Music2, RefreshCw, Settings2, Youtube } from 'lucide-react'
+import { CheckCircle2, ExternalLink, KeyRound, Music2, RefreshCw, Youtube } from 'lucide-react'
 import { api } from '../api'
 import { youTubeCookieReady } from '../downloadLinks'
 
-const GOOGLE_YOUTUBE_URL = 'https://music.youtube.com/'
+const SECRET_PLACEHOLDER = '••••••••'
+const ACCOUNT_COOKIE_RE = /(?:^|[;\s])(?:SAPISID|__Secure-3PAPISID|__Secure-1PAPISID)=[^;\s]+/i
 
 function StatusDot({ connected }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-green-400' : 'bg-border'}`} aria-hidden="true" />
@@ -41,6 +42,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const [lastfmState, setLastfmState] = useState('')
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
+  const [youtubeCookieDraft, setYoutubeCookieDraft] = useState('')
   const [youtubeState, setYoutubeState] = useState('')
   const [settingsError, setSettingsError] = useState('')
   const lastfmAuthTimeoutRef = useRef(null)
@@ -133,6 +135,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   }, [disableLastfmAuth])
 
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
+  const youtubeAccountReady = settings.yt_cookie_header === SECRET_PLACEHOLDER || ACCOUNT_COOKIE_RE.test(settings.yt_cookie_header || '')
   const youtubePlaybackReady = youTubeCookieReady(settings)
 
   const authorizeLastfm = async () => {
@@ -161,36 +164,36 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     }
   }
 
-  const openYouTube = async () => {
-    if (!api.isElectron) {
-      try {
-        await api.openExternal(GOOGLE_YOUTUBE_URL)
-        setYoutubeState('Sign in in your browser, then configure playback access in Settings.')
-      } catch (error) {
-        setYoutubeState(error?.message || 'Could not open YouTube in your browser.')
-      }
+  const saveYouTubeCookie = async () => {
+    const value = youtubeCookieDraft.trim()
+    if (!ACCOUNT_COOKIE_RE.test(value)) {
+      setYoutubeState('Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.')
       return
     }
     setYoutubeAuthorizing(true)
-    const result = await api.youtubeLogin().catch(error => ({ error: error.message }))
+    const result = await api.saveSettings({ yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: value }).catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
-    if (result?.ok) {
-      await loadSettings(true)
-      setYoutubeState('YouTube connected. Your browser session is now available to Lokal.')
+    if (!result?.error) {
+      setSettings(prev => ({ ...prev, yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: SECRET_PLACEHOLDER }))
+      setYoutubeCookieDraft('')
+      setYoutubeState('YouTube account and playback access saved.')
+      window.dispatchEvent(new Event('lokal:refresh'))
     } else {
-      setYoutubeState(result?.error || 'Could not connect YouTube.')
+      setYoutubeState(result.error)
     }
   }
 
   const disconnectYouTube = async () => {
-    if (!api.isElectron || !window.confirm('Disconnect YouTube from Lokal and clear its saved session?')) return
+    if (!window.confirm('Disconnect YouTube from Lokal and clear its saved cookie?')) return
     setYoutubeAuthorizing(true)
-    const result = await api.youtubeDisconnect().catch(error => ({ error: error.message }))
+    const result = await api.saveSettings({ yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }).catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
-    if (result?.ok) {
-      await loadSettings(true)
+    if (!result?.error) {
+      setSettings(prev => ({ ...prev, yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }))
+      setYoutubeCookieDraft('')
       setYoutubeState('YouTube disconnected from Lokal.')
-    } else setYoutubeState(result?.error || 'Could not disconnect YouTube.')
+      window.dispatchEvent(new Event('lokal:refresh'))
+    } else setYoutubeState(result.error)
   }
 
   if (loading) {
@@ -203,7 +206,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
         <div>
           <p className="text-sm font-medium text-white">Account connections</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
-            Connect in your browser. {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
+            {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
           </p>
           {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">Retry</button></p>}
         </div>
@@ -263,35 +266,37 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
               <div>
                 <p className="text-sm font-medium text-white">YouTube Music</p>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-                  <StatusDot connected={youtubePlaybackReady} />
-                  {youtubePlaybackReady ? 'Playback access configured' : 'Not connected'}
+                  <StatusDot connected={youtubeAccountReady} />
+                  {youtubeAccountReady ? 'Account access configured' : 'Account not connected'}
                 </div>
               </div>
             </div>
-            {youtubePlaybackReady && <CheckCircle2 size={16} className="text-green-400" />}
+            {youtubeAccountReady && <CheckCircle2 size={16} className="text-green-400" />}
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            {api.isElectron
-              ? 'Lokal opens a real Chrome/Edge browser window for Google/YouTube sign-in instead of embedding Google. After sign-in, it imports only the YouTube cookies needed for account features and playback.'
-              : 'Open Google/YouTube in your normal browser. Web mode cannot read browser cookies, so playback access is configured separately in Settings.'}
+            Paste a cookie header from a YouTube session you already signed into. Lokal uses it for YouTube Music account data and yt-dlp playback.
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton onClick={openYouTube} disabled={youtubeAuthorizing}>
-              <ExternalLink size={13} />
-              {youtubeAuthorizing ? 'Working…' : 'Open YouTube in Browser'}
-            </ActionButton>
-            <ActionButton onClick={() => onOpenSettings?.('youtube')} muted>
-              <Settings2 size={13} />
-              {youtubePlaybackReady ? 'Manage playback access' : 'Configure playback access'}
-            </ActionButton>
-            {api.isElectron && youtubePlaybackReady && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
+          <div className="space-y-2">
+            <input
+              type="password"
+              value={youtubeCookieDraft}
+              onChange={event => setYoutubeCookieDraft(event.target.value)}
+              placeholder="SAPISID=...; __Secure-3PAPISID=..."
+              spellCheck={false}
+              autoComplete="off"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-white outline-none focus:border-accent/50"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <ActionButton onClick={saveYouTubeCookie} disabled={youtubeAuthorizing || !youtubeCookieDraft.trim()}>
+                {youtubeAuthorizing ? 'Saving…' : 'Save YouTube access'}
+              </ActionButton>
+              {(youtubeAccountReady || youtubePlaybackReady) && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
+            </div>
           </div>
           <p className="text-[11px] leading-relaxed text-muted/80">
-            {api.isElectron
-              ? 'Lokal never embeds the Google sign-in page. It uses a private browser profile and passes only YouTube-domain cookies to YouTube account APIs and yt-dlp.'
-              : 'To use Premium/private playback, return to Lokal and provide a YouTube cookies.txt export in Settings. This stays local and is only passed to yt-dlp for YouTube URLs.'}
+            Supported account cookies: SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID. Treat the header like a password. {youtubePlaybackReady ? 'Playback access configured.' : 'Playback access is not configured yet.'}
           </p>
-          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.startsWith('YouTube connected.') || youtubeState === 'YouTube disconnected from Lokal.' ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
+          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('saved') || youtubeState.includes('disconnected') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
         </div>
       </div>
     </div>

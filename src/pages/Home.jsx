@@ -84,11 +84,12 @@ function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
 }
 
 function discoveryOnlineItem(item) {
-  if (!item?.videoId || !item.title || !item.artist) return null
+  const videoId = item?.videoId || (item?.provider === 'yt' ? item?.id : '')
+  if (!videoId || !item.title || !item.artist) return null
   return {
     provider: 'yt',
-    id: item.videoId,
-    videoId: item.videoId,
+    id: videoId,
+    videoId,
     title: item.title,
     artist: item.artist,
     artists: item.artists || [item.artist],
@@ -97,6 +98,93 @@ function discoveryOnlineItem(item) {
     thumbnail: item.thumbnail || null,
     source: 'youtube',
   }
+}
+
+function imageUrl(value) {
+  const url = String(value || '').trim()
+  // Last.fm sometimes still returns the old HTTP URL or its shared blank
+  // image. The former is blocked in web mode and the latter is not artwork.
+  if (!url || /2a96cbd8b46e442fc41c2b86b821562f/i.test(url)) return ''
+  return url.replace(/^http:\/\//i, 'https://')
+}
+
+function artistKey(value) {
+  return String(value || '').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+function recommendationMatch(candidate, results) {
+  const wantedTitle = artistKey(candidate?.title)
+  const wantedArtist = artistKey(candidate?.artist)
+  const score = (result) => {
+    const title = artistKey(result?.title)
+    const artist = artistKey(result?.artist || result?.artists?.join(' '))
+    if (!wantedTitle || !wantedArtist || !title || !artist) return 0
+    let value = 0
+    if (title === wantedTitle) value += 6
+    else if (title.includes(wantedTitle) || wantedTitle.includes(title)) value += 4
+    if (artist === wantedArtist) value += 5
+    else if (artist.includes(wantedArtist) || wantedArtist.includes(artist)) value += 4
+    if (result?.kind === 'song' || result?.official) value += 1
+    return value
+  }
+  const best = (Array.isArray(results) ? results : [])
+    .map(result => ({ result, score: score(result) }))
+    .sort((a, b) => b.score - a.score)[0]
+  // Never turn an unrelated first YouTube search result into a personal
+  // recommendation just because the provider search returned something.
+  return best?.score >= 8 ? best.result : null
+}
+
+// The regular artist pages already use artist metadata providers. Reuse that
+// lookup for external recommendations instead of leaving every missing
+// Last.fm image as a letter avatar.
+async function enrichDiscoveryArtists(artists) {
+  return Promise.all((Array.isArray(artists) ? artists : []).map(async artist => {
+    const direct = imageUrl(artist?.image)
+    if (direct) return { ...artist, image: direct }
+    const localResult = await api.getArtistsPage({ search: artist?.name || '', limit: 5, offset: 0, sort: 'name' }).catch(() => null)
+    const localArtist = (Array.isArray(localResult?.items) ? localResult.items : [])
+      .find(item => artistKey(item?.name) === artistKey(artist?.name))
+    if (localArtist?.image_path) {
+      const localImage = api.isElectron
+        ? `file://${localArtist.image_path}`
+        : `/api/artist-image/${encodeURIComponent(localArtist.id)}`
+      return { ...artist, image: localImage }
+    }
+    const candidates = await api.artistSearchMetadata(artist?.name || '', { source: 'deezer' }).catch(() => [])
+    const wanted = artistKey(artist?.name)
+    const candidate = (Array.isArray(candidates) ? candidates : []).find(item => artistKey(item?.title) === wanted)
+      || (Array.isArray(candidates) ? candidates.find(item => item?.imageUrl) : null)
+    return { ...artist, image: imageUrl(candidate?.imageUrl) }
+  }))
+}
+
+function interleave(items) {
+  const groups = new Map()
+  for (const item of items || []) {
+    const key = item?.source || 'provider'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(item)
+  }
+  const result = []
+  let added = true
+  while (added) {
+    added = false
+    for (const group of groups.values()) {
+      const item = group.shift()
+      if (item) { result.push(item); added = true }
+    }
+  }
+  return result
+}
+
+function shuffled(items) {
+  const result = [...(items || [])]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
 }
 
 function discoveryEmptyMessage(error) {
@@ -124,7 +212,7 @@ function DiscoveryPanel({ data, loading, error, onRefresh, onSave, onPlay, onRad
   const tracks = Array.isArray(data?.tracks) ? data.tracks : []
   const playlists = Array.isArray(data?.playlists) ? data.playlists : []
   const artists = Array.isArray(data?.similarArtists) ? data.similarArtists : []
-  const hasAccount = Boolean(data?.youtubeConnected || data?.lastfmConnected)
+  const hasAccount = Boolean(data?.youtubeConnected || data?.lastfmConnected || tracks.length || playlists.length || artists.length)
   const feature = tracks[0]
   const upNext = tracks.slice(1, 4)
   const quickPicks = tracks.slice(4, 10)
@@ -175,8 +263,11 @@ function HomeContent({ user }) {
   const [suggestions, setSuggestions] = useCachedState(`home:suggestions:${uidKey}`, [])
   const [history, setHistory] = useCachedState(`home:history:${uidKey}`, [])
   const [mixes, setMixes] = useCachedState(`home:mixes:${uidKey}`, [])
-  const [discovery, setDiscovery] = useCachedState(`home:discovery:v2:${uidKey}`, null)
-  const [mixLab, setMixLab] = useCachedState(`home:mix:v2:${uidKey}`, { size: 32, tracks: [] })
+  // v3 drops the pre-provider shelf, which could otherwise keep unrelated
+  // artists and tracks visible until the five-minute refresh window elapsed.
+  const [discovery, setDiscovery] = useCachedState(`home:discovery:v3:${uidKey}`, null)
+  // v3 invalidates mixes built by the old generic search fallback.
+  const [mixLab, setMixLab] = useCachedState(`home:mix:v3:${uidKey}`, { size: 32, tracks: [] })
   // Sections appear together once everything is in (not mixes, then
   // suggestions, then recent), and "No tracks yet" only when it's true.
   const [loaded, setLoaded, wasCached] = useCachedState(`home:loaded:${uidKey}`, false)
@@ -211,18 +302,14 @@ function HomeContent({ user }) {
     if (mixLabGenerating) return
     setMixLabGenerating(true)
     try {
-      const refreshed = !discovery?.tracks?.length ? await loadDiscovery(true) : null
-      const candidates = Array.isArray(refreshed?.tracks) ? refreshed.tracks : (Array.isArray(discovery?.tracks) ? discovery.tracks : [])
-      let unique = candidates.filter((track, index, list) => track?.id && list.findIndex(item => item.id === track.id) === index)
-      if (unique.length < mixSize) {
-        const source = (refreshed || discovery || {}).similarArtists || []
-        const artists = source.slice(0, 8).map(artist => artist.name).filter(Boolean)
-        const extraResults = await Promise.all(artists.map(artist => api.onlineSearch(`${artist} similar music`, 'yt').catch(() => null)))
-        const extraItems = extraResults.flatMap(result => Array.isArray(result?.results) ? result.results.slice(0, 8) : [])
-        const saved = extraItems.length ? await api.onlineSave(extraItems).catch(() => []) : []
-        unique = [...unique, ...(Array.isArray(saved) ? saved : [])].filter((track, index, list) => track?.id && list.findIndex(item => item.id === track.id) === index)
-      }
+      // Always refresh: reusing the current shelf made Regenerate appear to
+      // do nothing and meant a mix could outlive the provider recommendations
+      // it claimed to represent.
+      const refreshed = await loadDiscovery(true)
+      const candidates = Array.isArray(refreshed?.tracks) ? refreshed.tracks : []
+      const unique = interleave(shuffled(candidates)).filter((track, index, list) => track?.id && list.findIndex(item => item.id === track.id) === index)
       setMixLab({ size: mixSize, tracks: unique.slice(0, mixSize) })
+      if (!unique.length) showToast('No Last.fm or YouTube Music recommendations were found.')
     } finally {
       setMixLabGenerating(false)
     }
@@ -263,25 +350,46 @@ function HomeContent({ user }) {
           return true
         })
         .slice(0, 18)
-        .map(track => Promise.resolve(api.onlineSearch(`${track.artist} ${track.title}`, 'yt')).catch(() => null))
+        .map(track => Promise.resolve(api.onlineSearch(`${track.artist} ${track.title}`, 'yt'))
+          .then(response => recommendationMatch(track, response?.results))
+          .catch(() => null))
       const searchResponses = await Promise.all(searches)
-      const lastfmItems = searchResponses.map(response => response?.results?.[0]).filter(Boolean).map(item => ({ ...item, source: 'lastfm' }))
-      const sourceById = new Map([...accountItems, ...lastfmItems].map(item => [`yt-${item.id || item.videoId}`, item.source || 'youtube']))
-      const saved = await api.onlineSave([...accountItems, ...lastfmItems]).catch(() => null)
+      const lastfmItems = searchResponses.filter(Boolean).map(item => ({ ...item, source: 'lastfm' }))
+      const sourceItems = interleave([
+        ...accountItems.map(item => ({ ...item, source: 'youtube' })),
+        ...lastfmItems,
+      ])
+      const sourceById = new Map(sourceItems.map(item => [`yt-${item.id || item.videoId}`, item.source || 'youtube']))
+      const saved = await api.onlineSave(sourceItems).catch(() => null)
       const tracks = (Array.isArray(saved) ? saved.filter(Boolean) : []).map(track => ({ ...track, source: sourceById.get(track.id) || 'youtube' }))
+      const youtubeArtists = accountItems
+        .flatMap(item => Array.isArray(item.artists) && item.artists.length ? item.artists : [item.artist])
+        .filter(Boolean)
+        .map(name => ({ name, source: 'youtube' }))
+      const seenArtists = new Set()
+      const providerArtists = [
+        ...(Array.isArray(lastfm?.similarArtists) ? lastfm.similarArtists : []).map(artist => ({ ...artist, source: 'lastfm' })),
+        ...youtubeArtists,
+      ].filter(artist => {
+        const key = artistKey(artist.name)
+        if (!key || seenArtists.has(key)) return false
+        seenArtists.add(key)
+        return true
+      })
+      const similarArtists = await enrichDiscoveryArtists(providerArtists.slice(0, 16))
       if (requestId !== discoveryRequestRef.current) return
-      const youtubeConnected = !youtube?.error
-      const lastfmConnected = !lastfm?.error
+      const youtubeConnected = !youtube?.error && (accountItems.length > 0 || youtube?.playlists?.length > 0)
+      const lastfmConnected = !lastfm?.error && (lastfmTracks.length > 0 || providerArtists.some(artist => artist.source === 'lastfm'))
       const next = {
         updatedAt: Date.now(),
         tracks,
         playlists: Array.isArray(youtube?.playlists) ? youtube.playlists : [],
-        similarArtists: Array.isArray(lastfm?.similarArtists) ? lastfm.similarArtists : [],
+        similarArtists,
         youtubeConnected,
         lastfmConnected,
       }
       setDiscovery(next)
-      if (!tracks.length && !youtubeConnected && !lastfmConnected) setDiscoveryError(lastfm?.error || youtube?.error || '')
+      if (!tracks.length && !similarArtists.length && !youtubeConnected && !lastfmConnected) setDiscoveryError(lastfm?.error || youtube?.error || '')
       return next
     } finally {
       if (requestId === discoveryRequestRef.current) setDiscoveryLoading(false)
@@ -413,7 +521,7 @@ function HomeContent({ user }) {
            onRefresh={() => loadDiscovery(true)}
            onPlay={(track) => playQueue([track], 0, { type: 'discovery', id: track.id, name: 'Discovery' })}
            onRadio={startRadio}
-           onArtistRadio={(artist) => startRadio({ artist: artist.name })}
+           onArtistRadio={(artist) => startRadio({ artist: artist.name, type: 'artist' })}
            onSave={() => saveList('discovery', `Discovery - ${today()}`, discovery?.tracks || [], 'Personal Discovery from Last.fm and YouTube Music')}
           onImportPlaylist={importYoutubePlaylist}
           importingPlaylist={importingPlaylist}
