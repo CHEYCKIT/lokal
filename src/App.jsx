@@ -37,7 +37,7 @@ import Toaster, { showToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
-import { isAudioEventForTrack } from './playerAudio'
+import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -1472,8 +1472,7 @@ export default function App() {
     fadeInEl.dataset.lokalTrackPending = String(nextTrack.id)
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
-    fadeInEl.src = encodedSrc
-    fadeInEl.load()
+    replaceAudioSource(fadeInEl, encodedSrc)
 
     // The current track stays the active one until the next one can play
     // (a stream can take several seconds to start). If it can't -- it fails,
@@ -1650,6 +1649,8 @@ export default function App() {
     el.dataset.fallbackPending = '1'
     el.pause()
     el.removeAttribute('src')
+    try { el.currentTime = 0 } catch {}
+    el.load()
     let cancelled = false
     const start = async () => {
       const generation = usePlayerStore.getState().playbackGeneration
@@ -1659,7 +1660,7 @@ export default function App() {
       if (cancelled || live.playbackGeneration !== generation || live.currentTrack?.id !== currentTrack.id || live.currentTrack?.file_path !== currentTrack.file_path) return
       if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable); return }
       el.dataset.fallbackPending = ''
-      el.src = src
+      replaceAudioSource(el, src)
       beginLastfmPlayback(live.currentTrack)
       if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
       if (api.isElectron) api.discordSetActivity(currentTrack, usePlayerStore.getState().isPlaying).catch(() => {})

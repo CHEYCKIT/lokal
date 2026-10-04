@@ -142,8 +142,14 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
   const artists = Array.isArray(data?.artists) ? data.artists : []
   const fresh = Array.isArray(data?.freshFinds) ? data.freshFinds : []
   const toggle = key => onSection?.(activeSection === key ? null : key)
-  return <div className="space-y-10">
-    <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Sparkles size={15} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Discovery · {source}</h2></div><p className="mt-1 text-sm text-muted">Recommendations come directly from your selected provider.</p></div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
+  return <div className="space-y-7">
+    <div data-discovery-header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-border/60 pb-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10"><Sparkles size={16} className="text-accent" /></div>
+        <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="text-sm font-medium text-white">Discovery</h2><span className="text-xs uppercase tracking-[0.18em] text-muted">{source}</span></div><p className="mt-0.5 truncate text-xs text-muted">Personalized recommendations from your selected provider.</p></div>
+      </div>
+      <div className="flex shrink-0 items-center gap-4"><span className="hidden text-[11px] uppercase tracking-[0.16em] text-subtle @md:inline">{data ? `${fresh.length + quick.length} picks` : 'Loading picks'}</span><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
+    </div>
     {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
     {!data && (loading
       ? <p className="py-10 text-center text-sm text-muted">Building your {source} recommendations…</p>
