@@ -5,6 +5,7 @@
  * assigned so that event cannot advance the queue a second time.
  */
 export function isAudioEventForTrack(target, currentTrackId) {
+  if (target?.dataset?.lokalTrackPending) return false
   const elementTrackId = target?.dataset?.lokalTrackId
   return !elementTrackId || (currentTrackId != null && elementTrackId === String(currentTrackId))
 }
