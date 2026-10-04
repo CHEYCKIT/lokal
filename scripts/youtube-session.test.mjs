@@ -40,11 +40,12 @@ function environment({ connected = false, authenticated = true } = {}) {
     electron: { session: { fromPartition: partition => { assert.equal(partition, sessions.PARTITION); return session } }, BrowserWindow },
     getSettings: () => settings, saveSettings: values => Object.assign(settings, values), provider, syncCookies: header => exports.push(header),
   })
-  return { manager, settings, session, requests, exports, windows, rotate: () => { cookieValue = 'session-two' } }
+  return { manager, settings, session, provider, requests, exports, windows, rotate: () => { cookieValue = 'session-two' } }
 }
 
 test('session requests use fresh signed authorization, matching UA, selected-account context and Chromium cookie rotation', async () => {
   const env = environment({ connected: true })
+  env.settings.yt_account_context = JSON.stringify({ 'x-goog-authuser': '2', 'x-goog-pageid': 'saved-brand', 'x-youtube-client-version': '1.saved' })
   const auth = await env.manager.credentials()
   assert.ok(!env.session.getUserAgent().includes('Electron'))
   assert.ok(!env.session.getUserAgent().includes('lokal'))
@@ -55,6 +56,9 @@ test('session requests use fresh signed authorization, matching UA, selected-acc
   assert.equal(env.requests[0].init.credentials, 'include')
   assert.equal(env.requests[0].init.headers.Cookie, undefined)
   assert.equal(env.requests[0].init.headers['User-Agent'], env.session.getUserAgent())
+  assert.equal(env.requests[0].init.headers['X-Goog-AuthUser'], '2', 'the first request after restart must use the saved verified context')
+  assert.equal(env.requests[0].init.headers['X-Goog-PageId'], 'saved-brand')
+  assert.equal(env.requests[0].init.headers['X-YouTube-Client-Version'], '1.saved')
   await assert.rejects(auth.fetchImpl('https://example.com/'), /Unexpected.*origin/)
 })
 
@@ -68,13 +72,15 @@ test('login uses a plain isolated window and succeeds only after authenticated A
   assert.equal(win.options.webPreferences.session, env.session)
   assert.ok(win.url.startsWith('https://accounts.google.com/ServiceLogin'))
   env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '2', 'X-Goog-PageId': 'brand', 'X-YouTube-Client-Version': '1.browser.client', Cookie: 'do-not-store', Authorization: 'do-not-store' } }, () => {})
-  assert.ok(!env.settings.yt_account_context.includes('do-not-store'))
+  assert.equal(env.settings.yt_account_context, undefined, 'captured headers stay staged until verification succeeds')
   win.url = 'https://music.youtube.com/'
   win.webContents.emit('did-finish-load')
   const result = await login
   assert.equal(result.authenticated, true)
   assert.equal(env.settings.yt_account_session, '1')
   assert.equal(env.settings.yt_cookie_browser, 'session')
+  assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '2', 'x-goog-pageid': 'brand', 'x-youtube-client-version': '1.browser.client' })
+  assert.ok(!env.settings.yt_account_context.includes('do-not-store'))
   assert.equal(win.destroyed, true)
   assert.equal(env.requests[0].init.headers['X-Goog-AuthUser'], '2')
   assert.equal(JSON.parse(env.requests[0].init.body).context.client.clientVersion, '1.browser.client')
@@ -115,11 +121,12 @@ test('session API requests preserve bootstrapped context before the website capt
   const login = env.manager.signIn()
   env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '2', 'X-Goog-PageId': 'old-brand' } }, () => {})
   env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '0', 'X-YouTube-Client-Version': '1.personal' } }, () => {})
-  const personal = youtube.accountHeaders((await env.manager.credentials({ forceSession: true })).cookies)
+  env.windows[0].url = 'https://music.youtube.com/'
+  env.windows[0].webContents.emit('did-finish-load')
+  await login
+  const personal = youtube.accountHeaders((await env.manager.credentials()).cookies)
   assert.equal(personal['X-Goog-AuthUser'], '0')
   assert.equal(personal['X-Goog-PageId'], undefined, 'a personal account must not inherit the previous brand identity')
-  env.windows[0].close()
-  await login
   await assert.rejects(auth.fetchImpl('https://music.youtube.com/'), /session changed/)
 })
 
@@ -152,4 +159,67 @@ test('main-frame failures report an error and the default retry restores the rea
   assert.doesNotMatch(env.session.getUserAgent(), /Electron|lokal|Firefox/)
   env.windows[1].close()
   assert.equal((await retry).cancelled, true)
+})
+
+test('cancelled or failed account switches preserve the verified context and discard the candidate', async () => {
+  for (const failure of ['cancel', 'verification', 'load']) {
+    const env = environment({ connected: true, authenticated: false })
+    const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand', 'x-youtube-client-version': '1.verified' }
+    env.settings.yt_account_context = JSON.stringify(active)
+    const login = env.manager.signIn()
+    const win = env.windows[0]
+    env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'unverified-brand' } }, () => {})
+    assert.deepEqual(JSON.parse(env.settings.yt_account_context), active, 'capturing candidate headers must not replace persisted authority')
+    const during = youtube.accountHeaders((await env.manager.credentials()).cookies)
+    assert.equal(during['X-Goog-AuthUser'], '2')
+    assert.equal(during['X-Goog-PageId'], 'verified-brand')
+    if (failure === 'verification') {
+      win.url = 'https://music.youtube.com/'
+      win.webContents.emit('did-finish-load')
+      await tick()
+      assert.equal(env.requests.at(-1).init.headers['X-Goog-AuthUser'], '3', 'verification uses the staged candidate, not the active account')
+      assert.equal(win.destroyed, false)
+    }
+    if (failure === 'load') win.webContents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', win.url, true)
+    else win.close()
+    const result = await login
+    assert.equal(result.authenticated, false)
+    assert.equal(env.settings.yt_account_session, '1')
+    assert.deepEqual(JSON.parse(env.settings.yt_account_context), active)
+    const after = youtube.accountHeaders((await env.manager.credentials()).cookies)
+    assert.equal(after['X-Goog-AuthUser'], '2')
+    assert.equal(after['X-Goog-PageId'], 'verified-brand')
+  }
+})
+
+test('a context change during verification requires verification of the new snapshot before promotion', async () => {
+  const env = environment({ connected: true })
+  const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand' }
+  env.settings.yt_account_context = JSON.stringify(active)
+  const releases = []
+  env.provider.fetchAccountData = async auth => {
+    await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: JSON.stringify({ context: { client: {} } }) })
+    await new Promise(resolve => releases.push(resolve))
+    return { authenticated: true }
+  }
+  const login = env.manager.signIn()
+  const win = env.windows[0]
+  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'candidate-brand' } }, () => {})
+  win.url = 'https://music.youtube.com/'
+  win.webContents.emit('did-finish-load')
+  await tick()
+  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '0', 'X-YouTube-Client-Version': '1.personal' } }, () => {})
+  releases[0]()
+  await tick()
+  assert.equal(win.destroyed, false, 'the first verified response cannot authorize a different captured context')
+  assert.deepEqual(JSON.parse(env.settings.yt_account_context), active)
+  assert.equal(env.requests.at(-1).init.headers['X-Goog-AuthUser'], '0')
+  const oldHandle = await env.manager.credentials()
+  releases[1]()
+  assert.equal((await login).authenticated, true)
+  assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '0', 'x-youtube-client-version': '1.personal' })
+  const personal = youtube.accountHeaders((await env.manager.credentials()).cookies)
+  assert.equal(personal['X-Goog-AuthUser'], '0')
+  assert.equal(personal['X-Goog-PageId'], undefined)
+  await assert.rejects(oldHandle.fetchImpl('https://music.youtube.com/'), /session changed/, 'handles bound to the previous active context cannot survive promotion')
 })

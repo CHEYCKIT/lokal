@@ -15,6 +15,8 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
   let loginJob
   let revision = 0
   let requestContext = {}
+  let pendingRequestContext = null
+  let verifyLogin
   let defaultUserAgent
   const getSession = () => {
     if (ses) return ses
@@ -32,23 +34,28 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     ses.webRequest.onBeforeSendHeaders({ urls: [`${MUSIC}/youtubei/*`] }, (details, callback) => {
       // Learn the selected account/client from the actual website request.
       // Never copy Cookie or Authorization to renderer-visible settings.
+      let changed = false
       if (window && details.webContentsId === window.webContents.id) {
         const headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([key, value]) => [key.toLowerCase(), value]))
         const next = {}
         for (const key of ['x-goog-authuser', 'x-goog-pageid', 'x-goog-visitor-id', 'x-youtube-client-version']) if (typeof headers[key] === 'string') next[key] = headers[key]
-        requestContext = next
-        saveSettings({ yt_account_context: JSON.stringify(next) })
+        if (JSON.stringify(next) !== JSON.stringify(pendingRequestContext)) {
+          pendingRequestContext = next
+          changed = true
+        }
       }
       callback({ requestHeaders: details.requestHeaders })
+      if (changed) verifyLogin?.()
     })
     return ses
   }
   const cookieHeader = async () => (await getSession().cookies.get({ url: MUSIC })).map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
-  const credentials = async ({ forceSession = false } = {}) => {
+  const credentials = async ({ forceSession = false, context } = {}) => {
     if (!forceSession && getSettings().yt_account_session !== '1') return { cookies: '', fetchImpl: fetch }
     const token = revision
     const currentSession = getSession()
-    const headersFor = cookies => JSON.stringify({ ...requestContext, 'user-agent': currentSession.getUserAgent(), Cookie: cookies })
+    const accountContext = context ?? requestContext
+    const headersFor = cookies => JSON.stringify({ ...accountContext, 'user-agent': currentSession.getUserAgent(), Cookie: cookies })
     const cookies = await cookieHeader()
     if (token !== revision) throw new Error('YouTube Music session changed. Try again.')
     syncCookies(cookies)
@@ -86,6 +93,7 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     const currentSession = getSession()
     currentSession.setUserAgent(compatibility ? 'Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0' : defaultUserAgent)
     const token = ++revision
+    pendingRequestContext = {}
     loginJob = new Promise(resolve => {
       const win = window = new runtime.BrowserWindow({
         width: 980, height: 760, minWidth: 640, minHeight: 500, title: 'Sign in to YouTube Music', backgroundColor: '#111111', autoHideMenuBar: true,
@@ -97,6 +105,9 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
       const finish = result => {
         if (finished) return
         finished = true
+        revision++
+        pendingRequestContext = null
+        verifyLogin = null
         window = null
         loginJob = null
         if (!win.isDestroyed()) win.close()
@@ -106,19 +117,28 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
         if (finished || verifying || token !== revision || !win.webContents.getURL().startsWith(`${MUSIC}/`)) return
         verifying = true
         try {
-          const auth = await credentials({ forceSession: true })
-          if (!provider.accountHeaders(auth.cookies)) return
-          provider.clearAccountCache()
-          const result = await provider.fetchAccountData({ ...auth, force: true })
-          if (finished || token !== revision || !result.authenticated || result.error) return
-          await currentSession.cookies.flushStore()
-          const freshCookies = await cookieHeader()
-          if (finished || token !== revision) return
-          saveSettings({ yt_account_session: '1', yt_account_revision: String(Date.now()), yt_cookies: '1', yt_cookie_browser: 'session' })
-          syncCookies(freshCookies)
-          finish(result)
+          while (!finished && token === revision) {
+            // Promote only the exact context snapshot these requests verified.
+            const context = pendingRequestContext
+            const auth = await credentials({ forceSession: true, context })
+            if (!provider.accountHeaders(auth.cookies)) return
+            provider.clearAccountCache()
+            const result = await provider.fetchAccountData({ ...auth, force: true })
+            if (finished || token !== revision) return
+            if (context !== pendingRequestContext) continue
+            if (!result.authenticated || result.error) return
+            await currentSession.cookies.flushStore()
+            const freshCookies = await cookieHeader()
+            if (finished || token !== revision) return
+            if (context !== pendingRequestContext) continue
+            requestContext = context
+            saveSettings({ yt_account_context: JSON.stringify(context), yt_account_session: '1', yt_account_revision: String(Date.now()), yt_cookies: '1', yt_cookie_browser: 'session' })
+            syncCookies(freshCookies)
+            finish(result)
+          }
         } finally { verifying = false }
       }
+      verifyLogin = () => { check().catch(() => {}) }
       win.webContents.on('did-finish-load', () => { check().catch(() => {}) })
       win.webContents.on('did-navigate-in-page', () => { check().catch(() => {}) })
       win.webContents.on('did-fail-load', (_, code, description, url, isMainFrame) => {
