@@ -37,6 +37,7 @@ import Toaster, { showToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
+import { isAudioEventForTrack } from './playerAudio'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -473,7 +474,8 @@ export default function App() {
   const isEventFromActive = useCallback((e) => {
     const activeSide = usePlayerStore.getState().activeAudioElement
     const isPrimary = e.target === audioRef.current
-    return (activeSide === 'primary' && isPrimary) || (activeSide === 'cf' && !isPrimary)
+    const active = (activeSide === 'primary' && isPrimary) || (activeSide === 'cf' && !isPrimary)
+    return active && isAudioEventForTrack(e.target, usePlayerStore.getState().currentTrack?.id)
   }, [])
 
   const fetchChangelog = useCallback(async () => {
@@ -1464,6 +1466,10 @@ export default function App() {
     const encodedSrc = audioSrcFor(nextTrack)
     if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
 
+    // Keep the old source identity until the replacement reaches canplay.
+    // An ended event already queued by the old source must not be relabeled as
+    // the next track while the media element is being replaced.
+    fadeInEl.dataset.lokalTrackPending = String(nextTrack.id)
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
@@ -1505,6 +1511,8 @@ export default function App() {
       if (outcome !== 'ready') {
         cancelCrossfade()
         try { fadeInEl.removeAttribute('src'); fadeInEl.load() } catch {}
+        fadeInEl.dataset.lokalTrackPending = ''
+        fadeInEl.dataset.lokalTrackId = ''
         if (outcome === 'ended') {
           // Its "ended" was ignored while the crossfade was pending: do what
           // it would have done (repeat one plays the track again).
@@ -1522,6 +1530,9 @@ export default function App() {
       }
 
       flushTime(currentTrackRef.current?.id)
+
+      fadeInEl.dataset.lokalTrackId = String(nextTrack.id)
+      fadeInEl.dataset.lokalTrackPending = ''
 
       const nextSide = isPrimaryActive ? 'cf' : 'primary'
       setActiveAudioElement(nextSide)
@@ -1579,6 +1590,8 @@ export default function App() {
         try { fadeOutEl.pause() } catch {}
         try { fadeOutEl.src = '' } catch {}
         try { fadeOutEl.currentTime = 0 } catch {}
+        fadeOutEl.dataset.lokalTrackPending = ''
+        fadeOutEl.dataset.lokalTrackId = ''
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, cfDuration * 1000)
     })
@@ -1595,6 +1608,8 @@ export default function App() {
 
     if (cfAudioRef.current) { 
       try { 
+        cfAudioRef.current.dataset.lokalTrackPending = ''
+        cfAudioRef.current.dataset.lokalTrackId = ''
         if (cfGainNodeRef.current) cfGainNodeRef.current.gain.value = 0
         cfAudioRef.current.pause(); 
         cfAudioRef.current.src = '' 
@@ -1618,12 +1633,18 @@ export default function App() {
     if (!src) {
       audioRef.current.pause()
       audioRef.current.src = ''
+      audioRef.current.dataset.lokalTrackPending = ''
+      audioRef.current.dataset.lokalTrackId = ''
       setIsPlaying(false)
       return
     }
     setStreamError(null)
     prepareNextStream()
     const el = audioRef.current
+    // Do not relabel the element until its new source is established. This
+    // leaves any queued event from the previous source unable to match the
+    // new current track.
+    el.dataset.lokalTrackPending = String(currentTrack.id)
     el.dataset.fallbackFor = ''
     el.dataset.fallbackSrc = ''
     el.dataset.fallbackPending = '1'
@@ -1644,7 +1665,7 @@ export default function App() {
       if (api.isElectron) api.discordSetActivity(currentTrack, usePlayerStore.getState().isPlaying).catch(() => {})
     }
     start()
-    return () => { cancelled = true; el.dataset.fallbackPending = '' }
+    return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
   }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback])
 
   useEffect(() => {
@@ -1739,7 +1760,16 @@ export default function App() {
     if (isEventFromActive(e)) setDuration(e.target.duration)
   }, [isEventFromActive])
 
+  const handleAudioCanPlay = useCallback((e) => {
+    const el = e.currentTarget
+    const pending = el.dataset.lokalTrackPending
+    if (!pending) return
+    el.dataset.lokalTrackId = pending
+    el.dataset.lokalTrackPending = ''
+  }, [])
+
   const handlePrimaryEnded = useCallback((e) => {
+    if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
     if (!isEventFromActive(e) || isCrossfadingRef.current) return
     
     stopTimer()
@@ -1751,9 +1781,10 @@ export default function App() {
       audioRef.current.play().catch(() => {}) 
     }
     else autoNext()
-  }, [isEventFromActive, repeat, beginLastfmPlayback])
+  }, [isEventFromActive, repeat, beginLastfmPlayback, autoNext, stopTimer, flushTime])
 
   const handleCfEnded = useCallback((e) => {
+    if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
     if (!isEventFromActive(e) || isCrossfadingRef.current) return
     
     stopTimer()
@@ -1765,7 +1796,7 @@ export default function App() {
       cfAudioRef.current.play().catch(() => {}) 
     }
     else autoNext()
-  }, [isEventFromActive, repeat, beginLastfmPlayback])
+  }, [isEventFromActive, repeat, beginLastfmPlayback, autoNext, stopTimer, flushTime])
 
   const handleStartDownload = async () => {
     setUpdateState(prev => ({ ...prev, status: 'downloading' }));
@@ -2144,6 +2175,7 @@ export default function App() {
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
+          onCanPlay={handleAudioCanPlay}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
@@ -2154,6 +2186,7 @@ export default function App() {
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}
+          onCanPlay={handleAudioCanPlay}
           onEnded={handleCfEnded}
           onError={handleAudioError}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}

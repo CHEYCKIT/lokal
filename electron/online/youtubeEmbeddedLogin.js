@@ -28,7 +28,7 @@ function loginURL(value) {
 }
 
 /** Navigate Music with native Electron identity; preserve the whole verified profile. */
-async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, signal, onChange = () => {}, onClosed = () => {}, onError = () => {}, onProgress = () => {} } = {}) {
+async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, signal, onChange = () => {}, onClosed = () => {}, onError = () => {}, onProgress = () => {}, cookiePollMs = 1000 } = {}) {
   if (signal?.aborted) throw new Error('Sign-in cancelled.')
   const runtime = electron || require('electron')
   const session = candidateSession || runtime.session.fromPartition(`persist:lokal-ytmusic-${crypto.randomUUID()}`)
@@ -43,6 +43,7 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
   window.setMenu(null)
   const contents = window.webContents
   let closed = false, loaded = false, context = {}
+  let cookiePollTimer
   const changed = () => { if (!closed) onChange() }
   const cookieValues = new Map()
   const cookieKey = cookie => JSON.stringify([cookie.domain, cookie.path, cookie.name])
@@ -63,6 +64,7 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
   const cleanup = async (preserveSession = false) => {
     signal?.removeEventListener('abort', abort)
     runtime.app.removeListener('before-quit', abort)
+    clearInterval(cookiePollTimer)
     session.cookies.removeListener('changed', cookieChanged)
     session.webRequest.onBeforeSendHeaders(null)
     if (!preserveSession) await session.clearStorageData()
@@ -92,6 +94,16 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
     onClosed()
   })
   session.cookies.on('changed', cookieChanged)
+  let polledCookies = '', pollInitialized = false
+  const pollCookies = async () => {
+    if (closed) return
+    const cookies = (await session.cookies.get({ url: MUSIC })).filter(youtubeCookie)
+    const next = cookies.map(cookie => `${cookie.domain}|${cookie.path}|${cookie.name}|${cookie.value}|${cookie.sameSite}`).sort().join('\n')
+    if (pollInitialized && next !== polledCookies) changed()
+    polledCookies = next
+    pollInitialized = true
+  }
+  cookiePollTimer = setInterval(() => { pollCookies().catch(() => {}) }, cookiePollMs)
   session.webRequest.onBeforeSendHeaders({ urls: [`${MUSIC}/youtubei/*`] }, (details, callback) => {
     if (details.webContentsId === contents.id) {
       const next = accountContext(details.requestHeaders)
@@ -154,6 +166,8 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
         }
         const scoped = (await session.cookies.get({ url: MUSIC })).filter(youtubeCookie)
         for (const cookie of scoped) cookieValues.set(cookieKey(cookie), cookieValue(cookie))
+        polledCookies = scoped.map(cookie => `${cookie.domain}|${cookie.path}|${cookie.name}|${cookie.value}|${cookie.sameSite}`).sort().join('\n')
+        pollInitialized = true
         const cookies = scoped.map(cookie => ({
           ...cookie,
           expires: cookie.expirationDate,
