@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isAudioEventForTrack } from '../src/playerAudio.js'
+import { isAudioEventForTrack, replaceAudioSource } from '../src/playerAudio.js'
+
+test('replacing an audio source clears the old resource before loading the next one', () => {
+  const calls = []
+  const element = {
+    currentTime: 3,
+    pause: () => calls.push('pause'),
+    removeAttribute: name => calls.push(`remove:${name}`),
+    load: () => calls.push('load'),
+    src: '',
+  }
+  replaceAudioSource(element, 'next-source')
+  assert.deepEqual(calls, ['pause', 'remove:src', 'load', 'load'])
+  assert.equal(element.src, 'next-source')
+  assert.equal(element.currentTime, 0)
+})
 
 test('audio events from the previous track are ignored after a transition', () => {
   assert.equal(isAudioEventForTrack({ dataset: { lokalTrackId: 'first' } }, 'second'), false)
