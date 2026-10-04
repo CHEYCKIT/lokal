@@ -141,7 +141,7 @@ test('login navigation blocks other origins and protocols and never creates unma
 })
 
 test('expiry-only cookie renewals do not loop verification, but cookie value changes and expiration do', async () => {
-  const env = environment(), login = await env.open(), session = login.session
+  const env = environment(), login = await env.open({ cookiePollMs: 1 }), session = login.session
   const cookie = { domain: '.youtube.com', path: '/', name: 'SAPISID', value: 'account', secure: true, httpOnly: true, sameSite: 'no_restriction', expirationDate: 2000000000 }
   session.cookies.values = [cookie]
   await login.read()
@@ -155,6 +155,20 @@ test('expiry-only cookie renewals do not loop verification, but cookie value cha
   session.cookies.emit('changed', {}, cookie, 'expired', true)
   assert.equal(env.changes(), before + 2)
   await login.close()
+})
+
+test('cookie polling detects an authentication change when Chromium emits no cookie event', async () => {
+  const env = environment(), login = await env.open({ cookiePollMs: 1 }), session = login.session
+  try {
+    await login.read()
+    const before = env.changes()
+    session.cookies.values = [{ domain: '.youtube.com', path: '/', name: 'SAPISID', value: 'new-login', sameSite: 'no_restriction' }]
+    await tick()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.ok(env.changes() > before)
+  } finally {
+    await login.close()
+  }
 })
 
 test('regional premium redirects retain the Google to YouTube signin to Music handoff', async () => {

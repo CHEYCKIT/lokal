@@ -37,6 +37,7 @@ import Toaster, { showToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
+import { isAudioEventForTrack } from './playerAudio'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -302,9 +303,10 @@ export default function App() {
   // Web mode needs nothing here: the server's stream route does the same.
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
+    const failedTrack = usePlayerStore.getState().currentTrack
+    if (!isAudioEventForTrack(el, failedTrack?.id)) return
     const code = el?.error?.code
     // A failed stream advances through the configured playback providers.
-    const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
     if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
       await recoverOnlinePlayback(el, failedTrack, failedRef)
@@ -473,7 +475,8 @@ export default function App() {
   const isEventFromActive = useCallback((e) => {
     const activeSide = usePlayerStore.getState().activeAudioElement
     const isPrimary = e.target === audioRef.current
-    return (activeSide === 'primary' && isPrimary) || (activeSide === 'cf' && !isPrimary)
+    const active = (activeSide === 'primary' && isPrimary) || (activeSide === 'cf' && !isPrimary)
+    return active && isAudioEventForTrack(e.target, usePlayerStore.getState().currentTrack?.id)
   }, [])
 
   const fetchChangelog = useCallback(async () => {
@@ -1464,6 +1467,7 @@ export default function App() {
     const encodedSrc = audioSrcFor(nextTrack)
     if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
 
+    fadeInEl.dataset.lokalTrackId = String(nextTrack.id)
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
     fadeInEl.src = encodedSrc
@@ -1579,6 +1583,7 @@ export default function App() {
         try { fadeOutEl.pause() } catch {}
         try { fadeOutEl.src = '' } catch {}
         try { fadeOutEl.currentTime = 0 } catch {}
+        fadeOutEl.dataset.lokalTrackId = ''
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, cfDuration * 1000)
     })
@@ -1595,6 +1600,7 @@ export default function App() {
 
     if (cfAudioRef.current) { 
       try { 
+        cfAudioRef.current.dataset.lokalTrackId = ''
         if (cfGainNodeRef.current) cfGainNodeRef.current.gain.value = 0
         cfAudioRef.current.pause(); 
         cfAudioRef.current.src = '' 
@@ -1618,12 +1624,14 @@ export default function App() {
     if (!src) {
       audioRef.current.pause()
       audioRef.current.src = ''
+      audioRef.current.dataset.lokalTrackId = ''
       setIsPlaying(false)
       return
     }
     setStreamError(null)
     prepareNextStream()
     const el = audioRef.current
+    el.dataset.lokalTrackId = String(currentTrack.id)
     el.dataset.fallbackFor = ''
     el.dataset.fallbackSrc = ''
     el.dataset.fallbackPending = '1'
@@ -1751,7 +1759,7 @@ export default function App() {
       audioRef.current.play().catch(() => {}) 
     }
     else autoNext()
-  }, [isEventFromActive, repeat, beginLastfmPlayback])
+  }, [isEventFromActive, repeat, beginLastfmPlayback, autoNext, stopTimer, flushTime])
 
   const handleCfEnded = useCallback((e) => {
     if (!isEventFromActive(e) || isCrossfadingRef.current) return
@@ -1765,7 +1773,7 @@ export default function App() {
       cfAudioRef.current.play().catch(() => {}) 
     }
     else autoNext()
-  }, [isEventFromActive, repeat, beginLastfmPlayback])
+  }, [isEventFromActive, repeat, beginLastfmPlayback, autoNext, stopTimer, flushTime])
 
   const handleStartDownload = async () => {
     setUpdateState(prev => ({ ...prev, status: 'downloading' }));
