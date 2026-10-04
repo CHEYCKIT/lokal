@@ -1,6 +1,5 @@
 const fs = require('fs')
 const path = require('path')
-const net = require('net')
 const { connectBrowser } = require('./browserCdp')
 
 const MUSIC = 'https://music.youtube.com'
@@ -51,15 +50,7 @@ async function browserExecutable(userData, onProgress = () => {}, tools, app) {
   return browserInstallJob
 }
 
-async function freePort() {
-  const server = net.createServer()
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
-  const port = server.address().port
-  await new Promise(resolve => server.close(resolve))
-  return port
-}
-
-/** Launch a genuine, non-automated browser window; passwords stay in that browser. */
+/** Launch an isolated browser window; passwords stay in that browser. */
 async function openYouTubeBrowser({ electron, signal, onChange = () => {}, onClosed = () => {}, onProgress = () => {}, tools, executablePath, extraArgs = [] } = {}) {
   const runtime = electron || require('electron')
   const userData = runtime.app.getPath('userData')
@@ -86,17 +77,14 @@ async function openYouTubeBrowser({ electron, signal, onChange = () => {}, onClo
   }
   const abort = () => { close().catch(() => {}) }
   try {
-    const port = await freePort()
     if (signal?.aborted) throw new Error('Sign-in cancelled.')
-    // A nonzero port and absence of --enable-automation/--headless preserve a
-    // normal browser identity. The app owns this temporary profile, never the user's.
-    browser = tools.launch({ executablePath, args: [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=980,760', ...extraArgs, '--app=about:blank'], env: { ...process.env }, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
+    // CDP stays on inherited child-process pipes, never a shared local listener.
+    // The app owns this temporary profile, never the user's.
+    browser = tools.launch({ executablePath, pipe: true, args: [`--user-data-dir=${profile}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=980,760', ...extraArgs, '--app=about:blank'], env: { ...process.env }, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
     signal?.addEventListener('abort', abort, { once: true })
     runtime.app.once('before-quit', abort)
     browser.hasClosed().then(() => { if (!closed && ready) { onClosed(); close().catch(() => {}) } }).catch(() => {})
-    const endpoint = await browser.waitForLineOutput(tools.CDP_WEBSOCKET_ENDPOINT_REGEX, 15000)
-    if (signal?.aborted) throw new Error('Sign-in cancelled.')
-    cdp = await connectBrowser(endpoint)
+    cdp = await connectBrowser(browser.nodeProcess, { timeoutMs: 15000 })
     const version = await cdp.send('Browser.getVersion')
     const targets = await cdp.send('Target.getTargets')
     targetId = targets.targetInfos.find(target => target.type === 'page')?.targetId

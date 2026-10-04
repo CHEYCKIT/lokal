@@ -66,6 +66,21 @@ test('a native artist song ID avoids a redundant search and preparation failures
   assert.match(playbackFallbackMessage(failures[0]), /yt-dlp is not installed/)
 })
 
+test('featured credits cannot conceal remix, live, or cover versions in matching', () => {
+  const target = { title: 'FE!N', artist: 'Travis Scott' }
+  for (const suffix of ['(feat. Playboi Carti - Remix)', '[ft. Playboi Carti - LIVE]', '(featuring Playboi Carti - Cover)', 'feat. Playboi Carti - Remix', 'ft. Playboi Carti (Live)', 'featuring Playboi Carti - Cover']) {
+    const result = { ...target, title: `FE!N ${suffix}` }
+    assert.equal(recommendationMatch(target, [result]), null, suffix)
+    assert.equal(recommendationMatch(target, [{ ...result, title: `Travis Scott - ${result.title}` }]), null, `artist-prefixed ${suffix}`)
+    assert.equal(recommendationMatch(result, [target]), null, 'a versioned candidate must not collapse to the original either')
+    assert.equal(recommendationMatch(result, [result]), result, 'an exact versioned title remains eligible')
+  }
+  for (const suffix of ['(feat. Playboi Carti)', '[ft. Playboi Carti]', 'featuring Playboi Carti']) {
+    const result = { ...target, title: `FE!N ${suffix}` }
+    assert.equal(recommendationMatch(target, [result]), result)
+  }
+})
+
 test('provider error responses are not misreported as missing artist songs', async () => {
   const failures = []
   const { client } = clientMock({ onlineSearch: async () => ({ error: 'Search rejected (401)', results: [] }) })

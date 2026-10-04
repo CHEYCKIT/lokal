@@ -153,13 +153,13 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
     {data && !quick.length && !history.length && !albums.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
     {feature && <section aria-label="For you" className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">
       <div className="flex flex-col gap-6 @lg:flex-row">
-        <div data-discovery-hero-track className="flex min-w-0 flex-1 flex-col gap-5 @sm:flex-row" onContextMenu={event => onTrackMenu?.(event, feature)}>
+        <div data-discovery-hero-track className="flex min-w-0 flex-1 flex-col gap-5 @sm:flex-row" onContextMenu={event => onTrackMenu?.(event, feature, featured)}>
           <div className="h-40 w-40 shrink-0 overflow-hidden rounded-xl bg-card @xl:h-52 @xl:w-52"><DiscoveryImage item={feature} src={trackArtURL(feature)} className="h-full w-full object-cover" /></div>
           <div className="min-w-0 flex-1 self-center"><p className="mb-2 text-[11px] font-display uppercase tracking-[0.2em] text-muted">For you · {source}</p><h2 className="break-words text-2xl font-medium leading-tight text-white @xl:text-3xl">{feature.title}</h2><p className="mt-3 text-sm text-muted @xl:text-lg">{feature.artist}</p>
             <div className="mt-5 flex items-center gap-4"><button type="button" aria-label={`Play ${feature.title}`} onClick={() => onPlay(feature, featured)} className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm text-black"><Play size={14} fill="currentColor" />Play</button><button type="button" onClick={() => onRadio(feature)} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-white"><Radio size={15} />Radio</button></div>
           </div>
         </div>
-        {featured.length > 1 && <div className="min-w-0 space-y-2 border-border @lg:w-64 @lg:shrink-0 @lg:border-l @lg:pl-5"><p className="mb-3 text-[11px] font-display uppercase tracking-[0.2em] text-muted">Up next for you</p>{featured.slice(1).map(track => <div key={songKey(track)} data-discovery-hero-track><DiscoveryTrack track={track} onPlay={track => onPlay(track, featured)} onRadio={onRadio} onContextMenu={onTrackMenu} /></div>)}</div>}
+        {featured.length > 1 && <div className="min-w-0 space-y-2 border-border @lg:w-64 @lg:shrink-0 @lg:border-l @lg:pl-5"><p className="mb-3 text-[11px] font-display uppercase tracking-[0.2em] text-muted">Up next for you</p>{featured.slice(1).map(track => <div key={songKey(track)} data-discovery-hero-track><DiscoveryTrack track={track} onPlay={track => onPlay(track, featured)} onRadio={onRadio} onContextMenu={(event, track) => onTrackMenu?.(event, track, featured)} /></div>)}</div>}
       </div>
     </section>}
     {quick.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow="Jump back in" title="Quick Picks" count={quick.length} subtitle={selectedSource === 'youtube' ? 'Picks from your YouTube Music account.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle('quick')} expanded={activeSection === 'quick'} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'quick' ? quick : quick.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
@@ -247,13 +247,14 @@ function HomeContent({ user }) {
     const toast = showLoadingToast(`Finding “${track.title}”…`)
     const account = accountRef.current
     const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
+    let detail = ''
     try {
       const started = await playRecommendationPool(pool, {
         selected: track, context: { type: 'discovery', name: context }, isCurrent,
         onProgress: message => { if (isCurrent()) toast.update(message) },
-        onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)),
+        onProviderFailure: failure => { if (failure.detail) detail = failure.detail; toast.update(playbackFallbackMessage(failure)) },
       })
-      toast.close(isCurrent() && started === false ? `No matching playback source was found for ${track.title}.` : '')
+      toast.close(isCurrent() && started === false ? detail ? `Could not play “${track.title}”. ${detail}` : `No matching playback source was found for ${track.title}.` : '')
     } catch { toast.close(isCurrent() ? `Could not load “${track.title}”.` : '') }
     finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
   }
@@ -346,8 +347,8 @@ function HomeContent({ user }) {
     if (resolved) action([resolved])
     else showToast(`No matching playback source was found for ${track.title}.`)
   }
-  const openTrackMenu = (event, track) => menu.open(event, [
-    { label: 'Play', icon: Play, onSelect: () => playRecommendation(track) },
+  const openTrackMenu = (event, track, featuredPool) => menu.open(event, [
+    { label: 'Play', icon: Play, onSelect: () => playRecommendation(track, featuredPool ? 'For You' : 'recommendations', featuredPool || [track]) },
     { label: 'Play next', icon: Clock, onSelect: () => withRecommendation(track, playNextMany) },
     { label: 'Add to queue', icon: ListEnd, onSelect: () => withRecommendation(track, addToQueueMany) },
     { label: 'Add to playlist…', icon: Plus, onSelect: () => withRecommendation(track, addToPlaylistMany) },

@@ -26,10 +26,11 @@ export function uniqueSongs(items) {
   })
 }
 
+const stripFeatured = suffix => /\b(?:remix|live|cover)\b/i.test(recommendationKey(suffix)) ? suffix : ''
 const titleKey = title => recommendationKey(String(title || '')
   .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio)[)\]]/gi, '')
-  .replace(/\s*[([](?:feat\.?|ft\.?|featuring)\s+[^)\]]+[)\]]/gi, '')
-  .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i, ''))
+  .replace(/\s*[([](?:feat\.?|ft\.?|featuring)\s+[^)\]]+[)\]]/gi, stripFeatured)
+  .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i, stripFeatured))
 
 export function recommendationMatch(candidate, results) {
   const title = titleKey(candidate?.title)
