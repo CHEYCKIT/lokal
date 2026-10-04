@@ -6,6 +6,20 @@ const { openEmbeddedYouTubeLogin } = require('./youtubeEmbeddedLogin')
 const PARTITION = 'persist:lokal-ytmusic'
 const MUSIC = 'https://music.youtube.com'
 
+// Cookies that name the signed-in account. Google rotates the others (SIDCC,
+// __Secure-*PSIDCC, __Secure-*PSIDTS, YSC…) on ordinary responses, including
+// the ones to Lokal's own verification requests.
+const IDENTITY_COOKIES = new Set(['SID', '__Secure-1PSID', '__Secure-3PSID', 'SAPISID', '__Secure-1PAPISID', '__Secure-3PAPISID', 'LOGIN_INFO'])
+
+/** Which account (and channel) a sign-in snapshot is for, ignoring rotating cookies. */
+function accountIdentity(snapshot = {}) {
+  let music = false
+  try { music = new URL(snapshot.url).origin === MUSIC } catch {}
+  const context = accountContext(snapshot.context)
+  const cookies = (snapshot.cookies || []).filter(cookie => youtubeCookie(cookie) && IDENTITY_COOKIES.has(cookie.name)).map(cookie => `${cookie.name}=${cookie.value}`).sort()
+  return JSON.stringify([music, context['x-goog-authuser'] || '0', context['x-goog-pageid'] || '', cookies])
+}
+
 /** Preserve cookie scope/lifetime while transferring only this app's Music session. */
 function electronCookie(cookie) {
   const host = cookie.domain.replace(/^\./, '')
@@ -99,6 +113,22 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     job.promise = new Promise(resolve => { job.resolve = resolve })
     loginJob = job
     const current = () => !job.finished && job.token === revision && loginJob === job
+    // Changes during a check (cookie rotation from the check's own requests,
+    // page requests, navigations) only matter when the account itself changed:
+    // retrying on every change never finishes, since each retry rotates cookies.
+    // Native windows share the candidate jar, so that is where the account
+    // lives; an external browser's snapshot carries its own cookies.
+    const identityOf = async snapshot => accountIdentity(job.browser.session === job.session
+      ? { ...snapshot, cookies: await job.session.cookies.get({ url: MUSIC }) }
+      : snapshot)
+    const sameAccount = async identity => {
+      if (!job.dirty) return true
+      const now = await job.browser.read()
+      if (!current()) return false
+      if (await identityOf(now) !== await identity) return false
+      job.dirty = false
+      return true
+    }
     const check = async () => {
       job.dirty = true
       if (!job.browser || job.checking || !current()) return
@@ -108,8 +138,13 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
           job.dirty = false
           const snapshot = await job.browser.read()
           if (!current()) return
+          // A snapshot that went stale while reading is read again (no requests yet).
           if (job.dirty) continue
           if (new URL(snapshot.url).origin !== MUSIC) return
+          // Read before the check's own requests can change anything; awaited
+          // only if something changes meanwhile.
+          const identity = identityOf(snapshot)
+          identity.catch(() => {})
           const context = accountContext(snapshot.context)
           const native = job.browser.session === job.session
           if (!native) {
@@ -126,13 +161,13 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
           provider.clearAccountCache()
           const result = await provider.fetchAccountData({ ...auth, force: true })
           if (!current()) return
-          if (job.dirty) continue
+          if (!(await sameAccount(identity))) { if (current()) continue; return }
           if (!result.authenticated || result.error) { onProgress({ message: result.error || 'YouTube Music has not confirmed account access yet.' }); return }
           await job.session.cookies.flushStore()
           job.session.flushStorageData?.()
           const freshCookies = await cookieHeader(job.session)
           if (!current()) return
-          if (job.dirty) continue
+          if (!(await sameAccount(identity))) { if (current()) continue; return }
           // The old jar and selected account remain intact until this atomic switch.
           saveSettings({ yt_account_partition: partition, yt_account_user_agent: native ? '' : job.session.getUserAgent(), yt_account_context: JSON.stringify(context), yt_account_session: '1', yt_account_revision: String(Date.now()), yt_cookies: '1', yt_cookie_browser: 'session' })
           const previous = ses
@@ -174,4 +209,4 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
   return { credentials, signIn, cancelSignIn, disconnect }
 }
 
-module.exports = { createYouTubeSession, electronCookie, PARTITION }
+module.exports = { createYouTubeSession, electronCookie, accountIdentity, PARTITION }
