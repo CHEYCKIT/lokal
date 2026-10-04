@@ -2,7 +2,7 @@ import { usePlayerStore } from './store/player.js'
 import { playbackSources, resolveRecommendationTracks, songKey, uniqueSongs } from './recommendations.js'
 
 /** Start one song promptly, then fill the same ordered queue in bounded batches. */
-export async function playRecommendationPool(candidates, { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, resolve, store = usePlayerStore } = {}) {
+export async function playRecommendationPool(candidates, { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, resolve, store = usePlayerStore } = {}) {
   const pool = uniqueSongs(candidates)
   let index = selected ? pool.findIndex(track => songKey(track) === songKey(selected)) : 0
   if (!isCurrent()) return null
@@ -11,6 +11,7 @@ export async function playRecommendationPool(candidates, { selected, context, fi
   // started audio. Explicit playTrack/playQueue calls also advance this token.
   let version = (store.getState().playbackGeneration || 0) + 1
   store.setState({ playbackGeneration: version })
+  onReserved?.(version)
   const current = () => isCurrent() && store.getState().playbackGeneration === version
   if (!resolve) {
     const sources = await playbackSources()

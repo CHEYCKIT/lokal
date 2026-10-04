@@ -136,6 +136,8 @@ contextBridge.exposeInMainWorld('electron', {
   youtubeCatalogue: (options) => invoke('online:catalogue', options),
   youtubeAccount: (force = false) => invoke('online:account', force),
   youtubeSignIn: options => invoke('online:signIn', options),
+  youtubeCancelSignIn: () => invoke('online:cancelSignIn'),
+  onYoutubeSignInStatus: fn => on('online:signInStatus', (_, status) => fn(status)),
   youtubeDisconnect: () => invoke('online:disconnect'),
   youtubeAccountPlaylist: (playlistId) => invoke('online:accountPlaylist', playlistId),
   youtubeRadio: (videoId) => invoke('online:radio', videoId),

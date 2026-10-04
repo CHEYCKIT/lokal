@@ -61,7 +61,7 @@ function providers() {
 function registerOnlineHandlers(ipcMain) {
   accountSession ||= require('../online/youtubeSession').createYouTubeSession({ getSettings: settings, saveSettings: values => {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
-    for (const [key, value] of Object.entries(values)) stmt.run(key, String(value))
+    getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
   } })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
@@ -72,7 +72,8 @@ function registerOnlineHandlers(ipcMain) {
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
   ipcMain.handle('online:artwork', (_, items) => discoveryArtwork(items))
-  ipcMain.handle('online:signIn', (_, options) => accountSession.signIn(options))
+  ipcMain.handle('online:signIn', (event, options) => accountSession.signIn({ mode: options?.mode || 'embedded', onProgress: status => { if (!event.sender.isDestroyed()) event.sender.send('online:signInStatus', status) } }))
+  ipcMain.handle('online:cancelSignIn', () => accountSession.cancelSignIn())
   ipcMain.handle('online:disconnect', () => accountSession.disconnect())
   ipcMain.handle('online:catalogue', (_, options) => accountRequest(({ cookies, fetchImpl }) => youtube.fetchCatalogue(options, cookies, fetchImpl)).catch(e => ({ error: e.message })))
   ipcMain.handle('online:account', (_, force = false) => accountRequest(auth => youtube.fetchAccountData({ ...auth, force: !!force })).catch(e => ({ error: e.message, authenticated: false })))

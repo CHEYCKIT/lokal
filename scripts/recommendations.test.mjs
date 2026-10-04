@@ -37,6 +37,59 @@ test('matching requires the exact title and artist and preserves version differe
   assert.ok(recommendationMatch(target, [{ title: 'Song (Official Audio)', artist: 'Artist - Topic' }]))
 })
 
+test('Travis Scott artist playback searches artist plus title and matches featured credits without accepting other versions', async () => {
+  const target = { title: 'FE!N', artist: 'Travis Scott' }
+  const actual = { title: 'FE!N (feat. Playboi Carti)', artist: 'Travis Scott', artists: ['Travis Scott'], videoId: '2nR1zrNzgcY', id: '2nR1zrNzgcY' }
+  assert.equal(recommendationMatch(target, [actual]), actual)
+  for (const title of ['FE!N (CHASE B REMIX)', 'FE!N (Live)', 'FE!N (Cover)']) assert.equal(recommendationMatch(target, [{ ...actual, title }]), null)
+  const queries = [], progress = []
+  const { client } = clientMock({
+    getSettings: async () => ({ playback_search_order: '["yt"]' }), onlineProviders: async () => [{ id: 'yt' }],
+    onlineSearch: async (query, source) => { queries.push([query, source]); return { results: [actual] } },
+  })
+  assert.equal((await resolveRecommendationTracks([target], client, { onProgress: message => progress.push(message) })).length, 1)
+  assert.deepEqual(queries, [['Travis Scott FE!N', 'yt']])
+  assert.ok(progress.some(message => message.includes('Travis Scott') && message.includes('FE!N')))
+})
+
+test('a native artist song ID avoids a redundant search and preparation failures retain their real cause', async () => {
+  const failures = [], prepared = []
+  const { client } = clientMock({
+    getSettings: async () => ({ playback_search_order: '["yt"]' }), onlineProviders: async () => [{ id: 'yt' }],
+    onlineSearch: async () => { throw new Error('Native song IDs must not be searched again') },
+    onlinePrepare: async (source, id) => { prepared.push([source, id]); return { error: 'yt-dlp is not installed. Install it from the Download page.' } },
+  })
+  const result = await resolveRecommendationTracks([{ title: 'SICKO MODE', artist: 'Travis Scott', videoId: 'NQbkGDoD7B0' }], client, { onProviderFailure: failure => failures.push(failure) })
+  assert.deepEqual(result, [])
+  assert.deepEqual(prepared, [['yt', 'NQbkGDoD7B0']])
+  assert.equal(failures[0].reason, 'unavailable', 'a found song with a failed stream is not a missing search result')
+  assert.match(playbackFallbackMessage(failures[0]), /yt-dlp is not installed/)
+})
+
+test('featured credits cannot conceal remix, live, or cover versions in matching', () => {
+  const target = { title: 'FE!N', artist: 'Travis Scott' }
+  for (const suffix of ['(feat. Playboi Carti - Remix)', '[ft. Playboi Carti - LIVE]', '(featuring Playboi Carti - Cover)', 'feat. Playboi Carti - Remix', 'ft. Playboi Carti (Live)', 'featuring Playboi Carti - Cover']) {
+    const result = { ...target, title: `FE!N ${suffix}` }
+    assert.equal(recommendationMatch(target, [result]), null, suffix)
+    assert.equal(recommendationMatch(target, [{ ...result, title: `Travis Scott - ${result.title}` }]), null, `artist-prefixed ${suffix}`)
+    assert.equal(recommendationMatch(result, [target]), null, 'a versioned candidate must not collapse to the original either')
+    assert.equal(recommendationMatch(result, [result]), result, 'an exact versioned title remains eligible')
+  }
+  for (const suffix of ['(feat. Playboi Carti)', '[ft. Playboi Carti]', 'featuring Playboi Carti']) {
+    const result = { ...target, title: `FE!N ${suffix}` }
+    assert.equal(recommendationMatch(target, [result]), result)
+  }
+})
+
+test('provider error responses are not misreported as missing artist songs', async () => {
+  const failures = []
+  const { client } = clientMock({ onlineSearch: async () => ({ error: 'Search rejected (401)', results: [] }) })
+  assert.deepEqual(await resolveRecommendationTracks([{ title: 'SICKO MODE', artist: 'Travis Scott' }], client, { onProviderFailure: failure => failures.push(failure) }), [])
+  assert.equal(failures.length, 3)
+  assert.ok(failures.every(failure => failure.reason === 'unavailable' && failure.detail === 'Search rejected (401)'))
+  assert.match(playbackFallbackMessage(failures[0]), /Search rejected \(401\)/)
+})
+
 test('playback follows SoundCloud/addon/YouTube order and survives a local lookup failure', async () => {
   const { client, searches, saved } = clientMock({
     searchTracks: async () => { throw new Error('Local search unavailable') },

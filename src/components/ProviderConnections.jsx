@@ -29,13 +29,14 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
  *
  * Desktop YouTube Music sign-in owns a persistent, automatically refreshed session.
  */
-export default function ProviderConnections({ compact = false, onOpenSettings, settingsOverride = null, disableLastfmAuth = false }) {
+export default function ProviderConnections({ compact = false, onOpenSettings, settingsOverride = null, disableLastfmAuth = false, onYouTubeSettingsChanged }) {
   const [settings, setSettings] = useState(() => settingsOverride || {})
   const [loading, setLoading] = useState(!settingsOverride)
   const [refreshing, setRefreshing] = useState(false)
   const [lastfmState, setLastfmState] = useState('')
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
+  const [youtubeSigningIn, setYoutubeSigningIn] = useState(false)
   const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
   const [settingsError, setSettingsError] = useState('')
   const youtubeStatus = useSyncExternalStore(subscribeYoutubeAccountStatus, getYoutubeAccountStatus)
@@ -71,6 +72,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
         setSettings(next)
         settingsRef.current = next
         setSettingsError('')
+        onYouTubeSettingsChanged?.(Object.fromEntries(Object.entries(next).filter(([key]) => key.startsWith('yt_'))))
       } else if (next?.error) {
         setSettingsError(next.error)
       }
@@ -131,6 +133,9 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
   const youtubeAccountReady = settings.yt_account_session === '1'
   const youtubeConnected = youtubeAccountReady && youtubeStatus.verified && youtubeStatus.connected
+  useEffect(() => api.onYoutubeSignInStatus(status => {
+    if (status?.message) setYoutubeState({ message: status.message, tone: 'muted' })
+  }), [])
   const verifyYouTube = async () => {
     setYoutubeAuthorizing(true)
     const result = await api.youtubeAccount(true).catch(error => ({ error: error.message }))
@@ -138,15 +143,17 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     const verified = result?.authenticated === true && !result.error
     setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'YouTube Music did not confirm account access. Please sign in again.', tone: verified ? 'success' : 'error' })
   }
-  const signInYouTube = async (compatibility = false) => {
+  const signInYouTube = async () => {
     setYoutubeAuthorizing(true)
-    setYoutubeState({ message: 'Complete sign-in in the YouTube Music window. Account access is verified before the window closes.', tone: 'muted' })
+    setYoutubeSigningIn(true)
+    setYoutubeState({ message: 'Opening YouTube Music in an isolated Lokal window. Use Sign in on that page; account verification is automatic.', tone: 'muted' })
     try {
-      const result = await api.youtubeSignIn({ compatibility })
+      const result = await api.youtubeSignIn({ mode: 'embedded' })
       await loadSettings(true)
-      setYoutubeState({ message: result?.authenticated ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: result?.authenticated ? 'success' : 'error' })
+      const verified = result?.authenticated === true && !result.error
+      setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: verified ? 'success' : 'error' })
     } catch (error) { setYoutubeState({ message: error.message || 'YouTube Music sign-in failed.', tone: 'error' }) }
-    finally { setYoutubeAuthorizing(false) }
+    finally { setYoutubeAuthorizing(false); setYoutubeSigningIn(false) }
   }
 
   const authorizeLastfm = async () => {
@@ -266,9 +273,9 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
             {youtubeConnected && <CheckCircle2 size={16} className="text-green-400" />}
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            {api.isElectron ? 'Sign in using the dedicated YouTube Music window. Lokal keeps this session updated on this device.' : 'YouTube Music sign-in is available in the desktop app.'}
+            {api.isElectron ? 'YouTube Music opens in an isolated Lokal window. Use the website’s Sign in button. Lokal keeps the full browser session after Music confirms account access and restores it when the app restarts.' : 'YouTube Music sign-in is available in the desktop app.'}
           </p>
-          {api.isElectron && <div className="flex flex-wrap gap-2"><ActionButton onClick={() => signInYouTube()} disabled={youtubeAuthorizing}>{youtubeAuthorizing ? <RefreshCw size={13} className="animate-spin" /> : <Youtube size={13} />}Sign in to YouTube Music</ActionButton><ActionButton onClick={() => signInYouTube(true)} disabled={youtubeAuthorizing} muted>Retry compatible sign-in</ActionButton></div>}
+          {api.isElectron && <div className="flex flex-wrap gap-2"><ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeAuthorizing ? <RefreshCw size={13} className="animate-spin" /> : <Youtube size={13} />}Sign in to YouTube Music</ActionButton>{youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>Cancel sign-in</ActionButton>}</div>}
           <div className="flex flex-wrap items-center gap-2">
               {youtubeAccountReady && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify account access</ActionButton>}
               {youtubeAccountReady && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
