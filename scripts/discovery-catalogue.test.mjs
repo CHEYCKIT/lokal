@@ -34,6 +34,21 @@ test('artist catalogues are bounded and provider metadata is separate from playb
   assert.equal((await loadDiscoveryCatalogue({ type: 'artist', artist: 'Artist' }, client)).tracks.length, 24)
 })
 
+test('artist playback prefers native catalogue IDs and can retry Last.fm after an unplayable native catalogue', async () => {
+  const calls = []
+  const client = { discoveryCatalogue: async options => {
+    calls.push([options.source, options.artist])
+    return { tracks: options.source === 'youtube' ? [{ title: 'SICKO MODE', artist: 'Travis Scott', videoId: 'NQbkGDoD7B0' }] : [{ title: 'FE!N', artist: 'Travis Scott' }] }
+  } }
+  const first = await loadDiscoveryCatalogue({ source: 'lastfm', type: 'artist', artist: 'Travis Scott' }, client)
+  assert.equal(first.tracks[0].videoId, 'NQbkGDoD7B0')
+  assert.equal(first.catalogueSource, 'youtube')
+  const next = await loadDiscoveryCatalogue({ source: 'lastfm', type: 'artist', artist: 'Travis Scott' }, client, { skipSources: [first.catalogueSource] })
+  assert.equal(next.catalogueSource, 'lastfm')
+  assert.equal(next.tracks[0].title, 'FE!N')
+  assert.deepEqual(calls, [['youtube', 'Travis Scott'], ['lastfm', 'Travis Scott']])
+})
+
 test('prefixed SoundCloud titles match the correct song and hidden previews still fall through during queue filling', async () => {
   const sources = [{ id: 'sc' }, { id: addon }]
   const prepared = []

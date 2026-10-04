@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net } = require('electron')
+require('./online/youtubeLoginIdentity').configureLoginIdentity(app)
 const path = require('path')
 const fs = require('fs')
 const log = require('electron-log')

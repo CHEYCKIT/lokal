@@ -316,6 +316,8 @@ export const api = {
     }
     return result
   },
+  youtubeCancelSignIn: () => isE() ? el().youtubeCancelSignIn() : Promise.resolve({ ok: true }),
+  onYoutubeSignInStatus: callback => isE() && el()?.onYoutubeSignInStatus ? el().onYoutubeSignInStatus(callback) : () => {},
   youtubeDisconnect: async () => {
     const result = isE() ? await el().youtubeDisconnect() : await api.saveSettings({ yt_cookies: '0', yt_cookie_header: '', yt_account_session: '0' })
     if (!result?.error && result?.ok) {

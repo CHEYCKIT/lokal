@@ -5,221 +5,209 @@ import sessions from '../electron/online/youtubeSession.js'
 import youtube from '../electron/online/youtube.js'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
-function environment({ connected = false, authenticated = true } = {}) {
+const browserCookies = value => [{ name: 'SAPISID', value, domain: '.youtube.com', path: '/', secure: true, httpOnly: true, sameSite: 'None', expires: 2000000000 }, { name: 'SID', value: 'test-login', domain: '.youtube.com', path: '/', secure: true }]
+function environment({ connected = false, authenticated = true, launchError = false } = {}) {
   const settings = { yt_account_session: connected ? '1' : '0' }
-  let cookieValue = 'session-one'
-  let ua = 'Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36 lokal-music/4.1.0 Electron/44.5.1'
-  const requests = []
-  const exports = []
-  const cookies = Object.assign(new EventEmitter(), {
-    get: async () => [{ name: 'SAPISID', value: cookieValue }, { name: 'SID', value: 'test-login' }], flushStore: async () => {},
-  })
-  const session = {
-    cookies, getUserAgent: () => ua, setUserAgent: value => { ua = value },
-    webRequest: { onBeforeSendHeaders: (filter, callback) => { session.capture = callback } },
-    fetch: async (url, init) => { requests.push({ url, init }); return { ok: true, json: async () => ({}) } },
-    clearStorageData: async () => { session.cleared = true },
-  }
-  const windows = []
-  class BrowserWindow extends EventEmitter {
-    constructor(options) {
-      super(); this.options = options; this.destroyed = false
-      this.webContents = Object.assign(new EventEmitter(), { id: 7, getURL: () => this.url, setWindowOpenHandler: callback => { this.popupHandler = callback } })
-      windows.push(this)
+  const requests = [], exports = [], partitions = new Map()
+  function partition(id) {
+    if (partitions.has(id)) return partitions.get(id)
+    let values = id === sessions.PARTITION && connected ? browserCookies('session-one') : []
+    let ua = 'Mozilla/5.0 Chrome/152.0.0.0 Safari/537.36 lokal-music/4.1.0 Electron/44.5.1'
+    const cookies = Object.assign(new EventEmitter(), {
+      get: async () => values,
+      set: async cookie => { values.push(cookie); cookies.emit('changed') }, flushStore: async () => {},
+    })
+    const session = {
+      cookies, getUserAgent: () => ua, setUserAgent: value => { ua = value },
+      fetch: async (url, init) => { requests.push({ url, init, partition: id }); return { ok: true, json: async () => ({}) } },
+      clearStorageData: async () => { values = []; session.cleared = true; cookies.emit('changed') },
+      rotate: () => { values = browserCookies('session-two'); cookies.emit('changed') },
     }
-    setMenu() {} show() {} focus() {}
-    loadURL(url) { this.url = url; return Promise.resolve() }
-    isDestroyed() { return this.destroyed }
-    close() { this.destroyed = true; this.emit('closed') }
+    partitions.set(id, session)
+    return session
   }
+  let callbacks
+  const snapshot = { url: 'https://accounts.google.com/', context: {}, cookies: browserCookies('browser-login'), userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/152.0.0.0 Safari/537.36' }
+  const browser = { closed: false, close: async () => { browser.closed = true }, focus() {}, read: async () => structuredClone(snapshot) }
   const provider = { ...youtube, fetchAccountData: async auth => {
     await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: JSON.stringify({ context: { client: { clientVersion: 'initial' } } }) })
     return { authenticated, ...(authenticated ? { home: [{ title: 'Personal Song', artist: 'Artist' }] } : { error: 'Not authenticated' }) }
   } }
-  const manager = sessions.createYouTubeSession({
-    electron: { session: { fromPartition: partition => { assert.equal(partition, sessions.PARTITION); return session } }, BrowserWindow },
-    getSettings: () => settings, saveSettings: values => Object.assign(settings, values), provider, syncCookies: header => exports.push(header),
-  })
-  return { manager, settings, session, provider, requests, exports, windows, rotate: () => { cookieValue = 'session-two' } }
+  const electron = { session: { fromPartition: partition }, BrowserWindow: class { constructor() { throw new Error('Google login must not use an Electron BrowserWindow') } } }
+  const makeManager = () => sessions.createYouTubeSession({ electron, getSettings: () => settings, saveSettings: values => Object.assign(settings, values), provider, syncCookies: header => exports.push(header), openBrowser: async options => { callbacks = options; if (launchError) throw new Error('Could not start an isolated sign-in browser (test)'); return browser } })
+  const manager = makeManager()
+  return {
+    manager, makeManager, settings, partitions, provider, requests, exports, browser, snapshot,
+    session: () => partition(settings.yt_account_partition || sessions.PARTITION),
+    candidate: () => [...partitions.values()].at(-1),
+    navigate: url => { snapshot.url = url; callbacks.onChange() },
+    capture: context => { snapshot.context = context; callbacks.onChange() },
+    close: () => callbacks.onClosed(),
+    fail: error => callbacks.onError(error),
+  }
 }
 
-test('session requests use fresh signed authorization, matching UA, selected-account context and Chromium cookie rotation', async () => {
+test('restored session uses saved account context, fresh signatures, Chromium cookie rotation, and a matching user-agent', async () => {
   const env = environment({ connected: true })
   env.settings.yt_account_context = JSON.stringify({ 'x-goog-authuser': '2', 'x-goog-pageid': 'saved-brand', 'x-youtube-client-version': '1.saved' })
   const auth = await env.manager.credentials()
-  assert.ok(!env.session.getUserAgent().includes('Electron'))
-  assert.ok(!env.session.getUserAgent().includes('lokal'))
+  assert.doesNotMatch(env.session().getUserAgent(), /Electron|lokal/)
   await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: '{}' })
-  env.rotate()
+  env.session().rotate()
   await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: '{}' })
-  assert.notEqual(env.requests[0].init.headers.Authorization, env.requests[1].init.headers.Authorization, 'a rotated session gets a new signature without a manual reconnect')
+  assert.notEqual(env.requests[0].init.headers.Authorization, env.requests[1].init.headers.Authorization)
   assert.equal(env.requests[0].init.credentials, 'include')
   assert.equal(env.requests[0].init.headers.Cookie, undefined)
-  assert.equal(env.requests[0].init.headers['User-Agent'], env.session.getUserAgent())
-  assert.equal(env.requests[0].init.headers['X-Goog-AuthUser'], '2', 'the first request after restart must use the saved verified context')
+  assert.equal(env.requests[0].init.headers['X-Goog-AuthUser'], '2')
   assert.equal(env.requests[0].init.headers['X-Goog-PageId'], 'saved-brand')
-  assert.equal(env.requests[0].init.headers['X-YouTube-Client-Version'], '1.saved')
+  assert.equal(env.requests[0].init.headers['User-Agent'], env.session().getUserAgent())
   await assert.rejects(auth.fetchImpl('https://example.com/'), /Unexpected.*origin/)
 })
 
-test('login uses a plain isolated window and succeeds only after authenticated API verification', async () => {
+test('real-browser cookies are staged separately and activated only after authenticated Music API verification', async () => {
   const env = environment()
-  const login = env.manager.signIn()
-  const win = env.windows[0]
-  assert.equal(win.options.title, 'Sign in to YouTube Music')
-  assert.equal(win.options.webPreferences.nodeIntegration, false)
-  assert.equal(win.options.webPreferences.preload, undefined)
-  assert.equal(win.options.webPreferences.session, env.session)
-  assert.ok(win.url.startsWith('https://accounts.google.com/ServiceLogin'))
-  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '2', 'X-Goog-PageId': 'brand', 'X-YouTube-Client-Version': '1.browser.client', Cookie: 'do-not-store', Authorization: 'do-not-store' } }, () => {})
-  assert.equal(env.settings.yt_account_context, undefined, 'captured headers stay staged until verification succeeds')
-  win.url = 'https://music.youtube.com/'
-  win.webContents.emit('did-finish-load')
-  const result = await login
-  assert.equal(result.authenticated, true)
-  assert.equal(env.settings.yt_account_session, '1')
-  assert.equal(env.settings.yt_cookie_browser, 'session')
-  assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '2', 'x-goog-pageid': 'brand', 'x-youtube-client-version': '1.browser.client' })
-  assert.ok(!env.settings.yt_account_context.includes('do-not-store'))
-  assert.equal(win.destroyed, true)
+  const progress = []
+  const login = env.manager.signIn({ onProgress: status => progress.push(status.message) })
+  await tick()
+  env.capture({ 'X-Goog-AuthUser': '2', 'X-Goog-PageId': 'brand', 'X-YouTube-Client-Version': '1.browser', Cookie: 'do-not-store', Authorization: 'do-not-store' })
+  assert.equal(env.settings.yt_account_context, undefined)
+  assert.deepEqual(env.exports, [])
+  env.snapshot.cookies.push({ name: 'unrelated', value: 'do-not-import', domain: '.google.com' })
+  env.navigate('https://music.youtube.com/')
+  await tick()
+  assert.deepEqual(progress, [], 'candidate verification must not report an internal error')
+  assert.equal((await login).authenticated, true)
+  assert.match(env.settings.yt_account_partition, /^persist:lokal-ytmusic-/)
+  assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '2', 'x-goog-pageid': 'brand', 'x-youtube-client-version': '1.browser' })
   assert.equal(env.requests[0].init.headers['X-Goog-AuthUser'], '2')
-  assert.equal(JSON.parse(env.requests[0].init.body).context.client.clientVersion, '1.browser.client')
   assert.equal(JSON.parse(env.requests[0].init.body).context.user.onBehalfOfUser, 'brand')
+  assert.ok(!env.exports.at(-1).includes('do-not-import'))
+  assert.equal(env.session().getUserAgent(), env.snapshot.userAgent)
+  const reopened = env.makeManager()
+  const auth = await reopened.credentials()
+  assert.equal(youtube.accountHeaders(auth.cookies)['X-Goog-PageId'], 'brand')
+  assert.ok(env.browser.closed)
 })
 
-test('having cookies alone never marks a login successful; closing and disconnecting are handled', async () => {
-  const env = environment({ authenticated: false })
-  const login = env.manager.signIn()
-  const win = env.windows[0]
-  win.url = 'https://music.youtube.com/'
-  win.webContents.emit('did-finish-load')
-  await tick()
-  assert.equal(win.destroyed, false)
-  assert.equal(env.settings.yt_account_session, '0')
-  win.close()
-  assert.equal((await login).cancelled, true)
-  await env.manager.disconnect()
-  assert.equal(env.session.cleared, true)
-  assert.equal(env.settings.yt_account_session, '0')
-  assert.equal((await env.manager.credentials()).cookies, '')
-  assert.equal(env.settings.yt_cookies, '0')
-  assert.equal(env.exports.at(-1), '', 'disconnect removes the automatically exported playback cookies')
-})
-
-test('session API requests preserve bootstrapped context before the website captures it and discard old brand selections', async () => {
-  const env = environment({ connected: true })
-  const auth = await env.manager.credentials()
-  await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', {
-    method: 'POST', headers: { 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'bootstrapped-brand', 'X-Goog-Visitor-Id': 'visitor', 'X-YouTube-Client-Version': '1.bootstrapped' },
-    body: JSON.stringify({ context: { client: { clientVersion: 'default' } } }),
-  })
-  const request = env.requests.at(-1).init
-  assert.equal(request.headers['X-Goog-AuthUser'], '3')
-  assert.equal(request.headers['X-Goog-PageId'], 'bootstrapped-brand')
-  assert.equal(JSON.parse(request.body).context.client.clientVersion, '1.bootstrapped')
-  assert.equal(JSON.parse(request.body).context.client.visitorData, 'visitor')
-  const login = env.manager.signIn()
-  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '2', 'X-Goog-PageId': 'old-brand' } }, () => {})
-  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '0', 'X-YouTube-Client-Version': '1.personal' } }, () => {})
-  env.windows[0].url = 'https://music.youtube.com/'
-  env.windows[0].webContents.emit('did-finish-load')
-  await login
-  const personal = youtube.accountHeaders((await env.manager.credentials()).cookies)
-  assert.equal(personal['X-Goog-AuthUser'], '0')
-  assert.equal(personal['X-Goog-PageId'], undefined, 'a personal account must not inherit the previous brand identity')
-  await assert.rejects(auth.fetchImpl('https://music.youtube.com/'), /session changed/)
-})
-
-test('disconnect during verification cannot restore connected settings or stale playback cookies', async () => {
-  const env = environment()
-  let releaseFlush
-  env.session.cookies.flushStore = () => new Promise(resolve => { releaseFlush = resolve })
-  const login = env.manager.signIn()
-  const win = env.windows[0]
-  win.url = 'https://music.youtube.com/'
-  win.webContents.emit('did-finish-load')
-  await tick()
-  assert.equal(typeof releaseFlush, 'function')
-  await env.manager.disconnect()
-  releaseFlush()
-  await tick()
-  assert.equal((await login).cancelled, true)
-  assert.equal(env.settings.yt_account_session, '0')
-  assert.equal(env.exports.at(-1), '')
-})
-
-test('main-frame failures report an error and the default retry restores the real Chromium user-agent', async () => {
-  const env = environment()
-  const failed = env.manager.signIn({ compatibility: true })
-  assert.match(env.session.getUserAgent(), /Firefox/)
-  env.windows[0].webContents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', 'https://accounts.google.com/', true)
-  assert.match((await failed).error, /ERR_NAME_NOT_RESOLVED/)
-  const retry = env.manager.signIn()
-  assert.match(env.session.getUserAgent(), /Chrome/)
-  assert.doesNotMatch(env.session.getUserAgent(), /Electron|lokal|Firefox/)
-  env.windows[1].close()
-  assert.equal((await retry).cancelled, true)
-})
-
-test('cancelled or failed account switches preserve the verified context and discard the candidate', async () => {
-  for (const failure of ['cancel', 'verification', 'load']) {
+test('failed or cancelled account switching never alters the active jar or context and never exports candidate cookies', async () => {
+  for (const verify of [false, true]) {
     const env = environment({ connected: true, authenticated: false })
-    const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand', 'x-youtube-client-version': '1.verified' }
+    const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand' }
     env.settings.yt_account_context = JSON.stringify(active)
+    const oldJar = env.session()
     const login = env.manager.signIn()
-    const win = env.windows[0]
-    env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'unverified-brand' } }, () => {})
-    assert.deepEqual(JSON.parse(env.settings.yt_account_context), active, 'capturing candidate headers must not replace persisted authority')
-    const during = youtube.accountHeaders((await env.manager.credentials()).cookies)
-    assert.equal(during['X-Goog-AuthUser'], '2')
-    assert.equal(during['X-Goog-PageId'], 'verified-brand')
-    if (failure === 'verification') {
-      win.url = 'https://music.youtube.com/'
-      win.webContents.emit('did-finish-load')
-      await tick()
-      assert.equal(env.requests.at(-1).init.headers['X-Goog-AuthUser'], '3', 'verification uses the staged candidate, not the active account')
-      assert.equal(win.destroyed, false)
-    }
-    if (failure === 'load') win.webContents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', win.url, true)
-    else win.close()
-    const result = await login
-    assert.equal(result.authenticated, false)
-    assert.equal(env.settings.yt_account_session, '1')
+    await tick()
+    env.capture({ 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'candidate-brand' })
+    if (verify) { env.navigate('https://music.youtube.com/'); await tick(); assert.equal(env.requests.at(-1).init.headers['X-Goog-AuthUser'], '3') }
+    env.close()
+    assert.equal((await login).cancelled, true)
     assert.deepEqual(JSON.parse(env.settings.yt_account_context), active)
-    const after = youtube.accountHeaders((await env.manager.credentials()).cookies)
-    assert.equal(after['X-Goog-AuthUser'], '2')
-    assert.equal(after['X-Goog-PageId'], 'verified-brand')
+    assert.equal(env.session(), oldJar)
+    assert.equal((await oldJar.cookies.get())[0].value, 'session-one')
+    assert.deepEqual(env.exports, [])
   }
 })
 
-test('a context change during verification requires verification of the new snapshot before promotion', async () => {
+test('cookie presence alone does not complete sign-in, and explicit cancel clears the candidate', async () => {
+  const env = environment({ authenticated: false })
+  const login = env.manager.signIn()
+  await tick()
+  env.navigate('https://music.youtube.com/')
+  await tick()
+  assert.equal(env.settings.yt_account_session, '0')
+  assert.equal(env.browser.closed, false)
+  env.manager.cancelSignIn()
+  assert.equal((await login).cancelled, true)
+  assert.equal((await env.candidate().cookies.get()).length, 0)
+})
+
+test('a changing candidate context is reverified before promotion and invalidates old credential handles', async () => {
   const env = environment({ connected: true })
   const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand' }
   env.settings.yt_account_context = JSON.stringify(active)
   const releases = []
   env.provider.fetchAccountData = async auth => {
-    await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: JSON.stringify({ context: { client: {} } }) })
+    await auth.fetchImpl('https://music.youtube.com/youtubei/v1/browse', { method: 'POST', body: '{}' })
     await new Promise(resolve => releases.push(resolve))
     return { authenticated: true }
   }
   const login = env.manager.signIn()
-  const win = env.windows[0]
-  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'candidate-brand' } }, () => {})
-  win.url = 'https://music.youtube.com/'
-  win.webContents.emit('did-finish-load')
   await tick()
-  env.session.capture({ webContentsId: 7, requestHeaders: { 'X-Goog-AuthUser': '0', 'X-YouTube-Client-Version': '1.personal' } }, () => {})
+  env.capture({ 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'candidate-brand' })
+  env.navigate('https://music.youtube.com/')
+  await tick()
+  env.capture({ 'X-Goog-AuthUser': '0', 'X-YouTube-Client-Version': '1.personal' })
   releases[0]()
   await tick()
-  assert.equal(win.destroyed, false, 'the first verified response cannot authorize a different captured context')
   assert.deepEqual(JSON.parse(env.settings.yt_account_context), active)
   assert.equal(env.requests.at(-1).init.headers['X-Goog-AuthUser'], '0')
   const oldHandle = await env.manager.credentials()
   releases[1]()
   assert.equal((await login).authenticated, true)
   assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '0', 'x-youtube-client-version': '1.personal' })
-  const personal = youtube.accountHeaders((await env.manager.credentials()).cookies)
-  assert.equal(personal['X-Goog-AuthUser'], '0')
-  assert.equal(personal['X-Goog-PageId'], undefined)
-  await assert.rejects(oldHandle.fetchImpl('https://music.youtube.com/'), /session changed/, 'handles bound to the previous active context cannot survive promotion')
+  await assert.rejects(oldHandle.fetchImpl('https://music.youtube.com/'), /session changed/)
+})
+
+test('disconnect during candidate flushing prevents activation and removes playback cookies', async () => {
+  const env = environment({ connected: true })
+  const login = env.manager.signIn()
+  await tick()
+  let release
+  env.candidate().cookies.flushStore = () => new Promise(resolve => { release = resolve })
+  env.navigate('https://music.youtube.com/')
+  await tick()
+  assert.equal(typeof release, 'function')
+  await env.manager.disconnect()
+  release()
+  await tick()
+  assert.equal((await login).cancelled, true)
+  assert.equal(env.settings.yt_account_session, '0')
+  assert.equal(env.settings.yt_account_partition, '')
+  assert.equal(env.exports.at(-1), '')
+  assert.equal((await env.manager.credentials()).cookies, '')
+})
+
+test('cookie transfer retains domain, path, expiry, HttpOnly and SameSite semantics', () => {
+  const cookie = sessions.electronCookie(browserCookies('test')[0])
+  assert.equal(cookie.domain, '.youtube.com')
+  assert.equal(cookie.httpOnly, true)
+  assert.equal(cookie.sameSite, 'no_restriction')
+  assert.equal(cookie.expirationDate, 2000000000)
+  const hostOnly = sessions.electronCookie({ name: 'session', value: 'test', domain: 'music.youtube.com', path: '/', session: true })
+  assert.equal(hostOnly.domain, undefined)
+  assert.equal(hostOnly.expirationDate, undefined)
+})
+
+test('a browser launch failure reports an error and leaves the verified account untouched', async () => {
+  const env = environment({ connected: true, launchError: true })
+  env.settings.yt_account_context = JSON.stringify({ 'x-goog-authuser': '2' })
+  const result = await env.manager.signIn()
+  assert.match(result.error, /Could not start an isolated sign-in browser/)
+  assert.equal(result.cancelled, undefined)
+  assert.equal(env.settings.yt_account_session, '1')
+  assert.deepEqual(JSON.parse(env.settings.yt_account_context), { 'x-goog-authuser': '2' })
+  assert.deepEqual(env.exports, [])
+})
+
+test('a login window failure preserves the active account and releases the candidate', async () => {
+  const env = environment({ connected: true })
+  const active = env.session()
+  const login = env.manager.signIn({ mode: 'embedded' })
+  await tick()
+  env.fail(new Error('The sign-in window stopped responding'))
+  const result = await login
+  assert.match(result.error, /stopped responding/)
+  assert.equal(result.cancelled, undefined)
+  assert.equal(env.settings.yt_account_session, '1')
+  assert.equal((await active.cookies.get())[0].value, 'session-one')
+  assert.equal((await env.candidate().cookies.get()).length, 0)
+  assert.deepEqual(env.exports, [])
+})
+
+test('unknown sign-in modes cannot launch a window or change credentials', async () => {
+  const env = environment({ connected: true })
+  const auth = await env.manager.credentials()
+  assert.match((await env.manager.signIn({ mode: 'unknown' })).error, /Unknown/)
+  assert.equal(env.partitions.size, 1)
+  await auth.fetchImpl('https://music.youtube.com/')
 })

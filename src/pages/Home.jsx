@@ -17,7 +17,7 @@ import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
 import { trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
-import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
+import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage, uniqueSongs } from '../recommendations'
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { loadDiscoveryCatalogue } from '../discoveryCatalogue'
@@ -141,7 +141,8 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
   const albums = Array.isArray(data?.albums) ? data.albums : []
   const artists = Array.isArray(data?.artists) ? data.artists : []
   const fresh = Array.isArray(data?.freshFinds) ? data.freshFinds : []
-  const feature = fresh[0] || quick[0]
+  const featured = uniqueSongs([...fresh, ...quick]).slice(0, 4)
+  const feature = featured[0]
   const toggle = key => onSection?.(activeSection === key ? null : key)
   return <div className="space-y-10">
     <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Sparkles size={15} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Discovery · {source}</h2></div><p className="mt-1 text-sm text-muted">Recommendations come directly from your selected provider.</p></div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
@@ -150,7 +151,17 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
       ? <p className="py-10 text-center text-sm text-muted">Building your {source} recommendations…</p>
       : <div className="rounded-xl border border-border bg-elevated p-4"><ProviderConnections compact onOpenSettings={onOpenSettings} /></div>)}
     {data && !quick.length && !history.length && !albums.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
-    {feature && <section className="rounded-2xl border border-border bg-elevated p-5"><SectionHeader icon={Sparkles} eyebrow="Discovery" title="Discover Something New" subtitle={feature.reason || `Selected from your ${source} recommendations.`} /><div className="flex items-center gap-5"><div className="h-32 w-32 shrink-0 overflow-hidden rounded-xl bg-card">{trackArtURL(feature) ? <FadeImg src={trackArtURL(feature)} className="h-full w-full object-cover" /> : <Music size={36} className="m-11 text-muted" />}</div><div className="min-w-0"><p className="truncate text-xl text-white">{feature.title}</p><p className="truncate text-sm text-muted">{feature.artist}</p><button type="button" onClick={() => onPlay(feature)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm text-base"><Play size={14} fill="currentColor" />Play</button></div></div></section>}
+    {feature && <section aria-label="For you" className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">
+      <div className="flex flex-col gap-6 @lg:flex-row">
+        <div data-discovery-hero-track className="flex min-w-0 flex-1 flex-col gap-5 @sm:flex-row" onContextMenu={event => onTrackMenu?.(event, feature)}>
+          <div className="h-40 w-40 shrink-0 overflow-hidden rounded-xl bg-card @xl:h-52 @xl:w-52"><DiscoveryImage item={feature} src={trackArtURL(feature)} className="h-full w-full object-cover" /></div>
+          <div className="min-w-0 flex-1 self-center"><p className="mb-2 text-[11px] font-display uppercase tracking-[0.2em] text-muted">For you · {source}</p><h2 className="break-words text-2xl font-medium leading-tight text-white @xl:text-3xl">{feature.title}</h2><p className="mt-3 text-sm text-muted @xl:text-lg">{feature.artist}</p>
+            <div className="mt-5 flex items-center gap-4"><button type="button" aria-label={`Play ${feature.title}`} onClick={() => onPlay(feature, featured)} className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm text-black"><Play size={14} fill="currentColor" />Play</button><button type="button" onClick={() => onRadio(feature)} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-white"><Radio size={15} />Radio</button></div>
+          </div>
+        </div>
+        {featured.length > 1 && <div className="min-w-0 space-y-2 border-border @lg:w-64 @lg:shrink-0 @lg:border-l @lg:pl-5"><p className="mb-3 text-[11px] font-display uppercase tracking-[0.2em] text-muted">Up next for you</p>{featured.slice(1).map(track => <div key={songKey(track)} data-discovery-hero-track><DiscoveryTrack track={track} onPlay={track => onPlay(track, featured)} onRadio={onRadio} onContextMenu={onTrackMenu} /></div>)}</div>}
+      </div>
+    </section>}
     {quick.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow="Jump back in" title="Quick Picks" count={quick.length} subtitle={selectedSource === 'youtube' ? 'Picks from your YouTube Music account.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle('quick')} expanded={activeSection === 'quick'} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'quick' ? quick : quick.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
     {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title={selectedSource === 'youtube' ? 'YouTube Music History' : 'Scrobble History'} count={history.length} subtitle={selectedSource === 'youtube' ? 'Recent tracks from your YouTube Music listening history.' : 'Your last 100 provider scrobbles, grouped by date.'} onExpand={() => toggle('history')} expanded={activeSection === 'history'} />{selectedSource === 'youtube' ? <TrackList tracks={recommendationRows(activeSection === 'history' ? history : history.slice(0, 6))} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'YouTube Music History' }} /> : <ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} />}</section>}
     {albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
@@ -254,21 +265,30 @@ function HomeContent({ user }) {
     pendingPlayRef.current = key
     const account = session.getSnapshot().account
     const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
-    const playbackVersion = usePlayerStore.getState().playbackGeneration
+    let playbackVersion = usePlayerStore.getState().playbackGeneration
     const catalogueCurrent = () => isCurrent() && usePlayerStore.getState().playbackGeneration === playbackVersion
     const artist = type === 'artist' ? item.name : item.artist
     const toast = showLoadingToast(type === 'album' ? `Loading ${item.title}…` : `Loading songs by ${artist}…`)
     try {
       const progress = message => { if (isCurrent()) toast.update(message) }
-      const result = await loadDiscoveryCatalogue({ source: recommendationSource, type, artist, album: type === 'album' ? item.title : '', albumId: item.albumId }, api, { isCurrent: catalogueCurrent, onProgress: progress })
-      if (!catalogueCurrent()) { toast.close(); return }
-      let candidates = result.tracks
-      if (type === 'artist') {
-        candidates = [...candidates]
-        for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]] }
+      const skipSources = []
+      let detail = ''
+      while (catalogueCurrent()) {
+        const result = await loadDiscoveryCatalogue({ source: recommendationSource, type, artist, album: type === 'album' ? item.title : '', albumId: item.albumId }, api, { isCurrent: catalogueCurrent, onProgress: progress, skipSources })
+        if (!catalogueCurrent()) { toast.close(); return }
+        if (!result.tracks.length) { toast.close(detail || result.error || `No playable songs were found for ${artist}.`); return }
+        const started = await playRecommendationPool(result.tracks, {
+          firstPlayable: true, isCurrent, onProgress: progress,
+          onReserved: version => { playbackVersion = version },
+          onStarted: () => { playbackVersion = usePlayerStore.getState().playbackGeneration },
+          onProviderFailure: failure => { if (failure.detail) detail = failure.detail; toast.update(playbackFallbackMessage(failure)) },
+          context: { type: 'discovery', name: type === 'album' ? item.title : artist },
+        })
+        if (started !== false || !catalogueCurrent()) { toast.close(); return }
+        if (type !== 'artist' || !result.catalogueSource) { toast.close(detail || `No playable tracks were found for ${item.title || artist} in your sources.`); return }
+        skipSources.push(result.catalogueSource)
       }
-      const started = await playRecommendationPool(candidates, { firstPlayable: true, isCurrent, onProgress: progress, onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)), context: { type: 'discovery', name: type === 'album' ? item.title : artist } })
-      toast.close(isCurrent() && started === false ? result.error || `No playable ${type === 'album' ? 'album tracks' : 'songs'} were found for ${type === 'album' ? item.title : artist} in your sources.` : '')
+      toast.close()
     } catch { toast.close(isCurrent() ? `Could not load ${type === 'album' ? item.title : artist} from your sources.` : '') }
     finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
   }
@@ -339,9 +359,9 @@ function HomeContent({ user }) {
   }
   const sectionProps = {
     data, source: recommendationSource, loading: discoveryLoading, error: discoveryError,
-    onRefresh: session.refresh, activeSection: route.section, onSection: section => goHome('discovery', section), onPlay: track => {
+    onRefresh: session.refresh, activeSection: route.section, onSection: section => goHome('discovery', section), onPlay: (track, featuredPool) => {
       const isQuick = data?.quickPicks?.some(item => item === track)
-      playRecommendation(track, isQuick ? 'Quick Picks' : 'Fresh Finds', isQuick ? data.quickPicks : recommendationTracks)
+      playRecommendation(track, featuredPool ? 'For You' : isQuick ? 'Quick Picks' : 'Fresh Finds', featuredPool || (isQuick ? data.quickPicks : recommendationTracks))
     }, onTrackMenu: openTrackMenu,
     resolveTracks: (rows, options = {}) => {
       const account = sessionState.account

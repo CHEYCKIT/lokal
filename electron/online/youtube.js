@@ -526,8 +526,8 @@ function expiryOf(url) {
 
 /** A readable reason from yt-dlp's error output. */
 function streamError(text) {
-  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Set your YouTube cookie in Settings → Library → Use YouTube Cookies.'
-  if (/Sign in to confirm your age/i.test(text)) return 'This song is age-restricted. Turn on YouTube cookies in Settings → Library to play it.'
+  if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Sign in to YouTube Music in Settings → Integrations.'
+  if (/Sign in to confirm your age/i.test(text)) return 'This song is age-restricted. Sign in to YouTube Music in Settings → Integrations to play it.'
   if (/not available|unavailable|Private video|removed/i.test(text)) return 'This song is not available on YouTube.'
   if (/HTTP Error 429|Too Many Requests/i.test(text)) return 'YouTube is rate-limiting. Try again in a while.'
   const line = String(text).split('\n').reverse().find(l => /ERROR:/.test(l))

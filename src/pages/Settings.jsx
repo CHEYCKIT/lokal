@@ -1981,7 +1981,7 @@ export default function Settings() {
 
       {inCategory('integrations') && (
       <Section title="Account Connections">
-        <ProviderConnections settingsOverride={settings} disableLastfmAuth onOpenSettings={(provider) => {
+        <ProviderConnections settingsOverride={settings} disableLastfmAuth onYouTubeSettingsChanged={patch => setSettings(previous => ({ ...previous, ...patch }))} onOpenSettings={(provider) => {
           setActiveCategory(provider === 'youtube' ? 'library' : 'integrations')
           if (provider === 'lastfm') setTimeout(() => document.getElementById('lastfm-api-key')?.focus(), 0)
         }} />
