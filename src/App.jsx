@@ -33,9 +33,10 @@ import SmartPlaylistModal from './components/SmartPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
-import Toaster from './components/Toaster'
+import Toaster, { showToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
-import { audioSrcFor, streamRef } from './onlineTracks'
+import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
+import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -230,6 +231,7 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait" onExitComplete={handleExitComplete}>
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageTransition gated><Home /></PageTransition>} />
+        <Route path="/home/:tab/*" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />
         <Route path="/artists" element={<PageTransition gated><Artists /></PageTransition>} />
         <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
@@ -254,6 +256,45 @@ export default function App() {
   const pageWidthRef = usePageWidth()
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
+  const streamRecoveryRef = useRef({ track: null, pending: false, failed: [] })
+
+  const recoverOnlinePlayback = useCallback(async (el, failedTrack, failedRef, reason = 'unavailable') => {
+    const activeEl = () => usePlayerStore.getState().activeAudioElement === 'cf' ? cfAudioRef.current : audioRef.current
+    if (usePlayerStore.getState().currentTrack !== failedTrack || el !== activeEl()) return
+    if (streamRecoveryRef.current.track !== failedTrack) streamRecoveryRef.current = { track: failedTrack, pending: false, failed: [] }
+    const recovery = streamRecoveryRef.current
+    if (recovery.pending) return
+    recovery.pending = true
+    recovery.failed.push(failedRef.provider)
+    el.dataset.fallbackPending = '1'
+    clearInterval(playTimerRef.current)
+    playTimerRef.current = null
+    el.pause()
+    const isCurrent = () => streamRecoveryRef.current === recovery && usePlayerStore.getState().currentTrack === failedTrack && el === activeEl()
+    showToast(reason === 'preview'
+      ? `${providerLabel(failedRef.provider)} only has a preview of “${failedTrack.title}”. Trying the next playback source.`
+      : `“${failedTrack.title}” couldn't play on ${providerLabel(failedRef.provider)}. Trying the next playback source.`)
+    try {
+      const [replacement] = await resolveRecommendationTracks([failedTrack], api, {
+        reusePlayable: false, afterProvider: failedRef.provider, skipProviders: recovery.failed, isCurrent,
+        onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+      })
+      if (!isCurrent()) return
+      if (replacement) {
+        recovery.track = replacement
+        setStreamError(null)
+        usePlayerStore.getState().replaceCurrentTrack(failedTrack.id, replacement)
+      } else {
+        usePlayerStore.getState().setIsPlaying(false)
+        const message = 'No full-length stream was found in your playback sources.'
+        setStreamError({ title: failedTrack.title, message })
+        showToast(message)
+      }
+    } finally {
+      recovery.pending = false
+      el.dataset.fallbackPending = ''
+    }
+  }, [])
 
   // A file the player can't decode (Apple Lossless .m4a, WMA, APE...): ask the
   // main process for a playable copy (converted once, cached) and switch to it.
@@ -261,23 +302,11 @@ export default function App() {
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
     const code = el?.error?.code
-    // An online song that couldn't be streamed: ask why, and say so.
+    // A failed stream advances through the configured playback providers.
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
     if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
-      const why = await Promise.resolve(api.onlinePrepare(failedRef.provider, failedRef.id, true)).catch(() => null)
-      if (usePlayerStore.getState().currentTrack?.id === failedTrack.id) {
-        // The element that failed is the one playing (not a crossfade's
-        // incoming one): nothing is playing any more, so say so and stop
-        // counting playback time.
-        const activeEl = usePlayerStore.getState().activeAudioElement === 'cf' ? cfAudioRef.current : audioRef.current
-        if (el === activeEl) {
-          clearInterval(playTimerRef.current)
-          playTimerRef.current = null
-          usePlayerStore.getState().setIsPlaying(false)
-        }
-        setStreamError({ title: failedTrack.title, message: why?.error || "Couldn't stream this song." })
-      }
+      await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }
     if (!api.isElectron || !el || (code !== 3 && code !== 4)) return
@@ -300,7 +329,7 @@ export default function App() {
     } finally {
       el.dataset.fallbackPending = ''
     }
-  }, [])
+  }, [recoverOnlinePlayback])
 
   // A pause event that doesn't mean "the user paused": the file failed to
   // decode (the failed first attempt at an Apple Lossless .m4a fires one), it
@@ -1446,14 +1475,21 @@ export default function App() {
     // is played the usual way, without a crossfade.
     const waitForCanplay = new Promise((resolve) => {
       let timer = null
+      let settled = false
       const done = (outcome) => {
+        if (settled) return
+        settled = true
         fadeInEl.removeEventListener('canplay', onReady)
         fadeInEl.removeEventListener('error', onFailed)
         fadeOutEl.removeEventListener('ended', onEnded)
         clearTimeout(timer)
         resolve(outcome)
       }
-      const onReady = () => done('ready')
+      const onReady = async () => {
+        const ref = streamRef(nextTrack)
+        const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider).catch(() => 'unavailable') : null
+        done(unavailable ? 'failed' : 'ready')
+      }
       const onFailed = () => done('failed')
       const onEnded = () => done('ended')
       fadeInEl.addEventListener('canplay', onReady)
@@ -1554,6 +1590,7 @@ export default function App() {
     }
 
     if (!audioRef.current || !currentTrack) return
+    if (streamRecoveryRef.current.track !== currentTrack) streamRecoveryRef.current = { track: currentTrack, pending: false, failed: [] }
 
     if (cfAudioRef.current) { 
       try { 
@@ -1585,13 +1622,27 @@ export default function App() {
     }
     setStreamError(null)
     prepareNextStream()
-    audioRef.current.dataset.fallbackFor = ''
-    audioRef.current.dataset.fallbackSrc = ''
-    audioRef.current.src = src
-    beginLastfmPlayback(currentTrack)
-    if (isPlaying) audioRef.current.play().catch(() => {})
-    if (api.isElectron) api.discordSetActivity(currentTrack, true).catch(() => {})
-  }, [currentTrack?.id, cancelCrossfade, beginLastfmPlayback])
+    const el = audioRef.current
+    el.dataset.fallbackFor = ''
+    el.dataset.fallbackSrc = ''
+    el.dataset.fallbackPending = '1'
+    el.pause()
+    el.removeAttribute('src')
+    let cancelled = false
+    const start = async () => {
+      const ref = streamRef(currentTrack)
+      const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider).catch(() => 'unavailable') : null
+      if (cancelled || usePlayerStore.getState().currentTrack !== currentTrack) return
+      if (unavailable) { await recoverOnlinePlayback(el, currentTrack, ref, unavailable); return }
+      el.dataset.fallbackPending = ''
+      el.src = src
+      beginLastfmPlayback(currentTrack)
+      if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
+      if (api.isElectron) api.discordSetActivity(currentTrack, usePlayerStore.getState().isPlaying).catch(() => {})
+    }
+    start()
+    return () => { cancelled = true; el.dataset.fallbackPending = '' }
+  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback])
 
   useEffect(() => {
     if (isCrossfadingRef.current) return

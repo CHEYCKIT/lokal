@@ -8,6 +8,8 @@ const { cookieArgs } = require('./ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../download/search')
 const sources = require('../online/sources')
 const youtube = require('../online/youtube')
+const { createArtworkResolver } = require('../discoveryArtwork')
+const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
 
 const SCHEME = 'lokal-stream'
 
@@ -66,6 +68,8 @@ function registerOnlineHandlers(ipcMain) {
   })
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
+  ipcMain.handle('online:artwork', (_, items) => discoveryArtwork(items))
+  ipcMain.handle('online:catalogue', (_, options) => youtube.fetchCatalogue(options, accountCookies()).catch(e => ({ error: e.message })))
   ipcMain.handle('online:account', (_, force = false) => youtube.fetchAccountData({ cookies: accountCookies(), force: !!force }))
   ipcMain.handle('online:accountPlaylist', (_, playlistId) => youtube.fetchAccountPlaylist(playlistId, accountCookies()))
   ipcMain.handle('online:radio', (_, videoId) => youtube.fetchRadio(videoId, { cookies: accountCookies() }).catch(() => []))

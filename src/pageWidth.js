@@ -4,7 +4,7 @@
 // sideways.
 //
 // Tailwind's sm/md/lg/xl measure the window; @sm/@md/@lg/@xl (see
-// tailwind.config.js) measure the page, at the window widths less the left
+// tailwind.config.mjs) measure the page, at the window widths less the left
 // sidebar (pageBreakpoints.js), so with the right sidebar closed a page looks
 // exactly as before. The page element carries them as data-page="sm md lg",
 // set here from its width, which the @ variants match. (Not a CSS container:

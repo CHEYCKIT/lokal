@@ -293,7 +293,7 @@ export default function Artists() {
             <div className="mt-2 flex items-center gap-2.5">
               <h1 className="font-display text-3xl uppercase tracking-[0.14em] text-white">Artists</h1>
               <button
-                onClick={() => navigate('/', { state: { tab: 'history' } })}
+                onClick={() => navigate('/home/history')}
                 title="Listening history"
                 className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 transition-colors hover:border-white/25 hover:text-white"
               >

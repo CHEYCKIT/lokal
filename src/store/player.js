@@ -278,6 +278,24 @@ export const usePlayerStore = create((set, get) => ({
 
   setPlaybackContext: (context) => set({ playbackContext: context || null }),
 
+  // A fallback changes the stream for the same queue entry, not the queue's
+  // order, shuffle state, or playback context.
+  replaceCurrentTrack: (oldId, track) => set(state => {
+    if (state.currentTrack?.id !== oldId || !sanitizeSingleTrack(track)) return {}
+    const replace = list => list.map(item => item.id === oldId ? track : item)
+    const replaceId = list => list.map(id => id === oldId ? track.id : id)
+    return {
+      currentTrack: track,
+      queue: replace(state.queue),
+      originalQueue: replace(state.originalQueue),
+      shuffleQueue: replace(state.shuffleQueue),
+      playHistory: replaceId(state.playHistory),
+      futureHistory: replaceId(state.futureHistory),
+      progress: 0,
+      duration: 0,
+    }
+  }),
+
   playTrack: (track, queue = null, context = null) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return

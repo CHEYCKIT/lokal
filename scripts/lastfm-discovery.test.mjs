@@ -19,6 +19,7 @@ function provider(overrides = {}) {
     if (method === 'user.getTopArtists') return { topartists: { artist: Array.from({ length: 35 }, (_, i) => ({ name: `Artist ${i}` })) } }
     if (method === 'user.getTopAlbums') return { topalbums: { album: Array.from({ length: 35 }, (_, i) => ({ name: `Album ${i}`, artist: { name: `Artist ${i}` } })) } }
     if (method === 'track.getSimilar') return { similartracks: { track: Array.from({ length: 40 }, (_, i) => event(`Similar ${params.track} ${i}`, 'Discovery Artist')) } }
+    if (method === 'artist.getSimilar') return { similarartists: { artist: [{ name: 'Related Artist' }] } }
     if (method === 'artist.getTopTracks') return { toptracks: { track: Array.from({ length: 30 }, (_, i) => event(`Catalogue ${params.page} ${i}`, params.artist)) } }
     throw new Error(`Unexpected method ${method}`)
   }
@@ -128,4 +129,12 @@ test('seed caching isolates accounts and credentials and does not cache partial 
   await loadLastfmDiscovery({ ...settings, lastfm_username: 'another-listener' }, call, { now, page: 2 })
   await loadLastfmDiscovery({ ...settings, lastfm_api_key: 'changed-test-key' }, call, { now, page: 3 })
   assert.equal(seedCount(), 4)
+})
+
+test('uncatalogued scrobbles still produce discovery from related artist catalogues', async () => {
+  const { call } = provider({ 'track.getSimilar': () => ({ error: 6, message: 'Track not found' }) })
+  const result = await loadLastfmDiscovery(settings, call, { now })
+  assert.equal(result.freshFinds.length, 30)
+  assert.ok(result.candidates.some(track => track.artist === 'Related Artist'))
+  assert.ok(!result.warnings.some(message => message.includes('Track not found')))
 })

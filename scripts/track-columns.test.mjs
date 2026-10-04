@@ -45,6 +45,17 @@ test('a liked track keeps its heart when optional quick actions are hidden', () 
   assert.equal(withLike.template.split(' ').at(-1), '2.5rem')
 })
 
+test('scrobble metadata adds columns to the standard layout and folds safely on narrow lists', () => {
+  const extraColumns = [{ key: 'scrobbled', width: 5.5 }, { key: 'age', width: 5.5 }]
+  const wide = trackColumnLayout(90, trackColumnDefaults(), { extraColumns })
+  assert.equal(wide.scrobbled, true)
+  assert.equal(wide.age, true)
+  assert.ok(wide.template.includes('5.5rem 5.5rem'))
+  const narrow = trackColumnLayout(24, trackColumnDefaults(), { extraColumns })
+  assert.equal(narrow.album, false)
+  assert.equal(narrow.age, false)
+})
+
 test('all preference combinations keep header/row grids within the available width', () => {
   const keys = TRACK_COLUMN_OPTIONS.map(([key]) => key)
   for (let mask = 0; mask < 2 ** keys.length; mask++) {

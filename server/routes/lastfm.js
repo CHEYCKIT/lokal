@@ -4,6 +4,7 @@ const crypto = require('crypto')
 const scrobbler = require('../../electron/lastfmScrobbler')
 const { getPrimaryLastfmArtist, syncLovedTracks } = require('../../electron/ipc/lastfm')
 const { loadLastfmDiscovery } = require('../../electron/lastfmDiscovery')
+const { lastfmCatalogue } = require('../../electron/discoveryCatalogue')
 
 const API_ROOT = 'https://ws.audioscrobbler.com/2.0/'
 const REQUEST_TIMEOUT_MS = 15000
@@ -227,8 +228,8 @@ function settings() {
   return Object.fromEntries(getDB().prepare('SELECT key, value FROM settings').all().map(row => [row.key, row.value]))
 }
 
-async function discovery(page = 0) {
-  return loadLastfmDiscovery(settings(), lastfmCall, { page })
+async function discovery(page = 0, force = false) {
+  return loadLastfmDiscovery(settings(), lastfmCall, { page, force })
 }
 
 async function similarMusic(artist, track, limit = 24) {
@@ -275,7 +276,8 @@ async function setLoved(artist, track, loved) {
   return lastfmCall(loved ? 'track.love' : 'track.unlove', { artist: getPrimaryLastfmArtist(artist), track, sk: saved.lastfm_session_key }, saved.lastfm_api_key, saved.lastfm_api_secret)
 }
 
-router.get('/discovery', async (req, res) => res.json(await discovery(req.query?.page).catch(e => ({ error: e.message }))))
+router.get('/discovery', async (req, res) => res.json(await discovery(req.query?.page, req.query?.force === '1').catch(e => ({ error: e.message }))))
+router.post('/catalogue', async (req, res) => res.json(await lastfmCatalogue(settings(), lastfmCall, req.body).catch(e => ({ error: e.message }))))
 router.get('/loved', async (req, res) => res.json(await lovedTracks(req.query?.page).catch(e => ({ error: e.message }))))
 router.post('/loved', async (req, res) => res.json(await setLoved(req.body?.artist, req.body?.track, !!req.body?.loved).catch(e => ({ error: e.message }))))
 router.post('/sync-likes', async (req, res) => {
