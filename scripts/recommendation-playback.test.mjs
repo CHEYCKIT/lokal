@@ -86,3 +86,12 @@ test('background queue filling preserves shuffle and avoids duplicate entries', 
   assert.equal(new Set(store.getState().shuffleQueue.map(track => track.id)).size, 8)
   assert.deepEqual(store.getState().originalQueue.map(track => track.title), pool.map(track => track.title))
 })
+
+test('a one-song Discovery result never gains unrelated local recommendations', async () => {
+  await playRecommendationPool(pool.slice(0, 1), { context: { type: 'discovery', name: 'Album' }, resolve: async rows => rows.map(playable) })
+  store.getState().appendRelated([playable({ title: 'Unrelated Local', artist: 'Other' })])
+  assert.deepEqual(store.getState().queue.map(track => track.title), ['Song 0'])
+  store.setState({ playbackContext: { type: 'mix', name: 'Mix' } })
+  store.getState().appendRelated([playable({ title: 'Unrelated Local', artist: 'Other' })])
+  assert.deepEqual(store.getState().queue.map(track => track.title), ['Song 0'])
+})

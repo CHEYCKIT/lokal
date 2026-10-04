@@ -10,6 +10,7 @@ const sources = require('../online/sources')
 const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
 const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
+let accountSession
 
 const SCHEME = 'lokal-stream'
 
@@ -26,10 +27,6 @@ function streamOptions() {
   return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
 }
 
-function accountCookies() {
-  return settings().yt_cookie_header || ''
-}
-
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
 async function youtubeFallback(query) {
   const ytdlp = findYtDlp()
@@ -44,7 +41,8 @@ async function youtubeFallback(query) {
 /** Songs for `query` on a provider ('yt' YouTube Music, 'sc' SoundCloud). */
 async function search(query, provider = 'yt') {
   try {
-    return await sources.search(sources.providerOf(provider) ? provider : 'yt', query, { db: getDB(), ytdlp: findYtDlp(), fallbackSearch: youtubeFallback })
+    const auth = provider === 'yt' && accountSession ? await accountSession.credentials() : {}
+    return await sources.search(sources.providerOf(provider) ? provider : 'yt', query, { db: getDB(), ytdlp: findYtDlp(), fetchImpl: auth.fetchImpl, fallbackSearch: youtubeFallback })
   } catch (e) {
     return { error: e.message, results: [] }
   }
@@ -61,6 +59,11 @@ function providers() {
 
 /** IPC: online:search, online:save (keep as ghost tracks), online:prepare (resolve a stream ahead of time, or get why it fails). */
 function registerOnlineHandlers(ipcMain) {
+  accountSession ||= require('../online/youtubeSession').createYouTubeSession({ getSettings: settings, saveSettings: values => {
+    const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    for (const [key, value] of Object.entries(values)) stmt.run(key, String(value))
+  } })
+  const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
   ipcMain.handle('online:search', (_, query, provider) => search(query, provider))
   ipcMain.handle('online:save', (_, items) => {
@@ -69,11 +72,13 @@ function registerOnlineHandlers(ipcMain) {
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
   ipcMain.handle('online:artwork', (_, items) => discoveryArtwork(items))
-  ipcMain.handle('online:catalogue', (_, options) => youtube.fetchCatalogue(options, accountCookies()).catch(e => ({ error: e.message })))
-  ipcMain.handle('online:account', (_, force = false) => youtube.fetchAccountData({ cookies: accountCookies(), force: !!force }))
-  ipcMain.handle('online:accountPlaylist', (_, playlistId) => youtube.fetchAccountPlaylist(playlistId, accountCookies()))
-  ipcMain.handle('online:radio', (_, videoId) => youtube.fetchRadio(videoId, { cookies: accountCookies() }).catch(() => []))
-  ipcMain.handle('online:setAccountLiked', (_, videoId, liked) => youtube.setAccountLiked(videoId, liked, accountCookies()))
+  ipcMain.handle('online:signIn', (_, options) => accountSession.signIn(options))
+  ipcMain.handle('online:disconnect', () => accountSession.disconnect())
+  ipcMain.handle('online:catalogue', (_, options) => accountRequest(({ cookies, fetchImpl }) => youtube.fetchCatalogue(options, cookies, fetchImpl)).catch(e => ({ error: e.message })))
+  ipcMain.handle('online:account', (_, force = false) => accountRequest(auth => youtube.fetchAccountData({ ...auth, force: !!force })).catch(e => ({ error: e.message, authenticated: false })))
+  ipcMain.handle('online:accountPlaylist', (_, playlistId) => accountRequest(({ cookies, fetchImpl }) => youtube.fetchAccountPlaylist(playlistId, cookies, fetchImpl)))
+  ipcMain.handle('online:radio', (_, videoId) => accountRequest(auth => youtube.fetchRadio(videoId, auth)).catch(() => []))
+  ipcMain.handle('online:setAccountLiked', (_, videoId, liked) => accountRequest(({ cookies, fetchImpl }) => youtube.setAccountLiked(videoId, liked, cookies, fetchImpl)))
   // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
     try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }
@@ -87,6 +92,7 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
+      if (provider === 'yt') await accountSession.credentials()
       const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
       return { ok: true, preview: !!stream.preview }
     } catch (e) { return { error: e.message } }
@@ -111,6 +117,7 @@ function registerStreamProtocol(protocol, net) {
       id = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
     } catch {}
     try {
+      if (provider === 'yt' && accountSession) await accountSession.credentials()
       const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: request.signal, fetchImpl: (u, init) => net.fetch(u, init) })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }

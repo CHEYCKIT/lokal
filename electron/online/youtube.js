@@ -168,15 +168,10 @@ function cookieValue(header, names) {
   return names.map(name => values.get(name)).find(Boolean) || ''
 }
 
-function normalizeAccountCookies(value) {
-  const text = String(value || '').trim().replace(/^cookie:\s*/i, '')
-  if (text.includes('\t')) {
-    return text.split(/\r?\n/).map(line => line.split('\t')).filter(fields => fields.length >= 7 && /(?:^|\.)youtube\.com$/i.test(fields[0].replace(/^#HttpOnly_/, ''))).map(fields => `${fields[5]}=${fields[6]}`).join('; ')
-  }
-  return text.replace(/[\r\n]+/g, ' ').trim()
-}
+const { normalizeCookies: normalizeAccountCookies, browserContext } = require('./browserAuth')
 
 function accountHeaders(cookieHeader, config = {}) {
+  config = { ...config, ...browserContext(cookieHeader) }
   cookieHeader = normalizeAccountCookies(cookieHeader)
   const sapisid = cookieValue(cookieHeader, ['SAPISID', '__Secure-3PAPISID', '__Secure-1PAPISID'])
   if (!sapisid) return null
@@ -194,7 +189,7 @@ function accountHeaders(cookieHeader, config = {}) {
     'Content-Type': 'application/json',
     Origin: 'https://music.youtube.com',
     Referer: 'https://music.youtube.com/',
-    'User-Agent': 'Mozilla/5.0',
+    'User-Agent': config.USER_AGENT || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
     Cookie: cookieHeader,
     Authorization: authorization.join(' '),
     'X-Origin': 'https://music.youtube.com',
@@ -233,8 +228,8 @@ async function musicContext(cookieHeader, fetchImpl, force = false) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10000)
   try {
-    const res = await fetchImpl('https://music.youtube.com/', { headers: { Cookie: normalizeAccountCookies(cookieHeader), 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US,en;q=0.9' }, signal: controller.signal })
-    const config = res.ok ? parseMusicConfig(await res.text()) : {}
+    const res = await fetchImpl('https://music.youtube.com/', { headers: { Cookie: normalizeAccountCookies(cookieHeader), 'User-Agent': browserContext(cookieHeader).USER_AGENT || 'Mozilla/5.0', 'Accept-Language': 'en-US,en;q=0.9' }, signal: controller.signal })
+    const config = { ...(res.ok ? parseMusicConfig(await res.text()) : {}), ...browserContext(cookieHeader) }
     contextCache.set(id, { config, at: Date.now() })
     if (contextCache.size > 4) contextCache.delete(contextCache.keys().next().value)
     return config
@@ -343,34 +338,35 @@ function parseAccountPlaylists(root, limit = 100) {
 function parseAccountEntities(root, type) {
   const items = new Map()
   walkObjects(root, node => {
-    const row = node.musicTwoRowItemRenderer
-    const endpoint = row?.navigationEndpoint?.browseEndpoint
+    const row = node.musicTwoRowItemRenderer || node.musicResponsiveListItemRenderer
+    const titleRuns = columnRuns(row, 0)
+    const endpoint = row?.navigationEndpoint?.browseEndpoint || titleRuns[0]?.navigationEndpoint?.browseEndpoint
     const pageType = endpoint?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
-    const title = textOf(row?.title)
+    const title = textOf(row?.title) || titleRuns.map(run => run.text).join('')
     if (!title || !pageType.endsWith(type === 'artist' ? '_ARTIST' : '_ALBUM')) return
     const image = thumbnailsOf(row.thumbnail)
-    const artist = textOf(row.subtitle).split('•').map(value => value.trim()).find(value => value && !/^(album|single|ep|\d{4})$/i.test(value)) || ''
+    const artist = (textOf(row.subtitle) || columnRuns(row, 1).map(run => run.text).join('')).split('•').map(value => value.trim()).find(value => value && !/^(album|single|ep|\d{4})$/i.test(value)) || ''
     items.set(endpoint.browseId, type === 'artist' ? { name: title, image, browseId: endpoint.browseId } : { title, artist, artwork_url: image, albumId: endpoint.browseId })
   })
   return [...items.values()].slice(0, 30)
 }
 
-async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}) {
-  const headers = accountHeaders(cookieHeader, config)
-  if (!headers) throw new Error('YouTube account cookies are missing SAPISID.')
+async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false } = {}) {
+  const headers = accountHeaders(cookieHeader, config) || (anonymous ? { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' } : null)
+  if (!headers) throw new Error('Sign in to YouTube Music in Integrations.')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const res = await fetchImpl(BROWSE_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, browseId }),
+      body: JSON.stringify({ context: { client: { ...CLIENT, ...config.INNERTUBE_CONTEXT?.client, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, browseId }),
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`YouTube Music account request failed (${res.status}).`)
     const json = await res.json()
-    if (isLoggedOutResponse(json)) {
-      throw new Error('YouTube Music rejected the saved session. Paste the complete Cookie header from a signed-in music.youtube.com request in Integrations, then verify account access.')
+    if (!anonymous && isLoggedOutResponse(json)) {
+      throw new Error('YouTube Music rejected the saved session. Sign in again in Integrations.')
     }
     return json
   } finally {
@@ -392,27 +388,30 @@ function isLoggedOutResponse(json) {
 
 /** Authenticated YouTube Music account surfaces backed by the internal login. */
 async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100, force = false } = {}) {
-  const cookieHeader = normalizeAccountCookies(cookies)
-  if (!accountHeaders(cookieHeader)) return { error: 'Paste the complete signed-in YouTube Music Cookie header in Integrations.', authenticated: false }
+  const cookieHeader = String(cookies || '')
+  if (!accountHeaders(cookieHeader)) return { error: 'Sign in to YouTube Music in Integrations.', authenticated: false }
   const key = accountKey(cookieHeader)
   const cached = accountCache.get(key)
   if (!force && cached && Date.now() - cached.at < ACCOUNT_TTL_MS) return cached.data
 
   const config = await musicContext(cookieHeader, fetchImpl, force)
-  const [likedResult, playlistsResult, homeResult] = await Promise.allSettled([
+  const [likedResult, playlistsResult, homeResult, historyResult] = await Promise.allSettled([
     accountBrowse('VLLM', cookieHeader, fetchImpl, config),
     accountBrowse('FEmusic_liked_playlists', cookieHeader, fetchImpl, config),
     accountBrowse('FEmusic_home', cookieHeader, fetchImpl, config),
+    accountBrowse('FEmusic_history', cookieHeader, fetchImpl, config),
   ])
   const liked = likedResult.status === 'fulfilled' ? parseAccountTracks(likedResult.value, limit) : []
   const playlists = playlistsResult.status === 'fulfilled' ? parseAccountPlaylists(playlistsResult.value, limit) : []
   const home = homeResult.status === 'fulfilled' ? parseAccountTracks(homeResult.value, limit) : []
-  const errors = [likedResult, playlistsResult, homeResult].filter(result => result.status === 'rejected')
-  if (!liked.length && !playlists.length && !home.length && errors.length === 3) {
-    return { error: errors[0].reason?.message || 'Could not load YouTube Music account data.', authenticated: false }
+  const results = [likedResult, playlistsResult, homeResult, historyResult]
+  const errors = results.filter(result => result.status === 'rejected')
+  const authenticated = results.some(result => result.status === 'fulfilled' && (result.value?.responseContext?.mainAppWebResponseContext?.loggedOut === false || (result.value?.responseContext?.serviceTrackingParams || []).some(service => (service.params || []).some(param => param.key === 'logged_in' && String(param.value) === '1'))))
+  if (!authenticated) {
+    return { error: errors[0]?.reason?.message || 'YouTube Music did not confirm an authenticated account. Sign in again in Integrations.', authenticated: false }
   }
   const homePlaylists = homeResult.status === 'fulfilled' ? parseAccountPlaylists(homeResult.value, 12) : []
-  const data = { liked, playlists, home, homePlaylists, artists: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'artist') : [], albums: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'album') : [], authenticated: true, homeError: homeResult.status === 'rejected' ? homeResult.reason?.message : '' }
+  const data = { liked, playlists, home, homePlaylists, history: historyResult.status === 'fulfilled' ? parseAccountTracks(historyResult.value, limit) : [], artists: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'artist') : [], albums: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'album') : [], authenticated: true, homeError: homeResult.status === 'rejected' ? homeResult.reason?.message : '' }
   if (!errors.length) {
     accountCache.set(key, { at: Date.now(), data })
     if (accountCache.size > 4) accountCache.delete(accountCache.keys().next().value)
@@ -423,13 +422,14 @@ async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100, force
 /** YouTube Music's own song radio, rather than searching for the word "radio". */
 async function fetchRadio(videoId, { cookies = '', fetchImpl = fetch, limit = 50 } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) return []
+  const config = await musicContext(cookies, fetchImpl)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const response = await fetchImpl('https://music.youtube.com/youtubei/v1/next?prettyPrint=false', {
       method: 'POST', signal: controller.signal,
-      headers: accountHeaders(cookies) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
-      body: JSON.stringify({ context: { client: CLIENT }, videoId, playlistId: `RDAMVM${videoId}`, isAudioOnly: true, enablePersistentPlaylistPanel: true }),
+      headers: accountHeaders(cookies, config) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
+      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion }, user: config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {} }, videoId, playlistId: `RDAMVM${videoId}`, isAudioOnly: true, enablePersistentPlaylistPanel: true }),
     })
     if (!response.ok) throw new Error(`YouTube Music radio failed (${response.status}).`)
     const json = await response.json()
@@ -462,7 +462,6 @@ async function fetchCatalogue({ type, artist, album, albumId } = {}, cookies, fe
     const tracks = (await searchSongs(String(artist), { limit: 60, fetchImpl })).filter(track => track.artists.some(name => plain(name) === plain(artist)))
     return { tracks }
   }
-  if (!accountHeaders(cookies)) return { error: 'Connect YouTube Music in Integrations with the complete signed-in Cookie header to load albums.' }
   const config = await musicContext(cookies, fetchImpl)
   let id = /^MPRE[\w-]+$/.test(String(albumId || '')) ? albumId : null
   if (!id) {
@@ -481,7 +480,7 @@ async function fetchCatalogue({ type, artist, album, albumId } = {}, cookies, fe
     } finally { clearTimeout(timer) }
   }
   if (!id) return { error: `YouTube Music did not find the album ${album} by ${artist}.` }
-  const root = await accountBrowse(id, cookies, fetchImpl, config)
+  const root = await accountBrowse(id, cookies, fetchImpl, config, { anonymous: !accountHeaders(cookies) })
   return { tracks: parseAccountTracks(root, 100).map(track => {
     const artists = track.artists?.length ? track.artists : [track.artist || String(artist)]
     return { ...track, artists, artist: track.artist || artists.join(', '), album }

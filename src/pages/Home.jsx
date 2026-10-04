@@ -11,7 +11,7 @@ import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { plural } from '../plural'
 import ContextMenu, { useContextMenu } from '../components/ContextMenu'
-import { showToast } from '../components/Toaster'
+import { showToast, showLoadingToast } from '../components/Toaster'
 import { addToPlaylistMany, addToQueueMany, playNextMany, saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
@@ -20,6 +20,7 @@ import { openRadio } from '../radioActions'
 import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
 import { playRecommendationPool } from '../recommendationPlayback'
+import { loadDiscoveryCatalogue } from '../discoveryCatalogue'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
@@ -151,7 +152,7 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
     {data && !quick.length && !history.length && !albums.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
     {feature && <section className="rounded-2xl border border-border bg-elevated p-5"><SectionHeader icon={Sparkles} eyebrow="Discovery" title="Discover Something New" subtitle={feature.reason || `Selected from your ${source} recommendations.`} /><div className="flex items-center gap-5"><div className="h-32 w-32 shrink-0 overflow-hidden rounded-xl bg-card">{trackArtURL(feature) ? <FadeImg src={trackArtURL(feature)} className="h-full w-full object-cover" /> : <Music size={36} className="m-11 text-muted" />}</div><div className="min-w-0"><p className="truncate text-xl text-white">{feature.title}</p><p className="truncate text-sm text-muted">{feature.artist}</p><button type="button" onClick={() => onPlay(feature)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm text-base"><Play size={14} fill="currentColor" />Play</button></div></div></section>}
     {quick.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow="Jump back in" title="Quick Picks" count={quick.length} subtitle={selectedSource === 'youtube' ? 'Picks from your YouTube Music account.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle('quick')} expanded={activeSection === 'quick'} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'quick' ? quick : quick.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
-    {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title="Scrobble History" count={history.length} subtitle="Your last 100 provider scrobbles, grouped by date." onExpand={() => toggle('history')} expanded={activeSection === 'history'} /><ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} /></section>}
+    {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title={selectedSource === 'youtube' ? 'YouTube Music History' : 'Scrobble History'} count={history.length} subtitle={selectedSource === 'youtube' ? 'Recent tracks from your YouTube Music listening history.' : 'Your last 100 provider scrobbles, grouped by date.'} onExpand={() => toggle('history')} expanded={activeSection === 'history'} />{selectedSource === 'youtube' ? <TrackList tracks={recommendationRows(activeSection === 'history' ? history : history.slice(0, 6))} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'YouTube Music History' }} /> : <ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} />}</section>}
     {albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
     {artists.length > 0 && <section><SectionHeader icon={User} eyebrow="For You" title="Artists For You" count={artists.length} onExpand={() => toggle('artists')} expanded={activeSection === 'artists'} /><div className="grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8">{(activeSection === 'artists' ? artists : artists.slice(0, 8)).map(artist => <ArtistRecommendation key={artist.name} artist={artist} onClick={onArtistPlay} onContextMenu={onArtistMenu} />)}</div></section>}
     {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title="Fresh Finds" count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={activeSection === 'fresh'} action={<button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><ListPlus size={13} />{saving ? 'Saving…' : 'Save'}</button>} /><div className="rounded-xl border border-border bg-elevated p-3">{(activeSection === 'fresh' ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
@@ -206,6 +207,7 @@ function HomeContent({ user }) {
   const menu = useContextMenu()
   const [saving, setSaving] = useState(null)
   const playRequestRef = useRef(0)
+  const pendingPlayRef = useRef(null)
   const accountRef = useRef(sessionState.account)
   accountRef.current = sessionState.account
   const saveBusyRef = useRef(false)
@@ -225,35 +227,50 @@ function HomeContent({ user }) {
   const saveMix = mix => saveList(`mix:${mix.id}`, `${mixTitle(mix)} - ${today()}`, mix.tracks, `Your ${mixTitle(mix)} from Home`)
 
   const playRecommendation = async (entry, context = 'recommendations', pool = [entry]) => {
-    const request = ++playRequestRef.current
     const track = entry?.track || entry
     if (!track) return
+    const key = `track:${songKey(track)}`
+    if (pendingPlayRef.current === key) return
+    const request = ++playRequestRef.current
+    pendingPlayRef.current = key
+    const toast = showLoadingToast(`Finding “${track.title}”…`)
     const account = accountRef.current
     const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
-    const started = await playRecommendationPool(pool, {
-      selected: track, context: { type: 'discovery', name: context }, isCurrent,
-      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
-    })
-    if (!isCurrent()) return
-    if (started === false) showToast(`No matching playback source was found for ${track.title}.`)
+    try {
+      const started = await playRecommendationPool(pool, {
+        selected: track, context: { type: 'discovery', name: context }, isCurrent,
+        onProgress: message => { if (isCurrent()) toast.update(message) },
+        onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)),
+      })
+      toast.close(isCurrent() && started === false ? `No matching playback source was found for ${track.title}.` : '')
+    } catch { toast.close(isCurrent() ? `Could not load “${track.title}”.` : '') }
+    finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
   }
 
   const playCatalogue = async (type, item) => {
+    const key = `${type}:${item.artist || item.name}:${item.title || ''}`
+    if (pendingPlayRef.current === key) return
     const request = ++playRequestRef.current
+    pendingPlayRef.current = key
     const account = session.getSnapshot().account
     const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
+    const playbackVersion = usePlayerStore.getState().playbackGeneration
+    const catalogueCurrent = () => isCurrent() && usePlayerStore.getState().playbackGeneration === playbackVersion
     const artist = type === 'artist' ? item.name : item.artist
-    showToast(type === 'album' ? `Loading ${item.title}…` : `Loading songs by ${artist}…`)
-    const result = await api.discoveryCatalogue({ source: recommendationSource, type, artist, album: type === 'album' ? item.title : '', albumId: item.albumId }).catch(() => null)
-    if (!isCurrent()) return
-    let candidates = Array.isArray(result?.tracks) ? result.tracks : []
-    if (type === 'artist') {
-      candidates = [...candidates]
-      for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]] }
-    }
-    const started = await playRecommendationPool(candidates, { firstPlayable: true, isCurrent, context: { type: 'discovery', name: type === 'album' ? item.title : artist } })
-    if (!isCurrent()) return
-    if (started === false) showToast(result?.error || 'No playable tracks were found.')
+    const toast = showLoadingToast(type === 'album' ? `Loading ${item.title}…` : `Loading songs by ${artist}…`)
+    try {
+      const progress = message => { if (isCurrent()) toast.update(message) }
+      const result = await loadDiscoveryCatalogue({ source: recommendationSource, type, artist, album: type === 'album' ? item.title : '', albumId: item.albumId }, api, { isCurrent: catalogueCurrent, onProgress: progress })
+      if (!catalogueCurrent()) { toast.close(); return }
+      let candidates = result.tracks
+      if (type === 'artist') {
+        candidates = [...candidates]
+        for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]] }
+      }
+      const started = await playRecommendationPool(candidates, { firstPlayable: true, isCurrent, onProgress: progress, onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)), context: { type: 'discovery', name: type === 'album' ? item.title : artist } })
+      toast.close(isCurrent() && started === false ? result.error || `No playable ${type === 'album' ? 'album tracks' : 'songs'} were found for ${type === 'album' ? item.title : artist} in your sources.` : '')
+    } catch { toast.close(isCurrent() ? `Could not load ${type === 'album' ? item.title : artist} from your sources.` : '') }
+    finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
   }
 
   const startRadio = async seed => {
@@ -280,7 +297,7 @@ function HomeContent({ user }) {
   }
 
   useEffect(() => { load() }, [user?.id])
-  useEffect(() => { session.ensure(); return () => { playRequestRef.current++ } }, [session])
+  useEffect(() => { session.ensure() }, [session])
   useEffect(() => {
     const refresh = () => load()
     window.addEventListener('lokal:refresh', refresh)

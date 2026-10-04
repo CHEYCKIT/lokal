@@ -1,11 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CheckCircle2, ExternalLink, KeyRound, Music2, RefreshCw, Youtube } from 'lucide-react'
 import { api } from '../api'
-import { youTubeCookieReady } from '../downloadLinks'
 import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
-
-const SECRET_PLACEHOLDER = '••••••••'
-const ACCOUNT_COOKIE_RE = /(?:^|[;\s])(?:SAPISID|__Secure-3PAPISID|__Secure-1PAPISID)=[^;\s]+/i
 
 function StatusDot({ connected }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-green-400' : 'bg-border'}`} aria-hidden="true" />
@@ -31,10 +27,7 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
 /**
  * Account entry points shared by first-run setup and Integrations.
  *
- * YouTube deliberately reports the cookie-backed playback state separately
- * from the browser account hand-off. Electron cannot read cookies from an
- * external browser after shell.openExternal(), so showing that as a connected
- * account would make Premium/private playback look configured when it is not.
+ * Desktop YouTube Music sign-in owns a persistent, automatically refreshed session.
  */
 export default function ProviderConnections({ compact = false, onOpenSettings, settingsOverride = null, disableLastfmAuth = false }) {
   const [settings, setSettings] = useState(() => settingsOverride || {})
@@ -43,7 +36,6 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const [lastfmState, setLastfmState] = useState('')
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
-  const [youtubeCookieDraft, setYoutubeCookieDraft] = useState('')
   const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
   const [settingsError, setSettingsError] = useState('')
   const youtubeStatus = useSyncExternalStore(subscribeYoutubeAccountStatus, getYoutubeAccountStatus)
@@ -137,14 +129,24 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   }, [disableLastfmAuth])
 
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
-  const youtubeAccountReady = settings.yt_cookie_header === SECRET_PLACEHOLDER || ACCOUNT_COOKIE_RE.test(settings.yt_cookie_header || '')
-  const youtubePlaybackReady = youTubeCookieReady(settings)
+  const youtubeAccountReady = settings.yt_account_session === '1'
   const youtubeConnected = youtubeAccountReady && youtubeStatus.verified && youtubeStatus.connected
   const verifyYouTube = async () => {
     setYoutubeAuthorizing(true)
     const result = await api.youtubeAccount(true).catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
-    setYoutubeState({ message: result?.error || 'YouTube Music account access verified.', tone: result?.error ? 'error' : 'success' })
+    const verified = result?.authenticated === true && !result.error
+    setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'YouTube Music did not confirm account access. Please sign in again.', tone: verified ? 'success' : 'error' })
+  }
+  const signInYouTube = async (compatibility = false) => {
+    setYoutubeAuthorizing(true)
+    setYoutubeState({ message: 'Complete sign-in in the YouTube Music window. Account access is verified before the window closes.', tone: 'muted' })
+    try {
+      const result = await api.youtubeSignIn({ compatibility })
+      await loadSettings(true)
+      setYoutubeState({ message: result?.authenticated ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: result?.authenticated ? 'success' : 'error' })
+    } catch (error) { setYoutubeState({ message: error.message || 'YouTube Music sign-in failed.', tone: 'error' }) }
+    finally { setYoutubeAuthorizing(false) }
   }
 
   const authorizeLastfm = async () => {
@@ -173,37 +175,17 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     }
   }
 
-  const saveYouTubeCookie = async () => {
-    const value = youtubeCookieDraft.trim()
-    if (!ACCOUNT_COOKIE_RE.test(value)) {
-      setYoutubeState({ message: 'Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.', tone: 'error' })
-      return
-    }
-    setYoutubeAuthorizing(true)
-    const result = await api.saveSettings({ yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: value }).catch(error => ({ error: error.message }))
-    setYoutubeAuthorizing(false)
-    if (!result?.error) {
-      setSettings(prev => ({ ...prev, yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: SECRET_PLACEHOLDER }))
-      setYoutubeCookieDraft('')
-      setYoutubeState({ message: 'YouTube session saved. Verifying account access…', tone: 'muted' })
-      await verifyYouTube()
-      window.dispatchEvent(new Event('lokal:refresh'))
-    } else {
-      setYoutubeState({ message: result.error, tone: 'error' })
-    }
-  }
-
   const disconnectYouTube = async () => {
-    if (!window.confirm('Disconnect YouTube from Lokal and clear its saved cookie?')) return
+    if (!window.confirm('Disconnect YouTube Music and sign out of its saved session?')) return
     setYoutubeAuthorizing(true)
-    const result = await api.saveSettings({ yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }).catch(error => ({ error: error.message }))
-    setYoutubeAuthorizing(false)
-    if (!result?.error) {
-      setSettings(prev => ({ ...prev, yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }))
-      setYoutubeCookieDraft('')
+    try {
+      const result = await api.youtubeDisconnect()
+      if (!result?.ok || result.error) throw new Error(result?.error || 'Could not disconnect YouTube Music.')
+      await loadSettings(true)
       setYoutubeState({ message: 'YouTube disconnected from Lokal.', tone: 'success' })
       window.dispatchEvent(new Event('lokal:refresh'))
-    } else setYoutubeState({ message: result.error, tone: 'error' })
+    } catch (error) { setYoutubeState({ message: error.message || 'Could not disconnect YouTube Music.', tone: 'error' }) }
+    finally { setYoutubeAuthorizing(false) }
   }
 
   if (loading) {
@@ -284,29 +266,13 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
             {youtubeConnected && <CheckCircle2 size={16} className="text-green-400" />}
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            Paste the complete Cookie header from a signed-in music.youtube.com request, including the session cookies. Lokal uses it for YouTube Music recommendations and yt-dlp playback.
+            {api.isElectron ? 'Sign in using the dedicated YouTube Music window. Lokal keeps this session updated on this device.' : 'YouTube Music sign-in is available in the desktop app.'}
           </p>
-          <div className="space-y-2">
-            <input
-              type="password"
-              value={youtubeCookieDraft}
-              onChange={event => setYoutubeCookieDraft(event.target.value)}
-              placeholder="SAPISID=...; __Secure-3PAPISID=..."
-              spellCheck={false}
-              autoComplete="off"
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-white outline-none focus:border-accent/50"
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <ActionButton onClick={saveYouTubeCookie} disabled={youtubeAuthorizing || !youtubeCookieDraft.trim()}>
-                {youtubeAuthorizing ? 'Saving…' : 'Save YouTube access'}
-              </ActionButton>
+          {api.isElectron && <div className="flex flex-wrap gap-2"><ActionButton onClick={() => signInYouTube()} disabled={youtubeAuthorizing}>{youtubeAuthorizing ? <RefreshCw size={13} className="animate-spin" /> : <Youtube size={13} />}Sign in to YouTube Music</ActionButton><ActionButton onClick={() => signInYouTube(true)} disabled={youtubeAuthorizing} muted>Retry compatible sign-in</ActionButton></div>}
+          <div className="flex flex-wrap items-center gap-2">
               {youtubeAccountReady && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify account access</ActionButton>}
-              {(youtubeAccountReady || youtubePlaybackReady) && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
-            </div>
+              {youtubeAccountReady && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
           </div>
-          <p className="text-[11px] leading-relaxed text-muted/80">
-            Supported account cookies: SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID. Treat the header like a password. {youtubePlaybackReady ? 'Playback access configured.' : 'Playback access is not configured yet.'}
-          </p>
           {youtubeState.message && <p className={`text-xs leading-relaxed ${youtubeState.tone === 'success' ? 'text-green-400' : youtubeState.tone === 'error' ? 'text-red-300' : 'text-muted'}`}>{youtubeState.message}</p>}
           {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
         </div>

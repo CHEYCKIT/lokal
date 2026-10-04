@@ -262,7 +262,7 @@ export const api = {
   },
   saveSettings: (s) => Promise.resolve(isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })).then(r => {
     if (!r?.error && Object.prototype.hasOwnProperty.call(s || {}, 'yt_cookie_header')) clearYoutubeAccountStatus()
-    if (!r?.error && s && typeof window !== 'undefined' && ['yt_cookie_header', 'lastfm_api_key', 'lastfm_username', 'lastfm_enabled', 'recommendation_source'].some(key => Object.prototype.hasOwnProperty.call(s, key))) {
+    if (!r?.error && s && typeof window !== 'undefined' && ['yt_cookie_header', 'yt_account_session', 'yt_account_revision', 'lastfm_api_key', 'lastfm_username', 'lastfm_enabled', 'recommendation_source'].some(key => Object.prototype.hasOwnProperty.call(s, key))) {
       window.dispatchEvent(new Event('lokal:recommendation-access-changed'))
     }
     // Only what was actually saved goes into the snapshot.
@@ -305,6 +305,24 @@ export const api = {
   youtubeAccount: (force = false) => {
     const version = youtubeAccountStatusRevision()
     return Promise.resolve(isE() ? el().youtubeAccount(force) : apiFetch(`/online/account?force=${force ? '1' : '0'}`)).then(result => { updateYoutubeAccountStatus(result, version); return result })
+  },
+  youtubeSignIn: async options => {
+    if (!isE()) return { error: 'YouTube Music sign-in is available in the desktop app.' }
+    const result = await el().youtubeSignIn(options)
+    if (result?.authenticated) {
+      clearYoutubeAccountStatus()
+      updateYoutubeAccountStatus(result)
+      window.dispatchEvent(new Event('lokal:recommendation-access-changed'))
+    }
+    return result
+  },
+  youtubeDisconnect: async () => {
+    const result = isE() ? await el().youtubeDisconnect() : await api.saveSettings({ yt_cookies: '0', yt_cookie_header: '', yt_account_session: '0' })
+    if (!result?.error && result?.ok) {
+      clearYoutubeAccountStatus()
+      window.dispatchEvent(new Event('lokal:recommendation-access-changed'))
+    }
+    return result
   },
   youtubeAccountPlaylist: (playlistId) => isE() ? el().youtubeAccountPlaylist(playlistId) : apiFetch(`/online/account-playlist/${encodeURIComponent(playlistId)}`),
   youtubeRadio: (videoId) => isE() ? el().youtubeRadio(videoId) : apiFetch(`/online/radio/${encodeURIComponent(videoId)}`),

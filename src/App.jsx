@@ -1631,13 +1631,15 @@ export default function App() {
     el.removeAttribute('src')
     let cancelled = false
     const start = async () => {
+      const generation = usePlayerStore.getState().playbackGeneration
       const ref = streamRef(currentTrack)
       const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider).catch(() => 'unavailable') : null
-      if (cancelled || usePlayerStore.getState().currentTrack !== currentTrack) return
-      if (unavailable) { await recoverOnlinePlayback(el, currentTrack, ref, unavailable); return }
+      const live = usePlayerStore.getState()
+      if (cancelled || live.playbackGeneration !== generation || live.currentTrack?.id !== currentTrack.id || live.currentTrack?.file_path !== currentTrack.file_path) return
+      if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable); return }
       el.dataset.fallbackPending = ''
       el.src = src
-      beginLastfmPlayback(currentTrack)
+      beginLastfmPlayback(live.currentTrack)
       if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
       if (api.isElectron) api.discordSetActivity(currentTrack, usePlayerStore.getState().isPlaying).catch(() => {})
     }
@@ -1719,12 +1721,13 @@ export default function App() {
     }
 
     const { queue, queueIndex, _fetchingRelated } = state
-    if (queue.length - queueIndex - 1 < 3 && currentTrackRef.current && !_fetchingRelated) {
+    if (state.playbackContext?.type !== 'discovery' && state.playbackContext?.type !== 'mix' && queue.length - queueIndex - 1 < 3 && currentTrackRef.current && !_fetchingRelated) {
+      const generation = state.playbackGeneration
       usePlayerStore.getState().setFetchingRelated(true)
       api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
-        if (Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
+        if (usePlayerStore.getState().playbackGeneration === generation && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
         usePlayerStore.getState().setFetchingRelated(false)
-      })
+      }).catch(() => usePlayerStore.getState().setFetchingRelated(false))
     }
   }, [triggerCrossfade, isEventFromActive])
 

@@ -35,7 +35,10 @@ export function recommendationMatch(candidate, results) {
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
   return (Array.isArray(results) ? results : []).find(result => {
-    if (titleKey(result?.title) !== title) return false
+    const name = String(result?.title || '')
+    const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
+    const resultTitle = prefix && recommendationKey(prefix[1]) === artist ? prefix[2] : name
+    if (titleKey(resultTitle) !== title) return false
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
     return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === artist)
       || recommendationKey(result.artist).replace(/ topic$/, '') === artist
@@ -78,9 +81,9 @@ export async function playbackAvailability(match, provider, client = api, timeou
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, afterProvider, skipProviders = [], onProviderFailure, prepareStreams = true } = {}) {
+export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, sources: configuredSources } = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
-  const ordered = await playbackSources(client, timeoutMs)
+  const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
   const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
   return (await mapLimited(uniqueSongs(candidates), async candidate => {
@@ -97,12 +100,13 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
           if (!isCurrent()) return null
           const failed = reason => { if (isCurrent()) onProviderFailure?.({ candidate, source, nextSource: sources[index + 1], reason }) }
           try {
+            if (isCurrent()) onProgress?.(`Searching ${source.label || providerLabel(source.id)} for “${candidate.title}”…`)
             const direct = source.id === 'yt' && candidate.videoId
             const response = direct ? null : await timed(() => client.onlineSearch(`${candidate.artist} ${candidate.title}`, source.id), timeoutMs)
             const match = direct ? { ...candidate, provider: 'yt', id: candidate.videoId } : recommendationMatch(candidate, response?.results)
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
-            const unavailable = match.preview ? 'preview' : prepareStreams ? await playbackAvailability(match, source.id, client, timeoutMs) : null
+            const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, timeoutMs) : null
             if (!isCurrent()) return null
             if (unavailable) { failed(unavailable); continue }
             const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id }]), timeoutMs)
@@ -177,7 +181,7 @@ export async function loadRecommendationPage(source, page = 0, client = api, { f
   const picks = tracks.length ? tracks : candidates
   return {
     source: 'youtube', fetchedAt: Date.now(), candidates,
-    freshFinds: candidates.slice(0, 30), quickPicks: picks.slice(0, 12), history: null,
+    freshFinds: candidates.slice(0, 30), quickPicks: picks.slice(0, 12), history: uniqueSongs(account?.history || []).map(track => ({ ...track, source: 'youtube', artwork_url: track.thumbnail })),
     artists: [...new Map([...(account?.artists || []), ...picks.flatMap(track => (track.artists || [track.artist]).map(name => ({ name, source: 'youtube' })))].filter(artist => artist.name).map(artist => [recommendationKey(artist.name), artist])).values()].slice(0, 30),
     albums: [...new Map([...(account?.albums || []), ...picks.filter(track => track.album).map(track => ({ title: track.album, artist: track.artist, albumId: track.albumId, artwork_url: track.thumbnail }))].map(album => [`${album.artist}\0${album.title}`, album])).values()].slice(0, 30),
     warnings: account.homeError ? [account.homeError] : [],
