@@ -1,6 +1,6 @@
 import { api } from './api.js'
 import { streamRef } from './onlineTracks.js'
-import { mapLimited, playbackSources, playableRecommendation, recommendationKey, resolveRecommendationTracks, songKey, timed } from './recommendations.js'
+import { mapLimited, playbackSources, playableRecommendation, recommendationKey, recommendationMatch, resolveRecommendationTracks, songKey, timed } from './recommendations.js'
 
 function normalize(value) {
   return String(value || '')
@@ -46,22 +46,29 @@ async function searchAndSaveArtistSongs(artists, client) {
   return searches.flat()
 }
 
+async function youtubeRadioSeed(seed, mode, client) {
+  if (mode !== 'track') return null
+  const stream = streamRef(seed)
+  const source = String(seed.source_ref || '').match(/^yt:([\w-]{11})$/)?.[1]
+  const linked = streamRef({ ...seed, file_path: 'ghost://imported' })
+  const id = (stream?.provider === 'yt' ? stream.id : null)
+    || source || (linked?.provider === 'yt' ? linked.id : null) || seed.videoId
+  if (/^[\w-]{11}$/.test(String(id || ''))) return id
+  if (!seed.title || !seed.artist) return null
+  try {
+    const result = await timed(() => client.onlineSearch(`${seed.artist} ${seed.title}`, 'yt'))
+    const match = recommendationMatch(seed, result?.results)
+    const matchedId = match?.videoId || match?.id
+    return /^[\w-]{11}$/.test(String(matchedId || '')) ? matchedId : null
+  } catch { return null }
+}
+
 export async function buildRadio(seed, userId, client = api) {
   if (!seed?.artist && !seed?.title) return []
   const mode = seed.type || (!seed.title || normalize(seed.title) === normalize(seed.artist) ? 'artist' : 'track')
-  const stream = streamRef(seed)
-  let providerSeed = stream ? seed : null
-
-  // A library track has no provider id. Resolve that exact song first so the
-  // provider can generate its own radio instead of falling back to local
-  // related tracks.
-  if (!providerSeed && mode === 'track' && seed.title && seed.artist) {
-    const [saved] = await resolveRecommendationTracks([seed], client, { searchLocal: false, reusePlayable: false })
-    providerSeed = saved || null
-  }
-
-  const provider = streamRef(providerSeed)
-  const radio = provider?.provider === 'yt' ? await timed(() => client.youtubeRadio(provider.id)).catch(() => []) : []
+  // Recommendation identity is independent of where the resulting songs play.
+  const videoId = await youtubeRadioSeed(seed, mode, client)
+  const radio = videoId ? await timed(() => client.youtubeRadio(videoId)).catch(() => []) : []
   const providerRadio = await resolveRecommendationTracks(Array.isArray(radio) ? radio : [], client)
   const similar = await timed(() => client.lastfmSimilar(seed.artist, mode === 'track' ? seed.title : null, 32)).catch(() => null)
   const similarTracks = mode === 'track' && Array.isArray(similar?.tracks) ? similar.tracks : []

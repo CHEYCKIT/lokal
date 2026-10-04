@@ -97,3 +97,35 @@ test('disabled Last.fm does not make provider calls', async () => {
   assert.ok(result.error)
   assert.equal(calls.length, 0)
 })
+
+test('later pages reuse seeds but refresh recommendation requests; expiry and force reload seeds', async () => {
+  const { call, calls } = provider()
+  const seedCount = () => calls.filter(c => c.method.startsWith('user.')).length
+  await loadLastfmDiscovery(settings, call, { now, page: 0 })
+  const initial = seedCount()
+  const before = calls.length
+  await loadLastfmDiscovery(settings, call, { now: now + 1000, page: 1 })
+  assert.equal(seedCount(), initial)
+  assert.ok(calls.length > before)
+  await loadLastfmDiscovery(settings, call, { now: now + 2000, page: 2, force: true })
+  assert.equal(seedCount(), initial * 2)
+  await loadLastfmDiscovery(settings, call, { now: now + 302000, page: 3 })
+  assert.equal(seedCount(), initial * 3)
+  await loadLastfmDiscovery(settings, call, { now: now + 303000, page: 0 })
+  assert.equal(seedCount(), initial * 4)
+})
+
+test('seed caching isolates accounts and credentials and does not cache partial failures', async () => {
+  let failed = true
+  const { call, calls } = provider({
+    'user.getTopAlbums': () => failed ? { error: 11, message: 'Unavailable' } : { topalbums: { album: [] } },
+  })
+  const seedCount = () => calls.filter(c => c.method === 'user.getTopAlbums').length
+  await loadLastfmDiscovery(settings, call, { now, page: 0 })
+  failed = false
+  await loadLastfmDiscovery(settings, call, { now, page: 1 })
+  assert.equal(seedCount(), 2)
+  await loadLastfmDiscovery({ ...settings, lastfm_username: 'another-listener' }, call, { now, page: 2 })
+  await loadLastfmDiscovery({ ...settings, lastfm_api_key: 'changed-test-key' }, call, { now, page: 3 })
+  assert.equal(seedCount(), 4)
+})

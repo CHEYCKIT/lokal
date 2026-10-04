@@ -133,7 +133,7 @@ test('provider refresh passes the Last.fm page and forces YouTube account refres
 test('local-track radio and Last.fm candidates use configured playback sources', async () => {
   const { client, searches } = clientMock({ lastfmSimilar: async () => ({ tracks: [song(1)] }) })
   const result = await buildRadio(playable(song(1)), 'guest', client)
-  assert.deepEqual(searches, ['sc', 'sc'])
+  assert.deepEqual(searches, ['yt', 'sc'])
   assert.equal(result.length, 1, 'seed and matching provider song are deduplicated')
 })
 
@@ -147,4 +147,28 @@ test('artist radio uses provider priority and rejects a similarly named wrong ar
   assert.deepEqual(searches, ['sc', addon])
   assert.equal(result.length, 1)
   assert.equal(result[0].provider, addon)
+})
+
+test('SoundCloud-first playback retains YouTube radio recommendations', async () => {
+  const radioIds = []
+  const { client, searches } = clientMock({
+    youtubeRadio: async id => { radioIds.push(id); return [song(1)] },
+    lastfmSimilar: async () => ({ tracks: [] }),
+  })
+  const result = await buildRadio(playable(song(1)), 'guest', client)
+  assert.deepEqual(radioIds, ['abcdefghijk'])
+  assert.deepEqual(searches, ['yt', 'sc'])
+  assert.equal(result.length, 1)
+})
+
+test('downloaded YouTube identity avoids a seed search with SoundCloud-first playback', async () => {
+  const radioIds = []
+  const { client, searches } = clientMock({
+    youtubeRadio: async id => { radioIds.push(id); return [song(1)] },
+    lastfmSimilar: async () => ({ tracks: [] }),
+  })
+  const result = await buildRadio({ ...playable(song(0)), source_ref: 'yt:abcdefghijk' }, 'guest', client)
+  assert.deepEqual(radioIds, ['abcdefghijk'])
+  assert.deepEqual(searches, ['sc'])
+  assert.equal(result[1].provider, 'sc')
 })

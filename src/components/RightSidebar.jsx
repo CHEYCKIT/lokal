@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { usePlayerStore } from '../store/player'
+import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
@@ -39,6 +39,7 @@ function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
 }
 
 export default function RightSidebar() {
+  const { user } = useAppStore()
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
     toggleFullscreen, toggleLyricsFullscreen, playbackContext,
@@ -147,8 +148,8 @@ export default function RightSidebar() {
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
-      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack) },
-      currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }) },
+      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
+      currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
     ].filter(Boolean))
   }
 

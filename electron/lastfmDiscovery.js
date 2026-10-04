@@ -5,6 +5,8 @@ const list = value => Array.isArray(value) ? value : value && typeof value === '
 const nameOf = value => typeof value === 'string' ? value : value?.name || value?.['#text'] || ''
 const key = value => String(value || '').normalize('NFKC').trim().toLowerCase()
 const songKey = track => `${key(track.artist)}\0${key(track.title)}`
+const seedCaches = new WeakMap()
+const SEED_TTL_MS = 5 * 60 * 1000
 
 function imageOf(images) {
   const usable = list(images).filter(image => image?.['#text'] && !/2a96cbd8|default_album|noimage/i.test(image['#text']))
@@ -88,6 +90,7 @@ async function loadLastfmDiscovery(settings, call, options = {}) {
   const username = String(settings.lastfm_username || '').trim()
   if (!settings.lastfm_api_key || !username || settings.lastfm_enabled === '0') return { error: 'Connect Last.fm in Integrations to load your account shelves.' }
   const now = options.now ?? Date.now()
+  const page = Math.min(1000, Math.max(0, Math.trunc(Number(options.page) || 0)))
   const warnings = []
   const ask = async (method, params) => {
     try {
@@ -99,13 +102,26 @@ async function loadLastfmDiscovery(settings, call, options = {}) {
       return null
     }
   }
-  const [week, month, recent, artists, albums] = await Promise.all([
+  if (!seedCaches.has(call)) seedCaches.set(call, new Map())
+  const accountCache = seedCaches.get(call)
+  const cached = accountCache.get(username)
+  const reusable = page > 0 && !options.force && cached?.apiKey === settings.lastfm_api_key
+    && now >= cached.at && now - cached.at < SEED_TTL_MS
+  const values = reusable ? cached.values : await Promise.all([
     weeklyScrobbles(ask, username, now, warnings),
     ask('user.getTopTracks', { user: username, period: '1month', limit: '60' }),
     ask('user.getRecentTracks', { user: username, limit: '101', extended: '1' }),
     ask('user.getTopArtists', { user: username, period: '1month', limit: '30' }),
     ask('user.getTopAlbums', { user: username, period: '1month', limit: '30' }),
   ])
+  if (!reusable) {
+    accountCache.delete(username)
+    if (values.every(Boolean)) {
+      accountCache.set(username, { at: now, apiKey: settings.lastfm_api_key, values })
+      while (accountCache.size > 20) accountCache.delete(accountCache.keys().next().value)
+    }
+  }
+  const [week, month, recent, artists, albums] = values
   if (![week, month, recent, artists, albums].some(Boolean)) return { error: warnings[0] || 'Last.fm did not answer.' }
   const tracks = root => list(root).map(trackOf).filter(track => track.title && track.artist)
   const history = scrobbles(recent).slice(0, 100)
@@ -124,7 +140,6 @@ async function loadLastfmDiscovery(settings, call, options = {}) {
   // Spread seeds across account artists. Previously taking the first N songs
   // before diversifying let a single soundtrack occupy the entire shelf.
   const seedPool = unique(weave([weekly, history, monthly]))
-  const page = Math.min(1000, Math.max(0, Math.trunc(Number(options.page) || 0)))
   const byArtist = new Map()
   for (const track of seedPool) {
     const id = key(track.artist)
