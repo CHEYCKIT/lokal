@@ -148,6 +148,31 @@ test('native account verification rechecks a changed website cookie snapshot bef
   assert.match(env.exports.at(-1), /SAPISID=session-two/)
 })
 
+test('cookies Google rotates on the verification requests themselves do not restart verification forever', async () => {
+  const env = environment({ native: true })
+  const login = env.manager.signIn({ verifyPollMs: 1000 })
+  await tick()
+  const candidate = env.candidate()
+  for (const cookie of browserCookies('native-account')) await candidate.cookies.set(cookie)
+  // Chromium applies Set-Cookie from every authenticated response (SIDCC,
+  // __Secure-*PSIDCC…); each one reaches the login window as a change.
+  let rotation = 0
+  const fetch = candidate.fetch
+  candidate.fetch = async (url, init) => {
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const response = await fetch(url, init)
+    await candidate.cookies.set({ name: 'SIDCC', value: `rotated-${++rotation}`, domain: '.youtube.com', path: '/' })
+    env.capture({ 'X-Goog-Visitor-Id': `visitor-${rotation}` })
+    return response
+  }
+  env.navigate('https://music.youtube.com/')
+  const outcome = await Promise.race([login, new Promise(resolve => setTimeout(() => resolve('timed out'), 2000))])
+  assert.notEqual(outcome, 'timed out', 'verification must finish despite rotating cookies')
+  assert.equal(outcome.authenticated, true)
+  assert.equal(env.requests.length, 1, 'one successful check is enough')
+  assert.equal(env.settings.yt_account_session, '1')
+})
+
 test('cancelled native login clears only the candidate full profile', async () => {
   const env = environment({ connected: true, authenticated: false, native: true })
   const active = env.session()
