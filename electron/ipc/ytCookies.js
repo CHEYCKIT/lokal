@@ -54,7 +54,7 @@ function isYouTubeUrl(url) {
  * Returns '' when nothing usable was pasted.
  */
 function cookiesTxtFrom(pasted) {
-  const text = String(pasted || '').trim()
+  let text = String(pasted || '').trim()
   if (!text) return ''
   if (/^(?:#|\.?[\w.-]+\t(?:TRUE|FALSE)\t)/m.test(text)) {
     const records = text.split(/\r?\n/).filter(line => {
@@ -63,6 +63,7 @@ function cookiesTxtFrom(pasted) {
     })
     return records.length ? `${[...HEADER, ...records].join('\n')}\n` : ''
   }
+  text = require('../online/browserAuth').normalizeCookies(text)
   const expires = Math.floor(Date.now() / 1000) + 365 * 24 * 3600
   const lines = [...HEADER]
   for (const part of text.replace(/^cookie:\s*/i, '').split(/;\s*/)) {
@@ -123,7 +124,7 @@ function cookieSource(settings) {
   // Pasting the cookie is the default: it works whatever the browser (Chrome
   // and Edge encrypt theirs on Windows, where yt-dlp can't read them).
   const browser = String(settings.yt_cookie_browser || 'paste').toLowerCase()
-  if (settings.yt_cookies !== '1' || browser !== 'paste') {
+  if (settings.yt_cookies !== '1' || !['paste', 'session'].includes(browser)) {
     // Cookies off, or another source picked: the pasted one isn't used, so
     // its file doesn't stay behind in the data folder.
     removePastedCookieFile()
@@ -132,6 +133,10 @@ function cookieSource(settings) {
   if (browser === 'paste') {
     const file = pastedCookieFile(settings.yt_cookie_header)
     return file ? { type: 'file', file, pasted: true } : null
+  }
+  if (browser === 'session') {
+    const file = pastedCookiePaths()?.file
+    return file && fs.existsSync(file) ? { type: 'file', file, pasted: true } : null
   }
   if (browser === 'file') {
     const file = String(settings.yt_cookie_file || '').trim()
@@ -190,4 +195,4 @@ function markUnreadable(browser) {
 
 const COOKIE_FAILURE_MESSAGE = "Couldn't read the browser's cookies. Pick Firefox or a cookies.txt file in Settings → Library, or turn YouTube cookies off."
 
-module.exports = { syncPastedCookie, cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE, cookiesTxtFrom, looksSignedIn, isYouTubeUrl, removePastedCookieFile }
+module.exports = { syncPastedCookie, syncSessionCookies: pastedCookieFile, cookieArgs, isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE, cookiesTxtFrom, looksSignedIn, isYouTubeUrl, removePastedCookieFile }

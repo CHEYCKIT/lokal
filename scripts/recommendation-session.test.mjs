@@ -73,7 +73,7 @@ test('invalidating an in-flight Mix clears the generating state even when settin
   assert.deepEqual(session.getSnapshot().mix.tracks, [])
 })
 
-test('unrelated settings preserve shelves; account changes discard old data and mixes', async () => {
+test('unrelated settings preserve shelves; account changes refresh shelves but retain the manually generated Mix', async () => {
   const { client, pages, setSettings } = mock()
   const session = createRecommendationSession(client)
   await session.ensure()
@@ -84,7 +84,7 @@ test('unrelated settings preserve shelves; account changes discard old data and 
   assert.equal(session.getSnapshot().data, data)
   setSettings({ lastfm_username: 'other', lastfm_enabled: '1' })
   await session.ensure()
-  assert.equal(session.getSnapshot().mix.tracks.length, 0)
+  assert.equal(session.getSnapshot().mix.tracks.length, 24)
   assert.equal(pages.at(-1).page, 0)
 })
 
@@ -97,4 +97,24 @@ test('artwork enrichment accumulates across batches and sections without refresh
   assert.ok(session.getSnapshot().data.freshFinds.every(track => track.artwork_url))
   assert.ok(session.getSnapshot().data.quickPicks.every(track => track.artwork_url))
   assert.equal(pages.length, 1)
+})
+
+test('Mix survives a fresh app session, provider/account changes, and failed regeneration until explicitly replaced', async () => {
+  const data = new Map()
+  const storage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) }
+  const { client, setSettings } = mock()
+  const first = createRecommendationSession(client, { profile: 'listener', storage })
+  await first.ensure()
+  await first.generate(24)
+  const mix = structuredClone(first.getSnapshot().mix)
+  const reopened = createRecommendationSession(client, { profile: 'listener', storage })
+  setSettings({ lastfm_username: 'changed-account', lastfm_enabled: '1' })
+  await reopened.ensure()
+  await reopened.refresh()
+  assert.deepEqual(reopened.getSnapshot().mix, mix)
+  client.lastfmDiscovery = async () => ({ error: 'Provider unavailable' })
+  await reopened.generate(40)
+  assert.deepEqual(reopened.getSnapshot().mix, mix)
+  assert.deepEqual(createRecommendationSession(client, { profile: 'listener', storage }).getSnapshot().mix, mix)
+  assert.deepEqual(createRecommendationSession(client, { profile: 'another-listener', storage }).getSnapshot().mix.tracks, [])
 })

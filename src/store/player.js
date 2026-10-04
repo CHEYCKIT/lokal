@@ -214,7 +214,8 @@ export const usePlayerStore = create((set, get) => ({
   },
   setFetchingRelated: (v) => set({ _fetchingRelated: v }),
   appendRelated: (tracks) => {
-    const { queue } = get()
+    const { queue, playbackContext } = get()
+    if (playbackContext?.type === 'discovery' || playbackContext?.type === 'mix') return
     const ids = new Set(queue.map(t => t.id))
     const fresh = sanitizeTrackList(tracks).filter(t => !ids.has(t.id))
     if (fresh.length) set({ queue: [...queue, ...fresh] })

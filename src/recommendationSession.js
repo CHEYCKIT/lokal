@@ -1,8 +1,7 @@
 import { api } from './api.js'
 import { buildRecommendationMix, loadRecommendationPage, mapLimited, resolveRecommendationTracks, sourceName } from './recommendations.js'
 
-// In-memory only: navigation and tab switches reuse the same shelves. A full
-// app restart creates a new module/session and fetches the provider again.
+// Discovery shelves are session-local; a manually generated Mix is durable.
 const sessions = new Map()
 const lastHomePaths = new Map()
 
@@ -18,8 +17,13 @@ export function rememberHomePath(accountId, pathname) {
   return getLastHomePath(accountId)
 }
 
-export function createRecommendationSession(client = api) {
-  let state = { account: '', source: 'lastfm', data: null, error: '', loading: false, started: false, mix: { size: 32, tracks: [] }, mixError: '', generating: false, tab: 'home' }
+export function createRecommendationSession(client = api, { profile = 'guest', storage = globalThis.localStorage } = {}) {
+  const storageKey = `lokal-recommendation-mix:${profile}`
+  let savedMix
+  try { savedMix = JSON.parse(storage?.getItem(storageKey) || 'null') } catch {}
+  const restoredMix = savedMix?.version === 1 && Array.isArray(savedMix.mix?.tracks) && [24, 32, 40].includes(savedMix.mix.tracks.length) ? savedMix.mix : null
+  let state = { account: '', source: 'lastfm', data: null, error: '', loading: false, started: false, mix: restoredMix || { size: 32, tracks: [] }, mixError: '', generating: false, tab: 'home' }
+  const saveMix = () => { try { storage?.setItem(storageKey, JSON.stringify({ version: 1, mix: state.mix })) } catch {} }
   const listeners = new Set()
   let generation = 0
   let discoveryPage = 0
@@ -32,14 +36,14 @@ export function createRecommendationSession(client = api) {
   const update = patch => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
   const configure = settings => {
     const source = settings.recommendation_source === 'youtube' ? 'youtube' : 'lastfm'
-    const account = JSON.stringify([source, source === 'lastfm' ? settings.lastfm_username || '' : settings.yt_cookie_header || '', settings.lastfm_enabled, source === 'lastfm' ? settings.lastfm_api_key || '' : ''])
+    const account = JSON.stringify([source, source === 'lastfm' ? settings.lastfm_username || '' : `${settings.yt_cookie_header || ''}:${settings.yt_account_session || ''}:${settings.yt_account_revision || ''}`, settings.lastfm_enabled, source === 'lastfm' ? settings.lastfm_api_key || '' : ''])
     if (state.account === account) return false
     generation++
     discoveryPage = 0
     mixPage = 0
     discoveryJob = null
     mixJob = null
-    update({ account, source, data: null, error: '', loading: false, started: false, mix: { size: state.mix.size, tracks: [] }, mixError: '', generating: false })
+    update({ account, source, data: null, error: '', loading: false, started: false, mixError: '', generating: false })
     return true
   }
   const enrich = async (data, isCurrent, commit) => {
@@ -116,7 +120,8 @@ export function createRecommendationSession(client = api) {
         const tracks = await buildRecommendationMix({ size, previous: state.mix.tracks, loadPage: () => loadRecommendationPage(source, ++mixPage, client), resolve: rows => resolveRecommendationTracks(rows, client, { isCurrent }), isCurrent })
         if (isCurrent()) {
           update({ mix: { size: tracks.length, tracks, source } })
-          enrich({ freshFinds: tracks }, isCurrent, next => update({ mix: { ...state.mix, tracks: next.freshFinds } })).catch(() => {})
+          saveMix()
+          enrich({ freshFinds: tracks }, isCurrent, next => { update({ mix: { ...state.mix, tracks: next.freshFinds } }); saveMix() }).catch(() => {})
         }
         return tracks
       } catch (error) {
@@ -140,7 +145,7 @@ export function createRecommendationSession(client = api) {
 }
 
 export function recommendationSession(profile = 'guest') {
-  if (!sessions.has(profile)) sessions.set(profile, createRecommendationSession())
+  if (!sessions.has(profile)) sessions.set(profile, createRecommendationSession(api, { profile }))
   return sessions.get(profile)
 }
 

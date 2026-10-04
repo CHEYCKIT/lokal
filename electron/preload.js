@@ -135,6 +135,8 @@ contextBridge.exposeInMainWorld('electron', {
   discoveryArtwork: (items) => invoke('online:artwork', items),
   youtubeCatalogue: (options) => invoke('online:catalogue', options),
   youtubeAccount: (force = false) => invoke('online:account', force),
+  youtubeSignIn: options => invoke('online:signIn', options),
+  youtubeDisconnect: () => invoke('online:disconnect'),
   youtubeAccountPlaylist: (playlistId) => invoke('online:accountPlaylist', playlistId),
   youtubeRadio: (videoId) => invoke('online:radio', videoId),
   youtubeSetLiked: (videoId, liked) => invoke('online:setAccountLiked', videoId, liked),

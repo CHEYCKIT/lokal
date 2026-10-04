@@ -34,7 +34,7 @@ test('account requests use bootstrapped client/account context and return person
   const result = await youtube.fetchAccountData({ cookies, fetchImpl, force: true })
   assert.equal(result.authenticated, true)
   assert.equal(result.home[0].title, 'Song')
-  assert.equal(requests.length, 4)
+  assert.equal(requests.length, 5)
   for (const request of requests.slice(1)) {
     const body = JSON.parse(request.init.body)
     assert.equal(body.context.client.clientVersion, musicConfig.INNERTUBE_CLIENT_VERSION)
@@ -48,14 +48,15 @@ test('invalid account sessions remain unverified and report how to reconnect ins
   const fetchImpl = async url => url.endsWith('/') ? { ok: true, text: async () => '' } : { ok: true, json: async () => ({ responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '0' }] }] } }) }
   const result = await youtube.fetchAccountData({ cookies, fetchImpl, force: true })
   assert.equal(result.authenticated, false)
-  assert.match(result.error, /complete Cookie header/)
+  assert.match(result.error, /Sign in again/)
 })
 
-test('disconnected album catalogues explain how to connect before making provider requests', async () => {
-  let requests = 0
-  const result = await youtube.fetchCatalogue({ type: 'album', artist: 'Artist', album: 'Album', albumId: 'MPREtestAlbum' }, '', async () => { requests++; throw new Error('No request expected') })
-  assert.match(result.error, /Connect YouTube Music.*complete signed-in Cookie header/)
-  assert.equal(requests, 0)
+test('public album catalogues load without requiring account cookies', async () => {
+  const result = await youtube.fetchCatalogue({ type: 'album', artist: 'Artist', album: 'Album', albumId: 'MPREtestAlbum' }, '', async url => url.endsWith('/')
+    ? { ok: true, text: async () => '' }
+    : { ok: true, json: async () => ({ ...accountRoot, responseContext: {}, contents: accountRoot.contents }) })
+  assert.equal(result.tracks[0].title, 'Song')
+  assert.equal(result.tracks[0].album, 'Album')
 })
 
 test('authenticated album catalogues keep album order and account context', async () => {
@@ -90,4 +91,32 @@ test('album tracks without artist runs inherit the requested artist while parsed
     ? { ok: true, text: async () => `ytcfg.set(${JSON.stringify(musicConfig)});` }
     : { ok: true, json: async () => ({ ...accountRoot, contents: [row('abcdefghijk', 'No Credits'), row('bcdefghijkl', 'Guest Credits', ['Guest Artist', 'Second Artist'])] }) })
   assert.deepEqual(result.tracks.map(track => [track.title, track.artist, track.artists]), [['No Credits', 'Album Artist', ['Album Artist']], ['Guest Credits', 'Guest Artist, Second Artist', ['Guest Artist', 'Second Artist']]])
+})
+
+test('captured browser request context preserves the selected account, visitor, client, and user-agent', async () => {
+  youtube.clearAccountCache()
+  const copied = JSON.stringify({ Cookie: '__Secure-3PAPISID=test-session; SID=test-login', 'X-Goog-AuthUser': '3', 'X-Goog-PageId': 'brand-channel', 'X-Goog-Visitor-Id': 'browser-visitor', 'X-YouTube-Client-Version': '1.browser.version', 'User-Agent': 'Browser Test UA' })
+  const requests = []
+  const result = await youtube.fetchAccountData({ cookies: copied, fetchImpl: async (url, init) => {
+    requests.push(init)
+    return url.endsWith('/') ? { ok: true, text: async () => `ytcfg.set(${JSON.stringify(musicConfig)});` } : { ok: true, json: async () => accountRoot }
+  } })
+  assert.equal(result.authenticated, true)
+  for (const request of requests.slice(1)) {
+    assert.equal(request.headers['X-Goog-AuthUser'], '3')
+    assert.equal(request.headers['X-Goog-PageId'], 'brand-channel')
+    assert.equal(request.headers['X-Goog-Visitor-Id'], 'browser-visitor')
+    assert.equal(request.headers['User-Agent'], 'Browser Test UA')
+    assert.equal(JSON.parse(request.body).context.client.clientVersion, '1.browser.version')
+  }
+  const cookieTools = (await import('../electron/ipc/ytCookies.js')).default
+  assert.match(cookieTools.cookiesTxtFrom(copied), /\t__Secure-3PAPISID\ttest-session/)
+  assert.ok(!cookieTools.cookiesTxtFrom(copied).includes('X-Goog-AuthUser'))
+})
+
+test('generic or unmarked home data is never presented as a verified personalized account', async () => {
+  youtube.clearAccountCache()
+  const result = await youtube.fetchAccountData({ cookies, fetchImpl: async url => url.endsWith('/') ? { ok: true, text: async () => '' } : { ok: true, json: async () => ({ ...accountRoot, responseContext: {} }) } })
+  assert.equal(result.authenticated, false)
+  assert.match(result.error, /did not confirm an authenticated account/)
 })
