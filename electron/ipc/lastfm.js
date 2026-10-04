@@ -1,5 +1,6 @@
 const { getDB } = require('./db')
 const { loadLastfmDiscovery } = require('../lastfmDiscovery')
+const { lastfmCatalogue } = require('../discoveryCatalogue')
 const scrobbler = require('../lastfmScrobbler')
 const crypto = require('crypto')
 
@@ -220,8 +221,8 @@ function normalizeLastfmTrack(track) {
   }
 }
 
-async function fetchDiscovery(page = 0) {
-  return loadLastfmDiscovery(storedLastfmSettings(), lastfmCall, { page })
+async function fetchDiscovery(page = 0, force = false) {
+  return loadLastfmDiscovery(storedLastfmSettings(), lastfmCall, { page, force })
 }
 
 async function fetchLovedTracks(startPage = 1) {
@@ -403,7 +404,8 @@ function registerLastFmHandlers(ipcMain) {
   ipcMain.handle('lastfm:updateNowPlaying', (_, artist, track, album, duration) =>
     scrobbler.updateNowPlaying(getDB(), { artist, track, album, duration }).catch(e => ({ error: e.message })))
 
-  ipcMain.handle('lastfm:discovery', (_, page) => fetchDiscovery(page).catch(e => ({ error: e.message })))
+  ipcMain.handle('lastfm:discovery', (_, page, force) => fetchDiscovery(page, force).catch(e => ({ error: e.message })))
+  ipcMain.handle('lastfm:catalogue', (_, options) => lastfmCatalogue(storedLastfmSettings(), lastfmCall, options).catch(e => ({ error: e.message })))
   ipcMain.handle('lastfm:loved', (_, page) => fetchLovedTracks(page).catch(e => ({ error: e.message })))
   ipcMain.handle('lastfm:setLoved', (_, artist, track, loved) => setLovedTrack(artist, track, loved).catch(e => ({ error: e.message })))
   ipcMain.handle('lastfm:syncLikes', (_, userId, page) => syncLovedTracks(userId, page).catch(e => ({ error: e.message })))

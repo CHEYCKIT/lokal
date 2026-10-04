@@ -6,6 +6,7 @@ import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { openSmartPlaylistEditor } from '../smartPlaylists'
+import { getLastHomePath } from '../recommendationSession'
 
 const NAV = [
   { icon: Home, label: 'Home', path: '/' },
@@ -64,6 +65,7 @@ export default function Sidebar() {
   }
 
   const isNavItemActive = (path) => {
+    if (path === '/') return loc.pathname === '/' || loc.pathname.startsWith('/home/')
     if (path === '/artists') {
       return loc.pathname === '/artists' || loc.pathname.startsWith('/artist/')
     }
@@ -316,7 +318,7 @@ export default function Sidebar() {
       <nav className="px-3 space-y-0.5 flex-shrink-0">
         {NAV.map(({ icon, label, path, tour }) => (
           <NavItem key={path} icon={icon} label={label} tour={tour} collapsed={collapsed}
-            active={isNavItemActive(path)} onClick={() => nav(path)}
+            active={isNavItemActive(path)} onClick={() => nav(path === '/' ? getLastHomePath(user?.id) : path)}
             badge={path === '/recap' && showRecapBadge} />
         ))}
       </nav>

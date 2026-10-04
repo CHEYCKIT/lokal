@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { isPlayable } from '../onlineTracks'
+import { isPlayable } from '../onlineTracks.js'
+import { songKey } from '../recommendations.js'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
@@ -201,6 +202,7 @@ export const usePlayerStore = create((set, get) => ({
   wasShuffled: false, 
 
   ...(savedQueueState || {}),
+  playbackGeneration: 0,
 
   setAudioRef: (ref) => set({ audioRef: ref }),
   setCfAudioRef: (ref) => set({ cfAudioRef: ref }),
@@ -278,6 +280,49 @@ export const usePlayerStore = create((set, get) => ({
 
   setPlaybackContext: (context) => set({ playbackContext: context || null }),
 
+  // A fallback changes the stream for the same queue entry, not the queue's
+  // order, shuffle state, or playback context.
+  replaceCurrentTrack: (oldId, track) => set(state => {
+    if (state.currentTrack?.id !== oldId || !sanitizeSingleTrack(track)) return {}
+    const replace = list => list.map(item => item.id === oldId ? track : item)
+    const replaceId = list => list.map(id => id === oldId ? track.id : id)
+    return {
+      currentTrack: track,
+      queue: replace(state.queue),
+      originalQueue: replace(state.originalQueue),
+      shuffleQueue: replace(state.shuffleQueue),
+      playHistory: replaceId(state.playHistory),
+      futureHistory: replaceId(state.futureHistory),
+      progress: 0,
+      duration: 0,
+    }
+  }),
+
+  extendRecommendationQueue: (tracks, order, generation) => set(state => {
+    if (state.playbackGeneration !== generation) return {}
+    const known = new Set(state.queue.map(songKey))
+    const fresh = sanitizeTrackList(tracks).filter(track => {
+      const key = songKey(track)
+      if (known.has(key)) return false
+      known.add(key)
+      return true
+    })
+    if (!fresh.length) return {}
+    const ranks = new Map(order.map((key, index) => [key, index]))
+    const queue = [...state.queue]
+    for (const track of fresh) {
+      const rank = ranks.get(songKey(track))
+      const before = queue.findIndex(item => ranks.get(songKey(item)) > rank)
+      queue.splice(before < 0 ? queue.length : before, 0, track)
+    }
+    const shuffledKeys = new Set(state.shuffleQueue.map(songKey))
+    return {
+      queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack?.id),
+      originalQueue: queue,
+      shuffleQueue: state.shuffle ? [...state.shuffleQueue, ...shuffleArray(fresh.filter(track => !shuffledKeys.has(songKey(track))))] : state.shuffleQueue,
+    }
+  }),
+
   playTrack: (track, queue = null, context = null) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return
@@ -291,6 +336,7 @@ export const usePlayerStore = create((set, get) => ({
     
     set(s => ({ 
       currentTrack: playableTrack, 
+      playbackGeneration: (s.playbackGeneration || 0) + 1,
       queue: q, 
       queueIndex: idx, 
       isPlaying: true, 
@@ -314,6 +360,7 @@ export const usePlayerStore = create((set, get) => ({
     
     set(s => ({ 
       queue: sanitizedTracks, 
+      playbackGeneration: (s.playbackGeneration || 0) + 1,
       queueIndex: safeIndex, 
       currentTrack: startTrack, 
       isPlaying: true,

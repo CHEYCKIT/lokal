@@ -95,6 +95,9 @@ async function loadLastfmDiscovery(settings, call, options = {}) {
   const ask = async (method, params) => {
     try {
       const answer = await call(method, params, settings.lastfm_api_key, null)
+      // Uncatalogued tracks are normal in scrobbles (soundtracks, uploads and
+      // regional releases). Artist catalogues remain available as fallback.
+      if (method === 'track.getSimilar' && Number(answer?.error) === 6) return { similartracks: { track: [] } }
       if (!answer || answer.error) throw new Error(answer?.message || String(answer?.error || 'Empty response'))
       return answer
     } catch (error) {
@@ -155,10 +158,14 @@ async function loadLastfmDiscovery(settings, call, options = {}) {
     const start = similar.length ? page * 5 % similar.length : 0
     return [...similar.slice(start), ...similar.slice(0, start)].map(track => ({ ...track, reason: `Similar to ${seed.artist} — ${seed.title}`, seedArtist: seed.artist }))
   })
+  const related = await mapLimited(topArtists.slice(page % Math.max(1, topArtists.length)).concat(topArtists).slice(0, 4), async artist => {
+    const result = await ask('artist.getSimilar', { artist: artist.name, autocorrect: '1', limit: '5' })
+    return list(result?.similarartists?.artist).map(item => item.name).filter(Boolean)
+  })
   // Sparse track.getSimilar coverage is common for new/regional music. Use
   // the actual account artists' Last.fm catalogues to extend the pool, never
   // generic YouTube searches or global charts.
-  const catalogArtists = unique([...topArtists.map(artist => artist.name), ...seeds.map(seed => seed.artist)], key)
+  const catalogArtists = unique(weave([related.flat(), topArtists.map(artist => artist.name), seeds.map(seed => seed.artist)]), key)
   const artistOffset = catalogArtists.length ? page * 6 % catalogArtists.length : 0
   const selectedArtists = [...catalogArtists.slice(artistOffset), ...catalogArtists.slice(0, artistOffset)].slice(0, 12)
   const catalogs = await mapLimited(selectedArtists, async artist => {

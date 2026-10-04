@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildRecommendationMix, loadRecommendationPage, recommendationMatch, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
+import { buildRecommendationMix, loadRecommendationPage, playbackFallbackMessage, recommendationMatch, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
 import { orderedPlaybackSources } from '../src/playbackSources.js'
 import { buildRadio } from '../src/radioActions.js'
 
@@ -18,6 +18,7 @@ function clientMock(overrides = {}) {
     searchTracks: async () => [],
     onlineSearch: async (query, source) => { searches.push(source); return { results: [{ ...song(1), id: 'abcdefghijk', provider: source }] } },
     onlineSave: async items => { saved.push(...items); return items.map(item => ({ ...item, id: `${item.provider}-${item.id}`, file_path: item.provider === 'sc' ? 'ghost://soundcloud/online/123' : item.provider === addon ? 'ghost://addon/0123456789/item' : 'ghost://youtube/online/abcdefghijk' })) },
+    onlinePrepare: async () => ({ ok: true, preview: false }),
     ...overrides,
   }
   return { client, searches, saved }
@@ -84,6 +85,68 @@ test('a stalled provider times out and an invalid saved row falls through', asyn
   assert.equal(result.length, 1)
 })
 
+for (const previewInSearch of [true, false]) {
+  test(`missing YouTube songs skip SoundCloud previews identified in ${previewInSearch ? 'search' : 'stream resolution'} and reach addons`, async () => {
+    const failures = []
+    const prepared = []
+    const { client, searches, saved } = clientMock({
+      getSettings: async () => ({ playback_search_order: JSON.stringify(['yt', 'sc', addon]) }),
+      onlinePrepare: async provider => { prepared.push(provider); return { ok: true, preview: provider === 'sc' } },
+    })
+    client.onlineSearch = async (query, provider) => {
+      searches.push(provider)
+      return { results: provider === 'yt' ? [] : [{ ...song(1), id: '123', preview: provider === 'sc' && previewInSearch }] }
+    }
+    const result = await resolveRecommendationTracks([song(1)], client, { onProviderFailure: failure => failures.push(failure) })
+    assert.deepEqual(searches, ['yt', 'sc', addon])
+    assert.deepEqual(saved.map(item => item.provider), [addon], 'preview tracks are never saved as playback matches')
+    assert.deepEqual(prepared, previewInSearch ? [addon] : ['sc', addon])
+    assert.equal(result[0].provider, addon)
+    assert.deepEqual(failures.map(({ source, nextSource, reason }) => [source.id, nextSource?.id, reason]), [['yt', 'sc', 'not-found'], ['sc', addon, 'preview']])
+    assert.match(playbackFallbackMessage(failures[0]), /wasn't found on YouTube.*Trying SoundCloud/)
+    assert.match(playbackFallbackMessage(failures[1]), /SoundCloud only has a preview.*Trying Addon/)
+  })
+}
+
+test('a found but unplayable YouTube stream advances to the next full-length source', async () => {
+  const failures = []
+  const { client, saved } = clientMock({
+    getSettings: async () => ({ playback_search_order: JSON.stringify(['yt', 'sc', addon]) }),
+    onlinePrepare: async provider => provider === 'yt' ? { error: 'Video unavailable' } : { ok: true },
+  })
+  const result = await resolveRecommendationTracks([{ ...song(1), videoId: 'abcdefghijk' }], client, { onProviderFailure: failure => failures.push(failure) })
+  assert.equal(result[0].provider, 'sc')
+  assert.deepEqual(saved.map(item => item.provider), ['sc'])
+  assert.equal(failures[0].reason, 'unavailable')
+})
+
+test('runtime recovery skips the failed provider and keeps the fallback order', async () => {
+  const { client, searches } = clientMock({ getSettings: async () => ({ playback_search_order: JSON.stringify(['yt', 'sc', addon]) }) })
+  const failed = { ...song(1), id: 'yt-abcdefghijk', videoId: 'abcdefghijk', file_path: 'ghost://youtube/online/abcdefghijk' }
+  const result = await resolveRecommendationTracks([failed], client, { reusePlayable: false, afterProvider: 'yt', skipProviders: ['yt', 'sc'] })
+  assert.deepEqual(searches, [addon])
+  assert.equal(result[0].provider, addon)
+})
+
+test('all unavailable or preview-only providers return no match and report exhaustion', async () => {
+  const failures = []
+  const { client, saved } = clientMock({ onlinePrepare: async provider => ({ ok: true, preview: provider !== 'yt', error: provider === 'yt' ? 'Unavailable' : undefined }) })
+  const result = await resolveRecommendationTracks([song(1)], client, { onProviderFailure: failure => failures.push(failure) })
+  assert.deepEqual(result, [])
+  assert.deepEqual(saved, [])
+  assert.equal(failures.at(-1).nextSource, undefined)
+  assert.match(playbackFallbackMessage(failures.at(-1)), /No more playback sources/)
+})
+
+test('changing playback while stream preparation is pending prevents stale saves and notifications', async () => {
+  let current = true
+  const failures = []
+  const { client, saved } = clientMock({ onlinePrepare: async () => { current = false; return { ok: true, preview: true } } })
+  assert.deepEqual(await resolveRecommendationTracks([song(1)], client, { isCurrent: () => current, onProviderFailure: failure => failures.push(failure) }), [])
+  assert.deepEqual(saved, [])
+  assert.deepEqual(failures, [])
+})
+
 for (const size of [24, 32, 40]) {
   test(`mix contains exactly ${size} unique playable matches across provider pages`, async () => {
     const pages = []
@@ -147,6 +210,21 @@ test('artist radio uses provider priority and rejects a similarly named wrong ar
   assert.deepEqual(searches, ['sc', addon])
   assert.equal(result.length, 1)
   assert.equal(result[0].provider, addon)
+})
+
+test('one failed artist-radio preparation does not discard another playable match from the same provider', async () => {
+  const { client, searches } = clientMock({
+    lastfmSimilar: async () => ({ artists: [{ name: 'Artist 1' }] }),
+    onlinePrepare: async (provider, id) => { if (id === 'failed') throw new Error('Unavailable'); return { ok: true } },
+  })
+  client.onlineSearch = async (query, source) => {
+    searches.push(source)
+    return { results: [{ ...song(1), id: 'failed' }, { ...song(1), title: 'Song 2', id: 'playable' }] }
+  }
+  const result = await buildRadio({ artist: 'Seed Artist', type: 'artist' }, 'guest', client)
+  assert.deepEqual(searches, ['sc'])
+  assert.deepEqual(result.map(track => track.title), ['Song 2'])
+  assert.equal(result[0].provider, 'sc')
 })
 
 test('SoundCloud-first playback retains YouTube radio recommendations', async () => {

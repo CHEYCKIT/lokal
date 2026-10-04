@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CheckCircle2, ExternalLink, KeyRound, Music2, RefreshCw, Youtube } from 'lucide-react'
 import { api } from '../api'
 import { youTubeCookieReady } from '../downloadLinks'
+import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
 
 const SECRET_PLACEHOLDER = '••••••••'
 const ACCOUNT_COOKIE_RE = /(?:^|[;\s])(?:SAPISID|__Secure-3PAPISID|__Secure-1PAPISID)=[^;\s]+/i
@@ -43,8 +44,9 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
   const [youtubeCookieDraft, setYoutubeCookieDraft] = useState('')
-  const [youtubeState, setYoutubeState] = useState('')
+  const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
   const [settingsError, setSettingsError] = useState('')
+  const youtubeStatus = useSyncExternalStore(subscribeYoutubeAccountStatus, getYoutubeAccountStatus)
   const lastfmAuthTimeoutRef = useRef(null)
   const settingsRef = useRef(settings)
 
@@ -137,6 +139,13 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
   const youtubeAccountReady = settings.yt_cookie_header === SECRET_PLACEHOLDER || ACCOUNT_COOKIE_RE.test(settings.yt_cookie_header || '')
   const youtubePlaybackReady = youTubeCookieReady(settings)
+  const youtubeConnected = youtubeAccountReady && youtubeStatus.verified && youtubeStatus.connected
+  const verifyYouTube = async () => {
+    setYoutubeAuthorizing(true)
+    const result = await api.youtubeAccount(true).catch(error => ({ error: error.message }))
+    setYoutubeAuthorizing(false)
+    setYoutubeState({ message: result?.error || 'YouTube Music account access verified.', tone: result?.error ? 'error' : 'success' })
+  }
 
   const authorizeLastfm = async () => {
     if (!settings.lastfm_api_key || !settings.lastfm_api_secret) {
@@ -167,7 +176,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const saveYouTubeCookie = async () => {
     const value = youtubeCookieDraft.trim()
     if (!ACCOUNT_COOKIE_RE.test(value)) {
-      setYoutubeState('Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.')
+      setYoutubeState({ message: 'Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.', tone: 'error' })
       return
     }
     setYoutubeAuthorizing(true)
@@ -176,10 +185,11 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     if (!result?.error) {
       setSettings(prev => ({ ...prev, yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: SECRET_PLACEHOLDER }))
       setYoutubeCookieDraft('')
-      setYoutubeState('YouTube account and playback access saved.')
+      setYoutubeState({ message: 'YouTube session saved. Verifying account access…', tone: 'muted' })
+      await verifyYouTube()
       window.dispatchEvent(new Event('lokal:refresh'))
     } else {
-      setYoutubeState(result.error)
+      setYoutubeState({ message: result.error, tone: 'error' })
     }
   }
 
@@ -191,9 +201,9 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     if (!result?.error) {
       setSettings(prev => ({ ...prev, yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }))
       setYoutubeCookieDraft('')
-      setYoutubeState('YouTube disconnected from Lokal.')
+      setYoutubeState({ message: 'YouTube disconnected from Lokal.', tone: 'success' })
       window.dispatchEvent(new Event('lokal:refresh'))
-    } else setYoutubeState(result.error)
+    } else setYoutubeState({ message: result.error, tone: 'error' })
   }
 
   if (loading) {
@@ -266,15 +276,15 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
               <div>
                 <p className="text-sm font-medium text-white">YouTube Music</p>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-                  <StatusDot connected={youtubeAccountReady} />
-                  {youtubeAccountReady ? 'Account access configured' : 'Account not connected'}
+                  <StatusDot connected={youtubeConnected} />
+                  {youtubeConnected ? 'Account access verified' : youtubeAccountReady ? youtubeStatus.error ? 'Saved session needs reconnecting' : 'Session saved · not verified' : 'Account not connected'}
                 </div>
               </div>
             </div>
-            {youtubeAccountReady && <CheckCircle2 size={16} className="text-green-400" />}
+            {youtubeConnected && <CheckCircle2 size={16} className="text-green-400" />}
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            Paste a cookie header from a YouTube session you already signed into. Lokal uses it for YouTube Music account data and yt-dlp playback.
+            Paste the complete Cookie header from a signed-in music.youtube.com request, including the session cookies. Lokal uses it for YouTube Music recommendations and yt-dlp playback.
           </p>
           <div className="space-y-2">
             <input
@@ -290,13 +300,15 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
               <ActionButton onClick={saveYouTubeCookie} disabled={youtubeAuthorizing || !youtubeCookieDraft.trim()}>
                 {youtubeAuthorizing ? 'Saving…' : 'Save YouTube access'}
               </ActionButton>
+              {youtubeAccountReady && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify account access</ActionButton>}
               {(youtubeAccountReady || youtubePlaybackReady) && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
             </div>
           </div>
           <p className="text-[11px] leading-relaxed text-muted/80">
             Supported account cookies: SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID. Treat the header like a password. {youtubePlaybackReady ? 'Playback access configured.' : 'Playback access is not configured yet.'}
           </p>
-          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('saved') || youtubeState.includes('disconnected') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
+          {youtubeState.message && <p className={`text-xs leading-relaxed ${youtubeState.tone === 'success' ? 'text-green-400' : youtubeState.tone === 'error' ? 'text-red-300' : 'text-muted'}`}>{youtubeState.message}</p>}
+          {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
         </div>
       </div>
     </div>

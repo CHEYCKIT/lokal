@@ -1,6 +1,6 @@
 import { api } from './api.js'
 import { streamRef } from './onlineTracks.js'
-import { mapLimited, playbackSources, playableRecommendation, recommendationKey, recommendationMatch, resolveRecommendationTracks, songKey, timed } from './recommendations.js'
+import { mapLimited, playbackAvailability, playbackSources, playableRecommendation, recommendationKey, recommendationMatch, resolveRecommendationTracks, songKey, timed } from './recommendations.js'
 
 function normalize(value) {
   return String(value || '')
@@ -36,7 +36,9 @@ async function searchAndSaveArtistSongs(artists, client) {
           .filter(item => item.title && artistMatches(artist, item))
           .filter(item => item.kind !== 'video' || item.official).slice(0, 2)
         if (!matches.length) continue
-        const saved = await timed(() => client.onlineSave(matches.map(item => ({ ...item, provider: source.id }))))
+        const available = (await mapLimited(matches, async item => await playbackAvailability(item, source.id, client).catch(() => 'unavailable') ? null : item)).filter(Boolean)
+        if (!available.length) continue
+        const saved = await timed(() => client.onlineSave(available.map(item => ({ ...item, provider: source.id }))))
         const tracks = (Array.isArray(saved) ? saved : []).filter(playableRecommendation)
         if (tracks.length) return tracks
       } catch { /* Try the next configured playback provider. */ }

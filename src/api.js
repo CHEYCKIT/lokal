@@ -1,3 +1,5 @@
+import { updateYoutubeAccountStatus, clearYoutubeAccountStatus, youtubeAccountStatusRevision } from './youtubeAccountStatus.js'
+
 const isE = () => {
   try {
     if (typeof window !== 'undefined' && window.electron?.isElectron === true) return true
@@ -259,6 +261,10 @@ export const api = {
     })
   },
   saveSettings: (s) => Promise.resolve(isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })).then(r => {
+    if (!r?.error && Object.prototype.hasOwnProperty.call(s || {}, 'yt_cookie_header')) clearYoutubeAccountStatus()
+    if (!r?.error && s && typeof window !== 'undefined' && ['yt_cookie_header', 'lastfm_api_key', 'lastfm_username', 'lastfm_enabled', 'recommendation_source'].some(key => Object.prototype.hasOwnProperty.call(s, key))) {
+      window.dispatchEvent(new Event('lokal:recommendation-access-changed'))
+    }
     // Only what was actually saved goes into the snapshot.
     if (!r?.error && s && typeof s === 'object') {
       settingsRevision++
@@ -292,7 +298,14 @@ export const api = {
   onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
   onlinePrepare: (provider, id, force = false) => isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }),
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
-  youtubeAccount: (force = false) => isE() ? el().youtubeAccount(force) : apiFetch(`/online/account?force=${force ? '1' : '0'}`),
+  discoveryArtwork: items => isE() ? el().discoveryArtwork(items) : apiFetch('/online/artwork', { method: 'POST', body: { items } }),
+  discoveryCatalogue: options => options.source === 'youtube'
+    ? (isE() ? el().youtubeCatalogue(options) : apiFetch('/online/catalogue', { method: 'POST', body: options }))
+    : (isE() ? el().lastfmCatalogue(options) : apiFetch('/lastfm/catalogue', { method: 'POST', body: options })),
+  youtubeAccount: (force = false) => {
+    const version = youtubeAccountStatusRevision()
+    return Promise.resolve(isE() ? el().youtubeAccount(force) : apiFetch(`/online/account?force=${force ? '1' : '0'}`)).then(result => { updateYoutubeAccountStatus(result, version); return result })
+  },
   youtubeAccountPlaylist: (playlistId) => isE() ? el().youtubeAccountPlaylist(playlistId) : apiFetch(`/online/account-playlist/${encodeURIComponent(playlistId)}`),
   youtubeRadio: (videoId) => isE() ? el().youtubeRadio(videoId) : apiFetch(`/online/radio/${encodeURIComponent(videoId)}`),
   youtubeSetLiked: (videoId, liked) => isE() ? el().youtubeSetLiked(videoId, liked) : apiFetch('/online/account-liked', { method: 'POST', body: { videoId, liked } }),
@@ -386,7 +399,7 @@ export const api = {
   lastfmGetTrackInfo: (artist, track) => isE() ? el().lastfmGetTrackInfo(artist, track) : apiFetch(`/lastfm/track?${new URLSearchParams({artist, track})}`),
   lastfmGetSimilarArtists: (artist, limit) => isE() ? el().lastfmGetSimilarArtists(artist, limit) : apiFetch(`/lastfm/similar/${encodeURIComponent(artist)}?limit=${limit || 5}`),
   lastfmScrobble: (artist, track, album, duration, timestamp) => isE() ? el().lastfmScrobble(artist, track, album, duration, timestamp) : apiFetch('/lastfm/scrobble', { method:'POST', body:{artist, track, album, duration, timestamp} }),
-  lastfmDiscovery: (page = 0) => isE() ? el().lastfmDiscovery(page) : apiFetch(`/lastfm/discovery?page=${encodeURIComponent(page)}`),
+  lastfmDiscovery: (page = 0, force = false) => isE() ? el().lastfmDiscovery(page, force) : apiFetch(`/lastfm/discovery?page=${encodeURIComponent(page)}&force=${force ? '1' : '0'}`),
   lastfmSimilar: (artist, track, limit = 24) => isE() ? el().lastfmSimilar(artist, track, limit) : apiFetch(`/lastfm/similar-music?${new URLSearchParams({ artist, ...(track ? { track } : {}), limit: String(limit) })}`),
   lastfmLoved: (page) => isE() ? el().lastfmLoved(page) : apiFetch(`/lastfm/loved${page ? `?page=${encodeURIComponent(page)}` : ''}`),
   lastfmSetLoved: (artist, track, loved) => isE() ? el().lastfmSetLoved(artist, track, loved) : apiFetch('/lastfm/loved', { method:'POST', body:{ artist, track, loved } }),

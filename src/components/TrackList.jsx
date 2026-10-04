@@ -24,6 +24,9 @@ import { useTrackColumnsStore } from '../store/trackColumns'
 import TrackColumnPicker from './TrackColumnPicker'
 import { TrackSourceIcon } from './SourceIcon'
 import { openRadio } from '../radioActions'
+import DiscoveryImage from './DiscoveryImage'
+import { playRecommendationPool } from '../recommendationPlayback'
+import { playbackFallbackMessage } from '../recommendations'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -68,7 +71,9 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null }) {
+export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null }) {
+  const resolvedPlaybackRef = useRef(0)
+  useEffect(() => () => { resolvedPlaybackRef.current++ }, [])
   // Downloads from an addon are tagged with its name.
   const [addonNames, setAddonNames] = useState({})
   const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source) || isAddonProvider(streamRef(t)?.provider))
@@ -136,7 +141,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
   const anyLiked = useMemo(() => tracks.some(track => likedIds.has(track.id)), [tracks, likedIds])
   const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
-  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked })
+  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked, extraColumns })
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
@@ -369,11 +374,34 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   // A ghost that can't be played (no file, no stream): opens the resolve dialog.
   // Online songs are ghosts too, but they stream, so they play like any track.
-  const isGhostTrack = (track) => !isPlayable(track)
+  const isGhostTrack = (track) => !track?.file_path || !isPlayable(track)
+  const needsResolution = track => !!resolveTracks && isGhostTrack(track)
+  const runResolved = async (list, action, selectedTrack) => {
+    try {
+      const rows = resolveTracks ? await resolveTracks(list, { selectedTrack }) : list
+      if (!rows.length) { showToast('No playable matches were found.'); return }
+      return await action(rows)
+    } catch { showToast('Could not resolve the selected tracks.') }
+  }
 
+  const playResolved = (list, selected) => {
+    const request = ++resolvedPlaybackRef.current
+    const isCurrent = () => request === resolvedPlaybackRef.current
+    return playRecommendationPool(list, {
+      selected, firstPlayable: !selected, context, resolve: resolveTracks, isCurrent,
+      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+    }).then(started => {
+      if (started === false && isCurrent()) showToast(selected ? 'No playback match was found for this track.' : 'No playable matches were found.')
+    }).catch(() => { if (isCurrent()) showToast('Could not resolve the selected tracks.') })
+  }
 
   const handlePlay = (track, e) => {
     e.stopPropagation()
+    if (resolveTracks) {
+      if (currentTrack?.id === track.id) togglePlay()
+      else playResolved(mergedTracks, track)
+      return
+    }
     if (isGhostTrack(track)) {
       setGhostTrack(track)
       return
@@ -385,6 +413,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   const toggleLike = async (track, e) => {
     e.stopPropagation()
+    if (needsResolution(track)) return runResolved([track], rows => toggleLike(rows[0], { stopPropagation() {} }))
     const r = await api.toggleLike(track.id, user?.id, track)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
     setLiked(track.id, liked)
@@ -421,6 +450,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const askDelete = (list) => {
+    if (resolveTracks) return
     const deletable = libraryTracks(list)
     if (!deletable.length) { showToast('Streamed and imported songs aren\'t in your library to delete'); return }
     setDeleteRequest({ tracks: deletable, title: deletable.length === 1 ? deletable[0].title : null })
@@ -442,6 +472,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const playMany = (list) => {
+    if (resolveTracks) return playResolved(list)
     const playable = list.filter(track => !isGhostTrack(track))
     if (!playable.length) return
     saveRecentTrack(playable[0])
@@ -467,23 +498,23 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     const list = mergedTracks.filter(item => ids.includes(String(item.id)))
     const one = list.length === 1 ? list[0] : null
     const count = list.length > 1 ? ` ${list.length} songs` : ''
-    const deletable = libraryTracks(list)
+    const deletable = resolveTracks ? [] : libraryTracks(list)
     const oneGhost = one && isGhostTrack(one)
     const liked = one && likedIds.has(one.id)
     menu.open(event, [
       { label: one ? 'Play' : `Play${count}`, icon: Play, onSelect: () => (one ? handlePlay(one, { stopPropagation() {} }) : playMany(list)) },
-      { label: 'Play next', icon: Clock, onSelect: () => playNextMany(list) },
-      { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
-       { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
+      { label: 'Play next', icon: Clock, onSelect: () => runResolved(list, playNextMany) },
+      { label: 'Add to queue', icon: ListEnd, onSelect: () => runResolved(list, addToQueueMany) },
+       { label: 'Add to playlist…', icon: Plus, onSelect: () => runResolved(list, addToPlaylistMany) },
        one && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(navigate, one, useAppStore.getState().user?.id) },
       one && onQuickAdd && { label: 'Add to this playlist', icon: LibraryBig, onSelect: () => handleQuickAdd(one) },
-      one && !oneGhost && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
+      one && (!oneGhost || needsResolution(one)) && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
       one && isStreamed(one) && { label: 'Save to library', icon: Download, onSelect: () => saveStreamed(one) },
       one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
-      one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) },
-      one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
+      !resolveTracks && (one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) }),
+      !resolveTracks && one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
       { separator: true },
       onRemove && { label: one ? 'Remove from this playlist' : `Remove${count} from this playlist`, icon: ListMinus, onSelect: () => removeMany(list) },
       deletable.length > 0 && { label: deletable.length > 1 ? `Delete ${deletable.length} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDelete(deletable) },
@@ -571,6 +602,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   const handlePlayNext = (track, e) => {
     e.stopPropagation()
+    if (resolveTracks) return runResolved(rowTargets(track), playNextMany)
     if (isGhostTrack(track)) {
       setGhostTrack(track)
       return
@@ -580,6 +612,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   const handleAddToQueue = (track, e) => {
     e.stopPropagation()
+    if (resolveTracks) return runResolved(rowTargets(track), addToQueueMany)
     if (isGhostTrack(track)) {
       setGhostTrack(track)
       return
@@ -656,12 +689,12 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         onClear={selection.clear}
         actions={[
           { label: 'Play', icon: Play, onClick: () => playMany(selectedTracks()) },
-          { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedTracks()) },
-          { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedTracks()) },
-          { label: 'Add to playlist', icon: Plus, onClick: () => addToPlaylistMany(selectedTracks()) },
-          { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true) },
+          { label: 'Play next', icon: Clock, onClick: () => runResolved(selectedTracks(), playNextMany) },
+          { label: 'Add to queue', icon: ListEnd, onClick: () => runResolved(selectedTracks(), addToQueueMany) },
+          { label: 'Add to playlist', icon: Plus, onClick: () => runResolved(selectedTracks(), addToPlaylistMany) },
+          { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true), hidden: !!resolveTracks },
           { label: 'Remove', icon: ListMinus, onClick: () => removeMany(selectedTracks()), hidden: !onRemove },
-          { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !libraryTracks(selectedTracks()).length },
+          { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !!resolveTracks || !libraryTracks(selectedTracks()).length },
         ]}
       />
 
@@ -676,6 +709,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         {layout.album && <span className="truncate">Album</span>}
         {layout.source && <span className="flex justify-center" title="Source"><Globe size={12} aria-hidden="true" /><span className="sr-only">Source</span></span>}
         {layout.quality && <span className="text-center">Quality</span>}
+        {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
         {layout.added && <span className="truncate text-right tracking-normal">Date added</span>}
         {layout.time && <span className="text-right">Time</span>}
         <span className="sr-only">Actions</span>
@@ -697,7 +731,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         const isDragOver = dragOverId === track.id
         const liked = likedIds.has(track.id)
         const src = artSrc(track)
-        const isGhost = isGhostTrack(track)
+        const isGhost = isGhostTrack(track) && !needsResolution(track)
         const streamed = isStreamed(track)
         const RowComponent = shouldAnimateRows ? motion.div : 'div'
         const motionProps = shouldAnimateRows ? {
@@ -746,12 +780,12 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
             <div className="min-w-0 flex items-center gap-2.5">
               {columns.artwork ? <div className="w-8 h-8 rounded flex-shrink-0 overflow-hidden bg-card relative">
-                {src ? <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center text-muted"><Music size={11} /></div>}
+                {resolveTracks ? <DiscoveryImage item={track} src={src} className="w-full h-full object-cover" /> : src ? <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center text-muted"><Music size={11} /></div>}
                 {!layout.number && <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`}
                   className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 text-white">
                   {isCurrent && isPlaying ? <Pause size={14} /> : <Play size={14} />}
                 </button>}
-                {layout.number && api.isElectron && isHov && (
+                {layout.number && api.isElectron && isHov && !resolveTracks && (
                   <button onClick={e => replaceArtwork(track, e)} title="Replace artwork" className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera size={10} className="text-white" />
                   </button>
@@ -776,6 +810,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                     <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || 'Unknown album'}>{track.album || 'Unknown album'}</span>
                   </>}
                 </div>
+                {extraColumns.filter(column => !layout[column.key]).map(column => <span key={column.key} className="mr-2 text-[10px] text-muted">{column.label}: {column.render(track)}</span>)}
               </div>
             </div>
 
@@ -796,6 +831,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 </button>
               )
             })()}
+            {extraColumns.map(column => layout[column.key] && <span key={column.key} data-track-column={column.key} className="truncate text-right text-xs text-muted">{column.render(track)}</span>)}
             {layout.added && <p className="truncate text-right text-xs text-muted/60" title={track.added_at ? addedDate(track.added_at).toLocaleString() : undefined}>{fmtAddedAt(track.added_at)}</p>}
             {layout.time && <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>}
             {/* More stays reachable even with every optional column off. */}
@@ -849,25 +885,25 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                     </button>
                   )
                 })()}
-                <button onClick={e => { e.stopPropagation(); openAddToPlaylist(track) }}
+                <button onClick={e => { e.stopPropagation(); runResolved([track], rows => openAddToPlaylist(rows[0])) }}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
                   title="Add to another playlist">
                   <Plus size={14} />
                 </button>
-                <button 
+                {!resolveTracks && <button
                   onClick={e => { e.stopPropagation(); setEditingTrack(track) }}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
                   title="Edit track info"
                 >
                   <Edit2 size={14} />
-                </button>
+                </button>}
                 {onRemove && (
                   <button onClick={e => { e.stopPropagation(); onRemove(track) }}
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all">
                     <Trash2 size={12} />
                   </button>
                 )}
-                {!playlistId && !onRemove && (
+                {!playlistId && !onRemove && !resolveTracks && (
                   <button onClick={e => { e.stopPropagation(); askDelete([track]) }}
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title="Delete from Library">
                     <Trash2 size={12} />

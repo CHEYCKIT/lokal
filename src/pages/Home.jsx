@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { CalendarDays, ChevronDown, ChevronUp, Clock, Disc3, History, ListEnd, ListPlus, Music, Play, Plus, Radio, RefreshCw, Sparkles, User } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
+import DiscoveryImage from '../components/DiscoveryImage'
 import SectionSwap from '../components/SectionSwap'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
@@ -16,10 +17,18 @@ import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
 import { trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
-import { songKey, sourceName, playableRecommendation, resolveRecommendationTracks, buildRecommendationMix, loadRecommendationPage } from '../recommendations'
+import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
+import { recommendationSession, rememberHomePath } from '../recommendationSession'
+import { playRecommendationPool } from '../recommendationPlayback'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
+
+function homeRoute(pathname) {
+  const parts = String(pathname || '').split('/').filter(Boolean)
+  if (parts[0] !== 'home') return { tab: 'home', section: null }
+  return { tab: ['discovery', 'mixlab', 'history'].includes(parts[1]) ? parts[1] : 'home', section: parts[2] || null }
+}
 
 function secureImage(value) {
   const url = String(value || '').trim()
@@ -82,7 +91,7 @@ function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu }) {
   return (
     <div onContextMenu={event => onContextMenu?.(event, track)} className="group flex min-w-0 items-center gap-1 rounded-xl p-2 transition-colors hover:bg-white/[0.06]">
       <button type="button" onClick={() => onPlay(track)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card">{artwork ? <FadeImg src={artwork} className="h-full w-full object-cover" /> : <Music size={17} className="m-4 text-muted" />}</div>
+        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card"><DiscoveryImage item={track} src={artwork} className="h-full w-full object-cover" /></div>
         <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}{track.scrobbleCount ? ` · ${track.scrobbleCount} this week` : ''}</p></div>
       </button>
       {onRadio && <button type="button" aria-label={`Start radio for ${track.title}`} onClick={() => onRadio(track)} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100" title="Start radio"><Radio size={14} /></button>}
@@ -92,15 +101,27 @@ function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu }) {
 
 function ArtistRecommendation({ artist, onClick, onContextMenu }) {
   const image = secureImage(artist?.image)
-  return <button type="button" onClick={() => onClick(artist)} onContextMenu={event => onContextMenu?.(event, artist)} className="group min-w-0 text-center"><div className="mx-auto aspect-square w-full max-w-28 overflow-hidden rounded-full bg-card ring-1 ring-white/10 transition-transform group-hover:scale-105">{image ? <FadeImg src={image} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center bg-accent/20 text-2xl font-medium text-accent">{artist.name.charAt(0)}</div>}</div><p className="mt-2 truncate text-sm text-white">{artist.name}</p><p className="text-xs text-muted">Start artist radio</p></button>
+  return <button type="button" onClick={() => onClick(artist)} onContextMenu={event => onContextMenu?.(event, artist)} className="group min-w-0 text-center">
+    <div className="mx-auto aspect-square w-full max-w-28 overflow-hidden rounded-full bg-card ring-1 ring-white/10 transition-transform group-hover:scale-105"><DiscoveryImage item={artist} type="artist" src={image} className="h-full w-full object-cover" fallback={<div className="flex h-full items-center justify-center bg-accent/20 text-2xl font-medium text-accent">{artist.name.charAt(0)}</div>} /></div>
+    <p className="mt-2 truncate text-sm text-white">{artist.name}</p><p className="text-xs text-muted">Play artist songs</p>
+  </button>
 }
 
-function AlbumRecommendation({ album, onClick }) {
+function AlbumRecommendation({ album, onClick, onContextMenu }) {
   const image = secureImage(album?.artwork_url)
-  return <button type="button" onClick={() => onClick(album)} className="group min-w-0 text-left"><div className="relative aspect-square overflow-hidden rounded-xl bg-card">{image ? <FadeImg src={image} className="h-full w-full object-cover transition-transform group-hover:scale-105" /> : <div className="flex h-full items-center justify-center text-muted"><Disc3 size={30} /></div>}<span className="absolute bottom-2 right-2 rounded-full bg-black/65 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100"><Radio size={13} /></span></div><p className="mt-2 truncate text-sm font-medium text-white">{album.title}</p><p className="truncate text-xs text-muted">{album.artist}</p></button>
+  return <button type="button" onClick={() => onClick(album)} onContextMenu={event => onContextMenu?.(event, album)} className="group min-w-0 text-left">
+    <div className="relative aspect-square overflow-hidden rounded-xl bg-card"><DiscoveryImage item={album} type="album" src={image} className="h-full w-full object-cover transition-transform group-hover:scale-105" fallback={<div className="flex h-full items-center justify-center text-muted"><Disc3 size={30} /></div>} /><span className="absolute bottom-2 right-2 rounded-full bg-black/65 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100"><Play size={13} /></span></div>
+    <p className="mt-2 truncate text-sm font-medium text-white">{album.title}</p><p className="truncate text-xs text-muted">{album.artist}</p>
+  </button>
 }
 
-function ScrobbleHistory({ entries, onPlay, compact = false }) {
+const historyColumns = [
+  { key: 'scrobbled', label: 'Scrobbled', width: 5.5, render: track => new Date(Number(track.scrobbledAt) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+  { key: 'age', label: 'Age', width: 5.5, render: track => relativeAge(track.scrobbledAt) },
+]
+const recommendationRows = tracks => tracks.map((track, index) => ({ ...track, id: track.id || `recommendation:${songKey(track)}:${track.scrobbledAt || index}` }))
+
+function ScrobbleHistory({ entries, resolveTracks }) {
   const groups = []
   const byDate = new Map()
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -109,33 +130,31 @@ function ScrobbleHistory({ entries, onPlay, compact = false }) {
     if (!byDate.has(date)) { const group = { date, entries: [] }; byDate.set(date, group); groups.push(group) }
     byDate.get(date).entries.push(entry)
   }
-  if (compact) {
-    return <div className="grid grid-cols-2 gap-3 @md:grid-cols-3 @lg:grid-cols-6">{(entries || []).slice(0, 6).map((entry, index) => { const track = entry.track || entry; return <button key={`${songKey(track)}-${entry.scrobbledAt || entry.played_at || index}`} onClick={() => onPlay(entry)} className="min-w-0 text-left"><div className="aspect-square overflow-hidden rounded-xl bg-card">{trackArtURL(track) ? <FadeImg src={trackArtURL(track)} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-muted"><Music size={28} /></div>}</div><p className="mt-2 truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}</p><p className="mt-1 text-[11px] text-muted/70">{relativeAge(entry.scrobbledAt || entry.played_at)}</p></button> })}</div>
-  }
-  return <div className="space-y-6">{groups.map(group => <section key={group.date}><div className="mb-2 flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><CalendarDays size={14} />{group.date}</div><div className="overflow-hidden rounded-xl border border-border bg-elevated"><div className="grid grid-cols-[minmax(0,1fr)_9rem_7rem] gap-3 border-b border-border px-4 py-2 text-[10px] font-display uppercase tracking-widest text-muted"><span>Track</span><span>Scrobbled</span><span>Age</span></div>{group.entries.map((entry, index) => { const track = entry.track || entry; return <button key={`${songKey(track)}-${entry.scrobbledAt || entry.played_at || index}`} onClick={() => onPlay(entry)} className="grid w-full grid-cols-[minmax(0,1fr)_9rem_7rem] items-center gap-3 border-b border-border/60 px-4 py-3 text-left last:border-0 hover:bg-card"><span className="min-w-0"><span className="block truncate text-sm text-white">{track.title}</span><span className="block truncate text-xs text-muted">{track.artist}</span></span><span className="text-xs text-muted">{new Date((Number(entry.scrobbledAt || entry.played_at) || 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span><span className="text-xs text-muted">{relativeAge(entry.scrobbledAt || entry.played_at)}</span></button> })}</div></section>)}</div>
+  return <div className="space-y-6">{groups.map(group => <section key={group.date}><div className="mb-2 flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><CalendarDays size={14} />{group.date}</div><div className="rounded-xl border border-border bg-elevated p-3"><TrackList tracks={recommendationRows(group.entries)} extraColumns={historyColumns} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'Scrobble History' }} /></div></section>)}</div>
 }
 
-function RecommendationSections({ data, source: selectedSource, loading, error, onRefresh, onPlay, onTrackMenu, onRadio, onArtistRadio, onArtistMenu, onAlbumRadio, onSave, saving, onSeeHistory, onOpenSettings, showRefresh = false }) {
-  const [expanded, setExpanded] = useState({ quick: false, albums: false, artists: false, fresh: false })
+function RecommendationSections({ data, source: selectedSource, loading, error, onRefresh, onPlay, resolveTracks, onTrackMenu, onRadio, onArtistPlay, onArtistMenu, onAlbumPlay, onAlbumMenu, onSave, saving, onOpenSettings, activeSection, onSection }) {
   const source = sourceName(selectedSource)
   const quick = Array.isArray(data?.quickPicks) ? data.quickPicks : []
   const history = Array.isArray(data?.history) ? data.history : []
   const albums = Array.isArray(data?.albums) ? data.albums : []
   const artists = Array.isArray(data?.artists) ? data.artists : []
   const fresh = Array.isArray(data?.freshFinds) ? data.freshFinds : []
-  const toggle = key => setExpanded(current => ({ ...current, [key]: !current[key] }))
+  const feature = fresh[0] || quick[0]
+  const toggle = key => onSection?.(activeSection === key ? null : key)
   return <div className="space-y-10">
-    {showRefresh && <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Sparkles size={15} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Discovery · {source}</h2></div><p className="mt-1 text-sm text-muted">Recommendations come directly from your selected provider.</p></div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>}
+    <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Sparkles size={15} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Discovery · {source}</h2></div><p className="mt-1 text-sm text-muted">Recommendations come directly from your selected provider.</p></div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
     {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
     {!data && (loading
       ? <p className="py-10 text-center text-sm text-muted">Building your {source} recommendations…</p>
       : <div className="rounded-xl border border-border bg-elevated p-4"><ProviderConnections compact onOpenSettings={onOpenSettings} /></div>)}
     {data && !quick.length && !history.length && !albums.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
-    {quick.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow="Jump back in" title="Quick Picks" count={quick.length} subtitle={selectedSource === 'youtube' ? 'Picks from your YouTube Music account.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle('quick')} expanded={expanded.quick} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(expanded.quick ? quick : quick.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
-    {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title="Continue Listening" count={history.length} onExpand={onSeeHistory} /><ScrobbleHistory entries={history} onPlay={onPlay} compact /></section>}
-    {albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={expanded.albums} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(expanded.albums ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumRadio} />)}</div></section>}
-    {artists.length > 0 && <section><SectionHeader icon={User} eyebrow="For You" title="Artists For You" count={artists.length} onExpand={() => toggle('artists')} expanded={expanded.artists} /><div className="grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8">{(expanded.artists ? artists : artists.slice(0, 8)).map(artist => <ArtistRecommendation key={artist.name} artist={artist} onClick={onArtistRadio} onContextMenu={onArtistMenu} />)}</div></section>}
-    {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title="Fresh Finds" count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={expanded.fresh} action={<button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><ListPlus size={13} />{saving ? 'Saving…' : 'Save'}</button>} /><div className="rounded-xl border border-border bg-elevated p-3">{(expanded.fresh ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
+    {feature && <section className="rounded-2xl border border-border bg-elevated p-5"><SectionHeader icon={Sparkles} eyebrow="Discovery" title="Discover Something New" subtitle={feature.reason || `Selected from your ${source} recommendations.`} /><div className="flex items-center gap-5"><div className="h-32 w-32 shrink-0 overflow-hidden rounded-xl bg-card">{trackArtURL(feature) ? <FadeImg src={trackArtURL(feature)} className="h-full w-full object-cover" /> : <Music size={36} className="m-11 text-muted" />}</div><div className="min-w-0"><p className="truncate text-xl text-white">{feature.title}</p><p className="truncate text-sm text-muted">{feature.artist}</p><button type="button" onClick={() => onPlay(feature)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm text-base"><Play size={14} fill="currentColor" />Play</button></div></div></section>}
+    {quick.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow="Jump back in" title="Quick Picks" count={quick.length} subtitle={selectedSource === 'youtube' ? 'Picks from your YouTube Music account.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle('quick')} expanded={activeSection === 'quick'} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'quick' ? quick : quick.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
+    {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title="Scrobble History" count={history.length} subtitle="Your last 100 provider scrobbles, grouped by date." onExpand={() => toggle('history')} expanded={activeSection === 'history'} /><ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} /></section>}
+    {albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
+    {artists.length > 0 && <section><SectionHeader icon={User} eyebrow="For You" title="Artists For You" count={artists.length} onExpand={() => toggle('artists')} expanded={activeSection === 'artists'} /><div className="grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8">{(activeSection === 'artists' ? artists : artists.slice(0, 8)).map(artist => <ArtistRecommendation key={artist.name} artist={artist} onClick={onArtistPlay} onContextMenu={onArtistMenu} />)}</div></section>}
+    {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title="Fresh Finds" count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={activeSection === 'fresh'} action={<button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><ListPlus size={13} />{saving ? 'Saving…' : 'Save'}</button>} /><div className="rounded-xl border border-border bg-elevated p-3">{(activeSection === 'fresh' ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={onPlay} onRadio={onRadio} onContextMenu={onTrackMenu} />)}</div></section>}
   </div>
 }
 
@@ -173,29 +192,22 @@ function HomeContent({ user }) {
   const [suggestions, setSuggestions] = useCachedState(`home:suggestions:${uidKey}`, [])
   const [localHistory, setLocalHistory] = useCachedState(`home:history:${uidKey}`, [])
   const [mixes, setMixes] = useCachedState(`home:mixes:${uidKey}`, [])
-  const [discovery, setDiscovery] = useState(null)
-  const [mixLab, setMixLab] = useState({ size: 32, tracks: [] })
+  const session = recommendationSession(uidKey)
+  const sessionState = useSyncExternalStore(session.subscribe, session.getSnapshot)
+  const { data: discovery, mix: mixLab, source: recommendationSource, loading: discoveryLoading, error: discoveryError, generating: mixGenerating, mixError } = sessionState
   const [loaded, setLoaded, wasCached] = useCachedState(`home:loaded:${uidKey}`, false)
   usePageReady(loaded || wasCached)
   const location = useLocation()
-  const [tab, setTab] = useState(() => ['history', 'discovery', 'mixlab'].includes(location.state?.tab) ? location.state.tab : 'home')
+  const route = homeRoute(location.pathname)
+  const tab = route.tab
+  useEffect(() => { rememberHomePath(uidKey, location.pathname) }, [uidKey, location.pathname])
   const { playQueue } = usePlayerStore()
   const navigate = useNavigate()
   const menu = useContextMenu()
   const [saving, setSaving] = useState(null)
-  const [discoveryLoading, setDiscoveryLoading] = useState(false)
-  const [discoveryError, setDiscoveryError] = useState('')
-  const [mixGenerating, setMixGenerating] = useState(false)
-  const [mixError, setMixError] = useState('')
-  const [recommendationSource, setRecommendationSource] = useState('lastfm')
-  const discoveryRequestRef = useRef(0)
-  const discoveryPageRef = useRef(0)
-  const mixPageRef = useRef(0)
-  const discoveryRef = useRef(null)
-  const mixRequestRef = useRef(0)
-  const mixBusyRef = useRef(false)
   const playRequestRef = useRef(0)
-  const accountRef = useRef('')
+  const accountRef = useRef(sessionState.account)
+  accountRef.current = sessionState.account
   const saveBusyRef = useRef(false)
 
   const saveList = async (key, name, items, description) => {
@@ -212,18 +224,36 @@ function HomeContent({ user }) {
   }
   const saveMix = mix => saveList(`mix:${mix.id}`, `${mixTitle(mix)} - ${today()}`, mix.tracks, `Your ${mixTitle(mix)} from Home`)
 
-  const playRecommendation = async (entry, context = 'recommendations') => {
+  const playRecommendation = async (entry, context = 'recommendations', pool = [entry]) => {
     const request = ++playRequestRef.current
     const track = entry?.track || entry
     if (!track) return
-    if (playableRecommendation(track)) {
-      playQueue([track], 0, { type: context, id: track.id, name: context })
-      return
+    const account = accountRef.current
+    const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
+    const started = await playRecommendationPool(pool, {
+      selected: track, context: { type: 'discovery', name: context }, isCurrent,
+      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+    })
+    if (!isCurrent()) return
+    if (started === false) showToast(`No matching playback source was found for ${track.title}.`)
+  }
+
+  const playCatalogue = async (type, item) => {
+    const request = ++playRequestRef.current
+    const account = session.getSnapshot().account
+    const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
+    const artist = type === 'artist' ? item.name : item.artist
+    showToast(type === 'album' ? `Loading ${item.title}…` : `Loading songs by ${artist}…`)
+    const result = await api.discoveryCatalogue({ source: recommendationSource, type, artist, album: type === 'album' ? item.title : '', albumId: item.albumId }).catch(() => null)
+    if (!isCurrent()) return
+    let candidates = Array.isArray(result?.tracks) ? result.tracks : []
+    if (type === 'artist') {
+      candidates = [...candidates]
+      for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]] }
     }
-    const [resolved] = await resolveRecommendationTracks([track], api, { isCurrent: () => request === playRequestRef.current })
-    if (request !== playRequestRef.current) return
-    if (resolved?.id) playQueue([resolved], 0, { type: context, id: resolved.id, name: context })
-    else showToast(`No matching playback source was found for ${track.title}.`)
+    const started = await playRecommendationPool(candidates, { firstPlayable: true, isCurrent, context: { type: 'discovery', name: type === 'album' ? item.title : artist } })
+    if (!isCurrent()) return
+    if (started === false) showToast(result?.error || 'No playable tracks were found.')
   }
 
   const startRadio = async seed => {
@@ -249,102 +279,17 @@ function HomeContent({ user }) {
     })
   }
 
-  const loadDiscovery = async (force = false) => {
-    const requestId = ++discoveryRequestRef.current
-    setDiscoveryLoading(true)
-    setDiscoveryError('')
-    try {
-      const settings = await api.getSettings()
-      if (!settings || settings.error) throw new Error(settings?.error || 'Could not read recommendation settings.')
-      if (requestId !== discoveryRequestRef.current) return null
-      const source = settings?.recommendation_source === 'youtube' ? 'youtube' : 'lastfm'
-      const account = `${source}:${source === 'lastfm' ? settings.lastfm_username || '' : settings.yt_cookie_header || ''}:${settings.lastfm_enabled}`
-      if (accountRef.current !== account) {
-        accountRef.current = account
-        discoveryRef.current = null
-        discoveryPageRef.current = 0
-        mixPageRef.current = 0
-        setDiscovery(null)
-        ++mixRequestRef.current
-        ++playRequestRef.current
-        mixBusyRef.current = false
-        setMixGenerating(false)
-        setMixLab(prev => ({ size: prev.size, tracks: [] }))
-        setMixError('')
-      }
-      setRecommendationSource(source)
-      const previous = discoveryRef.current
-      const page = force && previous ? ++discoveryPageRef.current : discoveryPageRef.current
-      const providerData = await loadRecommendationPage(source, page, api)
-      if (requestId !== discoveryRequestRef.current) return null
-      if (!providerData || providerData.error) throw new Error(providerData?.error || 'Recommendation provider unavailable.')
-      const section = key => Array.isArray(providerData[key]) ? providerData[key] : previous?.[key] || []
-      const next = {
-        ...providerData, source, updatedAt: Date.now(),
-        quickPicks: section('quickPicks'), history: section('history'),
-        albums: section('albums').slice(0, 30), artists: section('artists').slice(0, 30),
-        freshFinds: section('freshFinds').slice(0, 30),
-      }
-      discoveryRef.current = next
-      setDiscovery(next)
-      if (providerData.warnings?.length) setDiscoveryError(`Some ${sourceName(source)} sections could not refresh. ${providerData.warnings[0]}`)
-      return next
-    } catch (error) {
-      if (requestId === discoveryRequestRef.current) setDiscoveryError(error.message || 'Could not refresh recommendations.')
-      return null
-    } finally {
-      if (requestId === discoveryRequestRef.current) setDiscoveryLoading(false)
-    }
-  }
-
-  const generateMix = async requestedSize => {
-    const target = Number(requestedSize || mixLab?.size) || 32
-    if (mixBusyRef.current) return
-    mixBusyRef.current = true
-    const requestId = ++mixRequestRef.current
-    setMixGenerating(true)
-    setMixError('')
-    try {
-      const settings = await api.getSettings()
-      if (requestId !== mixRequestRef.current) return
-      if (!settings || settings.error) throw new Error(settings?.error || 'Could not read settings.')
-      const source = settings.recommendation_source === 'youtube' ? 'youtube' : 'lastfm'
-      const isCurrent = () => requestId === mixRequestRef.current
-      const tracks = await buildRecommendationMix({
-        size: target,
-        previous: mixLab.source === source ? mixLab?.tracks || [] : [],
-        loadPage: () => loadRecommendationPage(source, ++mixPageRef.current, api),
-        resolve: tracks => resolveRecommendationTracks(tracks, api, { isCurrent }),
-        isCurrent,
-      })
-      if (requestId !== mixRequestRef.current) return
-      setMixLab({ size: target, tracks, source })
-    } catch (error) {
-      if (requestId === mixRequestRef.current) setMixError(error?.message || 'Could not build a new recommendation mix.')
-    } finally {
-      if (requestId === mixRequestRef.current) { mixBusyRef.current = false; setMixGenerating(false) }
-    }
-  }
-
   useEffect(() => { load() }, [user?.id])
-  useEffect(() => { loadDiscovery(); return () => { discoveryRequestRef.current++; mixRequestRef.current++; playRequestRef.current++ } }, [user?.id])
+  useEffect(() => { session.ensure(); return () => { playRequestRef.current++ } }, [session])
   useEffect(() => {
-    const refresh = () => { load(); loadDiscovery(true) }
-    const settingsChanged = () => {
-      mixRequestRef.current++
-      playRequestRef.current++
-      mixBusyRef.current = false
-      setMixGenerating(false)
-      loadDiscovery(true)
-    }
+    const refresh = () => load()
     window.addEventListener('lokal:refresh', refresh)
-    window.addEventListener('lokal:settings-saved', settingsChanged)
-    return () => { window.removeEventListener('lokal:refresh', refresh); window.removeEventListener('lokal:settings-saved', settingsChanged) }
+    return () => { window.removeEventListener('lokal:refresh', refresh) }
   }, [user?.id])
 
   const data = discovery
   const recommendationTracks = data?.freshFinds || []
-  const historyEntries = recommendationSource === 'lastfm' ? data?.history || [] : localHistory
+  const goHome = (next, section = null) => navigate(next === 'home' ? '/' : `/home/${next}${section ? `/${section}` : ''}`)
   const openMixMenu = (event, mix) => menu.open(event, [
     { label: 'Play', icon: Play, onSelect: () => playQueue(mix.tracks, 0) },
     { label: 'Play next', icon: Clock, onSelect: () => playNextMany(mix.tracks) },
@@ -377,11 +322,22 @@ function HomeContent({ user }) {
   }
   const sectionProps = {
     data, source: recommendationSource, loading: discoveryLoading, error: discoveryError,
-    onRefresh: () => loadDiscovery(true), onPlay: playRecommendation, onTrackMenu: openTrackMenu,
+    onRefresh: session.refresh, activeSection: route.section, onSection: section => goHome('discovery', section), onPlay: track => {
+      const isQuick = data?.quickPicks?.some(item => item === track)
+      playRecommendation(track, isQuick ? 'Quick Picks' : 'Fresh Finds', isQuick ? data.quickPicks : recommendationTracks)
+    }, onTrackMenu: openTrackMenu,
+    resolveTracks: (rows, options = {}) => {
+      const account = sessionState.account
+      return resolveRecommendationTracks(rows, api, {
+        ...options,
+        isCurrent: () => account === session.getSnapshot().account && (!options.isCurrent || options.isCurrent()),
+      })
+    },
     onRadio: startRadio, onArtistMenu: openArtistMenu,
-    onArtistRadio: artist => startRadio({ artist: artist.name, type: 'artist' }),
-    onAlbumRadio: album => startRadio({ title: album.title, artist: album.artist, type: 'album' }),
-    onSave: saveRecommendations, saving: !!saving, onSeeHistory: () => setTab('history'),
+    onArtistPlay: artist => playCatalogue('artist', artist),
+    onAlbumPlay: album => playCatalogue('album', album),
+    onAlbumMenu: (event, album) => menu.open(event, [{ label: 'Play album', icon: Play, onSelect: () => playCatalogue('album', album) }, { label: 'Start album radio', icon: Radio, onSelect: () => startRadio({ title: album.title, artist: album.artist, type: 'album' }) }]),
+    onSave: saveRecommendations, saving: !!saving,
     onOpenSettings: () => navigate('/settings', { state: { category: 'integrations' } }),
   }
   const localHome = <>
@@ -392,17 +348,16 @@ function HomeContent({ user }) {
   </>
 
   return <div className="p-6 space-y-7 w-full max-w-6xl mx-auto pb-10">
-    <div><h1 className="text-2xl font-display text-white">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}</h1><p className="text-sm text-muted mt-1">Recommendations and listening history from {recommendationSource === 'youtube' ? 'YouTube Music' : 'Last.fm'}</p></div>
-    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Home'], ['discovery', 'Discovery'], ['mixlab', 'Mix'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
+    <div><h1 className="text-2xl font-display text-white">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}</h1><p className="text-sm text-muted mt-1">Your music, listening history, and recommendations</p></div>
+    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Home'], ['discovery', 'Discovery'], ['mixlab', 'Mix'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
     <SectionSwap id={tab} className="space-y-10">
       {tab === 'history' ? <section>
-        <SectionHeader icon={History} eyebrow="History" title={recommendationSource === 'lastfm' ? 'Scrobbles' : 'Listening History'} count={historyEntries.length} subtitle={recommendationSource === 'lastfm' ? 'Your last 100 Last.fm scrobbles, grouped by date.' : 'Your last 100 local listening events, grouped by date.'} />
-        {discoveryError && <p role="status" className="mb-4 text-sm text-red-200">{discoveryError}</p>}
-        {historyEntries.length ? <ScrobbleHistory entries={historyEntries} onPlay={entry => playRecommendation(entry, 'history')} /> : <p className="py-10 text-center text-sm text-muted">{discoveryLoading ? 'Loading history…' : 'No listening history available.'}</p>}
+        <SectionHeader icon={History} eyebrow="History" title="Listen History" count={localHistory.length} />
+        {localHistory.length ? <TrackList tracks={localHistory} reduceMotion context={{ type: 'history', name: 'Listen History' }} /> : <p className="py-10 text-center text-sm text-muted">No listen history yet.</p>}
       </section>
-        : tab === 'mixlab' ? <MixPanel tracks={mixLab?.tracks || []} source={mixLab.source || recommendationSource} size={Number(mixLab?.size) || 32} error={mixError} generating={mixGenerating} saving={!!saving} onSize={size => setMixLab(prev => ({ ...prev, size }))} onGenerate={generateMix} onPlay={tracks => playQueue(tracks, 0, { type: 'mix', name: `${sourceName(mixLab.source || recommendationSource)} Mix` })} onSave={() => saveList('mixlab', `Mix - ${today()}`, mixLab?.tracks || [], `${sourceName(mixLab.source || recommendationSource)} recommendation Mix`)} />
-        : tab === 'discovery' ? <RecommendationSections {...sectionProps} showRefresh />
-        : <><RecommendationSections {...sectionProps} />{localHome}</>
+        : tab === 'mixlab' ? <MixPanel tracks={mixLab?.tracks || []} source={mixLab.source || recommendationSource} size={Number(mixLab?.size) || 32} error={mixError} generating={mixGenerating} saving={!!saving} onSize={session.setSize} onGenerate={session.generate} onPlay={tracks => playQueue(tracks, 0, { type: 'mix', name: `${sourceName(mixLab.source || recommendationSource)} Mix` })} onSave={() => saveList('mixlab', `Mix - ${today()}`, mixLab?.tracks || [], `${sourceName(mixLab.source || recommendationSource)} recommendation Mix`)} />
+        : tab === 'discovery' ? <RecommendationSections {...sectionProps} />
+        : localHome
       }
     </SectionSwap>
     <ContextMenu menu={menu} />
