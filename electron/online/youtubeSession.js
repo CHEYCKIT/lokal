@@ -81,6 +81,7 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
   const finish = (job, result) => {
     if (job.finished) return
     job.finished = true
+    clearInterval(job.verifyTimer)
     revision++
     if (loginJob === job) loginJob = null
     // Close before aborting so a successful native login keeps its full profile.
@@ -89,7 +90,7 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     if (!result.authenticated) job.session.clearStorageData().catch(() => {})
     job.resolve(result)
   }
-  const signIn = ({ mode = 'embedded', onProgress = () => {} } = {}) => {
+  const signIn = ({ mode = 'embedded', onProgress = () => {}, verifyPollMs = 1500 } = {}) => {
     if (!['embedded', 'browser'].includes(mode)) return Promise.resolve({ authenticated: false, error: 'Unknown YouTube Music sign-in mode.' })
     if (loginJob) { loginJob.browser?.focus(); return loginJob.promise }
     getSession()
@@ -150,6 +151,10 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
         const opener = openBrowser || (mode === 'browser' ? openYouTubeBrowser : openEmbeddedYouTubeLogin)
         job.browser = await opener({ electron: runtime(), session: job.session, signal: job.controller.signal, onChange: changed, onClosed: () => finish(job, { authenticated: false, cancelled: true }), onError: error => finish(job, { authenticated: false, error: error.message || 'The sign-in window failed.' }), onProgress })
         if (!current()) { await job.browser.close(); return }
+        job.verifyTimer = setInterval(() => {
+          if (!current() || job.checking) return
+          changed()
+        }, Math.max(25, Number(verifyPollMs) || 1500))
         await check()
       } catch (error) { finish(job, { authenticated: false, ...(job.controller.signal.aborted ? { cancelled: true } : { error: error.message || 'Could not open the sign-in browser.' }) }) }
     })()

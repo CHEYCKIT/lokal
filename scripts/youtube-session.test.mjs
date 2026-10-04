@@ -225,6 +225,14 @@ test('cookie presence alone does not complete sign-in, and explicit cancel clear
   assert.equal((await env.candidate().cookies.get()).length, 0)
 })
 
+test('periodic verification catches a silently authenticated Music page', async () => {
+  const env = environment()
+  const login = env.manager.signIn({ verifyPollMs: 5 })
+  await tick()
+  env.snapshot.url = 'https://music.youtube.com/'
+  assert.equal((await login).authenticated, true)
+})
+
 test('a changing candidate context is reverified before promotion and invalidates old credential handles', async () => {
   const env = environment({ connected: true })
   const active = { 'x-goog-authuser': '2', 'x-goog-pageid': 'verified-brand' }
