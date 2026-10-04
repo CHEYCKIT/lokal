@@ -44,7 +44,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
   const [youtubeCookieDraft, setYoutubeCookieDraft] = useState('')
-  const [youtubeState, setYoutubeState] = useState('')
+  const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
   const [settingsError, setSettingsError] = useState('')
   const youtubeStatus = useSyncExternalStore(subscribeYoutubeAccountStatus, getYoutubeAccountStatus)
   const lastfmAuthTimeoutRef = useRef(null)
@@ -144,7 +144,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     setYoutubeAuthorizing(true)
     const result = await api.youtubeAccount(true).catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
-    setYoutubeState(result?.error || 'YouTube Music account access verified.')
+    setYoutubeState({ message: result?.error || 'YouTube Music account access verified.', tone: result?.error ? 'error' : 'success' })
   }
 
   const authorizeLastfm = async () => {
@@ -176,7 +176,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const saveYouTubeCookie = async () => {
     const value = youtubeCookieDraft.trim()
     if (!ACCOUNT_COOKIE_RE.test(value)) {
-      setYoutubeState('Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.')
+      setYoutubeState({ message: 'Paste a YouTube cookie header containing SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID.', tone: 'error' })
       return
     }
     setYoutubeAuthorizing(true)
@@ -185,11 +185,11 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     if (!result?.error) {
       setSettings(prev => ({ ...prev, yt_cookies: '1', yt_cookie_browser: 'paste', yt_cookie_header: SECRET_PLACEHOLDER }))
       setYoutubeCookieDraft('')
-      setYoutubeState('YouTube session saved. Verifying account access…')
+      setYoutubeState({ message: 'YouTube session saved. Verifying account access…', tone: 'muted' })
       await verifyYouTube()
       window.dispatchEvent(new Event('lokal:refresh'))
     } else {
-      setYoutubeState(result.error)
+      setYoutubeState({ message: result.error, tone: 'error' })
     }
   }
 
@@ -201,9 +201,9 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     if (!result?.error) {
       setSettings(prev => ({ ...prev, yt_cookies: '0', yt_cookie_browser: 'paste', yt_cookie_header: '' }))
       setYoutubeCookieDraft('')
-      setYoutubeState('YouTube disconnected from Lokal.')
+      setYoutubeState({ message: 'YouTube disconnected from Lokal.', tone: 'success' })
       window.dispatchEvent(new Event('lokal:refresh'))
-    } else setYoutubeState(result.error)
+    } else setYoutubeState({ message: result.error, tone: 'error' })
   }
 
   if (loading) {
@@ -307,8 +307,8 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
           <p className="text-[11px] leading-relaxed text-muted/80">
             Supported account cookies: SAPISID, __Secure-3PAPISID, or __Secure-1PAPISID. Treat the header like a password. {youtubePlaybackReady ? 'Playback access configured.' : 'Playback access is not configured yet.'}
           </p>
-          {youtubeState && <p className={`text-xs leading-relaxed ${youtubeState.includes('saved') || youtubeState.includes('disconnected') ? 'text-green-400' : 'text-muted'}`}>{youtubeState}</p>}
-          {!youtubeState && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
+          {youtubeState.message && <p className={`text-xs leading-relaxed ${youtubeState.tone === 'success' ? 'text-green-400' : youtubeState.tone === 'error' ? 'text-red-300' : 'text-muted'}`}>{youtubeState.message}</p>}
+          {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
         </div>
       </div>
     </div>

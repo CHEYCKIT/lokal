@@ -25,6 +25,8 @@ import TrackColumnPicker from './TrackColumnPicker'
 import { TrackSourceIcon } from './SourceIcon'
 import { openRadio } from '../radioActions'
 import DiscoveryImage from './DiscoveryImage'
+import { playRecommendationPool } from '../recommendationPlayback'
+import { playbackFallbackMessage } from '../recommendations'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -70,6 +72,8 @@ function fmtAddedAt(ts) {
 }
 
 export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null }) {
+  const resolvedPlaybackRef = useRef(0)
+  useEffect(() => () => { resolvedPlaybackRef.current++ }, [])
   // Downloads from an addon are tagged with its name.
   const [addonNames, setAddonNames] = useState({})
   const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source) || isAddonProvider(streamRef(t)?.provider))
@@ -384,11 +388,12 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const handlePlay = (track, e) => {
     e.stopPropagation()
     if (resolveTracks) {
-      runResolved(mergedTracks, rows => {
-        const index = rows.findIndex(row => row.title === track.title && row.artist === track.artist)
-        if (index >= 0) usePlayerStore.getState().playQueue(rows, index, context)
-        else showToast('No playback match was found for this track.')
-      }, track)
+      const request = ++resolvedPlaybackRef.current
+      playRecommendationPool(mergedTracks, {
+        selected: track, context, resolve: resolveTracks,
+        isCurrent: () => request === resolvedPlaybackRef.current,
+        onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+      }).then(started => { if (started === false && request === resolvedPlaybackRef.current) showToast('No playback match was found for this track.') }).catch(() => showToast('Could not resolve the selected tracks.'))
       return
     }
     if (isGhostTrack(track)) {

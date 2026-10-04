@@ -212,6 +212,21 @@ test('artist radio uses provider priority and rejects a similarly named wrong ar
   assert.equal(result[0].provider, addon)
 })
 
+test('one failed artist-radio preparation does not discard another playable match from the same provider', async () => {
+  const { client, searches } = clientMock({
+    lastfmSimilar: async () => ({ artists: [{ name: 'Artist 1' }] }),
+    onlinePrepare: async (provider, id) => { if (id === 'failed') throw new Error('Unavailable'); return { ok: true } },
+  })
+  client.onlineSearch = async (query, source) => {
+    searches.push(source)
+    return { results: [{ ...song(1), id: 'failed' }, { ...song(1), title: 'Song 2', id: 'playable' }] }
+  }
+  const result = await buildRadio({ artist: 'Seed Artist', type: 'artist' }, 'guest', client)
+  assert.deepEqual(searches, ['sc'])
+  assert.deepEqual(result.map(track => track.title), ['Song 2'])
+  assert.equal(result[0].provider, 'sc')
+})
+
 test('SoundCloud-first playback retains YouTube radio recommendations', async () => {
   const radioIds = []
   const { client, searches } = clientMock({

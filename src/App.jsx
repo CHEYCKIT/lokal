@@ -212,6 +212,7 @@ function PageTransition({ gated = false, children }) {
 function AnimatedRoutes() {
   const location = useLocation()
   const navigationType = useNavigationType()
+  const routeKey = location.pathname === '/' || location.pathname.startsWith('/home/') ? 'home' : location.pathname
   // Every page scrolls inside the same <main>, so without this a page opened
   // from a scrolled-down one (e.g. Settings from the middle of Home) inherited
   // that scroll position. Reset once the old page has faded out -- resetting
@@ -220,7 +221,7 @@ function AnimatedRoutes() {
   const resetOnEnter = useRef(false)
   useEffect(() => {
     resetOnEnter.current = navigationType !== 'POP'
-  }, [location.pathname, navigationType])
+  }, [routeKey, navigationType])
   const handleExitComplete = () => {
     if (!resetOnEnter.current) return
     resetOnEnter.current = false
@@ -229,7 +230,7 @@ function AnimatedRoutes() {
   }
   return (
     <AnimatePresence mode="wait" onExitComplete={handleExitComplete}>
-      <Routes location={location} key={location.pathname}>
+      <Routes location={location} key={routeKey}>
         <Route path="/" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/home/:tab/*" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />

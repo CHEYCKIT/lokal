@@ -19,6 +19,7 @@ import { trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
 import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
+import { playRecommendationPool } from '../recommendationPlayback'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
@@ -229,14 +230,12 @@ function HomeContent({ user }) {
     if (!track) return
     const account = accountRef.current
     const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
-    const tracks = await resolveRecommendationTracks(pool, api, {
-      isCurrent,
-      onProviderFailure: failure => { if (songKey(failure.candidate) === songKey(track)) showToast(playbackFallbackMessage(failure)) },
+    const started = await playRecommendationPool(pool, {
+      selected: track, context: { type: 'discovery', name: context }, isCurrent,
+      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
     })
     if (!isCurrent()) return
-    const index = tracks.findIndex(item => songKey(item) === songKey(track))
-    if (index >= 0) playQueue(tracks, index, { type: 'discovery', name: context })
-    else showToast(`No matching playback source was found for ${track.title}.`)
+    if (started === false) showToast(`No matching playback source was found for ${track.title}.`)
   }
 
   const playCatalogue = async (type, item) => {
@@ -252,10 +251,9 @@ function HomeContent({ user }) {
       candidates = [...candidates]
       for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]] }
     }
-    const tracks = await resolveRecommendationTracks(candidates, api, { isCurrent })
+    const started = await playRecommendationPool(candidates, { firstPlayable: true, isCurrent, context: { type: 'discovery', name: type === 'album' ? item.title : artist } })
     if (!isCurrent()) return
-    if (tracks.length) playQueue(tracks, 0, { type: 'discovery', name: type === 'album' ? item.title : artist })
-    else showToast(result?.error || 'No playable tracks were found.')
+    if (started === false) showToast(result?.error || 'No playable tracks were found.')
   }
 
   const startRadio = async seed => {
@@ -328,12 +326,11 @@ function HomeContent({ user }) {
       const isQuick = data?.quickPicks?.some(item => item === track)
       playRecommendation(track, isQuick ? 'Quick Picks' : 'Fresh Finds', isQuick ? data.quickPicks : recommendationTracks)
     }, onTrackMenu: openTrackMenu,
-    resolveTracks: (rows, { selectedTrack } = {}) => {
-      const request = ++playRequestRef.current
-      const account = session.getSnapshot().account
+    resolveTracks: (rows, options = {}) => {
+      const account = sessionState.account
       return resolveRecommendationTracks(rows, api, {
-        isCurrent: () => request === playRequestRef.current && account === session.getSnapshot().account,
-        onProviderFailure: failure => { if (selectedTrack && songKey(failure.candidate) === songKey(selectedTrack)) showToast(playbackFallbackMessage(failure)) },
+        ...options,
+        isCurrent: () => account === session.getSnapshot().account && (!options.isCurrent || options.isCurrent()),
       })
     },
     onRadio: startRadio, onArtistMenu: openArtistMenu,

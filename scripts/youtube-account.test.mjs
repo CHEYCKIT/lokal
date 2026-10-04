@@ -76,3 +76,18 @@ test('authenticated album catalogues keep album order and account context', asyn
   assert.equal(JSON.parse(browseRequest.body).browseId, 'MPREtestAlbum')
   assert.equal(browseRequest.headers['X-Goog-AuthUser'], '2')
 })
+
+test('album tracks without artist runs inherit the requested artist while parsed credits are preserved', async () => {
+  youtube.clearAccountCache()
+  const row = (videoId, title, artists = []) => ({ musicResponsiveListItemRenderer: {
+    playlistItemData: { videoId },
+    flexColumns: [
+      { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: title }] } } },
+      { musicResponsiveListItemFlexColumnRenderer: { text: { runs: artists.map(text => ({ text, navigationEndpoint: { browseEndpoint: { browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ARTIST' } } } } })) } } },
+    ],
+  } })
+  const result = await youtube.fetchCatalogue({ type: 'album', artist: 'Album Artist', album: 'Album', albumId: 'MPREtestAlbum' }, cookies, async url => url.endsWith('/')
+    ? { ok: true, text: async () => `ytcfg.set(${JSON.stringify(musicConfig)});` }
+    : { ok: true, json: async () => ({ ...accountRoot, contents: [row('abcdefghijk', 'No Credits'), row('bcdefghijkl', 'Guest Credits', ['Guest Artist', 'Second Artist'])] }) })
+  assert.deepEqual(result.tracks.map(track => [track.title, track.artist, track.artists]), [['No Credits', 'Album Artist', ['Album Artist']], ['Guest Credits', 'Guest Artist, Second Artist', ['Guest Artist', 'Second Artist']]])
+})

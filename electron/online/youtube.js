@@ -482,7 +482,10 @@ async function fetchCatalogue({ type, artist, album, albumId } = {}, cookies, fe
   }
   if (!id) return { error: `YouTube Music did not find the album ${album} by ${artist}.` }
   const root = await accountBrowse(id, cookies, fetchImpl, config)
-  return { tracks: parseAccountTracks(root, 100).map(track => ({ ...track, album })) }
+  return { tracks: parseAccountTracks(root, 100).map(track => {
+    const artists = track.artists?.length ? track.artists : [track.artist || String(artist)]
+    return { ...track, artists, artist: track.artist || artists.join(', '), album }
+  }) }
 }
 
 async function setAccountLiked(videoId, liked, cookies, fetchImpl = fetch) {

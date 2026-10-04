@@ -78,7 +78,7 @@ export async function playbackAvailability(match, provider, client = api, timeou
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, afterProvider, skipProviders = [], onProviderFailure } = {}) {
+export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, afterProvider, skipProviders = [], onProviderFailure, prepareStreams = true } = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
@@ -102,7 +102,7 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
             const match = direct ? { ...candidate, provider: 'yt', id: candidate.videoId } : recommendationMatch(candidate, response?.results)
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
-            const unavailable = await playbackAvailability(match, source.id, client, timeoutMs)
+            const unavailable = match.preview ? 'preview' : prepareStreams ? await playbackAvailability(match, source.id, client, timeoutMs) : null
             if (!isCurrent()) return null
             if (unavailable) { failed(unavailable); continue }
             const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id }]), timeoutMs)

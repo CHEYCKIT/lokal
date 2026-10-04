@@ -36,7 +36,7 @@ async function searchAndSaveArtistSongs(artists, client) {
           .filter(item => item.title && artistMatches(artist, item))
           .filter(item => item.kind !== 'video' || item.official).slice(0, 2)
         if (!matches.length) continue
-        const available = (await mapLimited(matches, async item => await playbackAvailability(item, source.id, client) ? null : item)).filter(Boolean)
+        const available = (await mapLimited(matches, async item => await playbackAvailability(item, source.id, client).catch(() => 'unavailable') ? null : item)).filter(Boolean)
         if (!available.length) continue
         const saved = await timed(() => client.onlineSave(available.map(item => ({ ...item, provider: source.id }))))
         const tracks = (Array.isArray(saved) ? saved : []).filter(playableRecommendation)
