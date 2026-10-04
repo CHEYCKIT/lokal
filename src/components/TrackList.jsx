@@ -384,16 +384,21 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     } catch { showToast('Could not resolve the selected tracks.') }
   }
 
+  const playResolved = (list, selected) => {
+    const request = ++resolvedPlaybackRef.current
+    const isCurrent = () => request === resolvedPlaybackRef.current
+    return playRecommendationPool(list, {
+      selected, firstPlayable: !selected, context, resolve: resolveTracks, isCurrent,
+      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+    }).then(started => {
+      if (started === false && isCurrent()) showToast(selected ? 'No playback match was found for this track.' : 'No playable matches were found.')
+    }).catch(() => { if (isCurrent()) showToast('Could not resolve the selected tracks.') })
+  }
 
   const handlePlay = (track, e) => {
     e.stopPropagation()
     if (resolveTracks) {
-      const request = ++resolvedPlaybackRef.current
-      playRecommendationPool(mergedTracks, {
-        selected: track, context, resolve: resolveTracks,
-        isCurrent: () => request === resolvedPlaybackRef.current,
-        onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
-      }).then(started => { if (started === false && request === resolvedPlaybackRef.current) showToast('No playback match was found for this track.') }).catch(() => showToast('Could not resolve the selected tracks.'))
+      playResolved(mergedTracks, track)
       return
     }
     if (isGhostTrack(track)) {
@@ -466,7 +471,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const playMany = (list) => {
-    if (resolveTracks) return runResolved(list, rows => usePlayerStore.getState().playQueue(rows, 0, context))
+    if (resolveTracks) return playResolved(list)
     const playable = list.filter(track => !isGhostTrack(track))
     if (!playable.length) return
     saveRecentTrack(playable[0])

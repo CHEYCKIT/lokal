@@ -27,7 +27,7 @@ export async function playRecommendationPool(candidates, { selected, context, fi
   for (let at = 0; at < rest.length && current(); at += 4) {
     // Future songs are prepared when they actually play. Known preview results
     // are still rejected here, and runtime preparation handles hidden previews.
-    const rows = await resolve(rest.slice(at, at + 4), { isCurrent: current, prepareStreams: false })
+    const rows = await resolve(rest.slice(at, at + 4), { isCurrent: current, prepareStreams: false }).catch(() => [])
     if (current() && rows.length) store.getState().extendRecommendationQueue(rows, order, version)
   }
   return true

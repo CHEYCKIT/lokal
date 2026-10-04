@@ -50,6 +50,22 @@ test('background results cannot append to a different playback queue', async () 
   assert.deepEqual(store.getState().queue, [other])
 })
 
+test('a failed background batch does not reject active playback or prevent later batches from filling the queue', async () => {
+  let backgroundBatches = 0
+  const started = await playRecommendationPool(pool, {
+    selected: pool[0],
+    resolve: async (rows, options) => {
+      if (!options.prepareStreams && ++backgroundBatches === 1) throw new Error('Temporary lookup failure')
+      return rows.map(playable)
+    },
+  })
+  assert.equal(started, true)
+  assert.equal(backgroundBatches, 2)
+  assert.equal(store.getState().isPlaying, true)
+  assert.equal(store.getState().currentTrack.title, 'Song 0')
+  assert.deepEqual(store.getState().queue.map(track => track.title), ['Song 0', 'Song 5', 'Song 6', 'Song 7'])
+})
+
 test('a newer click supersedes an older selected-song lookup before audio starts', async () => {
   let release
   const old = playRecommendationPool([pool[0]], { selected: pool[0], resolve: rows => new Promise(resolve => { release = () => resolve(rows.map(playable)) }) })
