@@ -398,7 +398,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const handlePlay = (track, e) => {
     e.stopPropagation()
     if (resolveTracks) {
-      playResolved(mergedTracks, track)
+      if (currentTrack?.id === track.id) togglePlay()
+      else playResolved(mergedTracks, track)
       return
     }
     if (isGhostTrack(track)) {
