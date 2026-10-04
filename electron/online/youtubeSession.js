@@ -2,7 +2,6 @@ const crypto = require('crypto')
 const youtube = require('./youtube')
 const { openYouTubeBrowser, accountContext, youtubeCookie } = require('./youtubeBrowser')
 const { openEmbeddedYouTubeLogin } = require('./youtubeEmbeddedLogin')
-const { browserUserAgent } = require('./youtubeLoginIdentity')
 
 const PARTITION = 'persist:lokal-ytmusic'
 const MUSIC = 'https://music.youtube.com'
@@ -36,7 +35,9 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     const saved = getSettings()
     const partition = /^persist:lokal-ytmusic(?:-[\da-f-]+)?$/.test(saved.yt_account_partition || '') ? saved.yt_account_partition : PARTITION
     ses = runtime().session.fromPartition(partition)
-    ses.setUserAgent(saved.yt_account_user_agent || browserUserAgent(ses.getUserAgent()))
+    // External-browser and legacy profiles keep their saved identity; native
+    // embedded profiles use Electron's current default, including after updates.
+    if (saved.yt_account_user_agent) ses.setUserAgent(saved.yt_account_user_agent)
     try { requestContext = accountContext(JSON.parse(saved.yt_account_context || '{}')) } catch {}
     watchCookies(ses)
     return ses
@@ -82,8 +83,9 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     job.finished = true
     revision++
     if (loginJob === job) loginJob = null
+    // Close before aborting so a successful native login keeps its full profile.
+    Promise.resolve(job.browser?.close({ preserveSession: !!result.authenticated })).catch(() => {})
     job.controller.abort()
-    Promise.resolve(job.browser?.close()).catch(() => {})
     if (!result.authenticated) job.session.clearStorageData().catch(() => {})
     job.resolve(result)
   }
@@ -108,11 +110,14 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
           if (job.dirty) continue
           if (new URL(snapshot.url).origin !== MUSIC) return
           const context = accountContext(snapshot.context)
-          job.session.setUserAgent(browserUserAgent(snapshot.userAgent))
-          await job.session.clearStorageData({ storages: ['cookies'] })
-          for (const cookie of snapshot.cookies.filter(youtubeCookie)) {
-            if (!current()) return
-            await job.session.cookies.set(electronCookie(cookie))
+          const native = job.browser.session === job.session
+          if (!native) {
+            job.session.setUserAgent(snapshot.userAgent)
+            await job.session.clearStorageData({ storages: ['cookies'] })
+            for (const cookie of snapshot.cookies.filter(youtubeCookie)) {
+              if (!current()) return
+              await job.session.cookies.set(electronCookie(cookie))
+            }
           }
           if (!current()) return
           const auth = await sessionCredentials(job.session, context, job.token)
@@ -123,11 +128,12 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
           if (job.dirty) continue
           if (!result.authenticated || result.error) { onProgress({ message: result.error || 'YouTube Music has not confirmed account access yet.' }); return }
           await job.session.cookies.flushStore()
+          job.session.flushStorageData?.()
           const freshCookies = await cookieHeader(job.session)
           if (!current()) return
           if (job.dirty) continue
           // The old jar and selected account remain intact until this atomic switch.
-          saveSettings({ yt_account_partition: partition, yt_account_user_agent: job.session.getUserAgent(), yt_account_context: JSON.stringify(context), yt_account_session: '1', yt_account_revision: String(Date.now()), yt_cookies: '1', yt_cookie_browser: 'session' })
+          saveSettings({ yt_account_partition: partition, yt_account_user_agent: native ? '' : job.session.getUserAgent(), yt_account_context: JSON.stringify(context), yt_account_session: '1', yt_account_revision: String(Date.now()), yt_cookies: '1', yt_cookie_browser: 'session' })
           const previous = ses
           ses = job.session
           requestContext = context
@@ -142,7 +148,7 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     ;(async () => {
       try {
         const opener = openBrowser || (mode === 'browser' ? openYouTubeBrowser : openEmbeddedYouTubeLogin)
-        job.browser = await opener({ electron: runtime(), signal: job.controller.signal, onChange: changed, onClosed: () => finish(job, { authenticated: false, cancelled: true }), onError: error => finish(job, { authenticated: false, error: error.message || 'The sign-in window failed.' }), onProgress })
+        job.browser = await opener({ electron: runtime(), session: job.session, signal: job.controller.signal, onChange: changed, onClosed: () => finish(job, { authenticated: false, cancelled: true }), onError: error => finish(job, { authenticated: false, error: error.message || 'The sign-in window failed.' }), onProgress })
         if (!current()) { await job.browser.close(); return }
         await check()
       } catch (error) { finish(job, { authenticated: false, ...(job.controller.signal.aborted ? { cancelled: true } : { error: error.message || 'Could not open the sign-in browser.' }) }) }
@@ -163,4 +169,4 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
   return { credentials, signIn, cancelSignIn, disconnect }
 }
 
-module.exports = { createYouTubeSession, browserUserAgent, electronCookie, PARTITION }
+module.exports = { createYouTubeSession, electronCookie, PARTITION }

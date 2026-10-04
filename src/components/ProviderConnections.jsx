@@ -146,7 +146,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
   const signInYouTube = async () => {
     setYoutubeAuthorizing(true)
     setYoutubeSigningIn(true)
-    setYoutubeState({ message: 'Opening an isolated Lokal sign-in window. Complete Google sign-in there; Music account verification is automatic.', tone: 'muted' })
+    setYoutubeState({ message: 'Opening YouTube Music in an isolated Lokal window. Use Sign in on that page; account verification is automatic.', tone: 'muted' })
     try {
       const result = await api.youtubeSignIn({ mode: 'embedded' })
       await loadSettings(true)
@@ -273,7 +273,7 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
             {youtubeConnected && <CheckCircle2 size={16} className="text-green-400" />}
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            {api.isElectron ? 'Google sign-in opens in an isolated Lokal window. Lokal saves the session only after YouTube Music confirms account access, then maintains it automatically.' : 'YouTube Music sign-in is available in the desktop app.'}
+            {api.isElectron ? 'YouTube Music opens in an isolated Lokal window. Use the website’s Sign in button. Lokal keeps the full browser session after Music confirms account access and restores it when the app restarts.' : 'YouTube Music sign-in is available in the desktop app.'}
           </p>
           {api.isElectron && <div className="flex flex-wrap gap-2"><ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeAuthorizing ? <RefreshCw size={13} className="animate-spin" /> : <Youtube size={13} />}Sign in to YouTube Music</ActionButton>{youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>Cancel sign-in</ActionButton>}</div>}
           <div className="flex flex-wrap items-center gap-2">
