@@ -3,7 +3,7 @@
 ![convient photo of toro](https://i.imgur.com/KgjwTvk.png)
 
 
-**Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, listening recaps, smart mixes, an audio-quality checker, and one search bar that finds, streams and downloads.
+**Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, listening recaps, recommendations from Last.fm or YouTube Music, smart playlists, an audio-quality checker, and one search bar that finds, streams and downloads.
 
 ![Lokal Music](https://img.shields.io/badge/version-5.0.0-blue) ![Electron](https://img.shields.io/badge/Electron-latest-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB) ![License](https://img.shields.io/badge/license-MIT-green) [![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/Wv3zfpG6UT)
 
@@ -31,9 +31,11 @@
 - **One search bar** for your library, YouTube Music, SoundCloud, Soulseek and addons: stream, save or paste a link to download
 - **Listening recaps** for every week, month and year, with a story you can tap through
 - **Audio quality checker** that sorts your files into Hi-res, Lossless, High and Low, and spots fake FLACs
+- **Discovery, Mix and Radio** from your Last.fm or YouTube Music account, played from your library first, then from YouTube Music, SoundCloud or your addons
+- **Smart playlists** that fill themselves from rules, and **share cards** for playlists, artists and recaps
 - **Mixes, playlists and stats** built from your own listening history
-- **Full-screen player** with moving canvas covers, a colour backdrop, a mini player and crossfade
-- **Last.fm, ListenBrainz and Discord** integrations, plus a phone remote
+- **Full-screen player** with moving canvas covers, a colour backdrop, a glass player bar, a mini player and crossfade
+- **Account connections** for Last.fm, ListenBrainz, YouTube Music and Discord, plus a phone remote
 
 ---
 
@@ -82,6 +84,31 @@ The search bar at the top covers your own library, then songs that aren't in it 
 
 ---
 
+## Discovery, Mix and Radio
+
+![Discovery on Home: Fresh Finds and Quick Picks from Last.fm, each song ready to play from the library](docs/screenshots/discovery.webp)
+
+Home has four tabs: **Local** (mixes from your own library), **Discovery**, **Mix** and **History** (everything you've played in Lokal).
+
+**Discovery** shows recommendations from the account you pick at the top, **Last.fm** or **YouTube Music**:
+
+| | Last.fm | YouTube Music |
+|---|---|---|
+| New music | **Fresh Finds**: songs similar to what you scrobble, and more from your artists | **Fresh Finds** from your YouTube Music home |
+| Your favourites | **Quick Picks**: what you scrobbled most this week | **Likes**: your 30 latest liked songs |
+| History | **Scrobble History**, grouped by day | **YouTube Music History** |
+| Collections | **Albums For You** and **Artists For You** | **Mixed for you** (your "My Mix" playlists), **Artists For You** |
+
+Click a song to play it; the rest of the shelf queues up behind it. Save Fresh Finds, Quick Picks or your Likes as a playlist, and download a song, an album or a whole YouTube Music mix to your library from its menu (right-click).
+
+**Where songs play from:** a song you already have plays from your files. Otherwise Lokal looks for the *same* recording (same title and artist, never a cover or remix) in your **Playback Search Priority** (Settings → Integrations → Recommendations): YouTube Music first by default, then SoundCloud and any searchable addons, in the order you set. YouTube Music's own recommendations play their exact video, without searching. If a source only has a preview or can't play a song, the next one is tried, and if none can, the next song plays.
+
+| Mix | |
+|---|---|
+| ![The Mix tab: a 24-track mix sampled from your recommendations](docs/screenshots/mix.webp) | **Mix** builds a 24, 32 or 40-track mix from a fresh sample of your recommendations. **Regenerate** for a new one; the last mix is kept until you do. Play it, or save it as a playlist.<br><br>**Radio** (*Start radio* on any song, *Start artist radio* or *Start album radio*) plays a station of related songs from YouTube Music's own radio and Last.fm's similar tracks; **Regenerate** for a new one. |
+
+---
+
 ## Listening Recaps
 
 | Every week, month and year | …and a story to tap through |
@@ -93,7 +120,7 @@ Lokal builds a recap from your own listening for every finished week (Monday to 
 - top tracks, artists, albums and genres
 - your **listening sessions**, named by what they were ("Late night listening", "Neon Harbor deep dive")
 
-Play any recap, save it as a playlist, or watch it as a **full-screen story**. New recaps appear on their own when a week or month ends.
+Play any recap, save it as a playlist, watch it as a **full-screen story**, or **share** it as a picture (see [Share cards](#smart-playlists-and-share-cards)). New recaps appear on their own when a week or month ends.
 
 ---
 
@@ -112,7 +139,7 @@ Know what you're actually listening to:
 
 - **Spectrum check:** looks at the spectrum of your lossless files to catch **fake FLACs**, ones converted from an MP3 (needs ffmpeg).
 - **Worth upgrading:** lists your lossy and suspect files, lowest quality first.
-- **Get it in lossless:** finds a better copy through MusicBrainz store links, Qobuz, Bandcamp, 7digital and Soulseek.
+- **Get it in lossless:** finds a better copy through MusicBrainz store links, Qobuz, Bandcamp, 7digital and Soulseek, with **Discogs** and **AllMusic** to check which releases exist.
 - **Pill in the player bar:** the playing song's tier shows under the artist, and hovering says what it means.
 
 ---
@@ -127,12 +154,24 @@ Know what you're actually listening to:
 |---|---|
 | ![An artist page with bio, popular songs and releases](docs/screenshots/artist.webp) | ![A playlist with its songs](docs/screenshots/playlist.webp) |
 
-- **Library:** your music folder indexed from the files' own tags. Drum kits, sample packs and loops are filtered out, and you can opt out if something gets flagged by mistake (*via the minimum duration*). Filter by **source** (music folder, YouTube, SoundCloud, Soulseek, addons) and by **genre**, and sort by date, title, artist, plays or length.
+- **Library:** your music folder indexed from the files' own tags. Drum kits, sample packs and loops are filtered out, and you can opt out if something gets flagged by mistake (*via the minimum duration*). Filter by **source** (music folder, YouTube, SoundCloud, Soulseek, addons), **genre** and **quality**, and sort by date, title, artist, plays or length.
+- **Track lists you can adjust:** pick the columns (track number, artwork, artist, source, quality, date added, duration, quick actions, drag handle) from **Columns**; the layout tightens on its own when the window gets narrow. An icon shows where a downloaded or streamed song came from (YouTube, SoundCloud, Soulseek, an addon), and playlists show each song's quality.
 - **Albums:** albums, EPs and singles are kept apart; hover a cover to play the whole release.
-- **Artists:** each artist gets a page with a **photo and bio**, fetched automatically from Deezer, TheAudioDB, MusicBrainz or Wikipedia, or set by hand. Top songs and releases are on the same page. Names like "Tyler, the Creator" stay one artist.
+- **Artists:** each artist gets a page with a **photo and bio**, fetched automatically from **Wikidata**, Deezer, TheAudioDB, MusicBrainz or Wikipedia, or set by hand. *Auto* takes bios from Wikidata first (the artist's own Wikipedia article) and photos from Deezer first. Top songs and releases are on the same page. Names like "Tyler, the Creator" stay one artist.
 - **Playlists:** create, reorder, download, and get recommendations. Import them from Spotify (Exportify), Apple Music, YouTube Music, Last.fm or a CSV/JSON/M3U file.
 - **Select several songs** with Ctrl/Cmd+click (Shift for a range) to queue, add to a playlist or delete them all at once.
 - **Duplicate detection:** a smart merge scores each copy by bitrate, artwork and metadata completeness, then keeps the best one.
+
+---
+
+## Smart Playlists and Share Cards
+
+| Smart playlists | Share cards |
+|---|---|
+| ![A smart playlist's rules: Synthwave from 2022 or later, never played, in random order](docs/screenshots/smart.webp) | ![The share card for the Night Drive playlist](docs/screenshots/share.webp) |
+
+- **Smart playlists** are made of rules instead of a list, and update themselves as your library and listening change: genre, artist, album, title, folder, year, date added, last played, plays, liked, length, quality and source. Match all or any of them, pick an order (random included) and an optional limit. A live count shows what the rules give before you save. Create one with the ✨ button next to Playlists.
+- **Share cards** turn a playlist, an artist or a recap into one picture (1080×1350, the size social apps show in full) with its covers, numbers and top songs. Copy it or save it from the **Share** button.
 
 ---
 
@@ -140,8 +179,8 @@ Know what you're actually listening to:
 
 ![The profile page: plays, hours listened, likes and this week, top genres, top artists and tracks](docs/screenshots/profile.webp)
 
-- **Mixes on Home** are built from your history and likes: a Daily Mix, New Arrivals, Most Played and Discovery (songs you haven't played yet). Save any mix, or a suggested song, as a playlist.
-- **History** shows what you played recently, streamed songs included.
+- **Mixes on Home** (the **Local** tab) are built from your history and likes: a Daily Mix, New Arrivals, Most Played and Discovery (songs you haven't played yet). Save any mix, or a suggested song, as a playlist.
+- **History** (Home → History) shows what you played recently, streamed songs included.
 - **Your profile** shows your total plays, hours listened, likes and this week's plays, plus your top genres, artists and tracks.
 
 ---
@@ -151,6 +190,8 @@ Know what you're actually listening to:
 - **Full-screen player** with the cover, or full-screen lyrics; switch between them with one click.
 - **Canvas covers:** looping video covers from Apple Music, Tidal, community lists or Spotify Canvas (*Spotify needs your own account cookie*).
 - **Colour backdrop** taken from the cover.
+- **Glass player bar:** the player floats over the pages, which scroll on underneath it, frosted. Switch it off (or the waveform next to the volume) in Settings → Appearance → Player Bar.
+- **Audio output picker** in the player bar, to send the music to another device (headphones, speakers, an interface).
 - **Mini player** to keep the music in a corner.
 - **Sleep timer.**
 - **Crossfade** between tracks.
@@ -161,9 +202,15 @@ Know what you're actually listening to:
 
 ## Integrations
 
-- **Last.fm:** "now playing" and scrobbles (after half the track or 4 minutes). Scrobbles made offline are kept and sent later.
-- **ListenBrainz:** the same for the open alternative by MetaBrainz. Paste your user token in **Settings → Integrations**.
-- **Discord Rich Presence:** shows what you're listening to. Use the built-in app, or your own from Discord's developer portal.
+![Account connections in Settings: Last.fm, ListenBrainz, YouTube Music and Discord](docs/screenshots/accounts.webp)
+
+Everything is connected from **Settings → Integrations → Account Connections**:
+
+- **Last.fm:** *Sign in*, then follow the numbered steps: create an API account, paste its key and secret, your username, and *Authorize* in the browser. Lokal sends "now playing" and scrobbles (after half the track or 4 minutes); scrobbles made offline are kept and sent later. Your account also powers Discovery, Mix and Radio.
+- **ListenBrainz:** *Sign in* with your user token, for the open alternative by MetaBrainz. Same scrobbling rules, offline listens kept.
+- **YouTube Music** (desktop app): *Sign in* opens YouTube Music in its own Lokal window; use the site's Sign in button. Lokal keeps the session (restored at every start) and uses it for Discovery, your mixes and likes, and to stream songs that need an account. *Verify* checks it's still valid.
+- **Discord Rich Presence:** *Connect* to show what you're listening to. Use the built-in app, or your own from Discord's developer portal (Settings → Integrations → Discord Rich Presence).
+- **Scrobbling** has one switch per service (Settings → Integrations → Scrobbling), to pause it without signing out.
 - **Phone remote:** open `http://<your computer>:3421/remote` on your phone to control playback. It installs as a web app.
 - **Web mode:** run Lokal as a server and listen to your library from another device (see [Web Mode Setup](#web-mode-setup)).
 - **Plugins:** install plugins from a folder in **Settings → Plugins**.
@@ -242,7 +289,7 @@ On Windows, the easiest way is to drop both `.exe` files somewhere and add that 
 
 If Lokal still struggles to find your *ffmpeg* or *yt-dlp*, you can point to them manually in Settings as well.
 
-YouTube often asks downloaders to "confirm you're not a bot". Setting up your YouTube cookie in **Settings → Library → Use YouTube Cookies** fixes that (Lokal reminds you when it's missing).
+YouTube often asks downloaders to "confirm you're not a bot". Signing in to YouTube Music in **Settings → Integrations → Account Connections** fixes that: streams and downloads then use your session. Signed in, yt-dlp needs a JavaScript runtime to read YouTube's audio links; Lokal gives it its own (Electron's Node), so there's nothing to install, and a [deno](https://deno.com/) you've installed is used first. Keep yt-dlp up to date (Settings → Integrations → External Tools): YouTube changes often.
 
 ---
 
@@ -277,7 +324,8 @@ src/              React frontend
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - [slskd](https://github.com/slskd/slskd)
 - Lyrics: [LRCLIB](https://lrclib.net/), BiniLyrics, BetterLyrics, LyricsPlus, Unison, KuGou and lyrics.ovh
-- Artist info: [MusicBrainz](https://musicbrainz.org/), [TheAudioDB](https://www.theaudiodb.com/), [Deezer](https://www.deezer.com/) and [Wikipedia](https://www.wikipedia.org/)
+- Artist info: [Wikidata](https://www.wikidata.org/), [MusicBrainz](https://musicbrainz.org/), [TheAudioDB](https://www.theaudiodb.com/), [Deezer](https://www.deezer.com/) and [Wikipedia](https://www.wikipedia.org/)
+- Recommendations: [Last.fm](https://www.last.fm/) and [YouTube Music](https://music.youtube.com/)
 
 ---
 
@@ -300,7 +348,7 @@ Lokal has no accounts, analytics or telemetry. Your library, listening history a
 
 - checking GitHub Releases for a new version (stable builds only);
 - looking up lyrics, artwork and artist information (the services listed above under *Built With*);
-- Last.fm, ListenBrainz and Discord, if you connect them;
+- Last.fm, ListenBrainz, YouTube Music and Discord, if you connect them;
 - searching, streaming and downloading, if you use those features.
 
 ---
