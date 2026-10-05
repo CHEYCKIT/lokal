@@ -24,7 +24,6 @@ const DURATION = /^(?:\d+:)?\d{1,2}:\d{2}$/
 const SEARCH_TTL_MS = 10 * 60 * 1000
 const STREAM_MARGIN_MS = 10 * 60 * 1000
 const RESOLVE_TIMEOUT_MS = 30000
-const BROWSE_URL = 'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false'
 const LIKE_URL = 'https://music.youtube.com/youtubei/v1/like'
 const ACCOUNT_TTL_MS = 5 * 60 * 1000
 
@@ -270,6 +269,8 @@ function walkObjects(root, visitor) {
 }
 
 function parseTrackCard(renderer) {
+  const endpoints = [renderer?.navigationEndpoint, renderer?.onTap, ...(renderer?.title?.runs || []).map(run => run.navigationEndpoint)]
+  if (renderer?.isPlaylist || endpoints.some(endpoint => String(endpoint?.browseEndpoint?.browseId || '').startsWith('VL') || /^RDTMAK/.test(endpoint?.watchEndpoint?.playlistId || ''))) return null
   const videoId = renderer?.navigationEndpoint?.watchEndpoint?.videoId
     || renderer?.onTap?.watchEndpoint?.videoId
     || ''
@@ -283,7 +284,7 @@ function parseTrackCard(renderer) {
     title,
     ...metadata,
     artist: metadata.artist || 'Unknown Artist',
-    thumbnail: thumbnailsOf(renderer?.thumbnail),
+    thumbnail: thumbnailsOf(renderer?.thumbnailRenderer || renderer?.thumbnail),
     kind: 'song',
     official: true,
     url: `https://music.youtube.com/watch?v=${videoId}`,
@@ -315,11 +316,16 @@ function parseAccountPlaylists(root, limit = 100) {
   walkObjects(root, node => {
     const renderer = node.gridPlaylistRenderer || node.musicTwoRowItemRenderer
     if (!renderer || playlists.length >= limit) return
-    const navigation = renderer.navigationEndpoint || renderer.onTap || {}
-    if (!renderer.isPlaylist && VIDEO_ID.test(navigation.watchEndpoint?.videoId || '')) return
-    const play = renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint
-    const endpoint = navigation.browseEndpoint
-    const rawId = renderer.playlistId || endpoint?.browseId || navigation.watchPlaylistEndpoint?.playlistId || navigation.watchEndpoint?.playlistId || play?.watchPlaylistEndpoint?.playlistId || play?.watchEndpoint?.playlistId || ''
+    const titleNavigation = renderer.title?.runs?.find(run => run.navigationEndpoint)?.navigationEndpoint
+    const play = (renderer.thumbnailOverlay || renderer.overlay)?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint
+    const navigations = [titleNavigation, renderer.navigationEndpoint, renderer.onTap, play].filter(Boolean)
+    const browse = navigations.find(navigation => navigation.browseEndpoint?.browseId)?.browseEndpoint
+    const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
+    if (pageType && !pageType.endsWith('_PLAYLIST')) return
+    // A song's radio link isn't a playlist card. Personalized mix cards may
+    // have a seed video on their play button but a playlist link on the title.
+    if (!browse && !renderer.isPlaylist && !navigations.some(navigation => navigation.watchPlaylistEndpoint || /^RDTMAK/.test(navigation.watchEndpoint?.playlistId || '')) && navigations.some(navigation => VIDEO_ID.test(navigation.watchEndpoint?.videoId || ''))) return
+    const rawId = renderer.playlistId || browse?.browseId || navigations.map(navigation => navigation.watchPlaylistEndpoint?.playlistId || navigation.watchEndpoint?.playlistId).find(Boolean) || ''
     const id = String(rawId).replace(/^VL/, '')
     if (!id || /^(UC|MPRE|FE)/.test(id) || seen.has(id)) return
     const title = textOf(renderer.title)
@@ -330,25 +336,70 @@ function parseAccountPlaylists(root, limit = 100) {
       title,
       author: textOf(renderer.shortBylineText || renderer.subtitle),
       trackCount: textOf(renderer.videoCountText || renderer.secondLine),
-      thumbnail: thumbnailsOf(renderer.thumbnail),
+      thumbnail: thumbnailsOf(renderer.thumbnailRenderer || renderer.thumbnail),
       url: `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`,
     })
   })
   return playlists
 }
 
+const isMixTitle = title => /^(mixed for you|mixes for you|your mixes)$/i.test(String(title || '').trim())
+const isPersonalMix = playlist => /^RDTMAK/.test(playlist.id)
+const shelfTitle = shelf => textOf(shelf?.header?.musicCarouselShelfBasicHeaderRenderer?.title || shelf?.title)
+
 function mixedForYouShelves(root) {
   const shelves = []
   walkObjects(root, node => {
     const shelf = node.musicCarouselShelfRenderer || node.musicShelfRenderer
-    const header = shelf?.header?.musicCarouselShelfBasicHeaderRenderer
-    if (/^(mixed for you|mixes for you|your mixes)$/i.test(textOf(header?.title || shelf?.title).trim())) shelves.push(shelf)
+    if (shelf && (isMixTitle(shelfTitle(shelf)) || parseAccountPlaylists(shelf.contents).some(isPersonalMix))) shelves.push(shelf)
   })
   return shelves
 }
 
 function parseAccountMixes(root) {
-  return parseAccountPlaylists(mixedForYouShelves(root), Infinity)
+  const mixes = mixedForYouShelves(root).flatMap(shelf => {
+    const playlists = parseAccountPlaylists(shelf.contents, Infinity)
+    return isMixTitle(shelfTitle(shelf)) ? playlists : playlists.filter(isPersonalMix)
+  })
+  return [...new Map(mixes.map(mix => [mix.id, mix])).values()]
+}
+
+function continuationTokens(root, types) {
+  const tokens = new Set()
+  const collect = container => {
+    for (const entry of container?.continuations || []) {
+      const token = entry.nextContinuationData?.continuation
+      if (token) tokens.add(token)
+    }
+    for (const item of container?.contents || container?.items || container?.continuationItems || []) {
+      const endpoint = item.continuationItemRenderer?.continuationEndpoint
+      const commands = [endpoint, ...(endpoint?.commandExecutorCommand?.commands || [])]
+      for (const command of commands) if (command?.continuationCommand?.token) tokens.add(command.continuationCommand.token)
+    }
+  }
+  walkObjects(root, node => {
+    for (const type of types) if (node[type]) collect(node[type])
+  })
+  return [...tokens]
+}
+
+async function browsePages(browseId, first, cookies, fetchImpl, config, { params, types, stop = () => false } = {}) {
+  const pages = [first]
+  const seen = new Set()
+  const pending = continuationTokens(first, types)
+  const deadline = Date.now() + 10000
+  while (pending.length && !stop(pages)) {
+    const continuation = pending.shift()
+    if (seen.has(continuation)) continue
+    if (seen.size >= 20 || Date.now() >= deadline) return { pages, error: 'YouTube Music mix loading did not finish. Refresh to retry.' }
+    seen.add(continuation)
+    try {
+      const page = await accountBrowse(browseId, cookies, fetchImpl, config, { params, continuation, timeoutMs: Math.min(5000, deadline - Date.now()) })
+      pages.push(page)
+      pending.push(...continuationTokens(page, types))
+    } catch (error) { return { pages, error: error.message } }
+  }
+  return { pages, error: '' }
 }
 
 function parseAccountEntities(root, type) {
@@ -367,16 +418,17 @@ function parseAccountEntities(root, type) {
   return [...items.values()].slice(0, 30)
 }
 
-async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false, params } = {}) {
+async function accountRequest(endpoint, body, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false, timeoutMs = 12000, continuation } = {}) {
   const headers = accountHeaders(cookieHeader, config) || (anonymous ? { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' } : null)
   if (!headers) throw new Error('Sign in to YouTube Music in Integrations.')
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetchImpl(BROWSE_URL, {
+    const url = `https://music.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false${continuation ? `&${new URLSearchParams({ continuation, ctoken: continuation })}` : ''}`
+    const res = await fetchImpl(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ context: { client: { ...CLIENT, ...config.INNERTUBE_CONTEXT?.client, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, browseId, ...(params ? { params } : {}) }),
+      body: JSON.stringify({ context: { client: { ...CLIENT, ...config.INNERTUBE_CONTEXT?.client, hl: CLIENT.hl, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, ...body }),
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`YouTube Music account request failed (${res.status}).`)
@@ -388,6 +440,10 @@ async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config =
   } finally {
     clearTimeout(timer)
   }
+}
+
+function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}, options = {}) {
+  return accountRequest('browse', { browseId, ...(options.params ? { params: options.params } : {}), ...(options.continuation ? { continuation: options.continuation } : {}) }, cookieHeader, fetchImpl, config, options)
 }
 
 function accountKey(cookieHeader) {
@@ -426,16 +482,29 @@ async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100, force
   if (!authenticated) {
     return { error: errors[0]?.reason?.message || 'YouTube Music did not confirm an authenticated account. Sign in again in Integrations.', authenticated: false }
   }
-  const homeRoot = homeResult.status === 'fulfilled' ? homeResult.value : null
+  const homePages = homeResult.status === 'fulfilled' ? await browsePages('FEmusic_home', homeResult.value, cookieHeader, fetchImpl, config, {
+    types: ['sectionListRenderer', 'sectionListContinuation', 'appendContinuationItemsAction', 'reloadContinuationItemsCommand'],
+    stop: pages => mixedForYouShelves(pages).some(shelf => isMixTitle(shelfTitle(shelf))),
+  }) : { pages: [], error: homeResult.reason?.message || '' }
+  const homeRoot = homePages.pages
   const homePlaylists = parseAccountPlaylists(homeRoot)
   const mixEndpoints = new Map()
-  for (const shelf of mixedForYouShelves(homeRoot)) walkObjects(shelf.header, node => {
+  const mixTypes = ['musicCarouselShelfRenderer', 'musicCarouselShelfContinuation', 'musicShelfRenderer', 'musicShelfContinuation', 'gridRenderer', 'gridContinuation', 'sectionListRenderer', 'sectionListContinuation', 'appendContinuationItemsAction', 'reloadContinuationItemsCommand']
+  const shelfPages = await Promise.all(mixedForYouShelves(homeRoot).map(async shelf => ({
+    ...await browsePages('FEmusic_home', { musicCarouselShelfRenderer: shelf }, cookieHeader, fetchImpl, config, { types: mixTypes }),
+    namedMixShelf: isMixTitle(shelfTitle(shelf)),
+  })))
+  for (const shelf of mixedForYouShelves(homeRoot)) if (isMixTitle(shelfTitle(shelf))) walkObjects(shelf.header, node => {
     const endpoint = node.browseEndpoint
-    if (endpoint?.browseId) mixEndpoints.set(JSON.stringify(endpoint), endpoint)
+    if (endpoint?.browseId) mixEndpoints.set(`${endpoint.browseId}\0${endpoint.params || ''}`, endpoint)
   })
-  const expandedMixes = await Promise.allSettled([...mixEndpoints.values()].map(endpoint => accountBrowse(endpoint.browseId, cookieHeader, fetchImpl, config, { params: endpoint.params })))
-  const mixes = [...new Map([...parseAccountMixes(homeRoot), ...expandedMixes.flatMap(result => result.status === 'fulfilled' ? parseAccountPlaylists(result.value, Infinity) : [])].map(mix => [mix.id, mix])).values()]
-  const mixError = expandedMixes.find(result => result.status === 'rejected')?.reason?.message || ''
+  const expandedMixes = await Promise.allSettled([...mixEndpoints.values()].map(async endpoint => {
+    const first = await accountBrowse(endpoint.browseId, cookieHeader, fetchImpl, config, { params: endpoint.params })
+    return browsePages(endpoint.browseId, first, cookieHeader, fetchImpl, config, { params: endpoint.params, types: mixTypes })
+  }))
+  const extraMixes = [...shelfPages.flatMap(result => parseAccountPlaylists(result.pages.slice(1), Infinity).filter(mix => result.namedMixShelf || isPersonalMix(mix))), ...expandedMixes.flatMap(result => result.status === 'fulfilled' ? parseAccountPlaylists(result.value.pages, Infinity) : [])]
+  const mixes = [...new Map([...parseAccountMixes(homeRoot), ...extraMixes].map(mix => [mix.id, mix])).values()]
+  const mixError = homePages.error || shelfPages.find(result => result.error)?.error || expandedMixes.find(result => result.status === 'rejected')?.reason?.message || expandedMixes.find(result => result.status === 'fulfilled' && result.value.error)?.value.error || ''
   const knownAlbums = new Map([...liked, ...home].filter(track => track.album).map(track => [track.videoId, track]))
   const history = (historyResult.status === 'fulfilled' ? parseAccountTracks(historyResult.value, limit) : []).map(track => track.album || !knownAlbums.has(track.videoId) ? track : { ...track, album: knownAlbums.get(track.videoId).album, albumId: knownAlbums.get(track.videoId).albumId })
   const data = { liked, playlists, home, homePlaylists, mixes, history, artists: parseAccountEntities(homeRoot, 'artist'), albums: parseAccountEntities(homeRoot, 'album'), authenticated: true, homeError: homeResult.status === 'rejected' ? homeResult.reason?.message : '', mixError }
@@ -475,7 +544,9 @@ async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
   if (!id) return { error: 'A YouTube Music playlist id is required.' }
   try {
     const config = await musicContext(cookies, fetchImpl)
-    const root = await accountBrowse(`VL${id}`, cookies, fetchImpl, config)
+    const root = /^RD/.test(id)
+      ? await accountRequest('next', { playlistId: id, enablePersistentPlaylistPanel: true, isAudioOnly: true, tunerSettingValue: 'AUTOMIX_SETTING_NORMAL' }, cookies, fetchImpl, config)
+      : await accountBrowse(`VL${id}`, cookies, fetchImpl, config)
     return { id, tracks: parseAccountTracks(root, 500) }
   } catch (error) {
     return { error: error.message }
