@@ -79,7 +79,10 @@ export default function Playlist() {
 
   // Online songs are ghost tracks too, but they stream, so they play.
   const playableTracks = useMemo(() => tracks.filter(track => isPlayable(track)), [tracks])
-  const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://')), [tracks])
+  // Songs to resolve: entries with nothing to play (an import that found no
+  // file). Streamed songs (a saved YouTube Music mix...) are ghost rows too,
+  // but they play, so they aren't missing anything.
+  const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://') && !isPlayable(track)), [tracks])
   const getGhostKey = useCallback((track) => String(track?.playlist_track_id || track?.added_at || track?.id || ''), [])
   const selectedGhost = ghostTracks.find(track => getGhostKey(track) === selectedGhostKey) || ghostTracks[0] || null
 
@@ -276,7 +279,10 @@ export default function Playlist() {
   }
 
   const searchGhostMatches = useCallback(async (ghostTrack, queryOverride = '') => {
-    const fallbackQuery = String(ghostTrack?.title || '').trim()
+    const title = String(ghostTrack?.title || '').trim()
+    // Online, the artist goes with the title: "Thinking of You" alone finds
+    // every song called that (Katy Perry, Sister Sledge...) before Salasa's.
+    const fallbackQuery = [ghostTrack?.artist, title].map(part => String(part || '').trim()).filter(Boolean).join(' ')
     const query = String(queryOverride || fallbackQuery).trim()
     if (!ghostTrack || !query) {
       setGhostLocalResults([])
@@ -288,7 +294,8 @@ export default function Playlist() {
     setGhostActionStatus('')
     try {
       const [localResult, ytResult] = await Promise.all([
-        api.searchTracks(query),
+        // Local copies may be tagged differently: the title finds them.
+        api.searchTracks(queryOverride ? query : title || query),
         api.searchYT(query, 1),
       ])
       const localTracks = Array.isArray(localResult?.tracks)
