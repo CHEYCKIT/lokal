@@ -14,6 +14,7 @@
 const { spawn } = require('child_process')
 const crypto = require('crypto')
 const { isCookieError, markUnreadable } = require('../ipc/ytCookies')
+const { jsRuntime, jsRuntimeRefused } = require('./jsRuntime')
 
 const SEARCH_URL = 'https://music.youtube.com/youtubei/v1/search?prettyPrint=false'
 const CLIENT = { clientName: 'WEB_REMIX', clientVersion: '1.20250901.03.00', hl: 'en' }
@@ -621,10 +622,16 @@ function expiryOf(url) {
   return Date.now() + 60 * 60 * 1000
 }
 
+// yt-dlp found the video but no format it could use: the stream links are
+// behind JavaScript challenges it couldn't solve, or need a token it lacks.
+const FORMATS_MISSING = /Requested format is not available|Only images are available|No video formats found|n challenge solving failed|nsig extraction failed|Signature extraction failed/i
+
 /** A readable reason from yt-dlp's error output. */
 function streamError(text) {
   if (/confirm you.re not a bot/i.test(text)) return 'YouTube asked to confirm you are not a bot. Sign in to YouTube Music in Settings → Integrations.'
   if (/Sign in to confirm your age/i.test(text)) return 'This song is age-restricted. Sign in to YouTube Music in Settings → Integrations to play it.'
+  // Not the song: yt-dlp got no audio link it could use ("Requested format is not available").
+  if (FORMATS_MISSING.test(text)) return 'YouTube gave yt-dlp no playable audio for this song. Update yt-dlp in Settings → External Tools, then try again.'
   if (/not available|unavailable|Private video|removed/i.test(text)) return 'This song is not available on YouTube.'
   if (/HTTP Error 429|Too Many Requests/i.test(text)) return 'YouTube is rate-limiting. Try again in a while.'
   const line = String(text).split('\n').reverse().find(l => /ERROR:/.test(l))
@@ -646,14 +653,16 @@ const QUALITY_ARGS = {
 
 function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
   return new Promise((resolve, reject) => {
+    const runtime = jsRuntime()
     const args = [
       ...(QUALITY_ARGS[quality] || QUALITY_ARGS.best),
       '-j', '--no-playlist', '--no-warnings', '--skip-download',
+      ...runtime.args,
       ...cookieArgs,
       `https://music.youtube.com/watch?v=${videoId}`,
     ]
     let proc
-    try { proc = spawn(ytdlp, args, { windowsHide: true }) } catch (e) { reject(new Error(`Could not run yt-dlp (${e.message})`)); return }
+    try { proc = spawn(ytdlp, args, { windowsHide: true, ...runtime.options }) } catch (e) { reject(new Error(`Could not run yt-dlp (${e.message})`)); return }
     let out = ''
     let err = ''
     let timedOut = false
@@ -672,13 +681,19 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
       try { info = JSON.parse(out.trim().split('\n').pop()) } catch {}
       const output = err || out
       if (!info?.url) {
+        if (runtime.args.length && jsRuntimeRefused(output)) {
+          resolve(runResolve(videoId, { ytdlp, cookieArgs, quality }))
+          return
+        }
         if (isCookieError(output)) {
           const error = new Error('YouTube cookies could not be read')
           error.cookieError = true
           reject(error)
           return
         }
-        reject(new Error(streamError(output)))
+        const error = new Error(streamError(output))
+        error.formatsMissing = FORMATS_MISSING.test(output)
+        reject(error)
         return
       }
       const ext = info.ext || ''
@@ -706,8 +721,10 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
     try {
       return await runResolve(videoId, { ytdlp, cookieArgs, quality: q })
     } catch (e) {
-      if (!cookieBrowser || !e.cookieError) throw e
-      markUnreadable(cookieBrowser)
+      if (e.cookieError && cookieBrowser) markUnreadable(cookieBrowser)
+      // Signed in, yt-dlp only uses player clients that need a JavaScript
+      // runtime; signed out, it has one that doesn't. Public songs play the same.
+      else if (!(e.formatsMissing && cookieArgs?.length)) throw e
       return runResolve(videoId, { ytdlp, cookieArgs: [], quality: q })
     }
   })().then(stream => {

@@ -10,6 +10,7 @@
 
 const path = require('path')
 const { cookieArgs } = require('../ipc/ytCookies')
+const { jsRuntime } = require('../online/jsRuntime')
 
 const FORMATS = ['original', 'mp3', 'm4a', 'opus', 'flac']
 const MP3_BITRATES = ['128', '192', '256', '320']
@@ -96,13 +97,16 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
     ...cookies.args,
     ...metadataArgs(settings),
   ]
+  // YouTube's stream links need a JavaScript runtime once cookies are given (jsRuntime.js).
+  const runtime = isYouTube(url) ? jsRuntime() : { args: [], options: {} }
+  args.push(...runtime.args)
   if (isYouTube(url)) args.push('--convert-thumbnail', 'jpg')
   if (ffmpeg && (ffmpeg.includes('/') || ffmpeg.includes('\\'))) args.push('--ffmpeg-location', path.dirname(ffmpeg))
   args.push(...extraArgs)
   // The URL goes last, after "--", so a "URL" that starts with "-" can never be
   // read as a yt-dlp option (argument injection, CWE-88).
   args.push('--', url)
-  return { args, cookies }
+  return { args, cookies, spawnOptions: runtime.options }
 }
 
 module.exports = { buildArgs, resolveFormat, audioArgs, outputTemplate, isYouTube, isSoundCloud, FORMATS, MP3_BITRATES, TITLE_NOISE }
