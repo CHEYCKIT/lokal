@@ -253,7 +253,7 @@ export default function QueuePanel() {
             initial={{ x: 320 }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="h-full flex flex-col border-l border-border"
+            className="h-full flex flex-col border-l border-border pb-[var(--player-space,0px)]"
             style={{ width: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
           >
             <QueueContent onClose={toggleQueue} />

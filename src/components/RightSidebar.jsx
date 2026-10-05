@@ -205,7 +205,7 @@ export default function RightSidebar() {
             initial={{ x: 300 }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="h-full flex flex-col border-l border-border"
+            className="h-full flex flex-col border-l border-border pb-[var(--player-space,0px)]"
             style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
           >
           <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0 border-b border-border">
