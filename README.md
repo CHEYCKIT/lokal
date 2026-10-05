@@ -168,7 +168,7 @@ Know what you're actually listening to:
 
 | Smart playlists | Share cards |
 |---|---|
-| ![A smart playlist's rules: Synthwave from 2022 or later, never played, in random order](docs/screenshots/smart.webp) | ![The share card for the Night Drive playlist](docs/screenshots/share.webp) |
+| ![A smart playlist's rules: Synthwave from 2022 or later, in random order](docs/screenshots/smart.webp) | ![The share card for the Night Drive playlist](docs/screenshots/share.webp) |
 
 - **Smart playlists** are made of rules instead of a list, and update themselves as your library and listening change: genre, artist, album, title, folder, year, date added, last played, plays, liked, length, quality and source. Match all or any of them, pick an order (random included) and an optional limit. A live count shows what the rules give before you save. Create one with the ✨ button next to Playlists.
 - **Share cards** turn a playlist, an artist or a recap into one picture (1080×1350, the size social apps show in full) with its covers, numbers and top songs. Copy it or save it from the **Share** button.
