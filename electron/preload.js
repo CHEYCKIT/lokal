@@ -234,6 +234,7 @@ contextBridge.exposeInMainWorld('electron', {
   discordSetActivity: (t, p) => invoke('discord:setActivity', t, p),
   discordConnect: (id) => invoke('discord:connect', id),
   discordDisconnect: () => invoke('discord:disconnect'),
+  discordStatus: () => invoke('discord:status'),
 
   
   lastfmConnect: (apiKey, apiSecret, token) => invoke('lastfm:connect', apiKey, apiSecret, token),
