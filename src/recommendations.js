@@ -1,6 +1,6 @@
 import { api } from './api.js'
 import { DEFAULT_PLAYBACK_SOURCES, orderedPlaybackSources } from './playbackSources.js'
-import { isPlayable, providerLabel } from './onlineTracks.js'
+import { isPlayable, providerLabel, streamRef } from './onlineTracks.js'
 
 export const recommendationKey = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 export const songKey = track => `${recommendationKey(track?.artist)}\0${recommendationKey(track?.title)}`
@@ -36,17 +36,37 @@ export function recommendationMatch(candidate, results) {
   const title = titleKey(candidate?.title)
   const artist = recommendationKey(candidate?.artist)
   if (!title || !artist) return null
+  const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
   return (Array.isArray(results) ? results : []).find(result => {
     const name = String(result?.title || '')
     const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
-    const resultTitle = prefix && recommendationKey(prefix[1]) === artist ? prefix[2] : name
+    const resultTitle = prefix && [artist, leadArtist].includes(recommendationKey(prefix[1])) ? prefix[2] : name
     if (titleKey(resultTitle) !== title) return false
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
-    return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === artist)
+    return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === leadArtist)
       || recommendationKey(result.artist).replace(/ topic$/, '') === artist
   }) || null
+}
+
+/** Preserve native YouTube identity across DB rows, provider fallbacks and restored queues. */
+export function recommendationVideoId(track) {
+  const valid = value => /^[\w-]{11}$/.test(String(value || '')) ? String(value) : null
+  if (valid(track?.videoId)) return String(track.videoId)
+  const ref = streamRef(track)
+  if (ref?.provider === 'yt' && valid(ref.id)) return ref.id
+  const saved = String(track?.source_ref || '').match(/^yt:([\w-]{11})$/)
+  if (saved) return saved[1]
+  if (track?.provider === 'yt' && valid(track.id)) return String(track.id)
+  for (const link of [track?.source_url, track?.url]) {
+    try {
+      const url = new URL(link)
+      const id = url.hostname === 'youtu.be' ? url.pathname.slice(1) : /^(?:music\.|www\.)?youtube\.com$/.test(url.hostname) ? url.searchParams.get('v') : null
+      if (valid(id)) return id
+    } catch {}
+  }
+  return null
 }
 
 export async function timed(work, ms = 15000) {
@@ -94,6 +114,7 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
   return (await mapLimited(uniqueSongs(candidates), async candidate => {
     if (!isCurrent()) return null
     if (reusePlayable && playableRecommendation(candidate)) return candidate
+    const videoId = recommendationVideoId(candidate)
     try {
       const local = searchLocal ? await timed(() => client.searchTracks(candidate.title), timeoutMs).catch(() => null) : null
       const rows = Array.isArray(local) ? local : Array.isArray(local?.tracks) ? local.tracks : []
@@ -105,12 +126,12 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
           if (!isCurrent()) return null
           const failed = (reason, detail) => { if (isCurrent()) onProviderFailure?.({ candidate, source, nextSource: sources[index + 1], reason, ...(detail ? { detail } : {}) }) }
           try {
-            if (isCurrent()) onProgress?.(`Searching ${source.label || providerLabel(source.id)} for ${candidate.artist} — “${candidate.title}”…`)
-            const direct = source.id === 'yt' && candidate.videoId
+            const direct = source.id === 'yt' && videoId
+            if (isCurrent()) onProgress?.(`${direct ? 'Loading' : 'Searching'} ${source.label || providerLabel(source.id)} ${direct ? 'track' : 'for'} ${candidate.artist} — “${candidate.title}”…`)
             const response = direct ? null : await timed(() => client.onlineSearch(`${candidate.artist} ${candidate.title}`, source.id), timeoutMs)
             if (!isCurrent()) return null
             if (response?.error) { failed('unavailable', response.error); continue }
-            const match = direct ? { ...candidate, provider: 'yt', id: candidate.videoId } : recommendationMatch(candidate, response?.results)
+            const match = direct ? { ...candidate, videoId, provider: 'yt', id: videoId } : recommendationMatch(candidate, response?.results)
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
             let detail
@@ -128,6 +149,8 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
       }
       return row && isCurrent() ? {
         ...row, title: candidate.title, artist: candidate.artist,
+        ...(videoId ? { videoId } : {}),
+        ...(candidate.artists?.length ? { artists: candidate.artists } : {}),
         album: candidate.album || row.album,
         artwork_url: candidate.artwork_url || row.artwork_url,
         source: candidate.source || 'lastfm', reason: candidate.reason,
