@@ -143,3 +143,28 @@ export async function saveToLibrary(track) {
       : undefined,
   })
 }
+
+/** Queue unique streamed songs, keeping local files and failed downloads separate. */
+export async function saveTracksToLibrary(tracks, { isCurrent = () => true, onProgress, save = saveToLibrary } = {}) {
+  const result = { started: 0, existing: 0, failed: 0 }
+  const seen = new Set()
+  let refresh = false
+  for (const track of tracks || []) {
+    if (!isCurrent()) break
+    const key = sourceRefKey(streamRef(track)) || track?.id
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    if (track.file_path && !isGhostTrack(track)) { result.existing++; continue }
+    onProgress?.(`Queuing download of “${track.title}”…`)
+    const response = await save(track).catch(error => ({ error: error.message }))
+    if (response?.error) result.failed++
+    else if (response?.alreadyInLibrary) { result.existing++; refresh = true }
+    else result.started++
+  }
+  if (refresh && typeof window !== 'undefined') window.dispatchEvent(new Event('lokal:refresh'))
+  return result
+}
+
+export function libraryDownloadMessage({ started, existing, failed }) {
+  return [started && `Started ${started} download${started === 1 ? '' : 's'}`, existing && `${existing} already in your library`, failed && `${failed} unavailable`].filter(Boolean).join('; ') || 'No songs to download.'
+}

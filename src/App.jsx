@@ -33,11 +33,12 @@ import SmartPlaylistModal from './components/SmartPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
-import Toaster, { showToast } from './components/Toaster'
+import Toaster, { showLoadingToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
+import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
 
 const EQ_AUDIO_BANDS = [
@@ -273,13 +274,14 @@ export default function App() {
     playTimerRef.current = null
     el.pause()
     const isCurrent = () => streamRecoveryRef.current === recovery && usePlayerStore.getState().currentTrack === failedTrack && el === activeEl()
-    showToast(reason === 'preview'
+    const toast = showLoadingToast(reason === 'preview'
       ? `${providerLabel(failedRef.provider)} only has a preview of “${failedTrack.title}”. Trying the next playback source.`
       : `“${failedTrack.title}” couldn't play on ${providerLabel(failedRef.provider)}. Trying the next playback source.`)
     try {
       const [replacement] = await resolveRecommendationTracks([failedTrack], api, {
         reusePlayable: false, afterProvider: failedRef.provider, skipProviders: recovery.failed, isCurrent,
-        onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+        onProgress: message => { if (isCurrent()) toast.update(message) },
+        onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) },
       })
       if (!isCurrent()) return
       if (replacement) {
@@ -287,12 +289,18 @@ export default function App() {
         setStreamError(null)
         usePlayerStore.getState().replaceCurrentTrack(failedTrack.id, replacement)
       } else {
+        if (['discovery', 'mix'].includes(usePlayerStore.getState().playbackContext?.type)) {
+          toast.update(`“${failedTrack.title}” is unavailable. Trying the next song…`)
+          if (await skipUnavailableRecommendation(failedTrack)) { setStreamError(null); return }
+          if (!isCurrent()) return
+        }
         usePlayerStore.getState().setIsPlaying(false)
         const message = 'No full-length stream was found in your playback sources.'
         setStreamError({ title: failedTrack.title, message })
-        showToast(message)
+        toast.close(message)
       }
     } finally {
+      toast.close()
       recovery.pending = false
       el.dataset.fallbackPending = ''
     }

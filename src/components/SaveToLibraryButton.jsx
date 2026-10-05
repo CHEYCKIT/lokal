@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Check, Download, AlertCircle, Search } from 'lucide-react'
 import { useDownloads } from '../store/downloads'
-import { downloadUrlFor, providerLabel as labelOf, saveToLibrary, streamRef, sourceRefKey } from '../onlineTracks'
+import { downloadUrlFor, isGhostTrack, providerLabel as labelOf, saveToLibrary, streamRef, sourceRefKey } from '../onlineTracks'
 
 const SAVING = new Set(['queued', 'downloading', 'finishing'])
 
@@ -23,7 +23,7 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
  */
 export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '' }) {
   const nav = useNavigate()
-  const ref = track ? streamRef(track) : source
+  const ref = streamRef(track) || source
   const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
     ? downloadUrlFor({ file_path: `ghost://${ref.provider === 'sc' ? 'soundcloud' : 'youtube'}/online/${ref.id}` })
     : null
@@ -34,7 +34,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   // player bar...): by the song itself (sourceRef), its URL, or the id we got
   // back. A finished download whose song was deleted since doesn't count: it
   // can be saved again.
-  const refKey = sourceRefKey(ref)
+  const refKey = sourceRefKey(ref) || (getTrack ? `recommendation:${meta?.artist || track?.artist}\0${meta?.title || track?.title}` : null)
   const job = useDownloads(s => s.jobs.find(j => !j.removed && ((refKey && j.sourceRef === refKey) || (url && j.url === url) || (jobId && j.id === jobId))) || null)
   // Already in the library (the download was refused as a duplicate).
   const [inLibrary, setInLibrary] = useState(false)
@@ -67,10 +67,10 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey) }
   }, [menu])
 
-  if (!ref) return null
-  const providerLabel = labelOf(ref.provider)
+  if (!ref && !getTrack) return null
+  const providerLabel = ref ? labelOf(ref.provider) : 'your playback sources'
 
-  const resolveTrack = async () => track || (getTrack ? await getTrack() : null)
+  const resolveTrack = async () => getTrack ? await getTrack() : track
 
   /** Download from where the song streams. */
   const saveFromSource = async () => {
@@ -80,7 +80,8 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     setRequested(true)
     const clickedKey = refKey
     const target = await resolveTrack().catch(() => null)
-    const result = target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
+    const result = target?.file_path && !isGhostTrack(target) ? { alreadyInLibrary: true }
+      : target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
     if (keyRef.current !== clickedKey) return
     if (result?.alreadyInLibrary) {
       // Nothing to download: the song is in the library, and this streamed

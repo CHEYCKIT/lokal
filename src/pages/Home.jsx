@@ -6,6 +6,7 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
 import DiscoveryImage from '../components/DiscoveryImage'
+import SaveToLibraryButton from '../components/SaveToLibraryButton'
 import SectionSwap from '../components/SectionSwap'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
@@ -15,7 +16,7 @@ import { showToast, showLoadingToast } from '../components/Toaster'
 import { addToPlaylistMany, addToQueueMany, playNextMany, saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
-import { saveToLibrary, trackArtURL } from '../onlineTracks'
+import { libraryDownloadMessage, saveTracksToLibrary, trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
 import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
@@ -87,7 +88,7 @@ function SectionHeader({ icon: Icon, eyebrow, title, count, subtitle, onExpand, 
   )
 }
 
-function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu }) {
+function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu, getDownloadTrack }) {
   const artwork = trackArtURL(track) || secureImage(track?.artwork_url)
   return (
     <div onContextMenu={event => onContextMenu?.(event, track)} className="group flex min-w-0 items-center gap-1 rounded-xl p-2 transition-colors hover:bg-white/[0.06]">
@@ -95,6 +96,7 @@ function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu }) {
         <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card"><DiscoveryImage item={track} src={artwork} className="h-full w-full object-cover" /></div>
         <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}{track.scrobbleCount ? ` · ${track.scrobbleCount} this week` : ''}</p></div>
       </button>
+      <SaveToLibraryButton track={track} getTrack={() => getDownloadTrack(track)} meta={track} className="p-2 opacity-0 group-hover:opacity-100 focus:opacity-100" />
       {onRadio && <button type="button" aria-label={`Start radio for ${track.title}`} onClick={() => onRadio(track)} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100" title="Start radio"><Radio size={14} /></button>}
     </div>
   )
@@ -134,7 +136,7 @@ function ScrobbleHistory({ entries, resolveTracks }) {
   return <div className="space-y-6">{groups.map(group => <section key={group.date}><div className="mb-2 flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><CalendarDays size={14} />{group.date}</div><div className="rounded-xl border border-border bg-elevated p-3"><TrackList tracks={recommendationRows(group.entries)} extraColumns={historyColumns} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'Scrobble History' }} /></div></section>)}</div>
 }
 
-function RecommendationSections({ data, source: selectedSource, loading, error, onRefresh, onSourceChange, onPlay, resolveTracks, onTrackMenu, onRadio, onArtistPlay, onArtistMenu, onAlbumPlay, onAlbumMenu, onSaveFresh, onSaveQuick, saving, onOpenSettings, activeSection, onSection }) {
+function RecommendationSections({ data, source: selectedSource, loading, error, onRefresh, onSourceChange, onPlay, resolveTracks, getDownloadTrack, onTrackMenu, onRadio, onArtistPlay, onArtistMenu, onAlbumPlay, onAlbumMenu, onProviderMixPlay, onProviderMixMenu, onSaveFresh, onSaveQuick, saving, onOpenSettings, activeSection, onSection }) {
   const source = sourceName(selectedSource)
   const quick = Array.isArray(data?.quickPicks) ? data.quickPicks : []
   const liked = Array.isArray(data?.liked) ? data.liked : []
@@ -142,6 +144,7 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
   const secondaryKey = selectedSource === 'youtube' ? 'liked' : 'quick'
   const history = Array.isArray(data?.history) ? data.history : []
   const albums = Array.isArray(data?.albums) ? data.albums : []
+  const providerMixes = Array.isArray(data?.mixes) ? data.mixes : []
   const artists = Array.isArray(data?.artists) ? data.artists : []
   const fresh = Array.isArray(data?.freshFinds) ? data.freshFinds : []
   const toggle = key => onSection?.(activeSection === key ? null : key)
@@ -151,17 +154,18 @@ function RecommendationSections({ data, source: selectedSource, loading, error, 
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10"><Sparkles size={16} className="text-accent" /></div>
         <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="text-sm font-medium text-white">Discovery</h2><span className="text-xs uppercase tracking-[0.18em] text-muted">{source}</span></div><p className="mt-0.5 truncate text-xs text-muted">Personalized recommendations from your selected provider.</p></div>
       </div>
-      <div className="flex shrink-0 items-center gap-3"><div role="group" aria-label="Discovery provider" className="flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">{[['lastfm', 'Last.fm'], ['youtube', 'YouTube Music']].map(([id, label]) => <button key={id} type="button" aria-pressed={selectedSource === id} onClick={() => onSourceChange?.(id)} className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${selectedSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div><span className="hidden text-[11px] uppercase tracking-[0.16em] text-subtle @lg:inline">{data ? `${fresh.length + secondary.length} picks` : 'Loading picks'}</span><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
+      <div className="flex shrink-0 items-center gap-3"><div role="group" aria-label="Discovery provider" className="flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">{[['lastfm', 'Last.fm'], ['youtube', 'YouTube Music']].map(([id, label]) => <button key={id} type="button" aria-pressed={selectedSource === id} onClick={() => onSourceChange?.(id)} className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${selectedSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button></div>
     </div>
     {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
     {!data && (loading
       ? <p className="py-10 text-center text-sm text-muted">Building your {source} recommendations…</p>
       : <div className="rounded-xl border border-border bg-elevated p-4"><ProviderConnections compact onOpenSettings={onOpenSettings} /></div>)}
-    {data && !secondary.length && !history.length && !albums.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
-    {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title="Fresh Finds" count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={activeSection === 'fresh'} action={<button type="button" aria-label="Save Fresh Finds as a playlist" title="Save Fresh Finds as a playlist" onClick={onSaveFresh} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === 'fresh-finds' ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'fresh' ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={item => onPlay(item, 'fresh')} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, 'fresh')} />)}</div></section>}
-    {secondary.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow={selectedSource === 'youtube' ? 'Recently liked' : 'Jump back in'} title={selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} count={secondary.length} subtitle={selectedSource === 'youtube' ? 'Tracks you recently liked on YouTube Music.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle(secondaryKey)} expanded={activeSection === secondaryKey} action={<button type="button" aria-label={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} title={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} onClick={onSaveQuick} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === (selectedSource === 'youtube' ? 'youtube-likes' : 'quick-picks') ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === secondaryKey ? secondary : secondary.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} onPlay={item => onPlay(item, secondaryKey)} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, secondaryKey)} />)}</div></section>}
+    {data && !secondary.length && !history.length && !albums.length && !providerMixes.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
+    {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title="Fresh Finds" count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={activeSection === 'fresh'} action={<button type="button" aria-label="Save Fresh Finds as a playlist" title="Save Fresh Finds as a playlist" onClick={onSaveFresh} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === 'fresh-finds' ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'fresh' ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} getDownloadTrack={getDownloadTrack} onPlay={item => onPlay(item, 'fresh')} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, 'fresh')} />)}</div></section>}
+    {secondary.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow={selectedSource === 'youtube' ? 'Recently liked' : 'Jump back in'} title={selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} count={secondary.length} subtitle={selectedSource === 'youtube' ? 'Your 30 most recently liked tracks on YouTube Music.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle(secondaryKey)} expanded={activeSection === secondaryKey} action={<button type="button" aria-label={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} title={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} onClick={onSaveQuick} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === (selectedSource === 'youtube' ? 'youtube-likes' : 'quick-picks') ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === secondaryKey ? secondary : secondary.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} getDownloadTrack={getDownloadTrack} onPlay={item => onPlay(item, secondaryKey)} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, secondaryKey)} />)}</div></section>}
     {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title={selectedSource === 'youtube' ? 'YouTube Music History' : 'Scrobble History'} count={history.length} subtitle={selectedSource === 'youtube' ? 'Recent tracks from your YouTube Music listening history.' : 'Your last 100 provider scrobbles, grouped by date.'} onExpand={() => toggle('history')} expanded={activeSection === 'history'} />{selectedSource === 'youtube' ? <TrackList tracks={recommendationRows(activeSection === 'history' ? history : history.slice(0, 6))} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'YouTube Music History' }} /> : <ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} />}</section>}
-    {albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
+    {selectedSource === 'youtube' && providerMixes.length > 0 && <section><SectionHeader icon={Radio} eyebrow="Made for you" title="Mixed for you" count={providerMixes.length} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{providerMixes.map(mix => <AlbumRecommendation key={mix.id} album={{ ...mix, artist: mix.author || 'YouTube Music' }} onClick={() => onProviderMixPlay(mix)} onContextMenu={event => onProviderMixMenu(event, mix)} />)}</div></section>}
+    {selectedSource !== 'youtube' && albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
     {artists.length > 0 && <section><SectionHeader icon={User} eyebrow="For You" title="Artists For You" count={artists.length} onExpand={() => toggle('artists')} expanded={activeSection === 'artists'} /><div className="grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8">{(activeSection === 'artists' ? artists : artists.slice(0, 8)).map(artist => <ArtistRecommendation key={artist.name} artist={artist} onClick={onArtistPlay} onContextMenu={onArtistMenu} />)}</div></section>}
   </div>
 }
@@ -184,7 +188,7 @@ function MixPanel({ tracks, source, size, generating, error, saving, onSize, onG
           <button onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted hover:text-white disabled:opacity-50"><ListPlus size={13} />Save</button>
         </div>
       </div>
-      <TrackList tracks={tracks} reduceMotion />
+      <TrackList tracks={tracks} reduceMotion context={{ type: 'mix', name: `${sourceName(source)} Mix` }} />
     </section> : <p className="rounded-xl border border-border bg-elevated px-4 py-10 text-center text-sm text-muted">Choose a size and regenerate to build a {sourceName(source)} mix.</p>}
   </div>
 }
@@ -248,7 +252,7 @@ function HomeContent({ user }) {
       const started = await playRecommendationPool(pool, {
         selected: track, context: { type: 'discovery', name: context }, isCurrent,
         onProgress: message => { if (isCurrent()) toast.update(message) },
-        onProviderFailure: failure => { if (failure.detail) detail = failure.detail; toast.update(playbackFallbackMessage(failure)) },
+        onProviderFailure: failure => { if (isCurrent()) { if (failure.detail) detail = failure.detail; toast.update(playbackFallbackMessage(failure)) } },
       })
       toast.close(isCurrent() && started === false ? detail ? `Could not play “${track.title}”. ${detail}` : `No matching playback source was found for ${track.title}.` : '')
     } catch { toast.close(isCurrent() ? `Could not load “${track.title}”.` : '') }
@@ -305,7 +309,7 @@ function HomeContent({ user }) {
       showToast(catalogue.error || `No matching songs were found for ${album.title} in your sources.`)
       return []
     }
-    const resolved = await resolveRecommendationTracks(catalogue.tracks, api, { isCurrent, onProgress })
+    const resolved = await resolveRecommendationTracks(catalogue.tracks, api, { isCurrent, onProgress, prepareStreams: false })
     if (!resolved.length) {
       showToast(`No playable songs were found for ${album.title} in your sources.`)
       return []
@@ -330,9 +334,8 @@ function HomeContent({ user }) {
     try {
       const tracks = await resolveRecommendedAlbum(album, message => toast.update(message))
       if (!tracks.length) { toast.close(); return }
-      const results = await Promise.all(tracks.map(track => saveToLibrary(track).catch(error => ({ error: error.message }))))
-      const failed = results.filter(result => result?.error).length
-      toast.close(failed ? `Started ${tracks.length - failed} downloads; ${failed} failed.` : `Started downloading “${album.title}”.`)
+      const result = await saveTracksToLibrary(tracks, { onProgress: message => toast.update(message) })
+      toast.close(libraryDownloadMessage(result))
     } catch {
       toast.close(`Could not download “${album.title}”.`)
     }
@@ -384,12 +387,64 @@ function HomeContent({ user }) {
     { label: 'Start artist radio', icon: Radio, onSelect: () => startRadio({ artist: artist.name, type: 'artist' }) },
     { label: 'Go to artist', icon: User, onSelect: () => navigate(artistPath(artist.name)) },
   ])
-  const withRecommendation = async (track, action) => {
+  const resolveDownloadTrack = async track => {
     const account = accountRef.current
-    const [resolved] = await resolveRecommendationTracks([track], api, { isCurrent: () => account === accountRef.current })
-    if (account !== accountRef.current) return
-    if (resolved) action([resolved])
-    else showToast(`No matching playback source was found for ${track.title}.`)
+    const isCurrent = () => account === session.getSnapshot().account
+    const toast = showLoadingToast(`Finding “${track.title}”…`)
+    try {
+      const [resolved] = await resolveRecommendationTracks([track], api, { isCurrent, prepareStreams: false, onProgress: message => { if (isCurrent()) toast.update(message) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
+      toast.close(!resolved && isCurrent() ? `No matching source was found for ${track.title}.` : '')
+      return isCurrent() ? resolved : null
+    } catch { toast.close(isCurrent() ? `Could not load “${track.title}”.` : ''); return null }
+  }
+  const withRecommendation = async (track, action) => {
+    const resolved = await resolveDownloadTrack(track)
+    if (resolved) return action([resolved])
+  }
+  const downloadRecommendations = async tracks => {
+    const result = await saveTracksToLibrary(tracks)
+    showToast(libraryDownloadMessage(result))
+  }
+  const loadProviderMix = async mix => {
+    const result = await api.youtubeAccountPlaylist(mix.id)
+    if (result?.error) throw new Error(result.error)
+    return (result?.tracks || []).map(track => ({ ...track, source: 'youtube', artwork_url: track.artwork_url || track.thumbnail }))
+  }
+  const playProviderMix = async mix => {
+    const key = `youtube-mix:${mix.id}`
+    if (pendingPlayRef.current === key) return
+    const request = ++playRequestRef.current
+    pendingPlayRef.current = key
+    const account = session.getSnapshot().account
+    const version = usePlayerStore.getState().playbackGeneration
+    const isCurrent = () => request === playRequestRef.current && account === session.getSnapshot().account
+    const toast = showLoadingToast(`Loading ${mix.title}…`)
+    try {
+      const tracks = await loadProviderMix(mix)
+      if (!isCurrent() || usePlayerStore.getState().playbackGeneration !== version) { toast.close(); return }
+      const started = await playRecommendationPool(tracks, { firstPlayable: true, context: { type: 'discovery', name: mix.title }, isCurrent, onProgress: message => { if (isCurrent()) toast.update(message) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
+      toast.close(started === false && isCurrent() ? `No playable songs were found in ${mix.title}.` : '')
+    } catch (error) { toast.close(isCurrent() ? error.message || `Could not load ${mix.title}.` : '') }
+    finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
+  }
+  const saveProviderMix = async (mix, download = false) => {
+    const account = session.getSnapshot().account
+    const isCurrent = () => account === session.getSnapshot().account
+    const toast = showLoadingToast(`Loading ${mix.title}…`)
+    try {
+      const candidates = await loadProviderMix(mix)
+      const tracks = await resolveRecommendationTracks(candidates, api, { isCurrent, prepareStreams: false, onProgress: message => { if (isCurrent()) toast.update(message) } })
+      if (!isCurrent()) { toast.close(); return }
+      if (!tracks.length) { toast.close(`No matching songs were found in ${mix.title}.`); return }
+      if (download) {
+        const result = await saveTracksToLibrary(tracks, { isCurrent, onProgress: message => toast.update(message) })
+        result.failed += candidates.length - tracks.length
+        toast.close(libraryDownloadMessage(result))
+      } else {
+        const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: 'Mixed for you on YouTube Music' })
+        toast.close(playlist ? `Saved “${mix.title}” as a playlist.` : `Could not save “${mix.title}”.`)
+      }
+    } catch (error) { toast.close(isCurrent() ? error.message || `Could not load ${mix.title}.` : '') }
   }
   const openTrackMenu = (event, track, section = 'fresh') => {
     const isLiked = section === 'liked'
@@ -401,6 +456,7 @@ function HomeContent({ user }) {
       { label: 'Play next', icon: Clock, onSelect: () => withRecommendation(track, playNextMany) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => withRecommendation(track, addToQueueMany) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => withRecommendation(track, addToPlaylistMany) },
+      { label: 'Download song', icon: Download, onSelect: () => withRecommendation(track, downloadRecommendations) },
       { label: 'Start radio', icon: Radio, onSelect: () => startRadio(track) },
     ])
   }
@@ -410,6 +466,13 @@ function HomeContent({ user }) {
   }
   const sectionProps = {
     data, source: recommendationSource, loading: discoveryLoading, error: discoveryError,
+    getDownloadTrack: resolveDownloadTrack,
+    onProviderMixPlay: playProviderMix,
+    onProviderMixMenu: (event, mix) => menu.open(event, [
+      { label: 'Play mix', icon: Play, onSelect: () => playProviderMix(mix) },
+      { label: 'Save as playlist', icon: ListPlus, onSelect: () => saveProviderMix(mix) },
+      { label: 'Download mix', icon: Download, onSelect: () => saveProviderMix(mix, true) },
+    ]),
     onRefresh: session.refresh, onSourceChange: async source => {
       if (source === recommendationSource) return
       const result = await api.saveSettings({ recommendation_source: source }).catch(error => ({ error: error.message }))
