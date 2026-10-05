@@ -154,6 +154,8 @@ Know what you're actually listening to:
 |---|---|
 | ![An artist page with bio, popular songs and releases](docs/screenshots/artist.webp) | ![A playlist with its songs](docs/screenshots/playlist.webp) |
 
+![The Library's column picker: track number, artwork, artist, source, quality, date added, duration and quick actions](docs/screenshots/columns.webp)
+
 - **Library:** your music folder indexed from the files' own tags. Drum kits, sample packs and loops are filtered out, and you can opt out if something gets flagged by mistake (*via the minimum duration*). Filter by **source** (music folder, YouTube, SoundCloud, Soulseek, addons), **genre** and **quality**, and sort by date, title, artist, plays or length.
 - **Track lists you can adjust:** pick the columns (track number, artwork, artist, source, quality, date added, duration, quick actions, drag handle) from **Columns**; the layout tightens on its own when the window gets narrow. An icon shows where a downloaded or streamed song came from (YouTube, SoundCloud, Soulseek, an addon), and playlists show each song's quality.
 - **Albums:** albums, EPs and singles are kept apart; hover a cover to play the whole release.
