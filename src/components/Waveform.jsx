@@ -49,6 +49,7 @@ export default function Waveform({
       canvas.height = Math.max(1, Math.floor(cssH * dpr))
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      canvas.dispatchEvent(new Event('lokal:waveform-resize'))
     }
 
     if (typeof ResizeObserver !== 'undefined') {
@@ -84,6 +85,7 @@ export default function Waveform({
     if (!analyser) {
       const drawStatic = () => {
         const { w: cssW, h: cssH } = sizeRef.current
+        if (!cssW) return
         ctx.clearRect(0, 0, cssW, cssH)
         const barWidth = Math.max(1, cssW / barCount - 2)
         for (let i = 0; i < barCount; i++) {
@@ -92,11 +94,13 @@ export default function Waveform({
           const y = (cssH - barHeight) / 2
           drawCapsule(x, y, barWidth, barHeight, 2, 'rgba(255,255,255,0.18)')
         }
-        animationRef.current = requestAnimationFrame(drawStatic)
       }
+      // Nothing to show without the analyser: one still frame, redrawn on resize.
       drawStatic()
+      const redraw = () => drawStatic()
+      canvas.addEventListener('lokal:waveform-resize', redraw)
       return () => {
-        if (animationRef.current) cancelAnimationFrame(animationRef.current)
+        canvas.removeEventListener('lokal:waveform-resize', redraw)
         if (resizeObserverRef.current) resizeObserverRef.current.disconnect()
         else window.removeEventListener('resize', resize)
       }
@@ -131,7 +135,16 @@ export default function Waveform({
       return shaped
     }
 
-    const draw = () => {
+    // 30 frames a second is plenty for bars this size, and halves the repaints
+    // (inside the glass player bar, each one also redoes its blur).
+    const FRAME_MS = 1000 / 30
+    let last = 0
+    let idleFrames = 0
+    let gradient = null
+    let gradientWidth = 0
+    const draw = (now = performance.now()) => {
+      if (now - last < FRAME_MS - 1) { animationRef.current = requestAnimationFrame(draw); return }
+      last = now
       const { w: cssW, h: cssH } = sizeRef.current
 
       if (!isPlaying) {
@@ -145,7 +158,8 @@ export default function Waveform({
           const y = (cssH - barHeight) / 2
           drawCapsule(x, y, barWidth, barHeight, 2, 'rgba(255,255,255,0.18)')
         }
-        animationRef.current = requestAnimationFrame(draw)
+        // Paused: let the bars settle for a couple of seconds, then stop drawing.
+        animationRef.current = ++idleFrames < 60 ? requestAnimationFrame(draw) : null
         return
       }
 
@@ -153,10 +167,13 @@ export default function Waveform({
       ctx.clearRect(0, 0, cssW, cssH)
       phaseRef.current += 0.08
 
-      const gradient = ctx.createLinearGradient(0, 0, cssW, 0)
-      gradient.addColorStop(0, 'rgba(255,255,255,0.3)')
-      gradient.addColorStop(0.55, 'rgba(232,255,87,0.9)')
-      gradient.addColorStop(1, 'rgba(255,255,255,0.95)')
+      if (!gradient || gradientWidth !== cssW) {
+        gradient = ctx.createLinearGradient(0, 0, cssW, 0)
+        gradient.addColorStop(0, 'rgba(255,255,255,0.3)')
+        gradient.addColorStop(0.55, 'rgba(232,255,87,0.9)')
+        gradient.addColorStop(1, 'rgba(255,255,255,0.95)')
+        gradientWidth = cssW
+      }
 
       const barWidth = Math.max(1, cssW / barCount - 2)
       const center = (barCount - 1) / 2
@@ -186,8 +203,12 @@ export default function Waveform({
     }
 
     draw()
+    // A resize clears the canvas: draw again, even if a pause had stopped it.
+    const kick = () => { if (!animationRef.current) { idleFrames = 50; last = 0; draw() } }
+    canvas.addEventListener('lokal:waveform-resize', kick)
 
     return () => {
+      canvas.removeEventListener('lokal:waveform-resize', kick)
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
       if (resizeObserverRef.current) resizeObserverRef.current.disconnect()
       else window.removeEventListener('resize', resize)

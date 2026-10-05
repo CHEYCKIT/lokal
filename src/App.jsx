@@ -40,6 +40,7 @@ import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTra
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
+import { useAppearanceFlag } from './appearanceFlags'
 
 const EQ_AUDIO_BANDS = [
   { frequency: 31, type: 'lowshelf', q: 0.7 },
@@ -255,6 +256,8 @@ function AnimatedRoutes() {
 
 /** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
+  // The glass player bar floats over the pages, which keep room for it.
+  const glassPlayerBar = useAppearanceFlag('glass_player_bar')
   // Pages lay out by the space they get between the sidebars (pageWidth.js).
   const pageWidthRef = usePageWidth()
   const audioRef = useRef(null)
@@ -2112,7 +2115,7 @@ export default function App() {
   return (
     <Router>
       <NativeHistoryNavigation />
-      <div className="relative flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx} style={showMiniPlayer ? undefined : { '--player-space': '104px' }}>
+      <div className="relative flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx} style={showMiniPlayer || !glassPlayerBar ? undefined : { '--player-space': '104px' }}>
         {showMiniPlayer ? (
           <MiniPlayer windowed />
         ) : (

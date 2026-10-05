@@ -7,6 +7,7 @@ import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { artistToSlug } from '../artistLink'
 import Waveform from './Waveform'
+import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
@@ -18,6 +19,8 @@ import { openRadio } from '../radioActions'
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
 export default function PlayerBar() {
+  const glass = useAppearanceFlag('glass_player_bar')
+  const showWaveform = useAppearanceFlag('player_waveform')
   const nav = useNavigate()
   const {
     currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
@@ -134,9 +137,14 @@ export default function PlayerBar() {
 
   return (
     <>
-      {/* Glass, like the downloads popup: a card floating over the bottom of the
-          pages, which scroll on underneath it (App leaves --player-space for it). */}
-      <div className="absolute inset-x-3 bottom-3 z-30 h-20 rounded-2xl border border-white/10 flex items-center px-4 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.55)' }}>
+      {/* Glass (Settings > Appearance > Player Bar), like the downloads popup:
+          a card floating over the bottom of the pages, which scroll on
+          underneath it (App leaves --player-space for it). Off: the plain
+          strip below the pages. */}
+      <div data-player-bar className={glass
+        ? 'absolute inset-x-3 bottom-3 z-30 h-20 rounded-2xl border border-white/10 flex items-center px-4 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-lg backdrop-saturate-150'
+        : 'h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10'}
+        style={glass ? { backgroundColor: 'rgba(var(--surface-rgb), 0.55)' } : { backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
         <div className="flex items-center gap-3 w-60 min-w-0">
         <button onClick={toggleFullscreen} disabled={!currentTrack}
           className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
@@ -251,7 +259,7 @@ export default function PlayerBar() {
         </div>
 
         <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
-          {currentTrack && (
+          {currentTrack && showWaveform && (
             <div className="min-w-0 shrink basis-[120px] overflow-hidden">
               <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
