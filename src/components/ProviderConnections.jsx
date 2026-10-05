@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { CheckCircle2, ExternalLink, KeyRound, Music2, RefreshCw, Youtube } from 'lucide-react'
+import React, { useEffect, useState, useSyncExternalStore } from 'react'
+import { AudioLines, CheckCircle2, LogIn, Music2, RefreshCw, Youtube } from 'lucide-react'
 import { api } from '../api'
+import { LastfmSignInModal, ListenBrainzSignInModal } from './ScrobblerSignIn'
 import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
 
 function StatusDot({ connected }) {
@@ -24,44 +25,58 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
   )
 }
 
+function AccountCard({ icon: Icon, tint, name, connected, status, children }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${tint}`}><Icon size={16} /></div>
+          <div>
+            <p className="text-sm font-medium text-white">{name}</p>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted"><StatusDot connected={connected} />{status}</div>
+          </div>
+        </div>
+        {connected && <CheckCircle2 size={16} className="text-green-400" />}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+    </div>
+  )
+}
+
 /**
  * Account entry points shared by first-run setup and Integrations.
  *
  * Desktop YouTube Music sign-in owns a persistent, automatically refreshed session.
  */
-export default function ProviderConnections({ compact = false, onOpenSettings, settingsOverride = null, disableLastfmAuth = false, onYouTubeSettingsChanged }) {
+export default function ProviderConnections({ compact = false, settingsOverride = null, onSettingsChanged, onListenBrainzChanged }) {
   const [settings, setSettings] = useState(() => settingsOverride || {})
   const [loading, setLoading] = useState(!settingsOverride)
   const [refreshing, setRefreshing] = useState(false)
-  const [lastfmState, setLastfmState] = useState('')
-  const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
+  const [signIn, setSignIn] = useState(null) // 'lastfm' | 'listenbrainz'
+  const [listenbrainz, setListenbrainz] = useState(null)
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
   const [youtubeSigningIn, setYoutubeSigningIn] = useState(false)
   const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
   const [settingsError, setSettingsError] = useState('')
   const youtubeStatus = useSyncExternalStore(subscribeYoutubeAccountStatus, getYoutubeAccountStatus)
-  const lastfmAuthTimeoutRef = useRef(null)
-  const settingsRef = useRef(settings)
-
-  useEffect(() => {
-    settingsRef.current = settings
-  }, [settings])
 
   useEffect(() => {
     if (!settingsOverride) return
     setSettings(settingsOverride)
-    settingsRef.current = settingsOverride
     setLoading(false)
   }, [settingsOverride])
 
-  useEffect(() => {
-    if (!disableLastfmAuth) return undefined
-    clearTimeout(lastfmAuthTimeoutRef.current)
-    lastfmAuthTimeoutRef.current = null
-    setLastfmAuthorizing(false)
-    setLastfmState('')
-    return undefined
-  }, [disableLastfmAuth, settingsOverride?.lastfm_session_key])
+  const refreshListenBrainz = () => Promise.resolve(api.listenbrainzStatus?.()).then(status => {
+    if (!status || status.error) return
+    setListenbrainz(status)
+    onListenBrainzChanged?.(status)
+  }).catch(() => {})
+  useEffect(() => { refreshListenBrainz() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changeSettings = patch => {
+    setSettings(previous => ({ ...previous, ...patch }))
+    onSettingsChanged?.(patch)
+  }
 
   const loadSettings = async (quiet = false) => {
     if (quiet) setRefreshing(true)
@@ -70,9 +85,8 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
       const next = await api.getSettings()
       if (next && !next.error) {
         setSettings(next)
-        settingsRef.current = next
         setSettingsError('')
-        onYouTubeSettingsChanged?.(Object.fromEntries(Object.entries(next).filter(([key]) => key.startsWith('yt_'))))
+        onSettingsChanged?.(Object.fromEntries(Object.entries(next).filter(([key]) => key.startsWith('yt_') || key.startsWith('lastfm_'))))
       } else if (next?.error) {
         setSettingsError(next.error)
       }
@@ -82,55 +96,15 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
       if (quiet) setRefreshing(false)
       else setLoading(false)
     }
+    refreshListenBrainz()
   }
 
   useEffect(() => {
     if (!settingsOverride) loadSettings()
   }, [settingsOverride])
 
-  useEffect(() => {
-    if (disableLastfmAuth) return undefined
-    const offAuth = api.onLastfmAuthToken?.(async (token) => {
-      if (!token) return
-      clearTimeout(lastfmAuthTimeoutRef.current)
-      lastfmAuthTimeoutRef.current = null
-      const current = settingsRef.current || {}
-      if (!current.lastfm_api_key || !current.lastfm_api_secret) {
-        setLastfmAuthorizing(false)
-        setLastfmState('Add your Last.fm API key and secret in Settings first.')
-        return
-      }
-
-      setLastfmState('Finishing Last.fm connection…')
-      const result = await api.lastfmConnect(current.lastfm_api_key, current.lastfm_api_secret, token).catch(e => ({ error: e.message }))
-      if (!result?.sessionKey) {
-        setLastfmAuthorizing(false)
-        setLastfmState(result?.error || 'Last.fm connection failed.')
-        return
-      }
-
-      const patch = {
-        lastfm_auth_token: token,
-        lastfm_session_key: result.sessionKey,
-        lastfm_username: result.username || current.lastfm_username || '',
-      }
-      const saved = await api.saveSettings(patch).catch(error => ({ error: error.message }))
-      if (saved?.error) {
-        setLastfmAuthorizing(false)
-        setLastfmState(saved.error)
-        return
-      }
-      setSettings(prev => ({ ...prev, ...patch }))
-      setLastfmAuthorizing(false)
-      setLastfmState(`Connected as ${patch.lastfm_username || 'Last.fm user'}`)
-    })
-    return () => {
-      clearTimeout(lastfmAuthTimeoutRef.current)
-      offAuth?.()
-    }
-  }, [disableLastfmAuth])
-
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
+  const listenbrainzConnected = !!listenbrainz?.connected
   const youtubeAccountReady = settings.yt_account_session === '1'
   const youtubeConnected = youtubeAccountReady && youtubeStatus.verified && youtubeStatus.connected
   useEffect(() => api.onYoutubeSignInStatus(status => {
@@ -156,30 +130,18 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
     finally { setYoutubeAuthorizing(false); setYoutubeSigningIn(false) }
   }
 
-  const authorizeLastfm = async () => {
-    if (!settings.lastfm_api_key || !settings.lastfm_api_secret) {
-      setLastfmState('Add your Last.fm API key and secret in Settings first.')
-      onOpenSettings?.('lastfm')
-      return
-    }
-    setLastfmAuthorizing(true)
-    setLastfmState('Waiting for Last.fm authorization in your browser…')
-    clearTimeout(lastfmAuthTimeoutRef.current)
-    if (!disableLastfmAuth) {
-      lastfmAuthTimeoutRef.current = setTimeout(() => {
-        setLastfmAuthorizing(false)
-        setLastfmState('Authorization timed out. Try again.')
-        lastfmAuthTimeoutRef.current = null
-      }, 120000)
-    }
-    try {
-      await api.lastfmAuthorize(settings.lastfm_api_key)
-    } catch (error) {
-      clearTimeout(lastfmAuthTimeoutRef.current)
-      lastfmAuthTimeoutRef.current = null
-      setLastfmAuthorizing(false)
-      setLastfmState(error?.message || 'Could not open Last.fm in your browser.')
-    }
+  const disconnectLastfm = async () => {
+    if (!window.confirm('Disconnect Last.fm?')) return
+    const patch = { lastfm_session_key: '', lastfm_auth_token: '', lastfm_username: '' }
+    const saved = await Promise.resolve(api.saveSettings(patch)).catch(error => ({ error: error.message }))
+    if (saved?.error) { setSettingsError(saved.error); return }
+    changeSettings(patch)
+  }
+
+  const disconnectListenBrainz = async () => {
+    if (!window.confirm('Disconnect ListenBrainz?')) return
+    await Promise.resolve(api.listenbrainzDisconnect()).catch(() => {})
+    refreshListenBrainz()
   }
 
   const disconnectYouTube = async () => {
@@ -222,39 +184,18 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
       </div>
 
       <div className={compact ? 'space-y-3' : 'grid gap-3 @md:grid-cols-2'}>
-        <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/10 text-red-300">
-                <Music2 size={16} />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">Last.fm</p>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-                  <StatusDot connected={lastfmConnected} />
-                  {lastfmConnected ? `Connected as ${settings.lastfm_username}` : 'Not connected'}
-                </div>
-              </div>
-            </div>
-            {lastfmConnected && <CheckCircle2 size={16} className="text-green-400" />}
-          </div>
-          <p className="text-xs leading-relaxed text-muted">
-            Use your Last.fm profile for scrobbling and future personalized discovery.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton onClick={authorizeLastfm} disabled={lastfmAuthorizing || disableLastfmAuth}>
-              <ExternalLink size={13} />
-              {lastfmAuthorizing ? 'Waiting…' : lastfmConnected ? 'Reconnect' : 'Authorize in Browser'}
-            </ActionButton>
-            {!settings.lastfm_api_key || !settings.lastfm_api_secret ? (
-              <ActionButton onClick={() => onOpenSettings?.('lastfm')} muted>
-                <KeyRound size={13} />
-                Add API keys
-              </ActionButton>
-            ) : null}
-          </div>
-          {lastfmState && <p className={`text-xs leading-relaxed ${lastfmState.startsWith('Connected') ? 'text-green-400' : 'text-muted'}`}>{lastfmState}</p>}
-        </div>
+        <AccountCard icon={Music2} tint="bg-red-500/10 text-red-300" name="Last.fm" connected={lastfmConnected}
+          status={lastfmConnected ? `Connected as ${settings.lastfm_username}` : 'Not connected'}>
+          <ActionButton onClick={() => setSignIn('lastfm')}><LogIn size={13} />{lastfmConnected ? 'Reconnect' : 'Sign in'}</ActionButton>
+          {lastfmConnected && <ActionButton onClick={disconnectLastfm} muted>Disconnect</ActionButton>}
+        </AccountCard>
+
+        <AccountCard icon={AudioLines} tint="bg-orange-500/10 text-orange-300" name="ListenBrainz" connected={listenbrainzConnected}
+          status={listenbrainzConnected ? `Connected as ${listenbrainz.username || 'ListenBrainz user'}` : 'Not connected'}>
+          {listenbrainzConnected
+            ? <><ActionButton onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(listenbrainz.username || '')}/`)} muted>Profile</ActionButton><ActionButton onClick={disconnectListenBrainz} muted>Disconnect</ActionButton></>
+            : <ActionButton onClick={() => setSignIn('listenbrainz')}><LogIn size={13} />Sign in</ActionButton>}
+        </AccountCard>
 
         <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -284,6 +225,8 @@ export default function ProviderConnections({ compact = false, onOpenSettings, s
           {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
         </div>
       </div>
+      <LastfmSignInModal open={signIn === 'lastfm'} onClose={() => setSignIn(null)} settings={settings} onConnected={changeSettings} />
+      <ListenBrainzSignInModal open={signIn === 'listenbrainz'} onClose={() => setSignIn(null)} onConnected={refreshListenBrainz} />
     </div>
   )
 }

@@ -257,9 +257,6 @@ export default function Settings() {
   const [manageArtist, setManageArtist] = useState(null)
   const [artistSearch, setArtistSearch] = useState('')
   const [discordStatus, setDiscordStatus] = useState('')
-  const [lastfmStatus, setLastfmStatus] = useState('')
-  const [lastfmFeed, setLastfmFeed] = useState([])
-  const [lastfmAuthorizing, setLastfmAuthorizing] = useState(false)
   const [importStatus, setImportStatus] = useState('')
   const [urlTarget, setUrlTarget] = useState({ type: '', id: '', url: '' })
   const [showUrlModal, setShowUrlModal] = useState(false)
@@ -308,17 +305,8 @@ export default function Settings() {
   }
   // ListenBrainz: its token is saved only once ListenBrainz confirms it.
   const [lbStatus, setLbStatus] = useState(null)
-  const [lbToken, setLbToken] = useState('')
-  const [lbMessage, setLbMessage] = useState(null)
   /** Reload the ListenBrainz connection status. */
   const refreshListenBrainz = () => { Promise.resolve(api.listenbrainzStatus?.()).then(s => { if (s && !s.error) setLbStatus(s) }).catch(() => {}) }
-  /** Connect ListenBrainz with the pasted token. */
-  const connectListenBrainz = async () => {
-    setLbMessage({ loading: true })
-    const result = await api.listenbrainzConnect(lbToken.trim()).catch(e => ({ error: e.message }))
-    if (result?.ok) { setLbToken(''); setLbMessage(null); refreshListenBrainz() }
-    else setLbMessage({ error: result?.error || 'Could not connect' })
-  }
   const [spotifyCheck, setSpotifyCheck] = useState(null)
   const testSpotifyCanvas = async () => {
     setSpotifyCheck({ loading: true })
@@ -425,23 +413,6 @@ export default function Settings() {
   const deferredArtistSearch = useDeferredValue(artistSearch)
   const { themeName, themeOverrides, showAdvanced, setShowAdvanced, selectTheme, setAccent, saveOverride, saveOverrides, resetTheme, textScale, setTextScale } = useTheme()
 
-  const pushLastfmFeed = (entry) => {
-    setLastfmFeed(prev => {
-      const next = [
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          time: Date.now(),
-          ...entry,
-        },
-        ...prev,
-      ].slice(0, 10)
-      try {
-        localStorage.setItem(LASTFM_STATUS_KEY, JSON.stringify(next))
-      } catch {}
-      return next
-    })
-  }
-
   useEffect(() => {
 
     api.getSettings().then(s => {
@@ -505,74 +476,8 @@ export default function Settings() {
       api.getPerfSettings().then(s => { if (s) setPerfSettings(p => ({ ...p, ...s })) }).catch(() => {})
     }
 
-    try {
-      setLastfmFeed(JSON.parse(localStorage.getItem(LASTFM_STATUS_KEY) || '[]'))
-    } catch {}
 
   }, []) 
-
-  useEffect(() => {
-    const offAuth = api.onLastfmAuthToken?.(async (token) => {
-      if (!token) return
-      set('lastfm_auth_token', token)
-      setLastfmAuthorizing(false)
-      pushLastfmFeed({
-        level: 'info',
-        label: 'Authorization',
-        message: 'Authorization callback received from Last.fm'
-      })
-      if (!settings.lastfm_api_key || !settings.lastfm_api_secret) {
-        setLastfmStatus('Need API key and secret')
-        pushLastfmFeed({
-          level: 'error',
-          label: 'Authorization',
-          message: 'Missing API key or secret for session exchange'
-        })
-        return
-      }
-      setLastfmStatus('Finishing Last.fm connection...')
-      const result = await api.lastfmConnect(settings.lastfm_api_key, settings.lastfm_api_secret, token)
-      if (result.sessionKey) {
-        await api.saveSettings({
-          lastfm_session_key: result.sessionKey,
-          lastfm_username: result.username || settings.lastfm_username,
-          lastfm_auth_token: token
-        })
-        setSettings(prev => ({
-          ...prev,
-          lastfm_auth_token: token,
-          lastfm_session_key: result.sessionKey,
-          lastfm_username: result.username || prev.lastfm_username
-        }))
-        setLastfmStatus('✓ Connected as ' + (result.username || settings.lastfm_username))
-        pushLastfmFeed({
-          level: 'success',
-          label: 'Connection',
-          message: `Connected as ${result.username || settings.lastfm_username || 'Last.fm user'}`
-        })
-      } else {
-        setLastfmStatus(result.error || 'Failed')
-        pushLastfmFeed({
-          level: 'error',
-          label: 'Connection',
-          message: result.error || 'Failed to exchange Last.fm token'
-        })
-      }
-    })
-
-    const onStatus = (event) => {
-      const next = event.detail
-      if (Array.isArray(next)) {
-        setLastfmFeed(next)
-      }
-    }
-
-    window.addEventListener('lokal:lastfm-status', onStatus)
-    return () => {
-      offAuth?.()
-      window.removeEventListener('lokal:lastfm-status', onStatus)
-    }
-  }, [settings.lastfm_api_key, settings.lastfm_api_secret, settings.lastfm_username])
 
   const loadArtists = async () => {
     const requestId = ++artistRequestRef.current
@@ -711,10 +616,6 @@ export default function Settings() {
     touchedSettingsRef.current.add(k)
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
-  }
-
-  const openLastfmPage = async (url) => {
-    await api.openExternal(url)
   }
 
   const applyEqGains = (nextGains, presetKey = getEqPresetKey(nextGains)) => {
@@ -1295,6 +1196,7 @@ export default function Settings() {
     { label: 'Export as CSV', icon: <Download size={14} />, onClick: () => handleHistoryExport('csv') },
   ]
   const inCategory = (key) => activeCategory === key
+  const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
   const usingDefaultDiscordId = settings.discord_use_default_app_id !== '0'
 
   return (
@@ -1769,6 +1671,143 @@ export default function Settings() {
       </Section>
       )}
 
+      {inCategory('integrations') && (
+      <Section title="Account Connections">
+        <ProviderConnections settingsOverride={settings} onSettingsChanged={patch => setSettings(previous => ({ ...previous, ...patch }))} onListenBrainzChanged={setLbStatus} />
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="Discord Rich Presence">
+        <Row label="Use Default App ID" desc="Uses your built-in Discord app ID by default">
+          <button
+            onClick={() => set('discord_use_default_app_id', usingDefaultDiscordId ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${usingDefaultDiscordId ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {usingDefaultDiscordId ? 'Yes' : 'No'}
+          </button>
+        </Row>
+        {!usingDefaultDiscordId && (
+          <Row label="Custom App Client ID" desc="Optional override if you want to use your own Discord app">
+            <input value={settings.discord_client_id || ''} onChange={e => set('discord_client_id', e.target.value)}
+              placeholder={DEFAULT_DISCORD_CLIENT_ID}
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+        )}
+        <Row label="Connect On Startup" desc="Automatically tries to start Discord Rich Presence when Lokal opens">
+          <button
+            onClick={() => set('discord_auto_connect', settings.discord_auto_connect === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.discord_auto_connect === '1' ? 'Yes' : 'No'}
+          </button>
+        </Row>
+        <Row label="Connect">
+          <div className="flex items-center gap-3">
+            <button onClick={connectDiscord}
+              className="px-4 py-2 bg-[#5865F2]/20 border border-[#5865F2]/40 text-[#7289da] rounded-lg text-sm hover:bg-[#5865F2]/30 transition-colors">
+              Connect
+            </button>
+            <button onClick={disconnectDiscord}
+              className="px-4 py-2 bg-card border border-border text-muted rounded-lg text-sm hover:text-white hover:border-accent/30 transition-colors">
+              Kill Previous
+            </button>
+            {discordStatus && (
+              <span className={`text-xs ${discordStatus.startsWith('✓') ? 'text-accent' : discordStatus.startsWith('✗') ? 'text-red-400' : 'text-muted'}`}>
+                {discordStatus}
+              </span>
+            )}
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="Recommendations">
+        <Row label="Recommendation Source" desc="Choose which provider supplies Quick Picks, Artists For You, Rotation, Fresh Finds, Discovery, and Mix. Last.fm follows your scrobbles and profile by default.">
+          <select
+            value={settings.recommendation_source || 'lastfm'}
+            onChange={event => set('recommendation_source', event.target.value)}
+            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="lastfm">Last.fm</option>
+            <option value="youtube">YouTube Music</option>
+          </select>
+        </Row>
+        <Row stacked label="Playback Search Priority" desc="When playing a recommendation, search these sources in order until the same song is found. YouTube Music is first by default. Enabled searchable addons appear here automatically. This controls playback lookup for Discovery, Mix, and Radio; your recommendation provider still chooses the music.">
+          <PlaybackSourceSettings value={settings.playback_search_order} onChange={value => set('playback_search_order', value)} />
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="Scrobbling">
+        <Row label="Last.fm" desc={lastfmConnected ? '' : 'Sign in to Last.fm in Account Connections first.'}>
+          <button disabled={!lastfmConnected} aria-pressed={lastfmConnected && settings.lastfm_scrobbling === '1'}
+            onClick={() => set('lastfm_scrobbling', settings.lastfm_scrobbling === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${lastfmConnected && settings.lastfm_scrobbling === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {lastfmConnected && settings.lastfm_scrobbling === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="ListenBrainz" desc={lbStatus?.connected ? (lbStatus.queued ? `${lbStatus.queued} listen${lbStatus.queued === 1 ? '' : 's'} waiting to be sent` : '') : 'Sign in to ListenBrainz in Account Connections first.'}>
+          <button disabled={!lbStatus?.connected} aria-pressed={!!(lbStatus?.connected && lbStatus.enabled)}
+            onClick={async () => {
+              // Keep the current state if the change didn't go through.
+              const next = await Promise.resolve(api.listenbrainzSetEnabled(!lbStatus.enabled)).catch(() => null)
+              if (next && !next.error) setLbStatus(next)
+            }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${!!(lbStatus?.connected && lbStatus.enabled) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {!!(lbStatus?.connected && lbStatus.enabled) ? 'On' : 'Off'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+        <Section title="Soulseek">
+          <p className="text-xs text-muted leading-relaxed">
+            Search and download from Soulseek, where lossless (FLAC) copies are common. Lokal talks to{' '}
+            <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
+            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). Soulseek is a sharing network: slskd shares folders back by default, and most of what's on it is copyrighted, so only download what you're allowed to.
+          </p>
+          <Row label="slskd Address" desc="Where slskd's web interface runs.">
+            <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
+              placeholder="http://localhost:5030" spellCheck={false}
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="API Key">
+            <input type="password" value={settings.soulseek_api_key || ''} onChange={e => set('soulseek_api_key', e.target.value)}
+              placeholder="From slskd.yml" spellCheck={false} autoComplete="off"
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+          <Row label="slskd Downloads Folder" desc="Leave empty to use the folder slskd reports. Set it when slskd runs in Docker or on another machine, as this computer sees that folder. Finished files are moved from there into your music folder.">
+            <div className="flex items-center gap-2">
+              <input value={settings.soulseek_downloads_dir || ''} onChange={e => set('soulseek_downloads_dir', e.target.value)}
+                placeholder="Automatic" spellCheck={false}
+                className="w-48 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+              {api.isElectron && (
+                <button onClick={async () => { const f = await api.openFolder(); if (f) set('soulseek_downloads_dir', f) }}
+                  className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
+                  <FolderOpen size={14} />
+                </button>
+              )}
+            </div>
+          </Row>
+          <div className="flex items-center gap-3">
+            <button onClick={testSoulseek} disabled={soulseekCheck?.loading}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+              {soulseekCheck?.loading ? 'Checking...' : 'Save & Test'}
+            </button>
+            {soulseekCheck && !soulseekCheck.loading && (
+              soulseekCheck.error
+                ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
+                : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
+                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : `The API key works, but slskd isn't logged in to Soulseek${soulseekCheck.serverState ? ` (${soulseekCheck.serverState})` : ''}. Check the soulseek: username and password in slskd.yml, and slskd's own page.`}
+                    {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
+                    {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
+                  </p>
+            )}
+          </div>
+        </Section>
+      )}
+
       {api.isElectron && inCategory('integrations') && (
         <Section title="External Tools">
           <p className="text-xs text-muted mb-4">Manage yt-dlp and ffmpeg for downloading YouTube videos.</p>
@@ -1928,371 +1967,6 @@ export default function Settings() {
           </div>
           <p className="text-xs text-muted mt-3 text-center opacity-50">Click anywhere in app once to activate EQ</p>
         </div>
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-        <Section title="Soulseek">
-          <p className="text-xs text-muted leading-relaxed">
-            Search and download from Soulseek, where lossless (FLAC) copies are common. Lokal talks to{' '}
-            <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
-            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). Soulseek is a sharing network: slskd shares folders back by default, and most of what's on it is copyrighted, so only download what you're allowed to.
-          </p>
-          <Row label="slskd Address" desc="Where slskd's web interface runs.">
-            <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
-              placeholder="http://localhost:5030" spellCheck={false}
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-          <Row label="API Key">
-            <input type="password" value={settings.soulseek_api_key || ''} onChange={e => set('soulseek_api_key', e.target.value)}
-              placeholder="From slskd.yml" spellCheck={false} autoComplete="off"
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-          <Row label="slskd Downloads Folder" desc="Leave empty to use the folder slskd reports. Set it when slskd runs in Docker or on another machine, as this computer sees that folder. Finished files are moved from there into your music folder.">
-            <div className="flex items-center gap-2">
-              <input value={settings.soulseek_downloads_dir || ''} onChange={e => set('soulseek_downloads_dir', e.target.value)}
-                placeholder="Automatic" spellCheck={false}
-                className="w-48 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-              {api.isElectron && (
-                <button onClick={async () => { const f = await api.openFolder(); if (f) set('soulseek_downloads_dir', f) }}
-                  className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
-                  <FolderOpen size={14} />
-                </button>
-              )}
-            </div>
-          </Row>
-          <div className="flex items-center gap-3">
-            <button onClick={testSoulseek} disabled={soulseekCheck?.loading}
-              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-              {soulseekCheck?.loading ? 'Checking...' : 'Save & Test'}
-            </button>
-            {soulseekCheck && !soulseekCheck.loading && (
-              soulseekCheck.error
-                ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
-                : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
-                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : `The API key works, but slskd isn't logged in to Soulseek${soulseekCheck.serverState ? ` (${soulseekCheck.serverState})` : ''}. Check the soulseek: username and password in slskd.yml, and slskd's own page.`}
-                    {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
-                    {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
-                  </p>
-            )}
-          </div>
-        </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="Account Connections">
-        <ProviderConnections settingsOverride={settings} disableLastfmAuth onYouTubeSettingsChanged={patch => setSettings(previous => ({ ...previous, ...patch }))} onOpenSettings={(provider) => {
-          setActiveCategory(provider === 'youtube' ? 'library' : 'integrations')
-          if (provider === 'lastfm') setTimeout(() => document.getElementById('lastfm-api-key')?.focus(), 0)
-        }} />
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="Recommendations">
-        <Row label="Recommendation Source" desc="Choose which provider supplies Quick Picks, Artists For You, Rotation, Fresh Finds, Discovery, and Mix. Last.fm follows your scrobbles and profile by default.">
-          <select
-            value={settings.recommendation_source || 'lastfm'}
-            onChange={event => set('recommendation_source', event.target.value)}
-            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="lastfm">Last.fm</option>
-            <option value="youtube">YouTube Music</option>
-          </select>
-        </Row>
-        <Row stacked label="Playback Search Priority" desc="When playing a recommendation, search these sources in order until the same song is found. YouTube Music is first by default. Enabled searchable addons appear here automatically. This controls playback lookup for Discovery, Mix, and Radio; your recommendation provider still chooses the music.">
-          <PlaybackSourceSettings value={settings.playback_search_order} onChange={value => set('playback_search_order', value)} />
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="Discord Rich Presence">
-        <Row label="Use Default App ID" desc="Uses your built-in Discord app ID by default">
-          <button
-            onClick={() => set('discord_use_default_app_id', usingDefaultDiscordId ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${usingDefaultDiscordId ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {usingDefaultDiscordId ? 'Yes' : 'No'}
-          </button>
-        </Row>
-        {!usingDefaultDiscordId && (
-          <Row label="Custom App Client ID" desc="Optional override if you want to use your own Discord app">
-            <input value={settings.discord_client_id || ''} onChange={e => set('discord_client_id', e.target.value)}
-              placeholder={DEFAULT_DISCORD_CLIENT_ID}
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-        )}
-        <Row label="Connect On Startup" desc="Automatically tries to start Discord Rich Presence when Lokal opens">
-          <button
-            onClick={() => set('discord_auto_connect', settings.discord_auto_connect === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.discord_auto_connect === '1' ? 'Yes' : 'No'}
-          </button>
-        </Row>
-        <Row label="Connect">
-          <div className="flex items-center gap-3">
-            <button onClick={connectDiscord}
-              className="px-4 py-2 bg-[#5865F2]/20 border border-[#5865F2]/40 text-[#7289da] rounded-lg text-sm hover:bg-[#5865F2]/30 transition-colors">
-              Connect
-            </button>
-            <button onClick={disconnectDiscord}
-              className="px-4 py-2 bg-card border border-border text-muted rounded-lg text-sm hover:text-white hover:border-accent/30 transition-colors">
-              Kill Previous
-            </button>
-            {discordStatus && (
-              <span className={`text-xs ${discordStatus.startsWith('✓') ? 'text-accent' : discordStatus.startsWith('✗') ? 'text-red-400' : 'text-muted'}`}>
-                {discordStatus}
-              </span>
-            )}
-          </div>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="Last.fm">
-        <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
-          <div>
-            <p className="text-sm text-white font-medium">Quick Setup</p>
-            <p className="text-xs text-muted mt-0.5">Need your API app or Last.fm profile details first? These shortcuts open the right pages.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/api/account/create')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Create API App
-            </button>
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/api/accounts')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              API Dashboard
-            </button>
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/user')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Find Username
-            </button>
-          </div>
-        </div>
-        <Row label="API Key" desc="Open API Dashboard if you need to copy it from your Last.fm app settings">
-          <div className="flex items-center gap-2">
-            <input id="lastfm-api-key" value={settings.lastfm_api_key || ''} onChange={e => set('lastfm_api_key', e.target.value)}
-              placeholder="Your Last.fm API key"
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/api/accounts')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Open
-            </button>
-          </div>
-        </Row>
-        <Row label="API Secret" desc="Open API Dashboard if you need to copy the matching secret">
-          <div className="flex items-center gap-2">
-            <input value={settings.lastfm_api_secret || ''} onChange={e => set('lastfm_api_secret', e.target.value)}
-              placeholder="Your API secret"
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/api/accounts')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Open
-            </button>
-          </div>
-        </Row>
-        <Row label="Username" desc="Open your Last.fm profile if you need to confirm the exact username">
-          <div className="flex items-center gap-2">
-            <input value={settings.lastfm_username || ''} onChange={e => set('lastfm_username', e.target.value)}
-              placeholder="username"
-              className="w-40 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            <button
-              onClick={() => openLastfmPage('https://www.last.fm/user')}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Open
-            </button>
-          </div>
-        </Row>
-        <Row label="Last.fm Integration" desc="Turn Last.fm off completely, including now playing updates and scrobbles.">
-          <button
-            onClick={() => set('lastfm_enabled', settings.lastfm_enabled === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lastfm_enabled !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.lastfm_enabled !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Scrobbling" desc="Scrobble a track to Last.fm once you have listened to half of it, or 4 minutes for long tracks (Last.fm's rule). Tracks under 30 seconds are not scrobbled.">
-          <button
-            onClick={() => { const v = settings.lastfm_scrobbling !== '1'; set('lastfm_scrobbling', v ? '1' : '0') }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lastfm_scrobbling === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.lastfm_scrobbling === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row stacked label="Authorization" desc="Open Last.fm in your browser and let Lokal finish the connection automatically">
-          <div className="flex flex-col items-start gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  if (!settings.lastfm_api_key || !settings.lastfm_api_secret) {
-                    setLastfmStatus('Need API key and secret')
-                    pushLastfmFeed({
-                      level: 'error',
-                      label: 'Authorization',
-                      message: 'Add your API key and secret before authorizing'
-                    })
-                    return
-                  }
-                  setLastfmAuthorizing(true)
-                  setLastfmStatus('Waiting for browser authorization...')
-                  pushLastfmFeed({
-                    level: 'info',
-                    label: 'Authorization',
-                    message: 'Opened Last.fm authorization in your browser'
-                  })
-                  await api.lastfmAuthorize(settings.lastfm_api_key)
-                }}
-                className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-              >
-                {lastfmAuthorizing ? 'Waiting...' : 'Authorize in Browser'}
-              </button>
-              <input value={settings.lastfm_auth_token || ''} onChange={e => set('lastfm_auth_token', e.target.value)}
-                placeholder="Manual token fallback"
-                className="w-44 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-              <button 
-                onClick={async () => {
-                  if (!settings.lastfm_api_key || !settings.lastfm_api_secret || !settings.lastfm_auth_token) {
-                    setLastfmStatus('Need API key, secret, and token')
-                    pushLastfmFeed({
-                      level: 'error',
-                      label: 'Connection',
-                      message: 'Missing API key, secret, or auth token'
-                    })
-                    return
-                  }
-                  setLastfmStatus('Connecting...')
-                  pushLastfmFeed({
-                    level: 'info',
-                    label: 'Connection',
-                    message: 'Exchanging manual Last.fm token for a session'
-                  })
-                  const result = await api.lastfmConnect(settings.lastfm_api_key, settings.lastfm_api_secret, settings.lastfm_auth_token)
-                  if (result.sessionKey) {
-                    await api.saveSettings({ 
-                      lastfm_session_key: result.sessionKey,
-                      lastfm_username: result.username || settings.lastfm_username,
-                      lastfm_auth_token: settings.lastfm_auth_token
-                    })
-                    setSettings(prev => ({
-                      ...prev,
-                      lastfm_session_key: result.sessionKey,
-                      lastfm_username: result.username || prev.lastfm_username
-                    }))
-                    setLastfmStatus('✓ Connected as ' + (result.username || settings.lastfm_username))
-                    pushLastfmFeed({
-                      level: 'success',
-                      label: 'Connection',
-                      message: `Connected as ${result.username || settings.lastfm_username || 'Last.fm user'}`
-                    })
-                  } else {
-                    setLastfmStatus(result.error || 'Failed')
-                    pushLastfmFeed({
-                      level: 'error',
-                      label: 'Connection',
-                      message: result.error || 'Failed to connect to Last.fm'
-                    })
-                  }
-                }}
-                className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">
-                Connect
-              </button>
-            </div>
-            {lastfmStatus && (
-              <span className={`text-xs leading-relaxed ${lastfmStatus.startsWith('✓') ? 'text-accent' : lastfmStatus.startsWith('Need') || lastfmStatus.startsWith('Failed') ? 'text-red-400' : 'text-muted'}`}>
-                {lastfmStatus}
-              </span>
-            )}
-          </div>
-        </Row>
-        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-white font-medium">Last.fm Status</p>
-              <p className="text-xs text-muted mt-0.5">Connection, now playing, and scrobble events from this session.</p>
-            </div>
-            <div className="text-right text-xs text-muted">
-              <div>{settings.lastfm_session_key ? 'Session ready' : 'No session'}</div>
-              <div>{settings.lastfm_username ? `User: ${settings.lastfm_username}` : 'User: not connected'}</div>
-            </div>
-          </div>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {!lastfmFeed.length && (
-              <div className="text-xs text-muted">No Last.fm events yet.</div>
-            )}
-            {lastfmFeed.map(item => (
-              <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-black/20 px-3 py-2">
-                <div className="min-w-0">
-                  <div className={`text-xs ${item.level === 'success' ? 'text-accent' : item.level === 'error' ? 'text-red-400' : 'text-white/80'}`}>
-                    {item.label}
-                  </div>
-                  <div className="text-xs text-muted break-words">{item.message}</div>
-                </div>
-                <div className="text-[10px] text-muted whitespace-nowrap">
-                  {new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="ListenBrainz">
-        <p className="text-xs text-muted leading-relaxed">
-          Sends what you play to <span className="text-white">ListenBrainz</span>, the open alternative to Last.fm run by MetaBrainz: "now playing" when a song starts, and a listen once you've heard half of it (or 4 minutes). Listens made while offline are kept and sent later.
-        </p>
-        {lbStatus?.connected ? (
-          <>
-            <Row label="Account" desc={lbStatus.queued ? `${lbStatus.queued} listen${lbStatus.queued === 1 ? '' : 's'} waiting to be sent` : 'Connected'}>
-              <div className="flex items-center gap-2">
-                <button onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(lbStatus.username || '')}/`)}
-                  className="text-sm text-accent hover:underline">{lbStatus.username || 'Connected'}</button>
-                <button onClick={async () => { await api.listenbrainzDisconnect(); setLbToken(''); setLbMessage(null); refreshListenBrainz() }}
-                  className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">Disconnect</button>
-              </div>
-            </Row>
-            <Row label="Submit Listens" desc="Turn off to pause sending without disconnecting.">
-              <button onClick={async () => {
-                  // Keep the current state if the change didn't go through.
-                  const next = await Promise.resolve(api.listenbrainzSetEnabled(!lbStatus.enabled)).catch(() => null)
-                  if (next && !next.error) setLbStatus(next)
-                }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${lbStatus.enabled ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                {lbStatus.enabled ? 'On' : 'Off'}
-              </button>
-            </Row>
-          </>
-        ) : (
-          <>
-            <Row label="User Token" desc="Copy it from your ListenBrainz settings page (listenbrainz.org/settings). It's stored on this device only.">
-              <div className="flex items-center gap-2">
-                <input type="password" value={lbToken} onChange={e => { setLbToken(e.target.value); setLbMessage(null) }}
-                  placeholder="ListenBrainz user token" spellCheck={false} autoComplete="off"
-                  className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-                <button onClick={() => api.openExternal('https://listenbrainz.org/settings/')}
-                  className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">Get Token</button>
-              </div>
-            </Row>
-            <div className="flex items-center gap-3">
-              <button onClick={connectListenBrainz} disabled={lbMessage?.loading || !lbToken.trim()}
-                className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-                {lbMessage?.loading ? 'Checking...' : 'Connect'}
-              </button>
-              {lbMessage?.error && <p className="text-xs text-red-400">{lbMessage.error}</p>}
-            </div>
-          </>
-        )}
       </Section>
       )}
 
