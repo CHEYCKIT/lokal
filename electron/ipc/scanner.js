@@ -1276,10 +1276,10 @@ function registerScannerHandlers(ipcMain) {
   })
   ipcMain.handle('scanner:search', (_, q) => {
     const db = getDB()
-    const term = `%${q}%`
-    const artists = db.prepare(`SELECT a.*, COUNT(atl.track_id) as track_count FROM artists a JOIN artist_track_links atl ON atl.artist_id = a.id WHERE a.name LIKE ? GROUP BY a.id LIMIT 5`).all(term)
-    const artistsWithFallback = artists.map(artist => addArtistFallback(db, artist))
-    const tracks = db.prepare(`SELECT * FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND (title LIKE ? OR artist LIKE ? OR album LIKE ?) LIMIT 40`).all(term, term, term)
+    // Every word in one of the fields, in any order (electron/librarySearch.js).
+    const { searchTracks, searchArtists } = require('../librarySearch')
+    const tracks = searchTracks(db, q, 40)
+    const artistsWithFallback = searchArtists(db, q, tracks).map(artist => addArtistFallback(db, artist))
     return { artists: artistsWithFallback, tracks }
   })
   ipcMain.handle('scanner:searchLyrics', (_, q) => {
@@ -2030,8 +2030,9 @@ function registerV4Handlers(ipcMain) {
     return enrichAlbumRows(rows)
   })
   ipcMain.handle('scanner:searchAlbums', (_, q) => {
-    const term = `%${q}%`
-    const rows = getDB().prepare(`${albumRowsQuery("AND (album LIKE ? OR album_artist LIKE ? OR artist LIKE ?)")} ORDER BY album ASC`).all(term, term, term)
+    const match = require('../librarySearch').wordsMatch(q, ['album', 'album_artist', 'artist'])
+    if (!match) return []
+    const rows = getDB().prepare(`${albumRowsQuery(`AND ${match.sql}`)} ORDER BY album ASC`).all(...match.params)
     return enrichAlbumRows(rows)
   })
   ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); forgetDownloads(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })

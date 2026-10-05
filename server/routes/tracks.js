@@ -560,9 +560,8 @@ router.get('/', (req, res) => {
 })
 
 router.get('/search', (req, res) => {
-  const { q = '' } = req.query
-  const term = `%${q}%`
-  res.json(getDB().prepare("SELECT * FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND (title LIKE ? OR artist LIKE ? OR album LIKE ?) LIMIT 60").all(term, term, term))
+  // Every word in one of the fields, in any order (electron/librarySearch.js).
+  res.json(require('../../electron/librarySearch').searchTracks(getDB(), String(req.query.q || ''), 60))
 })
 
 router.get('/search-lyrics', (req, res) => {
