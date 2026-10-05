@@ -61,6 +61,17 @@ function Section({ title, children }) {
     </div>
   )
 }
+/** 1536 -> "1.5 KB" */
+function fmtBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = n / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`
+}
+
 // `stacked`: the control goes under the text, full width (a wide control
 // beside it would squeeze the description into a narrow column).
 function Row({ label, desc, children, stacked = false }) {
@@ -304,6 +315,20 @@ export default function Settings() {
   }
   // ListenBrainz: its token is saved only once ListenBrainz confirms it.
   const [lbStatus, setLbStatus] = useState(null)
+  const [cacheInfo, setCacheInfo] = useState(null) // { motion, playback, web, limit, limits } | { busy }
+  const refreshCache = () => { Promise.resolve(api.cacheUsage?.()).then(info => { if (info && !info.error) setCacheInfo(info) }).catch(() => {}) }
+  const setCacheLimit = async (mb) => {
+    await Promise.resolve(api.saveSettings({ cache_limit_mb: String(mb) })).catch(() => {})
+    setSettings(prev => ({ ...prev, cache_limit_mb: String(mb) }))
+    const info = await Promise.resolve(api.cacheTrim?.()).catch(() => null)
+    if (info && !info.error) setCacheInfo(info)
+  }
+  const clearCache = async () => {
+    setCacheInfo(info => ({ ...info, busy: true }))
+    const info = await Promise.resolve(api.cacheClear?.()).catch(() => null)
+    if (info && !info.error) setCacheInfo(info)
+    else setCacheInfo(prev => ({ ...prev, busy: false }))
+  }
   /** Reload the ListenBrainz connection status. */
   const refreshListenBrainz = () => { Promise.resolve(api.listenbrainzStatus?.()).then(s => { if (s && !s.error) setLbStatus(s) }).catch(() => {}) }
   const [spotifyCheck, setSpotifyCheck] = useState(null)
@@ -386,6 +411,7 @@ export default function Settings() {
   }, [location.state?.category])
   // Load the ListenBrainz connection state when Integrations is opened.
   useEffect(() => { if (activeCategory === 'integrations') refreshListenBrainz() }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeCategory === 'data' && api.isElectron) refreshCache() }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   // Every category shares the page's one scroll container (App's <main>), so
   // switching from halfway down a long category used to land halfway down
   // the next one. Start each category at the top; layout effect so the new
@@ -1565,6 +1591,26 @@ export default function Settings() {
                 </button>
               </div>
             )}
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {api.isElectron && inCategory('data') && (
+      <Section title="Cache">
+        <Row label="Cache Size Limit" desc="Moving covers and playable copies of files the player can't decode (Apple Lossless, WMA...) are kept on disk so they don't have to be made again. Past this size, the ones used longest ago are removed.">
+          <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
+            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
+          </select>
+        </Row>
+        <Row label="In Use" desc={cacheInfo ? `Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
+              {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}
+            </button>
           </div>
         </Row>
       </Section>

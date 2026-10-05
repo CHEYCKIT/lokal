@@ -110,26 +110,15 @@ async function makePlayable(filePath, { ffmpeg } = {}) {
 
 // ---------------------------------------------------------------- playback cache
 
-const CACHE_LIMIT_BYTES = 3 * 1024 ** 3
 const inFlight = new Map()
 
 function cacheKey(filePath, stat) {
   return crypto.createHash('sha1').update(`${filePath}\u0000${stat.size}\u0000${stat.mtimeMs}`).digest('hex').slice(0, 20)
 }
 
-function trimCache(dir) {
-  let entries = []
-  try {
-    entries = fs.readdirSync(dir)
-      .filter(f => !f.includes('.part'))
-      .map(f => { const p = path.join(dir, f); const s = fs.statSync(p); return { p, size: s.size, used: s.atimeMs || s.mtimeMs } })
-      .sort((a, b) => b.used - a.used)
-  } catch { return }
-  let total = 0
-  for (const e of entries) {
-    total += e.size
-    if (total > CACHE_LIMIT_BYTES) { try { fs.unlinkSync(e.p) } catch {} }
-  }
+// Playable copies share the cache limit with moving covers (electron/cache.js).
+function trimCache(dir, keep) {
+  require('../cache').trim({ keep })
 }
 
 /**

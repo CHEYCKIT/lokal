@@ -31,7 +31,6 @@ const SOURCES = ['apple', 'tidal', 'community', 'spotify']
 const DEFAULT_SOURCES = ['apple', 'tidal', 'community'] // Spotify needs a cookie, so it's opt-in
 const HIT_TTL = 30 * 24 * 3600 * 1000
 const MISS_TTL = 3 * 24 * 3600 * 1000
-const CACHE_LIMIT_BYTES = 600 * 1024 * 1024
 
 // ---------------------------------------------------------------- matching
 
@@ -301,20 +300,9 @@ async function download(url, dest, timeoutMs = 60000) {
   }
 }
 
+// Moving covers share the cache limit with playback copies (electron/cache.js).
 function trimCache(dir, keep) {
-  let entries = []
-  try {
-    entries = fs.readdirSync(dir).filter(f => f.endsWith('.mp4')).map(f => {
-      const p = path.join(dir, f)
-      const s = fs.statSync(p)
-      return { p, size: s.size, used: s.atimeMs || s.mtimeMs }
-    }).sort((a, b) => b.used - a.used)
-  } catch { return }
-  let total = 0
-  for (const e of entries) {
-    total += e.size
-    if (total > CACHE_LIMIT_BYTES && e.p !== keep) { try { fs.unlinkSync(e.p) } catch {} }
-  }
+  require('../cache').trim({ keep })
 }
 
 const inFlight = new Map()
