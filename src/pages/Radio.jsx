@@ -36,9 +36,16 @@ export default function Radio() {
     if (!seed || loading) return
     const sessionKey = sessionKeyRef.current
     setLoading(true)
-    const next = await buildRadio(seed, user?.id)
+    let next = []
+    try {
+      next = await buildRadio(seed, user?.id)
+    } catch {
+      next = []
+    } finally {
+      // A failed build must not leave Regenerate disabled and spinning.
+      if (sessionKey === sessionKeyRef.current) setLoading(false)
+    }
     if (sessionKey !== sessionKeyRef.current) return
-    setLoading(false)
     if (next.length) {
       setTracks(next)
       playQueue(next, 0, { type: 'radio', name: `${seed.title || seed.artist} Radio` })
