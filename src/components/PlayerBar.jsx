@@ -134,7 +134,8 @@ export default function PlayerBar() {
 
   return (
     <>
-      <div className="h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
+      {/* Glass, like the downloads popup: a floating card over the app's background. */}
+      <div className="mx-3 mb-3 h-20 rounded-2xl border border-border flex items-center px-4 gap-4 flex-shrink-0 z-10 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl" style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.82)' }}>
         <div className="flex items-center gap-3 w-60 min-w-0">
         <button onClick={toggleFullscreen} disabled={!currentTrack}
           className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
