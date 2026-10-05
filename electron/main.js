@@ -255,6 +255,7 @@ const MINI_MAX_HEIGHT = 800
 // An explicit size well past any real display works around it.
 const NORMAL_MAX_WIDTH = 100000
 const NORMAL_MAX_HEIGHT = 100000
+const windowStatePath = path.join(app.getPath('userData'), 'window-state.json')
 let miniModeRestoreState = null
 let miniModeEnabled = false
 let mediaKeysPreferred = false
@@ -277,6 +278,36 @@ function centeredBounds(width, height, referenceBounds) {
   const x = Math.round(area.x + (area.width - width) / 2)
   const y = Math.round(area.y + (area.height - height) / 2)
   return { x, y, width, height }
+}
+
+function validWindowBounds(bounds) {
+  if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return null
+  if (bounds.width < NORMAL_MIN_WIDTH || bounds.height < NORMAL_MIN_HEIGHT) return null
+  const displays = screen.getAllDisplays()
+  const visible = displays.some(display => {
+    const area = display.workArea
+    return bounds.x < area.x + area.width && bounds.x + bounds.width > area.x && bounds.y < area.y + area.height && bounds.y + bounds.height > area.y
+  })
+  return visible ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) } : null
+}
+
+function loadWindowState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(windowStatePath, 'utf8'))
+    const bounds = validWindowBounds(saved?.bounds)
+    return bounds ? { bounds, maximized: saved.maximized === true } : null
+  } catch { return null }
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed() || miniModeEnabled) return
+  const bounds = validWindowBounds(typeof mainWindow.getNormalBounds === 'function' ? mainWindow.getNormalBounds() : mainWindow.getBounds())
+  if (!bounds) return
+  try {
+    const tmp = `${windowStatePath}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify({ bounds, maximized: mainWindow.isMaximized() }))
+    fs.renameSync(tmp, windowStatePath)
+  } catch {}
 }
 
 function emitPlayerCommand(action) {
@@ -322,9 +353,10 @@ function setPreferredMediaKeys(enabled) {
 }
 
 function createWindow() {
+  const saved = loadWindowState()
   mainWindow = new BrowserWindow({
     icon: path.join(__dirname, process.platform === 'win32' ? '../public/lokal-icon.ico' : '../public/lokal-icon.png'),
-    width: 1400, height: 860, minWidth: NORMAL_MIN_WIDTH, minHeight: NORMAL_MIN_HEIGHT,
+    ...(saved?.bounds || { width: 1400, height: 860 }), minWidth: NORMAL_MIN_WIDTH, minHeight: NORMAL_MIN_HEIGHT,
     useContentSize: true,
     resizable: true,
     frame: false, backgroundColor: savedWindowBackground(),
@@ -343,6 +375,12 @@ function createWindow() {
   mainWindow.on('hide', () => sendVisibility(true))
   mainWindow.on('restore', () => sendVisibility(false))
   mainWindow.on('show', () => sendVisibility(false))
+  mainWindow.on('resize', saveWindowState)
+  mainWindow.on('move', saveWindowState)
+  mainWindow.on('maximize', saveWindowState)
+  mainWindow.on('unmaximize', saveWindowState)
+  mainWindow.on('close', saveWindowState)
+  if (saved?.maximized) mainWindow.maximize()
 
   
   

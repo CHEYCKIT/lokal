@@ -49,7 +49,7 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
   const enrich = async (data, isCurrent, commit) => {
     if (!client.discoveryArtwork) return
     const groups = [
-      ['artists', 'artist'], ['albums', 'album'], ['quickPicks', 'track'], ['freshFinds', 'track'], ['history', 'track'],
+      ['artists', 'artist'], ['albums', 'album'], ['quickPicks', 'track'], ['liked', 'track'], ['freshFinds', 'track'], ['history', 'track'],
     ]
     await mapLimited(groups, async ([section, type]) => {
       const items = data[section] || []
@@ -81,7 +81,7 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
         if (!result || result.error) throw new Error(result?.error || 'Recommendation provider unavailable.')
         const previous = state.data
         const section = name => Array.isArray(result[name]) ? result[name] : previous?.[name] || []
-        const data = { ...result, source: state.source, quickPicks: section('quickPicks'), history: section('history'), artists: section('artists'), albums: section('albums'), freshFinds: section('freshFinds'), updatedAt: Date.now() }
+        const data = { ...result, source: state.source, quickPicks: section('quickPicks'), liked: section('liked'), history: section('history'), artists: section('artists'), albums: section('albums'), freshFinds: section('freshFinds'), updatedAt: Date.now() }
         update({ data, error: result.warnings?.length ? `Some ${sourceName(state.source)} sections could not refresh. ${result.warnings[0]}` : '' })
         // Artwork enrichment is independent of playback and survives navigation.
         enrich(data, isCurrent, next => update({ data: next })).catch(() => {})
