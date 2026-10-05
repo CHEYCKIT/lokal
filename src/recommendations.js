@@ -2,7 +2,7 @@ import { api } from './api.js'
 import { DEFAULT_PLAYBACK_SOURCES, orderedPlaybackSources } from './playbackSources.js'
 import { isPlayable, providerLabel, streamRef } from './onlineTracks.js'
 
-export const recommendationKey = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+export const recommendationKey = value => String(value || '').normalize('NFKD').replace(/(\p{Script=Latin})\p{M}+/gu, '$1').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim()
 export const songKey = track => `${recommendationKey(track?.artist)}\0${recommendationKey(track?.title)}`
 export const sourceName = source => source === 'youtube' ? 'YouTube Music' : 'Last.fm'
 
@@ -32,10 +32,27 @@ const titleKey = title => recommendationKey(String(title || '')
   .replace(/\s*[([](?:feat\.?|ft\.?|featuring)\s+[^)\]]+[)\]]/gi, stripFeatured)
   .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i, stripFeatured))
 
+const versionWords = /\b(?:remix|live|cover|instrumental|acoustic|karaoke|edit|sped up|slowed|nightcore)\b/i
+const nonLatinLetters = value => [...value].some(char => /\p{L}/u.test(char) && !/\p{Script=Latin}/u.test(char))
+
+/** Explicit bilingual aliases, e.g. "流線 - ryusen", without dropping version labels. */
+export function recommendationTitles(title) {
+  const original = String(title || '').normalize('NFC').trim()
+  const parts = original.split(/\s+[-–—|/]\s+/).map(part => part.trim())
+  if (parts.length !== 2 || versionWords.test(original) || nonLatinLetters(parts[0]) === nonLatinLetters(parts[1]) || !parts.some(part => !nonLatinLetters(part) && /\p{Script=Latin}/u.test(part))) return [original]
+  return [original, ...parts.filter(part => !nonLatinLetters(part)), ...parts.filter(nonLatinLetters)]
+}
+
+export function recommendationQueries(candidate) {
+  const artist = String(candidate.artist || '').normalize('NFC').trim()
+  const lead = String(candidate.artists?.[0] || artist).normalize('NFC').trim()
+  return [...new Set(recommendationTitles(candidate.title).flatMap(title => [artist, lead].map(name => `${name} ${title}`.trim())))].slice(0, 6)
+}
+
 export function recommendationMatch(candidate, results) {
-  const title = titleKey(candidate?.title)
+  const titles = recommendationTitles(candidate?.title).map(titleKey)
   const artist = recommendationKey(candidate?.artist)
-  if (!title || !artist) return null
+  if (!titles[0] || !artist) return null
   const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
@@ -43,7 +60,7 @@ export function recommendationMatch(candidate, results) {
     const name = String(result?.title || '')
     const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
     const resultTitle = prefix && [artist, leadArtist].includes(recommendationKey(prefix[1])) ? prefix[2] : name
-    if (titleKey(resultTitle) !== title) return false
+    if (!recommendationTitles(resultTitle).map(titleKey).some(title => titles.includes(title))) return false
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
     return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === leadArtist)
       || recommendationKey(result.artist).replace(/ topic$/, '') === artist
@@ -58,7 +75,7 @@ export function recommendationVideoId(track) {
   if (ref?.provider === 'yt' && valid(ref.id)) return ref.id
   const saved = String(track?.source_ref || '').match(/^yt:([\w-]{11})$/)
   if (saved) return saved[1]
-  if (track?.provider === 'yt' && valid(track.id)) return String(track.id)
+  if ((track?.provider === 'yt' || !track?.provider && track?.source === 'youtube' && !track?.file_path) && valid(track.id)) return String(track.id)
   for (const link of [track?.source_url, track?.url]) {
     try {
       const url = new URL(link)
@@ -69,10 +86,10 @@ export function recommendationVideoId(track) {
   return null
 }
 
-export async function timed(work, ms = 15000) {
+export async function timed(work, ms = 15000, message = 'Provider lookup timed out') {
   let timer
   try {
-    return await Promise.race([Promise.resolve().then(work), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Provider lookup timed out')), ms) })])
+    return await Promise.race([Promise.resolve().then(work), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms) })])
   } finally { clearTimeout(timer) }
 }
 
@@ -97,16 +114,16 @@ export function playbackFallbackMessage({ candidate, source, nextSource, reason,
 
 // Search metadata alone cannot tell whether a full stream is available (in
 // particular, SoundCloud may only report its Go+ preview during resolution).
-export async function playbackAvailability(match, provider, client = api, timeoutMs = 15000, onError = () => {}) {
+export async function playbackAvailability(match, provider, client = api, timeoutMs = 35000, onError = () => {}) {
   if (match.preview) return 'preview'
   if (typeof client.onlinePrepare !== 'function') return null
-  const prepared = await timed(() => client.onlinePrepare(provider, String(match.id)), timeoutMs)
+  const prepared = await timed(() => client.onlinePrepare(provider, String(match.id)), timeoutMs, 'Audio preparation timed out. Try again.')
   if (prepared?.preview) return 'preview'
   if (prepared?.error) onError(prepared.error)
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, sources: configuredSources } = {}) {
+export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, sources: configuredSources } = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
@@ -128,14 +145,26 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
           try {
             const direct = source.id === 'yt' && videoId
             if (isCurrent()) onProgress?.(`${direct ? 'Loading' : 'Searching'} ${source.label || providerLabel(source.id)} ${direct ? 'track' : 'for'} ${candidate.artist} — “${candidate.title}”…`)
-            const response = direct ? null : await timed(() => client.onlineSearch(`${candidate.artist} ${candidate.title}`, source.id), timeoutMs)
-            if (!isCurrent()) return null
-            if (response?.error) { failed('unavailable', response.error); continue }
-            const match = direct ? { ...candidate, videoId, provider: 'yt', id: videoId } : recommendationMatch(candidate, response?.results)
+            let match = direct ? { ...candidate, videoId, provider: 'yt', id: videoId } : null
+            let searchError = ''
+            if (!direct) {
+              const deadline = Date.now() + timeoutMs
+              for (const query of recommendationQueries(candidate)) {
+                if (!isCurrent()) return null
+                const remaining = deadline - Date.now()
+                if (remaining <= 0) throw new Error('Provider lookup timed out')
+                const response = await timed(() => client.onlineSearch(query, source.id), remaining)
+                if (!isCurrent()) return null
+                if (response?.error) { searchError = response.error; break }
+                match = recommendationMatch(candidate, response?.results)
+                if (match) break
+              }
+            }
+            if (searchError) { failed('unavailable', searchError); continue }
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
             let detail
-            const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, timeoutMs, message => { detail = message }) : null
+            const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
             if (unavailable) { failed(unavailable, detail); continue }
             const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id }]), timeoutMs)

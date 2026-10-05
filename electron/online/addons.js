@@ -266,18 +266,23 @@ async function search(db, key, query, { fetchImpl, limit = 20 } = {}) {
   const provider = providerFor(key)
   const results = (Array.isArray(json.tracks) ? json.tracks : [])
     .filter(t => t && t.id != null && t.title)
-    .map(t => ({
-      provider,
-      id: String(t.id).slice(0, 300),
-      title: String(t.title).slice(0, 500),
-      artist: String(t.artist || (Array.isArray(t.artists) ? t.artists.map(a => a?.name || a).join(', ') : '') || '').slice(0, 500),
-      artists: [String(t.artist || '')].filter(Boolean),
-      album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
-      duration: durationOf(t),
-      thumbnail: /^https:\/\//.test(String(t.artworkURL || t.artwork || '')) ? String(t.artworkURL || t.artwork) : null,
-      quality: t.format ? String(t.format).slice(0, 40) : null,
-      kind: 'song',
-    }))
+    .map(t => {
+      const name = artist => String(typeof artist === 'object' ? artist?.name || '' : artist || '').slice(0, 500)
+      const artists = Array.isArray(t.artists) ? t.artists.map(name).filter(Boolean) : []
+      if (!artists.length && name(t.artist)) artists.push(name(t.artist))
+      return {
+        provider,
+        id: String(t.id).slice(0, 300),
+        title: String(t.title).slice(0, 500),
+        artist: name(t.artist) || artists.join(', '),
+        artists,
+        album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
+        duration: durationOf(t),
+        thumbnail: /^https:\/\//.test(String(t.artworkURL || t.artwork || '')) ? String(t.artworkURL || t.artwork) : null,
+        quality: t.format ? String(t.format).slice(0, 40) : null,
+        kind: 'song',
+      }
+    })
   if (searchCache.size > 100) searchCache.delete(searchCache.keys().next().value)
   searchCache.set(cacheKey, { at: Date.now(), results })
   return results.slice(0, limit)
