@@ -135,6 +135,10 @@ function jobSourceRef(kind, url, opts = {}) {
 }
 
 /** Where a download's files come from, kept on their tracks: yt, sc, an addon (a-<key>), soulseek or web. */
+// Quality tiers, worst to best, for deciding whether a new download is an upgrade.
+const TIER_RANK = { unknown: 0, low: 1, high: 2, lossless: 3, hires: 4 }
+const TIER_NAME = { low: 'low-quality', high: 'high-quality', lossless: 'lossless', hires: 'hi-res' }
+
 function jobSourceLabel(job) {
   if (job.kind === 'soulseek') return 'soulseek'
   if (job.opts?.addonSource?.provider) return job.opts.addonSource.provider
@@ -998,12 +1002,20 @@ class DownloadManager {
     try {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
       const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
+      // The same song, downloaded before (from YouTube, say) and now in better
+      // quality (an addon's FLAC): the new file takes the old one's place in
+      // its track, which keeps its playlists, likes and history. Otherwise
+      // indexing would only see a duplicate and leave the new file out of the
+      // library (a later rescan then added it as a file of unknown source).
+      const upgraded = result?.duplicate && result.id ? await this.replaceWorseCopy(job, result.id, filepath) : false
       if (result?.id) {
         // Where it came from: tells versions apart, and stops a second download.
         // A file already in the library (indexing gave back its track) keeps
-        // the source it had.
+        // the source it had, unless this download just replaced its file.
         try {
-          this.db().prepare('UPDATE tracks SET download_source = COALESCE(download_source, ?), source_ref = COALESCE(source_ref, ?) WHERE id = ?')
+          this.db().prepare(upgraded
+            ? 'UPDATE tracks SET download_source = ?, source_ref = ? WHERE id = ?'
+            : 'UPDATE tracks SET download_source = COALESCE(download_source, ?), source_ref = COALESCE(source_ref, ?) WHERE id = ?')
             .run(jobSourceLabel(job), job.sourceRef || null, result.id)
         } catch {}
         // No cover inside the file (common on Soulseek, where the art is a
@@ -1057,6 +1069,44 @@ class DownloadManager {
         try { this.deps.onLibraryUpdated?.(result) } catch {}
       }
     } catch {}
+  }
+
+  /**
+   * `filepath` is a song the library already has as track `trackId`. When
+   * that track was itself downloaded and this file is of a better quality
+   * tier (Low < High < Lossless < Hi-res), put this file in its place (the old
+   * one is kept aside, like "Get it in lossless" does). Your own files are
+   * never replaced. True when the file was swapped.
+   */
+  async replaceWorseCopy(job, trackId, filepath) {
+    try {
+      const quality = require('../quality')
+      const track = this.db().prepare("SELECT id, file_path, download_source, lossless, bitrate, codec, sample_rate, bit_depth FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(trackId)
+      if (!track?.download_source || path.resolve(track.file_path) === path.resolve(filepath)) return false
+      const before = track.lossless === null || track.lossless === undefined
+        ? (fs.existsSync(track.file_path) ? await this.fileTier(track.file_path) : 'unknown')
+        : quality.tierOf(track)
+      const after = await this.fileTier(filepath)
+      if (!(TIER_RANK[after] > TIER_RANK[before])) return false
+      const { upgradeTrackFile } = require('../quality/upgrade')
+      const up = await upgradeTrackFile(this.db(), trackId, filepath, { storageDir: this.deps.getStorageDir?.() })
+      if (!up?.id) {
+        job.outputLines.push(`[Lokal] Not used in place of the earlier copy: ${up?.error || 'unknown error'}`)
+        return false
+      }
+      job.outputLines.push(`[Lokal] Replaced the earlier ${TIER_NAME[before] || ''} copy with this ${TIER_NAME[after]} file${up.movedTo ? ` (the old file was moved to ${up.movedTo})` : ''}`)
+      return true
+    } catch (e) {
+      job.outputLines.push(`[Lokal] Could not compare with the earlier copy: ${e.message}`)
+      return false
+    }
+  }
+
+  /** A file's quality tier (low, high, lossless, hires). */
+  async fileTier(file) {
+    const quality = require('../quality')
+    const meta = await require('music-metadata').parseFile(file, { duration: false, skipCovers: true })
+    return quality.tierOf({ ...quality.qualityFields(meta), bitrate: meta?.format?.bitrate ? Math.round(meta.format.bitrate / 1000) : null })
   }
 
   async onExit(job, code, err) {
