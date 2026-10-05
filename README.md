@@ -140,6 +140,9 @@ Know what you're actually listening to:
 - **Spectrum check:** looks at the spectrum of your lossless files to catch **fake FLACs**, ones converted from an MP3 (needs ffmpeg).
 - **Worth upgrading:** lists your lossy and suspect files, lowest quality first.
 - **Get it in lossless:** finds a better copy through MusicBrainz store links, Qobuz, Bandcamp, 7digital and Soulseek, with **Discogs** and **AllMusic** to check which releases exist.
+
+  ![Get it in lossless: Qobuz, Bandcamp, 7digital, Discogs, AllMusic and Soulseek for one song](docs/screenshots/lossless.webp)
+
 - **Pill in the player bar:** the playing song's tier shows under the artist, and hovering says what it means.
 
 ---
@@ -204,7 +207,7 @@ Know what you're actually listening to:
 
 ## Integrations
 
-![Account connections in Settings: Last.fm, ListenBrainz, YouTube Music and Discord](docs/screenshots/accounts.webp)
+![Account connections in Settings: Last.fm and ListenBrainz connected; YouTube Music and Discord connect from the desktop app](docs/screenshots/accounts.webp)
 
 Everything is connected from **Settings → Integrations → Account Connections**:
 
