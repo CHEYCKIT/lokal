@@ -15,7 +15,7 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         muted
           ? 'border-border bg-card text-muted hover:border-accent/30 hover:text-white'
           : 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
@@ -26,7 +26,7 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
   )
 }
 
-function AccountCard({ icon: Icon, tint, name, connected, status, children }) {
+function AccountCard({ icon: Icon, tint, name, connected, status, note, children }) {
   return (
     <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -39,7 +39,8 @@ function AccountCard({ icon: Icon, tint, name, connected, status, children }) {
         </div>
         {connected && <CheckCircle2 size={16} className="text-green-400" />}
       </div>
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      <div className="flex flex-nowrap items-center gap-2">{children}</div>
+      {note && <p className="text-xs leading-relaxed text-red-300">{note}</p>}
     </div>
   )
 }
@@ -141,7 +142,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   const signInYouTube = async () => {
     setYoutubeAuthorizing(true)
     setYoutubeSigningIn(true)
-    setYoutubeState({ message: 'Opening YouTube Music in an isolated Lokal window. Use Sign in on that page; account verification is automatic.', tone: 'muted' })
+    setYoutubeState({ message: '', tone: 'muted' })
     try {
       const result = await api.youtubeSignIn({ mode: 'embedded' })
       await loadSettings(true)
@@ -218,40 +219,20 @@ export default function ProviderConnections({ compact = false, settingsOverride 
             : <ActionButton onClick={() => setSignIn('listenbrainz')}><LogIn size={13} />Sign in</ActionButton>}
         </AccountCard>
 
-        <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600/10 text-red-300">
-                <Youtube size={16} />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">YouTube Music</p>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-                  <StatusDot connected={youtubeConnected} />
-                  {youtubeConnected ? 'Account access verified' : youtubeAccountReady ? youtubeStatus.error ? 'Saved session needs reconnecting' : 'Session saved · not verified' : 'Account not connected'}
-                </div>
-              </div>
-            </div>
-            {youtubeConnected && <CheckCircle2 size={16} className="text-green-400" />}
-          </div>
-          <p className="text-xs leading-relaxed text-muted">
-            {api.isElectron ? 'YouTube Music opens in an isolated Lokal window. Use the website’s Sign in button. Lokal keeps the full browser session after Music confirms account access and restores it when the app restarts.' : 'YouTube Music sign-in is available in the desktop app.'}
-          </p>
-          {api.isElectron && <div className="flex flex-wrap gap-2"><ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeAuthorizing ? <RefreshCw size={13} className="animate-spin" /> : <Youtube size={13} />}Sign in to YouTube Music</ActionButton>{youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>Cancel sign-in</ActionButton>}</div>}
-          <div className="flex flex-wrap items-center gap-2">
-              {youtubeAccountReady && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify account access</ActionButton>}
-              {youtubeAccountReady && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
-          </div>
-          {youtubeState.message && <p className={`text-xs leading-relaxed ${youtubeState.tone === 'success' ? 'text-green-400' : youtubeState.tone === 'error' ? 'text-red-300' : 'text-muted'}`}>{youtubeState.message}</p>}
-          {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
-        </div>
+        <AccountCard icon={Youtube} tint="bg-red-600/10 text-red-300" name="YouTube Music" connected={youtubeConnected}
+          note={youtubeState.tone === 'error' ? youtubeState.message : youtubeStatus.error}
+          status={!api.isElectron ? 'Available in the desktop app' : youtubeConnected ? 'Connected' : youtubeAccountReady ? youtubeStatus.error ? 'Needs signing in again' : 'Not verified' : 'Not connected'}>
+          {api.isElectron && !youtubeConnected && <ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeSigningIn ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Sign in</ActionButton>}
+          {youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>Cancel</ActionButton>}
+          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify</ActionButton>}
+          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
+        </AccountCard>
 
-        <AccountCard icon={Gamepad2} tint="bg-[#5865F2]/15 text-[#8b95f5]" name="Discord" connected={discord.connected}
+        <AccountCard icon={Gamepad2} tint="bg-[#5865F2]/15 text-[#8b95f5]" name="Discord" connected={discord.connected} note={discord.error}
           status={!api.isElectron ? 'Available in the desktop app' : discord.connected ? 'Rich Presence connected' : 'Not connected'}>
           {api.isElectron && (discord.connected
             ? <ActionButton onClick={disconnectDiscord} disabled={discord.busy} muted>Disconnect</ActionButton>
             : <ActionButton onClick={connectDiscord} disabled={discord.busy}>{discord.busy ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Connect</ActionButton>)}
-          {discord.error && <p className="w-full text-xs text-red-300">{discord.error}</p>}
         </AccountCard>
       </div>
       <LastfmSignInModal open={signIn === 'lastfm'} onClose={() => setSignIn(null)} settings={settings} onConnected={changeSettings} />
