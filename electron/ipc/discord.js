@@ -215,6 +215,9 @@ function registerDiscordHandlers(ipcMain) {
     return setActivity(track, isPlaying)
   })
 
+  // Connected once Discord accepted the login (the client knows its user).
+  ipcMain.handle('discord:status', () => ({ connected: !!rpcClient?.user }))
+
   ipcMain.handle('discord:disconnect', async () => {
     await disconnectRpc()
     return true

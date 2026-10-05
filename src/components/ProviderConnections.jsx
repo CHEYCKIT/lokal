@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
-import { AudioLines, CheckCircle2, LogIn, Music2, RefreshCw, Youtube } from 'lucide-react'
+import { AudioLines, CheckCircle2, Gamepad2, LogIn, Music2, RefreshCw, Youtube } from 'lucide-react'
 import { api } from '../api'
 import { LastfmSignInModal, ListenBrainzSignInModal } from './ScrobblerSignIn'
+import { discordClientId } from '../discord'
 import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
 
 function StatusDot({ connected }) {
@@ -54,6 +55,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   const [refreshing, setRefreshing] = useState(false)
   const [signIn, setSignIn] = useState(null) // 'lastfm' | 'listenbrainz'
   const [listenbrainz, setListenbrainz] = useState(null)
+  const [discord, setDiscord] = useState({ connected: false, busy: false, error: '' })
   const [youtubeAuthorizing, setYoutubeAuthorizing] = useState(false)
   const [youtubeSigningIn, setYoutubeSigningIn] = useState(false)
   const [youtubeState, setYoutubeState] = useState({ message: '', tone: 'muted' })
@@ -72,6 +74,24 @@ export default function ProviderConnections({ compact = false, settingsOverride 
     onListenBrainzChanged?.(status)
   }).catch(() => {})
   useEffect(() => { refreshListenBrainz() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshDiscord = () => Promise.resolve(api.discordStatus?.()).then(status => setDiscord(d => ({ ...d, connected: !!status?.connected }))).catch(() => {})
+  useEffect(() => { if (api.isElectron) refreshDiscord() }, [])
+
+  const connectDiscord = async () => {
+    const id = discordClientId(settings)
+    if (!id) { setDiscord(d => ({ ...d, error: 'Add your Discord app ID under Discord Rich Presence first.' })); return }
+    setDiscord(d => ({ ...d, busy: true, error: '' }))
+    await Promise.resolve(api.saveSettings({ discord_client_id: id })).catch(() => {})
+    const ok = await Promise.resolve(api.discordConnect(id)).catch(() => false)
+    setDiscord({ connected: !!ok, busy: false, error: ok ? '' : 'Could not connect. Is Discord open?' })
+  }
+
+  const disconnectDiscord = async () => {
+    setDiscord(d => ({ ...d, busy: true, error: '' }))
+    await Promise.resolve(api.discordDisconnect()).catch(() => {})
+    setDiscord({ connected: false, busy: false, error: '' })
+  }
 
   const changeSettings = patch => {
     setSettings(previous => ({ ...previous, ...patch }))
@@ -97,6 +117,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
       else setLoading(false)
     }
     refreshListenBrainz()
+    if (api.isElectron) refreshDiscord()
   }
 
   useEffect(() => {
@@ -224,6 +245,14 @@ export default function ProviderConnections({ compact = false, settingsOverride 
           {youtubeState.message && <p className={`text-xs leading-relaxed ${youtubeState.tone === 'success' ? 'text-green-400' : youtubeState.tone === 'error' ? 'text-red-300' : 'text-muted'}`}>{youtubeState.message}</p>}
           {!youtubeState.message && youtubeStatus.error && <p className="text-xs leading-relaxed text-red-300">{youtubeStatus.error}</p>}
         </div>
+
+        <AccountCard icon={Gamepad2} tint="bg-[#5865F2]/15 text-[#8b95f5]" name="Discord" connected={discord.connected}
+          status={!api.isElectron ? 'Available in the desktop app' : discord.connected ? 'Rich Presence connected' : 'Not connected'}>
+          {api.isElectron && (discord.connected
+            ? <ActionButton onClick={disconnectDiscord} disabled={discord.busy} muted>Disconnect</ActionButton>
+            : <ActionButton onClick={connectDiscord} disabled={discord.busy}>{discord.busy ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Connect</ActionButton>)}
+          {discord.error && <p className="w-full text-xs text-red-300">{discord.error}</p>}
+        </AccountCard>
       </div>
       <LastfmSignInModal open={signIn === 'lastfm'} onClose={() => setSignIn(null)} settings={settings} onConnected={changeSettings} />
       <ListenBrainzSignInModal open={signIn === 'listenbrainz'} onClose={() => setSignIn(null)} onConnected={refreshListenBrainz} />

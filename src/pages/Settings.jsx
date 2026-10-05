@@ -9,6 +9,7 @@ import { peekCache, writeCache, usePageReady } from '../pageCache'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
 import ProviderConnections from '../components/ProviderConnections'
+import { DEFAULT_DISCORD_CLIENT_ID } from '../discord'
 import PlaybackSourceSettings from '../components/PlaybackSourceSettings'
 import { useAppStore, usePlayerStore } from '../store/player'
 import Modal from '../components/Modal'
@@ -30,7 +31,6 @@ const EQ_PRESETS = {
 }
 const DEFAULT_EQ_PRESET = 'flat'
 const ARTISTS_PAGE_SIZE = 60
-const DEFAULT_DISCORD_CLIENT_ID = '1473597925581131919'
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const SETTINGS_CATEGORIES = [
   { key: 'library', label: 'Library', icon: Music2 },
@@ -256,7 +256,6 @@ export default function Settings() {
   const [artistsTotal, setArtistsTotal] = useState(0)
   const [manageArtist, setManageArtist] = useState(null)
   const [artistSearch, setArtistSearch] = useState('')
-  const [discordStatus, setDiscordStatus] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [urlTarget, setUrlTarget] = useState({ type: '', id: '', url: '' })
   const [showUrlModal, setShowUrlModal] = useState(false)
@@ -646,27 +645,6 @@ export default function Settings() {
     if (activeCategory === 'artists') {
       refreshArtists()
     }
-  }
-
-  const connectDiscord = async () => {
-    const id = settings.discord_use_default_app_id === '0'
-      ? settings.discord_client_id
-      : DEFAULT_DISCORD_CLIENT_ID
-    if (!id) { setDiscordStatus('Enter a Client ID first'); return }
-    await api.saveSettings({ discord_client_id: id })
-    setDiscordStatus('Resetting previous session…')
-    await api.discordDisconnect()
-    setDiscordStatus('Connecting…')
-    const ok = await api.discordConnect(id)
-    setDiscordStatus(ok ? '✓ Connected!' : '✗ Failed — is Discord open?')
-    setTimeout(() => setDiscordStatus(''), 6000)
-  }
-
-  const disconnectDiscord = async () => {
-    setDiscordStatus('Disconnecting…')
-    await api.discordDisconnect()
-    setDiscordStatus('✓ Disconnected')
-    setTimeout(() => setDiscordStatus(''), 4000)
   }
 
   const importPhotos = async () => {
@@ -1699,23 +1677,6 @@ export default function Settings() {
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {settings.discord_auto_connect === '1' ? 'Yes' : 'No'}
           </button>
-        </Row>
-        <Row label="Connect">
-          <div className="flex items-center gap-3">
-            <button onClick={connectDiscord}
-              className="px-4 py-2 bg-[#5865F2]/20 border border-[#5865F2]/40 text-[#7289da] rounded-lg text-sm hover:bg-[#5865F2]/30 transition-colors">
-              Connect
-            </button>
-            <button onClick={disconnectDiscord}
-              className="px-4 py-2 bg-card border border-border text-muted rounded-lg text-sm hover:text-white hover:border-accent/30 transition-colors">
-              Kill Previous
-            </button>
-            {discordStatus && (
-              <span className={`text-xs ${discordStatus.startsWith('✓') ? 'text-accent' : discordStatus.startsWith('✗') ? 'text-red-400' : 'text-muted'}`}>
-                {discordStatus}
-              </span>
-            )}
-          </div>
         </Row>
       </Section>
       )}
