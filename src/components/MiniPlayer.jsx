@@ -4,11 +4,13 @@ import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from '
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
 import Waveform from './Waveform'
+import { useAppearanceFlag } from '../appearanceFlags'
 import { trackArtURL } from '../onlineTracks'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
 export default function MiniPlayer({ windowed = false }) {
+  const showWaveform = useAppearanceFlag('player_waveform')
   const {
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
@@ -359,7 +361,7 @@ export default function MiniPlayer({ windowed = false }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentTrack && (
+          {currentTrack && showWaveform && (
             <div className={windowed ? 'w-12 h-4' : 'w-10 h-4'}>
               <Waveform
                 isPlaying={isPlaying}

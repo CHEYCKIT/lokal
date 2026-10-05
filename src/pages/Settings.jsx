@@ -2287,6 +2287,25 @@ module.exports = {
       )}
 
       {inCategory('appearance') && (
+      <Section title="Player Bar">
+        <Row label="Glass" desc="The player bar floats over the pages, which show through it, blurred. Off: a plain bar below the pages, lighter on the graphics card (worth it if playback with a moving cover stutters).">
+          <button
+            onClick={() => set('glass_player_bar', settings.glass_player_bar === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.glass_player_bar !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.glass_player_bar !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Waveform" desc="The live bars next to the volume, in the player bar and the mini player.">
+          <button
+            onClick={() => set('player_waveform', settings.player_waveform === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.player_waveform !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.player_waveform !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
       <Section title="Now Playing">
         <Row label="Colour Background" desc="Fill the Details sidebar and the full screen player with colours taken from the cover, Apple Music style. Off: the classic dark sidebar and a blurred cover behind the full screen player.">
           <button
