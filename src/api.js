@@ -350,6 +350,9 @@ export const api = {
   cancelAllDownloads: () => isE() ? el().cancelAllDownloads() : apiFetch('/download/cancel-all', { method:'POST', body:{} }),
   clearFinishedDownloads: () => isE() ? el().clearFinishedDownloads() : apiFetch('/download/clear-finished', { method:'POST', body:{} }),
   markDownloadsSeen: () => isE() ? el().markDownloadsSeen() : apiFetch('/download/seen', { method:'POST', body:{} }),
+  cacheUsage: () => isE() ? el().cacheUsage() : Promise.resolve(null),
+  cacheTrim: () => isE() ? el().cacheTrim() : Promise.resolve(null),
+  cacheClear: () => isE() ? el().cacheClear() : Promise.resolve(null),
   artworkMesh: (trackId) => isE() ? el().artworkMesh(trackId) : apiFetch(`/artwork-fx/mesh/${encodeURIComponent(trackId)}`).then(r => (Array.isArray(r) ? r : null)),
   // { src, source } -- src is something a <video> can play in this mode.
   spotifyCanvasCheck: () => isE() ? el().spotifyCanvasCheck() : apiFetch('/artwork-fx/spotify-check', { method: 'POST' }),

@@ -119,11 +119,18 @@ function registerStreamProtocol(protocol, net) {
     } catch {}
     try {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
-      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: request.signal, fetchImpl: (u, init) => net.fetch(u, init) })
+      // Electron doesn't fire request.signal when the player drops a stream
+      // (next song, seek); it cancels the response body. The request to the
+      // media server must be aborted then, or its connection stays open: after
+      // six (Chromium's limit per server) every new stream from that server
+      // waits forever, and songs stop playing until Lokal restarts.
+      const upstream = new AbortController()
+      request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
+      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: upstream.signal, fetchImpl: (u, init) => net.fetch(u, init) })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)
-      return new Response(res.body, { status: res.status, headers })
+      return new Response(sources.cancellableBody(res.body, () => upstream.abort()), { status: res.status, headers })
     } catch (e) {
       return new Response(String(e.message || e), { status: 502, headers: { 'content-type': 'text/plain' } })
     }

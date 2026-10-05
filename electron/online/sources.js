@@ -98,7 +98,7 @@ async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
 
 /**
  * Fetch (a range of) the audio of an item. A refused URL (expired, or tied to
- * another address) is looked up again once. `signal`: aborts an addon's media
+ * another address) is looked up again once. `signal`: aborts the media
  * request when the one who asked for it goes away.
  */
 async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
@@ -110,7 +110,7 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
     // at a time, each checked like the addon's own URLs (https, or http on
     // this machine / network only). Built-in providers fetch directly.
     if (addons.keyOfProvider(provider)) return { stream, res: await fetchAddonMedia(stream.url, { fetchImpl, headers, signal }) }
-    return { stream, res: await fetchImpl(stream.url, { headers }) }
+    return { stream, res: await fetchImpl(stream.url, { headers, signal }) }
   }
   let { stream, res } = await attempt(false)
   if (res.status === 403 || res.status === 410) {
@@ -118,6 +118,29 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
     ;({ stream, res } = await attempt(true))
   }
   return { res, mime: stream.mime, preview: !!stream.preview }
+}
+
+/**
+ * `body`, passed on chunk by chunk; cancelling it (the player dropped the
+ * stream: skipped, seeked, ended) calls `abort`. Cancelling the body alone
+ * doesn't close the request it came from.
+ */
+function cancellableBody(body, abort) {
+  if (!body?.getReader) return body
+  const reader = body.getReader()
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) controller.close()
+        else controller.enqueue(value)
+      } catch (e) { controller.error(e) }
+    },
+    cancel(reason) {
+      abort()
+      return reader.cancel(reason).catch(() => {})
+    },
+  })
 }
 
 // ---------------------------------------------------------------- tracks
@@ -374,7 +397,9 @@ function saveOnlineTracks(db, items = []) {
       album_artist: item.artists?.[0] ? String(item.artists[0]).slice(0, 500) : null,
       duration: Number(item.duration) > 0 ? Number(item.duration) : null,
       source_url: p.sourceUrl(itemId),
-      artwork_url: /^https:\/\//.test(String(item.thumbnail || '')) ? String(item.thumbnail).slice(0, 1000) : null,
+      // Search results call it thumbnail; a row played again (a fallback to
+      // another source) has artwork_url: keep its cover either way.
+      artwork_url: [item.thumbnail, item.artwork_url].map(value => String(value || '')).find(value => /^https:\/\//.test(value))?.slice(0, 1000) || null,
       now: Date.now(),
     })
     return get.get(id)
@@ -412,6 +437,7 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
 }
 
 module.exports = {
+  cancellableBody,
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
   onlineTrackId, streamRef, sourceIdentity, saveOnlineTracks, pruneOnlineTracks, streamedTwins,

@@ -17,6 +17,7 @@ const { registerPlayerHandlers } = require('./ipc/player')
 const { registerDownloaderHandlers, registerExtraDownloaderHandlers, registerPlaylistArchiveHandlers, markInterruptedPlaylistsIncomplete, shutdownActiveDownloads } = require('./ipc/downloader')
 const { registerLyricsHandlers } = require('./ipc/lyrics')
 const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
+const { registerCacheHandlers } = require('./ipc/cache')
 const { registerUserHandlers } = require('./ipc/users')
 const { registerDiscordHandlers } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
@@ -467,6 +468,7 @@ app.whenReady().then(() => {
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
   try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
+  try { registerCacheHandlers(ipcMain) } catch (e) { console.error('registerCacheHandlers:', e.message) }
   try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
   try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
 
