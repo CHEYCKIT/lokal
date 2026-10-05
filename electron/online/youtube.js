@@ -269,11 +269,10 @@ function walkObjects(root, visitor) {
 }
 
 function parseTrackCard(renderer) {
-  const endpoints = [renderer?.navigationEndpoint, renderer?.onTap, ...(renderer?.title?.runs || []).map(run => run.navigationEndpoint)]
-  if (renderer?.isPlaylist || endpoints.some(endpoint => String(endpoint?.browseEndpoint?.browseId || '').startsWith('VL') || /^RDTMAK/.test(endpoint?.watchEndpoint?.playlistId || ''))) return null
-  const videoId = renderer?.navigationEndpoint?.watchEndpoint?.videoId
-    || renderer?.onTap?.watchEndpoint?.videoId
-    || ''
+  const play = (renderer?.thumbnailOverlay || renderer?.overlay)?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint
+  const endpoints = [renderer?.navigationEndpoint, renderer?.onTap, ...(renderer?.title?.runs || []).map(run => run.navigationEndpoint), play]
+  if (renderer?.isPlaylist || endpoints.some(endpoint => /^(VL|MPRE|UC)/.test(endpoint?.browseEndpoint?.browseId || '') || endpoint?.watchPlaylistEndpoint || /^RDTMAK/.test(endpoint?.watchEndpoint?.playlistId || ''))) return null
+  const videoId = endpoints.map(endpoint => endpoint?.watchEndpoint?.videoId).find(id => VIDEO_ID.test(id || '')) || ''
   const title = textOf(renderer?.title)
   if (!VIDEO_ID.test(videoId) || !title) return null
   const runs = renderer.subtitle?.runs
@@ -305,7 +304,7 @@ function parseAccountTracks(root, limit = 200) {
     if (item && (!VIDEO_ID.test(item.videoId || '') || !item.title)) return
     if (!item || seen.has(item.videoId)) return
     seen.add(item.videoId)
-    tracks.push(item)
+    tracks.push({ ...item, provider: 'yt', id: item.videoId, source_url: item.url })
   })
   return tracks
 }
@@ -657,12 +656,18 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
     try { proc = spawn(ytdlp, args, { windowsHide: true }) } catch (e) { reject(new Error(`Could not run yt-dlp (${e.message})`)); return }
     let out = ''
     let err = ''
-    const timer = setTimeout(() => { try { proc.kill() } catch {} }, RESOLVE_TIMEOUT_MS)
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      try { proc.kill() } catch {}
+      reject(new Error('YouTube audio resolution timed out. Try again.'))
+    }, RESOLVE_TIMEOUT_MS)
     proc.stdout.on('data', d => { out += d })
     proc.stderr.on('data', d => { err += d })
     proc.on('error', e => { clearTimeout(timer); reject(new Error(`Could not run yt-dlp (${e.message})`)) })
     proc.on('close', () => {
       clearTimeout(timer)
+      if (timedOut) return
       let info = null
       try { info = JSON.parse(out.trim().split('\n').pop()) } catch {}
       const output = err || out

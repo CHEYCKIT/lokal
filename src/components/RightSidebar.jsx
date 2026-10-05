@@ -307,7 +307,6 @@ export default function RightSidebar() {
 
                   {currentTrack && (
                     <div className={fx ? 'bg-black/20 rounded-xl border border-white/10 px-4 py-1 backdrop-blur-md' : 'bg-card rounded-xl border border-border px-4 py-1'}>
-                      <InfoRow fx={fx} label="Artist" value={currentTrack.artist} />
                       <InfoRow
                         fx={fx}
                         label="Album"
