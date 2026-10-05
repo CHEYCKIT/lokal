@@ -50,7 +50,7 @@ export function LyricsContent({ onClose }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-hidden min-h-0">
+      <div className="flex-1 overflow-hidden min-h-0 pb-[var(--player-space,0px)]">
         {currentTrack ? (
           <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
         ) : (
@@ -89,7 +89,7 @@ export default function LyricsSidePanel() {
             initial={{ x: 320 }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="h-full flex flex-col border-l border-border pb-[var(--player-space,0px)]"
+            className="h-full flex flex-col border-l border-border"
             style={{ width: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
           >
             <LyricsContent onClose={toggleLyricsPanel} />

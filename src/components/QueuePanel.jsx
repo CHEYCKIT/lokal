@@ -111,7 +111,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto p-2 pb-[calc(var(--player-space,0px)+0.5rem)]">
         {!displayQueue.length && (
           <p className="text-xs text-muted text-center py-8">Queue is empty</p>
         )}
@@ -253,7 +253,7 @@ export default function QueuePanel() {
             initial={{ x: 320 }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="h-full flex flex-col border-l border-border pb-[var(--player-space,0px)]"
+            className="h-full flex flex-col border-l border-border"
             style={{ width: 320, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
           >
             <QueueContent onClose={toggleQueue} />
