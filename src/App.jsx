@@ -2112,7 +2112,7 @@ export default function App() {
   return (
     <Router>
       <NativeHistoryNavigation />
-      <div className="flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx}>
+      <div className="relative flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx} style={showMiniPlayer ? undefined : { '--player-space': '104px' }}>
         {showMiniPlayer ? (
           <MiniPlayer windowed />
         ) : (
@@ -2135,7 +2135,7 @@ export default function App() {
             <TitleBar />
             <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
-              <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent [scrollbar-gutter:stable]">
+              <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent pb-[var(--player-space,0px)] [scrollbar-gutter:stable]">
                 <AnimatedRoutes />
               </main>
               <RightSidebar />

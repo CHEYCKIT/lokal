@@ -187,7 +187,7 @@ export default function Sidebar() {
   return (
     <aside
       aria-label="Sidebar"
-      className={`${collapsed ? 'w-[4.5rem]' : 'w-56'} border-r border-border flex flex-col h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out`}
+      className={`${collapsed ? 'w-[4.5rem]' : 'w-56'} border-r border-border flex flex-col h-full pb-[var(--player-space,0px)] flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out`}
       style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
     >
       <div className={`${collapsed ? 'px-0' : 'px-5'} py-4 flex-shrink-0`}>

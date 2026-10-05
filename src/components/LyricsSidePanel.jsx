@@ -50,7 +50,7 @@ export function LyricsContent({ onClose }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-hidden min-h-0">
+      <div className="flex-1 overflow-hidden min-h-0 pb-[var(--player-space,0px)]">
         {currentTrack ? (
           <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
         ) : (

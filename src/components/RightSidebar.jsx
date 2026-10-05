@@ -238,7 +238,7 @@ export default function RightSidebar() {
                   into colours taken from it; a moving cover plays over the
                   still one when there is one. */}
               {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? heroHeight : 0} />}
-              <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'}`}>
+              <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'} pb-[calc(var(--player-space,0px)+1rem)]`}>
                 <div
                   className={fx ? 'relative w-full overflow-hidden' : 'relative w-full rounded-xl overflow-hidden bg-card border border-border/50'}
                   style={{
@@ -342,7 +342,7 @@ export default function RightSidebar() {
                   className="absolute inset-0 flex flex-col"
                   style={{ backgroundColor: 'rgb(var(--surface-rgb))' }}
                 >
-                  <div className="flex-1 overflow-hidden min-h-0">
+                  <div className="flex-1 overflow-hidden min-h-0 pb-[var(--player-space,0px)]">
                     {currentTrack ? (
                       <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
                     ) : (
