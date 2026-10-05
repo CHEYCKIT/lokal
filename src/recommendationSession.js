@@ -81,7 +81,7 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
         if (!result || result.error) throw new Error(result?.error || 'Recommendation provider unavailable.')
         const previous = state.data
         const section = name => Array.isArray(result[name]) ? result[name] : previous?.[name] || []
-        const data = { ...result, source: state.source, quickPicks: section('quickPicks'), liked: section('liked'), history: section('history'), artists: section('artists'), albums: section('albums'), freshFinds: section('freshFinds'), updatedAt: Date.now() }
+        const data = { ...result, source: state.source, quickPicks: section('quickPicks'), liked: section('liked'), history: section('history'), artists: section('artists'), albums: section('albums'), mixes: section('mixes'), freshFinds: section('freshFinds'), updatedAt: Date.now() }
         update({ data, error: result.warnings?.length ? `Some ${sourceName(state.source)} sections could not refresh. ${result.warnings[0]}` : '' })
         // Artwork enrichment is independent of playback and survives navigation.
         enrich(data, isCurrent, next => update({ data: next })).catch(() => {})

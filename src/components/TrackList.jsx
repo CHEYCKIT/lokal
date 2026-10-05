@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { showToast } from './Toaster'
+import { showToast, showLoadingToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
-import { trackArtURL, isPlayable, isStreamed, streamRef, loadAddonNames, isAddonProvider, saveToLibrary } from '../onlineTracks'
+import { trackArtURL, isPlayable, isStreamed, streamRef, loadAddonNames, isAddonProvider, saveTracksToLibrary, libraryDownloadMessage } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
@@ -73,7 +73,8 @@ function fmtAddedAt(ts) {
 
 export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null }) {
   const resolvedPlaybackRef = useRef(0)
-  useEffect(() => () => { resolvedPlaybackRef.current++ }, [])
+  const resolvedToastRef = useRef(null)
+  useEffect(() => () => { resolvedPlaybackRef.current++; resolvedToastRef.current?.close() }, [])
   // Downloads from an addon are tagged with its name.
   const [addonNames, setAddonNames] = useState({})
   const hasAddonDownloads = tracks.some(t => isAddonProvider(t?.download_source) || isAddonProvider(streamRef(t)?.provider))
@@ -140,7 +141,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const shouldAnimateRows = !reduceMotion && tracks.length <= 120
   const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
   const anyLiked = useMemo(() => tracks.some(track => likedIds.has(track.id)), [tracks, likedIds])
-  const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
+  const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed || resolveTracks ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
   const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked, extraColumns })
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
@@ -377,22 +378,30 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const isGhostTrack = (track) => !track?.file_path || !isPlayable(track)
   const needsResolution = track => !!resolveTracks && isGhostTrack(track)
   const runResolved = async (list, action, selectedTrack) => {
+    const toast = resolveTracks ? showLoadingToast('Finding the selected songs…') : null
     try {
-      const rows = resolveTracks ? await resolveTracks(list, { selectedTrack }) : list
-      if (!rows.length) { showToast('No playable matches were found.'); return }
+      const rows = resolveTracks ? await resolveTracks(list, { selectedTrack, onProgress: message => toast.update(message), onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)) }) : list
+      if (!rows.length) { toast?.close('No playable matches were found.'); return }
+      toast?.close()
       return await action(rows)
-    } catch { showToast('Could not resolve the selected tracks.') }
+    } catch { if (toast) toast.close('Could not resolve the selected tracks.'); else showToast('Could not resolve the selected tracks.') }
   }
 
   const playResolved = (list, selected) => {
     const request = ++resolvedPlaybackRef.current
     const isCurrent = () => request === resolvedPlaybackRef.current
+    resolvedToastRef.current?.close()
+    const toast = showLoadingToast(selected ? `Finding “${selected.title}”…` : 'Loading the selected songs…')
+    resolvedToastRef.current = toast
+    let detail = ''
     return playRecommendationPool(list, {
       selected, firstPlayable: !selected, context, resolve: resolveTracks, isCurrent,
-      onProviderFailure: failure => showToast(playbackFallbackMessage(failure)),
+      onProgress: message => { if (isCurrent()) toast.update(message) },
+      onProviderFailure: failure => { if (isCurrent()) { detail = failure.detail || detail; toast.update(playbackFallbackMessage(failure)) } },
     }).then(started => {
-      if (started === false && isCurrent()) showToast(selected ? 'No playback match was found for this track.' : 'No playable matches were found.')
-    }).catch(() => { if (isCurrent()) showToast('Could not resolve the selected tracks.') })
+      toast.close(started === false && isCurrent() ? detail || 'No playable matches were found in this list.' : '')
+    }).catch(() => { toast.close(isCurrent() ? 'Could not resolve the selected tracks.' : '') })
+      .finally(() => { if (isCurrent()) resolvedToastRef.current = null })
   }
 
   const handlePlay = (track, e) => {
@@ -479,11 +488,24 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     usePlayerStore.getState().playQueue(playable, 0, context)
   }
 
-  /** Save a streamed song to the library, from the menu (the row's ⬇ does the same). */
-  const saveStreamed = async (track) => {
-    const result = await saveToLibrary(track).catch(e => ({ error: e.message }))
-    if (result?.alreadyInLibrary) { window.dispatchEvent(new Event('lokal:refresh')); showToast('Already in your library'); return }
-    showToast(result?.error ? `Couldn't save: ${result.error}` : `Saving ${track.title || 'the song'} to your library`)
+  const resolveDownloadTrack = async track => {
+    const toast = showLoadingToast(`Finding “${track.title}”…`)
+    try {
+      const [row] = await resolveTracks([track], { prepareStreams: false, onProgress: message => toast.update(message), onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)) })
+      toast.close(row ? '' : 'No matching source was found for this song.')
+      return row
+    } catch { toast.close('Could not resolve this song.'); return null }
+  }
+
+  /** Download rows/selection, resolving metadata-only recommendations first. */
+  const downloadSongs = async list => {
+    const toast = showLoadingToast('Preparing downloads…')
+    try {
+      const rows = resolveTracks ? await resolveTracks(list, { prepareStreams: false, onProgress: message => toast.update(message), onProviderFailure: failure => toast.update(playbackFallbackMessage(failure)) }) : list
+      const result = await saveTracksToLibrary(rows, { onProgress: message => toast.update(message) })
+      result.failed += list.length - rows.length
+      toast.close(libraryDownloadMessage(result))
+    } catch { toast.close('Could not download the selected songs.') }
   }
 
   /**
@@ -509,7 +531,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
        one && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(navigate, one, useAppStore.getState().user?.id) },
       one && onQuickAdd && { label: 'Add to this playlist', icon: LibraryBig, onSelect: () => handleQuickAdd(one) },
       one && (!oneGhost || needsResolution(one)) && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
-      one && isStreamed(one) && { label: 'Save to library', icon: Download, onSelect: () => saveStreamed(one) },
+       list.some(item => isStreamed(item) || needsResolution(item)) && { label: resolveTracks || !one ? `Download${one ? ' song' : count}` : 'Save to library', icon: Download, onSelect: () => downloadSongs(list) },
       one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
@@ -692,6 +714,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           { label: 'Play next', icon: Clock, onClick: () => runResolved(selectedTracks(), playNextMany) },
           { label: 'Add to queue', icon: ListEnd, onClick: () => runResolved(selectedTracks(), addToQueueMany) },
           { label: 'Add to playlist', icon: Plus, onClick: () => runResolved(selectedTracks(), addToPlaylistMany) },
+          { label: 'Download', icon: Download, onClick: () => downloadSongs(selectedTracks()), hidden: !selectedTracks().some(track => isStreamed(track) || needsResolution(track)) },
           { label: 'Edit', icon: Edit2, onClick: () => setShowBatchEdit(true), hidden: !!resolveTracks },
           { label: 'Remove', icon: ListMinus, onClick: () => removeMany(selectedTracks()), hidden: !onRemove },
           { label: 'Delete', icon: Trash2, danger: true, onClick: () => askDelete(selectedTracks()), hidden: !!resolveTracks || !libraryTracks(selectedTracks()).length },
@@ -843,7 +866,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                     <Clock size={14} />
                   </button>
                 )}
-                {streamed && <SaveToLibraryButton track={track} className="opacity-0 group-hover:opacity-100" />}
+                {(streamed || needsResolution(track)) && <SaveToLibraryButton track={track} getTrack={needsResolution(track) ? () => resolveDownloadTrack(track) : undefined} meta={track} className="opacity-0 group-hover:opacity-100 focus:opacity-100" />}
                 {showAddToQueue && !isGhost && (
                   <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">

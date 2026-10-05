@@ -51,53 +51,59 @@ function largerThumbnail(url) {
   return /=w\d+-h\d+/.test(url) ? url.replace(/=w\d+-h\d+[^&?]*$/, '=w544-h544-l90-rj') : url
 }
 
-/** One song or video row of a YouTube Music search, or null for anything else. */
+/** Linked and plain metadata shared by search, history, cards and queue rows. */
+function parseSongMetadata(runs) {
+  const artists = []
+  let album = null
+  let albumId = null
+  let duration = null
+  const loose = []
+  for (const run of runs) {
+    const text = String(run.text || '').trim()
+    if (!text || text === '•') continue
+    const browse = run.navigationEndpoint?.browseEndpoint
+    const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
+    if (pageType.endsWith('_ARTIST') || pageType.endsWith('_USER_CHANNEL')) artists.push(text)
+    else if (pageType.endsWith('_ALBUM') || /^MPRE/.test(browse?.browseId || '')) { album = text; albumId = browse.browseId || null }
+    else if (parseDuration(text) != null) duration = parseDuration(text)
+    else if (!/\b(views|plays|listeners|subscribers)$/i.test(text)) loose.push(text)
+  }
+  // Unfiltered results start with the kind ("Song", "Video"); an artist
+  // without a channel link is plain text.
+  const kind = /^(song|video|episode)$/i.test(loose[0] || '') ? loose.shift().toLowerCase() : null
+  if (!artists.length) {
+    const name = loose.shift()
+    if (name) artists.push(name)
+  }
+  if (!album) {
+    album = loose.find(text => !artists.includes(text) && parseDuration(text) == null && !/\b(views|plays)$/i.test(text)) || null
+  }
+  return { artists: [...new Set(artists)], artist: [...new Set(artists)].join(', '), album, albumId, duration, kind }
+}
+
+/** One song or video row, or null for non-track entries. */
 function parseItem(renderer) {
   const titleRuns = columnRuns(renderer, 0)
   const watch = titleRuns[0]?.navigationEndpoint?.watchEndpoint || renderer?.navigationEndpoint?.watchEndpoint
   const videoId = renderer?.playlistItemData?.videoId || watch?.videoId
   if (!videoId || !VIDEO_ID.test(videoId)) return null
   const videoType = watch?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType || ''
-
-  const artists = []
-  let album = null
-  let albumId = null
-  let duration = null
-  const loose = []
-  for (const run of columnRuns(renderer, 1)) {
-    const text = String(run.text || '').trim()
-    if (!text || text === '•') continue
-    const browse = run.navigationEndpoint?.browseEndpoint
-    const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
-    if (pageType.endsWith('_ARTIST') || pageType.endsWith('_USER_CHANNEL')) artists.push(text)
-    else if (pageType.endsWith('_ALBUM')) { album = text; albumId = browse.browseId || null }
-    else if (parseDuration(text) != null) duration = parseDuration(text)
-    else loose.push(text)
-  }
-  // Unfiltered results start with the kind ("Song", "Video"); an artist
-  // without a channel link is plain text.
-  const kind = /^(song|video|episode)$/i.test(loose[0] || '') ? loose.shift().toLowerCase() : null
-  if (kind === 'episode') return null
-  if (!artists.length) {
-    const name = loose.find(t => !/\b(views|plays)$/i.test(t))
-    if (name) artists.push(name)
-  }
-  if (!album) {
-    album = loose.find(text => !artists.includes(text) && parseDuration(text) == null && !/\b(views|plays)$/i.test(text)) || null
-  }
+  // History and playlist rows put the album in its own flex column and time
+  // in a fixed column, unlike search's combined artist/album subtitle.
+  const metadata = parseSongMetadata([
+    ...(renderer.flexColumns || []).slice(1).flatMap((_, index) => columnRuns(renderer, index + 1)),
+    ...(renderer.fixedColumns || []).flatMap(column => column.musicResponsiveListItemFixedColumnRenderer?.text?.runs || []),
+  ])
+  if (metadata.kind === 'episode') return null
 
   const thumbs = renderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || []
   return {
     videoId,
     title: titleRuns.map(r => r.text).join('').trim(),
-    artists,
-    artist: artists.join(', '),
-    album,
-    albumId,
-    duration,
+    ...metadata,
     thumbnail: largerThumbnail(thumbs[thumbs.length - 1]?.url),
     // ATV = the audio track from the catalogue; OMV = official music video.
-    kind: kind || (videoType === 'MUSIC_VIDEO_TYPE_ATV' ? 'song' : 'video'),
+    kind: metadata.kind || (videoType === 'MUSIC_VIDEO_TYPE_ATV' ? 'song' : 'video'),
     official: videoType === 'MUSIC_VIDEO_TYPE_ATV' || videoType === 'MUSIC_VIDEO_TYPE_OMV',
     url: `https://music.youtube.com/watch?v=${videoId}`,
   }
@@ -268,17 +274,15 @@ function parseTrackCard(renderer) {
     || renderer?.onTap?.watchEndpoint?.videoId
     || ''
   const title = textOf(renderer?.title)
-  const subtitle = textOf(renderer?.subtitle)
   if (!VIDEO_ID.test(videoId) || !title) return null
-  const subtitleParts = subtitle.split('•').map(value => value.trim()).filter(Boolean)
-  const artist = subtitleParts[0] || 'Unknown Artist'
+  const runs = renderer.subtitle?.runs
+  const metadata = parseSongMetadata(runs?.some(run => run.navigationEndpoint) ? runs : textOf(renderer.subtitle).split('•').map(text => ({ text })))
+  if (metadata.kind === 'episode') return null
   return {
     videoId,
     title,
-    artists: [artist],
-    artist,
-    album: subtitleParts[1] || null,
-    duration: null,
+    ...metadata,
+    artist: metadata.artist || 'Unknown Artist',
     thumbnail: thumbnailsOf(renderer?.thumbnail),
     kind: 'song',
     official: true,
@@ -290,23 +294,14 @@ function parseAccountTracks(root, limit = 200) {
   const tracks = []
   const seen = new Set()
   walkObjects(root, node => {
-    const renderer = node.musicResponsiveListItemRenderer
-    if (!renderer || tracks.length >= limit) return
-    const item = parseItem(renderer)
-    if (!item || seen.has(item.videoId)) return
-    seen.add(item.videoId)
-    tracks.push(item)
-    return
-  })
-  walkObjects(root, node => {
     if (tracks.length >= limit) return
     const panel = node.playlistPanelVideoRenderer
-    const item = panel ? {
-      videoId: panel.videoId, title: textOf(panel.title), artist: textOf(panel.longBylineText || panel.shortBylineText).split(' • ')[0],
+    const item = node.musicResponsiveListItemRenderer ? parseItem(node.musicResponsiveListItemRenderer) : panel ? {
+      videoId: panel.videoId, title: textOf(panel.title), ...parseSongMetadata((panel.longBylineText || panel.shortBylineText)?.runs || textOf(panel.longBylineText || panel.shortBylineText).split('•').map(text => ({ text }))),
       thumbnail: thumbnailsOf(panel.thumbnail), duration: parseDuration(textOf(panel.lengthText)),
       url: `https://music.youtube.com/watch?v=${panel.videoId}`,
     } : parseTrackCard(node.musicTwoRowItemRenderer)
-    if (item && (!VIDEO_ID.test(item.videoId || '') || !item.title || !item.artist)) return
+    if (item && (!VIDEO_ID.test(item.videoId || '') || !item.title)) return
     if (!item || seen.has(item.videoId)) return
     seen.add(item.videoId)
     tracks.push(item)
@@ -320,10 +315,13 @@ function parseAccountPlaylists(root, limit = 100) {
   walkObjects(root, node => {
     const renderer = node.gridPlaylistRenderer || node.musicTwoRowItemRenderer
     if (!renderer || playlists.length >= limit) return
-    const endpoint = renderer.navigationEndpoint?.browseEndpoint
-    const rawId = renderer.playlistId || endpoint?.browseId || ''
+    const navigation = renderer.navigationEndpoint || renderer.onTap || {}
+    if (!renderer.isPlaylist && VIDEO_ID.test(navigation.watchEndpoint?.videoId || '')) return
+    const play = renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint
+    const endpoint = navigation.browseEndpoint
+    const rawId = renderer.playlistId || endpoint?.browseId || navigation.watchPlaylistEndpoint?.playlistId || navigation.watchEndpoint?.playlistId || play?.watchPlaylistEndpoint?.playlistId || play?.watchEndpoint?.playlistId || ''
     const id = String(rawId).replace(/^VL/, '')
-    if (!id || /^UC|^MPRE/.test(id) || seen.has(id)) return
+    if (!id || /^(UC|MPRE|FE)/.test(id) || seen.has(id)) return
     const title = textOf(renderer.title)
     if (!title) return
     seen.add(id)
@@ -337,6 +335,20 @@ function parseAccountPlaylists(root, limit = 100) {
     })
   })
   return playlists
+}
+
+function mixedForYouShelves(root) {
+  const shelves = []
+  walkObjects(root, node => {
+    const shelf = node.musicCarouselShelfRenderer || node.musicShelfRenderer
+    const header = shelf?.header?.musicCarouselShelfBasicHeaderRenderer
+    if (/^(mixed for you|mixes for you|your mixes)$/i.test(textOf(header?.title || shelf?.title).trim())) shelves.push(shelf)
+  })
+  return shelves
+}
+
+function parseAccountMixes(root) {
+  return parseAccountPlaylists(mixedForYouShelves(root), Infinity)
 }
 
 function parseAccountEntities(root, type) {
@@ -355,7 +367,7 @@ function parseAccountEntities(root, type) {
   return [...items.values()].slice(0, 30)
 }
 
-async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false } = {}) {
+async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false, params } = {}) {
   const headers = accountHeaders(cookieHeader, config) || (anonymous ? { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' } : null)
   if (!headers) throw new Error('Sign in to YouTube Music in Integrations.')
   const controller = new AbortController()
@@ -364,7 +376,7 @@ async function accountBrowse(browseId, cookieHeader, fetchImpl = fetch, config =
     const res = await fetchImpl(BROWSE_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ context: { client: { ...CLIENT, ...config.INNERTUBE_CONTEXT?.client, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, browseId }),
+      body: JSON.stringify({ context: { client: { ...CLIENT, ...config.INNERTUBE_CONTEXT?.client, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) }, user: { ...(config.DELEGATED_SESSION_ID ? { onBehalfOfUser: config.DELEGATED_SESSION_ID } : {}) } }, browseId, ...(params ? { params } : {}) }),
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`YouTube Music account request failed (${res.status}).`)
@@ -414,9 +426,20 @@ async function fetchAccountData({ cookies, fetchImpl = fetch, limit = 100, force
   if (!authenticated) {
     return { error: errors[0]?.reason?.message || 'YouTube Music did not confirm an authenticated account. Sign in again in Integrations.', authenticated: false }
   }
-  const homePlaylists = homeResult.status === 'fulfilled' ? parseAccountPlaylists(homeResult.value, 12) : []
-  const data = { liked, playlists, home, homePlaylists, history: historyResult.status === 'fulfilled' ? parseAccountTracks(historyResult.value, limit) : [], artists: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'artist') : [], albums: homeResult.status === 'fulfilled' ? parseAccountEntities(homeResult.value, 'album') : [], authenticated: true, homeError: homeResult.status === 'rejected' ? homeResult.reason?.message : '' }
-  if (!errors.length) {
+  const homeRoot = homeResult.status === 'fulfilled' ? homeResult.value : null
+  const homePlaylists = parseAccountPlaylists(homeRoot)
+  const mixEndpoints = new Map()
+  for (const shelf of mixedForYouShelves(homeRoot)) walkObjects(shelf.header, node => {
+    const endpoint = node.browseEndpoint
+    if (endpoint?.browseId) mixEndpoints.set(JSON.stringify(endpoint), endpoint)
+  })
+  const expandedMixes = await Promise.allSettled([...mixEndpoints.values()].map(endpoint => accountBrowse(endpoint.browseId, cookieHeader, fetchImpl, config, { params: endpoint.params })))
+  const mixes = [...new Map([...parseAccountMixes(homeRoot), ...expandedMixes.flatMap(result => result.status === 'fulfilled' ? parseAccountPlaylists(result.value, Infinity) : [])].map(mix => [mix.id, mix])).values()]
+  const mixError = expandedMixes.find(result => result.status === 'rejected')?.reason?.message || ''
+  const knownAlbums = new Map([...liked, ...home].filter(track => track.album).map(track => [track.videoId, track]))
+  const history = (historyResult.status === 'fulfilled' ? parseAccountTracks(historyResult.value, limit) : []).map(track => track.album || !knownAlbums.has(track.videoId) ? track : { ...track, album: knownAlbums.get(track.videoId).album, albumId: knownAlbums.get(track.videoId).albumId })
+  const data = { liked, playlists, home, homePlaylists, mixes, history, artists: parseAccountEntities(homeRoot, 'artist'), albums: parseAccountEntities(homeRoot, 'album'), authenticated: true, homeError: homeResult.status === 'rejected' ? homeResult.reason?.message : '', mixError }
+  if (!errors.length && !mixError) {
     accountCache.set(key, { at: Date.now(), data })
     if (accountCache.size > 4) accountCache.delete(accountCache.keys().next().value)
   }
@@ -649,6 +672,6 @@ function videoIdFromUrl(url) {
 module.exports = {
   searchSongs, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue,
-  fetchRadio, parseAccountTracks, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
+  fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
   resolveStream, fetchStream, streamError, videoIdFromUrl,
 }

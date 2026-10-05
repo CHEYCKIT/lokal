@@ -5,6 +5,71 @@ import youtube from '../electron/online/youtube.js'
 const cookies = 'Cookie: __Secure-3PAPISID=test-session-value; __Secure-3PSID=test-login-value'
 const musicConfig = { INNERTUBE_CLIENT_VERSION: '1.test.client', VISITOR_DATA: 'test-visitor', SESSION_INDEX: '2', DELEGATED_SESSION_ID: 'test-channel' }
 const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '1' }] }] }, contents: { musicTwoRowItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk' } }, title: { runs: [{ text: 'Song' }] }, subtitle: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: 'Album' }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://images.example/cover.jpg' }] } } } } } }
+const column = runs => ({ musicResponsiveListItemFlexColumnRenderer: { text: { runs } } })
+const linked = (text, browseId, type) => ({ text, navigationEndpoint: { browseEndpoint: { browseId, ...(type ? { browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: `MUSIC_PAGE_TYPE_${type}` } } } : {}) } } })
+
+test('history rows read separate album and duration columns, including album endpoints without pageType', () => {
+  const track = youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'History Song' }]), column([linked('Artist', 'UCartist', 'ARTIST')]), column([linked('History Album', 'MPREalbum')])], fixedColumns: [{ musicResponsiveListItemFixedColumnRenderer: { text: { runs: [{ text: '3:42' }] } } }] })
+  assert.equal(track.album, 'History Album')
+  assert.equal(track.albumId, 'MPREalbum')
+  assert.equal(track.artist, 'Artist')
+  assert.equal(track.duration, 222)
+  assert.equal(youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'Song' }]), column([{ text: 'Artist' }]), column([{ text: 'Plain Album' }])] }).album, 'Plain Album')
+  assert.equal(youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'Song' }]), column([{ text: 'Artist' }]), column([{ text: '1989' }])] }).album, '1989')
+  assert.equal(youtube.parseAccountTracks({ musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, subtitle: { runs: [{ text: 'Artist • Album' }] } } })[0].album, 'Album')
+})
+
+test('account tracks preserve provider order across renderer types and do not mistake video views for albums', () => {
+  const card = { musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, subtitle: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: '2.3M views' }] } } }
+  const panel = { playlistPanelVideoRenderer: { videoId: 'bcdefghijkl', title: { simpleText: 'Panel Song' }, longBylineText: { runs: [linked('Artist', 'UCartist', 'ARTIST'), { text: ' • ' }, linked('Panel Album', 'MPREpanel', 'ALBUM')] } } }
+  const row = { musicResponsiveListItemRenderer: { playlistItemData: { videoId: 'cdefghijklm' }, flexColumns: [column([{ text: 'Row Song' }]), column([{ text: 'Artist' }, { text: ' • ' }, { text: 'Row Album' }])] } }
+  const tracks = youtube.parseAccountTracks([card, panel, row, card])
+  assert.deepEqual(tracks.map(track => track.title), ['Song', 'Panel Song', 'Row Song'])
+  assert.deepEqual(tracks.map(track => track.album), [null, 'Panel Album', 'Row Album'])
+  assert.deepEqual(youtube.parseAccountTracks([card, panel, row], 2).map(track => track.title), ['Song', 'Panel Song'])
+})
+
+const mixCard = (id, endpoint = 'watchPlaylistEndpoint') => ({ musicTwoRowItemRenderer: { title: { runs: [{ text: `Mix ${id}` }] }, navigationEndpoint: { [endpoint]: endpoint === 'browseEndpoint' ? { browseId: `VL${id}` } : { playlistId: id } } } })
+const mixShelf = (contents, header = {}) => ({ musicCarouselShelfRenderer: { header: { musicCarouselShelfBasicHeaderRenderer: { title: { runs: [{ text: 'Mixed for you' }] }, ...header } }, contents } })
+
+test('Mixed for you retains all playlist cards and supports browse, watch, and overlay play endpoints', () => {
+  const cards = Array.from({ length: 20 }, (_, i) => mixCard(`RDmix${i}`, i % 2 ? 'browseEndpoint' : 'watchPlaylistEndpoint'))
+  cards.push({ musicTwoRowItemRenderer: { title: { simpleText: 'Overlay Mix' }, thumbnailOverlay: { musicItemThumbnailOverlayRenderer: { content: { musicPlayButtonRenderer: { playNavigationEndpoint: { watchPlaylistEndpoint: { playlistId: 'RDoverlay' } } } } } } } })
+  cards.push({ musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk', playlistId: 'RDsongRadio' } } } })
+  const root = [mixShelf(cards), { musicCarouselShelfRenderer: { header: { musicCarouselShelfBasicHeaderRenderer: { title: { simpleText: 'Recommended playlists' } } }, contents: [mixCard('PLunrelated')] } }]
+  const mixes = youtube.parseAccountMixes(root)
+  assert.equal(mixes.length, 21)
+  assert.equal(mixes.at(-1).id, 'RDoverlay')
+  assert.ok(mixes.every(mix => mix.id !== 'PLunrelated'))
+})
+
+test('account data expands Mixed for you see-all endpoints without the former twelve-playlist limit', async () => {
+  youtube.clearAccountCache()
+  const requests = []
+  const endpoint = { browseId: 'FEmusic_mixed_for_you', params: 'mix-page' }
+  const result = await youtube.fetchAccountData({ cookies, force: true, fetchImpl: async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => '' }
+    const body = JSON.parse(init.body)
+    requests.push(body)
+    const contents = body.browseId === 'FEmusic_home' ? [mixShelf([mixCard('RDmix0')], { moreContentButton: { buttonRenderer: { navigationEndpoint: { browseEndpoint: endpoint } } } }), mixCard('PLunrelated')]
+      : body.browseId === endpoint.browseId ? Array.from({ length: 18 }, (_, i) => mixCard(`RDmix${i}`)) : []
+    return { ok: true, json: async () => ({ responseContext: accountRoot.responseContext, contents }) }
+  } })
+  assert.equal(result.mixes.length, 18)
+  assert.deepEqual(requests.at(-1).params, endpoint.params)
+  assert.ok(result.homePlaylists.some(playlist => playlist.id === 'PLunrelated'))
+  assert.ok(!result.mixes.some(playlist => playlist.id === 'PLunrelated'))
+})
+
+test('history can recover missing albums from other account surfaces only for the identical video', async () => {
+  youtube.clearAccountCache()
+  const result = await youtube.fetchAccountData({ cookies, force: true, fetchImpl: async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => '' }
+    const history = JSON.parse(init.body).browseId === 'FEmusic_history'
+    return { ok: true, json: async () => history ? { ...accountRoot, contents: { musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, subtitle: { simpleText: 'Artist' } } } } : accountRoot }
+  } })
+  assert.equal(result.history[0].album, 'Album')
+})
 
 test('account cookies normalize header prefixes and secure variants generate all required auth schemes', () => {
   const headers = youtube.accountHeaders(cookies, musicConfig)

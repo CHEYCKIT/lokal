@@ -18,9 +18,19 @@ export function showToast(message) {
 /** A request-owned loading toast stays visible until that request completes. */
 export function showLoadingToast(message) {
   const id = `loading:${Date.now()}:${Math.random()}`
-  const send = text => window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { id, message: String(text), loading: true } }))
+  let closed = false
+  const send = (text, update = false) => {
+    if (!closed) window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { id, message: String(text), loading: true, update } }))
+  }
   send(message)
-  return { update: send, close: message => window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { finish: id, message: message || '' } })) }
+  return {
+    update: text => send(text, true),
+    close: message => {
+      if (closed) return
+      closed = true
+      window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { finish: id, message: message || '' } }))
+    },
+  }
 }
 
 export default function Toaster() {
@@ -32,6 +42,10 @@ export default function Toaster() {
     let seq = 0
     const onToast = (event) => {
       const detail = event.detail || {}
+      if (detail.update) {
+        setToast(previous => previous?.id === detail.id ? { ...previous, message: detail.message } : previous)
+        return
+      }
       if (detail.finish) {
         setToast(previous => {
           if (previous?.id !== detail.finish) return previous
@@ -53,7 +67,7 @@ export default function Toaster() {
   const hidden = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }
   return createPortal(
     <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[210] flex justify-center px-4" role="status" aria-live="polite">
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {toast && (
           <motion.div
             key={toast.id}

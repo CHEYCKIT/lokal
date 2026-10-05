@@ -246,6 +246,17 @@ test('provider refresh passes the Last.fm page and forces YouTube account refres
   assert.deepEqual(playlists, ['b', 'c'])
 })
 
+test('YouTube shelves keep the thirty most recent likes, all genuine mixes, and history album metadata', async () => {
+  const likes = songs(40).map((track, i) => ({ ...track, videoId: `video${i}`, thumbnail: `https://images.example/${i}` }))
+  const mixes = Array.from({ length: 18 }, (_, i) => ({ id: `RDmix${i}`, title: `Mix ${i}`, thumbnail: `https://images.example/mix${i}` }))
+  const result = await loadRecommendationPage('youtube', 0, { youtubeAccount: async () => ({ liked: likes, mixes, history: [{ ...song(1), album: 'History Album', albumId: 'MPREalbum' }] }) })
+  assert.deepEqual(result.liked.map(track => track.title), likes.slice(0, 30).map(track => track.title))
+  assert.deepEqual(result.mixes.map(mix => mix.id), mixes.map(mix => mix.id))
+  assert.equal(result.mixes.at(-1).artwork_url, mixes.at(-1).thumbnail)
+  assert.equal(result.history[0].album, 'History Album')
+  assert.equal(result.history[0].albumId, 'MPREalbum')
+})
+
 test('local-track radio and Last.fm candidates use configured playback sources', async () => {
   const { client, searches } = clientMock({ lastfmSimilar: async () => ({ tracks: [song(1)] }) })
   const result = await buildRadio(playable(song(1)), 'guest', client)
