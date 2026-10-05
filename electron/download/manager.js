@@ -22,6 +22,7 @@ const fs = require('fs-extra')
 const { buildArgs, resolveFormat, isYouTube } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
+const { jsRuntimeRefused } = require('../online/jsRuntime')
 const slskd = require('./slskd')
 const { sourceIdentity, onlineTrackId, streamedTwins, sourceRefOf, sourceRefOfTrack } = require('../online/sources')
 const { readInfo, coverThumbnail, imageThumbnail } = require('./tagger')
@@ -691,7 +692,7 @@ class DownloadManager {
       } catch {}
     }
 
-    const { args, cookies } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [] })
+    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [] })
     job.cookies = cookies
     job.errorLines = []
     job.outputLines.push(...cookies.notes)
@@ -712,7 +713,7 @@ class DownloadManager {
 
     let proc
     try {
-      proc = spawn(ytdlp, args, { windowsHide: true })
+      proc = spawn(ytdlp, args, { windowsHide: true, ...spawnOptions })
     } catch (err) {
       this.running--
       this.fail(job, err.message)
@@ -1100,6 +1101,12 @@ class DownloadManager {
     }
 
     const lines = job.errorLines.length ? job.errorLines : job.outputLines
+    // A yt-dlp too old for --js-runtimes: straight back in line without it.
+    if (!err && !partial && jsRuntimeRefused(lines.join('\n'))) {
+      this.update(job, { status: 'queued', message: 'Retrying...' }, { persist: true })
+      return
+    }
+
     // Unreadable browser cookies: straight back in line without them.
     if (!err && job.cookies?.usedBrowser && !partial && isCookieError(lines)) {
       job.outputLines.push(markUnreadable(job.cookies.usedBrowser))
@@ -1139,6 +1146,14 @@ class DownloadManager {
         job.extraArgs = FALLBACK_CLIENTS
         job.outputLines.push('[Lokal] YouTube refused the download; retrying with other YouTube player clients.')
         this.update(job, { status: 'queued', message: 'Retrying with another YouTube client...', speed: null, eta: null }, { persist: true })
+        return
+      }
+      // Signed in, yt-dlp only uses clients that need a JavaScript runtime;
+      // signed out, it has one that doesn't.
+      if (!job.withoutCookies && job.cookies?.args?.length) {
+        job.withoutCookies = true
+        job.outputLines.push('[Lokal] YouTube gave no usable format with your cookies; retrying without them.')
+        this.update(job, { status: 'queued', message: 'Retrying without cookies...', speed: null, eta: null }, { persist: true })
         return
       }
     }

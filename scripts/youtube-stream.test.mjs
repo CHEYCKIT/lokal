@@ -52,3 +52,69 @@ test('native extraction uses the exact recording URL and a hidden Windows proces
   assert.equal(stream.url, 'https://media.example.test/native.webm')
   assert.equal(stream.mime, 'audio/webm')
 })
+
+// One fake yt-dlp process per spawn, answered in order.
+function extractorRuns(t, answers) {
+  const calls = []
+  t.mock.method(require('node:child_process'), 'spawn', (executable, args, options) => {
+    const child = new EventEmitter()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.kill = () => {}
+    calls.push({ args, options })
+    const answer = answers.shift()
+    setImmediate(() => {
+      if (answer.json) child.stdout.write(JSON.stringify(answer.json))
+      if (answer.stderr) child.stderr.write(answer.stderr)
+      setImmediate(() => child.emit('close', answer.json ? 0 : 1))
+    })
+    return child
+  })
+  delete require.cache[require.resolve('../electron/online/jsRuntime.js')]
+  delete require.cache[require.resolve('../electron/online/youtube.js')]
+  return { calls, youtube: require('../electron/online/youtube.js') }
+}
+
+const AUDIO = { url: 'https://media.example.test/audio.webm', ext: 'webm', acodec: 'opus', abr: 130 }
+const NO_FORMAT = 'ERROR: [youtube] j_UhEi3GZOU: Requested format is not available. Use --list-formats for a list of available formats\n'
+
+test('yt-dlp is given this process as its JavaScript runtime, which signed-in YouTube clients need', async t => {
+  const { calls, youtube } = extractorRuns(t, [{ json: AUDIO }])
+  await youtube.resolveStream('j_UhEi3GZOU', { ytdlp: '/fixture/yt-dlp', cookieArgs: ['--cookies', '/fixture/cookies.txt'] })
+  const at = calls[0].args.indexOf('--js-runtimes')
+  assert.ok(at >= 0)
+  assert.equal(calls[0].args[at + 1], `node:${process.execPath}`)
+  assert.equal(calls[0].options.windowsHide, true)
+})
+
+test('a signed-in song with no usable format plays signed out instead of being reported unavailable', async t => {
+  const { calls, youtube } = extractorRuns(t, [{ stderr: NO_FORMAT }, { json: AUDIO }])
+  const stream = await youtube.resolveStream('CjdEqFMuNFU', { ytdlp: '/fixture/yt-dlp', cookieArgs: ['--cookies', '/fixture/cookies.txt'] })
+  assert.equal(stream.url, AUDIO.url)
+  assert.equal(calls.length, 2)
+  assert.ok(calls[0].args.includes('--cookies'))
+  assert.ok(!calls[1].args.includes('--cookies'))
+})
+
+test('a missing format is not reported as the song missing from YouTube', async t => {
+  const { calls, youtube } = extractorRuns(t, [{ stderr: NO_FORMAT }])
+  await assert.rejects(youtube.resolveStream('dLl4PZtxia8', { ytdlp: '/fixture/yt-dlp' }), error => {
+    assert.doesNotMatch(error.message, /not available on YouTube/)
+    assert.match(error.message, /no playable audio/)
+    return true
+  })
+  assert.equal(calls.length, 1) // signed out already: nothing else to try
+  assert.equal(youtube.streamError('ERROR: [youtube] x: Video unavailable'), 'This song is not available on YouTube.')
+})
+
+test('a yt-dlp too old for --js-runtimes is run again without it, and not given it again', async t => {
+  const { calls, youtube } = extractorRuns(t, [
+    { stderr: 'Usage: yt-dlp [OPTIONS] URL [URL...]\n\nyt-dlp: error: no such option: --js-runtimes\n' },
+    { json: AUDIO },
+    { json: AUDIO },
+  ])
+  const stream = await youtube.resolveStream('fJ9rUzIMcZQ', { ytdlp: '/fixture/yt-dlp' })
+  assert.equal(stream.url, AUDIO.url)
+  await youtube.resolveStream('04854XqcfCY', { ytdlp: '/fixture/yt-dlp' })
+  assert.deepEqual(calls.map(call => call.args.includes('--js-runtimes')), [true, false, false])
+})
