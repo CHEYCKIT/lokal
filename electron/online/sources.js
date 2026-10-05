@@ -397,7 +397,9 @@ function saveOnlineTracks(db, items = []) {
       album_artist: item.artists?.[0] ? String(item.artists[0]).slice(0, 500) : null,
       duration: Number(item.duration) > 0 ? Number(item.duration) : null,
       source_url: p.sourceUrl(itemId),
-      artwork_url: /^https:\/\//.test(String(item.thumbnail || '')) ? String(item.thumbnail).slice(0, 1000) : null,
+      // Search results call it thumbnail; a row played again (a fallback to
+      // another source) has artwork_url: keep its cover either way.
+      artwork_url: [item.thumbnail, item.artwork_url].map(value => String(value || '')).find(value => /^https:\/\//.test(value))?.slice(0, 1000) || null,
       now: Date.now(),
     })
     return get.get(id)

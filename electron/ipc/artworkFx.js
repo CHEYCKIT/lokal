@@ -4,6 +4,7 @@
 
 const path = require('path')
 const fs = require('fs')
+const net = require('net')
 const { getDB, getStorageDir } = require('./db')
 const { meshFromImage } = require('../artwork/mesh')
 const { motionCoverFor } = require('../artwork/motion')
@@ -18,6 +19,21 @@ function settingsMap() {
   try { return Object.fromEntries(getDB().prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value])) } catch { return {} }
 }
 
+/**
+ * The cover of an online song (a ghost row) to take colours from, or null:
+ * https only, never this computer or the local network. Any host: a song
+ * played from YouTube after its addon failed keeps the addon's cover.
+ */
+function remoteArtworkURL(track) {
+  if (!/^ghost:\/\/(?:youtube|soundcloud|addon)\//.test(String(track?.file_path || ''))) return null
+  let url
+  try { url = new URL(String(track?.artwork_url || '')) } catch { return null }
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  if (url.protocol !== 'https:' || url.username || url.password) return null
+  if (net.isIP(host) || host === 'localhost' || /\.(?:localhost|local|internal|lan|home)$/.test(host) || !host.includes('.')) return null
+  return url
+}
+
 async function meshForTrack(trackId) {
   const track = trackRow(trackId)
   const art = track?.artwork_path
@@ -26,13 +42,8 @@ async function meshForTrack(trackId) {
     try { stamp = String(fs.statSync(art).mtimeMs) } catch {}
     return meshFromImage(art, `${art}|${stamp}`)
   }
-  let url
-  try {
-    url = new URL(String(track?.artwork_url || ''))
-    const trustedHost = /(?:^|\.)(?:ytimg\.com|ggpht\.com|googleusercontent\.com|sndcdn\.com)$/i.test(url.hostname)
-    const addonArtwork = /^ghost:\/\/addon\//.test(String(track?.file_path || ''))
-    if (url.protocol !== 'https:' || (!trustedHost && !addonArtwork)) return null
-  } catch { return null }
+  const url = remoteArtworkURL(track)
+  if (!url) return null
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   try {
@@ -84,4 +95,4 @@ function registerArtworkFxHandlers(ipcMain) {
   ipcMain.handle('artwork:spotifyCheck', () => spotifyCheck())
 }
 
-module.exports = { registerArtworkFxHandlers, meshForTrack, motionForTrack, motionCacheDir, spotifyCheck }
+module.exports = { registerArtworkFxHandlers, meshForTrack, remoteArtworkURL, motionForTrack, motionCacheDir, spotifyCheck }
