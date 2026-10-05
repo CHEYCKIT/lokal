@@ -1775,7 +1775,16 @@ export default function App() {
     if (!pending) return
     el.dataset.lokalTrackId = pending
     el.dataset.lokalTrackPending = ''
-  }, [])
+    // The element's play event came while it was still pending and was
+    // ignored: start what it would have (the listening timer, ListenBrainz
+    // now playing), or an auto-advanced song is never counted.
+    const { activeAudioElement, isPlaying, currentTrack } = usePlayerStore.getState()
+    const active = (activeAudioElement === 'primary') === (el === audioRef.current)
+    if (active && isPlaying && !el.paused && String(currentTrack?.id) === pending) {
+      startTimer()
+      sendListenBrainzNowPlaying()
+    }
+  }, [startTimer, sendListenBrainzNowPlaying])
 
   const handlePrimaryEnded = useCallback((e) => {
     if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
