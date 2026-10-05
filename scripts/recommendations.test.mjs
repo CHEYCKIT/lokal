@@ -66,6 +66,40 @@ test('a native artist song ID avoids a redundant search and preparation failures
   assert.match(playbackFallbackMessage(failures[0]), /yt-dlp is not installed/)
 })
 
+test('native YouTube identity survives a database-only save row and a subsequent SoundCloud fallback', async () => {
+  const target = { title: 'Native Song', artist: 'Artist A, Artist B', artists: ['Artist A', 'Artist B'], videoId: 'abcdefghijk', source: 'youtube' }
+  const prepared = [], searches = []
+  const { client } = clientMock({
+    getSettings: async () => ({ playback_search_order: '["sc","yt"]' }), onlineProviders: async () => [{ id: 'sc' }, { id: 'yt' }],
+    onlineSearch: async (query, source) => { searches.push(source); return source === 'sc' ? { results: [{ id: '123', ...target, artist: 'Artist A', artists: ['Artist A'] }] } : { results: [] } },
+    onlineSave: async items => items.map(item => ({ id: `${item.provider}-${item.id}`, file_path: item.provider === 'sc' ? 'ghost://soundcloud/online/123' : `ghost://youtube/online/${item.id}`, source_url: item.provider === 'sc' ? 'https://api.soundcloud.com/tracks/123' : `https://music.youtube.com/watch?v=${item.id}`, title: item.title, artist: item.artist })),
+    onlinePrepare: async (source, id) => { prepared.push([source, id]); return { ok: true } },
+  })
+  const [saved] = await resolveRecommendationTracks([target], client)
+  assert.equal(saved.videoId, target.videoId)
+  assert.deepEqual(saved.artists, target.artists)
+  const [fallback] = await resolveRecommendationTracks([saved], client, { reusePlayable: false, afterProvider: 'sc' })
+  assert.equal(fallback.file_path, 'ghost://youtube/online/abcdefghijk')
+  assert.deepEqual(searches, ['sc'], 'the known YouTube recording must not be searched by display title again')
+  assert.deepEqual(prepared.at(-1), ['yt', 'abcdefghijk'])
+})
+
+test('existing YouTube ghosts, downloaded source identities and native URLs resolve directly without text search', async () => {
+  for (const identity of [{ file_path: 'ghost://youtube/online/abcdefghijk', id: 'yt-abcdefghijk' }, { source_ref: 'yt:abcdefghijk' }, { url: 'https://music.youtube.com/watch?v=abcdefghijk' }, { source_url: 'https://youtu.be/abcdefghijk' }]) {
+    const prepared = []
+    const { client } = clientMock({ getSettings: async () => ({ playback_search_order: '["yt"]' }), onlineProviders: async () => [{ id: 'yt' }], onlineSearch: async () => { throw new Error('Native identity should avoid text search') }, onlinePrepare: async (source, id) => { prepared.push(id); return { ok: true } } })
+    const resolved = await resolveRecommendationTracks([{ ...song(1), ...identity }], client, { reusePlayable: false })
+    assert.equal(resolved.length, 1)
+    assert.deepEqual(prepared, ['abcdefghijk'])
+  }
+})
+
+test('collaborative tracks match their structured lead artist while wrong artists and alternate versions remain rejected', () => {
+  const candidate = { title: 'Collaboration', artist: 'Artist A, Artist B', artists: ['Artist A', 'Artist B'] }
+  assert.ok(recommendationMatch(candidate, [{ title: 'Collaboration', artist: 'Artist A', artists: ['Artist A'] }]))
+  for (const result of [{ title: 'Collaboration', artist: 'Artist B' }, { title: 'Collaboration', artist: 'Other Artist' }, { title: 'Collaboration (Live)', artist: 'Artist A' }]) assert.equal(recommendationMatch(candidate, [result]), null)
+})
+
 test('featured credits cannot conceal remix, live, or cover versions in matching', () => {
   const target = { title: 'FE!N', artist: 'Travis Scott' }
   for (const suffix of ['(feat. Playboi Carti - Remix)', '[ft. Playboi Carti - LIVE]', '(featuring Playboi Carti - Cover)', 'feat. Playboi Carti - Remix', 'ft. Playboi Carti (Live)', 'featuring Playboi Carti - Cover']) {
