@@ -82,6 +82,9 @@ function parseItem(renderer) {
     const name = loose.find(t => !/\b(views|plays)$/i.test(t))
     if (name) artists.push(name)
   }
+  if (!album) {
+    album = loose.find(text => !artists.includes(text) && parseDuration(text) == null && !/\b(views|plays)$/i.test(text)) || null
+  }
 
   const thumbs = renderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || []
   return {
@@ -267,13 +270,14 @@ function parseTrackCard(renderer) {
   const title = textOf(renderer?.title)
   const subtitle = textOf(renderer?.subtitle)
   if (!VIDEO_ID.test(videoId) || !title) return null
-  const artist = subtitle.split('•').map(value => value.trim()).filter(Boolean)[0] || 'Unknown Artist'
+  const subtitleParts = subtitle.split('•').map(value => value.trim()).filter(Boolean)
+  const artist = subtitleParts[0] || 'Unknown Artist'
   return {
     videoId,
     title,
     artists: [artist],
     artist,
-    album: null,
+    album: subtitleParts[1] || null,
     duration: null,
     thumbnail: thumbnailsOf(renderer?.thumbnail),
     kind: 'song',

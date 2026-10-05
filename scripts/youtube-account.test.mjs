@@ -4,7 +4,7 @@ import youtube from '../electron/online/youtube.js'
 
 const cookies = 'Cookie: __Secure-3PAPISID=test-session-value; __Secure-3PSID=test-login-value'
 const musicConfig = { INNERTUBE_CLIENT_VERSION: '1.test.client', VISITOR_DATA: 'test-visitor', SESSION_INDEX: '2', DELEGATED_SESSION_ID: 'test-channel' }
-const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '1' }] }] }, contents: { musicTwoRowItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk' } }, title: { runs: [{ text: 'Song' }] }, subtitle: { runs: [{ text: 'Artist' }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://images.example/cover.jpg' }] } } } } } }
+const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '1' }] }] }, contents: { musicTwoRowItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk' } }, title: { runs: [{ text: 'Song' }] }, subtitle: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: 'Album' }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://images.example/cover.jpg' }] } } } } } }
 
 test('account cookies normalize header prefixes and secure variants generate all required auth schemes', () => {
   const headers = youtube.accountHeaders(cookies, musicConfig)
@@ -34,6 +34,8 @@ test('account requests use bootstrapped client/account context and return person
   const result = await youtube.fetchAccountData({ cookies, fetchImpl, force: true })
   assert.equal(result.authenticated, true)
   assert.equal(result.home[0].title, 'Song')
+  assert.equal(result.home[0].album, 'Album')
+  assert.equal(result.history[0].album, 'Album')
   assert.equal(requests.length, 5)
   for (const request of requests.slice(1)) {
     const body = JSON.parse(request.init.body)

@@ -11,7 +11,7 @@ const { motionCoverFor } = require('../artwork/motion')
 const MAX_REMOTE_ARTWORK_BYTES = 10 * 1024 * 1024
 
 function trackRow(trackId) {
-  try { return getDB().prepare('SELECT id, title, artist, album, artwork_path, artwork_url FROM tracks WHERE id = ?').get(trackId) || null } catch { return null }
+  try { return getDB().prepare('SELECT id, title, artist, album, file_path, artwork_path, artwork_url FROM tracks WHERE id = ?').get(trackId) || null } catch { return null }
 }
 
 function settingsMap() {
@@ -29,7 +29,9 @@ async function meshForTrack(trackId) {
   let url
   try {
     url = new URL(String(track?.artwork_url || ''))
-    if (url.protocol !== 'https:' || !/(?:^|\.)(?:ytimg\.com|ggpht\.com|googleusercontent\.com|sndcdn\.com)$/i.test(url.hostname)) return null
+    const trustedHost = /(?:^|\.)(?:ytimg\.com|ggpht\.com|googleusercontent\.com|sndcdn\.com)$/i.test(url.hostname)
+    const addonArtwork = /^ghost:\/\/addon\//.test(String(track?.file_path || ''))
+    if (url.protocol !== 'https:' || (!trustedHost && !addonArtwork)) return null
   } catch { return null }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
