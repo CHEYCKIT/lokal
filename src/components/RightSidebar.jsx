@@ -389,7 +389,7 @@ export default function RightSidebar() {
                         aria-pressed={coverOff}
                         title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
                         className={fx ? btnFx : btnClassic}>
-                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName} for This Song`}
+                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName}`}
                       </button>
                     </div>
                   )}

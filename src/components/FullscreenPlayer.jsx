@@ -1,11 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2 } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Image as ImageIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
-import MotionCover from './MotionCover'
+import MotionCover, { loadMotionCover } from './MotionCover'
 import { useMotionCoverOff } from '../motionCoverPrefs'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
@@ -218,7 +218,19 @@ export default function FullscreenPlayer() {
   const backdropFx = useArtworkBackdropEnabled()
   const [fsCanvas, setFsCanvas] = useState(false)
   // Turned off for this song from the side panel.
-  const [coverOff] = useMotionCoverOff(currentTrack)
+  const [coverOff, setCoverOff] = useMotionCoverOff(currentTrack)
+  // Whether the song has a Canvas / moving cover (asked even while it's
+  // turned off, so its button stays to turn it back on).
+  const [coverClip, setCoverClip] = useState({ id: null, clip: null })
+  useEffect(() => {
+    const id = currentTrack?.id
+    if (!id || !(showFullscreen || showLyricsFullscreen)) return undefined
+    let current = true
+    loadMotionCover(id).then(clip => { if (current) setCoverClip({ id, clip: clip?.src ? clip : null }) })
+    return () => { current = false }
+  }, [currentTrack?.id, showFullscreen, showLyricsFullscreen])
+  const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
+  const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -649,6 +661,11 @@ export default function FullscreenPlayer() {
                       <CoverButton onClick={() => openAddToPlaylist(currentTrack)} label="Add to a playlist"><ListPlus size={19} /></CoverButton>
                       <CoverButton onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')} label={fullscreenPanel === 'queue' ? 'Hide the queue' : 'Show the queue'} active={fullscreenPanel === 'queue'}><ListMusic size={19} /></CoverButton>
                       <CoverButton onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')} label={fullscreenPanel === 'lyrics' ? 'Hide the lyrics' : 'Show the lyrics'} active={fullscreenPanel === 'lyrics'}><Mic2 size={19} /></CoverButton>
+                      {clipNow && (
+                        <CoverButton onClick={() => setCoverOff(!coverOff)} label={coverOff ? `Show ${clipName}` : `Hide ${clipName}`} active={coverOff}>
+                          {coverOff ? <Film size={19} /> : <ImageIcon size={19} />}
+                        </CoverButton>
+                      )}
                     </div>
                     <div className="relative flex items-center justify-center gap-8 pb-7">
                       <CoverIcon onClick={toggleShuffle} label="Shuffle" pressed={shuffle} dim={!shuffle}>
@@ -726,6 +743,7 @@ export default function FullscreenPlayer() {
                         wordSync={wordSync}
                         onSearchRequest={() => setShowSearch(true)}
                         textScale={1.6}
+                        toolbarHidden={chromeHidden}
                         isAutoSynced={isAutoSynced}
                       />
                     </div>
