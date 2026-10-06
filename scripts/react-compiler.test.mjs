@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { COMPILED } from '../vite.config.mjs'
+import { COMPILED, isCompiled } from '../vite.config.mjs'
 
 const require = createRequire(import.meta.url)
 const babel = require('@babel/core')
@@ -16,6 +16,7 @@ const babel = require('@babel/core')
 const REVIEWED = {
   QueuePanel: ['displayQueue.length'], // always an array
   LyricsPanel: ['line.time', 'line.bgWords', 'line.text', 'line.words', 'line.bgText'], // Row's line prop
+  ContextMenu: ['state?.items'], // null-safe
 }
 
 function compile(name) {
@@ -25,7 +26,8 @@ function compile(name) {
     filename: file, babelrc: false, configFile: false, parserOpts: { plugins: ['jsx'] },
     plugins: [['babel-plugin-react-compiler', { logger: { logEvent(_, event) { if (event.kind === 'CompileSuccess') compiled.push(event.fnName) } } }]],
   })
-  const paths = new Set([...code.matchAll(/\$\[\d+\] !== ([A-Za-z_$][\w$]*\.[\w$.]+)/g)].map(m => m[1]))
+  // Ordinary and optional-chain steps alike (`a.b`, `a?.b`, `a?.b.c`).
+  const paths = new Set([...code.matchAll(/\$\[\d+\] !== ([A-Za-z_$][\w$]*(?:\??\.[\w$]+)+)/g)].map(m => m[1]))
   return { compiled, paths: [...paths] }
 }
 
@@ -37,3 +39,12 @@ for (const name of COMPILED) {
     assert.deepEqual(unreviewed, [], `${name} now reads ${unreviewed.join(', ')} during render: check each object can't be null there`)
   })
 }
+
+test('the listed files are picked out on any platform', () => {
+  assert.equal(isCompiled('/home/me/lokal/src/components/QueuePanel.jsx'), true)
+  assert.equal(isCompiled('C:/Users/me/lokal/src/components/QueuePanel.jsx'), true) // what Vite passes on Windows
+  assert.equal(isCompiled('C:\\Users\\me\\lokal\\src\\components\\QueuePanel.jsx'), true)
+  assert.equal(isCompiled('/home/me/lokal/src/components/QueuePanel.jsx?v=123'), true)
+  assert.equal(isCompiled('/home/me/lokal/src/components/ProfileModal.jsx'), false)
+  assert.equal(isCompiled('/home/me/lokal/src/pages/QueuePanel.jsx'), false)
+})

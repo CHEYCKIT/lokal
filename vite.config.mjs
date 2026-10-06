@@ -20,10 +20,17 @@ export const COMPILED = [
   'Sidebar', 'ArtworkBackdrop', 'ContextMenu', 'Modal',
 ]
 
+// Vite hands plugins forward-slash ids, on Windows too, sometimes with a
+// query (`?v=`), so compare a normalised path rather than one built with path.sep.
+export const isCompiled = (filename) => {
+  const file = String(filename).split('?')[0].replace(/\\/g, '/')
+  return COMPILED.some(name => file.endsWith(`/src/components/${name}.jsx`))
+}
+
 export default defineConfig({
   plugins: [react({
     babel: {
-      plugins: [['babel-plugin-react-compiler', { sources: filename => COMPILED.some(name => filename.endsWith(`${path.sep}src${path.sep}components${path.sep}${name}.jsx`)) }]],
+      plugins: [['babel-plugin-react-compiler', { sources: isCompiled }]],
     },
   })],
   resolve: { alias: { '@': path.resolve(dirname, 'src') } },
