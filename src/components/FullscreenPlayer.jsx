@@ -6,6 +6,7 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
+import { useMotionCoverOff } from '../motionCoverPrefs'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
 import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
@@ -155,6 +156,8 @@ export default function FullscreenPlayer() {
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()
   const [fsCanvas, setFsCanvas] = useState(false)
+  // Turned off for this song from the side panel.
+  const [coverOff] = useMotionCoverOff(currentTrack)
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -494,8 +497,8 @@ export default function FullscreenPlayer() {
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
-                {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
-                {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} />}
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
+                {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
               </motion.div>
             </AnimatePresence>
 
