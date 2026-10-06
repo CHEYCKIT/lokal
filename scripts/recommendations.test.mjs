@@ -383,3 +383,15 @@ test('a match from another release is saved with the cover that was shown', asyn
   await resolveRecommendationTracks([{ title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', album: 'I Am', artwork_url: 'https://lastfm.example/i-am.jpg' }], client, { sources: [{ id: addon, label: 'Addon' }], prepareStreams: false })
   assert.equal(saved[0]?.thumbnail, 'https://lastfm.example/i-am.jpg')
 })
+
+test("moving a playback source keeps the ones not available right now in their place", async () => {
+  const { movePlaybackSource } = await import('../src/playbackSources.js')
+  const addon = { id: 'a-0123456789' }
+  // The addon is first but not loaded yet (or being reinstalled): moving SoundCloud up keeps it first.
+  assert.deepEqual(movePlaybackSource(JSON.stringify(['a-0123456789', 'yt', 'sc']), [{ id: 'yt' }, { id: 'sc' }], 1, -1), ['a-0123456789', 'sc', 'yt'])
+  assert.deepEqual(orderedPlaybackSources(JSON.stringify(['a-0123456789', 'sc', 'yt']), [{ id: 'yt' }, { id: 'sc' }, addon]).map(p => p.id), ['a-0123456789', 'sc', 'yt'])
+  // All available: an ordinary move; a new source starts last.
+  assert.deepEqual(movePlaybackSource(JSON.stringify(['yt', 'sc']), [{ id: 'yt' }, { id: 'sc' }, addon], 2, -1), ['yt', 'a-0123456789', 'sc'])
+  assert.deepEqual(movePlaybackSource('not json', [{ id: 'yt' }, { id: 'sc' }], 0, 1), ['sc', 'yt'])
+  assert.deepEqual(movePlaybackSource(JSON.stringify(['yt', 'sc']), [{ id: 'yt' }, { id: 'sc' }], 1, 1), ['yt', 'sc'])
+})
