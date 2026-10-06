@@ -27,6 +27,7 @@ import { openRadio } from '../radioActions'
 import DiscoveryImage from './DiscoveryImage'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
+import { navigateToTrackAlbum } from '../playbackContext'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -534,7 +535,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
        list.some(item => isStreamed(item) || needsResolution(item)) && { label: resolveTracks || !one ? `Download${one ? ' song' : count}` : 'Save to library', icon: Download, onSelect: () => downloadSongs(list) },
       one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
       { separator: true },
-      one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigate('/albums', { state: { album: { title: one.album, album_artist: one.album_artist || one.artist } } }) },
+      one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(navigate, one) },
       !resolveTracks && (one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) }),
       !resolveTracks && one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
       { separator: true },

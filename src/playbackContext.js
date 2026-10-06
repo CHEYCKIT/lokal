@@ -8,6 +8,9 @@
 //   { type: 'album',    name, album: { title, album_artist, artwork_path } }
 //   { type: 'artist',   id, name }
 //   { type: 'library' | 'mix' | 'search' | 'recap', name }
+//   { type: 'discovery', name, path? }   online songs; path: their album or artist page
+
+import { isOnlineTrack, onlineAlbumPath } from './onlineBrowse.js'
 
 export function makePlaylistContext(playlist, fallbackId = null) {
   const id = playlist?.id ?? fallbackId
@@ -70,6 +73,7 @@ export function isContextNavigable(context) {
   if (context.type === 'playlist') return !!context.id
   if (context.type === 'artist') return !!context.id
   if (context.type === 'album') return !!context.album?.title
+  if (context.type === 'discovery') return /^\/(?:online|artist)\//.test(String(context.path || ''))
   return false
 }
 
@@ -93,6 +97,10 @@ export function navigateToContext(nav, context, highlightTrackId = null) {
     nav('/albums', { state: { ...state, album: context.album } })
     return true
   }
+  if (context.type === 'discovery') {
+    nav(context.path, { state })
+    return true
+  }
   return false
 }
 
@@ -100,6 +108,12 @@ export function navigateToContext(nav, context, highlightTrackId = null) {
 export function navigateToTrackAlbum(nav, track) {
   const context = albumContextFromTrack(track)
   if (!nav || !context) return false
+  // A streamed song: its album online (that page opens the library's copy
+  // instead when there is one).
+  if (isOnlineTrack(track)) {
+    nav(onlineAlbumPath({ artist: track.album_artist || track.artist, album: track.album }), { state: { artwork: track.artwork_url || null, highlightTitle: track.title } })
+    return true
+  }
   nav('/albums', { state: { album: context.album, highlightTrackId: track?.id || null } })
   return true
 }

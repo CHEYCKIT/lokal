@@ -18,6 +18,7 @@ import Onboarding, { useOnboarding } from './components/Onboarding'
 import PostOnboardingTour from './components/PostOnboardingTour'
 import Home from './pages/Home'
 import Albums from './pages/Albums'
+import OnlineAlbum from './pages/OnlineAlbum'
 import Artists from './pages/Artists'
 import Library from './pages/Library'
 import Search from './pages/Search'
@@ -241,6 +242,7 @@ function AnimatedRoutes() {
         <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
         <Route path="/search" element={<PageTransition><Search /></PageTransition>} />
         <Route path="/artist/:id" element={<PageTransition><Artist /></PageTransition>} />
+        <Route path="/online/album" element={<PageTransition><OnlineAlbum /></PageTransition>} />
         <Route path="/playlist/:id" element={<PageTransition gated><Playlist /></PageTransition>} />
         {/* The Downloader lives in Search now; what asked for it (a Soulseek search) is passed on. */}
         <Route path="/downloader" element={<Navigate to="/search" replace state={location.state} />} />

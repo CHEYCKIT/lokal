@@ -5,7 +5,7 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
-import { artistToSlug } from '../artistLink'
+import { navigateToTrackArtist } from '../artistLink'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
@@ -113,8 +113,7 @@ export default function PlayerBar() {
 
   const handleArtistClick = () => {
     if (!currentTrack) return
-    const slug = artistToSlug(currentTrack.artist, keepCommaArtists)
-    nav(`/artist/a-${slug}`)
+    navigateToTrackArtist(nav, currentTrack, keepCommaArtists)
   }
 
   const hasAlbum = !!currentTrack?.album

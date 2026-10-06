@@ -13,6 +13,7 @@ import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
+import OnlineArtist from '../components/OnlineArtist'
 
 export default function Artist() {
   const { id } = useParams()
@@ -27,6 +28,12 @@ export default function Artist() {
   // this, that track silently fails to highlight with no visible fallback.
   const [standaloneTrack, setStandaloneTrack] = useState(null)
   const [showManage, setShowManage] = useState(false)
+  // Not in the library, or only as streamed songs (a streamed song's artist
+  // shortcut): their page online instead.
+  const [online, setOnline] = useState(false)
+  // Their name as the link gave it ("Earth, Wind & Fire"; the id is a slug).
+  const onlineNames = useRef({})
+  if (location.state?.name) onlineNames.current[id] = location.state.name
   const { playQueue } = usePlayerStore()
   const artistContext = makeArtistContext(id, artist?.name)
   // Set by the "playing from ..." shortcut so we can scroll to the playing track.
@@ -83,9 +90,10 @@ export default function Artist() {
   }, [artist, highlightTrackId, highlightRequestKey])
 
   const load = () => {
+    setOnline(false)
     Promise.all([api.getArtist(id), api.getSettings()]).then(([data, appSettings]) => {
+      if (!data?.id || !data.tracks?.length) { setArtist(null); setOnline(true); return }
       setArtist(data)
-      if (!data?.id) return
       if (appSettings?.auto_fetch_artist_metadata !== '1') return
       api.artistRefreshMetadata(data.id).then((refreshed) => {
         if (!refreshed || refreshed.error) return
@@ -99,7 +107,7 @@ export default function Artist() {
           return { ...current, ...refreshed }
         })
       }).catch(() => {})
-    }).catch(() => {})
+    }).catch(() => { setArtist(null); setOnline(true) })
     api.getArtists().then(setAllArtists)
   }
 
@@ -140,6 +148,7 @@ export default function Artist() {
   const releasesFor = (keys) => releaseList.filter(album => keys.includes(releaseKey(album)))
   const releaseSelection = useSelection(releaseKeys, { onDelete: (keys) => releases.askDelete(releasesFor(keys)) })
 
+  if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]} />
   if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
 
   // Web mode previously hardcoded this to null, so the artist detail page

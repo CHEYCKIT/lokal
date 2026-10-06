@@ -412,8 +412,11 @@ function parseAccountEntities(root, type) {
     const title = textOf(row?.title) || titleRuns.map(run => run.text).join('')
     if (!title || !pageType.endsWith(type === 'artist' ? '_ARTIST' : '_ALBUM')) return
     const image = thumbnailsOf(row.thumbnail)
-    const artist = (textOf(row.subtitle) || columnRuns(row, 1).map(run => run.text).join('')).split('•').map(value => value.trim()).find(value => value && !/^(album|single|ep|\d{4})$/i.test(value)) || ''
-    items.set(endpoint.browseId, type === 'artist' ? { name: title, image, browseId: endpoint.browseId } : { title, artist, artwork_url: image, albumId: endpoint.browseId })
+    const parts = (textOf(row.subtitle) || columnRuns(row, 1).map(run => run.text).join('')).split('•').map(value => value.trim())
+    const artist = parts.find(value => value && !/^(album|single|ep|\d{4})$/i.test(value)) || ''
+    const year = Number(parts.find(value => /^\d{4}$/.test(value))) || null
+    const kind = parts.find(value => /^(album|single|ep)$/i.test(value))?.toLowerCase() || null
+    items.set(endpoint.browseId, type === 'artist' ? { name: title, image, browseId: endpoint.browseId } : { title, artist, artwork_url: image, albumId: endpoint.browseId, year, release_type: kind })
   })
   return [...items.values()].slice(0, 30)
 }
@@ -553,29 +556,40 @@ async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
   }
 }
 
+/** YouTube Music's album search: { albums: [{ title, artist, artwork_url, albumId, year, release_type }] } or { error }. */
+async function searchAlbums(query, cookies, fetchImpl, config) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    const response = await fetchImpl(SEARCH_URL, {
+      method: 'POST', signal: controller.signal,
+      headers: accountHeaders(cookies, config) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
+      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion } }, query, params: 'EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D' }),
+    })
+    if (!response.ok) return { error: `YouTube album search failed (${response.status}).` }
+    return { albums: parseAccountEntities(await response.json(), 'album') }
+  } finally { clearTimeout(timer) }
+}
+
 async function fetchCatalogue({ type, artist, album, albumId } = {}, cookies, fetchImpl = fetch) {
   const plain = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   if (!artist || (type === 'album' && !album)) return { error: 'An artist and album name are required.' }
-  if (type !== 'album') {
+  if (type !== 'album' && type !== 'albums') {
     const tracks = (await searchSongs(String(artist), { limit: 60, fetchImpl })).filter(track => track.artists.some(name => plain(name) === plain(artist)))
     return { tracks }
   }
   const config = await musicContext(cookies, fetchImpl)
+  // An artist's albums (their online page): albums whose artist is them.
+  if (type === 'albums') {
+    const found = await searchAlbums(String(artist), cookies, fetchImpl, config)
+    if (found.error) return found
+    return { albums: found.albums.filter(item => plain(item.artist) === plain(artist) || plain(item.artist).startsWith(`${plain(artist)} `)) }
+  }
   let id = /^MPRE[\w-]+$/.test(String(albumId || '')) ? albumId : null
   if (!id) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 12000)
-    try {
-      const response = await fetchImpl(SEARCH_URL, {
-        method: 'POST', signal: controller.signal,
-        headers: accountHeaders(cookies, config) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
-        body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion } }, query: `${artist} ${album}`, params: 'EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D' }),
-      })
-      if (!response.ok) return { error: `YouTube album search failed (${response.status}).` }
-      const result = await response.json()
-      const match = parseAccountEntities(result, 'album').find(item => plain(item.title) === plain(album) && plain(item.artist) === plain(artist))
-      id = match?.albumId
-    } finally { clearTimeout(timer) }
+    const found = await searchAlbums(`${artist} ${album}`, cookies, fetchImpl, config)
+    if (found.error) return found
+    id = found.albums.find(item => plain(item.title) === plain(album) && plain(item.artist) === plain(artist))?.albumId
   }
   if (!id) return { error: `YouTube Music did not find the album ${album} by ${artist}.` }
   const root = await accountBrowse(id, cookies, fetchImpl, config, { anonymous: !accountHeaders(cookies) })
