@@ -332,6 +332,9 @@ export const api = {
   onlineDownloadUrl: (provider, id) => isE() ? el().onlineDownloadUrl(provider, id) : apiFetch(`/online/download-url/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`, { method:'POST' }),
   // Addons: online sources added by manifest URL (Settings → Addons).
   addonsList: () => isE() ? el().addonsList() : apiFetch('/online/addons'),
+  // An addon's album / artist page (when its manifest lists "album" / "artist").
+  addonAlbum: (provider, id) => isE() ? el().addonAlbum(provider, id) : apiFetch(`/online/addon-album/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`),
+  addonArtist: (provider, id) => isE() ? el().addonArtist(provider, id) : apiFetch(`/online/addon-artist/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`),
   addonsInstall: (url) => isE() ? el().addonsInstall(url) : apiFetch('/online/addons', { method:'POST', body:{ url } }),
   addonsRemove: (key) => isE() ? el().addonsRemove(key) : apiFetch(`/online/addons/${encodeURIComponent(key)}`, { method:'DELETE' }),
   addonsSetEnabled: (key, enabled) => isE() ? el().addonsSetEnabled(key, enabled) : apiFetch(`/online/addons/${encodeURIComponent(key)}/enabled`, { method:'PUT', body:{ enabled } }),

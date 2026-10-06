@@ -5,6 +5,7 @@
 // slug. Centralised here so PlayerBar, RightSidebar, etc. can't drift.
 
 import { isOnlineTrack } from './onlineBrowse.js'
+import { streamRef } from './onlineTracks.js'
 
 export function artistToSlug(artistName, keepCommaArtists = []) {
   if (!artistName) return ''
@@ -30,7 +31,8 @@ export function navigateToTrackArtist(nav, track, keepCommaArtists = []) {
     const slug = artistToSlug(name, [name])
     if (!slug) return false
     // The song itself tells their YouTube Music channel from a namesake's.
-    nav(`/artist/a-${slug}`, { state: { name, anchor: { title: track.title, album: track.album || '' } } })
+    const ref = streamRef(track)
+    nav(`/artist/a-${slug}`, { state: { name, anchor: { title: track.title, album: track.album || '', provider: ref?.provider || null, id: ref?.id ?? null } } })
     return true
   }
   const slug = artistToSlug(track.artist, keepCommaArtists)

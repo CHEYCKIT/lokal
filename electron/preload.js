@@ -144,6 +144,8 @@ contextBridge.exposeInMainWorld('electron', {
   youtubeSetLiked: (videoId, liked) => invoke('online:setAccountLiked', videoId, liked),
   onlineDownloadUrl: (provider, id) => invoke('online:downloadUrl', provider, id),
   addonsList: () => invoke('addons:list'),
+  addonAlbum: (provider, id) => invoke('online:addonAlbum', provider, id),
+  addonArtist: (provider, id) => invoke('online:addonArtist', provider, id),
   addonsInstall: (url) => invoke('addons:install', url),
   addonsRemove: (key) => invoke('addons:remove', key),
   addonsSetEnabled: (key, enabled) => invoke('addons:setEnabled', key, enabled),

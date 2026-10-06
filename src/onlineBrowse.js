@@ -7,14 +7,117 @@
 
 import { api } from './api.js'
 import { loadDiscoveryCatalogue } from './discoveryCatalogue.js'
-import { isGhostTrack } from './onlineTracks.js'
-import { recommendationKey, recommendationMatch, timed } from './recommendations.js'
+import { isGhostTrack, streamRef } from './onlineTracks.js'
+import { playbackSources, recommendationKey, recommendationMatch, timed } from './recommendations.js'
 
 /** "/online/album?artist=...&album=..." */
-export function onlineAlbumPath({ artist, album, albumId } = {}) {
+export function onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumId } = {}) {
   const params = new URLSearchParams({ artist: String(artist || ''), album: String(album || '') })
   if (/^MPRE[\w-]+$/.test(String(albumId || ''))) params.set('albumId', albumId)
+  // An addon's album: from that addon ("source"), by its id when known.
+  if (/^a-[0-9a-f]{10}$/.test(String(provider || ''))) {
+    params.set('source', provider)
+    if (sourceAlbumId) params.set('sourceAlbum', String(sourceAlbumId))
+  }
   return `/online/album?${params}`
+}
+
+/** The album page of a song: its addon's when it plays from one. */
+export function trackAlbumPath(track) {
+  const ref = streamRef(track)
+  const provider = /^a-/.test(ref?.provider || '') ? ref.provider : /^a-/.test(track.provider || '') ? track.provider : null
+  return onlineAlbumPath({
+    artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId,
+    provider, sourceAlbumId: provider && track.provider === provider ? track.albumId : null,
+  })
+}
+
+// ---------------------------------------------------------------- addons' own album and artist pages
+
+/** Enabled addons offering `resource` ("album" / "artist"), `first` before the others, then in playback order. */
+export async function catalogueAddons(resource, client = api, first = null) {
+  const providers = await Promise.resolve(client.onlineProviders?.()).catch(() => [])
+  const offering = (Array.isArray(providers) ? providers : []).filter(item => item?.addon && item[resource])
+  if (!offering.length) return []
+  const order = (await playbackSources(client).catch(() => [])).map(source => source.id)
+  const rank = id => (id === first ? -1 : order.includes(id) ? order.indexOf(id) : order.length)
+  return offering.map(item => item.id).sort((a, b) => rank(a) - rank(b))
+}
+
+const plain = value => recommendationKey(value)
+
+/** The addon's own result for `track` (with its album and artist ids), by searching it. */
+async function addonResultFor(track, provider, client) {
+  const ref = streamRef(track) || (track.provider && track.id ? { provider: track.provider, id: track.id } : null)
+  const response = await timed(() => client.onlineSearch(`${track.artist} ${track.title}`, provider), 12000).catch(() => null)
+  const results = Array.isArray(response?.results) ? response.results : []
+  return (ref?.provider === provider && results.find(result => String(result.id) === String(ref.id))) || recommendationMatch(track, results)
+}
+
+/** Songs from an addon album or artist page: played from that addon directly (no search). */
+const exactTracks = (tracks, artwork = '') => tracks.map(track => ({ ...track, exact: true, artwork_url: track.thumbnail || artwork || '' }))
+
+/**
+ * An album from an addon that has album pages: { tracks, title, artist,
+ * artwork, provider, albumId } or null. Its id: given, else from a song of
+ * it (`anchor`), else by searching the addon for the artist and album.
+ */
+export async function loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client = api) {
+  for (const addon of await catalogueAddons('album', client, provider)) {
+    let id = addon === provider ? sourceAlbumId : null
+    if (!id && anchor?.title) id = (await addonResultFor({ artist, ...anchor }, addon, client))?.albumId
+    if (!id) {
+      const response = await timed(() => client.onlineSearch(`${artist} ${album}`, addon), 12000).catch(() => null)
+      const results = Array.isArray(response?.results) ? response.results : []
+      const sameArtist = result => [result.artist, ...(result.artists || [])].some(name => plain(name) === plain(artist))
+      id = results.find(result => result.albumId && releaseTitleKey(result.album) === releaseTitleKey(album) && sameArtist(result))?.albumId
+    }
+    if (!id) continue
+    const result = await timed(() => client.addonAlbum(addon, id), 15000).catch(() => null)
+    if (!result || result.error || !result.tracks?.length) continue
+    return { tracks: exactTracks(result.tracks, result.artwork_url), title: result.title || album, artist: result.artist || artist, artwork: result.artwork_url || '', year: result.year, provider: addon, albumId: result.id }
+  }
+  return null
+}
+
+/**
+ * An artist from an addon that has artist pages: { name, image, tracks,
+ * albums } or null. Their id tells them from namesakes: the one credited on
+ * `anchor` (a song of theirs), else of the artists so named in the addon's
+ * search the one sharing the most with `hints` (the library's titles), else
+ * the one most of the results credit.
+ */
+export async function loadAddonArtist(name, { anchor, hints = [] } = {}, client = api) {
+  const want = plain(name)
+  const hinted = new Set(hints.map(plain).filter(Boolean))
+  for (const addon of await catalogueAddons('artist', client, anchor?.provider)) {
+    let id = null
+    if (anchor?.title) {
+      const own = await addonResultFor({ artist: name, ...anchor }, addon, client)
+      const at = (own?.artists || []).findIndex(artist => plain(artist) === want)
+      id = own?.artistIds?.[at >= 0 ? at : 0] || null
+    }
+    if (!id) {
+      const response = await timed(() => client.onlineSearch(name, addon), 12000).catch(() => null)
+      const tally = new Map() // id -> { count, hints }
+      for (const result of Array.isArray(response?.results) ? response.results : []) {
+        ;(result.artists || []).forEach((artist, index) => {
+          const artistId = result.artistIds?.[index]
+          if (!artistId || plain(artist) !== want) return
+          const entry = tally.get(artistId) || { count: 0, hints: 0 }
+          entry.count++
+          if (hinted.has(plain(result.title)) || hinted.has(plain(result.album))) entry.hints++
+          tally.set(artistId, entry)
+        })
+      }
+      id = [...tally.entries()].sort((a, b) => b[1].hints - a[1].hints || b[1].count - a[1].count)[0]?.[0] || null
+    }
+    if (!id) continue
+    const result = await timed(() => client.addonArtist(addon, id), 15000).catch(() => null)
+    if (!result || result.error || (!result.tracks?.length && !result.albums?.length)) continue
+    return { name: result.name || name, image: result.image || '', tracks: exactTracks(result.tracks), albums: result.albums.map(item => ({ ...item, provider: addon, sourceAlbumId: item.albumId, albumId: null })) }
+  }
+  return null
 }
 
 /** A song that isn't a library file: streamed, or a ghost row. */
@@ -28,8 +131,15 @@ export async function libraryAlbum({ artist, album }, client = api) {
 }
 
 /** An album's songs, in order: { tracks, error } */
-export async function loadOnlineAlbum({ artist, album, albumId, artwork }, client = api, options = {}) {
-  const result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, options)
+export async function loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, client = api, options = {}) {
+  // The catalogues first (Last.fm, YouTube Music); then an addon with album
+  // pages (the whole album, in order); then a search of the playback sources.
+  let result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, searchSources: false })
+  if (!result.tracks?.length) {
+    const fromAddon = await loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client).catch(() => null)
+    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork }
+    result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, skipSources: ['lastfm', 'youtube'] })
+  }
   // Songs without their own cover show the album's.
   const tracks = (result.tracks || []).map(track => ({ ...track, album: track.album || album, artwork_url: track.artwork_url || track.thumbnail || artwork || '' }))
   return { tracks, error: tracks.length ? '' : result.error }
@@ -37,7 +147,7 @@ export async function loadOnlineAlbum({ artist, album, albumId, artwork }, clien
 
 /** An artist's popular songs: { tracks, error } */
 export async function loadOnlineArtistSongs(artist, client = api, options = {}) {
-  const result = await loadDiscoveryCatalogue({ type: 'artist', artist }, client, options)
+  const result = await loadDiscoveryCatalogue({ type: 'artist', artist }, client, { searchSources: true, ...options })
   return { tracks: (result.tracks || []).map(track => ({ ...track, artwork_url: track.artwork_url || track.thumbnail || '' })), error: result.error || '' }
 }
 

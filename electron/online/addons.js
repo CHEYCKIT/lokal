@@ -4,10 +4,16 @@
 // to the addons the user installed, like a browser talks to the sites the
 // user opens.
 //
-// Supported (v1): tracks.
+// Supported (v1): tracks; albums and artists when the manifest lists them.
 //   GET <base>/manifest.json      id, name, version, resources, icon, settings
-//   GET <base>/search?q=...       { tracks: [{ id, title, artist, album, duration, artworkURL, ... }] }
+//   GET <base>/search?q=...       { tracks: [{ id, title, artist, artists: [{ id, name }], album, albumId,
+//                                   trackNumber, discNumber, year, isrc, duration, artworkURL, format }] }
 //   GET <base>/stream/<id>        { url, format, expiresAt, ... }
+//   GET <base>/album/<id>         { id, title, artist, artistId, artworkURL, year, releaseType, tracks: [...] }   ("album")
+//   GET <base>/artist/<id>        { id, name, artworkURL, albums: [{ id, title, year, releaseType, artworkURL,
+//                                   trackCount }], topTracks: [...] }                                          ("artist")
+// The manifest is read again now and then (refreshManifests), so an addon
+// that gains resources needn't be installed again.
 // <base> is the manifest URL without "/manifest.json" (it may carry the
 // user's token, e.g. https://addon.example/<token>/manifest.json). The
 // addon's settings (declared in its manifest, edited in Settings → Addons)
@@ -19,7 +25,9 @@ const crypto = require('crypto')
 const net = require('net')
 
 const SETTINGS_KEY = 'addons'
-const TIMEOUT_MS = { manifest: 10000, search: 10000, stream: 15000 }
+const TIMEOUT_MS = { manifest: 10000, search: 10000, stream: 15000, catalogue: 15000 }
+const CATALOGUE_TTL_MS = 30 * 60 * 1000
+const MANIFEST_MAX_AGE_MS = 6 * 60 * 60 * 1000
 const MAX_BYTES = 2 * 1024 * 1024
 const SEARCH_TTL_MS = 5 * 60 * 1000
 const STREAM_TTL_MS = 20 * 60 * 1000
@@ -31,6 +39,7 @@ let USER_AGENT = 'Lokal'
 try { USER_AGENT = `Lokal/${require('../../package.json').version}` } catch {}
 
 const searchCache = new Map() // `${key}\n${query}` -> { at, results }
+const catalogueCache = new Map() // `${key}\n${path}` -> { at, value }
 const streamCache = new Map() // `${key}\n${id}` -> stream
 const resolving = new Map()
 
@@ -190,7 +199,22 @@ function findByKey(db, key) {
 async function install(db, manifestUrl, { fetchImpl } = {}) {
   const url = checkUrl(manifestUrl)
   if (!/\/manifest\.json$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, '')}/manifest.json`
-  const manifest = await getJson(url.toString(), { timeoutMs: TIMEOUT_MS.manifest, fetchImpl })
+  const manifest = await getJson(freshUrl(url), { timeoutMs: TIMEOUT_MS.manifest, fetchImpl })
+  return saveManifest(db, url, manifest)
+}
+
+/**
+ * The manifest URL with a throwaway parameter: a CDN in front of an addon
+ * (Cloudflare) can keep serving an old manifest for hours, so a new version
+ * (new resources) would go unseen. Only the fetch uses it, never the saved URL.
+ */
+function freshUrl(url) {
+  const fresh = new URL(url.toString())
+  fresh.searchParams.set('lokal_fresh', String(Date.now()))
+  return fresh.toString()
+}
+
+function saveManifest(db, url, manifest) {
   const resources = Array.isArray(manifest.resources) ? manifest.resources.filter(r => typeof r === 'string') : []
   if (!manifest.id || !manifest.name || !manifest.version) throw new Error('This is not an addon manifest (id, name and version are required).')
   if (!resources.includes('search') || !resources.includes('stream')) throw new Error('This addon cannot search and stream tracks, so Lokal cannot use it.')
@@ -208,9 +232,30 @@ async function install(db, manifestUrl, { fetchImpl } = {}) {
   const baseUrl = url.toString().replace(/\/manifest\.json(?:\?.*)?$/i, '')
   const all = readAll(db)
   const existing = all.find(a => a.key === key)
-  const addon = { key, baseUrl, manifest: clean, enabled: existing ? existing.enabled !== false : true, settings: existing?.settings || {}, installedAt: existing?.installedAt || Date.now() }
-  writeAll(db, [...all.filter(a => a.key !== key), addon])
+  const addon = { key, baseUrl, manifest: clean, enabled: existing ? existing.enabled !== false : true, settings: existing?.settings || {}, installedAt: existing?.installedAt || Date.now(), manifestAt: Date.now() }
+  // Updating keeps its place among the addons (the playback order lists them).
+  writeAll(db, existing ? all.map(a => (a.key === key ? addon : a)) : [...all, addon])
   return publicView(addon)
+}
+
+const refreshing = new Set()
+/**
+ * Read installed addons' manifests again when the copy is older than
+ * `maxAgeMs` (new resources, settings, name), keeping the user's settings.
+ * Failures are quiet: the saved manifest stays.
+ */
+async function refreshManifests(db, { fetchImpl, maxAgeMs = MANIFEST_MAX_AGE_MS } = {}) {
+  const due = readAll(db).filter(a => !refreshing.has(a.key) && !(Date.now() - (a.manifestAt || 0) < maxAgeMs))
+  await Promise.all(due.map(async addon => {
+    refreshing.add(addon.key)
+    try {
+      const url = new URL(`${addon.baseUrl}/manifest.json`)
+      const manifest = await getJson(freshUrl(url), { timeoutMs: TIMEOUT_MS.manifest, fetchImpl })
+      // The same addon only: a manifest that changed its id is a different one.
+      if (addonKey(String(manifest?.id || '').slice(0, 200)) === addon.key) saveManifest(db, url, manifest)
+    } catch {} finally { refreshing.delete(addon.key) }
+  }))
+  return list(db)
 }
 
 function remove(db, key) {
@@ -253,6 +298,38 @@ function durationOf(t) {
   return d > 36000 ? Math.round(d / 1000) : Math.round(d) // some send ms in "duration"
 }
 
+const idOf = value => (value == null || value === '' ? null : String(value).slice(0, 300))
+const positive = value => (Number(value) > 0 ? Math.floor(Number(value)) : null)
+const httpsImage = value => (/^https:\/\//.test(String(value || '')) ? String(value).slice(0, 1000) : null)
+const RELEASE_TYPES = new Set(['album', 'single', 'ep', 'compilation', 'live'])
+
+/** One addon track, as Lokal's online results carry it. */
+function trackOf(t, provider) {
+  const name = artist => String(typeof artist === 'object' ? artist?.name || '' : artist || '').slice(0, 500)
+  const artistList = Array.isArray(t.artists) ? t.artists.filter(a => name(a)) : []
+  const artists = artistList.map(name)
+  if (!artists.length && name(t.artist)) artists.push(name(t.artist))
+  return {
+    provider,
+    id: String(t.id).slice(0, 300),
+    title: String(t.title).slice(0, 500),
+    artist: name(t.artist) || artists.join(', '),
+    artists,
+    // The addon's ids: its artists (told apart from namesakes) and album.
+    artistIds: artistList.length ? artistList.map(a => (typeof a === 'object' ? idOf(a.id) : null)) : [],
+    album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
+    albumId: idOf(t.albumId ?? (typeof t.album === 'object' ? t.album?.id : null)),
+    track_num: positive(t.trackNumber),
+    disc_num: positive(t.discNumber),
+    year: positive(t.year),
+    isrc: t.isrc ? String(t.isrc).slice(0, 20) : null,
+    duration: durationOf(t),
+    thumbnail: httpsImage(t.artworkURL || t.artwork),
+    quality: t.format ? String(t.format).slice(0, 40) : null,
+    kind: 'song',
+  }
+}
+
 /** Tracks from an addon's /search. */
 async function search(db, key, query, { fetchImpl, limit = 20 } = {}) {
   const addon = findByKey(db, key)
@@ -267,25 +344,60 @@ async function search(db, key, query, { fetchImpl, limit = 20 } = {}) {
   const results = (Array.isArray(json.tracks) ? json.tracks : [])
     .filter(t => t && t.id != null && t.title)
     .map(t => {
-      const name = artist => String(typeof artist === 'object' ? artist?.name || '' : artist || '').slice(0, 500)
-      const artists = Array.isArray(t.artists) ? t.artists.map(name).filter(Boolean) : []
-      if (!artists.length && name(t.artist)) artists.push(name(t.artist))
-      return {
-        provider,
-        id: String(t.id).slice(0, 300),
-        title: String(t.title).slice(0, 500),
-        artist: name(t.artist) || artists.join(', '),
-        artists,
-        album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
-        duration: durationOf(t),
-        thumbnail: /^https:\/\//.test(String(t.artworkURL || t.artwork || '')) ? String(t.artworkURL || t.artwork) : null,
-        quality: t.format ? String(t.format).slice(0, 40) : null,
-        kind: 'song',
-      }
+      return trackOf(t, provider)
     })
   if (searchCache.size > 100) searchCache.delete(searchCache.keys().next().value)
   searchCache.set(cacheKey, { at: Date.now(), results })
   return results.slice(0, limit)
+}
+
+/** A cached catalogue request (/album, /artist) of an addon that declares `resource`. */
+async function catalogue(db, key, resource, id, { fetchImpl } = {}) {
+  const addon = findByKey(db, key)
+  if (!addon || addon.enabled === false) throw new Error('This addon is not installed or is turned off.')
+  if (!addon.manifest.resources.includes(resource)) throw new Error(`This addon has no ${resource} pages.`)
+  const path = `/${resource}/${encodeURIComponent(String(id || '').slice(0, 300))}`
+  const cacheKey = `${key}\n${path}`
+  const cached = catalogueCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < CATALOGUE_TTL_MS) return cached.value
+  const json = await getJson(endpoint(addon, path), { timeoutMs: TIMEOUT_MS.catalogue, fetchImpl })
+  if (catalogueCache.size > 100) catalogueCache.delete(catalogueCache.keys().next().value)
+  catalogueCache.set(cacheKey, { at: Date.now(), value: json })
+  return json
+}
+
+/** An album, its tracks in order: { id, title, artist, artistId, artwork_url, year, release_type, tracks }. */
+async function album(db, key, id, options = {}) {
+  const json = await catalogue(db, key, 'album', id, options)
+  const provider = providerFor(key)
+  const artwork = httpsImage(json.artworkURL || json.artwork)
+  const tracks = (Array.isArray(json.tracks) ? json.tracks : [])
+    .filter(t => t && t.id != null && t.title)
+    .map(t => {
+      const track = trackOf(t, provider)
+      return { ...track, album: track.album || String(json.title || '').slice(0, 500), albumId: track.albumId || idOf(json.id), thumbnail: track.thumbnail || artwork }
+    })
+    .sort((a, b) => (a.disc_num || 1) - (b.disc_num || 1) || (a.track_num || 1e4) - (b.track_num || 1e4))
+  return {
+    provider, id: idOf(json.id) || String(id), title: String(json.title || '').slice(0, 500), artist: String(json.artist || '').slice(0, 500),
+    artistId: idOf(json.artistId), artwork_url: artwork, year: positive(json.year),
+    release_type: RELEASE_TYPES.has(json.releaseType) ? json.releaseType : 'album', tracks,
+  }
+}
+
+/** An artist: { id, name, image, albums: [{ albumId, title, year, release_type, artwork_url, track_count }], tracks }. */
+async function artist(db, key, id, options = {}) {
+  const json = await catalogue(db, key, 'artist', id, options)
+  const provider = providerFor(key)
+  const name = String(json.name || '').slice(0, 500)
+  return {
+    provider, id: idOf(json.id) || String(id), name, image: httpsImage(json.artworkURL || json.artwork),
+    albums: (Array.isArray(json.albums) ? json.albums : []).filter(a => a && a.id != null && a.title).slice(0, 300).map(a => ({
+      provider, albumId: idOf(a.id), title: String(a.title).slice(0, 500), artist: name, year: positive(a.year),
+      release_type: RELEASE_TYPES.has(a.releaseType) ? a.releaseType : 'album', artwork_url: httpsImage(a.artworkURL || a.artwork), track_count: positive(a.trackCount),
+    })),
+    tracks: (Array.isArray(json.topTracks) ? json.topTracks : []).filter(t => t && t.id != null && t.title).slice(0, 50).map(t => trackOf(t, provider)),
+  }
 }
 
 const MIME = { flac: 'audio/flac', mp3: 'audio/mpeg', aac: 'audio/aac', m4a: 'audio/mp4', mp4: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm' }
@@ -317,6 +429,6 @@ async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
 
 module.exports = {
   addonKey, providerFor, keyOfProvider, checkUrl, getJson, fetchChecked,
-  list, searchable, install, remove, setEnabled, setSettings,
-  search, resolveStream, findByKey,
+  list, searchable, install, remove, setEnabled, setSettings, refreshManifests,
+  search, resolveStream, findByKey, album, artist, trackOf,
 }

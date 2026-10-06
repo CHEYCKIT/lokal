@@ -12,12 +12,19 @@ import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
 import { downloadOnline, resolveOnline } from '../onlineActions'
-import { isOnlineTrack, onlineAlbumPath } from '../onlineBrowse'
+import { isOnlineTrack, trackAlbumPath } from '../onlineBrowse'
+import { streamRef } from '../onlineTracks'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { artistPath } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { useAppStore } from '../store/player'
+
+/** A song to tell its album or artist by (an addon's own result, when it's from one). */
+const anchorOf = track => {
+  const ref = streamRef(track) || (/^a-/.test(track.provider || '') ? { provider: track.provider, id: track.id } : null)
+  return { title: track.title, album: track.album || '', provider: ref?.provider || null, id: ref?.id ?? null }
+}
 
 const time = seconds => {
   const value = Number(seconds) || 0
@@ -50,8 +57,8 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
       { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
       !own && { label: 'Download song', icon: Download, onSelect: () => downloadOnline([track]) },
       { separator: true },
-      track.album && { label: 'Go to album', icon: Disc3, onSelect: () => (own ? navigateToTrackAlbum(nav, track) : nav(onlineAlbumPath({ artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId }), { state: { artwork: track.artwork_url || null, highlightTitle: track.title } })) },
-      track.artist && { label: 'Go to artist', icon: User, onSelect: () => (own ? nav(artistPath(track.artist)) : nav(artistPath(track.artists?.[0] || track.artist), { state: { name: track.artists?.[0] || track.artist, anchor: { title: track.title, album: track.album || '' } } })) },
+      track.album && { label: 'Go to album', icon: Disc3, onSelect: () => (own ? navigateToTrackAlbum(nav, track) : nav(trackAlbumPath(track), { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: anchorOf(track) } })) },
+      track.artist && { label: 'Go to artist', icon: User, onSelect: () => (own ? nav(artistPath(track.artist)) : nav(artistPath(track.artists?.[0] || track.artist), { state: { name: track.artists?.[0] || track.artist, anchor: anchorOf(track) } })) },
       { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, track, userId) },
     ])
   }
