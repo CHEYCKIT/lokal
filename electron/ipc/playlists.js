@@ -770,10 +770,10 @@ function registerPlaylistHandlers() {
       const linkImport = require('../playlists/linkImport');
       const { manager } = require('./downloader');
       const { findYtDlp } = require('./tools');
-      const playlist = await linkImport.fetchPlaylist({ ytdlp: findYtDlp(), url: payload?.url, settings: manager().settings() });
+      const playlist = await linkImport.fetchPlaylist({ ytdlp: findYtDlp(), url: payload?.url, settings: manager().settings(), db: getDB() });
       if (playlist.error) return { error: playlist.error };
-      const { rows, matched, ghostable } = linkImport.previewEntries(getDB(), playlist.entries, { findTrack });
-      return { ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, entries: rows };
+      const { rows, matched, ghostable } = await linkImport.previewEntries(getDB(), playlist.entries, { findTrack });
+      return { ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, limit: playlist.limit, entries: rows };
     } catch (e) {
       return { error: e.message };
     }
@@ -786,7 +786,7 @@ function registerPlaylistHandlers() {
       if (!name) return { error: 'Please enter a playlist name' };
       const entries = linkImport.sanitizeEntries(payload?.entries);
       if (!entries.length) return { error: 'No tracks selected' };
-      const result = linkImport.importLinkEntries(getDB(), {
+      const result = await linkImport.importLinkEntries(getDB(), {
         name,
         userId: payload?.userId,
         entries,

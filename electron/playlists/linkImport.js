@@ -5,12 +5,18 @@
 const { spawn } = require('child_process')
 const { cookieArgs } = require('../ipc/ytCookies')
 const { jsRuntime } = require('../online/jsRuntime')
-const { isYouTube } = require('../download/args')
+const { isYouTube, isSoundCloud } = require('../download/args')
 const { sourceIdentity } = require('../online/sources')
+const { artistAndTitle, preferKnownArtist } = require('../download/postprocess')
+const { stripArtistPrefix } = require('../download/tagger')
 
-const MAX_ENTRIES = 500
-const FETCH_TIMEOUT_MS = 120000
+const MAX_ENTRIES = 10000
+const FETCH_TIMEOUT_MS = 10 * 60 * 1000
+const YIELD_EVERY = 100
 const UNAVAILABLE = /^\[?(?:deleted|private|unavailable) video\]?$/i
+const TITLE_NOISE = /\s*[(\[](?:official\s+)?(?:(?:music|lyrics?|hd|4k|audio)\s+)?(?:video|audio|visuali[sz]er|lyrics?|m\/?v|hd|hq|4k)[)\]]/gi
+
+const tick = () => new Promise(resolve => setImmediate(resolve))
 
 function text(value, max) {
   const out = String(value ?? '').replace(/[\u0000-\u001f]/g, ' ').trim()
@@ -24,6 +30,22 @@ function httpUrl(value) {
   } catch {
     return null
   }
+}
+
+function httpsUrl(value) {
+  const url = httpUrl(value)
+  return url && url.startsWith('https:') ? url : null
+}
+
+function bestThumbnail(raw, videoId) {
+  const listed = (Array.isArray(raw.thumbnails) ? raw.thumbnails : []).filter(t => httpsUrl(t?.url))
+  const sized = listed.filter(t => Number(t.width) > 0 && Number(t.height) > 0)
+  const best = sized.length
+    ? sized.reduce((a, b) => (Number(b.width) * Number(b.height) > Number(a.width) * Number(a.height) ? b : a))
+    : listed[listed.length - 1]
+  if (best) return httpsUrl(best.url)
+  if (httpsUrl(raw.thumbnail)) return httpsUrl(raw.thumbnail)
+  return /^[\w-]{11}$/.test(videoId) ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null
 }
 
 function playlistLinkProblem(link) {
@@ -42,6 +64,10 @@ function cleanArtist(name) {
   return String(name || '').replace(/\s+-\s+Topic$/i, '').replace(/VEVO$/i, '').trim()
 }
 
+function hostOf(link) {
+  try { return new URL(link).hostname.replace(/^(?:www|m)\./, '') } catch { return '' }
+}
+
 function platformOf(link) {
   try {
     const host = new URL(link).hostname.replace(/^(?:www|m|music)\./, '')
@@ -58,17 +84,28 @@ function entryLink(raw, playlistIsYouTube) {
   return httpUrl(raw.webpage_url) || httpUrl(raw.url)
 }
 
-function normalizeEntry(raw, { fallbackArtist = '', playlistIsYouTube = false } = {}) {
+function normalizeEntry(raw, { fallbackArtist = '', playlistIsYouTube = false, catalogue = false, cleanTitles = true, soundcloud = false, db = null } = {}) {
   if (!raw || typeof raw !== 'object') return null
   const rawTitle = text(raw.track || raw.title, 300)
   if (!rawTitle || UNAVAILABLE.test(rawTitle)) return null
   const sourceUrl = entryLink(raw, playlistIsYouTube)
   if (!sourceUrl) return null
+  const channel = String(raw.channel || raw.uploader || '')
   const listed = Array.isArray(raw.artists) ? raw.artists.join(', ') : ''
-  const artist = text(cleanArtist(raw.artist || listed || raw.channel || raw.uploader || raw.creator || fallbackArtist), 300)
+  let artist = text(cleanArtist(raw.artist || listed || channel || raw.creator || fallbackArtist), 300)
   let title = rawTitle
-  if (artist && title.toLowerCase().startsWith(`${artist.toLowerCase()} - `)) title = title.slice(artist.length + 3).trim() || rawTitle
-  const thumbs = Array.isArray(raw.thumbnails) ? raw.thumbnails.filter(t => t?.url) : []
+  if (cleanTitles) title = title.replace(TITLE_NOISE, '').trim() || rawTitle
+  const trusted = catalogue || !!raw.track || /\s-\sTopic$/i.test(channel)
+  if (!trusted) {
+    const meta = { channel: raw.channel, uploader: raw.uploader, track: raw.track, title: rawTitle, artists: raw.artists }
+    const parsed = preferKnownArtist(artistAndTitle(meta, { title }, { soundcloud }), db)
+    if (parsed?.artist && parsed?.title) {
+      artist = text(parsed.artist, 300)
+      title = text(parsed.title, 300)
+    } else if (artist) {
+      title = stripArtistPrefix(title, artist) || title
+    }
+  }
   const duration = Number(raw.duration)
   return {
     key: sourceUrl,
@@ -76,7 +113,7 @@ function normalizeEntry(raw, { fallbackArtist = '', playlistIsYouTube = false } 
     artist: artist || null,
     album: text(raw.album, 300) || null,
     duration: duration > 0 ? Math.round(duration) : null,
-    thumbnail: httpUrl(raw.thumbnail) || httpUrl(thumbs[thumbs.length - 1]?.url),
+    thumbnail: bestThumbnail(raw, String(raw.id || '')),
     source_url: sourceUrl,
   }
 }
@@ -96,7 +133,7 @@ function sanitizeEntries(list) {
       artist: text(item.artist, 300) || null,
       album: text(item.album, 300) || null,
       duration: duration > 0 ? Math.round(duration) : null,
-      thumbnail: httpUrl(item.thumbnail),
+      thumbnail: httpsUrl(item.thumbnail),
       source_url: sourceUrl,
     })
     if (out.length >= MAX_ENTRIES) break
@@ -110,18 +147,27 @@ function ytdlpError(stderr) {
   return line ? line.replace(/^ERROR:\s*(?:\[[^\]]+\]\s*)?/i, '').slice(0, 300) : ''
 }
 
-function parsePlaylistJson(stdout, stderr, { url, limit = MAX_ENTRIES } = {}) {
+function parsePlaylistJson(stdout, stderr, { url, limit = MAX_ENTRIES, settings = {}, db = null } = {}) {
   let data
   try { data = JSON.parse(stdout) } catch { return { error: ytdlpError(stderr) || 'Could not read that playlist.' } }
   const raw = Array.isArray(data?.entries) ? data.entries : []
   if (!raw.length) return { error: ytdlpError(stderr) || "That link has no tracks. Is it a playlist, and is it public (or are cookies set up in Settings)?" }
-  const playlistIsYouTube = isYouTube(url || data.webpage_url || '')
+  const base = url || data.webpage_url || ''
+  const playlistIsYouTube = isYouTube(base)
   const fallbackArtist = playlistIsYouTube ? '' : cleanArtist(data.uploader || data.channel)
+  const context = {
+    fallbackArtist,
+    playlistIsYouTube,
+    catalogue: hostOf(base) === 'music.youtube.com',
+    cleanTitles: settings.clean_download_metadata !== '0',
+    soundcloud: isSoundCloud(base),
+    db,
+  }
   const seen = new Set()
   const entries = []
   let skipped = 0
   for (const item of raw.slice(0, limit)) {
-    const entry = normalizeEntry(item, { fallbackArtist, playlistIsYouTube })
+    const entry = normalizeEntry(item, context)
     if (!entry || seen.has(entry.key)) { skipped++; continue }
     seen.add(entry.key)
     entries.push(entry)
@@ -133,11 +179,12 @@ function parsePlaylistJson(stdout, stderr, { url, limit = MAX_ENTRIES } = {}) {
     entries,
     skipped,
     truncated: raw.length > limit,
+    limit,
   }
 }
 
 /** Reads a playlist's tracks with yt-dlp, without downloading anything. */
-function fetchPlaylist({ ytdlp, url, settings = {}, limit = MAX_ENTRIES, track = p => p, timeoutMs = FETCH_TIMEOUT_MS }) {
+function fetchPlaylist({ ytdlp, url, settings = {}, db = null, limit = MAX_ENTRIES, track = p => p, timeoutMs = FETCH_TIMEOUT_MS }) {
   const problem = playlistLinkProblem(url)
   if (problem) return Promise.resolve({ error: problem })
   if (!ytdlp) return Promise.resolve({ error: 'yt-dlp not found. Go to Settings -> External Tools to download it or set a custom path.' })
@@ -165,7 +212,7 @@ function fetchPlaylist({ ytdlp, url, settings = {}, limit = MAX_ENTRIES, track =
     proc.on('error', () => { clearTimeout(timer); resolve({ error: 'Failed to run yt-dlp' }) })
     proc.on('close', () => {
       clearTimeout(timer)
-      resolve(timedOut ? { error: 'Reading that playlist took too long.' } : parsePlaylistJson(stdout, stderr, { url: link, limit }))
+      resolve(timedOut ? { error: 'Reading that playlist took too long.' } : parsePlaylistJson(stdout, stderr, { url: link, limit, settings, db }))
     })
   })
 }
@@ -183,12 +230,22 @@ function existingGhost(db, entry) {
   return db.prepare("SELECT id FROM tracks WHERE source_url = ? AND file_path LIKE 'ghost://%' LIMIT 1").get(entry.source_url) || null
 }
 
-/** Which of these songs are already in the library (or already streamed), for the preview list. */
-function previewEntries(db, entries, { findTrack }) {
-  let matched = 0
-  const rows = entries.map((entry) => {
+async function resolveEntries(db, entries, findTrack) {
+  const out = []
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
     const owned = libraryMatch(db, entry, findTrack)
-    const ghost = !owned && existingGhost(db, entry)
+    out.push({ entry, owned, ghost: owned ? null : existingGhost(db, entry) })
+    if (i % YIELD_EVERY === YIELD_EVERY - 1) await tick()
+  }
+  return out
+}
+
+/** Which of these songs are already in the library (or already streamed), for the preview list. */
+async function previewEntries(db, entries, { findTrack }) {
+  const resolved = await resolveEntries(db, entries, findTrack)
+  let matched = 0
+  const rows = resolved.map(({ entry, owned, ghost }) => {
     if (owned) matched++
     return { ...entry, status: owned ? 'In library' : ghost ? 'Already added as a ghost' : 'New ghost song' }
   })
@@ -197,33 +254,34 @@ function previewEntries(db, entries, { findTrack }) {
 
 /**
  * Makes a playlist from `entries`: songs already in the library are used as
- * they are, the rest become ghost songs (streamable from their link, and
- * replaced by the file if one is downloaded later).
+ * they are, the rest become ghost songs (streamable from their link, with the
+ * YouTube cover, and replaced by the file if one is downloaded later).
  */
-function importLinkEntries(db, { name, userId, entries, helpers, platform = 'link' }) {
+async function importLinkEntries(db, { name, userId, entries, helpers, platform = 'link' }) {
   const { findTrack, createGhostTrack } = helpers
   const uid = userId || 'guest'
   const playlistId = `pl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const resolved = await resolveEntries(db, entries, findTrack)
   const result = { playlistId, name, total: entries.length, matched: 0, ghosted: 0, reused: 0, duplicates: 0, ghosts: [] }
   const insert = db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, position, added_by, added_at) VALUES (?, ?, ?, ?, ?)')
+  const setCover = db.prepare('UPDATE tracks SET artwork_url = ? WHERE id = ? AND artwork_url IS NULL')
   db.transaction(() => {
     db.prepare('INSERT INTO playlists (id, name, user_id) VALUES (?, ?, ?)').run(playlistId, name, uid)
     const added = new Set()
     let position = 0
-    for (const entry of entries) {
+    for (const { entry, owned, ghost } of resolved) {
       let trackId
       let kind
-      const owned = libraryMatch(db, entry, findTrack)
       if (owned) { trackId = owned.id; kind = 'matched' }
-      else {
-        const ghost = existingGhost(db, entry)
-        if (ghost) { trackId = ghost.id; kind = 'reused' }
-        else {
-          const created = createGhostTrack(db, entry, platform, playlistId)
-          trackId = created.id
-          kind = 'ghosted'
-          result.ghosts.push({ trackId, source_url: entry.source_url, title: entry.title, artist: entry.artist })
-        }
+      else if (ghost) {
+        trackId = ghost.id
+        kind = 'reused'
+        if (entry.thumbnail) setCover.run(entry.thumbnail, trackId)
+      } else {
+        trackId = createGhostTrack(db, entry, platform, playlistId).id
+        kind = 'ghosted'
+        if (entry.thumbnail) setCover.run(entry.thumbnail, trackId)
+        result.ghosts.push({ trackId, source_url: entry.source_url, title: entry.title, artist: entry.artist, thumbnail: entry.thumbnail })
       }
       if (added.has(trackId)) { result.duplicates++; continue }
       added.add(trackId)
@@ -244,7 +302,7 @@ function queueGhostDownloads(manager, ghosts) {
       title: ghost.title,
       from: 'Playlist import',
       replaceTrackId: ghost.trackId,
-      tags: knownTagsOf({ title: ghost.title, artist: ghost.artist }),
+      tags: knownTagsOf({ title: ghost.title, artist: ghost.artist, cover: ghost.thumbnail }),
     })
     if (result?.error && !result.alreadyInLibrary) failed++
     else queued++
@@ -263,4 +321,5 @@ module.exports = {
   importLinkEntries,
   queueGhostDownloads,
   platformOf,
+  bestThumbnail,
 }

@@ -787,23 +787,23 @@ router.post('/link-preview', async (req, res) => {
   try {
     const linkImport = require('../../electron/playlists/linkImport')
     const download = require('./download')
-    const playlist = await linkImport.fetchPlaylist({ ytdlp: download.findBinary('yt-dlp'), url: req.body?.url, settings: download.manager().settings() })
+    const playlist = await linkImport.fetchPlaylist({ ytdlp: download.findBinary('yt-dlp'), url: req.body?.url, settings: download.manager().settings(), db: getDB() })
     if (playlist.error) return res.status(400).json({ error: playlist.error })
-    const { rows, matched, ghostable } = linkImport.previewEntries(getDB(), playlist.entries, { findTrack })
-    res.json({ ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, entries: rows })
+    const { rows, matched, ghostable } = await linkImport.previewEntries(getDB(), playlist.entries, { findTrack })
+    res.json({ ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, limit: playlist.limit, entries: rows })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
 
-router.post('/link-import', (req, res) => {
+router.post('/link-import', async (req, res) => {
   try {
     const linkImport = require('../../electron/playlists/linkImport')
     const name = String(req.body?.name || '').trim().slice(0, 200)
     if (!name) return res.status(400).json({ error: 'Please enter a playlist name' })
     const entries = linkImport.sanitizeEntries(req.body?.entries)
     if (!entries.length) return res.status(400).json({ error: 'No tracks selected' })
-    const result = linkImport.importLinkEntries(getDB(), {
+    const result = await linkImport.importLinkEntries(getDB(), {
       name,
       userId: req.body?.userId,
       entries,

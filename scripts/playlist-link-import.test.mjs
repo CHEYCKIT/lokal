@@ -22,7 +22,7 @@ function video(id, title, channel = 'Artist - Topic', extra = {}) {
 function memoryDb() {
   const db = new Database(':memory:')
   db.exec(`
-    CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, title TEXT, artist TEXT, album TEXT, duration INTEGER, source_url TEXT, source_ref TEXT);
+    CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, title TEXT, artist TEXT, album TEXT, duration INTEGER, source_url TEXT, source_ref TEXT, artwork_url TEXT);
     CREATE TABLE playlists (id TEXT PRIMARY KEY, name TEXT, user_id TEXT);
     CREATE TABLE playlist_tracks (id INTEGER PRIMARY KEY AUTOINCREMENT, playlist_id TEXT, track_id TEXT, position INTEGER, added_by TEXT, added_at INTEGER);
   `)
@@ -50,10 +50,10 @@ test('only real playlist links are accepted', () => {
 
 test('a flat yt-dlp playlist becomes clean entries', () => {
   const out = flat([
-    video('aaaaaaaaaaa', 'Artist - Song One'),
+    video('aaaaaaaaaaa', 'Artist - Song One', 'Artist'),
     video('bbbbbbbbbbb', '[Deleted video]', 'NA'),
     video('ccccccccccc', '[Private video]', 'NA'),
-    video('aaaaaaaaaaa', 'Artist - Song One'),
+    video('aaaaaaaaaaa', 'Artist - Song One', 'Artist'),
     video('ddddddddddd', 'Song Two', 'SomeoneVEVO'),
     { title: 'No id and no link' },
   ])
@@ -101,10 +101,11 @@ test('entries sent back by the app are checked', () => {
   assert.equal(clean.length, 1)
   assert.equal(clean[0].duration, 181)
   assert.equal(clean[0].thumbnail, null)
+  assert.equal(linkImport.sanitizeEntries([{ title: 'T', source_url: 'https://example.com/a', thumbnail: 'http://example.com/a.jpg' }])[0].thumbnail, null)
   assert.equal(linkImport.sanitizeEntries('nope').length, 0)
 })
 
-test('importing makes a playlist from library songs, existing ghosts and new ghosts', () => {
+test('importing makes a playlist from library songs, existing ghosts and new ghosts', async () => {
   const db = memoryDb()
   db.prepare("INSERT INTO tracks (id, file_path, title, artist, source_ref) VALUES ('t1', '/music/one.opus', 'Downloaded Before', 'Artist', 'yt:aaaaaaaaaaa')").run()
   db.prepare("INSERT INTO tracks (id, file_path, title, artist) VALUES ('t2', '/music/two.mp3', 'Matched By Name', 'Artist')").run()
@@ -115,7 +116,7 @@ test('importing makes a playlist from library songs, existing ghosts and new gho
     { title: 'Streamed', artist: 'Artist', source_url: 'https://www.youtube.com/watch?v=ccccccccccc' },
     { title: 'Brand New', artist: 'Artist', source_url: 'https://www.youtube.com/watch?v=ddddddddddd' },
   ])
-  const result = linkImport.importLinkEntries(db, { name: 'Road Trip', userId: 'u1', entries, helpers, platform: 'youtube' })
+  const result = await linkImport.importLinkEntries(db, { name: 'Road Trip', userId: 'u1', entries, helpers, platform: 'youtube' })
   assert.equal(result.matched, 2)
   assert.equal(result.reused, 1)
   assert.equal(result.ghosted, 1)
@@ -129,23 +130,23 @@ test('importing makes a playlist from library songs, existing ghosts and new gho
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tracks WHERE file_path LIKE 'ghost://%'").get().n, 2)
 })
 
-test('the same song twice in one import is added once', () => {
+test('the same song twice in one import is added once', async () => {
   const db = memoryDb()
   db.prepare("INSERT INTO tracks (id, file_path, title, artist) VALUES ('t1', '/music/one.mp3', 'Song', 'Artist')").run()
   const entries = linkImport.sanitizeEntries([
     { title: 'Song', source_url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa' },
     { title: 'Song', source_url: 'https://www.youtube.com/watch?v=bbbbbbbbbbb' },
   ])
-  const result = linkImport.importLinkEntries(db, { name: 'Dupes', entries, helpers, platform: 'youtube' })
+  const result = await linkImport.importLinkEntries(db, { name: 'Dupes', entries, helpers, platform: 'youtube' })
   assert.equal(result.duplicates, 1)
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM playlist_tracks').get().n, 1)
 })
 
-test('a failed import leaves no half-made playlist', () => {
+test('a failed import leaves no half-made playlist', async () => {
   const db = memoryDb()
   const entries = linkImport.sanitizeEntries([{ title: 'A', source_url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa' }])
   const broken = { ...helpers, createGhostTrack: () => { throw new Error('disk full') } }
-  assert.throws(() => linkImport.importLinkEntries(db, { name: 'Nope', entries, helpers: broken, platform: 'youtube' }), /disk full/)
+  await assert.rejects(linkImport.importLinkEntries(db, { name: 'Nope', entries, helpers: broken, platform: 'youtube' }), /disk full/)
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM playlists').get().n, 0)
 })
 
@@ -153,7 +154,7 @@ test('downloading afterwards is opt-in work done per ghost song', () => {
   const calls = []
   const manager = { enqueue: (kind, url, opts) => { calls.push({ kind, url, opts }); return url.endsWith('b') ? { error: 'Already in your library: B', alreadyInLibrary: true } : { downloadId: 'x' } } }
   const ghosts = [
-    { trackId: 'g1', source_url: 'https://www.youtube.com/watch?v=a', title: 'A', artist: 'X' },
+    { trackId: 'g1', source_url: 'https://www.youtube.com/watch?v=a', title: 'A', artist: 'X', thumbnail: 'https://i.ytimg.com/vi/a/hqdefault.jpg' },
     { trackId: 'g2', source_url: 'https://www.youtube.com/watch?v=b', title: 'B', artist: 'X' },
   ]
   const result = linkImport.queueGhostDownloads(manager, ghosts)
@@ -161,6 +162,7 @@ test('downloading afterwards is opt-in work done per ghost song', () => {
   assert.equal(calls[0].kind, 'single')
   assert.equal(calls[0].opts.replaceTrackId, 'g1')
   assert.equal(calls[0].opts.tags.title, 'A')
+  assert.equal(calls[0].opts.tags.cover, 'https://i.ytimg.com/vi/a/hqdefault.jpg')
 })
 
 test('yt-dlp is asked to list the playlist, not download it', async () => {
@@ -190,4 +192,57 @@ test('plain downloads never make a library playlist', () => {
     assert.doesNotMatch(source, /INSERT INTO playlists\b/, file)
     assert.doesNotMatch(source, /INSERT INTO playlist_tracks/, file)
   }
+})
+
+test('every track of a big playlist is read, not just the first few hundred', () => {
+  const entries = Array.from({ length: 3600 }, (_, i) => video(`v${String(i).padStart(10, '0')}`, `Song ${i}`))
+  const result = linkImport.parsePlaylistJson(flat(entries), '', { url: 'https://music.youtube.com/playlist?list=LM' })
+  assert.equal(result.entries.length, 3600)
+  assert.equal(result.truncated, false)
+  assert.ok(linkImport.MAX_ENTRIES >= 5000)
+  assert.equal(linkImport.playlistLinkProblem('https://music.youtube.com/playlist?list=LM'), null)
+})
+
+test('the biggest listed thumbnail is used, with a YouTube fallback', () => {
+  const big = linkImport.bestThumbnail({ thumbnails: [
+    { url: 'https://i.ytimg.com/vi/aaaaaaaaaaa/default.jpg', width: 120, height: 90 },
+    { url: 'https://i.ytimg.com/vi/aaaaaaaaaaa/maxresdefault.jpg', width: 1280, height: 720 },
+    { url: 'https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg', width: 480, height: 360 },
+  ] }, 'aaaaaaaaaaa')
+  assert.equal(big, 'https://i.ytimg.com/vi/aaaaaaaaaaa/maxresdefault.jpg')
+  assert.equal(linkImport.bestThumbnail({ thumbnails: [{ url: 'https://a.example/1.jpg' }, { url: 'https://a.example/2.jpg' }] }, 'x'), 'https://a.example/2.jpg')
+  assert.equal(linkImport.bestThumbnail({ thumbnails: [{ url: 'http://insecure.example/a.jpg', width: 9999, height: 9999 }] }, 'aaaaaaaaaaa'), 'https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg')
+  assert.equal(linkImport.bestThumbnail({}, ''), null)
+})
+
+test('titles are tidied the way downloads tidy them', () => {
+  const upload = linkImport.normalizeEntry(video('aaaaaaaaaaa', 'Cool Band - Great Song (Official Video)', 'Some Label'), { playlistIsYouTube: true })
+  assert.equal(upload.artist, 'Cool Band')
+  assert.equal(upload.title, 'Great Song')
+  const catalogue = linkImport.normalizeEntry(video('bbbbbbbbbbb', 'Song - Remastered 2011', 'Cool Band'), { playlistIsYouTube: true, catalogue: true })
+  assert.equal(catalogue.artist, 'Cool Band')
+  assert.equal(catalogue.title, 'Song - Remastered 2011')
+  const topic = linkImport.normalizeEntry(video('ccccccccccc', 'A - B', 'Cool Band - Topic'), { playlistIsYouTube: true })
+  assert.equal(topic.title, 'A - B')
+  const kept = linkImport.normalizeEntry(video('ddddddddddd', 'Song (Official Video)', 'Cool Band'), { playlistIsYouTube: true, cleanTitles: false })
+  assert.equal(kept.title, 'Song (Official Video)')
+})
+
+test('ghost songs get the YouTube cover', async () => {
+  const db = memoryDb()
+  const entries = linkImport.sanitizeEntries([{ title: 'New', artist: 'A', source_url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa', thumbnail: 'https://i.ytimg.com/vi/aaaaaaaaaaa/maxresdefault.jpg' }])
+  const result = await linkImport.importLinkEntries(db, { name: 'Covers', entries, helpers, platform: 'youtube' })
+  assert.equal(db.prepare('SELECT artwork_url FROM tracks WHERE id = ?').get(result.ghosts[0].trackId).artwork_url, 'https://i.ytimg.com/vi/aaaaaaaaaaa/maxresdefault.jpg')
+  assert.equal(result.ghosts[0].thumbnail, 'https://i.ytimg.com/vi/aaaaaaaaaaa/maxresdefault.jpg')
+})
+
+test('matching thousands of songs gives the app time to breathe', async () => {
+  const db = memoryDb()
+  const entries = linkImport.sanitizeEntries(Array.from({ length: 1500 }, (_, i) => ({ title: `Song ${i}`, source_url: `https://www.youtube.com/watch?v=${String(i).padStart(11, '0')}` })))
+  let ticks = 0
+  const timer = setInterval(() => { ticks++ }, 0)
+  const preview = await linkImport.previewEntries(db, entries, helpers)
+  clearInterval(timer)
+  assert.equal(preview.rows.length, 1500)
+  assert.ok(ticks > 0)
 })

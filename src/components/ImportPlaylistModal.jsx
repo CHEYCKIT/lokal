@@ -83,6 +83,7 @@ function LinkImport({ onDone }) {
             {reading && <Loader2 size={14} className="animate-spin" />} Read
           </button>
         </div>
+        {reading && <p className="mt-1.5 text-[11px] text-muted">Reading the playlist… big ones (thousands of songs) can take a minute.</p>}
         <p className="mt-1.5 text-[11px] text-muted">YouTube, YouTube Music, SoundCloud and Bandcamp playlists and albums. Nothing is downloaded; songs you don't own are added as streamable ghost songs.</p>
       </div>
 
@@ -102,8 +103,11 @@ function LinkImport({ onDone }) {
             </div>
             <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-card/60 divide-y divide-border/60">
               {preview.entries.map(entry => (
-                <label key={entry.key} className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated/60">
+                <label key={entry.key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 48px' }} className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated/60">
                   <input type="checkbox" checked={selected.has(entry.key)} onChange={() => toggle(entry.key)} style={{ accentColor: 'var(--accent)' }} />
+                  {entry.thumbnail
+                    ? <img src={entry.thumbnail} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" className="h-8 w-8 flex-shrink-0 rounded object-cover bg-card" />
+                    : <span className="h-8 w-8 flex-shrink-0 rounded bg-card" />}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs text-white">{entry.title}</span>
                     <span className="block truncate text-[11px] text-muted">{entry.artist || 'Unknown Artist'}{entry.duration ? ` · ${formatDuration(entry.duration)}` : ''}</span>
@@ -115,13 +119,13 @@ function LinkImport({ onDone }) {
             {(preview.skipped > 0 || preview.truncated) && (
               <p className="mt-1.5 text-[11px] text-muted">
                 {preview.skipped > 0 && `${plural(preview.skipped, 'deleted, private or duplicate video')} left out. `}
-                {preview.truncated && 'Only the first 500 tracks are read.'}
+                {preview.truncated && `Only the first ${Number(preview.limit || 0).toLocaleString()} tracks are read.`}
               </p>
             )}
           </div>
           <label className="flex cursor-pointer items-start gap-2.5 text-xs text-muted">
             <input type="checkbox" checked={downloadAfter} onChange={e => setDownloadAfter(e.target.checked)} className="mt-0.5" />
-            <span>Also download the {plural(ghostCount, 'song')} not in the library yet. Each file takes its ghost song's place in the playlist.</span>
+            <span>Also download the {plural(ghostCount, 'song')} not in the library yet. Each file takes its ghost song's place in the playlist.{ghostCount > 200 ? ' That is a lot: they download a few at a time and can be cancelled from the download list.' : ''}</span>
           </label>
         </>
       )}
