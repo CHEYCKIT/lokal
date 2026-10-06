@@ -50,7 +50,9 @@ export default function OnlineAlbum() {
       // In the library after all (downloaded since, say): its own page.
       const own = await libraryAlbum({ artist, album })
       if (!isCurrent()) return
-      if (own) { nav('/albums', { replace: true, state: { album: own } }); return }
+      // Opened as an online album: show it whole there ("Full album online"),
+      // not only the songs the library has.
+      if (own) { nav('/albums', { replace: true, state: { album: own, connect: true } }); return }
       const result = await loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
         isCurrent, onProgress: progress => { if (isCurrent()) setState(current => ({ ...current, progress })) },
       })
@@ -86,7 +88,7 @@ export default function OnlineAlbum() {
       </button>
       <div className="mb-8 flex flex-col gap-5 @md:flex-row @md:items-end">
         <div className="h-44 w-44 flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-elevated shadow-xl">
-          <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
+          <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
         </div>
         <div className="min-w-0">
           <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Album · Online</p>

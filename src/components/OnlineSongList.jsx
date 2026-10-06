@@ -84,7 +84,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
             <div className="relative flex h-8 w-8 items-center justify-center">
               {numbered
                 ? <span className={`text-xs tabular-nums group-hover:opacity-0 ${marked ? 'text-accent' : 'text-muted'}`}>{track.track_num || track.trackNumber || index + 1}</span>
-                : <div className="h-8 w-8 overflow-hidden rounded group-hover:opacity-40"><DiscoveryImage item={track} src={track.artwork_url} className="h-full w-full object-cover" /></div>}
+                : <div className="h-8 w-8 overflow-hidden rounded group-hover:opacity-40"><DiscoveryImage item={track} src={track.artwork_url} lookup className="h-full w-full object-cover" /></div>}
               <button onClick={() => onPlay(track)} aria-label={`Play ${track.title}`} className="absolute inset-0 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"><Play size={14} fill="currentColor" /></button>
             </div>
             <div className="min-w-0">

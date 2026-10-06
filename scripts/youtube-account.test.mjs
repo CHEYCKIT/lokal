@@ -262,3 +262,31 @@ test("namesakes: the channel of the song playing, else the one sharing the libra
   const noHints = await youtube.fetchCatalogue({ type: 'artistPage', artist: 'Salasa' }, '', fetchImpl)
   assert.equal(noHints.channelId, 'UCother0000000')
 })
+
+test("artist page album cards keep their covers (thumbnailRenderer)", () => {
+  const page = artistPage('Earth, Wind & Fire', [], [['I Am', 'MPREiam', 1979]])
+  const card = page.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[1].musicCarouselShelfRenderer.contents[0].musicTwoRowItemRenderer
+  card.thumbnailRenderer = { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/iam=w226-h226' }] } } }
+  const parsed = youtube.parseArtistPage(page)
+  assert.match(parsed.albums[0].artwork_url, /^https:\/\/lh3\.googleusercontent\.com\/iam/)
+})
+
+test('album search by name finds an edition and requests carry a visitor id without an account', async () => {
+  youtube.clearAccountCache()
+  const albumRow = (title, artist, id) => ({ musicResponsiveListItemRenderer: {
+    flexColumns: [column([linked(title, id, 'ALBUM')]), column([{ text: 'Album' }, { text: ' • ' }, { text: artist }, { text: ' • ' }, { text: '1979' }])],
+    navigationEndpoint: { browseEndpoint: { browseId: id, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ALBUM' } } } },
+  } })
+  const sent = []
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => 'ytcfg.set({"VISITOR_DATA":"visitor-123","INNERTUBE_CLIENT_VERSION":"1.2026"});' }
+    const body = JSON.parse(init.body)
+    sent.push({ visitor: init.headers['X-Goog-Visitor-Id'], context: body.context.client.visitorData, browseId: body.browseId })
+    if (body.browseId) return { ok: true, json: async () => ({ contents: { musicResponsiveListItemRenderer: { playlistItemData: { videoId: 'aaaaaaaaaaa' }, flexColumns: [column([{ text: 'In the Stone', navigationEndpoint: { watchEndpoint: { videoId: 'aaaaaaaaaaa' } } }])] } } }) }
+    return { ok: true, json: async () => ({ contents: [albumRow('I Am (Expanded Edition)', 'Earth, Wind & Fire', 'MPREexp')] }) }
+  }
+  const result = await youtube.fetchCatalogue({ type: 'album', artist: 'Earth, Wind & Fire', album: 'I Am' }, '', fetchImpl)
+  assert.equal(result.tracks[0].title, 'In the Stone')
+  assert.equal(sent.at(-1).browseId, 'MPREexp')
+  assert.ok(sent.every(request => request.visitor === 'visitor-123' && request.context === 'visitor-123'))
+})
