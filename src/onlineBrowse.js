@@ -239,3 +239,72 @@ export function setConnected(key, on) {
   else set.delete(key)
   try { localStorage.setItem(CONNECTED_KEY, JSON.stringify([...set].slice(-500))) } catch {}
 }
+
+// ---------------------------------------------------------------- cache
+
+// Online album and artist data, kept once loaded: coming back to a page (or
+// opening it again later) shows it at once instead of looking it all up
+// again. Refresh buttons load it anew. In memory, and in localStorage for a
+// week (the newest 80); failed or empty lookups aren't kept.
+const CACHE_KEY = 'lokal-online-cache-v1'
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CACHE_MAX = 80
+let memory = null
+
+function cacheEntries() {
+  if (memory) return memory
+  memory = new Map()
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]')
+    for (const [key, entry] of Array.isArray(saved) ? saved : []) {
+      if (entry && Date.now() - entry.at < CACHE_TTL_MS) memory.set(key, entry)
+    }
+  } catch {}
+  return memory
+}
+
+function saveCache() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify([...cacheEntries()].slice(-CACHE_MAX))) } catch {}
+}
+
+const cacheKeyOf = (kind, parts) => `${kind}:${parts.map(part => recommendationKey(part) || String(part || '')).join('|')}`
+
+/** The key an online album is cached under. */
+export const albumCacheKey = ({ artist, album, albumId, provider, sourceAlbumId } = {}) => cacheKeyOf('album', [artist, album, albumId, provider, sourceAlbumId])
+/** The key an online artist is cached under. */
+export const artistCacheKey = name => cacheKeyOf('artist', [name])
+
+/** What's cached under `key` (and when), or null. */
+export function peekOnline(key) {
+  const entry = cacheEntries().get(key)
+  if (!entry || Date.now() - entry.at >= CACHE_TTL_MS) return null
+  return entry
+}
+
+/** Keep `value` under `key` (newest last). */
+export function keepOnline(key, value) {
+  const entries = cacheEntries()
+  entries.delete(key)
+  entries.set(key, { at: Date.now(), value })
+  while (entries.size > CACHE_MAX) entries.delete(entries.keys().next().value)
+  saveCache()
+}
+
+/**
+ * The cached value of `key`, else `load()`'s (kept when `keep(value)` says it
+ * found something). `refresh` loads it anew.
+ */
+export async function cachedOnline(key, load, { refresh = false, keep = () => true } = {}) {
+  if (!refresh) {
+    const hit = peekOnline(key)
+    if (hit) return hit.value
+  }
+  const value = await load()
+  if (value && keep(value)) keepOnline(key, value)
+  return value
+}
+
+/** An album's songs (loadOnlineAlbum), from the cache when it has them. */
+export function loadOnlineAlbumCached(options, client = api, loadOptions = {}, { refresh = false } = {}) {
+  return cachedOnline(albumCacheKey(options), () => loadOnlineAlbum(options, client, loadOptions), { refresh, keep: result => result.tracks?.length > 0 })
+}

@@ -5,13 +5,16 @@
 // sections ("More online"): with the songs the library has marked, and only
 // the albums it doesn't have.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, Music, Play, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import OnlineSongList from './OnlineSongList'
-import { loadAddonArtist, loadArtistChannel, loadOnlineAlbum, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
+import RefreshButton from './RefreshButton'
+import ReleaseTypeFilter from './ReleaseTypeFilter'
+import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
+import { artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
@@ -22,14 +25,20 @@ import { useAppStore } from '../store/player'
 export const nameFromSlug = id => String(id || '').replace(/^a-/, '').split('-').filter(Boolean).map(word => word[0].toUpperCase() + word.slice(1)).join(' ')
 
 /**
- * An artist's popular songs and albums online: { songs, albums, name }
- * (nothing loads until `enabled`). From their YouTube Music channel when it
- * can be told apart from namesakes (`anchor`: a song of theirs; `hints`: the
- * library's titles by them), else by name.
+ * An artist's popular songs and albums online: { songs, albums, name,
+ * refresh, loadedAt } (nothing loads until `enabled`). From their YouTube
+ * Music channel when it can be told apart from namesakes (`anchor`: a song
+ * of theirs; `hints`: the library's titles by them), else by name. Kept once
+ * loaded (see cachedOnline): coming back shows it at once; refresh() looks
+ * it up again.
  */
 export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, hints = [] } = {}) {
-  const [songs, setSongs] = useState({ loading: true, tracks: [], error: '' })
-  const [albums, setAlbums] = useState({ loading: true, items: [] })
+  const cacheKey = artistCacheKey(fallbackName)
+  const fromCache = () => peekOnline(cacheKey)
+  const [songs, setSongs] = useState(() => fromCache()?.value.songs || { loading: true, tracks: [], error: '' })
+  const [albums, setAlbums] = useState(() => fromCache()?.value.albums || { loading: true, items: [] })
+  const [loadedAt, setLoadedAt] = useState(() => fromCache()?.at || 0)
+  const [reload, setReload] = useState(0)
   const request = useRef(0)
 
   // The artist's own spelling ("Earth, Wind & Fire"), from their songs.
@@ -41,8 +50,22 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
     if (!enabled || !fallbackName) return undefined
     const version = ++request.current
     const isCurrent = () => version === request.current
+    const cached = reload ? null : fromCache()
+    if (cached) {
+      setSongs(cached.value.songs)
+      setAlbums(cached.value.albums)
+      setLoadedAt(cached.at)
+      return () => { request.current++ }
+    }
     setSongs({ loading: true, tracks: [], error: '' })
     setAlbums({ loading: true, items: [] })
+    const done = (nextSongs, nextAlbums) => {
+      if (!isCurrent()) return
+      setSongs(nextSongs)
+      setAlbums(nextAlbums)
+      setLoadedAt(Date.now())
+      if (nextSongs.tracks.length || nextAlbums.items.length) keepOnline(cacheKey, { songs: nextSongs, albums: nextAlbums })
+    }
     ;(async () => {
       // YouTube Music's channel of this very artist first, then the
       // catalogues by name (YouTube Music, Last.fm), then an addon with artist
@@ -50,8 +73,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
       const channel = await loadArtistChannel(fallbackName, { anchor, hints })
       if (!isCurrent()) return
       if (channel) {
-        setSongs({ loading: false, tracks: channel.tracks, error: '', name: channel.name, image: channel.image })
-        setAlbums({ loading: false, items: channel.albums })
+        done({ loading: false, tracks: channel.tracks, error: '', name: channel.name, image: channel.image }, { loading: false, items: channel.albums })
         return
       }
       // "Drake, Future": the whole name first, then the first artist.
@@ -68,22 +90,23 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
         const fromAddon = await loadAddonArtist(fallbackName, { anchor, hints }).catch(() => null)
         if (!isCurrent()) return
         if (fromAddon) {
-          setSongs({ loading: false, tracks: fromAddon.tracks, error: '', name: fromAddon.name, image: fromAddon.image })
-          setAlbums({ loading: false, items: fromAddon.albums })
+          done({ loading: false, tracks: fromAddon.tracks, error: '', name: fromAddon.name, image: fromAddon.image }, { loading: false, items: fromAddon.albums })
           return
         }
         result = await loadOnlineArtistSongs(fallbackName, undefined, { isCurrent, skipSources: ['youtube', 'lastfm'] })
         if (!isCurrent()) return
         found = fallbackName
       }
-      setSongs({ loading: false, tracks: result.tracks, error: result.error, name: found })
+      const nextSongs = { loading: false, tracks: result.tracks, error: result.error, name: found }
+      setSongs(nextSongs)
       const items = await loadOnlineArtistAlbums(found, result.tracks)
-      if (isCurrent()) setAlbums({ loading: false, items })
+      done(nextSongs, { loading: false, items })
     })()
     return () => { request.current++ }
-  }, [fallbackName, enabled]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fallbackName, enabled, reload]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { songs, albums, name }
+  const refresh = useCallback(() => setReload(n => n + 1), [])
+  return { songs, albums, name, refresh, loadedAt, loading: songs.loading || albums.loading }
 }
 
 /**
@@ -91,7 +114,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
  * @param libraryTracks  the library's songs by them: marked in the list, played from the files
  * @param libraryAlbums  the library's releases by them: left out of the albums ("More albums")
  */
-export function OnlineArtistSections({ data, path, libraryTracks = null, libraryAlbums = null }) {
+export function OnlineArtistSections({ data, path, libraryTracks = null, libraryAlbums = null, shownTypes = null }) {
   const nav = useNavigate()
   const menu = useContextMenu()
   const { songs, albums, name } = data
@@ -105,12 +128,18 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const popularTracks = inLibrary ? popular.tracks.slice(0, Math.min(10, songs.tracks.length)) : popular.tracks
   const owned = useMemo(() => new Set((libraryAlbums || []).map(album => releaseTitleKey(album.title))), [libraryAlbums])
   const albumItems = libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items
+  // In sections by type; the types shown chosen per artist (the library's
+  // artist page passes its own choice in, so both follow one setting).
+  const [ownShown, toggleType] = useReleaseTypes(name)
+  const shown = shownTypes || ownShown
+  const albumGroups = useMemo(() => groupReleases(albumItems, shown), [albumItems, shown])
+  const albumTypes = useMemo(() => releaseTypeCounts(albumItems), [albumItems])
 
   const play = (selected, list = popularTracks) => playOnline(list, { selected, name, path })
   const albumPath = album => onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
   const openAlbum = album => nav(albumPath(album), { state: { artwork: album.artwork_url || null } })
   const albumTracks = async album => {
-    const result = await loadOnlineAlbum({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
+    const result = await loadOnlineAlbumCached({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
     if (!result.tracks.length) showToast(result.error || `No songs were found for “${album.title}”.`)
     return result.tracks
   }
@@ -143,23 +172,38 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
       </section>
 
       {(albums.loading ? !songs.loading : albumItems.length > 0) && (
-        <section>
-          <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{libraryAlbums ? 'More albums online' : 'Albums'}</h2>
+        <section aria-label={libraryAlbums ? 'More releases online' : 'Releases'}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryAlbums ? 'More releases online' : 'Releases'}</h2>
+            {!shownTypes && !albums.loading && <ReleaseTypeFilter types={albumTypes} shown={shown} onToggle={toggleType} />}
+          </div>
           {albums.loading
             ? <p role="status" className="text-sm text-muted">Loading albums…</p>
-            : (
-              <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
-                {albumItems.map(album => (
-                  <button key={album.title} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
-                    <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
-                      <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+            : albumGroups.length === 0
+              ? <p className="text-sm text-muted">No releases of the types chosen.</p>
+              : (
+                <div className="space-y-6">
+                  {albumGroups.map(group => (
+                    <div key={group.type}>
+                      {(albumGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
+                      <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
+                        {group.items.map(album => (
+                          <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
+                            {/* Hover: a border, not a zoom. A transform animation moves the
+                                card onto its own GPU layer and back, and the blur over a
+                                playing canvas (side panel, player bar) flickers each time. */}
+                            <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/50">
+                              <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+                            </div>
+                            <p className="mt-2 truncate text-sm text-white">{album.title}</p>
+                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <p className="mt-2 truncate text-sm text-white">{album.title}</p>
-                    <p className="truncate text-xs text-muted">{[album.release_type === 'single' ? 'Single' : album.release_type === 'ep' ? 'EP' : 'Album', album.year].filter(Boolean).join(' · ')}</p>
-                  </button>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
         </section>
       )}
       <ContextMenu menu={menu} />
@@ -200,6 +244,7 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
               <button onClick={() => play(songs.tracks[0])} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
               <button onClick={() => openRadio(nav, { artist: name, type: 'artist' }, userId)} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50"><Radio size={15} /> Artist radio</button>
               <button onClick={downloadPopular} disabled={!songs.tracks.length || busy} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy ? 'Finding songs…' : 'Download popular songs'}</button>
+              <RefreshButton onClick={data.refresh} loading={data.loading} loadedAt={data.loadedAt} className="border-white/15 bg-black/30 backdrop-blur-sm" />
             </div>
           </div>
         </div>

@@ -15,7 +15,8 @@ import { artistPath, releaseKey, useReleaseActions } from '../releaseActions'
 import { plural } from '../plural'
 import { openRadio } from '../radioActions'
 import OnlineSongList from '../components/OnlineSongList'
-import { isConnected, loadOnlineAlbum, mergeWithLibrary, onlineAlbumPath, setConnected } from '../onlineBrowse'
+import RefreshButton from '../components/RefreshButton'
+import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 
 const PAGE_SIZE = 48
@@ -219,15 +220,21 @@ export default function Albums() {
   const [onlineAlbum, setOnlineAlbum] = useState({ loading: false, tracks: [], error: '' })
   const [downloadingMissing, setDownloadingMissing] = useState(false)
   useEffect(() => { setConnectedState(isConnected(connectKey) || location.state?.connect === true) }, [connectKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Kept once loaded (see cachedOnline): coming back doesn't look it up
+  // again; the Refresh button does.
+  const [reloadOnline, setReloadOnline] = useState(0)
   useEffect(() => {
     if (!connected || !selectedAlbum?.title) return undefined
     let cancelled = false
+    const options = { artist: albumArtist, album: selectedAlbum.title }
+    const hit = reloadOnline ? null : peekOnline(albumCacheKey(options))
+    if (hit) { setOnlineAlbum({ loading: false, tracks: hit.value.tracks, error: '', loadedAt: hit.at }); return undefined }
     setOnlineAlbum({ loading: true, tracks: [], error: '' })
-    loadOnlineAlbum({ artist: albumArtist, album: selectedAlbum.title }, undefined, { isCurrent: () => !cancelled })
-      .then(result => { if (!cancelled) setOnlineAlbum({ loading: false, tracks: result.tracks, error: result.error || '' }) })
+    loadOnlineAlbumCached(options, undefined, { isCurrent: () => !cancelled }, { refresh: reloadOnline > 0 })
+      .then(result => { if (!cancelled) setOnlineAlbum({ loading: false, tracks: result.tracks, error: result.error || '', loadedAt: Date.now() }) })
       .catch(() => { if (!cancelled) setOnlineAlbum({ loading: false, tracks: [], error: 'Could not load this album online.' }) })
     return () => { cancelled = true }
-  }, [connected, connectKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connected, connectKey, reloadOnline]) // eslint-disable-line react-hooks/exhaustive-deps
   const merged = useMemo(() => mergeWithLibrary(onlineAlbum.tracks, albumTracks), [onlineAlbum.tracks, albumTracks])
   const showOnline = connected && !onlineAlbum.loading && onlineAlbum.tracks.length > 0
   const toggleConnected = () => setConnectedState(on => { setConnected(connectKey, !on); return !on })
@@ -564,6 +571,7 @@ export default function Albums() {
                       <Download size={14} /> {downloadingMissing ? 'Finding songs…' : `Download missing (${merged.missing.length})`}
                     </button>
                   )}
+                  {connected && <RefreshButton onClick={() => setReloadOnline(n => n + 1)} loading={onlineAlbum.loading} loadedAt={onlineAlbum.loadedAt} className="bg-card" />}
                   {albumTracks.length > 0 && (
                     <button onClick={toggleConnected} aria-pressed={connected}
                       title={connected ? 'Show only your library' : 'Show the whole album, with the songs you have marked'}
