@@ -1,4 +1,5 @@
 import plugin from 'tailwindcss/plugin'
+import colors from 'tailwindcss/colors'
 import { PAGE_BREAKPOINTS } from './src/pageBreakpoints.js'
 
 /** @type {import('tailwindcss').Config} */
@@ -19,9 +20,14 @@ export default {
         muted: 'rgb(var(--muted-rgb) / <alpha-value>)',
         subtle: 'rgb(var(--muted2-rgb) / <alpha-value>)',
         text: 'rgb(var(--text-rgb) / <alpha-value>)',
-        red: 'rgb(var(--red-rgb) / <alpha-value>)',
-        purple: 'rgb(var(--purple-rgb) / <alpha-value>)',
-        orange: 'rgb(var(--orange-rgb) / <alpha-value>)',
+        // Tailwind's own shades (red-400, bg-red-500...) plus a plain `red`
+        // (= 400). These were single colours from --red-rgb & co, which no
+        // theme ever defined: plain `text-red` had no colour, and every shade
+        // (54 text-red-400 alone: errors, delete hovers, the red buttons)
+        // generated no CSS at all.
+        red: { ...colors.red, DEFAULT: 'rgb(248 113 113 / <alpha-value>)' },
+        purple: { ...colors.purple, DEFAULT: 'rgb(192 132 252 / <alpha-value>)' },
+        orange: { ...colors.orange, DEFAULT: 'rgb(251 146 60 / <alpha-value>)' },
       },
     },
   },

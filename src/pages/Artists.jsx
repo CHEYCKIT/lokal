@@ -51,13 +51,18 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
   const imgSrc = getArtistImage(artist)
 
   return (
-    <motion.button
+    // A div acting as the button: it holds the Play button, and a button
+    // can't contain another one.
+    <motion.div
+      role="button"
+      tabIndex={0}
       initial={animateIn ? { opacity: 0, y: 10 } : false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
       onClick={onClick}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick?.() } }}
       onContextMenu={event => onContextMenu?.(event, artist)}
-      className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-center transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.08]"
+      className="group relative flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-center transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.08]"
       style={{ contentVisibility: 'auto', containIntrinsicSize: '190px' }}
     >
       {rank != null && (
@@ -72,7 +77,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
           <FallbackAvatar name={artist.name} />
         )}
         {/* Same play glyph as the album covers; the rest of the card opens the artist. */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100">
           <button
             type="button"
             aria-label={`Play ${artist.name}`}
@@ -88,7 +93,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
         <p className="truncate text-sm font-medium text-white">{artist.name}</p>
         <p className="truncate text-xs text-white/55">{artist.track_count} {artist.track_count === 1 ? 'track' : 'tracks'}</p>
       </div>
-    </motion.button>
+    </motion.div>
   )
 }
 
