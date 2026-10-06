@@ -233,6 +233,7 @@ function parseImportEntries(fileContent, fileType) {
   if (fileType === 'm3u' || fileType === 'm3u8') entries = parseM3U(fileContent);
   else if (fileType === 'csv') entries = parseCSV(fileContent);
   else if (fileType === 'json') entries = parseJSON(fileContent);
+  else if (fileType === 'txt') entries = require('../playlists/textList').parseTextList(fileContent);
   return entries.map(normalizeImportEntry);
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { FileUp, Link2, Loader2 } from 'lucide-react'
+import { FileUp, Link2, ListMusic, Loader2 } from 'lucide-react'
 import Modal from './Modal'
 import { api } from '../api'
 import { useAppStore } from '../store/player'
@@ -156,7 +156,7 @@ function FileImport({ onDone }) {
   const choose = async () => {
     setError('')
     const selected = await api.openFile({
-      filters: [{ name: 'Import Files', extensions: ['csv', 'json', 'm3u', 'm3u8'] }],
+      filters: [{ name: 'Import Files', extensions: ['csv', 'json', 'm3u', 'm3u8', 'txt'] }],
       multiple: true,
     })
     const paths = Array.isArray(selected) ? selected : (selected ? [selected] : [])
@@ -205,7 +205,7 @@ function FileImport({ onDone }) {
       <div>
         <label className={label}>Files</label>
         <button type="button" onClick={choose} className={`${secondary} w-full flex items-center justify-center gap-2`}>
-          <FileUp size={14} /> {files.length ? (files.length === 1 ? files[0].fileName : `${files.length} files selected`) : 'Choose CSV, JSON or M3U files'}
+          <FileUp size={14} /> {files.length ? (files.length === 1 ? files[0].fileName : `${files.length} files selected`) : 'Choose CSV, JSON, M3U or TXT files'}
         </button>
         <p className="mt-1.5 text-[11px] text-muted">Songs in your library are matched and their missing details filled in from the file. The rest become ghost songs.</p>
       </div>
@@ -228,6 +228,73 @@ function FileImport({ onDone }) {
   )
 }
 
+// A pasted list, one song per line ("Artist - Title" or "Title"): read like
+// a file (fileType 'txt'), so songs not in the library become ghost songs
+// instead of being dropped.
+function ListImport({ onDone }) {
+  const user = useAppStore(s => s.user)
+  const [name, setName] = useState('')
+  const [list, setList] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [reading, setReading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState('')
+  const files = () => [{ fileName: 'Pasted list', fileContent: list, fileType: 'txt' }]
+
+  // The counts follow the list as it's typed or pasted.
+  useEffect(() => {
+    if (!list.trim()) { setPreview(null); return undefined }
+    let live = true
+    const timer = setTimeout(async () => {
+      setReading(true)
+      const result = await api.previewExternalPlaylistImport({ files: files(), sourcePlatform: 'generic' }).catch(e => ({ error: e.message }))
+      if (!live) return
+      setReading(false)
+      if (result?.error) { setError(result.error); setPreview(null); return }
+      setError('')
+      setPreview(result)
+    }, 400)
+    return () => { live = false; clearTimeout(timer) }
+  }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = async () => {
+    if (!name.trim()) { setError('Please enter a playlist name'); return }
+    if (!preview?.total) { setError('Add at least one song'); return }
+    setImporting(true)
+    setError('')
+    const result = await api.importExternalPlaylist({ name: name.trim(), userId: user?.id || 'guest', files: files(), sourcePlatform: 'generic' }).catch(e => ({ error: e.message }))
+    setImporting(false)
+    if (result?.error) { setError(result.error); return }
+    onDone(result)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className={label}>Playlist name</label>
+        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="My playlist" className={input} />
+      </div>
+      <div>
+        <label className={label}>Songs, one per line</label>
+        <textarea value={list} onChange={e => setList(e.target.value)} rows={8}
+          placeholder={'The Beatles - Hey Jude\nPink Floyd - Comfortably Numb\nStairway to Heaven'}
+          className={`${input} resize-none font-mono text-xs leading-relaxed`} />
+        <p className="mt-1.5 text-[11px] text-muted">"Artist - Title", or just the title. Songs in your library are matched; the rest become ghost songs you can stream or download later.</p>
+      </div>
+      {(preview || reading) && (
+        <p className="flex items-center gap-2 text-xs text-muted">
+          {reading && <Loader2 size={12} className="animate-spin" />}
+          {preview ? `${plural(preview.total, 'song')} · ${preview.matched} in your library · ${preview.ghostable} will be ghost songs` : 'Reading the list…'}
+        </p>
+      )}
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <button type="button" onClick={submit} disabled={importing || !preview?.total} className={`${primary} w-full flex items-center justify-center gap-2`}>
+        {importing && <Loader2 size={14} className="animate-spin" />} Import {preview?.total ? plural(preview.total, 'song') : 'playlist'}
+      </button>
+    </div>
+  )
+}
+
 export default function ImportPlaylistModal() {
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState('link')
@@ -236,7 +303,7 @@ export default function ImportPlaylistModal() {
 
   useEffect(() => {
     const handler = (e) => {
-      setSource(e?.detail?.source === 'file' ? 'file' : 'link')
+      setSource(['file', 'list'].includes(e?.detail?.source) ? e.detail.source : 'link')
       setLinkUrl(typeof e?.detail?.url === 'string' ? e.detail.url : '')
       setSession(n => n + 1)
       setOpen(true)
@@ -257,8 +324,11 @@ export default function ImportPlaylistModal() {
         <div className="flex gap-2">
           <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>From a link</Tab>
           <Tab active={source === 'file'} icon={FileUp} onClick={() => setSource('file')}>From a file</Tab>
+          <Tab active={source === 'list'} icon={ListMusic} onClick={() => setSource('list')}>From a list</Tab>
         </div>
-        {source === 'link' ? <LinkImport key={`l${session}`} onDone={done} initialUrl={linkUrl} /> : <FileImport key={`f${session}`} onDone={done} />}
+        {source === 'link' ? <LinkImport key={`l${session}`} onDone={done} initialUrl={linkUrl} />
+          : source === 'file' ? <FileImport key={`f${session}`} onDone={done} />
+            : <ListImport key={`t${session}`} onDone={done} />}
       </div>
     </Modal>
   )
