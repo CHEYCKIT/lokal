@@ -16,7 +16,7 @@ router.get('/motion/:trackId', async (req, res) => {
   try { ffmpeg = require('../../electron/ipc/tools').findFfmpeg() } catch {}
   const found = await motionForTrack(req.params.trackId, ffmpeg).catch(() => null)
   if (!found?.file) return res.json(null)
-  res.json({ source: found.source, tall: found.tall, src: `/api/artwork-fx/clip/${path.basename(found.file)}` })
+  res.json({ source: found.source, tall: found.tall, fade: found.fade || 0, src: `/api/artwork-fx/clip/${path.basename(found.file)}` })
 })
 
 router.post('/spotify-check', async (req, res) => {

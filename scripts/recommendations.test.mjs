@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildRecommendationMix, loadRecommendationPage, playbackFallbackMessage, recommendationMatch, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
+import { buildRecommendationMix, loadRecommendationPage, playbackFallbackMessage, matchCover, recommendationMatch, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
 import { orderedPlaybackSources } from '../src/playbackSources.js'
 import { buildRadio } from '../src/radioActions.js'
 
@@ -355,4 +355,31 @@ test('remastered and single versions are the same song; live, remix and edit are
   for (const title of ['September - Remastered 2003', 'September (2011 Remaster)', 'September (Remastered)', 'September - 2003 Remaster', 'September - Single Version', 'September (Mono)']) assert.ok(as(title), title)
   for (const title of ['September (Live)', 'September - Remix', 'September (Edit)']) assert.equal(as(title), null, title)
   assert.ok(recommendationMatch({ title: 'September - Remastered 2003', artist: 'Earth, Wind & Fire' }, [song]))
+})
+
+test('the same album\'s copy of a song is preferred, and its cover kept', () => {
+  const picked = { title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', album: 'I Am', artwork_url: 'https://lastfm.example/i-am.jpg' }
+  const results = [
+    { title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', album: 'The Essential Earth, Wind & Fire', thumbnail: 'https://addon.example/essential.jpg' },
+    { title: 'Boogie Wonderland (with The Emotions)(Album Version)', artist: 'Earth, Wind & Fire', album: 'I Am', thumbnail: 'https://addon.example/i-am.jpg' },
+  ]
+  const match = recommendationMatch(picked, results)
+  assert.equal(match.album, 'I Am')
+  assert.equal(matchCover(picked, match), 'https://addon.example/i-am.jpg')
+  // Only the compilation's copy: it's saved with the cover that was shown.
+  assert.equal(matchCover(picked, recommendationMatch(picked, results.slice(0, 1))), 'https://lastfm.example/i-am.jpg')
+  // Nothing better to go on: the match's own cover.
+  assert.equal(matchCover({ ...picked, album: '' }, results[0]), 'https://addon.example/essential.jpg')
+  assert.equal(matchCover({ ...picked, artwork_url: 'http://insecure.example/a.jpg' }, results[0]), 'https://addon.example/essential.jpg')
+  // "(with ...)" is a featuring credit; a remix still isn't the song.
+  assert.ok(recommendationMatch({ title: 'Song', artist: 'A' }, [{ title: 'Song (with B)', artist: 'A' }]))
+  assert.equal(recommendationMatch({ title: 'Song', artist: 'A' }, [{ title: 'Song (with B) [Remix]', artist: 'A' }]), null)
+})
+
+test('a match from another release is saved with the cover that was shown', async () => {
+  const { client, saved } = clientMock({
+    onlineSearch: async () => ({ results: [{ id: '9', title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', album: 'Greatest Hits', thumbnail: 'https://addon.example/gh.jpg' }] }),
+  })
+  await resolveRecommendationTracks([{ title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', album: 'I Am', artwork_url: 'https://lastfm.example/i-am.jpg' }], client, { sources: [{ id: addon, label: 'Addon' }], prepareStreams: false })
+  assert.equal(saved[0]?.thumbnail, 'https://lastfm.example/i-am.jpg')
 })

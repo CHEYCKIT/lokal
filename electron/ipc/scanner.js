@@ -11,6 +11,7 @@ const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
 const { removeTrackFiles, forgetDownloads } = require('./trackFiles')
 const { smartTracks, smartPreview, normalizeRules, playlistRules } = require('../playlists/smart')
+const { fetchCoverData } = require('../playlists/remoteCover')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
 
@@ -1325,11 +1326,13 @@ function registerScannerHandlers(ipcMain) {
       const rules = data.smartRules === null ? null : normalizeRules(data.smartRules)
       db.prepare('UPDATE playlists SET smart_rules = ? WHERE id = ?').run(rules ? JSON.stringify(rules) : null, plId)
     }
-    if (data.coverData) {
+    // coverURL: a cover from the web (a saved YouTube Music mix's).
+    const coverData = data.coverData || (data.coverURL ? await fetchCoverData(data.coverURL) : null)
+    if (coverData) {
       if (existing.cover_path && fs.existsSync(existing.cover_path)) {
         try { fs.removeSync(existing.cover_path) } catch {}
       }
-      const coverPath = await writePlaylistCover(plId, data.coverData)
+      const coverPath = await writePlaylistCover(plId, coverData)
       db.prepare('UPDATE playlists SET cover_path = ? WHERE id = ?').run(coverPath, plId)
     }
     if (data.clearCover) {

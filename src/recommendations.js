@@ -63,7 +63,9 @@ export function recommendationMatch(candidate, results) {
   const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
-  return (Array.isArray(results) ? results : []).find(result => {
+  // Of the matches, the one from the same album comes first (a compilation's
+  // copy would bring another cover, and its colours, along).
+  const matches = (Array.isArray(results) ? results : []).filter(result => {
     const name = String(result?.title || '')
     const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
     const resultTitle = prefix && [artist, leadArtist].includes(recommendationKey(prefix[1])) ? prefix[2] : name
@@ -71,7 +73,22 @@ export function recommendationMatch(candidate, results) {
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
     return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === leadArtist)
       || recommendationKey(result.artist).replace(/ topic$/, '') === artist
-  }) || null
+  })
+  const album = recommendationKey(candidate.album)
+  return (album && matches.find(result => recommendationKey(result.album) === album)) || matches[0] || null
+}
+
+/**
+ * The cover to save a matched song with: the match's own, unless it's from
+ * another release than the one picked (a compilation) -- then the picked
+ * song's cover, so the colour background matches the cover shown.
+ */
+export function matchCover(candidate, match) {
+  const picked = /^https:\/\//.test(String(candidate?.artwork_url || '')) && !/2a96cbd8b46e442fc41c2b86b821562f/.test(candidate.artwork_url) ? candidate.artwork_url : null
+  const own = match?.thumbnail || match?.artwork_url || null
+  if (!picked) return own
+  const album = recommendationKey(candidate.album)
+  return !own || (album && recommendationKey(match.album) !== album) ? picked : own
 }
 
 /** Preserve native YouTube identity across DB rows, provider fallbacks and restored queues. */
@@ -180,7 +197,7 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
             const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
             if (unavailable) { failed(unavailable, detail); continue }
-            const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id }]), timeoutMs)
+            const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id, thumbnail: matchCover(candidate, match) || undefined }]), timeoutMs)
             // saveOnlineTracks preserves order, including nulls, for all
             // providers (addon row IDs are hashed by the backend).
             row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
