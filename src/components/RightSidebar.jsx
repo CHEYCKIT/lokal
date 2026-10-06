@@ -293,14 +293,9 @@ export default function RightSidebar() {
               never moves, so there's no brief "adds space" moment and no
               second panel ever exists to overlap with. */}
           <div className="flex-1 overflow-hidden relative min-h-0">
-            {/* React 18 only supports the DOM `inert` attribute as a string
-                (empty string = present, undefined = absent) -- a plain
-                boolean, `true` or `false`, is treated as a non-boolean prop
-                and is never written to the DOM at all, in either state. That
-                made this inert toggle a silent no-op: the hidden Info/Lyrics
-                pane stayed focusable and reachable by assistive tech even
-                while covered by the other tab's overlay. */}
-            <div ref={infoRef} className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info' ? '' : undefined}>
+            {/* The hidden Info/Lyrics pane is inert: not focusable or
+                reachable by assistive tech while the other tab covers it. */}
+            <div ref={infoRef} className="absolute inset-0 flex flex-col" inert={sidePanelView !== 'info'}>
               {/* Apple Music-style: the cover runs edge to edge and dissolves
                   into colours taken from it; a moving cover plays over the
                   still one when there is one. */}
