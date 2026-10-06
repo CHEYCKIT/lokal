@@ -1549,20 +1549,6 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('integrations') && (
-      <Section title="Recommendations">
-        <Row label="Recommendation Source" desc="Where Home's recommendations come from: Last.fm (from what you scrobble) or YouTube Music (from your account).">
-          <select
-            value={settings.recommendation_source || 'lastfm'}
-            onChange={event => set('recommendation_source', event.target.value)}
-            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="lastfm">Last.fm</option>
-            <option value="youtube">YouTube Music</option>
-          </select>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
       <Section title="Scrobbling">
         <Row label="Last.fm" desc={lastfmConnected ? '' : 'Sign in to Last.fm in Account Connections first.'}>
           <button disabled={!lastfmConnected} aria-pressed={lastfmConnected && settings.lastfm_scrobbling === '1'}
