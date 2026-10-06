@@ -4,10 +4,17 @@ on:
   push:
     tags:
       - 'v*'
-  # Actions > Release Lokal > Run workflow: bumps the version (package.json,
-  # package-lock.json, the README badge) on main, tags it and builds the
-  # draft release, without a version PR or a tag pushed by hand. Pushing a
-  # vX.Y.Z tag yourself still works as before.
+    # A merged version bump (package.json changed to a version that has no
+    # tag yet) is tagged and built: see "prepare".
+    branches:
+      - main
+    paths:
+      - package.json
+  # Actions > Release Lokal > Run workflow: opens the "Version X.Y.Z" PR
+  # (package.json, package-lock.json, the README badge). Merging it releases
+  # that version. If package.json already has a version that isn't tagged
+  # yet, Run workflow tags and builds it straight away. Pushing a vX.Y.Z tag
+  # yourself still works as before.
   workflow_dispatch:
     inputs:
       bump:
@@ -16,7 +23,7 @@ on:
         options: [patch, minor, major]
         default: patch
       version:
-        description: 'Or an exact version, e.g. 5.3.0 (overrides the bump; the current version tags it as it is)'
+        description: 'Or an exact version, e.g. 5.3.0 (overrides the bump)'
         required: false
         default: ''
 
@@ -27,32 +34,48 @@ concurrency:
 
 jobs:
   prepare:
-    # Only for Run workflow: a pushed tag is already the release.
-    if: github.event_name == 'workflow_dispatch'
-    name: Bump the version and tag it
+    # Run workflow, or a push to main touching package.json. A pushed tag
+    # skips this: it is the release already.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    name: Version PR or tag
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
           fetch-depth: 0
-          # If main only accepts PRs, a token allowed to push to it
-          # (RELEASE_TOKEN secret) is needed; otherwise the default one.
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - name: Work out the version
         id: version
         env:
           # Through the environment, not pasted into the script: user input.
+          EVENT: ${{ github.event_name }}
           BUMP: ${{ inputs.bump }}
           EXACT: ${{ inputs.version }}
         run: |
           CURRENT=$(node -p "require('./package.json').version")
+          LAST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          untagged() { ! git rev-parse -q --verify "refs/tags/v$1" >/dev/null; }
+
+          if [ "$EVENT" = "push" ]; then
+            # A merged bump: release it if that version has no tag yet.
+            if [[ "$CURRENT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && untagged "$CURRENT"; then
+              echo "package.json says $CURRENT, not tagged yet: releasing it."
+              echo "mode=tag" >> "$GITHUB_OUTPUT"; echo "new=$CURRENT" >> "$GITHUB_OUTPUT"
+            else
+              echo "package.json says $CURRENT, already released: nothing to do."
+              echo "mode=none" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
           if [ -n "$EXACT" ]; then
             NEW="${EXACT#v}"
           else
@@ -61,27 +84,34 @@ jobs:
               const bump = process.argv[2]
               console.log(bump === "major" ? `${a + 1}.0.0` : bump === "minor" ? `${a}.${b + 1}.0` : `${a}.${b}.${c + 1}`)
             ' "$CURRENT" "$BUMP")
+            # package.json already ahead of the last release (a bump merged,
+            # never tagged): release that rather than skipping a version.
+            if untagged "$CURRENT"; then NEW="$CURRENT"; fi
           fi
           if ! [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error title=Version::\"$NEW\" isn't a version like 5.3.0."; exit 1
           fi
-          if git rev-parse -q --verify "refs/tags/v$NEW" >/dev/null; then
+          if ! untagged "$NEW"; then
             echo "::error title=Version::v$NEW already exists. Pick another version (or delete that tag first to release it again)."; exit 1
           fi
           # Never go backwards: the updater would not offer it.
           if [ "$NEW" != "$CURRENT" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$NEW" | sort -V | tail -1)" != "$NEW" ]; then
             echo "::error title=Version::$NEW is older than the current $CURRENT."; exit 1
           fi
-          LAST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
           if [ -n "$LAST" ] && [ "$(git rev-list --count "$LAST..HEAD")" = "0" ]; then
             echo "::error title=Nothing to release::main has nothing new since $LAST."; exit 1
           fi
-          echo "Releasing $CURRENT -> $NEW (previous release: ${LAST:-none})"
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" = "$CURRENT" ]; then
+            echo "package.json already says $NEW: tagging and building it."
+            echo "mode=tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "Opening the PR for $CURRENT -> $NEW (previous release: ${LAST:-none})."
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Bump package.json, package-lock.json and the README badge
-        if: steps.version.outputs.new != steps.version.outputs.current
+        if: steps.version.outputs.mode == 'pr'
         env:
           CURRENT: ${{ steps.version.outputs.current }}
           NEW: ${{ steps.version.outputs.new }}
@@ -101,15 +131,43 @@ jobs:
           ' "$CURRENT" "$NEW"
           sed -i -E "s/version-[0-9]+\.[0-9]+\.[0-9]+-blue/version-$NEW-blue/" README.md
           git diff --stat
+          git switch -q -c "release/v$NEW"
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -qam "Version $NEW"
-          if ! git push origin HEAD:main; then
-            echo "::error title=Push to main refused::main is protected. Add a RELEASE_TOKEN secret (a token allowed to push to main), or let github-actions bypass the rule, then run this again."
-            exit 1
-          fi
+          git push -f origin "release/v$NEW"
+
+      - name: Open the version PR
+        if: steps.version.outputs.mode == 'pr'
+        uses: actions/github-script@v8
+        env:
+          NEW: ${{ steps.version.outputs.new }}
+        with:
+          # main takes changes only through a reviewed PR: this opens it, and
+          # merging it (by a person) starts the release.
+          github-token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          script: |
+            const { owner, repo } = context.repo
+            const { NEW } = process.env
+            const branch = `release/v${NEW}`
+            // A run before may have opened it already.
+            let [pr] = (await github.rest.pulls.list({ owner, repo, state: 'open', base: 'main', head: `${owner}:${branch}` })).data
+            if (!pr) {
+              try {
+                ({ data: pr } = await github.rest.pulls.create({
+                  owner, repo, head: branch, base: 'main', title: `Version ${NEW}`,
+                  body: `Bumps package.json, package-lock.json and the README badge to ${NEW}.\n\n**Merging this releases v${NEW}**: Release Lokal tags it and builds the draft release.`,
+                }))
+              } catch (err) {
+                core.setFailed(`Couldn't open the PR (${err.message}). The branch ${branch} is pushed: open its PR yourself, or turn on Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" (or add a RELEASE_TOKEN secret) for next time.`)
+                return
+              }
+            }
+            core.notice(`Merge ${pr.html_url} to release v${NEW}.`, { title: 'Version PR ready' })
+            await core.summary.addRaw(`### Version PR ready\n\nMerge [${pr.title} (#${pr.number})](${pr.html_url}) to release **v${NEW}**: this workflow then tags and builds it.\n`).write()
 
       - name: Tag the release
         id: tag
+        if: steps.version.outputs.mode == 'tag'
         uses: actions/github-script@v8
         env:
           NEW: ${{ steps.version.outputs.new }}
@@ -127,8 +185,8 @@ jobs:
 
   build:
     needs: prepare
-    # Runs for a pushed tag (prepare skipped) or after prepare succeeded.
-    if: ${{ !cancelled() && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped') }}
+    # Runs for a pushed tag (prepare skipped) or a tag prepare just made.
+    if: ${{ !cancelled() && ((needs.prepare.result == 'skipped' && startsWith(github.ref, 'refs/tags/')) || (needs.prepare.result == 'success' && needs.prepare.outputs.tag != '')) }}
     strategy:
       matrix:
         # Linux stays on a fixed, older Ubuntu: native modules compiled here
