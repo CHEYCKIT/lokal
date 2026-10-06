@@ -337,64 +337,6 @@ async function cachedClip(found, { cacheDir, ffmpeg }) {
   return job
 }
 
-// ---------------------------------------------------------------- loop check
-
-// Apple's moving covers are made to loop: the last frame leads straight into
-// the first. Many others (Tidal's, some canvases) just end, and jump back to
-// the start. Those are crossfaded into their start instead (MotionCover).
-// Tiny greyscale frames are compared: the jump from the last frame to the
-// first, against an ordinary step between two neighbouring frames.
-
-const LOOP_FADE = 0.6 // s
-const SIDE = 32
-const loopChecks = new Map() // file|mtime -> seconds of crossfade
-
-function grey(ffmpeg, args, timeoutMs = 20000) {
-  return new Promise((resolve) => {
-    let proc
-    try { proc = spawn(ffmpeg || 'ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', ...args, '-vf', `scale=${SIDE}:${SIDE},format=gray`, '-f', 'rawvideo', '-'], { windowsHide: true }) } catch { resolve(null); return }
-    const chunks = []
-    const timer = setTimeout(() => { try { proc.kill('SIGKILL') } catch {} }, timeoutMs)
-    proc.stdout.on('data', d => chunks.push(d))
-    proc.stderr.on('data', () => {})
-    proc.on('error', () => { clearTimeout(timer); resolve(null) })
-    proc.on('close', code => { clearTimeout(timer); resolve(code === 0 ? Buffer.concat(chunks) : null) })
-  })
-}
-
-/** Mean difference of two frames, 0-255. */
-function frameDiff(a, b) {
-  let sum = 0
-  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i])
-  return sum / a.length
-}
-
-/** 0 when `ends` (first frame, last frames) loop by themselves, else the crossfade. */
-function loopFadeFor(first, tail) {
-  const size = SIDE * SIDE
-  if (!first || first.length < size || !tail || tail.length < size * 2) return 0
-  const frames = Math.floor(tail.length / size)
-  const last = tail.subarray((frames - 1) * size, frames * size)
-  const before = tail.subarray((frames - 2) * size, (frames - 1) * size)
-  const jump = frameDiff(last, first.subarray(0, size))
-  const step = frameDiff(before, last)
-  return jump > Math.max(6, step * 4) ? LOOP_FADE : 0
-}
-
-async function loopFade(file, ffmpeg) {
-  let stamp = ''
-  try { stamp = String(fs.statSync(file).mtimeMs) } catch { return 0 }
-  const key = `${file}|${stamp}`
-  if (!loopChecks.has(key)) {
-    if (loopChecks.size > 200) loopChecks.delete(loopChecks.keys().next().value)
-    loopChecks.set(key, Promise.all([
-      grey(ffmpeg, ['-i', file, '-frames:v', '1']),
-      grey(ffmpeg, ['-sseof', '-0.4', '-i', file]),
-    ]).then(([first, tail]) => loopFadeFor(first, tail)).catch(() => 0))
-  }
-  return loopChecks.get(key)
-}
-
 // ---------------------------------------------------------------- lookup
 
 function ensureTable(db) {
@@ -420,7 +362,7 @@ function enabledSources(settings) {
 }
 
 /**
- * @returns {Promise<{ file: string, source: string, tall: boolean, fade: number } | null>}  fade: seconds to crossfade the end into the start (0: it loops by itself)
+ * @returns {Promise<{ file: string, source: string, tall: boolean } | null>}
  */
 // The library stores a missing album as the literal "Unknown Album". Treat
 // that (or an empty album) as no album, so sources match on title and artist
@@ -458,7 +400,7 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   }
   if (!found) return null
   const file = await cachedClip(found, { cacheDir, ffmpeg })
-  return file ? { file, source: found.source, tall: !!found.tall, fade: await loopFade(file, ffmpeg) } : null
+  return file ? { file, source: found.source, tall: !!found.tall } : null
 }
 
-module.exports = { motionCoverFor, loopFade, loopFadeFor, fromApple, fromTidal, fromCommunity, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }
+module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }

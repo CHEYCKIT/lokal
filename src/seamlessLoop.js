@@ -1,12 +1,10 @@
-// Seamless looping for short clips (moving covers, canvases). A <video loop>
-// seeks back to the start at the end, and Chromium stalls on that seek
-// (frozen picture for a moment every time round). Instead two copies of the
-// clip take turns: while one plays, the other waits paused on its first
-// frame; just before the end it starts and is shown in the same frame, and
-// the first goes back to the start to wait.
-// Clips that aren't made to loop (the last frame is nothing like the first)
-// get `fade` seconds of crossfade from their end into their start instead
-// of a jump.
+// Looping a moving album cover with a fade: a <video loop> seeks back to
+// the start at the end, and Chromium stalls on that seek (frozen picture for
+// a moment every time round), and many covers don't end where they start
+// anyway. Instead two copies of the clip take turns: while one plays, the
+// other waits paused on its first frame; `fade` seconds before the end it
+// starts on top and fades in, and the first goes back to the start to wait.
+// (Spotify Canvases keep a plain loop; see MotionCover.)
 
 const LEAD = 0.075 // s before the end: two frames at 24-30 fps
 
