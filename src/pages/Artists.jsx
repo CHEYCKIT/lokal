@@ -77,7 +77,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
           <FallbackAvatar name={artist.name} />
         )}
         {/* Same play glyph as the album covers; the rest of the card opens the artist. */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100">
           <button
             type="button"
             aria-label={`Play ${artist.name}`}
