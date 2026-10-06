@@ -4,9 +4,131 @@ on:
   push:
     tags:
       - 'v*'
+  # Actions > Release Lokal > Run workflow: bumps the version (package.json,
+  # package-lock.json, the README badge) on main, tags it and builds the
+  # draft release, without a version PR or a tag pushed by hand. Pushing a
+  # vX.Y.Z tag yourself still works as before.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump (from the version in package.json)'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: 'Or an exact version, e.g. 5.3.0 (overrides the bump; the current version tags it as it is)'
+        required: false
+        default: ''
+
+# One release at a time.
+concurrency:
+  group: release-lokal
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    # Only for Run workflow: a pushed tag is already the release.
+    if: github.event_name == 'workflow_dispatch'
+    name: Bump the version and tag it
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          # If main only accepts PRs, a token allowed to push to it
+          # (RELEASE_TOKEN secret) is needed; otherwise the default one.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Work out the version
+        id: version
+        env:
+          # Through the environment, not pasted into the script: user input.
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ -n "$EXACT" ]; then
+            NEW="${EXACT#v}"
+          else
+            NEW=$(node -e '
+              const [a, b, c] = process.argv[1].split("-")[0].split(".").map(Number)
+              const bump = process.argv[2]
+              console.log(bump === "major" ? `${a + 1}.0.0` : bump === "minor" ? `${a}.${b + 1}.0` : `${a}.${b}.${c + 1}`)
+            ' "$CURRENT" "$BUMP")
+          fi
+          if ! [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=Version::\"$NEW\" isn't a version like 5.3.0."; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$NEW" >/dev/null; then
+            echo "::error title=Version::v$NEW already exists. Pick another version (or delete that tag first to release it again)."; exit 1
+          fi
+          # Never go backwards: the updater would not offer it.
+          if [ "$NEW" != "$CURRENT" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$NEW" | sort -V | tail -1)" != "$NEW" ]; then
+            echo "::error title=Version::$NEW is older than the current $CURRENT."; exit 1
+          fi
+          LAST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          if [ -n "$LAST" ] && [ "$(git rev-list --count "$LAST..HEAD")" = "0" ]; then
+            echo "::error title=Nothing to release::main has nothing new since $LAST."; exit 1
+          fi
+          echo "Releasing $CURRENT -> $NEW (previous release: ${LAST:-none})"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Bump package.json, package-lock.json and the README badge
+        if: steps.version.outputs.new != steps.version.outputs.current
+        env:
+          CURRENT: ${{ steps.version.outputs.current }}
+          NEW: ${{ steps.version.outputs.new }}
+        run: |
+          # Text replacements, not a JSON rewrite: the diff stays four lines.
+          node -e '
+            const fs = require("fs")
+            const [cur, next] = process.argv.slice(1)
+            const swap = (file, times) => {
+              let s = fs.readFileSync(file, "utf8"), n = 0
+              s = s.replace(new RegExp(`"version": "${cur.replace(/\./g, "\\.")}"`, "g"), m => n++ < times ? `"version": "${next}"` : m)
+              if (!n) throw new Error(`${file}: version ${cur} not found`)
+              fs.writeFileSync(file, s)
+            }
+            swap("package.json", 1)
+            swap("package-lock.json", 2)  // the lock file itself, and packages[""]
+          ' "$CURRENT" "$NEW"
+          sed -i -E "s/version-[0-9]+\.[0-9]+\.[0-9]+-blue/version-$NEW-blue/" README.md
+          git diff --stat
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qam "Version $NEW"
+          if ! git push origin HEAD:main; then
+            echo "::error title=Push to main refused::main is protected. Add a RELEASE_TOKEN secret (a token allowed to push to main), or let github-actions bypass the rule, then run this again."
+            exit 1
+          fi
+
+      - name: Tag the release
+        id: tag
+        uses: actions/github-script@v8
+        env:
+          NEW: ${{ steps.version.outputs.new }}
+        with:
+          # The default token on purpose: a tag it makes doesn't start this
+          # workflow a second time (the jobs below build it).
+          github-token: ${{ github.token }}
+          script: |
+            const { execSync } = require('child_process')
+            const tag = `v${process.env.NEW}`
+            const sha = execSync('git rev-parse HEAD').toString().trim()
+            await github.rest.git.createRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `refs/tags/${tag}`, sha })
+            core.info(`Tagged ${tag} at ${sha}`)
+            core.setOutput('tag', tag)
+
   build:
+    needs: prepare
+    # Runs for a pushed tag (prepare skipped) or after prepare succeeded.
+    if: ${{ !cancelled() && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped') }}
     strategy:
       matrix:
         # Linux stays on a fixed, older Ubuntu: native modules compiled here
@@ -21,6 +143,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v5
         with:
+          ref: ${{ needs.prepare.outputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -66,14 +189,19 @@ jobs:
           path: release
 
   release:
-    needs: build
+    needs: [prepare, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      # The version tag: pushed, or made by prepare.
+      TAG: ${{ needs.prepare.outputs.tag || github.ref_name }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
         with:
+          ref: ${{ needs.prepare.outputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -91,7 +219,7 @@ jobs:
         id: banner
         env:
           # Read via process.env rather than interpolated into the JS source.
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ env.TAG }}
         run: |
           # Drawn from this repo (.github/banner): the outside page it used to
           # be taken from stopped answering. Never fails the job.
@@ -200,7 +328,8 @@ jobs:
             // which GitHub would otherwise use and which misses a version
             // that was published late or left as a draft.
             const { execSync } = require('child_process');
-            const tag = context.ref.replace('refs/tags/', '');
+            const sh = (cmd) => execSync(cmd).toString();
+            const tag = process.env.TAG;
             const parts = (t) => t.replace(/^v/, '').split(/[.-]/).map(n => parseInt(n, 10)).filter(n => !Number.isNaN(n));
             const below = (a, b) => {
               const x = parts(a), y = parts(b);
@@ -209,24 +338,71 @@ jobs:
               }
               return false;
             };
-            const previous = execSync("git tag --list 'v*'").toString().split('\n')
+            const previous = sh("git tag --list 'v*'").split('\n')
               .map(t => t.trim())
               .filter(t => /^v\d+(\.\d+)*$/.test(t) && below(t, tag))
               .sort((a, b) => (below(a, b) ? 1 : -1))[0];
             core.info(`Release notes for ${tag}, since ${previous || 'the first commit'}`);
-            const response = await github.rest.repos.generateReleaseNotes({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tag,
-              ...(previous ? { previous_tag_name: previous } : {}),
-            });
-            core.setOutput('body', response.data.body);
+            const { owner, repo } = context.repo;
+
+            // One entry per PR merged since then (oldest first), with its
+            // description folded under it, ready to be tidied in the draft.
+            // Version bump PRs and the bump commit itself are left out.
+            const notes = async () => {
+              if (!previous) throw new Error('no previous version');
+              const lines = sh(`git log --first-parent --reverse --format=%H%x09%s ${previous}..${tag}`)
+                .split('\n').filter(Boolean).map(l => l.split('\t'));
+              const entries = [];
+              const contributors = new Set();
+              for (const [sha, subject] of lines) {
+                const m = subject.match(/^Merge pull request #(\d+)/) || subject.match(/\(#(\d+)\)$/);
+                if (!m) {
+                  if (!/^Version \d+\.\d+\.\d+$/.test(subject)) entries.push(`- ${subject} (${sha.slice(0, 7)})`);
+                  continue;
+                }
+                const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: Number(m[1]) });
+                if (/^(chore\/)?version-/.test(pr.head.ref) || /^Version \d+\.\d+\.\d+$/.test(pr.title)) continue;
+                contributors.add(pr.user.login);
+                const body = (pr.body || '')
+                  .split('\n')
+                  .filter(l => !/Generated with \[Claude Code\]|claude\.ai\/code\/session_|^Co-Authored-By:/i.test(l))
+                  .join('\n').trim();
+                entries.push(`- **${pr.title}** ([#${pr.number}](${pr.html_url}))` +
+                  (body ? `\n  <details><summary>Details</summary>\n\n${body.replace(/^/gm, '  ')}\n\n  </details>` : ''));
+              }
+              if (!entries.length) throw new Error('no changes found');
+              return [
+                "## What's Changed",
+                '',
+                ...entries,
+                '',
+                contributors.size ? `Contributors: ${[...contributors].map(u => '@' + u).join(', ')}` : '',
+                '',
+                `**Full Changelog**: https://github.com/${owner}/${repo}/compare/${previous}...${tag}`,
+              ].join('\n');
+            };
+
+            let body;
+            try {
+              body = await notes();
+            } catch (err) {
+              // Fall back to GitHub's own list of PR titles.
+              core.warning(`Writing release notes from the PRs failed (${err.message}); using GitHub's.`);
+              const response = await github.rest.repos.generateReleaseNotes({
+                owner, repo,
+                tag_name: tag,
+                ...(previous ? { previous_tag_name: previous } : {}),
+              });
+              body = response.data.body;
+            }
+            core.setOutput('body', body);
 
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
-          name: Release ${{ github.ref_name }}
+          name: Release ${{ env.TAG }}
+          tag_name: ${{ env.TAG }}
           files: |
             release_all/**/*.exe
             release_all/**/*.dmg
@@ -271,10 +447,10 @@ jobs:
         run: |
           LATEST_MSG="${{ steps.latest_commit.outputs.LATEST }}"
           BANNER_URL="${{ steps.banner.outputs.url }}"
-          BANNER_URL="${BANNER_URL:-https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/release-banner.png}"
+          BANNER_URL="${BANNER_URL:-https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}/release-banner.png}"
           
           PAYLOAD=$(jq -n \
-            --arg version "${{ github.ref_name }}" \
+            --arg version "${{ env.TAG }}" \
             --arg url "${{ steps.create_release.outputs.html_url }}" \
             --arg msg "$LATEST_MSG" \
             --arg image "$BANNER_URL" \
