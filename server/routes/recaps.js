@@ -1,6 +1,6 @@
 const router = require('express').Router()
 const { getDB } = require('../../electron/ipc/db')
-const { buildRecap, recapTracks, listeningDays } = require('../../electron/ipc/recaps')
+const { buildRecap, recapTracks, listeningDays, artistPlays, trackPlays } = require('../../electron/ipc/recaps')
 
 router.get('/:userId', (req, res) => {
   try {
@@ -26,6 +26,16 @@ router.get('/:userId/days', (req, res) => {
   } catch (e) {
     res.json({ error: e.message, days: [] })
   }
+})
+
+// One artist's plays, files and streams (the artist page's share card).
+router.get('/:userId/artist/:artistId', (req, res) => {
+  try { res.json(artistPlays(getDB(), req.params.userId || 'guest', req.params.artistId)) } catch (e) { res.json({ error: e.message }) }
+})
+
+// One song's plays by the user (the side panel's Plays).
+router.get('/:userId/track/:trackId', (req, res) => {
+  try { res.json(trackPlays(getDB(), req.params.userId || 'guest', req.params.trackId)) } catch (e) { res.json({ error: e.message }) }
 })
 
 router.get('/:userId/preferences', (req, res) => {

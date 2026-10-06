@@ -55,6 +55,20 @@ export default function RightSidebar() {
   } = usePlayerStore()
   const nav = useNavigate()
   const menu = useContextMenu()
+  // Your plays of the song (30 s or more, as recaps count them), streamed
+  // songs too: read for each song, as the one in the player keeps the count
+  // it had when it started. This play is counted once it ends.
+  const [trackPlays, setTrackPlays] = useState({ id: null, plays: null })
+  useEffect(() => {
+    const id = currentTrack?.id
+    if (!id) return undefined
+    let current = true
+    Promise.resolve(api.getTrackPlays?.(user?.id || 'guest', id))
+      .then(result => { if (current && Number.isFinite(result?.plays)) setTrackPlays({ id, plays: result.plays }) })
+      .catch(() => {})
+    return () => { current = false }
+  }, [currentTrack?.id, user?.id])
+  const plays = trackPlays.id === currentTrack?.id && trackPlays.plays !== null ? trackPlays.plays : Number(currentTrack?.play_count) || 0
   // A streamed song rarely comes with a genre: looked up (and kept) for it.
   const [foundGenre, setFoundGenre] = useState({ id: null, genre: null })
   useEffect(() => {
@@ -344,7 +358,7 @@ export default function RightSidebar() {
                       <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
                       {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
-                      <InfoRow fx={fx} label="Plays" value={currentTrack.play_count > 0 ? `${currentTrack.play_count}` : null} />
+                      <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
                   )}
                 </div>

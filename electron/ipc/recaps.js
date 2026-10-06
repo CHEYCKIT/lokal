@@ -498,7 +498,50 @@ function listeningDays(db, userId = 'guest', opts = {}) {
   return { days: [...days].sort(), tz: zone }
 }
 
+/**
+ * One artist's plays by `userId`, counted as recaps count them (30 seconds or
+ * more, files and streamed songs): their library songs (linked to them, as
+ * on their page) and the songs streamed under their name, which aren't
+ * linked: by the artist as written, or the first artist the source credited
+ * (kept as album_artist: "Earth, Wind & Fire" of "Earth, Wind & Fire, The
+ * Emotions"). Names aren't split on commas, so "Earth" doesn't get "Earth,
+ * Wind & Fire". With their most played songs.
+ */
+function artistPlays(db, userId = 'guest', artistId) {
+  ensureRecapTables(db)
+  try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
+  const id = String(artistId || '')
+  let artist = db.prepare('SELECT id, name FROM artists WHERE id = ?').get(id)
+  if (!artist) artist = db.prepare('SELECT id, name FROM artists WHERE LOWER(name) = LOWER(?)').get(id.replace(/^a-/, '').replace(/-/g, ' '))
+  if (!artist) return { error: 'Artist not found' }
+  const name = String(artist.name || '').toLowerCase()
+  const rows = db.prepare(`
+    SELECT t.id, t.title, t.album, (t.file_path LIKE 'ghost://%') AS streamed, COUNT(*) AS plays
+    FROM play_history ph JOIN tracks t ON t.id = ph.track_id
+    WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED_TRACKS}
+      AND (
+        t.id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)
+        OR (${STREAMED_TRACKS} AND (LOWER(t.artist) = ? OR LOWER(t.album_artist) = ?))
+      )
+    GROUP BY t.id
+    ORDER BY plays DESC, t.title
+  `).all(userId, QUALIFIED_SECONDS, artist.id, name, name)
+  const plays = rows.reduce((sum, row) => sum + row.plays, 0)
+  const streamed = rows.filter(row => row.streamed).reduce((sum, row) => sum + row.plays, 0)
+  return { plays, streamed, topTracks: rows.slice(0, 5).map(({ id: trackId, title, album, plays: count }) => ({ id: trackId, title, album, plays: count })) }
+}
+
+/** How many times `userId` played one song, counted as recaps count plays (30 seconds or more). */
+function trackPlays(db, userId = 'guest', trackId) {
+  ensureRecapTables(db)
+  try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
+  const row = db.prepare('SELECT COUNT(*) AS n FROM play_history WHERE user_id = ? AND track_id = ? AND COALESCE(seconds_played, 0) >= ?').get(userId, String(trackId || ''), QUALIFIED_SECONDS)
+  return { plays: Number(row?.n) || 0 }
+}
+
 function registerRecapHandlers(ipcMain) {
+  ipcMain.handle('recaps:trackPlays', (_, userId, trackId) => trackPlays(getDB(), userId || 'guest', trackId))
+  ipcMain.handle('recaps:artistPlays', (_, userId, artistId) => artistPlays(getDB(), userId || 'guest', artistId))
   ipcMain.handle('recaps:days', (_, userId, opts) => listeningDays(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:get', (_, userId, opts) => buildRecap(getDB(), userId || 'guest', opts || {}))
   ipcMain.handle('recaps:tracks', (_, userId, opts) => recapTracks(getDB(), userId || 'guest', opts || {}))
@@ -508,4 +551,4 @@ function registerRecapHandlers(ipcMain) {
   })
 }
 
-module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, recapTracks, listeningDays, ensureRecapTables }
+module.exports = { registerRecapHandlers, recordListeningEvent, buildRecap, recapTracks, listeningDays, artistPlays, trackPlays, ensureRecapTables }

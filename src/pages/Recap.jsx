@@ -479,7 +479,8 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
       title: shownPeriod?.title || 'My recap',
       subtitle: `${fmtDate(recap.from)} – ${fmtDate(recap.to)}`,
       art: coversOf(topTracks, 4),
-      stats: [['Listened', fmtMinutes(recap.totalMinutes)], ['Tracks', (recap.uniqueTracks || 0).toLocaleString()], ['Artists', (recap.uniqueArtists || 0).toLocaleString()], ['Peak hour', fmtHour(recap.peakHour?.hour)]],
+      // Plays (each listen of 30 s or more) and tracks (different songs), as the page shows them.
+      stats: [['Listened', fmtMinutes(recap.totalMinutes)], ['Plays', (recap.totalPlays || 0).toLocaleString()], ['Tracks', (recap.uniqueTracks || 0).toLocaleString()], ['Artists', (recap.uniqueArtists || 0).toLocaleString()]],
       list: (recap.topArtists || []).length
         ? { title: 'Top artists', items: recap.topArtists.slice(0, 5).map(item => [item.artist, plural(item.plays, 'play')]) }
         : { title: 'Top tracks', items: topTracks.slice(0, 5).map(track => [track.title, track.artist]) },
@@ -654,7 +655,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
                 </div>
                 <h2 className="mt-3 break-words text-3xl font-display text-white @sm:text-4xl">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-                  You played {plural(recap.totalPlays, 'track')} for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
+                  You played {plural(recap.uniqueTracks || 0, 'track')} ({plural(recap.totalPlays, 'play')}) for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
                 </p>
                 <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 @sm:grid-cols-2 @xl:grid-cols-4">
                   <Metric label="Minutes" value={fmtMinutes(recap.totalMinutes)} icon={Clock3} />

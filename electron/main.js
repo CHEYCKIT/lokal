@@ -178,12 +178,13 @@ autoUpdater.on('error', (err) => {
 
 const settingsPath = path.join(app.getPath('userData'), 'performance-settings.json')
 
-// Settings > About > Hardware Acceleration and Graphics Backend. Read once at
-// startup: Chromium only takes the GPU switches before the app is ready, so a
-// change needs a restart.
-const GRAPHICS_BACKENDS = ['auto', 'gl', 'd3d11', 'd3d9']
+// Settings > About > Hardware Acceleration. Read once at startup: Chromium
+// only takes the GPU switches before the app is ready, so a change needs a
+// restart. (A Graphics Backend choice was saved here too, for the white
+// flash Direct3D 11 showed on restore from the taskbar before Electron 44;
+// it's ignored now, and dropped on the next save.)
 function loadPerformanceSettings() {
-  const defaults = { hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto' }
+  const defaults = { hardwareAcceleration: true, performanceMode: false }
   try {
     if (fs.existsSync(settingsPath)) {
       const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
@@ -210,21 +211,6 @@ if (perfSettings.hardwareAcceleration === false) {
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
-
-// Windows: with Chromium's default Direct3D 11 backend, a window restored from
-// the taskbar shows white for a moment before its first new frame (turning
-// off native occlusion or background throttling didn't stop it). OpenGL and
-// Direct3D 9 don't flash, but felt laggy in testing (so did Vulkan, which
-// also shows a stretched frame on restore, and d3d11on12), so Automatic keeps
-// Chromium's Direct3D 11 and the others are a choice in Settings. A
-// --use-angle given on the command line wins.
-function angleBackend() {
-  if (process.platform !== 'win32' || perfSettings.hardwareAcceleration === false) return null
-  const chosen = GRAPHICS_BACKENDS.includes(perfSettings.graphicsBackend) ? perfSettings.graphicsBackend : 'auto'
-  return chosen === 'auto' ? null : chosen
-}
-const runningAngle = app.commandLine.hasSwitch('use-angle') ? app.commandLine.getSwitchValue('use-angle') : angleBackend()
-if (runningAngle && !app.commandLine.hasSwitch('use-angle')) app.commandLine.appendSwitch('use-angle', runningAngle)
 
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService')
 
@@ -366,7 +352,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, webSecurity: false,
       // A music player's timers shouldn't slow down while minimized. (This
-      // didn't cause the white flash on restore; see angleBackend.) The page
+      // didn't cause the white flash on restore.) The page
       // learns it's minimized through 'window:visibility' instead, to pause
       // what nobody sees.
       backgroundThrottling: false,
@@ -485,7 +471,7 @@ app.whenReady().then(() => {
       const next = { ...loadPerformanceSettings() }
       if (typeof newSettings?.hardwareAcceleration === 'boolean') next.hardwareAcceleration = newSettings.hardwareAcceleration
       if (typeof newSettings?.performanceMode === 'boolean') next.performanceMode = newSettings.performanceMode
-      if (GRAPHICS_BACKENDS.includes(newSettings?.graphicsBackend)) next.graphicsBackend = newSettings.graphicsBackend
+      delete next.graphicsBackend
       writePerformanceSettings(next)
       return { success: true }
     } catch (e) {
@@ -500,15 +486,12 @@ app.whenReady().then(() => {
   // What's saved (the next launch) plus what this launch is running with, so
   // Settings can say a restart is still needed.
   ipcMain.handle('perf:load', async () => {
-    const saved = loadPerformanceSettings()
+    const { graphicsBackend, ...saved } = loadPerformanceSettings()
     return {
       ...saved,
-      graphicsBackend: GRAPHICS_BACKENDS.includes(saved.graphicsBackend) ? saved.graphicsBackend : 'auto',
       platform: process.platform,
       running: {
         hardwareAcceleration: perfSettings.hardwareAcceleration !== false,
-        graphicsBackend: GRAPHICS_BACKENDS.includes(perfSettings.graphicsBackend) ? perfSettings.graphicsBackend : 'auto',
-        angle: runningAngle || null,
       },
     }
   })

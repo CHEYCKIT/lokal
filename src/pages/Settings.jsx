@@ -380,7 +380,7 @@ export default function Settings() {
   const [playlistImportResult, setPlaylistImportResult] = useState(null)
   // hardwareAcceleration is what the next launch uses; running is what this
   // launch started with (main only applies it at startup).
-  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, graphicsBackend: 'auto', platform: null, running: null })
+  const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, platform: null, running: null })
   const [perfSaveError, setPerfSaveError] = useState(null) // { key, message }
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
@@ -631,10 +631,7 @@ export default function Settings() {
     }
   }
   const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
-  const setGraphicsBackend = (graphicsBackend) => savePerfField('graphicsBackend', graphicsBackend)
-  const perfRestartNeeded = !!perfSettings.running && (
-    perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
-    || (perfSettings.running.graphicsBackend || 'auto') !== (perfSettings.graphicsBackend || 'auto'))
+  const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
@@ -1312,18 +1309,6 @@ export default function Settings() {
               </button>
             </div>
           </Row>
-          {perfSettings.platform === 'win32' && perfSettings.hardwareAcceleration && (
-            <Row label="Graphics Backend" desc={perfSaveError?.key === 'graphicsBackend' ? `Couldn't save (${perfSaveError.message})` : 'How the graphics card is used. Direct3D 11 is the smoothest but flashes white when the window comes back from the taskbar; OpenGL and Direct3D 9 don\'t flash but can feel laggy'}>
-              <select value={perfSettings.graphicsBackend || 'auto'} onChange={e => setGraphicsBackend(e.target.value)}
-                aria-label="Graphics backend"
-                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-                <option value="auto">Automatic (Direct3D 11)</option>
-                <option value="gl">OpenGL</option>
-                <option value="d3d11">Direct3D 11</option>
-                <option value="d3d9">Direct3D 9</option>
-              </select>
-            </Row>
-          )}
         </Section>
       )}
 
