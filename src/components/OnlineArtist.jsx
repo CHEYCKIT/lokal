@@ -12,6 +12,8 @@ import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import OnlineSongList from './OnlineSongList'
 import RefreshButton from './RefreshButton'
+import ReleaseTypeFilter from './ReleaseTypeFilter'
+import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
 import { artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { openRadio } from '../radioActions'
@@ -112,7 +114,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
  * @param libraryTracks  the library's songs by them: marked in the list, played from the files
  * @param libraryAlbums  the library's releases by them: left out of the albums ("More albums")
  */
-export function OnlineArtistSections({ data, path, libraryTracks = null, libraryAlbums = null }) {
+export function OnlineArtistSections({ data, path, libraryTracks = null, libraryAlbums = null, shownTypes = null }) {
   const nav = useNavigate()
   const menu = useContextMenu()
   const { songs, albums, name } = data
@@ -126,6 +128,12 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const popularTracks = inLibrary ? popular.tracks.slice(0, Math.min(10, songs.tracks.length)) : popular.tracks
   const owned = useMemo(() => new Set((libraryAlbums || []).map(album => releaseTitleKey(album.title))), [libraryAlbums])
   const albumItems = libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items
+  // In sections by type; the types shown chosen per artist (the library's
+  // artist page passes its own choice in, so both follow one setting).
+  const [ownShown, toggleType] = useReleaseTypes(name)
+  const shown = shownTypes || ownShown
+  const albumGroups = useMemo(() => groupReleases(albumItems, shown), [albumItems, shown])
+  const albumTypes = useMemo(() => releaseTypeCounts(albumItems), [albumItems])
 
   const play = (selected, list = popularTracks) => playOnline(list, { selected, name, path })
   const albumPath = album => onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
@@ -164,23 +172,38 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
       </section>
 
       {(albums.loading ? !songs.loading : albumItems.length > 0) && (
-        <section>
-          <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{libraryAlbums ? 'More albums online' : 'Albums'}</h2>
+        <section aria-label={libraryAlbums ? 'More releases online' : 'Releases'}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryAlbums ? 'More releases online' : 'Releases'}</h2>
+            {!shownTypes && !albums.loading && <ReleaseTypeFilter types={albumTypes} shown={shown} onToggle={toggleType} />}
+          </div>
           {albums.loading
             ? <p role="status" className="text-sm text-muted">Loading albums…</p>
-            : (
-              <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
-                {albumItems.map(album => (
-                  <button key={album.title} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
-                    <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
-                      <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+            : albumGroups.length === 0
+              ? <p className="text-sm text-muted">No releases of the types chosen.</p>
+              : (
+                <div className="space-y-6">
+                  {albumGroups.map(group => (
+                    <div key={group.type}>
+                      {(albumGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
+                      <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
+                        {group.items.map(album => (
+                          <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
+                            {/* Hover: a border, not a zoom. A transform animation moves the
+                                card onto its own GPU layer and back, and the blur over a
+                                playing canvas (side panel, player bar) flickers each time. */}
+                            <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/50">
+                              <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+                            </div>
+                            <p className="mt-2 truncate text-sm text-white">{album.title}</p>
+                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <p className="mt-2 truncate text-sm text-white">{album.title}</p>
-                    <p className="truncate text-xs text-muted">{[album.release_type === 'single' ? 'Single' : album.release_type === 'ep' ? 'EP' : 'Album', album.year].filter(Boolean).join(' · ')}</p>
-                  </button>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
         </section>
       )}
       <ContextMenu menu={menu} />

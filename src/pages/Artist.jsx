@@ -15,7 +15,9 @@ import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import OnlineArtist, { OnlineArtistSections, useOnlineArtist } from '../components/OnlineArtist'
 import RefreshButton from '../components/RefreshButton'
-import { isConnected, setConnected } from '../onlineBrowse'
+import { isConnected, releaseTitleKey, setConnected } from '../onlineBrowse'
+import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
+import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
 
 export default function Artist() {
   const { id } = useParams()
@@ -158,6 +160,16 @@ export default function Artist() {
   const onlineHints = useMemo(() => [...(artist?.albums || []).map(album => album.title), ...(artist?.tracks || []).map(track => track.title)].filter(Boolean), [artist])
   const onlineData = useOnlineArtist(artist?.name || '', connected && !!artist?.id, { hints: onlineHints })
 
+  // Releases in sections (Albums, EPs, Singles...), the types shown chosen per
+  // artist; "More releases online" follows the same choice.
+  const [shownTypes, toggleType] = useReleaseTypes(artist?.name || id)
+  const releaseGroups = useMemo(() => groupReleases(releaseList, shownTypes), [releaseList, shownTypes])
+  const releaseTypes = useMemo(() => {
+    const owned = new Set(releaseList.map(album => releaseTitleKey(album.title)))
+    const online = connected ? onlineData.albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : []
+    return releaseTypeCounts([...releaseList, ...online])
+  }, [releaseList, connected, onlineData.albums.items])
+
   if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]?.name} anchor={onlineNames.current[id]?.anchor} />
   if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
 
@@ -263,15 +275,23 @@ export default function Artist() {
 
         {artist.albums?.length > 0 && (
           <section>
-            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
+              <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
+            </div>
             <SelectionBar
               open={releaseSelection.count > 0}
               label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
               onClear={releaseSelection.clear}
               actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
             />
-            <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
-              {releaseList.map((album) => {
+            {releaseGroups.length === 0 && <p className="text-sm text-muted">No releases of the types chosen.</p>}
+            <div className="space-y-6">
+              {releaseGroups.map(group => (
+                <div key={group.type}>
+                  {(releaseGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
+                  <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
+                    {group.items.map((album) => {
                 const firstTrack = artist.tracks?.find((track) => track.album === album.title)
                 const cover = firstTrack ? artSrc(firstTrack) : null
                 const selected = releaseSelection.has(releaseKey(album))
@@ -283,7 +303,6 @@ export default function Artist() {
                     }}
                     onContextMenu={(event) => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))}
                     aria-selected={selected}
-                    whileHover={{ scale: 1.02 }}
                     className={`relative flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selected ? 'border-accent ring-2 ring-accent/60 bg-accent/10' : selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
                     <div className="relative flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
@@ -305,14 +324,17 @@ export default function Artist() {
                     </div>
                   </motion.button>
                 )
-              })}
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
 
         {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />}
 
-        {connected && <OnlineArtistSections data={onlineData} path={`/artist/${id}`} libraryTracks={artist.tracks || []} libraryAlbums={artist.albums || []} />}
+        {connected && <OnlineArtistSections data={onlineData} path={`/artist/${id}`} libraryTracks={artist.tracks || []} libraryAlbums={artist.albums || []} shownTypes={shownTypes} />}
       </div>
       {releases.elements}
 
