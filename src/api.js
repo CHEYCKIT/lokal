@@ -128,6 +128,17 @@ let settingsSnapshot = null
 let settingsRevision = 0
 export const peekSettings = () => settingsSnapshot
 
+/**
+ * Word-by-word lyrics (Settings > Playback > Lyrics): the saved setting, so it
+ * follows a backup or another device; this computer's copy only until the
+ * settings are read.
+ */
+export function wordSyncEnabled() {
+  const saved = settingsSnapshot?.word_sync
+  if (saved === '0' || saved === '1') return saved === '1'
+  try { return localStorage.getItem('word-sync') !== '0' } catch { return true }
+}
+
 export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
@@ -216,7 +227,6 @@ export const api = {
   artistDelete: (id) => isE() ? el().artistDelete(id) : apiFetch(`/artists/${id}`, { method:'DELETE' }),
   trackSetArtwork: (id, d) => isE() ? el().trackSetArtwork(id, d) : apiFetch(`/tracks/${id}/artwork`, { method:'PUT', body:{imageData:d} }),
   trackSetGenre: (id, genre) => isE() ? el().trackSetGenre(id, genre) : apiFetch(`/tracks/${id}/genre`, { method:'PUT', body:{genre} }),
-  importPhotosDir: (dir) => isE() ? el().importPhotosDir(dir) : Promise.resolve({ error:'Electron only' }),
   getPlaylists: (uid) => isE() ? el().getPlaylists(uid) : apiFetch(`/playlists?userId=${uid||'guest'}`),
   createPlaylist: (n, uid, d) => isE() ? el().createPlaylist(n, uid, d) : apiFetch('/playlists', { method:'POST', body:{name:n,userId:uid,description:d} }),
   updatePlaylist: (id, d) => isE() ? el().updatePlaylist(id, d) : apiFetch(`/playlists/${id}`, { method:'PUT', body:d }),
@@ -252,7 +262,6 @@ export const api = {
   importLyrics: (tid, c, t, fp) => isE() ? el().importLyrics(tid, c, t, fp) : apiFetch(`/lyrics/${tid}/import`, { method:'POST', body:{content:c,type:t,filePath:fp} }),
   clearLyricsCache: (tid) => isE() ? el().clearLyricsCache(tid) : apiFetch(`/lyrics/${tid}`, { method:'DELETE' }),
   clearLyricsDb: () => isE() ? el().clearLyricsDb() : apiFetch('/lyrics/clear-all', { method:'POST' }),
-  clearSongCache: () => isE() ? el().clearSongCache() : Promise.resolve({ ok: false, error: 'Electron only' }),
   // Both keep the snapshot peekSettings() hands out, so a page can paint with
   // the real settings on its first frame instead of defaults.
   getSettings: () => {

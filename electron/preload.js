@@ -114,7 +114,6 @@ contextBridge.exposeInMainWorld('electron', {
   updateTrackArtwork: (id, imageData) => invoke('track:setArtwork', id, imageData),
   fetchExternalArtwork: (id, title, artist) => invoke('track:fetchExternalArtwork', id, title, artist),
   setManualGenre: (data) => invoke('scanner:setManualGenre', data),
-  importPhotosDir: (dir) => invoke('artist:importPhotosDir', dir),
 
   
   getLyrics: (id, ti, ar, al, d, fp, opts) => invoke('lyrics:get', id, ti, ar, al, d, fp, opts),
@@ -214,7 +213,6 @@ contextBridge.exposeInMainWorld('electron', {
   importAllData: (payload) => invoke('settings:importAll', payload),
   factoryReset: () => invoke('settings:factoryReset'),
   clearTracks: () => invoke('db:clearTracks'),
-  clearSongCache: () => invoke('db:clearSongCache'),
   getKeepCommaArtists: () => invoke('settings:getKeepCommaArtists'),
 
   setKeepCommaArtists: (artists) => invoke('settings:setKeepCommaArtists', artists),

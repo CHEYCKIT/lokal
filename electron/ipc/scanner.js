@@ -348,25 +348,6 @@ function trackParams(item, trackId = item?.id) {
   }
 }
 
-function clearSongCache(db = getDB()) {
-  const clear = db.transaction(() => {
-    db.prepare('DELETE FROM artist_track_links').run()
-    db.prepare('DELETE FROM playlist_tracks').run()
-    db.prepare('DELETE FROM user_likes').run()
-    db.prepare('DELETE FROM play_history').run()
-    try { db.prepare('DELETE FROM listening_events').run() } catch {}
-    db.prepare('DELETE FROM lyrics_cache').run()
-    try { db.prepare('DELETE FROM lyrics_translations').run() } catch {}
-    db.prepare('DELETE FROM tracks').run()
-    db.prepare('DELETE FROM artists').run()
-  })
-  clear()
-  for (const dir of ['artwork', 'lyrics']) {
-    try { fs.emptyDirSync(path.join(getStorageDir(), dir)) } catch {}
-  }
-  return { ok: true }
-}
-
 async function scanFolder(folderPath) {
   const db = getDB()
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
@@ -1505,7 +1486,6 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:getAllGenres', () => collectAllGenres(getDB()))
   ipcMain.handle('scanner:getRandomTrack', () => getDB().prepare("SELECT * FROM tracks WHERE file_path NOT LIKE 'ghost://%' ORDER BY RANDOM() LIMIT 1").get())
   ipcMain.handle('db:clearTracks', () => { const db = getDB(); db.prepare('DELETE FROM artist_track_links').run(); db.prepare('DELETE FROM playlist_tracks').run(); db.prepare('DELETE FROM user_likes').run(); db.prepare('DELETE FROM play_history').run(); try { db.prepare('DELETE FROM listening_events').run() } catch {}; db.prepare('DELETE FROM lyrics_cache').run(); db.prepare('DELETE FROM lyrics_translations').run(); db.prepare('DELETE FROM tracks').run(); db.prepare('DELETE FROM artists').run() })
-  ipcMain.handle('db:clearSongCache', () => clearSongCache(getDB()))
   ipcMain.handle('db:clearLyrics', () => { const db = getDB(); db.prepare('DELETE FROM lyrics_cache').run(); db.prepare('DELETE FROM lyrics_translations').run() })
   ipcMain.handle('settings:get', () => { const rows = getDB().prepare('SELECT key, value FROM settings').all(); return Object.fromEntries(rows.map(r => [r.key, SECRET_SETTING_KEYS.has(r.key) && r.value ? SECRET_SETTING_PLACEHOLDER : r.value])) })
   ipcMain.handle('settings:save', (_, s) => {
@@ -1877,21 +1857,6 @@ module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers
 function registerExtraHandlers(ipcMain) {
   ipcMain.handle('artist:setImageUrl', async (_, artistId, url) => { const db = getDB(); const imgPath = path.join(getStorageDir(), 'artwork', `artist-${artistId}.jpg`); await downloadToFile(url, imgPath); db.prepare('UPDATE artists SET image_path = ?, image_source = ?, image_fetched_at = ? WHERE id = ?').run(imgPath, 'manual', Date.now(), artistId); return imgPath })
   ipcMain.handle('album:setImageUrl', async (_, albumTitle, url) => { const db = getDB(); const safeTitle = albumTitle.replace(/[^a-z0-9]+/gi, '-'); const imgPath = path.join(getStorageDir(), 'artwork', `album-${safeTitle}.jpg`); await downloadToFile(url, imgPath); db.prepare('UPDATE tracks SET artwork_path = ? WHERE album = ?').run(imgPath, albumTitle); return imgPath })
-  ipcMain.handle('artist:importPhotosDir', async (_, photosDir) => {
-    const db = getDB()
-    const dir = photosDir || path.join(process.cwd(), 'src', 'photos')
-    if (!fs.existsSync(dir)) return { error: 'Photos dir not found: ' + dir }
-    const imgExts = new Set(['.jpg','.jpeg','.png','.webp'])
-    const files = fs.readdirSync(dir).filter(f => imgExts.has(path.extname(f).toLowerCase()))
-    const artists = db.prepare('SELECT * FROM artists').all()
-    let matched = 0
-    for (const file of files) {
-      const nameWithoutExt = path.basename(file, path.extname(file)).toLowerCase()
-      const artist = artists.find(a => { const n = a.name.toLowerCase(); return n === nameWithoutExt || n.replace(/[^a-z0-9]/g, '') === nameWithoutExt.replace(/[^a-z0-9]/g, '') })
-      if (artist) { const dest = path.join(getStorageDir(), 'artwork', `artist-${artist.id}.jpg`); fs.copyFileSync(path.join(dir, file), dest); db.prepare('UPDATE artists SET image_path = ? WHERE id = ?').run(dest, artist.id); matched++ }
-    }
-    return { matched, total: files.length }
-  })
   ipcMain.handle('scanner:checkDuplicates', () => getDB().prepare(`SELECT title, artist, COUNT(*) as count, GROUP_CONCAT(id) as ids, GROUP_CONCAT(file_path) as paths FROM tracks GROUP BY LOWER(title), LOWER(artist) HAVING count > 1`).all())
   ipcMain.handle('scanner:checkPossibleDuplicates', () => {
     const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()

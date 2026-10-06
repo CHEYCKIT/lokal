@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
-import { api } from '../api'
+import { api, wordSyncEnabled } from '../api'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import { trackArtURL } from '../onlineTracks'
@@ -35,7 +35,7 @@ export default function MiniPlayer({ windowed = false }) {
 
   const wordSyncEnabled = useMemo(() => {
     try {
-      return localStorage.getItem('word-sync') !== '0'
+      return wordSyncEnabled()
     } catch {
       return false
     }
