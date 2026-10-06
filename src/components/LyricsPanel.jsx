@@ -299,6 +299,10 @@ const Row = React.memo(function Row({
 
 // ---------------------------------------------------------------- toolbar
 
+// The toolbar's pills fade out by themselves when the full-screen player
+// hides its controls (their parent row must not fade: see the row).
+const TOOLBAR_FADE = 'transition-[opacity,color,background-color] duration-300 group-data-[hidden=true]/toolbar:opacity-0'
+
 const SYNC_LABEL = { syllable: 'Syllable synced', line: 'Line synced', none: 'Not synced' }
 
 function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSearch }) {
@@ -315,7 +319,7 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSea
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md transition-colors"
+        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md ${TOOLBAR_FADE}`}
         title="Lyrics source"
       >
         {busy ? <Loader2 size={11} className="animate-spin" /> : null}
@@ -369,7 +373,7 @@ function Pill({ active, onClick, children, title, disabled }) {
       onClick={onClick}
       title={title}
       disabled={disabled}
-      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors disabled:opacity-40 ${active ? 'bg-white text-black' : 'text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md'}`}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] ${TOOLBAR_FADE} disabled:opacity-40 ${active ? 'bg-white text-black' : 'text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md'}`}
     >
       {children}
     </button>
@@ -760,7 +764,10 @@ export default function LyricsPanel({
     <div className="relative w-full h-full">
       {showToolbar && (
         <div
-          className={`absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none transition-opacity duration-300 ${toolbarHidden ? 'opacity-0' : 'opacity-100'} ${fullscreen ? '' : 'pb-6'}`}
+          // The pills fade by themselves (TOOLBAR_FADE), not this row: glass
+          // inside a fading parent shows as flat grey until the fade ends.
+          data-hidden={toolbarHidden}
+          className={`group/toolbar absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none ${fullscreen ? '' : 'pb-6'}`}
           // The sidebar keeps its soft shade behind the buttons; the fullscreen
           // views already have their own header there, so they go without.
           style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
