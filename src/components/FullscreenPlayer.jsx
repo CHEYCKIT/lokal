@@ -25,7 +25,7 @@ const IDLE_MS = 3000
 function CoverButton({ onClick, label, active = false, children }) {
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
-      className={`relative w-12 h-12 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_4px_14px_rgba(0,0,0,0.18)] ${active ? 'border-white/40 bg-white/30 text-white' : 'border-white/25 bg-white/[0.12] text-white/90 hover:bg-white/25 hover:text-white'}`}>
+      className={`relative w-12 h-12 flex items-center justify-center rounded-full border backdrop-blur-[2px] transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] ${active ? 'border-white/30 bg-white/[0.16] text-white' : 'border-white/[0.14] bg-white/[0.05] text-white/90 hover:bg-white/[0.12] hover:text-white'}`}>
       {children}
     </button>
   )
@@ -61,15 +61,16 @@ function VolumePill({ volume, onChange }) {
     if (event.key === 'ArrowUp' || event.key === 'ArrowRight') { event.preventDefault(); onChange(Math.min(1, volume + 0.05)) }
     if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') { event.preventDefault(); onChange(Math.max(0, volume - 0.05)) }
   }
+  // The speaker sits inside the pill, at its foot: dark over the white fill,
+  // light over the glass.
+  const covered = volume > 0.12
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div ref={ref} role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
-        aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} title={`Volume ${Math.round(volume * 100)}%`}
-        onPointerDown={start} onKeyDown={keys}
-        className="relative h-36 w-2.5 cursor-pointer overflow-hidden rounded-full border border-white/20 bg-white/15 backdrop-blur-md shadow-[0_2px_10px_rgba(0,0,0,0.25)] outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-        <div className="absolute inset-x-0 bottom-0 rounded-full bg-white/85" style={{ height: `${Math.round(volume * 100)}%` }} />
-      </div>
-      <Volume2 size={13} className="text-white/80 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]" />
+    <div ref={ref} role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} title={`Volume ${Math.round(volume * 100)}%`}
+      onPointerDown={start} onKeyDown={keys}
+      className="relative h-44 w-7 cursor-pointer overflow-hidden rounded-full border border-white/[0.14] bg-white/[0.06] backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+      <div className="absolute inset-x-0 bottom-0 bg-white/60" style={{ height: `${Math.round(volume * 100)}%` }} />
+      <Volume2 size={13} className={`pointer-events-none absolute bottom-2.5 left-1/2 -translate-x-1/2 ${covered ? 'text-black/55' : 'text-white/80'}`} />
     </div>
   )
 }
@@ -676,12 +677,12 @@ export default function FullscreenPlayer() {
             </AnimatePresence>
 
             <div className="mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
-              <span className="w-10 text-right text-xs tabular-nums text-white/60">{fmt(progress)}</span>
-              <div ref={barRef} className="group/bar relative h-1.5 flex-1 cursor-pointer rounded-full bg-white/20 hover:h-2 transition-[height]"
+              <span className="w-11 text-right text-sm tabular-nums text-white/75">{fmt(progress)}</span>
+              <div ref={barRef} className="group/bar relative h-3.5 flex-1 cursor-pointer overflow-hidden rounded-full bg-white/20 backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
                 onPointerDown={startScrub} role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)}>
-                <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${duration ? Math.min(100, (progress / duration) * 100) : 0}%` }} />
+                <div className="absolute inset-y-0 left-0 bg-white/90" style={{ width: `${duration ? Math.min(100, (progress / duration) * 100) : 0}%` }} />
               </div>
-              <span className="w-10 text-xs tabular-nums text-white/60">{fmt(duration)}</span>
+              <span className="w-11 text-sm tabular-nums text-white/75">{fmt(duration)}</span>
             </div>
 
             <AnimatePresence mode="wait">
