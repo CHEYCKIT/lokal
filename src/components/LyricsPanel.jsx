@@ -305,9 +305,12 @@ const TOOLBAR_FADE = 'transition-[opacity,color,background-color] duration-300 g
 
 const SYNC_LABEL = { syllable: 'Syllable synced', line: 'Line synced', none: 'Not synced' }
 
-function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSearch }) {
+function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSearch, hidden = false }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
+  // The toolbar hid (full screen idle): the menu goes with it rather than
+  // staying up, unclickable, over the lyrics.
+  useEffect(() => { if (hidden) setOpen(false) }, [hidden])
   useEffect(() => {
     if (!open) return
     const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false) }
@@ -795,6 +798,7 @@ export default function LyricsPanel({
                 onPick={pickSource}
                 onRefresh={() => load({ refresh: true })}
                 onSearch={requestSearch}
+                hidden={toolbarHidden}
               />
             )}
           </div>
