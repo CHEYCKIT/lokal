@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('electron', {
   onlineSave: (items) => invoke('online:save', items),
   onlinePrepare: (provider, id, force) => invoke('online:prepare', provider, id, force),
   onlineProviders: () => invoke('online:providers'),
+  onlineGenre: (trackId) => invoke('online:genre', trackId),
   searchSpelling: (q) => invoke('online:spelling', q),
   discoveryArtwork: (items) => invoke('online:artwork', items),
   youtubeCatalogue: (options) => invoke('online:catalogue', options),

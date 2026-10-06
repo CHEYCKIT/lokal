@@ -40,9 +40,9 @@ function CoverMosaic({ tracks = [] }) {
   for (const track of tracks) {
     const art = trackArt(track)
     const album = track.album ? `${track.album_artist || track.artist || ''}|${track.album}`.toLowerCase() : ''
-    if (!art || seen.has(album || art) || seen.has(track.artwork_path)) continue
+    if (!art || seen.has(album || art) || (track.artwork_path && seen.has(track.artwork_path))) continue
     seen.add(album || art)
-    seen.add(track.artwork_path)
+    if (track.artwork_path) seen.add(track.artwork_path)
     covers.push(art)
     if (covers.length === 4) break
   }
