@@ -199,6 +199,28 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
 /** A release title to compare by: "I Am (Expanded Edition)" -> "i am". */
 export const releaseTitleKey = title => recommendationKey(String(title || '').replace(/\s*[([][^)\]]*[)\]]/g, '')) || recommendationKey(title)
 
+/** How many of the library's songs (files) each release has, by releaseTitleKey. */
+export function libraryAlbumCounts(libraryTracks = []) {
+  const counts = new Map()
+  for (const track of libraryTracks || []) {
+    if (!track?.album || !track.file_path || isGhostTrack(track)) continue
+    const key = releaseTitleKey(track.album)
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * How much of `release` the library has: { owned, total, full } (total
+ * when the source says how many songs it has), or null when none of it.
+ */
+export function releaseOwnership(release, counts) {
+  const owned = counts?.get(releaseTitleKey(release?.title)) || 0
+  if (!owned) return null
+  const total = Number(release?.track_count) || 0
+  return { owned, total, full: !!total && owned >= total }
+}
+
 /**
  * The online tracklist with the library's songs in it: each online song the
  * library has is replaced by the library's copy (which plays the file); the

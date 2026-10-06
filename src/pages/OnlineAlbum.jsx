@@ -10,7 +10,8 @@ import DiscoveryImage from '../components/DiscoveryImage'
 import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
 import { usePageReady } from '../pageCache'
-import { albumCacheKey, libraryAlbum, loadOnlineAlbumCached, onlineAlbumPath, peekOnline } from '../onlineBrowse'
+import { albumCacheKey, isOnlineTrack, libraryAlbum, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline } from '../onlineBrowse'
+import { api } from '../api'
 import { downloadOnline, playOnline, resolveOnline } from '../onlineActions'
 import { saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
@@ -71,8 +72,25 @@ export default function OnlineAlbum() {
     return () => { request.current++ }
   }, [artist, album, albumId, provider, sourceAlbumId, reload]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The library's songs of this album (downloaded since the page opened, say):
+  // marked "In library" in the list, played from the files; the page itself
+  // stays as it is.
+  const [libraryTracks, setLibraryTracks] = useState([])
+  useEffect(() => {
+    let current = true
+    const read = () => Promise.resolve(api.getAlbumTracks({ title: album, album_artist: artist }))
+      .then(found => { if (current) setLibraryTracks(Array.isArray(found) ? found : []) }).catch(() => {})
+    read()
+    window.addEventListener('lokal:refresh', read)
+    return () => { current = false; window.removeEventListener('lokal:refresh', read) }
+  }, [artist, album])
+
   usePageReady(true)
-  const { tracks } = state
+  const merged = useMemo(() => mergeWithLibrary(state.tracks, libraryTracks), [state.tracks, libraryTracks])
+  const owned = state.tracks.length ? merged.owned : 0
+  // The album in order, the library's copies in their places (extras of the
+  // library's aren't added here: this is the album as published).
+  const tracks = owned ? merged.tracks.slice(0, state.tracks.length) : state.tracks
   const cover = state.artwork || artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
   const path = onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumId })
   const label = `“${album}”`
@@ -82,7 +100,9 @@ export default function OnlineAlbum() {
     try { await work() } finally { setBusy('') }
   }
   const play = (selected, list = tracks) => playOnline(list, { selected, name: album, path })
-  const download = () => run('download', () => downloadOnline(tracks, { label }))
+  // With some of it in the library: only the songs it doesn't have.
+  const missing = tracks.filter(isOnlineTrack)
+  const download = () => run('download', () => downloadOnline(missing, { label: owned ? `${missing.length} missing songs` : label }))
   const savePlaylist = () => run('playlist', async () => {
     const rows = await resolveOnline(tracks, { label })
     if (!rows.length) return
@@ -104,11 +124,11 @@ export default function OnlineAlbum() {
           <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Album · Online</p>
           <h1 className="truncate text-3xl font-display text-white">{album}</h1>
           <button onClick={() => nav(artistPath(artist), { state: { name: artist, anchor: tracks[0] ? { title: tracks[0].title, album } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{artist}</button>
-          {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{plural(tracks.length, 'song')}{duration ? ` · ${Math.round(duration / 60)} min` : ''}</p>}
+          {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{plural(tracks.length, 'song')}{duration ? ` · ${Math.round(duration / 60)} min` : ''}{owned ? ` · ${owned === tracks.length ? 'all' : `${owned} of ${tracks.length}`} in your library` : ''}</p>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button onClick={() => play(tracks[0])} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
             <button onClick={() => { const list = shuffled(tracks); play(list[0], list) }} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> Shuffle</button>
-            <button onClick={download} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? 'Finding songs…' : 'Download album'}</button>
+            {missing.length > 0 && <button onClick={download} disabled={!!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? 'Finding songs…' : owned ? `Download missing (${missing.length})` : 'Download album'}</button>}
             <button onClick={savePlaylist} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><ListPlus size={15} /> {busy === 'playlist' ? 'Saving…' : 'Save as playlist'}</button>
             <RefreshButton onClick={() => setReload(n => n + 1)} loading={state.loading} loadedAt={state.loadedAt} />
           </div>
@@ -117,7 +137,7 @@ export default function OnlineAlbum() {
       {state.loading
         ? <p role="status" className="text-sm text-muted">{state.progress || `Loading ${album}…`}</p>
         : tracks.length
-          ? <OnlineSongList tracks={tracks} numbered highlightTitle={highlightTitle} onPlay={track => play(track)} />
+          ? <OnlineSongList tracks={tracks} numbered markOwned={owned > 0} highlightTitle={highlightTitle} onPlay={track => play(track)} />
           : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{state.error || `No songs were found for ${album}.`}</p>}
     </div>
   )

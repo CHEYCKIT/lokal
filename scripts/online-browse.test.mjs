@@ -75,3 +75,18 @@ test('release titles compare without edition labels; nothing remembered without 
   assert.equal(releaseTitleKey('I Am (Expanded Edition)'), releaseTitleKey('I am'))
   assert.equal(isConnected('album:x|y'), false)
 })
+
+import { libraryAlbumCounts, releaseOwnership } from '../src/onlineBrowse.js'
+
+test('releases the library has all or part of', () => {
+  const counts = libraryAlbumCounts([
+    { album: 'I Am', file_path: '/m/1.flac' }, { album: 'I Am (Expanded Edition)', file_path: '/m/2.flac' },
+    { album: 'Raise!', file_path: 'ghost://youtube/online/abcdefghijk' }, { album: 'Spirit', file_path: '/m/3.flac' },
+  ])
+  assert.deepEqual(releaseOwnership({ title: 'I Am', track_count: 9 }, counts), { owned: 2, total: 9, full: false })
+  assert.deepEqual(releaseOwnership({ title: 'Spirit', track_count: 1 }, counts), { owned: 1, total: 1, full: true })
+  assert.deepEqual(releaseOwnership({ title: 'Spirit' }, counts), { owned: 1, total: 0, full: false })
+  // Streamed songs aren't in the library.
+  assert.equal(releaseOwnership({ title: 'Raise!', track_count: 9 }, counts), null)
+  assert.equal(releaseOwnership({ title: 'Gratitude' }, counts), null)
+})
