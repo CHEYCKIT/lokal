@@ -51,9 +51,10 @@ export function sessionComment(session) {
   return "this session had a very specific shape."
 }
 
+/** A track's cover: its artwork file, else a streamed song's own (https) cover. */
 export function trackArt(track) {
-  if (!track?.artwork_path) return ''
-  return api.isElectron ? api.fileURL(track.artwork_path) : api.artworkURL(track.id)
+  if (track?.artwork_path) return api.isElectron ? api.fileURL(track.artwork_path) : api.artworkURL(track.id)
+  return /^https:\/\//.test(String(track?.artwork_url || '')) ? track.artwork_url : ''
 }
 
 export function isFallbackGenre(genre) {
@@ -76,7 +77,7 @@ export function daysText(minutes) {
 }
 
 export function albumArt(album, tracks = []) {
-  const match = tracks.find(track => track.album === album?.album && track.artwork_path)
+  const match = tracks.find(track => track.album === album?.album && trackArt(track))
   return trackArt(match)
 }
 

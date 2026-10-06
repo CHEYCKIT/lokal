@@ -15,7 +15,7 @@ import {
   navigateToTrackAlbum,
 } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
-import { trackArtURL } from '../onlineTracks'
+import { isStreamed, trackArtURL } from '../onlineTracks'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
 
@@ -55,6 +55,16 @@ export default function RightSidebar() {
   } = usePlayerStore()
   const nav = useNavigate()
   const menu = useContextMenu()
+  // A streamed song rarely comes with a genre: looked up (and kept) for it.
+  const [foundGenre, setFoundGenre] = useState({ id: null, genre: null })
+  useEffect(() => {
+    const id = currentTrack?.id
+    if (!id || currentTrack.genre || !isStreamed(currentTrack)) return undefined
+    let current = true
+    Promise.resolve(api.onlineGenre?.(id)).then(genre => { if (current && genre) setFoundGenre({ id, genre }) }).catch(() => {})
+    return () => { current = false }
+  }, [currentTrack?.id, currentTrack?.genre]) // eslint-disable-line react-hooks/exhaustive-deps
+  const genre = currentTrack?.genre || (foundGenre.id === currentTrack?.id ? foundGenre.genre : null)
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = localStorage.getItem('word-sync') !== '0'
   // Backend-persisted setting (Settings' Unsynced Lyrics Auto-Sync toggle
@@ -328,7 +338,7 @@ export default function RightSidebar() {
                       />
                       {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label="Alb. Artist" value={currentTrack.album_artist} />}
                       <InfoRow fx={fx} label="Year" value={currentTrack.year} />
-                      <InfoRow fx={fx} label="Genre" value={currentTrack.genre} />
+                      <InfoRow fx={fx} label="Genre" value={genre} />
                       <InfoRow fx={fx} label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
                       <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
