@@ -192,16 +192,45 @@ function ChipRow({ label, contentKey, reduceMotion, children }) {
   )
 }
 
-// Remounted per user, so one user's cached recap never shows for another.
-export default function Recap() {
-  const { user } = useAppStore()
-  return <RecapContent key={user?.id || 'guest'} user={user} />
+// Which plays a recap counts: every song, the library's files, or songs only
+// streamed (YouTube Music, SoundCloud, addons). Remembered on this computer.
+const SOURCES_KEY = 'lokal-recap-sources'
+const RECAP_SOURCES = [['all', 'All', 'Every song you played'], ['library', 'Library', 'Songs in your library (files)'], ['streamed', 'Streamed', 'Songs you only streamed (YouTube Music, SoundCloud, addons)']]
+const savedSources = () => {
+  try { const value = localStorage.getItem(SOURCES_KEY); return RECAP_SOURCES.some(([id]) => id === value) ? value : 'all' } catch { return 'all' }
 }
 
-function RecapContent({ user }) {
-  // Kept across visits (per user): coming back shows the recap as it was
-  // while the periods refresh quietly, instead of rebuilding it on screen.
-  const k = `recap:${user?.id || 'guest'}`
+// Remounted per user (and per source filter), so one user's cached recap
+// never shows for another, nor one filter's for another.
+export default function Recap() {
+  const { user } = useAppStore()
+  const [sources, setSources] = useState(savedSources)
+  const changeSources = (value) => {
+    setSources(value)
+    try { localStorage.setItem(SOURCES_KEY, value) } catch {}
+  }
+  return <RecapContent key={`${user?.id || 'guest'}:${sources}`} user={user} sources={sources} onSourcesChange={changeSources} />
+}
+
+function SourcesFilter({ value, onChange }) {
+  return (
+    <div role="group" aria-label="Songs counted" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">
+      {RECAP_SOURCES.map(([id, label, title]) => (
+        <button key={id} type="button" aria-pressed={value === id} title={title} onClick={() => onChange(id)}
+          className={`rounded-md px-2.5 py-1 !text-[11px] transition-colors ${value === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function RecapContent({ user, sources = 'all', onSourcesChange }) {
+  // Kept across visits (per user and filter): coming back shows the recap as
+  // it was while the periods refresh quietly, instead of rebuilding it on screen.
+  const k = `recap:${user?.id || 'guest'}${sources === 'all' ? '' : `:${sources}`}`
+  // A period's recap, of the songs the filter counts.
+  const recapQuery = (period) => ({ ...periodQuery(period), ...(sources === 'all' ? {} : { sources }) })
   const [tree, setTree, treeWasCached] = useCachedState(`${k}:tree`, [])
   const [navYear, setNavYear] = useCachedState(`${k}:year`, null)
   const [navMonth, setNavMonth] = useCachedState(`${k}:month`, null) // 'YYYY-MM' whose weeks are shown
@@ -294,7 +323,7 @@ function RecapContent({ user }) {
   const prefetch = (period) => {
     if (!period || recapsById[period.id] || prefetching.current.has(period.id)) return
     prefetching.current.add(period.id)
-    Promise.resolve(api.getListeningRecap(user?.id || 'guest', periodQuery(period)))
+    Promise.resolve(api.getListeningRecap(user?.id || 'guest', recapQuery(period)))
       .then(result => {
         if (result && !result.error) setRecapsById(current => (current[period.id] ? current : { ...current, [period.id]: result }))
       })
@@ -310,7 +339,7 @@ function RecapContent({ user }) {
     let days = null
     let failure = 'No answer'
     try {
-      const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone() })
+      const result = await api.getListeningDays(user?.id || 'guest', { tz: listenerTimeZone(), ...(sources === 'all' ? {} : { sources }) })
       if (Array.isArray(result?.days)) days = result.days
       else failure = result?.error || failure
     } catch (e) { failure = e?.message || failure }
@@ -338,7 +367,8 @@ function RecapContent({ user }) {
     // Same period still selected: its recap is fetched again in the
     // background (the one on screen stays until the fresh one arrives).
     if (keep) refreshRecap(keep)
-    if (latest) {
+    // The sidebar's "new recap" badge is of all the listening, not one filter's.
+    if (latest && sources === 'all') {
       localStorage.setItem('lokal-recap-latest-completed', latest.id)
       window.dispatchEvent(new CustomEvent('lokal:recap-periods-changed', { detail: { latestId: latest.id } }))
     }
@@ -348,7 +378,7 @@ function RecapContent({ user }) {
   /** Fetch a period's recap again without the loading state; applied only if it's still selected. */
   const refreshRecap = async (period) => {
     try {
-      const result = await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
+      const result = await api.getListeningRecap(user?.id || 'guest', recapQuery(period))
       if (!result || result.error) return
       setRecapsById(current => ({ ...current, [period.id]: result }))
       // A recap "so far" has changed since: its artists' and genres' songs are read again too.
@@ -371,7 +401,7 @@ function RecapContent({ user }) {
     setStatus('')
     try {
       const cached = recapsById[period.id]
-      const result = cached || await api.getListeningRecap(user?.id || 'guest', periodQuery(period))
+      const result = cached || await api.getListeningRecap(user?.id || 'guest', recapQuery(period))
       // A newer load (another period, or this one again) takes over.
       if (!current()) return
       if (result?.error) {
@@ -489,7 +519,7 @@ function RecapContent({ user }) {
   const subjectTracks = async (kind, name) => {
     const key = `${shownId}|${kind}|${name}`
     if (!subjectTracksRef.current.has(key)) {
-      const result = await api.getRecapTracks(user?.id || 'guest', { ...periodQuery(shownPeriod), [kind]: name }).catch(() => null)
+      const result = await api.getRecapTracks(user?.id || 'guest', { ...recapQuery(shownPeriod), [kind]: name }).catch(() => null)
       if (!Array.isArray(result?.tracks)) return []
       subjectTracksRef.current.set(key, result.tracks)
     }
@@ -523,7 +553,8 @@ function RecapContent({ user }) {
             {(checkingPeriods || loading) && <RefreshCw size={11} className="animate-spin text-muted" aria-label="Checking for new recaps" />}
           </div>
           <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), month and year, built from your local listening sessions. Click a month or year again to see it so far.</p>
+          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), month and year, built from your listening sessions. Click a month or year again to see it so far.</p>
+          <div className="mt-3"><SourcesFilter value={sources} onChange={onSourcesChange} /></div>
         </div>
         {/* One row, always: short labels that never wrap, and on a narrow
             page the icons alone (named on hover and for screen readers). */}

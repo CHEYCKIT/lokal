@@ -5,7 +5,20 @@ const SESSION_GAP_SECONDS = 30 * 60
 const FALLBACK_GENRES = new Set(['music'])
 // Library files and songs streamed from search (YouTube Music, SoundCloud,
 // addons); other ghost tracks (imported, not playable) can't have plays.
-const COUNTED_TRACKS = "(t.file_path NOT LIKE 'ghost://%' OR t.file_path LIKE 'ghost://youtube/online/%' OR t.file_path LIKE 'ghost://soundcloud/online/%' OR t.file_path LIKE 'ghost://addon/%')"
+const STREAMED_TRACKS = "(t.file_path LIKE 'ghost://youtube/online/%' OR t.file_path LIKE 'ghost://soundcloud/online/%' OR t.file_path LIKE 'ghost://addon/%')"
+const LIBRARY_TRACKS = "t.file_path NOT LIKE 'ghost://%'"
+const COUNTED_TRACKS = `(${LIBRARY_TRACKS} OR ${STREAMED_TRACKS})`
+
+/**
+ * The songs a recap counts (opts.sources): 'library' for files only,
+ * 'streamed' for songs only streamed, anything else for both. A streamed song
+ * downloaded since counts as the library's (its plays moved to the file).
+ */
+function countedTracks(sources) {
+  if (sources === 'library') return LIBRARY_TRACKS
+  if (sources === 'streamed') return STREAMED_TRACKS
+  return COUNTED_TRACKS
+}
 
 function toUnix(value, fallback = null) {
   if (value === undefined || value === null || value === '') return fallback
@@ -348,7 +361,7 @@ function buildRecap(db, userId = 'guest', opts = {}) {
     range.partial = true
   }
   try { db.exec('ALTER TABLE play_history ADD COLUMN seconds_played INTEGER DEFAULT 0') } catch {}
-  const COUNTED = COUNTED_TRACKS
+  const COUNTED = countedTracks(opts.sources)
   // Just "is there anything?" (period lists, the sidebar badge): no full recap.
   if (['1', 'true'].includes(String(opts.countOnly))) {
     const { n } = db.prepare(`
@@ -390,7 +403,9 @@ function buildRecap(db, userId = 'guest', opts = {}) {
   const topTracks = [...trackMap.values()].sort((left, right) => right.plays - left.plays || right.seconds - left.seconds).slice(0, 50)
   const replayQueue = topTracks.slice(0, 50)
   const totalSeconds = qualified.reduce((sum, row) => sum + Number(row.seconds_played || 0), 0)
-  const preferenceProfile = savePreferenceProfile(db, userId, rows)
+  // The listening profile is of all the listening, not of one filter's share.
+  const filtered = COUNTED !== COUNTED_TRACKS
+  const preferenceProfile = filtered ? null : savePreferenceProfile(db, userId, rows)
   // Plays per hour of the day, in the listener's time zone (SQLite's
   // 'localtime' is the server's, which the web version may not share).
   const hourOf = hourInZone(validTimeZone(opts.tz))
@@ -438,7 +453,7 @@ function recapTracks(db, userId = 'guest', opts = {}) {
     SELECT t.*, ph.played_at, COALESCE(ph.seconds_played, 0) as seconds_played
     FROM play_history ph
     JOIN tracks t ON t.id = ph.track_id
-    WHERE ph.user_id = ? AND ph.played_at BETWEEN ? AND ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED_TRACKS}
+    WHERE ph.user_id = ? AND ph.played_at BETWEEN ? AND ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${countedTracks(opts.sources)}
   `).all(userId, range.from, range.to, QUALIFIED_SECONDS)
   const matches = artist
     ? (row) => row.artist === artist
@@ -472,7 +487,7 @@ function listeningDays(db, userId = 'guest', opts = {}) {
   const hours = db.prepare(`
     SELECT DISTINCT CAST(ph.played_at / 3600 AS INTEGER) AS h
     FROM play_history ph JOIN tracks t ON t.id = ph.track_id
-    WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${COUNTED_TRACKS}
+    WHERE ph.user_id = ? AND COALESCE(ph.seconds_played, 0) >= ? AND ${countedTracks(opts.sources)}
   `).all(userId, QUALIFIED_SECONDS).map(row => row.h)
   const format = new Intl.DateTimeFormat('en-CA', { timeZone: zone || undefined, year: 'numeric', month: '2-digit', day: '2-digit' })
   const days = new Set()
