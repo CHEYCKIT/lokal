@@ -290,3 +290,23 @@ test('album search by name finds an edition and requests carry a visitor id with
   assert.equal(sent.at(-1).browseId, 'MPREexp')
   assert.ok(sent.every(request => request.visitor === 'visitor-123' && request.context === 'visitor-123'))
 })
+
+test("an artist's top songs: the five on their page, then the rest of the list from its See all", async () => {
+  youtube.clearAccountCache()
+  const page = artistPage('Salasa', [1, 2, 3, 4, 5].map(n => [`Song ${n}`, `song${n}`.padEnd(11, "a"), 'Album']), [])
+  page.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[0].musicShelfRenderer.bottomEndpoint = { browseEndpoint: { browseId: 'VLOLAK5uy_top' } }
+  assert.equal(youtube.parseArtistPage(page).songsListId, 'VLOLAK5uy_top')
+  const row = (title, videoId) => ({ musicResponsiveListItemRenderer: { playlistItemData: { videoId }, flexColumns: [column([{ text: title, navigationEndpoint: { watchEndpoint: { videoId } } }]), column([linked('Salasa', 'UCx', 'ARTIST')])] } })
+  const list = { contents: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(n => row(`Song ${n}`, `song${n}`.padEnd(11, "a"))) }
+  const browsed = []
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => '' }
+    const body = JSON.parse(init.body)
+    browsed.push(body.browseId)
+    return { ok: true, json: async () => (body.browseId === 'VLOLAK5uy_top' ? list : page) }
+  }
+  const result = await youtube.fetchCatalogue({ type: 'artistPage', artist: 'Salasa', channelId: 'UCsalasa00000000' }, '', fetchImpl)
+  assert.deepEqual(browsed, ['UCsalasa00000000', 'VLOLAK5uy_top'])
+  assert.deepEqual(result.tracks.map(track => track.title), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(n => `Song ${n}`))
+  assert.equal(result.songsListId, undefined)
+})

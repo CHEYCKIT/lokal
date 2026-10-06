@@ -646,10 +646,15 @@ function parseArtistPage(root, fallbackName = '') {
   const name = textOf(header.title) || fallbackName
   const tracks = []
   const albums = []
+  // The top songs shelf shows five; its "See all" leads to the rest.
+  let songsListId = null
   walkObjects(root, node => {
     // Songs: the list shelf ("Top songs"), not the videos carousel.
     if (node.musicShelfRenderer) {
       for (const track of parseAccountTracks(node.musicShelfRenderer, 50)) if (!tracks.some(item => item.videoId === track.videoId)) tracks.push(track)
+      const shelf = node.musicShelfRenderer
+      const more = shelf.bottomEndpoint?.browseEndpoint?.browseId || (shelf.title?.runs || []).map(run => run?.navigationEndpoint?.browseEndpoint?.browseId).find(Boolean)
+      if (!songsListId && /^VL/.test(String(more || ''))) songsListId = more
     }
     const shelf = node.musicCarouselShelfRenderer
     const title = plainName(textOf(shelf?.header?.musicCarouselShelfBasicHeaderRenderer?.title))
@@ -660,7 +665,7 @@ function parseArtistPage(root, fallbackName = '') {
       }
     }
   })
-  return { name, image: thumbnailsOf(header.thumbnail), tracks, albums }
+  return { name, image: thumbnailsOf(header.thumbnail), tracks, albums, ...(songsListId ? { songsListId } : {}) }
 }
 
 /**
@@ -697,7 +702,18 @@ async function fetchArtistPage({ artist, channelId, anchor, hints = [] } = {}, c
   const hinted = new Set(hints.map(plainName).filter(Boolean))
   const score = page => [...page.tracks.map(track => track.title), ...page.tracks.map(track => track.album), ...page.albums.map(album => album.title)].filter(value => hinted.has(plainName(value))).length
   const best = pages.filter(Boolean).sort((a, b) => score(b) - score(a))[0]
-  return best || { error: `Could not load ${artist} from YouTube Music.` }
+  if (!best) return { error: `Could not load ${artist} from YouTube Music.` }
+  // Their page shows five top songs: the rest of the list (the page offers
+  // ten with "Show more"), when it can be read.
+  const { songsListId, ...page } = best
+  if (songsListId && page.tracks.length < 10) {
+    try {
+      const more = parseAccountTracks(await accountBrowse(songsListId, cookies, fetchImpl, config, { anonymous }), 20)
+      const seen = new Set(page.tracks.map(track => track.videoId))
+      page.tracks = [...page.tracks, ...more.filter(track => !seen.has(track.videoId))].slice(0, 20)
+    } catch {}
+  }
+  return page
 }
 
 async function fetchCatalogue(options = {}, cookies, fetchImpl = fetch) {
