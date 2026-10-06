@@ -43,7 +43,7 @@ export default function Artist() {
   // Their name as the link gave it ("Earth, Wind & Fire"; the id is a slug).
   const onlineNames = useRef({})
   if (location.state?.name) onlineNames.current[id] = { name: location.state.name, anchor: location.state.anchor || null }
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const artistContext = makeArtistContext(id, artist?.name)
   // Set by the "playing from ..." shortcut so we can scroll to the playing track.
   const [highlightTrackId, setHighlightTrackId] = useState(null)
@@ -377,7 +377,7 @@ export default function Artist() {
 
 function AlbumTracks({ album, artistName = null, highlightTrackId = null, highlightRequestKey = null }) {
   const [tracks, setTracks] = useState([])
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   // album now carries its own album_artist (see the two setSelectedAlbum
   // call sites above) -- this page's display artist name isn't necessarily
   // the album's actual album_artist (e.g. a "Various Artists" compilation,

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api, wordSyncEnabled } from '../api'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
@@ -15,7 +16,15 @@ export default function MiniPlayer({ windowed = false }) {
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
     toggleMiniPlayer, likedIds, setLiked
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    currentTrack, isPlaying, progress, duration, volume,
+    togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
+    toggleMiniPlayer, likedIds, setLiked
+  }) => ({
+    currentTrack, isPlaying, progress, duration, volume,
+    togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
+    toggleMiniPlayer, likedIds, setLiked
+  })))
   const { user } = useAppStore()
 
   const [lyricsLines, setLyricsLines] = useState([])

@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
@@ -209,7 +210,21 @@ export default function FullscreenPlayer() {
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     playbackContext, setVolume,
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    showFullscreen, toggleFullscreen, currentTrack, isPlaying,
+    progress, duration, volume, shuffle, repeat,
+    showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
+    togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
+    playbackContext, setVolume,
+  }) => ({
+    showFullscreen, toggleFullscreen, currentTrack, isPlaying,
+    progress, duration, volume, shuffle, repeat,
+    showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
+    togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
+    playbackContext, setVolume,
+  })))
   const { user, openAddToPlaylist } = useAppStore()
   const nav = useNavigate()
   const wordSync = wordSyncEnabled()

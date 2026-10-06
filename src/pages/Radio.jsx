@@ -13,7 +13,7 @@ export default function Radio() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAppStore()
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const seed = location.state?.seed || location.state?.tracks?.[0]
   const [tracks, setTracks] = useState(() => location.state?.tracks || [])
   const [loading, setLoading] = useState(false)

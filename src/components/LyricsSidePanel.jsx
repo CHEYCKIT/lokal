@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import { api, wordSyncEnabled } from '../api'
 
@@ -11,7 +12,7 @@ import { api, wordSyncEnabled } from '../api'
 // visual presentations never drift out of sync with each other. Mirrors
 // QueuePanel's QueueContent/QueuePanel split for the same reason.
 export function LyricsContent({ onClose }) {
-  const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore()
+  const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore(useShallow(({ currentTrack, progress, toggleLyricsFullscreen }) => ({ currentTrack, progress, toggleLyricsFullscreen })))
   const wordSync = wordSyncEnabled()
   // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
   // toggle saves via api.saveSettings, never to localStorage), matching how
@@ -73,7 +74,7 @@ export function LyricsContent({ onClose }) {
 // exactly (same width, same animation) so the two standalone panels read
 // as one consistent system.
 export default function LyricsSidePanel() {
-  const { showLyricsPanel, toggleLyricsPanel } = usePlayerStore()
+  const { showLyricsPanel, toggleLyricsPanel } = usePlayerStore(useShallow(({ showLyricsPanel, toggleLyricsPanel }) => ({ showLyricsPanel, toggleLyricsPanel })))
 
   return (
     <>

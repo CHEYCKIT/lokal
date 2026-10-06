@@ -30,7 +30,7 @@ export default function Library() {
   // The empty state waits for the first answer instead of showing meanwhile.
   const [loaded, setLoaded] = useState(wasCached)
   usePageReady(loaded)
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const navigate = useNavigate()
   const offsetRef = useRef(tracks.length)
   const loadingRef = useRef(false)

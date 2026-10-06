@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Music, GripVertical, ListPlus, ListStart, FolderPlus } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
 import { trackArtURL } from '../onlineTracks'
 
@@ -13,19 +14,39 @@ import { trackArtURL } from '../onlineTracks'
 // Lyrics panel's header (same padding/type treatment) and drops the close
 // button -- in fullscreen, closing the queue is done by clicking the same
 // Queue button that opened it, not a button inside the panel.
+// A big queue (a 4,600-song playlist) draws only the songs around the
+// current one; "Show earlier"/"Show more" reveal the rest a page at a time.
+const BEFORE = 10
+const AFTER = 150
+const PAGE = 200
+// Reorder animations measure every row, so only small queues get them.
+const ANIMATE_UP_TO = 150
+
 export function QueueContent({ onClose, variant = 'panel' }) {
   const {
     queue, queueIndex, playQueue, playbackContext,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    queue, queueIndex, playQueue, playbackContext,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
+  }) => ({
+    queue, queueIndex, playQueue, playbackContext,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
+  })))
   const { openAddToPlaylist } = useAppStore()
 
   const [draggedIndex, setDraggedIndex] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
-  const [hoveredIndex, setHoveredIndex] = useState(null)
 
   const displayQueue = shuffle ? shuffleQueue : queue
   const displayIndex = shuffle ? shuffleIndex : queueIndex
+  const [extra, setExtra] = useState({ before: 0, after: 0 })
+  useEffect(() => { setExtra({ before: 0, after: 0 }) }, [displayQueue, shuffle])
+  const at = Math.max(0, displayIndex)
+  const start = Math.max(0, at - BEFORE - extra.before)
+  const end = Math.min(displayQueue.length, at + AFTER + extra.after)
+  const shown = displayQueue.slice(start, end)
+  const animate = displayQueue.length <= ANIMATE_UP_TO
 
   const artSrc = (track) => trackArtURL(track)
 
@@ -116,25 +137,33 @@ export function QueueContent({ onClose, variant = 'panel' }) {
           <p className="text-xs text-muted text-center py-8">Queue is empty</p>
         )}
 
+        {start > 0 && (
+          <button
+            onClick={() => setExtra(prev => ({ ...prev, before: prev.before + PAGE }))}
+            className="w-full text-xs text-muted hover:text-white py-2 transition-colors"
+          >
+            Show earlier ({start})
+          </button>
+        )}
+
         <div className="space-y-1">
-          {displayQueue.map((track, i) => {
+          {shown.map((track, offset) => {
+            const i = start + offset
             const isCurrent = i === displayIndex
             const src = artSrc(track)
             const isDragging = draggedIndex === i
             const isDragOver = dragOverIndex === i
-            const isHovered = hoveredIndex === i
+            const Row = animate ? motion.div : 'div'
 
             return (
-              <motion.div
-                layout
+              <Row
+                layout={animate || undefined}
                 key={`${track.id}-${i}`}
                 draggable={!shuffle}
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => handleDragOver(e, i)}
                 onDrop={(e) => handleDrop(e, i)}
                 onDragEnd={handleDragEnd}
-                onMouseEnter={() => setHoveredIndex(i)}
-                onMouseLeave={() => setHoveredIndex(null)}
                 className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all text-left group relative border-t-2 ${
                   isCurrent ? 'bg-accent/15' : 'hover:bg-elevated'
                 } ${
@@ -145,9 +174,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
               >
                 {!shuffle && (
                   <div
-                    className={`flex-shrink-0 cursor-grab active:cursor-grabbing p-1 z-20 transition-opacity ${
-                      isHovered ? 'opacity-100' : 'opacity-0'
-                    }`}
+                    className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 z-20 transition-opacity opacity-0 group-hover:opacity-100"
                     onMouseDown={(e) => e.stopPropagation()}
                   >
                     <GripVertical size={14} className="text-muted" />
@@ -164,7 +191,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
                   <div className="w-9 h-9 rounded bg-card overflow-hidden flex-shrink-0 flex items-center justify-center text-subtle relative">
                     {src ? (
-                      <img src={src} className="w-full h-full object-cover" />
+                      <img src={src} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                     ) : (
                       <Music size={12} />
                     )}
@@ -183,50 +210,57 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                   </div>
                 </div>
 
-                {(isHovered || isCurrent) && (
-                  <div
-                    className="flex-shrink-0 flex items-center gap-1 z-20"
-                    onClick={(e) => e.stopPropagation()}
+                <div
+                  className={`flex-shrink-0 items-center gap-1 z-20 ${isCurrent ? 'flex' : 'hidden group-hover:flex'}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    onClick={(e) => handlePlayNext(track, e)}
+                    title="Play next"
+                    className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
                   >
-                    <button
-                      onClick={(e) => handlePlayNext(track, e)}
-                      title="Play next"
-                      className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
-                    >
-                      <ListStart size={14} />
-                    </button>
+                    <ListStart size={14} />
+                  </button>
 
-                    <button
-                      onClick={(e) => handleAddToQueue(track, e)}
-                      title="Add to queue"
-                      className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
-                    >
-                      <ListPlus size={14} />
-                    </button>
+                  <button
+                    onClick={(e) => handleAddToQueue(track, e)}
+                    title="Add to queue"
+                    className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
+                  >
+                    <ListPlus size={14} />
+                  </button>
 
-                    <button
-                      onClick={(e) => handleDragToPlaylist(track, e)}
-                      title="Add to playlist"
-                      className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
-                    >
-                      <FolderPlus size={14} />
-                    </button>
+                  <button
+                    onClick={(e) => handleDragToPlaylist(track, e)}
+                    title="Add to playlist"
+                    className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
+                  >
+                    <FolderPlus size={14} />
+                  </button>
 
-                    {!isCurrent && (
-                      <button
-                        onClick={(e) => handleRemove(track.id, e)}
-                        title="Remove from queue"
-                        className="p-1 rounded hover:bg-red-500/20 text-muted hover:text-red-400 transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </motion.div>
+                  {!isCurrent && (
+                    <button
+                      onClick={(e) => handleRemove(track.id, e)}
+                      title="Remove from queue"
+                      className="p-1 rounded hover:bg-red-500/20 text-muted hover:text-red-400 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </Row>
             )
           })}
         </div>
+
+        {end < displayQueue.length && (
+          <button
+            onClick={() => setExtra(prev => ({ ...prev, after: prev.after + PAGE }))}
+            className="w-full text-xs text-muted hover:text-white py-2 transition-colors"
+          >
+            Show more ({displayQueue.length - end})
+          </button>
+        )}
       </div>
     </>
   )
@@ -237,7 +271,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 // instead, so the two panels can never overlap or momentarily add up their
 // widths against each other.
 export default function QueuePanel() {
-  const { showQueue, toggleQueue } = usePlayerStore()
+  const { showQueue, toggleQueue } = usePlayerStore(useShallow(({ showQueue, toggleQueue }) => ({ showQueue, toggleQueue })))
 
   return (
     <>

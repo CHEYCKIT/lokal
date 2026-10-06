@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Download, RotateCcw, Search, Disc3 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import SearchDrawer from './LyricsSearchDrawer'
 import { api, wordSyncEnabled } from '../api'
@@ -20,7 +21,7 @@ export const FULLSCREEN_IN = { duration: 0.34, delay: 0.1, ease: [0.22, 1, 0.36,
 // open, so switching is only a crossfade (nothing to fetch or build at the
 // click). The cover flies into this header's cover (data-fullscreen-thumb).
 export default function LyricsFullscreen() {
-  const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore()
+  const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore(useShallow(({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress }) => ({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress })))
   const [refreshKey, setRefreshKey] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
   const [searchSessions, setSearchSessions] = useState({})

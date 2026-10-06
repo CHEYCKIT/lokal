@@ -253,7 +253,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
   const [checkingPeriods, setCheckingPeriods] = useState(!treeWasCached)
   const [status, setStatus] = useState('')
   const [storyOpen, setStoryOpen] = useState(false)
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   // The period selected right now, for answers that arrive after a switch.
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId

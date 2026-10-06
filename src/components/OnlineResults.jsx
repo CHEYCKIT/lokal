@@ -11,6 +11,7 @@ import { motion } from 'framer-motion'
 import { Music, Pause, Play, Plus } from 'lucide-react'
 import { api } from '../api'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { sameStream } from '../onlineTracks'
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
@@ -81,7 +82,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const seqRef = useRef(0)
-  const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayerStore()
+  const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayerStore(useShallow(({ currentTrack, isPlaying, playQueue, togglePlay }) => ({ currentTrack, isPlaying, playQueue, togglePlay })))
   const { openAddToPlaylist } = useAppStore()
   const q = String(query || '').trim()
   const providerLabel = providers.find(p => p.id === provider)?.label || 'YouTube Music'

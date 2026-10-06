@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarRange, Clock3, Disc3, Music4, Play, Plus, Sparkles, Users, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '../api'
 import { useAppStore, usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 
 function fmtMinutes(minutes) {
   if (!minutes) return '0 min'
@@ -26,7 +27,7 @@ function trackArt(track) {
 
 export default function RecapStories({ open, onClose }) {
   const { user } = useAppStore()
-  const { playTrack, playQueue } = usePlayerStore()
+  const { playTrack, playQueue } = usePlayerStore(useShallow(({ playTrack, playQueue }) => ({ playTrack, playQueue })))
   const [recap, setRecap] = useState(null)
   const [loading, setLoading] = useState(false)
   const [recapSource, setRecapSource] = useState('user')

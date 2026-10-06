@@ -69,7 +69,7 @@ export default function Quality() {
   const rowsRequestRef = useRef(0)
   usePageReady(!!summary && rowsLoaded)
   const [message, setMessage] = useState('')
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const pollRef = useRef(null)
   const wasRunning = useRef(false)
 

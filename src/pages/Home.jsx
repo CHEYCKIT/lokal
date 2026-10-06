@@ -213,7 +213,7 @@ function HomeContent({ user }) {
   const route = homeRoute(location.pathname)
   const tab = route.tab
   useEffect(() => { rememberHomePath(uidKey, location.pathname) }, [uidKey, location.pathname])
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const navigate = useNavigate()
   const menu = useContextMenu()
   const [saving, setSaving] = useState(null)

@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { navigateToTrackAlbum } from '../playbackContext'
@@ -30,7 +31,23 @@ export default function PlayerBar() {
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
     sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
     toggleMiniPlayer,
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
+    showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
+    togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
+    toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
+    sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
+    toggleMiniPlayer,
+  }) => ({
+    currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
+    showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
+    togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
+    toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
+    likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
+    sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
+    toggleMiniPlayer,
+  })))
   const { user, openAddToPlaylist } = useAppStore()
   const [likeAnim, setLikeAnim] = useState(false)
   const [keepCommaArtists, setKeepCommaArtists] = useState([])

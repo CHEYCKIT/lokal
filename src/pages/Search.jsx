@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Music, Disc3, Clock, User, Play, Search as SearchIcon } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { useSearchStore } from '../store/search'
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
@@ -46,7 +47,7 @@ export default function Search() {
   const [onlineQuery, setOnlineQuery] = useState(query)
   const exactRef = useRef('')
   const nav = useNavigate()
-  const { playQueue, queue, playTrack } = usePlayerStore()
+  const { playQueue, queue, playTrack } = usePlayerStore(useShallow(({ playQueue, queue, playTrack }) => ({ playQueue, queue, playTrack })))
   const isSearchStarted = !!query.trim()
   // A pasted link isn't searched for: it's offered for download.
   const link = asLink(query)
