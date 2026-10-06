@@ -312,6 +312,7 @@ export default function Artist() {
                     }}
                     onContextMenu={(event) => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))}
                     aria-selected={selected}
+                    whileHover={{ scale: 1.02 }}
                     className={`relative flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selected ? 'border-accent ring-2 ring-accent/60 bg-accent/10' : selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
                   >
                     <div className="relative flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
