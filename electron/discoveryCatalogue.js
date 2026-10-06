@@ -5,6 +5,16 @@ async function lastfmCatalogue(settings, call, { type, artist, album } = {}) {
   artist = String(artist || '').trim().slice(0, 300)
   album = String(album || '').trim().slice(0, 300)
   if (!settings.lastfm_api_key || !artist) return { error: 'Connect Last.fm to load this catalogue.' }
+  // An artist's albums (their online page).
+  if (type === 'albums') {
+    const result = await call('artist.getTopAlbums', { artist, autocorrect: '1', limit: '30' }, settings.lastfm_api_key, null)
+    if (result?.error) return { error: result.message || 'Catalogue unavailable.' }
+    return { albums: list(result?.topalbums?.album).map(row => ({
+      title: row.name || '',
+      artist: typeof row.artist === 'string' ? row.artist : row.artist?.name || artist,
+      artwork_url: list(row.image).filter(image => image?.['#text']).at(-1)?.['#text'] || '',
+    })).filter(row => row.title && row.title !== '(null)') }
+  }
   const result = await call(type === 'album' ? 'album.getInfo' : 'artist.getTopTracks', type === 'album'
     ? { artist, album, autocorrect: '1' } : { artist, autocorrect: '1', limit: '60' }, settings.lastfm_api_key, null)
   if (result?.error) return { error: result.message || 'Catalogue unavailable.' }

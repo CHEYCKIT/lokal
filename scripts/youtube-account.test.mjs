@@ -187,3 +187,22 @@ test('generic or unmarked home data is never presented as a verified personalize
   assert.equal(result.authenticated, false)
   assert.match(result.error, /did not confirm an authenticated account/)
 })
+
+test("an artist's albums come from YouTube Music's album search, theirs only", async () => {
+  youtube.clearAccountCache()
+  const album = (title, artist, browseId, year, kind = 'Album') => ({ musicResponsiveListItemRenderer: {
+    flexColumns: [column([linked(title, browseId, 'ALBUM')]), column([{ text: kind }, { text: ' • ' }, { text: artist }, { text: ' • ' }, { text: String(year) }])],
+    navigationEndpoint: { browseEndpoint: { browseId, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ALBUM' } } } },
+    thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: `https://images.example/${browseId}.jpg` }] } } },
+  } })
+  const results = { contents: [album('I Am', 'Earth, Wind & Fire', 'MPREiam', 1979), album('Boogie Wonderland', 'Earth, Wind & Fire', 'MPREbw', 1979, 'Single'), album('Earth Songs', 'Someone Else', 'MPREother', 2001)] }
+  let query = ''
+  const result = await youtube.fetchCatalogue({ type: 'albums', artist: 'Earth, Wind & Fire' }, '', async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => '' }
+    query = JSON.parse(init.body).query
+    return { ok: true, json: async () => results }
+  })
+  assert.equal(query, 'Earth, Wind & Fire')
+  assert.deepEqual(result.albums.map(item => [item.title, item.albumId, item.year, item.release_type]), [['I Am', 'MPREiam', 1979, 'album'], ['Boogie Wonderland', 'MPREbw', 1979, 'single']])
+  assert.equal(result.albums[0].artwork_url.startsWith('https://images.example/MPREiam'), true)
+})
