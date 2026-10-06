@@ -71,6 +71,22 @@ export default function OnlineAlbum() {
     return () => { request.current++ }
   }, [artist, album, albumId, provider, sourceAlbumId, reload]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The library changed while this page is open (a download of one of its
+  // songs finished, say): its own page now, like the artist page does.
+  useEffect(() => {
+    let checking = false
+    const onRefresh = async () => {
+      if (checking) return
+      checking = true
+      try {
+        const own = await libraryAlbum({ artist, album })
+        if (own) nav('/albums', { replace: true, state: { album: own, connect: true } })
+      } finally { checking = false }
+    }
+    window.addEventListener('lokal:refresh', onRefresh)
+    return () => window.removeEventListener('lokal:refresh', onRefresh)
+  }, [artist, album, nav])
+
   usePageReady(true)
   const { tracks } = state
   const cover = state.artwork || artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
