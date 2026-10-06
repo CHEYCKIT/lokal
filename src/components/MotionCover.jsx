@@ -9,6 +9,8 @@ import { api } from '../api'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { seamlessLoop } from '../seamlessLoop'
 
+const COVER_FADE = 0.8 // s: the end of a moving cover fading into its start
+
 const lookups = new Map() // trackId -> Promise<{ src, source } | null>
 
 export function loadMotionCover(trackId) {
@@ -73,15 +75,18 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   onActiveRef.current = onActive
   useEffect(() => () => { onActiveRef.current?.(false) }, [])
 
-  // Two copies of the clip take turns, so it loops without a stall (see seamlessLoop.js).
+  // Moving album covers (Apple Music, Tidal...) fade from their end into their
+  // start: two copies take turns (see seamlessLoop.js). A Spotify Canvas
+  // (tall) is made to loop and keeps a plain <video loop>.
+  const canvas = !!clip && (clip.tall || clip.source === 'spotify')
   const firstRef = useRef(null)
   const secondRef = useRef(null)
   const activeRef = useRef(null)
   useEffect(() => {
     activeRef.current = firstRef.current
-    if (!clip || !firstRef.current || !secondRef.current) return undefined
-    return seamlessLoop([firstRef.current, secondRef.current], { fade: Number(clip.fade) || 0, onSwap: video => { activeRef.current = video } })
-  }, [clip])
+    if (!clip || canvas || !firstRef.current || !secondRef.current) return undefined
+    return seamlessLoop([firstRef.current, secondRef.current], { fade: COVER_FADE, onSwap: video => { activeRef.current = video } })
+  }, [clip, canvas])
 
   // Don't spend the GPU on a clip nobody can see.
   // (Minimized counts too: see windowVisibility.js.) A clip that arrives
@@ -95,6 +100,27 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   }), [])
 
   if (!clip) return null
+  const title = { apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'
+  if (canvas) {
+    return (
+      <video
+        ref={firstRef}
+        key={clip.src}
+        src={clip.src}
+        muted
+        loop
+        autoPlay={!isWindowHidden()}
+        playsInline
+        preload="auto"
+        disablePictureInPicture
+        onPlaying={() => { if (!ready) { setReady(true); onActive?.(true) } }}
+        onError={() => { setClip(null); onActive?.(false) }}
+        className={`absolute inset-0 h-full w-full object-cover ${className}`}
+        style={{ ...style, opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
+        title={title}
+      />
+    )
+  }
   const videoProps = {
     src: clip.src,
     muted: true,
@@ -109,7 +135,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
       key={clip.src}
       className={`absolute inset-0 ${className}`}
       style={{ ...style, opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
-      title={{ apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'}
+      title={title}
     >
       <video
         {...videoProps}
