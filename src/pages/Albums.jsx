@@ -218,7 +218,7 @@ export default function Albums() {
   const [connected, setConnectedState] = useState(false)
   const [onlineAlbum, setOnlineAlbum] = useState({ loading: false, tracks: [], error: '' })
   const [downloadingMissing, setDownloadingMissing] = useState(false)
-  useEffect(() => { setConnectedState(isConnected(connectKey)) }, [connectKey])
+  useEffect(() => { setConnectedState(isConnected(connectKey) || location.state?.connect === true) }, [connectKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!connected || !selectedAlbum?.title) return undefined
     let cancelled = false

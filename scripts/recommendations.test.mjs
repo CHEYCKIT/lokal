@@ -348,3 +348,11 @@ test('downloaded YouTube identity avoids a seed search with SoundCloud-first pla
   assert.deepEqual(searches, ['sc'])
   assert.equal(result[1].provider, 'sc')
 })
+
+test('remastered and single versions are the same song; live, remix and edit are not', () => {
+  const song = { title: 'September', artist: 'Earth, Wind & Fire' }
+  const as = title => recommendationMatch(song, [{ title, artist: 'Earth, Wind & Fire' }])
+  for (const title of ['September - Remastered 2003', 'September (2011 Remaster)', 'September (Remastered)', 'September - 2003 Remaster', 'September - Single Version', 'September (Mono)']) assert.ok(as(title), title)
+  for (const title of ['September (Live)', 'September - Remix', 'September (Edit)']) assert.equal(as(title), null, title)
+  assert.ok(recommendationMatch({ title: 'September - Remastered 2003', artist: 'Earth, Wind & Fire' }, [song]))
+})

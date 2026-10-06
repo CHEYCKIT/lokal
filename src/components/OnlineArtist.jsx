@@ -152,7 +152,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                 {albumItems.map(album => (
                   <button key={album.title} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
                     <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
-                      <DiscoveryImage item={album} type="album" src={album.artwork_url} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+                      <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
                     </div>
                     <p className="mt-2 truncate text-sm text-white">{album.title}</p>
                     <p className="truncate text-xs text-muted">{[album.release_type === 'single' ? 'Single' : album.release_type === 'ep' ? 'EP' : 'Album', album.year].filter(Boolean).join(' · ')}</p>

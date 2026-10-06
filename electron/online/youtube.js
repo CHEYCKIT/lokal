@@ -132,14 +132,29 @@ function parseSearch(json) {
   return found
 }
 
+/**
+ * Headers and client context for a request without an account, with the
+ * visitor id YouTube Music's own page hands out: without one it answers some
+ * networks with thin results or "No results".
+ */
+async function anonymousRequest(fetchImpl, config = null) {
+  const ctx = config || await musicContext('', fetchImpl).catch(() => ({}))
+  const visitor = ctx?.VISITOR_DATA || ''
+  return {
+    headers: { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', 'User-Agent': 'Mozilla/5.0', ...(visitor ? { 'X-Goog-Visitor-Id': visitor } : {}) },
+    client: { ...CLIENT, clientVersion: ctx?.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(visitor ? { visitorData: visitor } : {}) },
+  }
+}
+
 async function innertubeSearch(query, params, fetchImpl) {
+  const anonymous = await anonymousRequest(fetchImpl)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const res = await fetchImpl(SEARCH_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', 'User-Agent': 'Mozilla/5.0' },
-      body: JSON.stringify({ context: { client: CLIENT }, query, ...(params ? { params } : {}) }),
+      headers: anonymous.headers,
+      body: JSON.stringify({ context: { client: anonymous.client }, query, ...(params ? { params } : {}) }),
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`YouTube Music answered ${res.status}`)
@@ -416,7 +431,9 @@ function parseAccountEntities(root, type) {
     const pageType = endpoint?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
     const title = textOf(row?.title) || titleRuns.map(run => run.text).join('')
     if (!title || !pageType.endsWith(type === 'artist' ? '_ARTIST' : '_ALBUM')) return
-    const image = thumbnailsOf(row.thumbnail)
+    // Cards (musicTwoRowItemRenderer: an artist page's albums and singles)
+    // keep their picture in thumbnailRenderer; list rows in thumbnail.
+    const image = thumbnailsOf(row.thumbnailRenderer || row.thumbnail)
     const parts = (textOf(row.subtitle) || columnRuns(row, 1).map(run => run.text).join('')).split('•').map(value => value.trim())
     const artist = parts.find(value => value && !/^(album|single|ep|\d{4})$/i.test(value)) || ''
     const year = Number(parts.find(value => /^\d{4}$/.test(value))) || null
@@ -427,7 +444,7 @@ function parseAccountEntities(root, type) {
 }
 
 async function accountRequest(endpoint, body, cookieHeader, fetchImpl = fetch, config = {}, { anonymous = false, timeoutMs = 12000, continuation } = {}) {
-  const headers = accountHeaders(cookieHeader, config) || (anonymous ? { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' } : null)
+  const headers = accountHeaders(cookieHeader, config) || (anonymous ? { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', ...(config.VISITOR_DATA ? { 'X-Goog-Visitor-Id': config.VISITOR_DATA } : {}) } : null)
   if (!headers) throw new Error('Sign in to YouTube Music in Integrations.')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -567,13 +584,15 @@ const ARTISTS_PARAMS = 'EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D'
 
 /** A filtered YouTube Music search: the response, or { error }. */
 async function musicSearch(query, params, cookies, fetchImpl, config) {
+  const signedIn = accountHeaders(cookies, config)
+  const anonymous = signedIn ? null : await anonymousRequest(fetchImpl, config)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const response = await fetchImpl(SEARCH_URL, {
       method: 'POST', signal: controller.signal,
-      headers: accountHeaders(cookies, config) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
-      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion } }, query, params }),
+      headers: signedIn || anonymous.headers,
+      body: JSON.stringify({ context: { client: anonymous ? anonymous.client : { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion, ...(config.VISITOR_DATA ? { visitorData: config.VISITOR_DATA } : {}) } }, query, params }),
     })
     if (!response.ok) return { error: `YouTube Music search failed (${response.status}).` }
     return await response.json()
@@ -668,7 +687,12 @@ async function fetchCatalogue(options = {}, cookies, fetchImpl = fetch) {
   if (!id) {
     const found = await searchAlbums(`${artist} ${album}`, cookies, fetchImpl, config)
     if (found.error) return found
-    id = found.albums.find(item => plain(item.title) === plain(album) && plain(item.artist) === plain(artist))?.albumId
+    // Exact first; then the same release under an edition label ("I Am" /
+    // "I Am (Expanded Edition)"), by an artist credit that starts with theirs.
+    const bare = value => plain(String(value || '').replace(/\s*[([][^)\]]*[)\]]/g, '')) || plain(value)
+    const sameArtist = item => plain(item.artist) === plain(artist) || plain(item.artist).startsWith(`${plain(artist)} `)
+    id = (found.albums.find(item => plain(item.title) === plain(album) && plain(item.artist) === plain(artist))
+      || found.albums.find(item => bare(item.title) === bare(album) && sameArtist(item)))?.albumId
   }
   if (!id) return { error: `YouTube Music did not find the album ${album} by ${artist}.` }
   const root = await accountBrowse(id, cookies, fetchImpl, config, { anonymous: !accountHeaders(cookies) })
