@@ -408,6 +408,9 @@ function Loading() {
 
 export default function LyricsPanel({
   track, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
+  // The full screen player hides the buttons along with its own after a few
+  // seconds without the mouse moving.
+  toolbarHidden = false,
 }) {
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
@@ -757,12 +760,12 @@ export default function LyricsPanel({
     <div className="relative w-full h-full">
       {showToolbar && (
         <div
-          className={`absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none ${fullscreen ? '' : 'pb-6'}`}
+          className={`absolute top-0 inset-x-0 z-20 flex items-center gap-1.5 px-4 pt-3 pointer-events-none transition-opacity duration-300 ${toolbarHidden ? 'opacity-0' : 'opacity-100'} ${fullscreen ? '' : 'pb-6'}`}
           // The sidebar keeps its soft shade behind the buttons; the fullscreen
           // views already have their own header there, so they go without.
           style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
         >
-          <div className="flex items-center gap-1.5 pointer-events-auto">
+          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden ? '' : undefined}>
             <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
               Translate
@@ -775,7 +778,7 @@ export default function LyricsPanel({
             )}
           </div>
           <div className="flex-1" />
-          <div className="flex items-center gap-1.5 pointer-events-auto">
+          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden ? '' : undefined}>
             {sources.length > 0 && result?.source && (
               <SourceMenu
                 sources={sources}
