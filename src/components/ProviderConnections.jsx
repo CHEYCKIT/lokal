@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
-import { AudioLines, CheckCircle2, Gamepad2, LogIn, Music2, RefreshCw, Youtube } from 'lucide-react'
+import { AudioLines, CheckCircle2, Gamepad2, LogIn, Music2, RefreshCw } from 'lucide-react'
+import { YoutubeIcon } from './SourceIcon'
 import { api } from '../api'
 import { LastfmSignInModal, ListenBrainzSignInModal } from './ScrobblerSignIn'
 import { discordClientId } from '../discord'
@@ -219,7 +220,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
             : <ActionButton onClick={() => setSignIn('listenbrainz')}><LogIn size={13} />Sign in</ActionButton>}
         </AccountCard>
 
-        <AccountCard icon={Youtube} tint="bg-red-600/10 text-red-300" name="YouTube Music" connected={youtubeConnected}
+        <AccountCard icon={YoutubeIcon} tint="bg-red-600/10 text-red-300" name="YouTube Music" connected={youtubeConnected}
           note={youtubeState.tone === 'error' ? youtubeState.message : youtubeStatus.error}
           status={!api.isElectron ? 'Available in the desktop app' : youtubeConnected ? 'Connected' : youtubeAccountReady ? youtubeStatus.error ? 'Needs signing in again' : 'Not verified' : 'Not connected'}>
           {api.isElectron && !youtubeConnected && <ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeSigningIn ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Sign in</ActionButton>}
