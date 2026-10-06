@@ -31,6 +31,7 @@ import Quality from './pages/Quality'
 import Radio from './pages/Radio'
 import LosslessModal from './components/LosslessModal'
 import SmartPlaylistModal from './components/SmartPlaylistModal'
+import ImportPlaylistModal from './components/ImportPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { api } from './api'
@@ -2155,6 +2156,7 @@ export default function App() {
             <AddToPlaylistModal />
             <LosslessModal />
             <SmartPlaylistModal />
+            <ImportPlaylistModal />
             <ShareCardModal />
             <RecapStories
               open={showRecapStories}
