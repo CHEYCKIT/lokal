@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Clock, Disc3, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Disc3, Download, Globe, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
@@ -14,6 +14,9 @@ import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions
 import { artistPath, releaseKey, useReleaseActions } from '../releaseActions'
 import { plural } from '../plural'
 import { openRadio } from '../radioActions'
+import OnlineSongList from '../components/OnlineSongList'
+import { isConnected, loadOnlineAlbum, mergeWithLibrary, onlineAlbumPath, setConnected } from '../onlineBrowse'
+import { downloadOnline, playOnline } from '../onlineActions'
 
 const PAGE_SIZE = 48
 
@@ -206,6 +209,34 @@ export default function Albums() {
   usePageReady(!loadingAlbums && (!location.state?.album || albumTracks.length > 0))
   const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore()
   const albumContext = useMemo(() => makeAlbumContext(selectedAlbum), [selectedAlbum])
+
+  // "Full album online": the whole tracklist from the catalogue, the songs the
+  // library has marked (and played from the files), the others streamed or
+  // downloaded (remembered per album).
+  const albumArtist = selectedAlbum?.album_artist || String(selectedAlbum?.artists || '').split(',')[0].trim()
+  const connectKey = selectedAlbum?.title ? `album:${String(albumArtist).toLowerCase()}|${String(selectedAlbum.title).toLowerCase()}` : ''
+  const [connected, setConnectedState] = useState(false)
+  const [onlineAlbum, setOnlineAlbum] = useState({ loading: false, tracks: [], error: '' })
+  const [downloadingMissing, setDownloadingMissing] = useState(false)
+  useEffect(() => { setConnectedState(isConnected(connectKey)) }, [connectKey])
+  useEffect(() => {
+    if (!connected || !selectedAlbum?.title) return undefined
+    let cancelled = false
+    setOnlineAlbum({ loading: true, tracks: [], error: '' })
+    loadOnlineAlbum({ artist: albumArtist, album: selectedAlbum.title }, undefined, { isCurrent: () => !cancelled })
+      .then(result => { if (!cancelled) setOnlineAlbum({ loading: false, tracks: result.tracks, error: result.error || '' }) })
+      .catch(() => { if (!cancelled) setOnlineAlbum({ loading: false, tracks: [], error: 'Could not load this album online.' }) })
+    return () => { cancelled = true }
+  }, [connected, connectKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const merged = useMemo(() => mergeWithLibrary(onlineAlbum.tracks, albumTracks), [onlineAlbum.tracks, albumTracks])
+  const showOnline = connected && !onlineAlbum.loading && onlineAlbum.tracks.length > 0
+  const toggleConnected = () => setConnectedState(on => { setConnected(connectKey, !on); return !on })
+  const playMerged = (selected) => playOnline(merged.tracks, { selected, name: selectedAlbum?.title, path: onlineAlbumPath({ artist: albumArtist, album: selectedAlbum?.title }) })
+  const downloadMissing = async () => {
+    if (downloadingMissing) return
+    setDownloadingMissing(true)
+    try { await downloadOnline(merged.missing, { label: `${merged.missing.length} missing songs` }) } finally { setDownloadingMissing(false) }
+  }
   // Set by the bottom-bar / now-playing shortcuts so we can flash the playing track.
   const [highlightTrackId, setHighlightTrackId] = useState(null)
   const highlightRowRef = useRef(null)
@@ -521,21 +552,46 @@ export default function Albums() {
                 <div>
                   <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Tracklist</p>
                   <p className="mt-1 text-sm text-white/65">
-                    {loadingTracks ? 'Loading tracks...' : plural(albumTracks.length, 'track')}
+                    {loadingTracks ? 'Loading tracks...' : showOnline
+                      ? `${merged.owned} of ${merged.tracks.length} in your library`
+                      : plural(albumTracks.length, 'track')}
                   </p>
                 </div>
-                {albumTracks.length > 0 && (
-                  <button
-                    onClick={() => playQueue(albumTracks, 0, albumContext)}
-                    className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-white transition-colors hover:border-accent/40"
-                  >
-                    <Play size={14} fill="currentColor" />
-                    Play
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {showOnline && merged.missing.length > 0 && (
+                    <button onClick={downloadMissing} disabled={downloadingMissing}
+                      className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50">
+                      <Download size={14} /> {downloadingMissing ? 'Finding songs…' : `Download missing (${merged.missing.length})`}
+                    </button>
+                  )}
+                  {albumTracks.length > 0 && (
+                    <button onClick={toggleConnected} aria-pressed={connected}
+                      title={connected ? 'Show only your library' : 'Show the whole album, with the songs you have marked'}
+                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${connected ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border bg-card text-white hover:border-accent/40'}`}>
+                      {connected && onlineAlbum.loading ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
+                      Full album online
+                    </button>
+                  )}
+                  {albumTracks.length > 0 && (
+                    <button
+                      onClick={() => (showOnline ? playMerged(merged.tracks[0]) : playQueue(albumTracks, 0, albumContext))}
+                      className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-white transition-colors hover:border-accent/40"
+                    >
+                      <Play size={14} fill="currentColor" />
+                      Play
+                    </button>
+                  )}
+                </div>
               </div>
+              {connected && !onlineAlbum.loading && !onlineAlbum.tracks.length && (
+                <p role="status" className="border-b border-border px-6 py-3 text-xs text-muted">{onlineAlbum.error || 'This album was not found online.'} Showing your library's songs.</p>
+              )}
 
-              {loadingTracks ? (
+              {showOnline && !loadingTracks ? (
+                <div className="px-4 py-3">
+                  <OnlineSongList tracks={merged.tracks} numbered markOwned onPlay={playMerged} />
+                </div>
+              ) : loadingTracks ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 size={24} className="animate-spin text-muted" />
                 </div>

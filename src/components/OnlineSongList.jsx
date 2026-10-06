@@ -2,16 +2,18 @@
 // click (or the play button) plays from that song; a right click plays,
 // queues, adds to a playlist, downloads or opens the song's album or artist.
 // The song is found in the playback sources first for everything but going
-// somewhere.
+// somewhere. Songs the library has (mergeWithLibrary puts its copies in the
+// list) are marked "In library" and use the file.
 
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, Disc3, Download, ListEnd, Play, Plus, Radio, User } from 'lucide-react'
+import { CheckCircle2, Clock, Disc3, Download, ListEnd, Play, Plus, Radio, User } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
 import { downloadOnline, resolveOnline } from '../onlineActions'
-import { onlineAlbumPath } from '../onlineBrowse'
+import { isOnlineTrack, onlineAlbumPath } from '../onlineBrowse'
+import { navigateToTrackAlbum } from '../playbackContext'
 import { artistPath } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
@@ -26,33 +28,39 @@ const time = seconds => {
  * @param numbered       show track numbers (an album) instead of covers
  * @param showAlbum      show each song's album (an artist's songs)
  * @param highlightTitle the song to mark (the one playing when the page was opened)
+ * @param markOwned      mark the library's songs "In library" (a download button on the others)
  */
-export default function OnlineSongList({ tracks, onPlay, numbered = false, showAlbum = false, highlightTitle = '' }) {
+export default function OnlineSongList({ tracks, onPlay, numbered = false, showAlbum = false, highlightTitle = '', markOwned = false }) {
   const nav = useNavigate()
   const menu = useContextMenu()
   const userId = useAppStore(state => state.user?.id)
   const highlight = recommendationKey(highlightTitle)
 
   const withResolved = async (track, action) => {
+    if (!isOnlineTrack(track)) { action([track]); return }
     const [row] = await resolveOnline([track])
     if (row) action([row])
   }
-  const openMenu = (event, track) => menu.open(event, [
-    { label: 'Play', icon: Play, onSelect: () => onPlay(track) },
-    { label: 'Play next', icon: Clock, onSelect: () => withResolved(track, playNextMany) },
-    { label: 'Add to queue', icon: ListEnd, onSelect: () => withResolved(track, addToQueueMany) },
-    { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
-    { label: 'Download song', icon: Download, onSelect: () => downloadOnline([track]) },
-    { separator: true },
-    track.album && { label: 'Go to album', icon: Disc3, onSelect: () => nav(onlineAlbumPath({ artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId }), { state: { artwork: track.artwork_url || null, highlightTitle: track.title } }) },
-    track.artist && { label: 'Go to artist', icon: User, onSelect: () => nav(artistPath(track.artists?.[0] || track.artist), { state: { name: track.artists?.[0] || track.artist } }) },
-    { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, track, userId) },
-  ])
+  const openMenu = (event, track) => {
+    const own = !isOnlineTrack(track)
+    menu.open(event, [
+      { label: 'Play', icon: Play, onSelect: () => onPlay(track) },
+      { label: 'Play next', icon: Clock, onSelect: () => withResolved(track, playNextMany) },
+      { label: 'Add to queue', icon: ListEnd, onSelect: () => withResolved(track, addToQueueMany) },
+      { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
+      !own && { label: 'Download song', icon: Download, onSelect: () => downloadOnline([track]) },
+      { separator: true },
+      track.album && { label: 'Go to album', icon: Disc3, onSelect: () => (own ? navigateToTrackAlbum(nav, track) : nav(onlineAlbumPath({ artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId }), { state: { artwork: track.artwork_url || null, highlightTitle: track.title } })) },
+      track.artist && { label: 'Go to artist', icon: User, onSelect: () => (own ? nav(artistPath(track.artist)) : nav(artistPath(track.artists?.[0] || track.artist), { state: { name: track.artists?.[0] || track.artist, anchor: { title: track.title, album: track.album || '' } } })) },
+      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, track, userId) },
+    ])
+  }
 
   return (
     <div className="flex flex-col">
       {tracks.map((track, index) => {
         const marked = highlight && recommendationKey(track.title) === highlight
+        const own = markOwned && !isOnlineTrack(track)
         return (
           <div
             key={`${index}-${track.title}`}
@@ -62,7 +70,9 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
             onDoubleClick={() => onPlay(track)}
             onKeyDown={event => { if (event.key === 'Enter') onPlay(track) }}
             onContextMenu={event => openMenu(event, track)}
-            className={`group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/5 ${showAlbum ? '@lg:grid-cols-[2rem_minmax(0,1fr)_minmax(0,14rem)_auto]' : ''} ${marked ? 'bg-accent/10' : ''}`}
+            // A fixed last column when it can hold the "In library" badge, so
+            // every row's columns line up.
+            className={`group grid items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/5 ${markOwned ? 'grid-cols-[2rem_minmax(0,1fr)_8.5rem]' : 'grid-cols-[2rem_minmax(0,1fr)_auto]'} ${showAlbum ? (markOwned ? '@lg:grid-cols-[2rem_minmax(0,1fr)_minmax(0,14rem)_8.5rem]' : '@lg:grid-cols-[2rem_minmax(0,1fr)_minmax(0,14rem)_auto]') : ''} ${marked ? 'bg-accent/10' : ''}`}
           >
             <div className="relative flex h-8 w-8 items-center justify-center">
               {numbered
@@ -75,7 +85,11 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
               <p className="truncate text-xs text-muted">{track.artist}</p>
             </div>
             {showAlbum && <p className="hidden truncate text-xs text-muted @lg:block">{track.album || ''}</p>}
-            <span className="text-xs tabular-nums text-subtle">{time(track.duration)}</span>
+            <span className="flex items-center justify-end gap-3">
+              {own && <span title="In your library" className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent"><CheckCircle2 size={11} /> In library</span>}
+              {markOwned && !own && <button type="button" onClick={event => { event.stopPropagation(); downloadOnline([track]) }} title={`Download ${track.title}`} aria-label={`Download ${track.title}`} className="text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100 focus:opacity-100"><Download size={14} /></button>}
+              <span className="text-xs tabular-nums text-subtle">{time(track.duration)}</span>
+            </span>
           </div>
         )
       })}

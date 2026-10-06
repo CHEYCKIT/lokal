@@ -206,3 +206,59 @@ test("an artist's albums come from YouTube Music's album search, theirs only", a
   assert.deepEqual(result.albums.map(item => [item.title, item.albumId, item.year, item.release_type]), [['I Am', 'MPREiam', 1979, 'album'], ['Boogie Wonderland', 'MPREbw', 1979, 'single']])
   assert.equal(result.albums[0].artwork_url.startsWith('https://images.example/MPREiam'), true)
 })
+
+// An artist channel's page, as YouTube Music sends it.
+const artistPage = (name, songs, albums, singles = []) => ({
+  header: { musicImmersiveHeaderRenderer: { title: { runs: [{ text: name }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: `https://images.example/${name}.jpg` }] } } } } },
+  contents: { singleColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { content: { sectionListRenderer: { contents: [
+    { musicShelfRenderer: { title: { runs: [{ text: 'Top songs' }] }, contents: songs.map(([title, videoId, album]) => ({ musicResponsiveListItemRenderer: {
+      playlistItemData: { videoId },
+      flexColumns: [column([{ text: title, navigationEndpoint: { watchEndpoint: { videoId, watchEndpointMusicSupportedConfigs: { watchEndpointMusicConfig: { musicVideoType: 'MUSIC_VIDEO_TYPE_ATV' } } } } }]), column([linked(name, 'UCx', 'ARTIST')]), column([linked(album, `MPRE${videoId}`, 'ALBUM')])],
+    } })) } },
+    ...[['Albums', albums], ['Singles', singles]].map(([title, list]) => ({ musicCarouselShelfRenderer: {
+      header: { musicCarouselShelfBasicHeaderRenderer: { title: { runs: [{ text: title }] } } },
+      contents: list.map(([albumTitle, id, year]) => ({ musicTwoRowItemRenderer: {
+        title: { runs: [linked(albumTitle, id, 'ALBUM')] }, subtitle: { runs: [{ text: String(year) }] },
+        navigationEndpoint: { browseEndpoint: { browseId: id, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ALBUM' } } } },
+      } })),
+    } })),
+  ] } } } }] } },
+})
+
+test("an artist page is read from their own channel: songs, albums and singles", () => {
+  const page = youtube.parseArtistPage(artistPage('Salasa', [['Thinking of You', 'aaaaaaaaaaa', 'Thinking of You']], [['First Light', 'MPREfl', 2023]], [['Thinking of You', 'MPREty', 2024]]))
+  assert.equal(page.name, 'Salasa')
+  assert.deepEqual(page.tracks.map(track => track.title), ['Thinking of You'])
+  assert.deepEqual(page.albums.map(album => [album.title, album.release_type, album.year, album.artist]), [['First Light', 'album', 2023, 'Salasa'], ['Thinking of You', 'single', 2024, 'Salasa']])
+})
+
+test("namesakes: the channel of the song playing, else the one sharing the library's titles", async () => {
+  youtube.clearAccountCache()
+  const pages = {
+    UCmine00000000: artistPage('Salasa', [['Thinking of You', 'aaaaaaaaaaa', 'Thinking of You']], [['First Light', 'MPREfl', 2023]]),
+    UCother0000000: artistPage('SALASA', [['リズム - Rhythm', 'bbbbbbbbbbb', 'Golden Child']], [['Login failed', 'MPRElf', 2026]]),
+  }
+  const artistResult = (name, id) => ({ musicResponsiveListItemRenderer: { flexColumns: [column([{ text: name }])], navigationEndpoint: { browseEndpoint: { browseId: id, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ARTIST' } } } } } })
+  const songResult = { musicResponsiveListItemRenderer: {
+    playlistItemData: { videoId: 'aaaaaaaaaaa' },
+    flexColumns: [column([{ text: 'Thinking of You', navigationEndpoint: { watchEndpoint: { videoId: 'aaaaaaaaaaa' } } }]), column([{ text: 'Song' }, { text: ' • ' }, linked('Salasa', 'UCmine00000000', 'ARTIST')])],
+  } }
+  const browsed = []
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => '' }
+    const body = JSON.parse(init.body)
+    if (body.browseId) { browsed.push(body.browseId); return { ok: true, json: async () => pages[body.browseId] } }
+    // Artist search: the namesake comes first.
+    if (body.params === 'EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D') return { ok: true, json: async () => ({ contents: [artistResult('SALASA', 'UCother0000000'), artistResult('Salasa', 'UCmine00000000')] }) }
+    return { ok: true, json: async () => ({ contents: [songResult] }) }
+  }
+  const fromSong = await youtube.fetchCatalogue({ type: 'artistPage', artist: 'Salasa', anchor: { title: 'Thinking of You' } }, '', fetchImpl)
+  assert.equal(fromSong.channelId, 'UCmine00000000')
+  assert.deepEqual(fromSong.albums.map(album => album.title), ['First Light'])
+  assert.deepEqual(browsed, ['UCmine00000000'])
+
+  const fromLibrary = await youtube.fetchCatalogue({ type: 'artistPage', artist: 'Salasa', hints: ['First Light'] }, '', fetchImpl)
+  assert.equal(fromLibrary.channelId, 'UCmine00000000')
+  const noHints = await youtube.fetchCatalogue({ type: 'artistPage', artist: 'Salasa' }, '', fetchImpl)
+  assert.equal(noHints.channelId, 'UCother0000000')
+})
