@@ -38,8 +38,9 @@ if (typeof window !== 'undefined') {
  * @param only      'square' (album-style clips, for the cover spot) or 'tall'
  *                  (9:16 canvases, for a full-panel background); both if unset
  * @param onActive  called with true while a clip is showing
+ * @param off       turned off for this song (motionCoverPrefs.js): the still cover only
  */
-export default function MotionCover({ trackId, className = '', onActive, only, style }) {
+export default function MotionCover({ trackId, className = '', onActive, only, style, off = false }) {
   const [clip, setClip] = useState(null)
   const [ready, setReady] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -57,7 +58,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
     setReady(false)
     onActive?.(false)
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-    if (!trackId || reduced) return undefined
+    if (!trackId || reduced || off) return undefined
     loadMotionCover(trackId).then(found => {
       if (cancelled || !found?.src) return
       if (only === 'square' && found.tall) return
@@ -65,7 +66,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
       setClip(found)
     })
     return () => { cancelled = true }
-  }, [trackId, only, revision]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, only, revision, off]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unmounting (e.g. the next track has no artwork, so the parent stops
   // rendering this) must also clear the parent's "clip showing" state -- the

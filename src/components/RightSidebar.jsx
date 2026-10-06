@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Film } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
-import MotionCover from './MotionCover'
+import MotionCover, { loadMotionCover } from './MotionCover'
+import { useMotionCoverOff } from '../motionCoverPrefs'
 import { api, wordSyncEnabled } from '../api'
 import {
   contextLabel,
@@ -164,6 +165,21 @@ export default function RightSidebar() {
   // A tall (9:16) canvas gets a taller hero area -- about 60% of the panel's
   // height -- instead of being cropped into the square cover.
   const [canvasOn, setCanvasOn] = useState(false)
+  // A song with a moving cover (a Canvas or an animated album cover) gets a
+  // button to turn it off for that song, here and in full screen
+  // (motionCoverPrefs.js). Whether it has one is asked even while it's off,
+  // so the button stays to turn it back on.
+  const [coverOff, setCoverOff] = useMotionCoverOff(currentTrack)
+  const [coverClip, setCoverClip] = useState({ id: null, clip: null })
+  useEffect(() => {
+    const id = currentTrack?.id
+    if (!id) return undefined
+    let current = true
+    loadMotionCover(id).then(clip => { if (current) setCoverClip({ id, clip: clip?.src ? clip : null }) })
+    return () => { current = false }
+  }, [currentTrack?.id])
+  const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
+  const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
   const infoRef = useRef(null)
   const [infoHeight, setInfoHeight] = useState(0)
   useEffect(() => {
@@ -295,8 +311,8 @@ export default function RightSidebar() {
                       <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
                     )}
                   </AnimatePresence>
-                  {artSrc && <MotionCover trackId={currentTrack?.id} only="square" />}
-                  {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} />}
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
+                  {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} off={coverOff} />}
                 </div>
 
                 <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>
@@ -338,6 +354,18 @@ export default function RightSidebar() {
                       </button>
                       <button onClick={toggleLyricsFullscreen} className={fx ? btnFx : btnClassic}>
                         <Mic2 size={11} /> Lyrics
+                      </button>
+                    </div>
+                  )}
+
+                  {currentTrack && clipNow && (
+                    <div className="flex">
+                      <button
+                        onClick={() => setCoverOff(!coverOff)}
+                        aria-pressed={coverOff}
+                        title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
+                        className={fx ? btnFx : btnClassic}>
+                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName} for This Song`}
                       </button>
                     </div>
                   )}
