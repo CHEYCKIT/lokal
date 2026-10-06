@@ -29,7 +29,8 @@ export function navigateToTrackArtist(nav, track, keepCommaArtists = []) {
     const name = String(track.artists?.[0] || track.artist).trim()
     const slug = artistToSlug(name, [name])
     if (!slug) return false
-    nav(`/artist/a-${slug}`, { state: { name } })
+    // The song itself tells their YouTube Music channel from a namesake's.
+    nav(`/artist/a-${slug}`, { state: { name, anchor: { title: track.title, album: track.album || '' } } })
     return true
   }
   const slug = artistToSlug(track.artist, keepCommaArtists)

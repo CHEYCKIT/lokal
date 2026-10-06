@@ -51,3 +51,27 @@ test('"Playing from" leads back to an online album or artist page', () => {
   assert.equal(isContextNavigable({ type: 'discovery', name: 'Fresh Finds' }), false)
   assert.equal(isContextNavigable({ type: 'discovery', name: 'x', path: 'https://evil.example' }), false)
 })
+
+import { mergeWithLibrary, isConnected, releaseTitleKey } from '../src/onlineBrowse.js'
+
+test('the full album keeps its order, with the library copies in place of the songs it has', () => {
+  const lib = [
+    { id: 'l1', title: 'Boogie Wonderland', artist: 'Earth, Wind & Fire', file_path: '/m/bw.flac' },
+    { id: 'l2', title: 'Bonus Jam', artist: 'Earth, Wind & Fire', file_path: '/m/bonus.flac' },
+    { id: 'g1', title: 'In the Stone', artist: 'Earth, Wind & Fire', file_path: 'ghost://youtube/online/abcdefghijk' },
+  ]
+  const online = [
+    { title: 'In the Stone (Album Version)', artist: 'Earth, Wind & Fire' },
+    { title: 'Boogie Wonderland (with The Emotions)(Album Version)', artist: 'Earth, Wind & Fire' },
+    { title: "Can't Let Go", artist: 'Earth, Wind & Fire' },
+  ]
+  const merged = mergeWithLibrary(online, lib)
+  assert.deepEqual(merged.tracks.map(track => track.id || track.title), ['In the Stone (Album Version)', 'l1', "Can't Let Go", 'l2'])
+  assert.deepEqual(merged.missing.map(track => track.title), ['In the Stone (Album Version)', "Can't Let Go"])
+  assert.equal(merged.owned, 2)
+})
+
+test('release titles compare without edition labels; nothing remembered without storage', () => {
+  assert.equal(releaseTitleKey('I Am (Expanded Edition)'), releaseTitleKey('I am'))
+  assert.equal(isConnected('album:x|y'), false)
+})

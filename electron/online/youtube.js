@@ -54,6 +54,7 @@ function largerThumbnail(url) {
 /** Linked and plain metadata shared by search, history, cards and queue rows. */
 function parseSongMetadata(runs) {
   const artists = []
+  const artistIds = {} // name -> channel id (UC...)
   let album = null
   let albumId = null
   let duration = null
@@ -63,7 +64,10 @@ function parseSongMetadata(runs) {
     if (!text || text === '•') continue
     const browse = run.navigationEndpoint?.browseEndpoint
     const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
-    if (pageType.endsWith('_ARTIST') || pageType.endsWith('_USER_CHANNEL')) artists.push(text)
+    if (pageType.endsWith('_ARTIST') || pageType.endsWith('_USER_CHANNEL')) {
+      artists.push(text)
+      if (/^UC[\w-]{10,}$/.test(browse?.browseId || '') && !artistIds[text]) artistIds[text] = browse.browseId
+    }
     else if (pageType.endsWith('_ALBUM') || /^MPRE/.test(browse?.browseId || '')) { album = text; albumId = browse.browseId || null }
     else if (parseDuration(text) != null) duration = parseDuration(text)
     else if (!/\b(views|plays|listeners|subscribers)$/i.test(text)) loose.push(text)
@@ -78,7 +82,8 @@ function parseSongMetadata(runs) {
   if (!album) {
     album = loose.find(text => !artists.includes(text) && parseDuration(text) == null && !/\b(views|plays)$/i.test(text)) || null
   }
-  return { artists: [...new Set(artists)], artist: [...new Set(artists)].join(', '), album, albumId, duration, kind }
+  const names = [...new Set(artists)]
+  return { artists: names, artist: names.join(', '), artistIds: names.map(name => artistIds[name] || null), album, albumId, duration, kind }
 }
 
 /** One song or video row, or null for non-track entries. */
@@ -556,24 +561,98 @@ async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
   }
 }
 
-/** YouTube Music's album search: { albums: [{ title, artist, artwork_url, albumId, year, release_type }] } or { error }. */
-async function searchAlbums(query, cookies, fetchImpl, config) {
+// YouTube Music's search filters, as its web client sends them.
+const ALBUMS_PARAMS = 'EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D'
+const ARTISTS_PARAMS = 'EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D'
+
+/** A filtered YouTube Music search: the response, or { error }. */
+async function musicSearch(query, params, cookies, fetchImpl, config) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const response = await fetchImpl(SEARCH_URL, {
       method: 'POST', signal: controller.signal,
       headers: accountHeaders(cookies, config) || { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com' },
-      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion } }, query, params: 'EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D' }),
+      body: JSON.stringify({ context: { client: { ...CLIENT, clientVersion: config.INNERTUBE_CLIENT_VERSION || CLIENT.clientVersion } }, query, params }),
     })
-    if (!response.ok) return { error: `YouTube album search failed (${response.status}).` }
-    return { albums: parseAccountEntities(await response.json(), 'album') }
+    if (!response.ok) return { error: `YouTube Music search failed (${response.status}).` }
+    return await response.json()
   } finally { clearTimeout(timer) }
 }
 
-async function fetchCatalogue({ type, artist, album, albumId } = {}, cookies, fetchImpl = fetch) {
+/** YouTube Music's album search: { albums: [{ title, artist, artwork_url, albumId, year, release_type }] } or { error }. */
+async function searchAlbums(query, cookies, fetchImpl, config) {
+  const result = await musicSearch(query, ALBUMS_PARAMS, cookies, fetchImpl, config)
+  return result.error ? result : { albums: parseAccountEntities(result, 'album') }
+}
+
+const plainName = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+/** An artist channel's page: its name, picture, songs and releases (albums, singles, EPs). */
+function parseArtistPage(root, fallbackName = '') {
+  const header = root?.header?.musicImmersiveHeaderRenderer || root?.header?.musicVisualHeaderRenderer || root?.header?.musicResponsiveHeaderRenderer || {}
+  const name = textOf(header.title) || fallbackName
+  const tracks = []
+  const albums = []
+  walkObjects(root, node => {
+    // Songs: the list shelf ("Top songs"), not the videos carousel.
+    if (node.musicShelfRenderer) {
+      for (const track of parseAccountTracks(node.musicShelfRenderer, 50)) if (!tracks.some(item => item.videoId === track.videoId)) tracks.push(track)
+    }
+    const shelf = node.musicCarouselShelfRenderer
+    const title = plainName(textOf(shelf?.header?.musicCarouselShelfBasicHeaderRenderer?.title))
+    if (shelf && /^(albums|singles|eps|singles and eps|singles eps)$/.test(title)) {
+      const kind = title === 'albums' ? 'album' : title === 'eps' ? 'ep' : 'single'
+      for (const album of parseAccountEntities(shelf.contents, 'album')) {
+        if (!albums.some(item => item.albumId === album.albumId)) albums.push({ ...album, artist: album.artist || name, release_type: album.release_type || kind })
+      }
+    }
+  })
+  return { name, image: thumbnailsOf(header.thumbnail), tracks, albums }
+}
+
+/**
+ * One artist's page, not everyone with the name: the channel of `anchor`
+ * (a song of theirs, e.g. the one playing), else of the artists named
+ * `artist` the one whose songs and releases share the most with `hints`
+ * (the library's titles), else YouTube's first.
+ * { channelId, name, image, tracks, albums } or { error }
+ */
+async function fetchArtistPage({ artist, channelId, anchor, hints = [] } = {}, cookies, fetchImpl = fetch) {
+  const config = await musicContext(cookies, fetchImpl)
+  const want = plainName(artist)
+  let id = /^UC[\w-]{10,}$/.test(String(channelId || '')) ? channelId : null
+  if (!id && anchor?.title) {
+    const title = plainName(anchor.title)
+    const songs = await searchSongs(`${artist} ${anchor.title}`, { limit: 10, fetchImpl }).catch(() => [])
+    for (const song of songs) {
+      const at = (song.artists || []).findIndex(name => plainName(name) === want)
+      const same = plainName(song.title) === title || plainName(song.title).startsWith(`${title} `) || title.startsWith(`${plainName(song.title)} `)
+      if (same && at >= 0 && song.artistIds?.[at]) { id = song.artistIds[at]; break }
+    }
+  }
+  let candidates = id ? [{ browseId: id }] : []
+  if (!id) {
+    const found = await musicSearch(artist, ARTISTS_PARAMS, cookies, fetchImpl, config)
+    if (found.error) return found
+    candidates = parseAccountEntities(found, 'artist').filter(item => plainName(item.name) === want && /^UC/.test(item.browseId)).slice(0, hints.length ? 3 : 1)
+  }
+  if (!candidates.length) return { error: `YouTube Music has no artist named ${artist}.` }
+  const anonymous = !accountHeaders(cookies)
+  const pages = await Promise.all(candidates.map(async candidate => {
+    try { return { channelId: candidate.browseId, ...parseArtistPage(await accountBrowse(candidate.browseId, cookies, fetchImpl, config, { anonymous }), artist) } } catch { return null }
+  }))
+  const hinted = new Set(hints.map(plainName).filter(Boolean))
+  const score = page => [...page.tracks.map(track => track.title), ...page.tracks.map(track => track.album), ...page.albums.map(album => album.title)].filter(value => hinted.has(plainName(value))).length
+  const best = pages.filter(Boolean).sort((a, b) => score(b) - score(a))[0]
+  return best || { error: `Could not load ${artist} from YouTube Music.` }
+}
+
+async function fetchCatalogue(options = {}, cookies, fetchImpl = fetch) {
+  const { type, artist, album, albumId } = options
   const plain = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   if (!artist || (type === 'album' && !album)) return { error: 'An artist and album name are required.' }
+  if (type === 'artistPage') return fetchArtistPage(options, cookies, fetchImpl)
   if (type !== 'album' && type !== 'albums') {
     const tracks = (await searchSongs(String(artist), { limit: 60, fetchImpl })).filter(track => track.artists.some(name => plain(name) === plain(artist)))
     return { tracks }
@@ -778,7 +857,7 @@ function videoIdFromUrl(url) {
 
 module.exports = {
   searchSongs, parseSearch, parseItem, parseDuration,
-  fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue,
+  fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
   resolveStream, fetchStream, streamError, videoIdFromUrl,
 }

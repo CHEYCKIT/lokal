@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -13,7 +13,8 @@ import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
-import OnlineArtist from '../components/OnlineArtist'
+import OnlineArtist, { OnlineArtistSections, useOnlineArtist } from '../components/OnlineArtist'
+import { isConnected, setConnected } from '../onlineBrowse'
 
 export default function Artist() {
   const { id } = useParams()
@@ -33,7 +34,7 @@ export default function Artist() {
   const [online, setOnline] = useState(false)
   // Their name as the link gave it ("Earth, Wind & Fire"; the id is a slug).
   const onlineNames = useRef({})
-  if (location.state?.name) onlineNames.current[id] = location.state.name
+  if (location.state?.name) onlineNames.current[id] = { name: location.state.name, anchor: location.state.anchor || null }
   const { playQueue } = usePlayerStore()
   const artistContext = makeArtistContext(id, artist?.name)
   // Set by the "playing from ..." shortcut so we can scroll to the playing track.
@@ -148,7 +149,15 @@ export default function Artist() {
   const releasesFor = (keys) => releaseList.filter(album => keys.includes(releaseKey(album)))
   const releaseSelection = useSelection(releaseKeys, { onDelete: (keys) => releases.askDelete(releasesFor(keys)) })
 
-  if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]} />
+  // "More online": their songs and albums online next to the library's, the
+  // library's marked (remembered per artist).
+  const [connected, setConnectedState] = useState(() => isConnected(`artist:${id}`))
+  useEffect(() => { setConnectedState(isConnected(`artist:${id}`)) }, [id])
+  const toggleConnected = () => setConnectedState(on => { setConnected(`artist:${id}`, !on); return !on })
+  const onlineHints = useMemo(() => [...(artist?.albums || []).map(album => album.title), ...(artist?.tracks || []).map(track => track.title)].filter(Boolean), [artist])
+  const onlineData = useOnlineArtist(artist?.name || '', connected && !!artist?.id, { hints: onlineHints })
+
+  if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]?.name} anchor={onlineNames.current[id]?.anchor} />
   if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
 
   // Web mode previously hardcoded this to null, so the artist detail page
@@ -223,6 +232,10 @@ export default function Artist() {
             className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Share2 size={14} /> Share
           </button>
+          <button onClick={toggleConnected} aria-pressed={connected} title={connected ? 'Hide their music online' : 'Show their other songs and albums online'}
+            className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${connected ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border bg-elevated text-white/80 hover:border-accent/30 hover:text-white'}`}>
+            <Globe size={14} /> {connected ? 'Online: on' : 'More online'}
+          </button>
         </div>
 
         {artist.bio && (
@@ -296,6 +309,8 @@ export default function Artist() {
         )}
 
         {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />}
+
+        {connected && <OnlineArtistSections data={onlineData} path={`/artist/${id}`} libraryTracks={artist.tracks || []} libraryAlbums={artist.albums || []} />}
       </div>
       {releases.elements}
 

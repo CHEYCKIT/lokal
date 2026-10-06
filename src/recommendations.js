@@ -28,8 +28,8 @@ export function uniqueSongs(items) {
 
 const stripFeatured = suffix => /\b(?:remix|live|cover)\b/i.test(recommendationKey(suffix)) ? suffix : ''
 const titleKey = title => recommendationKey(String(title || '')
-  .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio)[)\]]/gi, '')
-  .replace(/\s*[([](?:feat\.?|ft\.?|featuring)\s+[^)\]]+[)\]]/gi, stripFeatured)
+  .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio|album version|single version)[)\]]/gi, '')
+  .replace(/\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+[)\]]/gi, stripFeatured)
   .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i, stripFeatured))
 
 const versionWords = /\b(?:remix|live|cover|instrumental|acoustic|karaoke|edit|sped up|slowed|nightcore)\b/i
