@@ -158,7 +158,11 @@ jobs:
                   body: `Bumps package.json, package-lock.json and the README badge to ${NEW}.\n\n**Merging this releases v${NEW}**: Release Lokal tags it and builds the draft release.`,
                 }))
               } catch (err) {
-                core.setFailed(`Couldn't open the PR (${err.message}). The branch ${branch} is pushed: open its PR yourself, or turn on Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" (or add a RELEASE_TOKEN secret) for next time.`)
+                // Actions may not be allowed to open PRs here: the branch is
+                // pushed, so hand over a link that opens it, title filled in.
+                const url = `${context.serverUrl}/${owner}/${repo}/compare/main...${branch}?expand=1&title=${encodeURIComponent(`Version ${NEW}`)}`
+                core.notice(`Open the PR: ${url} then merge it to release v${NEW}. (Actions couldn't open it: ${err.message})`, { title: 'Open the version PR' })
+                await core.summary.addRaw(`### Open the version PR\n\n**[Open the "Version ${NEW}" PR](${url})**, then merge it to release **v${NEW}**: this workflow then tags and builds it.\n\n<sub>Actions couldn't open it (${err.message}). Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" lets it next time.</sub>\n`).write()
                 return
               }
             }
