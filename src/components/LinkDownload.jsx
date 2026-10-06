@@ -1,6 +1,8 @@
 // A link pasted into the search box: what it is (one song, or a playlist /
 // album / channel) and a button to download it into the library, then its
 // progress right there. Enter in the search box starts the first choice.
+// Its real title, artist and cover are looked up as soon as it's pasted
+// (api.linkInfo); until then the card goes by what the link itself says.
 // A playlist can also be saved as one of your playlists without downloading
 // (Import playlist, from a link, with this link filled in).
 
@@ -9,6 +11,7 @@ import { motion } from 'framer-motion'
 import { Disc3, Download, Library, Link2, ListMusic, ListPlus } from 'lucide-react'
 import { useDownloads, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
+import { api } from '../api'
 import { inferTitleFromUrl, linkKind, splitLink } from '../downloadLinks'
 import { DownloadRow } from './DownloadManager'
 import DownloadNotices from './DownloadNotices'
@@ -51,13 +54,27 @@ export default function LinkDownload({ link }) {
   useEffect(() => { startDownloadSync() }, [])
   useEffect(() => { setError(''); setPending(null) }, [link])
 
+  // url -> { title, author, thumbnail, count }, for each of the link's choices.
+  const [info, setInfo] = useState({})
+  const [coverFailed, setCoverFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    setInfo({})
+    setCoverFailed(false)
+    for (const url of new Set(choices.map(choice => choice.url))) {
+      api.linkInfo?.(url).then(result => { if (live && result?.ok) setInfo(prev => ({ ...prev, [url]: result })) }).catch(() => {})
+    }
+    return () => { live = false }
+  }, [link]) // eslint-disable-line react-hooks/exhaustive-deps
+  const titleOf = choice => info[choice.url]?.title || choice.title
+
   const jobFor = (choice) => jobs.find(job => !job.removed && job.url === choice.url && (job.kind || 'single') === choice.kind) || null
 
   const start = async (choice) => {
     if (pending || jobFor(choice)) return
     setError('')
     setPending(choice.id)
-    const result = await enqueue(choice.kind, choice.url, { title: choice.title, from: 'Link' }).catch(e => ({ error: e.message }))
+    const result = await enqueue(choice.kind, choice.url, { title: titleOf(choice), from: 'Link' }).catch(e => ({ error: e.message }))
     setPending(null)
     if (result?.error) setError(result.error)
   }
@@ -76,6 +93,10 @@ export default function LinkDownload({ link }) {
 
   const started = choices.map(jobFor).filter(Boolean)
   const what = kind === 'single' ? 'Song' : kind === 'both' ? 'Song from a playlist' : 'Playlist, album or channel'
+  const main = info[choices[0].url]
+  const cover = !coverFailed && main?.thumbnail
+  // A song from a playlist: the playlist's name under it.
+  const fromList = kind === 'both' ? info[listUrl]?.title : null
 
   return (
     <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label="Download a link">
@@ -84,15 +105,20 @@ export default function LinkDownload({ link }) {
       </h2>
       <div className="rounded-2xl border border-border bg-elevated/60 p-4">
         <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-card text-accent">
-            {kind === 'single' ? <Disc3 size={20} /> : <Library size={20} />}
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card text-accent">
+            {cover
+              ? <img src={cover} alt="" referrerPolicy="no-referrer" onError={() => setCoverFailed(true)} className="h-full w-full object-cover" />
+              : kind === 'single' ? <Disc3 size={20} /> : <Library size={20} />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-text">{choices[0].title}</p>
+            <p className="truncate text-sm font-semibold text-text">{titleOf(choices[0])}</p>
             <p className="mt-0.5 truncate text-xs text-muted">
-              <span className="text-accent/90">{what}</span> · {source.label}
+              <span className="text-accent/90">{what}</span>
+              {main?.author ? ` · ${main.author}` : ''}
+              {main?.count && kind !== 'single' ? ` · ${main.count.toLocaleString()} ${main.count === 1 ? 'song' : 'songs'}` : ''}
+              {` · ${source.label}`}
             </p>
-            <p className="mt-0.5 truncate text-[11px] text-subtle">{link}</p>
+            <p className="mt-0.5 truncate text-[11px] text-subtle">{fromList ? `From ${fromList}` : link}</p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
             {choices.map((choice, i) => {
@@ -131,7 +157,7 @@ export default function LinkDownload({ link }) {
         )}
         {!started.length && (
           <p className="mt-3 text-[11px] text-muted">
-            Saved to your music folder and added to the library, with lyrics and a square cover. The real {kind === 'single' ? 'title' : 'name'} is filled in from {source.label} once it starts.
+            Saved to your music folder and added to the library, with lyrics and a square cover.{main ? '' : ` The real ${kind === 'single' ? 'title' : 'name'} is filled in from ${source.label} once it starts.`}
           </p>
         )}
       </div>

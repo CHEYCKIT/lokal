@@ -363,6 +363,7 @@ export const api = {
   removeFromPlaylistArchive: (id, videoId) => isE() ? el().removeFromPlaylistArchive(id, videoId) : apiFetch('/download/playlist/remove-archive', { method:'POST', body:{playlistId:id, videoId} }),
   deleteDownloadedPlaylist: (id) => isE() ? el().deleteDownloadedPlaylist(id) : apiFetch('/download/playlist', { method:'DELETE', body:{playlistId:id} }),
   getPlaylistArchiveIds: (id) => isE() ? el().getPlaylistArchiveIds(id) : apiFetch(`/download/playlist/archive-ids?playlistId=${id}`),
+  linkInfo: (url) => isE() ? el().linkInfo(url) : apiFetch('/download/link-info', { method:'POST', body:{url} }),
   cancelDownload: (id) => isE() ? el().cancelDownload(id) : apiFetch('/download/cancel', { method:'POST', body:{id} }),
   getDownloadQueue: () => isE() ? el().getDownloadQueue() : apiFetch('/download/queue'),
   retryDownload: (id) => isE() ? el().retryDownload(id) : apiFetch('/download/retry', { method:'POST', body:{id} }),

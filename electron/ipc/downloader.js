@@ -152,6 +152,7 @@ function registerDownloaderHandlers(ipcMain) {
     clean.tags = require('../download/postprocess').knownTagsOf(clean.tags)
     return manager().enqueue('single', url, clean)
   })
+  ipcMain.handle('downloader:linkInfo', (_, url) => require('../download/linkInfo').linkInfo(url, { ytdlp: findYtDlp(), settings: manager().settings() }))
   ipcMain.handle('downloader:cancel', (_, id) => manager().cancel(id))
   ipcMain.handle('downloader:remove', (_, id) => manager().remove(id))
   ipcMain.handle('downloader:retry', (_, id) => manager().retry(id))

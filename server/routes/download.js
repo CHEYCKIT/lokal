@@ -112,6 +112,10 @@ const byId = (action) => async (req, res) => {
   res.status(result?.error ? 404 : 200).json(result)
 }
 
+router.post('/link-info', async (req, res) => {
+  const { linkInfo } = require('../../electron/download/linkInfo')
+  res.json(await linkInfo(req.body?.url, { ytdlp: findBinary('yt-dlp'), settings: manager().settings() }))
+})
 router.post('/cancel', byId('cancel'))
 router.post('/remove', byId('remove'))
 router.post('/retry', byId('retry'))
