@@ -135,6 +135,12 @@ async function applyTags(filePath, changes = {}) {
       try { if (await squareCover(T, file)) { done.cover = true; dirty = true } } catch {}
     }
     if (changes.album && !file.tag.album) { file.tag.album = changes.album; done.album = changes.album; dirty = true }
+    // A source's details (an addon's): only where the file has none.
+    if (changes.year && !file.tag.year) { file.tag.year = changes.year; done.year = changes.year; dirty = true }
+    if (changes.track && !file.tag.track) { file.tag.track = changes.track; done.track = changes.track; dirty = true }
+    if (changes.disc && !file.tag.disc) { file.tag.disc = changes.disc; done.disc = changes.disc; dirty = true }
+    if (changes.isrc && !file.tag.isrc) { file.tag.isrc = changes.isrc; done.isrc = changes.isrc; dirty = true }
+    if (changes.genre && !(file.tag.genres || []).length) { file.tag.genres = [changes.genre]; done.genre = changes.genre; dirty = true }
     // A cover for a file that has none (e.g. a bare audio link from an addon).
     if (changes.coverBytes && !(file.tag.pictures || []).length) {
       try {

@@ -370,14 +370,51 @@ function setSongLike(db, userId, trackId, liked) {
  * Keep online songs as ghost tracks, so they can be played, liked and added
  * to playlists. Returns the track rows (null for unusable items), in order.
  */
+/**
+ * What a source says of a stream's quality ("FLAC 16/44.1", "MP3 320"):
+ * { codec, lossless, bit_depth, sample_rate, bitrate } (nulls when unknown).
+ */
+function streamQuality(format) {
+  const text = String(format || '').trim()
+  const out = { codec: null, lossless: null, bit_depth: null, sample_rate: null, bitrate: null }
+  if (!text) return out
+  const codec = text.match(/^(flac|alac|wav|aiff|mp3|aac|opus|ogg|vorbis|m4a)\b/i)?.[1]?.toLowerCase()
+  if (codec) {
+    out.codec = codec
+    out.lossless = ['flac', 'alac', 'wav', 'aiff'].includes(codec) ? 1 : 0
+  }
+  const hires = text.match(/(\d{2})\s*(?:-?\s*bits?)?\s*[-/·,]\s*(\d{2,3}(?:\.\d+)?)\s*(?:k\s*hz)?/i)
+  if (out.lossless && hires) {
+    out.bit_depth = Number(hires[1])
+    out.sample_rate = Math.round(Number(hires[2]) * 1000)
+  } else if (out.lossless === 0) {
+    const kbps = Number(text.match(/(\d{2,4})\s*(?:kbps|k)?\s*$/i)?.[1])
+    if (kbps >= 32 && kbps <= 2000) out.bitrate = kbps
+  }
+  return out
+}
+
+const year = value => (Number(value) >= 1000 && Number(value) <= 2999 ? Math.floor(Number(value)) : null)
+const positive = value => (Number(value) > 0 && Number(value) < 1000 ? Math.floor(Number(value)) : null)
+
 function saveOnlineTracks(db, items = []) {
+  try { require('../quality').ensureColumns(db) } catch {}
+  // What the source says of the song (an addon's year, track number, ISRC,
+  // quality...) is kept for the details panel; it fills in, never erases.
   const upsert = db.prepare(`
-    INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, duration, source_url, artwork_url, last_modified)
-    VALUES (@id, @file_path, @id, @title, @artist, @album, @album_artist, @duration, @source_url, @artwork_url, @now)
+    INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, duration, source_url, artwork_url, last_modified,
+      year, track_num, genre, isrc, codec, lossless, bit_depth, sample_rate, bitrate)
+    VALUES (@id, @file_path, @id, @title, @artist, @album, @album_artist, @duration, @source_url, @artwork_url, @now,
+      @year, @track_num, @genre, @isrc, @codec, @lossless, @bit_depth, @sample_rate, @bitrate)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title, artist = excluded.artist, album = excluded.album,
       album_artist = excluded.album_artist, duration = excluded.duration,
-      source_url = excluded.source_url, artwork_url = excluded.artwork_url
+      source_url = excluded.source_url, artwork_url = excluded.artwork_url,
+      year = COALESCE(excluded.year, tracks.year), track_num = COALESCE(excluded.track_num, tracks.track_num),
+      genre = COALESCE(excluded.genre, tracks.genre), isrc = COALESCE(excluded.isrc, tracks.isrc),
+      codec = COALESCE(excluded.codec, tracks.codec), lossless = COALESCE(excluded.lossless, tracks.lossless),
+      bit_depth = COALESCE(excluded.bit_depth, tracks.bit_depth), sample_rate = COALESCE(excluded.sample_rate, tracks.sample_rate),
+      bitrate = COALESCE(excluded.bitrate, tracks.bitrate)
     WHERE tracks.file_path LIKE 'ghost://%'
   `)
   const get = db.prepare('SELECT * FROM tracks WHERE id = ?')
@@ -401,6 +438,11 @@ function saveOnlineTracks(db, items = []) {
       // another source) has artwork_url: keep its cover either way.
       artwork_url: [item.thumbnail, item.artwork_url].map(value => String(value || '')).find(value => /^https:\/\//.test(value))?.slice(0, 1000) || null,
       now: Date.now(),
+      year: year(item.year),
+      track_num: positive(item.track_num ?? item.trackNumber),
+      genre: typeof item.genre === 'string' && item.genre.trim() ? item.genre.trim().slice(0, 100) : null,
+      isrc: (() => { try { return require('../quality').normalizeIsrc(item.isrc) || null } catch { return null } })(),
+      ...streamQuality(item.quality || item.format),
     })
     return get.get(id)
   }))
@@ -437,6 +479,7 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
 }
 
 module.exports = {
+  streamQuality,
   cancellableBody,
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
