@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
+import { seamlessLoop } from '../seamlessLoop'
 
 const lookups = new Map() // trackId -> Promise<{ src, source } | null>
 
@@ -40,7 +41,6 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   const [clip, setClip] = useState(null)
   const [ready, setReady] = useState(false)
   const [revision, setRevision] = useState(0)
-  const videoRef = useRef(null)
 
   // The track on screen was edited: look it up again.
   useEffect(() => {
@@ -73,34 +73,51 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   onActiveRef.current = onActive
   useEffect(() => () => { onActiveRef.current?.(false) }, [])
 
+  // Two copies of the clip take turns, so it loops without a stall (see seamlessLoop.js).
+  const firstRef = useRef(null)
+  const secondRef = useRef(null)
+  const activeRef = useRef(null)
+  useEffect(() => {
+    activeRef.current = firstRef.current
+    if (!clip || !firstRef.current || !secondRef.current) return undefined
+    return seamlessLoop([firstRef.current, secondRef.current], { fade: Number(clip.fade) || 0, onSwap: video => { activeRef.current = video } })
+  }, [clip])
+
   // Don't spend the GPU on a clip nobody can see.
   // (Minimized counts too: see windowVisibility.js.) A clip that arrives
   // while nobody can see it (loaded or changed while minimized) doesn't
   // autoplay; it starts when the window is back.
   useEffect(() => onWindowVisibility((hidden) => {
-    const v = videoRef.current
+    const v = activeRef.current
     if (!v) return
     if (hidden) v.pause()
     else v.play().catch(() => {})
   }), [])
 
   if (!clip) return null
+  const videoProps = {
+    src: clip.src,
+    muted: true,
+    playsInline: true,
+    preload: 'auto',
+    disablePictureInPicture: true,
+    onError: () => { setClip(null); onActive?.(false) },
+    className: 'absolute inset-0 h-full w-full object-cover',
+  }
   return (
-    <video
-      ref={videoRef}
+    <div
       key={clip.src}
-      src={clip.src}
-      muted
-      loop
-      autoPlay={!isWindowHidden()}
-      playsInline
-      preload="auto"
-      disablePictureInPicture
-      onPlaying={() => { if (!ready) { setReady(true); onActive?.(true) } }}
-      onError={() => { setClip(null); onActive?.(false) }}
-      className={`absolute inset-0 h-full w-full object-cover ${className}`}
+      className={`absolute inset-0 ${className}`}
       style={{ ...style, opacity: ready ? 1 : 0, transition: 'opacity 320ms ease' }}
       title={{ apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'}
-    />
+    >
+      <video
+        {...videoProps}
+        ref={firstRef}
+        autoPlay={!isWindowHidden()}
+        onPlaying={() => { if (!ready) { setReady(true); onActive?.(true) } }}
+      />
+      <video {...videoProps} ref={secondRef} aria-hidden="true" style={{ visibility: 'hidden' }} />
+    </div>
   )
 }
