@@ -7,6 +7,7 @@ import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
 import FadeImg from '../components/FadeImg'
+import ImageZoom from '../components/ImageZoom'
 import CoverPlay from '../components/CoverPlay'
 import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
@@ -63,9 +64,12 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
       window.removeEventListener('resize', fitTitle)
     }
   }, [album.title])
+  // The cover, big (click it).
+  const [zoom, setZoom] = useState(false)
 
   return (
     <div className="relative overflow-hidden rounded-[2.25rem] border border-border bg-surface/80">
+      <ImageZoom src={artSrc} alt={album.title} open={zoom} onClose={() => setZoom(false)} />
       <div
         className="absolute inset-0 scale-110 blur-3xl"
         style={{
@@ -80,7 +84,9 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
         <div className="justify-self-start">
           <div className="h-44 w-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25 shadow-2xl @md:h-[280px] @md:w-[280px]">
             {artSrc ? (
-              <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
+              <button type="button" onClick={() => setZoom(true)} title="View the cover" aria-label={`View the cover of ${album.title}`} className="block h-full w-full cursor-zoom-in">
+                <img src={artSrc} alt={album.title} className="h-full w-full object-cover" />
+              </button>
             ) : (
               <div className="flex h-full w-full items-center justify-center">
                 <Disc3 size={58} className="text-white/35" />

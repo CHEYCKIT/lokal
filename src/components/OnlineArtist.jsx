@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, CircleDashed, Disc3, Download, Music, Play, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
+import ImageZoom from './ImageZoom'
 import OnlineSongList from './OnlineSongList'
 import RefreshButton from './RefreshButton'
 import ReleaseTypeFilter from './ReleaseTypeFilter'
@@ -245,6 +246,8 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
   }, [id])
   const { songs, albums, name } = data
   const [busy, setBusy] = useState(false)
+  // The artist's picture, big (click it).
+  const [zoom, setZoom] = useState(false)
   const play = (selected, list = songs.tracks) => playOnline(list, { selected, name, path: `/artist/${id}` })
   const downloadPopular = async () => {
     if (busy) return
@@ -262,9 +265,10 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
         {image ? <img src={image} alt="" className="h-full w-full object-cover opacity-30 blur-sm" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
         <div className="absolute bottom-5 left-8 right-8 flex items-end gap-5">
-          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated">
+          <button type="button" onClick={image ? () => setZoom(true) : undefined} disabled={!image} title={image ? 'View the picture' : undefined} className={`flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${image ? 'cursor-zoom-in' : 'cursor-default'}`}>
             {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
-          </div>
+          </button>
+          <ImageZoom src={image} alt={name} open={zoom} onClose={() => setZoom(false)} />
           <div className="min-w-0">
             <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Artist · Online</p>
             <h1 className="truncate text-3xl font-display text-white">{name}</h1>

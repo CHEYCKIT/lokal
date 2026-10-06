@@ -123,10 +123,11 @@ export default function RightSidebar() {
   // The base content area always shows 'info' now -- Queue and Lyrics are
   // both overlays that slide up over it (see below) and slide back down to
   // reveal it, so there's nothing else the base itself needs to render.
-  // This is only used for the Details/Lyrics pill highlight: while the
-  // Queue overlay is open, "Details" stays highlighted (matching what's
-  // showing underneath it), same as before this was split into overlays.
-  const tab = sidePanelView === 'lyrics' ? 'lyrics' : 'info'
+  // This is only used for the Details/Lyrics/Queue pill highlight. Queue is
+  // a tab here only when the panel is shared (exclusiveSidePanels); in the
+  // other mode it opens its own panel next to this one, and "Details" stays
+  // highlighted.
+  const tab = sidePanelView === 'lyrics' ? 'lyrics' : exclusiveSidePanels && sidePanelView === 'queue' ? 'queue' : 'info'
 
   // Cosmetic case: when the panel is closed and Queue/Lyrics is clicked,
   // toggleQueueButton/toggleLyricsButton opens it straight to that
@@ -232,8 +233,8 @@ export default function RightSidebar() {
           >
           <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0 border-b border-border">
             <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
-              {[['info', 'Details'], ['lyrics', 'Lyrics']].map(([id, label]) => (
-                <button key={id} onClick={() => setSidePanelView(id)} className={`px-3 py-1 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+              {[['info', 'Details'], ['lyrics', 'Lyrics'], ['queue', 'Queue']].map(([id, label]) => (
+                <button key={id} onClick={() => (id === 'queue' ? (tab === 'queue' ? null : toggleQueueButton()) : setSidePanelView(id))} aria-pressed={tab === id} className={`px-3 py-1 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
                   {label}
                 </button>
               ))}

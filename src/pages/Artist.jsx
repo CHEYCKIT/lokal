@@ -13,6 +13,7 @@ import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
+import ImageZoom from '../components/ImageZoom'
 import OnlineArtist, { OnlineArtistSections, OwnershipBadge, useOnlineArtist } from '../components/OnlineArtist'
 import RefreshButton from '../components/RefreshButton'
 import { isConnected, releaseTitleKey, setConnected } from '../onlineBrowse'
@@ -35,6 +36,8 @@ export default function Artist() {
   // Not in the library, or only as streamed songs (a streamed song's artist
   // shortcut): their page online instead.
   const [online, setOnline] = useState(false)
+  // The artist's picture, big (click it).
+  const [zoom, setZoom] = useState(false)
   const onlineRef = useRef(false)
   onlineRef.current = online
   // Their name as the link gave it ("Earth, Wind & Fire"; the id is a slug).
@@ -225,12 +228,19 @@ export default function Artist() {
         {imgSrc ? <img src={imgSrc} className="h-full w-full object-cover opacity-40" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
         <div className="absolute bottom-5 left-8 flex items-end gap-5">
-          <button onClick={pickArtistImage} className="relative group flex-shrink-0">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated">
-              {imgSrc ? <img src={imgSrc} className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
-            </div>
-            {api.isElectron && <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"><Camera size={18} className="text-white" /></div>}
-          </button>
+          {/* Click: the picture, big (no picture: choose one). The camera
+              in the corner changes it. */}
+          <div className="relative group flex-shrink-0">
+            <button onClick={imgSrc ? () => setZoom(true) : pickArtistImage} title={imgSrc ? 'View the picture' : api.isElectron ? 'Choose a picture' : undefined} className={`flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${imgSrc ? 'cursor-zoom-in' : ''}`}>
+              {imgSrc ? <img src={imgSrc} alt={artist.name} className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
+            </button>
+            {api.isElectron && imgSrc && (
+              <button onClick={pickArtistImage} title="Change the picture" aria-label="Change the picture" className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-elevated text-muted opacity-0 shadow-lg transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100">
+                <Camera size={14} />
+              </button>
+            )}
+            <ImageZoom src={imgSrc} alt={artist.name} open={zoom} onClose={() => setZoom(false)} />
+          </div>
           <div>
             <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Artist</p>
             <h1 className="text-3xl font-display text-white">{artist.name}</h1>

@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, ListPlus, Play, Shuffle } from 'lucide-react'
 import DiscoveryImage from '../components/DiscoveryImage'
+import ImageZoom from '../components/ImageZoom'
 import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
 import { usePageReady } from '../pageCache'
@@ -110,6 +111,8 @@ export default function OnlineAlbum() {
     showToast(playlist ? `Saved ${label} as a playlist.` : `Could not save ${label}.`)
   })
   const duration = useMemo(() => tracks.reduce((sum, track) => sum + (Number(track.duration) || 0), 0), [tracks])
+  // The cover, big (click it).
+  const [zoom, setZoom] = useState(false)
 
   return (
     <div className="p-6 pb-10">
@@ -117,7 +120,8 @@ export default function OnlineAlbum() {
         <ArrowLeft size={14} /> Back
       </button>
       <div className="mb-8 flex flex-col gap-5 @md:flex-row @md:items-end">
-        <div className="h-44 w-44 flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-elevated shadow-xl">
+        <ImageZoom src={cover} alt={album} open={zoom} onClose={() => setZoom(false)} />
+        <div onClick={cover ? () => setZoom(true) : undefined} title={cover ? 'View the cover' : undefined} className={`h-44 w-44 flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-elevated shadow-xl ${cover ? 'cursor-zoom-in' : ''}`}>
           <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
         </div>
         <div className="min-w-0">

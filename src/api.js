@@ -144,6 +144,8 @@ export const api = {
   avatarURL: (id) => `${BASE}/avatar/${id}`,
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
   searchTracks: (q) => isE() ? el().searchTracks(q) : apiFetch(`/tracks/search?q=${encodeURIComponent(q)}`),
+  // The library's files in short: [[artist, title, source_ref], ...] (see libraryIndex.js).
+  libraryKeys: () => isE() ? el().libraryKeys() : apiFetch('/tracks/library-keys'),
   searchLyrics: (q) => isE() ? el().searchLyrics(q) : apiFetch(`/tracks/search-lyrics?q=${encodeURIComponent(q)}`),
   toggleLike: async (tid, uid, track = null) => {
     const r = await (isE() ? el().toggleLike(tid, uid) : apiFetch(`/tracks/${tid}/like`, { method:'POST', body:{userId:uid} }))
