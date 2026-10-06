@@ -210,11 +210,8 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                       <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
                         {group.items.map(album => (
                           <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
-                            {/* Hover: a border, not a zoom. A transform animation moves the
-                                card onto its own GPU layer and back, and the blur over a
-                                playing canvas (side panel, player bar) flickers each time. */}
-                            <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/50">
-                              <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
+                            <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
+                              <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
                             </div>
                             <p className="mt-2 flex items-center gap-1.5 text-sm text-white"><span className="truncate">{album.title}</span><OwnershipBadge ownership={releaseOwnership(album, albumCounts)} /></p>
                             <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
