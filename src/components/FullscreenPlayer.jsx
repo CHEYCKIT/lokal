@@ -22,11 +22,18 @@ const PANEL_WIDTH = 'min(52vw, 780px)'
 // long without the mouse moving.
 const IDLE_MS = 3000
 
+// Glass (backdrop-blur) has to fade by itself, never inside a parent that
+// fades: while an ancestor's opacity is below 1, Chromium blurs that
+// ancestor's (empty) layer instead of what's behind it, so the bubbles showed
+// as flat grey discs during the fade, then snapped to clear glass at the end.
+// So the cover's controls and the header fade piece by piece.
+const COVER_FADE = 'transition-[opacity,color,background-color,border-color] duration-200 opacity-0 group-data-[shown=true]/controls:opacity-100 group-has-[:focus-visible]/controls:opacity-100'
+
 /** A glassy bubble on the cover (like, playlist, queue, lyrics). */
 function CoverButton({ onClick, label, active = false, children }) {
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
-      className={`relative w-12 h-12 flex items-center justify-center rounded-full border backdrop-blur-[2px] transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] ${active ? 'border-white/30 bg-white/[0.16] text-white' : 'border-white/[0.14] bg-white/[0.05] text-white/90 hover:bg-white/[0.12] hover:text-white'}`}>
+      className={`relative w-12 h-12 flex items-center justify-center rounded-full border backdrop-blur-[2px] ${COVER_FADE} shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] ${active ? 'border-white/30 bg-white/[0.16] text-white' : 'border-white/[0.14] bg-white/[0.05] text-white/90 hover:bg-white/[0.12] hover:text-white'}`}>
       {children}
     </button>
   )
@@ -69,7 +76,7 @@ function VolumePill({ volume, onChange }) {
     <div ref={ref} role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
       aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} title={`Volume ${Math.round(volume * 100)}%`}
       onPointerDown={start} onKeyDown={keys}
-      className="relative h-44 w-7 cursor-pointer overflow-hidden rounded-full border border-white/[0.14] bg-white/[0.06] backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+      className={`relative h-44 w-7 cursor-pointer overflow-hidden rounded-full border border-white/[0.14] bg-white/[0.06] backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${COVER_FADE}`}>
       <div className="absolute inset-x-0 bottom-0 bg-white/60" style={{ height: `${Math.round(volume * 100)}%` }} />
       <Volume2 size={13} className={`pointer-events-none absolute bottom-2.5 left-1/2 -translate-x-1/2 ${covered ? 'text-black/55' : 'text-white/80'}`} />
     </div>
@@ -472,6 +479,8 @@ export default function FullscreenPlayer() {
     return () => { clearTimeout(timer); events.forEach(type => window.removeEventListener(type, wake)) }
   }, [showFullscreen, showLyricsFullscreen])
   const chromeHidden = idle && !showSearch
+  // Each piece of the header fades by itself (glass inside a fading parent flashes grey; see COVER_FADE).
+  const chromeFade = `transition-[opacity,color,background-color] duration-300 ${chromeHidden ? 'opacity-0' : 'opacity-100'}`
   const [coverHover, setCoverHover] = useState(false)
   const controlsShown = coverHover && !chromeHidden
 
@@ -589,24 +598,24 @@ export default function FullscreenPlayer() {
           {/* The header: close, lyrics view, what's playing from, full screen.
               It fades out (and the cursor hides) after a few seconds without
               the mouse moving, and comes back as soon as it moves. */}
-          <div className={`absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 transition-opacity duration-300 ${chromeHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          <div className={`absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 ${chromeHidden ? 'pointer-events-none' : ''}`}
             onMouseEnter={() => { overChromeRef.current = true }} onMouseLeave={() => { overChromeRef.current = false }}>
             <div className="flex items-center gap-2">
               <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
-                className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
+                className={`w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
                 <X size={15} />
               </button>
               {/* Straight to full-screen lyrics (the view to come back from
                   has a Player button). */}
               {currentTrack && (
                 <button onClick={() => switchFullscreenView('lyrics')} title="Switch to full-screen lyrics"
-                  className="h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 hover:text-white transition-colors backdrop-blur-sm">
+                  className={`h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 hover:text-white backdrop-blur-sm ${chromeFade}`}>
                   <Maximize2 size={13} /> Lyrics
                 </button>
               )}
             </div>
             {playbackContext?.name && (
-              <div className="min-w-0 max-w-[50%] text-center">
+              <div className={`min-w-0 max-w-[50%] text-center ${chromeFade}`}>
                 <p className="text-[10px] font-display uppercase tracking-[0.28em] text-white/45">
                   {contextLabel(playbackContext)}
                 </p>
@@ -623,7 +632,7 @@ export default function FullscreenPlayer() {
               </div>
             )}
             <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
+              className={`w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
               {screenFull ? <Minimize size={15} /> : <Expand size={15} />}
             </button>
           </div>
@@ -659,8 +668,8 @@ export default function FullscreenPlayer() {
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
 
                 {currentTrack && (
-                  <div className={`absolute inset-0 z-10 flex flex-col justify-between transition-opacity duration-200 has-[:focus-visible]:opacity-100 ${controlsShown ? 'opacity-100' : 'opacity-0'}`}>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40 pointer-events-none" />
+                  <div data-shown={controlsShown} className="group/controls absolute inset-0 z-10 flex flex-col justify-between">
+                    <div className={`absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40 pointer-events-none ${COVER_FADE}`} />
                     <div className="relative flex items-center justify-center gap-3 pt-5">
                       <CoverButton onClick={toggleLike} label={isLiked ? 'Remove from Liked Songs' : 'Add to Liked Songs'} active={isLiked}>
                         <Heart size={19} fill={isLiked ? 'currentColor' : 'none'} />
@@ -682,7 +691,7 @@ export default function FullscreenPlayer() {
                         </CoverButton>
                       )}
                     </div>
-                    <div className="relative flex items-center justify-center gap-8 pb-7">
+                    <div className={`relative flex items-center justify-center gap-8 pb-7 ${COVER_FADE}`}>
                       <CoverIcon onClick={toggleShuffle} label="Shuffle" pressed={shuffle} dim={!shuffle}>
                         <Shuffle size={22} className={shuffle ? 'text-accent' : ''} />
                       </CoverIcon>
