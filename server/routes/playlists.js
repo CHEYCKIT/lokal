@@ -5,6 +5,7 @@ const fs = require('fs-extra')
 const path = require('path')
 const { getDB, getStorageDir } = require('../../electron/ipc/db')
 const { normalizeIsrc } = require('../../electron/quality')
+const { fetchCoverData } = require('../../electron/playlists/remoteCover')
 
 function parseCsvLine(line) {
   const result = []
@@ -570,7 +571,9 @@ router.put('/:id', async (req, res) => {
   const db = getDB()
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id)
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
-  const { name, description, coverData, clearCover, smartRules } = req.body || {}
+  const { name, description, clearCover, smartRules, coverURL } = req.body || {}
+  // coverURL: a cover from the web (a saved YouTube Music mix's).
+  const coverData = req.body?.coverData || (coverURL ? await fetchCoverData(coverURL) : null)
   if (name !== undefined) db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(name, req.params.id)
   if (description !== undefined) db.prepare('UPDATE playlists SET description = ? WHERE id = ?').run(description, req.params.id)
   // Smart playlist rules (null: a regular playlist again).

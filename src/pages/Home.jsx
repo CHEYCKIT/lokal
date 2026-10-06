@@ -441,7 +441,7 @@ function HomeContent({ user }) {
         result.failed += candidates.length - tracks.length
         toast.close(libraryDownloadMessage(result))
       } else {
-        const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: 'Mixed for you on YouTube Music' })
+        const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: 'Mixed for you on YouTube Music', coverURL: secureImage(mix.artwork_url || mix.thumbnail) })
         toast.close(playlist ? `Saved “${mix.title}” as a playlist.` : `Could not save “${mix.title}”.`)
       }
     } catch (error) { toast.close(isCurrent() ? error.message || `Could not load ${mix.title}.` : '') }

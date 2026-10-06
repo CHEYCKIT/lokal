@@ -4,10 +4,10 @@
 
 const path = require('path')
 const fs = require('fs')
-const net = require('net')
 const { getDB, getStorageDir } = require('./db')
 const { meshFromImage } = require('../artwork/mesh')
 const { motionCoverFor } = require('../artwork/motion')
+const { httpsImageURL } = require('../playlists/remoteCover')
 
 const MAX_REMOTE_ARTWORK_BYTES = 10 * 1024 * 1024
 
@@ -26,12 +26,7 @@ function settingsMap() {
  */
 function remoteArtworkURL(track) {
   if (!/^ghost:\/\/(?:youtube|soundcloud|addon)\//.test(String(track?.file_path || ''))) return null
-  let url
-  try { url = new URL(String(track?.artwork_url || '')) } catch { return null }
-  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
-  if (url.protocol !== 'https:' || url.username || url.password) return null
-  if (net.isIP(host) || host === 'localhost' || /\.(?:localhost|local|internal|lan|home)$/.test(host) || !host.includes('.')) return null
-  return url
+  return httpsImageURL(track?.artwork_url)
 }
 
 async function meshForTrack(trackId) {
