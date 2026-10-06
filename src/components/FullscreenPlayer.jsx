@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Image as ImageIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -463,10 +463,11 @@ export default function FullscreenPlayer() {
   // Idle: after a few seconds without the mouse moving, the header and the
   // cover's controls fade out and the cursor hides; any movement brings them
   // back. Not while the pointer rests on the header or the lyrics search is open.
+  // The lyrics layout (LyricsFullscreen) hides its own the same way.
   const [idle, setIdle] = useState(false)
   const overChromeRef = useRef(false)
   useEffect(() => {
-    if (!showFullscreen || showLyricsFullscreen) { setIdle(false); return undefined }
+    if (!showFullscreen) { setIdle(false); return undefined }
     let timer = null
     const wake = () => {
       setIdle(false)
@@ -477,8 +478,9 @@ export default function FullscreenPlayer() {
     const events = ['mousemove', 'mousedown', 'wheel', 'keydown', 'touchstart']
     events.forEach(type => window.addEventListener(type, wake, { passive: true }))
     return () => { clearTimeout(timer); events.forEach(type => window.removeEventListener(type, wake)) }
-  }, [showFullscreen, showLyricsFullscreen])
+  }, [showFullscreen])
   const chromeHidden = idle && !showSearch
+  const setOverChrome = useCallback((over) => { overChromeRef.current = over }, [])
   // Each piece of the header fades by itself (glass inside a fading parent flashes grey; see COVER_FADE).
   const chromeFade = `transition-[opacity,color,background-color] duration-300 ${chromeHidden ? 'opacity-0' : 'opacity-100'}`
   const [coverHover, setCoverHover] = useState(false)
@@ -542,8 +544,9 @@ export default function FullscreenPlayer() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 flex overflow-hidden"
-          style={{ WebkitAppRegion: 'no-drag', cursor: chromeHidden && !lyricsMode ? 'none' : undefined }}
+          // Idle, the cursor hides everywhere, the seek bar and other clickable bits included.
+          className={`fixed inset-0 z-50 flex overflow-hidden ${chromeHidden && !lyricsMode ? 'cursor-none [&_*]:!cursor-none' : ''}`}
+          style={{ WebkitAppRegion: 'no-drag' }}
           // Marks this exact DOM node so the useEffect above can reach and
           // hide it (and any stuck earlier copies) directly if its exit
           // animation never completes -- see that effect's comment.
@@ -787,7 +790,7 @@ export default function FullscreenPlayer() {
           </AnimatePresence>
           </motion.div>
 
-          <LyricsFullscreen />
+          <LyricsFullscreen idle={idle} onChromeHover={setOverChrome} screenFull={screenFull} onToggleScreen={toggleScreen} />
         </motion.div>
       )}
     </AnimatePresence>
