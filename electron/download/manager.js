@@ -103,22 +103,40 @@ function sourceLabel(url) {
 
 const GENERIC_TITLE = /^(?:download|playlist \/ album|(?:youtube|soundcloud|bandcamp|mixcloud)(?: music)? (?:playlist|download|track|release|channel)(?: [\w-]{1,12})?)$/i
 
+// yt-dlp runs in a process group of its own (outside Windows), so stopping
+// it also stops what it started: ffmpeg, and the real yt-dlp behind the
+// standalone build's launcher. Killing only the launcher left those running
+// (a playlist kept downloading after Cancel) and holding the output open, so
+// the job never heard it had ended.
+const OWN_GROUP = process.platform !== 'win32'
+
+function signalTree(proc, signal) {
+  if (proc.lokalGroup && proc.pid) {
+    try { process.kill(-proc.pid, signal); return } catch {}
+  }
+  try { proc.kill(signal) } catch {}
+}
+
 function terminate(proc) {
   if (!proc || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve()
   return new Promise(resolve => {
     let settled = false
     const finish = () => { if (!settled) { settled = true; clearTimeout(timer); resolve() } }
-    const timer = setTimeout(finish, 8000)
+    const timer = setTimeout(() => {
+      // Still not closed: stop waiting for its output (something it started may still hold it).
+      try { proc.stdout?.destroy(); proc.stderr?.destroy() } catch {}
+      finish()
+    }, 8000)
     proc.once('close', finish)
     proc.once('error', finish)
-    try { proc.kill('SIGTERM') } catch {}
+    signalTree(proc, 'SIGTERM')
     if (process.platform === 'win32' && proc.pid) {
       try {
         const killer = spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { windowsHide: true })
         killer.once('error', () => {})
       } catch {}
     } else {
-      setTimeout(() => { try { proc.kill('SIGKILL') } catch {} }, 1500)
+      setTimeout(() => signalTree(proc, 'SIGKILL'), 1500)
     }
   })
 }
@@ -717,7 +735,8 @@ class DownloadManager {
 
     let proc
     try {
-      proc = spawn(ytdlp, args, { windowsHide: true, ...spawnOptions })
+      proc = spawn(ytdlp, args, { windowsHide: true, ...spawnOptions, ...(OWN_GROUP ? { detached: true } : {}) })
+      proc.lokalGroup = OWN_GROUP
     } catch (err) {
       this.running--
       this.fail(job, err.message)
@@ -935,7 +954,7 @@ class DownloadManager {
     job.post = job.post.then(async () => {
       let finalPath = filepath
       try {
-        this.update(job, { message: `Adding lyrics: ${path.basename(filepath)}` })
+        if (!job.stop) this.update(job, { message: `Adding lyrics: ${path.basename(filepath)}` })
         const outputDir = job.opts.outputDir || job.settings?.music_folder || path.join(os.homedir(), 'Music')
         // Apple Lossless and other codecs the player can't decode: FLAC (or AAC) first.
         const playable = await makePlayable(filepath, { ffmpeg: this.deps.findTools?.()?.ffmpeg })
@@ -950,7 +969,10 @@ class DownloadManager {
           filepath = playable
           finalPath = playable
         }
-        const done = await finishFile(filepath, { db: this.db(), settings: job.settings || {}, url: job.url, meta, kind: job.kind, outputDir, known: job.opts?.tags || null })
+        // Stopped: the files already downloaded are still tagged and added,
+        // but without looking up lyrics, so stopping doesn't wait on a backlog.
+        const settings = job.stop ? { ...(job.settings || {}), download_embed_lyrics: '0' } : (job.settings || {})
+        const done = await finishFile(filepath, { db: this.db(), settings, url: job.url, meta, kind: job.kind, outputDir, known: job.opts?.tags || null })
         finalPath = done.filePath
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)

@@ -1,10 +1,12 @@
 // A link pasted into the search box: what it is (one song, or a playlist /
 // album / channel) and a button to download it into the library, then its
 // progress right there. Enter in the search box starts the first choice.
+// A playlist can also be saved as one of your playlists without downloading
+// (Import playlist, from a link, with this link filled in).
 
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Disc3, Download, Library, Link2, ListMusic } from 'lucide-react'
+import { Disc3, Download, Library, Link2, ListMusic, ListPlus } from 'lucide-react'
 import { useDownloads, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
 import { inferTitleFromUrl, linkKind, splitLink } from '../downloadLinks'
@@ -69,6 +71,9 @@ export default function LinkDownload({ link }) {
     if (takeSubmit(link)) start(choices[0])
   }, [submitSeq, link]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const listUrl = kind === 'both' ? splitLink(link).list : kind === 'single' ? null : link
+  const saveAsPlaylist = () => window.dispatchEvent(new CustomEvent('lokal:playlist-import', { detail: { source: 'link', url: listUrl } }))
+
   const started = choices.map(jobFor).filter(Boolean)
   const what = kind === 'single' ? 'Song' : kind === 'both' ? 'Song from a playlist' : 'Playlist, album or channel'
 
@@ -106,6 +111,16 @@ export default function LinkDownload({ link }) {
                 </button>
               )
             })}
+            {listUrl && (
+              <button
+                onClick={saveAsPlaylist}
+                title="Add it to your playlists without downloading; songs you don't have stream"
+                className="flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2 text-xs font-semibold text-text transition-colors hover:border-accent/50"
+              >
+                <ListPlus size={13} />
+                Save as playlist
+              </button>
+            )}
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
