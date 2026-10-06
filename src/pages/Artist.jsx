@@ -13,7 +13,7 @@ import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
-import OnlineArtist, { OnlineArtistSections, useOnlineArtist } from '../components/OnlineArtist'
+import OnlineArtist, { OnlineArtistSections, OwnershipBadge, useOnlineArtist } from '../components/OnlineArtist'
 import RefreshButton from '../components/RefreshButton'
 import { isConnected, releaseTitleKey, setConnected } from '../onlineBrowse'
 import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
@@ -35,6 +35,8 @@ export default function Artist() {
   // Not in the library, or only as streamed songs (a streamed song's artist
   // shortcut): their page online instead.
   const [online, setOnline] = useState(false)
+  const onlineRef = useRef(false)
+  onlineRef.current = online
   // Their name as the link gave it ("Earth, Wind & Fire"; the id is a slug).
   const onlineNames = useRef({})
   if (location.state?.name) onlineNames.current[id] = { name: location.state.name, anchor: location.state.anchor || null }
@@ -118,7 +120,11 @@ export default function Artist() {
   useEffect(() => { load() }, [id])
 
   useEffect(() => {
+    // An online artist page stays online while it's open (a download of one
+    // of their songs marks it "In library" there instead, see OnlineArtist);
+    // it's their library page from the next visit.
     const handleRefresh = () => {
+      if (onlineRef.current) return
       load()
     }
     window.addEventListener('lokal:refresh', handleRefresh)
@@ -164,6 +170,9 @@ export default function Artist() {
   // artist; "More releases online" follows the same choice.
   const [shownTypes, toggleType] = useReleaseTypes(artist?.name || id)
   const releaseGroups = useMemo(() => groupReleases(releaseList, shownTypes), [releaseList, shownTypes])
+  // Song counts of the releases online (when the source gives them), to mark
+  // the library's partial ones.
+  const onlineTotals = useMemo(() => new Map(connected ? onlineData.albums.items.filter(album => album.track_count).map(album => [releaseTitleKey(album.title), Number(album.track_count)]) : []), [connected, onlineData.albums.items])
   const releaseTypes = useMemo(() => {
     const owned = new Set(releaseList.map(album => releaseTitleKey(album.title)))
     const online = connected ? onlineData.albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : []
@@ -320,6 +329,8 @@ export default function Artist() {
                           {releaseLabel(album.release_type)}
                         </span>
                         <span className="block truncate">{album.year ? `${album.year} • ` : ''}{plural(album.track_count, 'track')}</span>
+                        {/* Part of a release ("1/9"), when the release online has more songs. */}
+                        {(() => { const total = onlineTotals.get(releaseTitleKey(album.title)); return total > album.track_count ? <OwnershipBadge ownership={{ owned: album.track_count, total, full: false }} /> : null })()}
                       </div>
                     </div>
                   </motion.button>

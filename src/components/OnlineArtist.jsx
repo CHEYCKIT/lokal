@@ -7,19 +7,36 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Disc3, Download, Music, Play, Radio } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CircleDashed, Disc3, Download, Music, Play, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import OnlineSongList from './OnlineSongList'
 import RefreshButton from './RefreshButton'
 import ReleaseTypeFilter from './ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
-import { artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
+import { libraryAlbumCounts, releaseOwnership, artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { showToast } from './Toaster'
 import { useAppStore } from '../store/player'
+import { api } from '../api'
+
+/**
+ * "In library" (all of a release) or "1/9" / "1 song" (part of it), for a
+ * release card. `ownership` from releaseOwnership.
+ */
+export function OwnershipBadge({ ownership }) {
+  if (!ownership) return null
+  const { owned, total, full } = ownership
+  return (
+    <span title={full ? 'In your library' : `${owned}${total ? ` of ${total}` : ''} song${owned === 1 && !total ? '' : 's'} in your library`}
+      className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${full ? 'bg-accent/15 text-accent' : 'border border-accent/40 text-accent/90'}`}>
+      {full ? <CheckCircle2 size={10} /> : <CircleDashed size={10} />}
+      {full ? 'In library' : total ? `${owned}/${total}` : `${owned} song${owned === 1 ? '' : 's'}`}
+    </span>
+  )
+}
 
 /** "a-earth-wind-fire" -> "Earth Wind Fire" (until the songs give the real name). */
 export const nameFromSlug = id => String(id || '').replace(/^a-/, '').split('-').filter(Boolean).map(word => word[0].toUpperCase() + word.slice(1)).join(' ')
@@ -120,6 +137,10 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const { songs, albums, name } = data
   const [busy, setBusy] = useState(false)
   const inLibrary = !!libraryTracks
+  // On the library's artist page (it passes its releases): owned albums are
+  // left out here. On the online page: they're shown, marked.
+  const libraryPage = !!libraryAlbums
+  const albumCounts = useMemo(() => libraryAlbumCounts(libraryTracks || []), [libraryTracks])
   const popular = useMemo(() => {
     const top = songs.tracks.slice(0, 10)
     return inLibrary ? mergeWithLibrary(top, libraryTracks) : { tracks: top, missing: top }
@@ -159,8 +180,8 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
     <>
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{inLibrary ? 'Popular online' : 'Popular'}</h2>
-          {inLibrary && popular.missing.length > 0 && (
+          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryPage ? 'Popular online' : 'Popular'}</h2>
+          {inLibrary && popular.missing.length > 0 && (libraryPage || popular.missing.length < popularTracks.length) && (
             <button onClick={() => withBusy(() => downloadOnline(popular.missing, { label: `${popular.missing.length} songs` }))} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-accent transition-opacity hover:opacity-80 disabled:opacity-50"><Download size={13} /> {busy ? 'Finding songs…' : `Download missing (${popular.missing.length})`}</button>
           )}
         </div>
@@ -195,7 +216,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                             <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/50">
                               <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
                             </div>
-                            <p className="mt-2 truncate text-sm text-white">{album.title}</p>
+                            <p className="mt-2 flex items-center gap-1.5 text-sm text-white"><span className="truncate">{album.title}</span><OwnershipBadge ownership={releaseOwnership(album, albumCounts)} /></p>
                             <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
                           </button>
                         ))}
@@ -215,6 +236,16 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
   const nav = useNavigate()
   const userId = useAppStore(state => state.user?.id)
   const data = useOnlineArtist(givenName || nameFromSlug(id), true, { anchor })
+  // Songs of theirs in the library (downloaded since this page opened, say):
+  // marked "In library" here; the page itself stays as it is.
+  const [libraryTracks, setLibraryTracks] = useState([])
+  useEffect(() => {
+    let current = true
+    const read = () => Promise.resolve(api.getArtist(id)).then(found => { if (current) setLibraryTracks(Array.isArray(found?.tracks) ? found.tracks : []) }).catch(() => {})
+    read()
+    window.addEventListener('lokal:refresh', read)
+    return () => { current = false; window.removeEventListener('lokal:refresh', read) }
+  }, [id])
   const { songs, albums, name } = data
   const [busy, setBusy] = useState(false)
   const play = (selected, list = songs.tracks) => playOnline(list, { selected, name, path: `/artist/${id}` })
@@ -251,7 +282,7 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
       </div>
 
       <div className="space-y-8 px-6 pt-6 @md:px-8">
-        <OnlineArtistSections data={data} path={`/artist/${id}`} />
+        <OnlineArtistSections data={data} path={`/artist/${id}`} libraryTracks={libraryTracks} />
       </div>
     </div>
   )
