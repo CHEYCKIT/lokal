@@ -7,6 +7,7 @@ const { findYtDlp } = require('./tools')
 const { cookieArgs } = require('./ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../download/search')
 const sources = require('../online/sources')
+const genres = require('../online/genres')
 const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
 const { spelling } = require('../online/spelling')
@@ -66,10 +67,17 @@ function registerOnlineHandlers(ipcMain) {
   } })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
+  // Streamed songs' genres (see genres.js): those already played, once the app has settled.
+  setTimeout(() => genres.backfillOnlineGenres(getDB()), 20000).unref?.()
   ipcMain.handle('online:search', (_, query, provider) => search(query, provider))
   ipcMain.handle('online:save', (_, items) => {
-    try { return sources.saveOnlineTracks(getDB(), items) } catch (e) { return { error: e.message } }
+    try {
+      const rows = sources.saveOnlineTracks(getDB(), items)
+      genres.fillOnlineGenres(getDB(), rows)
+      return rows
+    } catch (e) { return { error: e.message } }
   })
+  ipcMain.handle('online:genre', (_, trackId) => genres.trackGenre(getDB(), trackId).catch(() => null))
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
   // A misspelt search ("micheal jackson"): the library's spelling, else YouTube Music's.

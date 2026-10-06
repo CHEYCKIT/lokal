@@ -9,6 +9,7 @@ const { getDB } = require('../../electron/ipc/db')
 const { cookieArgs } = require('../../electron/ipc/ytCookies')
 const { runJsonSearch, mapSearchResult } = require('../../electron/download/search')
 const sources = require('../../electron/online/sources')
+const genres = require('../../electron/online/genres')
 const youtube = require('../../electron/online/youtube')
 const { createArtworkResolver } = require('../../electron/discoveryArtwork')
 const discoveryArtwork = createArtworkResolver({ getDB, searchArtists: require('../../electron/ipc/artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
@@ -98,8 +99,16 @@ router.put('/addons/:key/enabled', (req, res) => res.json(sources.addons.setEnab
 router.put('/addons/:key/settings', (req, res) => res.json(sources.addons.setSettings(getDB(), req.params.key, req.body?.values || {})))
 
 router.post('/save', (req, res) => {
-  try { res.json(sources.saveOnlineTracks(getDB(), req.body?.items)) } catch (e) { res.status(500).json({ error: e.message }) }
+  try {
+    const rows = sources.saveOnlineTracks(getDB(), req.body?.items)
+    genres.fillOnlineGenres(getDB(), rows)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
+// A streamed song's genre, looked up now if it has none (the details panel).
+router.get('/genre/:id', async (req, res) => res.json({ genre: await genres.trackGenre(getDB(), req.params.id).catch(() => null) }))
+// Streamed songs' genres (see genres.js): those already played, once the server has settled.
+setTimeout(() => { try { genres.backfillOnlineGenres(getDB()) } catch {} }, 20000).unref?.()
 
 router.post('/prepare/:provider/:id', async (req, res) => {
   try {

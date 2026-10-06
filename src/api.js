@@ -298,6 +298,8 @@ export const api = {
   onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
   onlinePrepare: (provider, id, force = false) => isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }),
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
+  // A streamed song's genre (looked up when it has none), or null.
+  onlineGenre: (trackId) => isE() ? el().onlineGenre(trackId) : apiFetch(`/online/genre/${encodeURIComponent(trackId)}`).then(r => r?.genre || null),
   // A misspelt search's correction: { corrected, source } (corrected null when none).
   searchSpelling: (q) => isE() ? el().searchSpelling(q) : apiFetch(`/online/spelling?q=${encodeURIComponent(q)}`),
   discoveryArtwork: items => isE() ? el().discoveryArtwork(items) : apiFetch('/online/artwork', { method: 'POST', body: { items } }),
