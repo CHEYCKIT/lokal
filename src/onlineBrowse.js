@@ -141,7 +141,8 @@ export async function loadOnlineAlbum({ artist, album, albumId, artwork, provide
     result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, skipSources: ['lastfm', 'youtube'] })
   }
   // Songs without their own cover show the album's.
-  const tracks = (result.tracks || []).map(track => ({ ...track, album: track.album || album, artwork_url: track.artwork_url || track.thumbnail || artwork || '' }))
+  // The album's artist goes along: a song credited "Estelle, D-Nice & ..." is found as Estelle's.
+  const tracks = (result.tracks || []).map(track => ({ ...track, album: track.album || album, album_artist: track.album_artist || artist, artwork_url: track.artwork_url || track.thumbnail || artwork || '' }))
   return { tracks, error: tracks.length ? '' : result.error }
 }
 

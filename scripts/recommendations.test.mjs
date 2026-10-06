@@ -395,3 +395,32 @@ test("moving a playback source keeps the ones not available right now in their p
   assert.deepEqual(movePlaybackSource('not json', [{ id: 'yt' }, { id: 'sc' }], 0, 1), ['sc', 'yt'])
   assert.deepEqual(movePlaybackSource(JSON.stringify(['yt', 'sc']), [{ id: 'yt' }, { id: 'sc' }], 1, 1), ['yt', 'sc'])
 })
+
+test('guests and Explicit labels: searched without them, matched either way (Estelle albums)', async () => {
+  const { recommendationQueries: queries, recommendationMatch: match, mainArtist, searchTitle } = await import('../src/recommendations.js')
+  assert.equal(mainArtist('Estelle [feat. Teedra Moses & Russell Taylor]'), 'Estelle')
+  assert.equal(mainArtist('Estelle feat. Joi'), 'Estelle')
+  assert.equal(searchTitle('Oh I [Explicit]'), 'Oh I')
+  assert.equal(searchTitle('American Boy (feat. Kanye West)'), 'American Boy')
+  assert.equal(searchTitle('Pretty Please (Love Me) [Feat. Cee-Lo]'), 'Pretty Please (Love Me)')
+  assert.equal(searchTitle('Hold On (feat. X) [Remix]'), 'Hold On [Remix]')
+
+  const grateful = { title: 'Grateful', artist: 'Estelle [feat. Teedra Moses & Russell Taylor]', album: 'Stay Alta', album_artist: 'Estelle' }
+  assert.equal(queries(grateful)[0], 'Estelle Grateful')
+  assert.ok(match(grateful, [{ title: 'Grateful', artist: 'Estelle', album: 'Stay Alta' }]))
+
+  const ohI = { title: 'Oh I [Explicit]', artist: 'Estelle', album: 'Stay Alta' }
+  assert.equal(queries(ohI)[0], 'Estelle Oh I')
+  assert.ok(match(ohI, [{ title: 'Oh I', artist: 'Estelle' }]))
+
+  const loveOnLove = { title: 'Love On Love', artist: 'Estelle, D-Nice, Estelle Swaray & Derrick Jones', album: 'Stay Alta', album_artist: 'Estelle' }
+  assert.ok(queries(loveOnLove).includes('Estelle Love On Love'))
+  assert.ok(match(loveOnLove, [{ title: 'Love On Love', artist: 'Estelle', artists: ['Estelle', 'D-Nice'] }]))
+
+  const americanBoy = { title: 'American Boy (feat. Kanye West)', artist: 'Estelle', album: 'Shine' }
+  assert.ok(match(americanBoy, [{ title: 'American Boy', artist: 'Estelle feat. Kanye West' }]))
+
+  // Still another song, or another artist's, isn't taken.
+  assert.equal(match(grateful, [{ title: 'Grateful', artist: 'Someone Else' }]), null)
+  assert.equal(match(americanBoy, [{ title: 'American Boy (Remix)', artist: 'Estelle' }]), null)
+})
