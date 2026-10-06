@@ -21,13 +21,56 @@ const PANEL_WIDTH = 'min(52vw, 780px)'
 // long without the mouse moving.
 const IDLE_MS = 3000
 
-/** A round button on the cover (like, playlist, queue, lyrics). */
+/** A glassy bubble on the cover (like, playlist, queue, lyrics). */
 function CoverButton({ onClick, label, active = false, children }) {
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
-      className={`relative w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm transition-colors ${active ? 'bg-white/25 text-accent' : 'bg-black/30 text-white/85 hover:bg-white/20 hover:text-white'}`}>
+      className={`relative w-12 h-12 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_4px_14px_rgba(0,0,0,0.18)] ${active ? 'border-white/40 bg-white/30 text-white' : 'border-white/25 bg-white/[0.12] text-white/90 hover:bg-white/25 hover:text-white'}`}>
       {children}
     </button>
+  )
+}
+
+/** A bare control on the cover (play, skip...): just the icon, with a soft shadow. */
+function CoverIcon({ onClick, label, pressed, dim = false, children }) {
+  return (
+    <button onClick={onClick} title={label} aria-label={label} aria-pressed={pressed}
+      className={`flex items-center justify-center transition-[color,transform] hover:scale-105 active:scale-95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)] ${dim ? 'text-white/60 hover:text-white' : 'text-white/90 hover:text-white'}`}>
+      {children}
+    </button>
+  )
+}
+
+/** Volume as a slim glass pill up the cover's edge: drag (or click) along it. */
+function VolumePill({ volume, onChange }) {
+  const ref = useRef(null)
+  const setFrom = (clientY) => {
+    const r = ref.current?.getBoundingClientRect()
+    if (!r) return
+    onChange(Math.max(0, Math.min(1, (r.bottom - clientY) / r.height)))
+  }
+  const start = (event) => {
+    event.preventDefault()
+    setFrom(event.clientY)
+    const move = e => setFrom(e.clientY)
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const keys = (event) => {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowRight') { event.preventDefault(); onChange(Math.min(1, volume + 0.05)) }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') { event.preventDefault(); onChange(Math.max(0, volume - 0.05)) }
+  }
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div ref={ref} role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} title={`Volume ${Math.round(volume * 100)}%`}
+        onPointerDown={start} onKeyDown={keys}
+        className="relative h-36 w-2.5 cursor-pointer overflow-hidden rounded-full border border-white/20 bg-white/15 backdrop-blur-md shadow-[0_2px_10px_rgba(0,0,0,0.25)] outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+        <div className="absolute inset-x-0 bottom-0 rounded-full bg-white/85" style={{ height: `${Math.round(volume * 100)}%` }} />
+      </div>
+      <Volume2 size={13} className="text-white/80 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]" />
+    </div>
   )
 }
 
@@ -589,47 +632,43 @@ export default function FullscreenPlayer() {
 
                 {currentTrack && (
                   <div className={`absolute inset-0 z-10 flex flex-col justify-between transition-opacity duration-200 has-[:focus-visible]:opacity-100 ${controlsShown ? 'opacity-100' : 'opacity-0'}`}>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/65 pointer-events-none" />
-                    <div className="relative flex items-center justify-center gap-2 pt-4">
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40 pointer-events-none" />
+                    <div className="relative flex items-center justify-center gap-3 pt-5">
                       <CoverButton onClick={toggleLike} label={isLiked ? 'Remove from Liked Songs' : 'Add to Liked Songs'} active={isLiked}>
-                        <Heart size={17} fill={isLiked ? 'currentColor' : 'none'} />
+                        <Heart size={19} fill={isLiked ? 'currentColor' : 'none'} />
                         <AnimatePresence>
                           {likeAnim && (
                             <motion.span initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 2.5, opacity: 0 }} exit={{}}
                               transition={{ duration: 0.5 }} className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <Heart size={17} className="text-accent" fill="currentColor" />
+                              <Heart size={19} className="text-accent" fill="currentColor" />
                             </motion.span>
                           )}
                         </AnimatePresence>
                       </CoverButton>
-                      <CoverButton onClick={() => openAddToPlaylist(currentTrack)} label="Add to a playlist"><ListPlus size={17} /></CoverButton>
-                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')} label={fullscreenPanel === 'queue' ? 'Hide the queue' : 'Show the queue'} active={fullscreenPanel === 'queue'}><ListMusic size={17} /></CoverButton>
-                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')} label={fullscreenPanel === 'lyrics' ? 'Hide the lyrics' : 'Show the lyrics'} active={fullscreenPanel === 'lyrics'}><Mic2 size={17} /></CoverButton>
+                      <CoverButton onClick={() => openAddToPlaylist(currentTrack)} label="Add to a playlist"><ListPlus size={19} /></CoverButton>
+                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')} label={fullscreenPanel === 'queue' ? 'Hide the queue' : 'Show the queue'} active={fullscreenPanel === 'queue'}><ListMusic size={19} /></CoverButton>
+                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')} label={fullscreenPanel === 'lyrics' ? 'Hide the lyrics' : 'Show the lyrics'} active={fullscreenPanel === 'lyrics'}><Mic2 size={19} /></CoverButton>
                     </div>
-                    <div className="relative flex items-center justify-center gap-5 pb-5">
-                      <button onClick={toggleShuffle} title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-white/75 hover:text-white'}`}>
-                        <Shuffle size={19} />
-                      </button>
-                      <button onClick={prev} title="Previous" aria-label="Previous" className="text-white/90 hover:text-white transition-colors">
-                        <SkipBack size={26} fill="currentColor" />
-                      </button>
-                      <motion.button onClick={togglePlay} whileTap={{ scale: 0.9 }} title={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'}
-                        className="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 shadow-2xl transition-transform">
-                        {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="translate-x-0.5" />}
-                      </motion.button>
-                      <button onClick={() => next(false)} title="Next" aria-label="Next" className="text-white/90 hover:text-white transition-colors">
-                        <SkipForward size={26} fill="currentColor" />
-                      </button>
-                      <button onClick={toggleRepeat} title="Repeat" aria-label="Repeat" aria-pressed={repeat !== 'none'} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-white/75 hover:text-white'}`}>
-                        <RepeatIcon size={19} />
-                      </button>
+                    <div className="relative flex items-center justify-center gap-8 pb-7">
+                      <CoverIcon onClick={toggleShuffle} label="Shuffle" pressed={shuffle} dim={!shuffle}>
+                        <Shuffle size={22} className={shuffle ? 'text-accent' : ''} />
+                      </CoverIcon>
+                      <CoverIcon onClick={prev} label="Previous">
+                        <SkipBack size={32} fill="currentColor" />
+                      </CoverIcon>
+                      <CoverIcon onClick={togglePlay} label={isPlaying ? 'Pause' : 'Play'}>
+                        {isPlaying ? <Pause size={44} fill="currentColor" strokeWidth={0} /> : <Play size={44} fill="currentColor" strokeWidth={0} className="translate-x-0.5" />}
+                      </CoverIcon>
+                      <CoverIcon onClick={() => next(false)} label="Next">
+                        <SkipForward size={32} fill="currentColor" />
+                      </CoverIcon>
+                      <CoverIcon onClick={toggleRepeat} label="Repeat" pressed={repeat !== 'none'} dim={repeat === 'none'}>
+                        <RepeatIcon size={22} className={repeat !== 'none' ? 'text-accent' : ''} />
+                      </CoverIcon>
                     </div>
                     {/* Volume, up the right edge. */}
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex h-40 w-7 flex-col items-center justify-end gap-1.5 rounded-full bg-black/35 py-2 backdrop-blur-sm">
-                      <input type="range" min={0} max={1} step={0.01} value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
-                        aria-label="Volume" title={`Volume ${Math.round(volume * 100)}%`}
-                        className="h-28 w-1.5 cursor-pointer accent-white" style={{ writingMode: 'vertical-lr', direction: 'rtl' }} />
-                      <Volume2 size={12} className="text-white/70" />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <VolumePill volume={volume} onChange={setVolume} />
                     </div>
                   </div>
                 )}
