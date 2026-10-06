@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Download, RotateCcw, Search, Disc3 } from 'lucide-react'
+import { X, Download, RotateCcw, Search, Disc3, Expand, Minimize } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
@@ -20,7 +20,10 @@ export const FULLSCREEN_IN = { duration: 0.34, delay: 0.1, ease: [0.22, 1, 0.36,
 // it mounted -- lyrics loaded and following the song -- the whole time it's
 // open, so switching is only a crossfade (nothing to fetch or build at the
 // click). The cover flies into this header's cover (data-fullscreen-thumb).
-export default function LyricsFullscreen() {
+// The player owns the idle timer and the whole-screen state: after a few
+// seconds without the mouse moving, this header and the lyrics' buttons fade
+// out and the cursor hides, as in the player.
+export default function LyricsFullscreen({ idle = false, onChromeHover = null, screenFull = false, onToggleScreen = null }) {
   const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore(useShallow(({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress }) => ({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress })))
   const [refreshKey, setRefreshKey] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
@@ -113,6 +116,8 @@ export default function LyricsFullscreen() {
   }
 
   const isAutoSynced = settings.unsynced_auto_sync === '1'
+  // Not while the lyrics search is open.
+  const hidden = active && idle && !showSearch
 
   return (
         <motion.div
@@ -121,10 +126,14 @@ export default function LyricsFullscreen() {
           animate={{ opacity: active ? 1 : 0 }}
           transition={active ? FULLSCREEN_IN : FULLSCREEN_OUT}
           aria-hidden={active ? undefined : true}
-          className="absolute inset-0 z-20 flex flex-col overflow-hidden"
+          // Hidden, the cursor goes too, over the clickable lines as well.
+          className={`absolute inset-0 z-20 flex flex-col overflow-hidden ${hidden ? 'cursor-none [&_*]:!cursor-none' : ''}`}
           style={{ pointerEvents: active ? undefined : 'none' }}
         >
-          <div className="relative z-10 flex items-center justify-between px-8 py-5 flex-shrink-0">
+          <div className={`relative z-10 flex items-center justify-between px-8 py-5 flex-shrink-0 transition-opacity duration-300 ${hidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+            inert={hidden}
+            onMouseEnter={() => onChromeHover?.(true)}
+            onMouseLeave={() => onChromeHover?.(false)}>
             <div className="flex items-center gap-4">
               {artSrc && (
                 // The player's big cover flies into this one (and back), and
@@ -166,6 +175,12 @@ export default function LyricsFullscreen() {
                   </button>
                 </>
               )}
+              {onToggleScreen && (
+                <button onClick={onToggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
+                  className="p-1.5 text-white/30 hover:text-white transition-colors">
+                  {screenFull ? <Minimize size={16} /> : <Expand size={16} />}
+                </button>
+              )}
               <button onClick={toggleLyricsFullscreen} className="p-1.5 text-white/30 hover:text-white transition-colors">
                 <X size={18} />
               </button>
@@ -183,6 +198,7 @@ export default function LyricsFullscreen() {
               onSearchRequest={handleSearchRequest}
               textScale={1.15}
               isAutoSynced={isAutoSynced}
+              toolbarHidden={hidden}
             />
           </div>
 

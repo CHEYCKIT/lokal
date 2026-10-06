@@ -669,7 +669,11 @@ export default function LyricsPanel({
   }, [lines, synced, wordSync, focusIdx, subLines, now])
 
   // ---- scrolling: native scroll for browsing, a staggered glide for following
-  const anchorFraction = fullscreen ? 0.3 : 0.26
+  const anchorFraction = fullscreen ? 0.22 : 0.26
+  // Full screen, the lyrics start at the top (clear of the buttons and the
+  // edge fade) rather than a third of the way down; the line being sung
+  // settles at anchorFraction once the song gets there.
+  const FULLSCREEN_TOP = { height: '10%', minHeight: '4.5rem' }
   const scrollToFocus = useCallback((instant) => {
     const container = containerRef.current
     const refs = rowsRef.current.get(focusIdx)
@@ -837,7 +841,7 @@ export default function LyricsPanel({
         }}
       >
         <div className={`w-full ${fullscreen ? 'max-w-3xl mx-auto px-6' : 'px-3'}`}>
-          {loading && <div style={{ height: fullscreen ? '26vh' : '18%' }} />}
+          {loading && <div style={fullscreen ? FULLSCREEN_TOP : { height: '18%' }} />}
           {loading && <Loading />}
 
           {!loading && !lines.length && (
@@ -865,7 +869,7 @@ export default function LyricsPanel({
 
           {!loading && lines.length > 0 && (
             <>
-              <div style={{ height: synced || isAutoSynced ? `${anchorFraction * 100}%` : '3.5rem', minHeight: synced ? (fullscreen ? '24vh' : '5rem') : undefined }} />
+              <div style={fullscreen ? FULLSCREEN_TOP : { height: synced || isAutoSynced ? `${anchorFraction * 100}%` : '3.5rem', minHeight: synced ? '5rem' : undefined }} />
               {!synced && (
                 <p className="px-3 pb-3 text-[11px] text-white/35">These lyrics aren't time-synced{isAutoSynced ? ' — following along roughly' : ''}.</p>
               )}
