@@ -38,6 +38,14 @@ function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
   )
 }
 
+/** "FLAC · 16-bit / 44.1 kHz" for a track whose source says so, else null. */
+function streamQualityLabel(track) {
+  if (!track?.codec) return null
+  const parts = [String(track.codec).toUpperCase()]
+  if (track.bit_depth && track.sample_rate) parts.push(`${track.bit_depth}-bit / ${Number(track.sample_rate) / 1000} kHz`)
+  return parts.join(' · ')
+}
+
 export default function RightSidebar() {
   const { user } = useAppStore()
   const {
@@ -319,6 +327,8 @@ export default function RightSidebar() {
                       <InfoRow fx={fx} label="Genre" value={currentTrack.genre} />
                       <InfoRow fx={fx} label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
                       <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
+                      {/* A stream (an addon's) has no file to measure: what the source says of it. */}
+                      {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
                       <InfoRow fx={fx} label="Plays" value={currentTrack.play_count > 0 ? `${currentTrack.play_count}` : null} />
                     </div>
                   )}

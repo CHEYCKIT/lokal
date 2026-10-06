@@ -323,6 +323,7 @@ function trackOf(t, provider) {
     disc_num: positive(t.discNumber),
     year: positive(t.year),
     isrc: t.isrc ? String(t.isrc).slice(0, 20) : null,
+    genre: typeof t.genre === 'string' && t.genre.trim() ? t.genre.trim().slice(0, 100) : null,
     duration: durationOf(t),
     thumbnail: httpsImage(t.artworkURL || t.artwork),
     quality: t.format ? String(t.format).slice(0, 40) : null,
