@@ -7,7 +7,7 @@ import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover from './MotionCover'
-import { api } from '../api'
+import { api, wordSyncEnabled } from '../api'
 import {
   contextLabel,
   isContextNavigable,
@@ -80,7 +80,7 @@ export default function RightSidebar() {
   }, [currentTrack?.id, currentTrack?.genre]) // eslint-disable-line react-hooks/exhaustive-deps
   const genre = currentTrack?.genre || (foundGenre.id === currentTrack?.id ? foundGenre.genre : null)
   const canOpenContext = isContextNavigable(playbackContext)
-  const wordSync = localStorage.getItem('word-sync') !== '0'
+  const wordSync = wordSyncEnabled()
   // Backend-persisted setting (Settings' Unsynced Lyrics Auto-Sync toggle
   // saves via api.saveSettings, never to localStorage) -- reading a
   // localStorage key here that's never written left this permanently false

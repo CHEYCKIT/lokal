@@ -4,7 +4,7 @@ import { X, Download, RotateCcw, Search, Disc3 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import SearchDrawer from './LyricsSearchDrawer'
-import { api } from '../api'
+import { api, wordSyncEnabled } from '../api'
 
 // How the player and full-screen lyrics trade places (FullscreenPlayer uses
 // these too): the view being left fades out quickly, the one arriving fades in
@@ -25,7 +25,7 @@ export default function LyricsFullscreen() {
   const [showSearch, setShowSearch] = useState(false)
   const [searchSessions, setSearchSessions] = useState({})
   const [settings, setSettings] = useState({})
-  const wordSync = localStorage.getItem('word-sync') !== '0'
+  const wordSync = wordSyncEnabled()
   const active = showLyricsFullscreen
   // Faded out (opacity 0, not visibility: hidden: that would drop what's
   // drawn and make switching back redraw every line on its first frame), the

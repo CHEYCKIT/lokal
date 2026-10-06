@@ -62,3 +62,31 @@ export function useReleaseTypes(artistName) {
   }, [artistName, shown])
   return [shown, toggle]
 }
+
+const ALBUMS_PAGE_KEY = 'lokal-albums-release-types'
+
+/**
+ * [shown, toggle(type)] for the Albums page, remembered on this computer.
+ * `hideSingles`: the old "Show Singles in Albums" switch was off, so Singles
+ * start hidden until a type is chosen here.
+ */
+export function useAlbumsPageReleaseTypes({ hideSingles = false } = {}) {
+  const read = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ALBUMS_PAGE_KEY) || 'null')
+      if (Array.isArray(saved)) return new Set(saved.filter(type => KNOWN.has(type)))
+    } catch {}
+    return new Set(RELEASE_TYPES.map(([type]) => type).filter(type => !(hideSingles && type === 'single')))
+  }
+  const [shown, setShown] = useState(read)
+  const toggle = useCallback(type => {
+    setShown(current => {
+      const next = new Set(current)
+      if (next.has(type)) next.delete(type)
+      else next.add(type)
+      try { localStorage.setItem(ALBUMS_PAGE_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }, [])
+  return [shown, toggle]
+}

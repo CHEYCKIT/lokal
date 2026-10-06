@@ -9,7 +9,7 @@ import MotionCover from './MotionCover'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
 import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
-import { api } from '../api'
+import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL } from '../onlineTracks'
 
@@ -150,7 +150,7 @@ export default function FullscreenPlayer() {
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
   const nav = useNavigate()
-  const wordSync = localStorage.getItem('word-sync') !== '0'
+  const wordSync = wordSyncEnabled()
   const [likeAnim, setLikeAnim] = useState(false)
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()

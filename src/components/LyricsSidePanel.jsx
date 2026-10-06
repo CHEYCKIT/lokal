@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
-import { api } from '../api'
+import { api, wordSyncEnabled } from '../api'
 
 // The actual lyrics view, with no opinion about how it's framed -- used both
 // by the standalone panel below (independent mode) and, via RightSidebar's
@@ -12,7 +12,7 @@ import { api } from '../api'
 // QueuePanel's QueueContent/QueuePanel split for the same reason.
 export function LyricsContent({ onClose }) {
   const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore()
-  const wordSync = localStorage.getItem('word-sync') !== '0'
+  const wordSync = wordSyncEnabled()
   // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
   // toggle saves via api.saveSettings, never to localStorage), matching how
   // FullscreenPlayer/LyricsFullscreen already read it -- reading a

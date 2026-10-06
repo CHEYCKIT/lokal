@@ -17,6 +17,8 @@ import { plural } from '../plural'
 import { openRadio } from '../radioActions'
 import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
+import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
+import { groupReleases, releaseTypeCounts, useAlbumsPageReleaseTypes } from '../releaseTypes'
 import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 
@@ -207,7 +209,7 @@ export default function Albums() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
   const [hoveredTrack, setHoveredTrack] = useState(null)
-  const [visibleByType, setVisibleByType] = useState({ all: PAGE_SIZE, album: PAGE_SIZE, ep: PAGE_SIZE, single: PAGE_SIZE })
+  const [visibleByType, setVisibleByType] = useState({})
   const [settings, setSettings] = useState(() => peekSettings() || {})
   const loadMoreRef = useRef(null)
   const navigate = useNavigate()
@@ -338,13 +340,14 @@ export default function Albums() {
     setHighlightTrackId(location.state?.highlightTrackId || null)
   }, [albums, location.pathname, location.state])
 
-  const showSingles = settings.show_singles_in_albums !== '0'
-  const separateByType = settings.separate_album_types !== '0'
+  // Which release types show, in sections (Albums, EPs, Singles...): chosen
+  // on the page, like an artist's page (this replaced two switches in
+  // Settings; one that hid Singles is carried over).
+  const [shownTypes, toggleType] = useAlbumsPageReleaseTypes({ hideSingles: settings.show_singles_in_albums === '0' })
 
   const filteredAlbums = useMemo(() => {
     const lower = query.trim().toLowerCase()
     const base = albums.filter((album) => {
-      if (!showSingles && album.release_type === 'single') return false
       if (!lower) return true
       const title = String(album.title || '').toLowerCase()
       const artists = String(album.artists || album.album_artist || '').toLowerCase()
@@ -373,23 +376,15 @@ export default function Albums() {
     }
 
     return base
-  }, [albums, query, showSingles, settings.album_sort_mode])
+  }, [albums, query, settings.album_sort_mode])
 
   useEffect(() => {
-    setVisibleByType({ all: PAGE_SIZE, album: PAGE_SIZE, ep: PAGE_SIZE, single: PAGE_SIZE })
+    setVisibleByType({})
     setLoadingMore(false)
-  }, [filteredAlbums, separateByType])
+  }, [filteredAlbums, shownTypes])
 
-  const sectionSource = useMemo(() => {
-    if (!separateByType) {
-      return [{ key: 'all', label: 'Releases', items: filteredAlbums }]
-    }
-    return [
-      { key: 'album', label: 'Albums', items: filteredAlbums.filter((album) => album.release_type === 'album') },
-      { key: 'ep', label: 'EPs', items: filteredAlbums.filter((album) => album.release_type === 'ep') },
-      { key: 'single', label: 'Singles', items: filteredAlbums.filter((album) => album.release_type === 'single') },
-    ].filter((group) => group.items.length > 0)
-  }, [filteredAlbums, separateByType])
+  const releaseTypes = useMemo(() => releaseTypeCounts(filteredAlbums), [filteredAlbums])
+  const sectionSource = useMemo(() => groupReleases(filteredAlbums, shownTypes).map(group => ({ key: group.type, label: group.label, items: group.items })), [filteredAlbums, shownTypes])
 
   const groupedAlbums = useMemo(() => {
     return sectionSource.map((group) => ({
@@ -534,6 +529,7 @@ export default function Albums() {
             </div>
 
             <div className="flex items-center gap-2 justify-start @sm:justify-end">
+              <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
               <label className="text-[11px] text-muted uppercase tracking-[0.16em]">Sort</label>
               <select
                 value={settings.album_sort_mode || 'default'}
@@ -695,6 +691,7 @@ export default function Albums() {
               onClear={releaseSelection.clear}
               actions={releases.barActions(selectedReleases())}
             />
+            {groupedAlbums.length === 0 && <p className="text-sm text-muted">No releases of the types chosen.</p>}
             {groupedAlbums.map((group) => (
               <section key={group.key} className="space-y-4">
                 <div className="flex items-end justify-between gap-4">
