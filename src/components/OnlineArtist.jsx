@@ -148,6 +148,9 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   }, [songs.tracks, libraryTracks, inLibrary])
   // Only what the library has as merged in: not its other songs at the end.
   const popularTracks = inLibrary ? popular.tracks.slice(0, Math.min(10, songs.tracks.length)) : popular.tracks
+  // Five, then ten with "Show more" (playing one queues all ten).
+  const [allPopular, setAllPopular] = useState(false)
+  const shownPopular = allPopular ? popularTracks : popularTracks.slice(0, 5)
   const owned = useMemo(() => new Set((libraryAlbums || []).map(album => releaseTitleKey(album.title))), [libraryAlbums])
   const albumItems = libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items
   // In sections by type; the types shown chosen per artist (the library's
@@ -189,7 +192,15 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
         {songs.loading
           ? <p role="status" className="text-sm text-muted">Loading {name}'s songs…</p>
           : popularTracks.length
-            ? <OnlineSongList tracks={popularTracks} showAlbum markOwned={inLibrary} onPlay={track => play(track)} />
+            ? <>
+              <OnlineSongList tracks={shownPopular} showAlbum markOwned={inLibrary} onPlay={track => play(track)} />
+              {popularTracks.length > 5 && (
+                <button type="button" onClick={() => setAllPopular(value => !value)} aria-expanded={allPopular}
+                  className="mt-2 px-2 text-xs font-medium text-muted transition-colors hover:text-white">
+                  {allPopular ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </>
             : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{songs.error || `No songs were found for ${name}.`}</p>}
       </section>
 
