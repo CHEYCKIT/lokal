@@ -31,7 +31,6 @@ const DEFAULT_EQ_PRESET = 'flat'
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const SETTINGS_CATEGORIES = [
   { key: 'library', label: 'Library', icon: Music2 },
-  { key: 'artists', label: 'Artists', icon: Tags },
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'integrations', label: 'Integrations', icon: Zap },
   { key: 'plugins', label: 'Plugins', icon: Puzzle },
@@ -1316,29 +1315,6 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
       )}
 
       {inCategory('library') && (
-      <Section title="Maintenance">
-        <Row label="Rescan Library">
-          <button onClick={rescan} disabled={scanning || !settings.music_folder}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">
-            <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? 'Scanning…' : 'Rescan'}
-          </button>
-        </Row>
-        <Row label="Find Duplicates" desc="Exact: the same title and artist. Similar: likely copies with close names and lengths, to check after the exact ones.">
-          <div className="flex items-center gap-2">
-            <button onClick={checkDuplicates}
-              className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-              Exact
-            </button>
-            <button onClick={checkPossibleDuplicates}
-              className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-              Similar
-            </button>
-          </div>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('artists') && (
       <Section title="Artists">
         <Row stacked label="Artist Info Source" desc="Where artist pictures and bios come from. Automatic tries the best source for each one.">
           <div className="inline-flex flex-wrap gap-1 p-0.5 bg-card rounded-lg border border-border">
@@ -1365,6 +1341,30 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
         </Row>
       </Section>
       )}
+
+      {inCategory('library') && (
+      <Section title="Maintenance">
+        <Row label="Rescan Library">
+          <button onClick={rescan} disabled={scanning || !settings.music_folder}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">
+            <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? 'Scanning…' : 'Rescan'}
+          </button>
+        </Row>
+        <Row label="Find Duplicates" desc="Exact: the same title and artist. Similar: likely copies with close names and lengths, to check after the exact ones.">
+          <div className="flex items-center gap-2">
+            <button onClick={checkDuplicates}
+              className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+              Exact
+            </button>
+            <button onClick={checkPossibleDuplicates}
+              className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+              Similar
+            </button>
+          </div>
+        </Row>
+      </Section>
+      )}
+
 
       {inCategory('data') && (
       <Section title="Backup">
