@@ -417,6 +417,10 @@ export const api = {
     ? el().getRecapTracks(uid, opts)
     : apiFetch(`/recaps/${uid || 'guest'}/tracks?${new URLSearchParams(Object.fromEntries(Object.entries(opts || {}).filter(([, value]) => value !== undefined && value !== null)))}`),
   getListeningDays: (uid, opts = {}) => isE() ? el().getListeningDays(uid, opts) : apiFetch(`/recaps/${uid || 'guest'}/days?${new URLSearchParams(Object.fromEntries(Object.entries(opts || {}).filter(([, value]) => value !== undefined && value !== null)))}`),
+  // One artist's plays by the user (30 s or more, files and streams), with their most played songs.
+  getArtistPlays: (uid, artistId) => isE() ? el().getArtistPlays(uid, artistId) : apiFetch(`/recaps/${uid || 'guest'}/artist/${encodeURIComponent(artistId)}`),
+  // One song's plays by the user (30 s or more), files and streams alike.
+  getTrackPlays: (uid, trackId) => isE() ? el().getTrackPlays(uid, trackId) : apiFetch(`/recaps/${uid || 'guest'}/track/${encodeURIComponent(trackId)}`),
   getListeningPreferences: (uid) => isE() ? el().getListeningPreferences(uid) : apiFetch(`/recaps/${uid || 'guest'}/preferences`),
   discordSetActivity: (t, p) => { if (isE() && el().discordSetActivity) return el().discordSetActivity(t, p); return Promise.resolve() },
   discordConnect: (id) => isE() ? el().discordConnect(id) : Promise.resolve(false),

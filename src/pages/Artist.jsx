@@ -192,12 +192,16 @@ export default function Artist() {
     ? (api.isElectron ? `file://${artist.image_path}` : `/api/artist-image/${encodeURIComponent(artist.id)}`)
     : null
   const artSrc = (track) => track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null
-  // The share card: the artist's photo (else a cover), their songs and plays.
-  const shareArtist = () => {
+  // The share card: the artist's photo (else a cover), their songs and your
+  // plays of them, counted as recaps count them (30 seconds or more, streamed
+  // songs too); the library's play counts if that can't be read.
+  const shareArtist = async () => {
     const tracks = artist.tracks || []
     const albums = new Set(tracks.map(track => track.album).filter(Boolean))
-    const plays = tracks.reduce((sum, track) => sum + (Number(track.play_count) || 0), 0)
-    const top = artist.topTracks?.length ? artist.topTracks : tracks
+    const listened = await Promise.resolve(api.getArtistPlays?.(useAppStore.getState().user?.id || 'guest', artist.id)).catch(() => null)
+    const counted = listened && !listened.error && Number.isFinite(listened.plays)
+    const plays = counted ? listened.plays : tracks.reduce((sum, track) => sum + (Number(track.play_count) || 0), 0)
+    const top = counted && listened.topTracks?.length ? listened.topTracks : artist.topTracks?.length ? artist.topTracks : tracks
     const photo = artistArtSource(artist)
     openShareCard({
       kind: 'Artist',
