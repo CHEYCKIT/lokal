@@ -44,7 +44,7 @@ export default function Playlist() {
   const [ghostYtResults, setGhostYtResults] = useState([])
   const [ghostSearchLoading, setGhostSearchLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const location = useLocation()
   // load() below re-fetches on every id change but doesn't clear `playlist`
   // first, so right after navigating from one playlist to another, `playlist`

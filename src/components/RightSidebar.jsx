@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Film } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
@@ -57,7 +58,15 @@ export default function RightSidebar() {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
     toggleFullscreen, toggleLyricsFullscreen, playbackContext,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels,
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext,
+    sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels,
+  }) => ({
+    showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext,
+    sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels,
+  })))
   const nav = useNavigate()
   const menu = useContextMenu()
   // Your plays of the song (30 s or more, as recaps count them), streamed

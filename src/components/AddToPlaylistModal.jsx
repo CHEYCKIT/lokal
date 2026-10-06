@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Check, Music, Heart } from 'lucide-react'
 import { useAppStore, usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
 import PlaylistCover from './PlaylistCover'
 import { plural } from '../plural'
 
 export default function AddToPlaylistModal() {
   const { addToPlaylistTrack, addToPlaylistTrackIds, closeAddToPlaylist, user } = useAppStore()
-  const { likedIds, setLiked } = usePlayerStore()
+  const { likedIds, setLiked } = usePlayerStore(useShallow(({ likedIds, setLiked }) => ({ likedIds, setLiked })))
   const [playlists, setPlaylists] = useState([])
   const [added, setAdded] = useState(new Set())
   const [newName, setNewName] = useState('')

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { showToast, showLoadingToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
@@ -85,7 +86,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     loadAddonNames().then(names => { if (live) setAddonNames(names) })
     return () => { live = false }
   }, [hasAddonDownloads])
-  const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore()
+  const { currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks } = usePlayerStore(useShallow(({ currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks }) => ({ currentTrack, isPlaying, playTrack, togglePlay, likedIds, setLiked, playNext, addToQueue, syncTrack, syncTracks })))
   const { user, openAddToPlaylist, openAddMultipleToPlaylist } = useAppStore()
   const profile = String(user?.id || 'guest')
   const savedColumns = useTrackColumnsStore(state => state.profiles[profile])

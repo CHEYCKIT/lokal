@@ -34,6 +34,7 @@ import SmartPlaylistModal from './components/SmartPlaylistModal'
 import ImportPlaylistModal from './components/ImportPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from './api'
 import Toaster, { showLoadingToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
@@ -434,14 +435,30 @@ export default function App() {
   }, [])
 
   const {
-    currentTrack, isPlaying, progress, duration, volume, repeat,
+    currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
     autoNext, setProgress, setDuration, setIsPlaying,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
-  } = usePlayerStore()
+  } = usePlayerStore(useShallow(({
+    currentTrack, isPlaying, duration, volume, repeat,
+    outputDeviceId,
+    autoNext, setProgress, setDuration, setIsPlaying,
+    setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
+    setActiveAudioElement,
+    shuffle, playNext, addToQueue, skipAhead,
+    showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
+  }) => ({
+    currentTrack, isPlaying, duration, volume, repeat,
+    outputDeviceId,
+    autoNext, setProgress, setDuration, setIsPlaying,
+    setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
+    setActiveAudioElement,
+    shuffle, playNext, addToQueue, skipAhead,
+    showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
+  })))
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
   const { user } = useAppStore()
@@ -1024,7 +1041,7 @@ export default function App() {
     publish()
     const interval = setInterval(publish, 1000)
     return () => clearInterval(interval)
-  }, [currentTrack?.id, isPlaying, progress, duration, volume])
+  }, [currentTrack?.id, isPlaying, duration, volume])
 
   useEffect(() => {
     if (!api.isElectron || !window.electron?.onRemoteCommand) return

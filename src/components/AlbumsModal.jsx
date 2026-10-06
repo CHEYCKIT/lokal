@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Search, Play, Pause, Disc3, Loader2 } from 'lucide-react'
 import { useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { usePlayerStore } from '../store/player'
 import { api } from '../api'
 import { makeAlbumContext } from '../playbackContext'
@@ -55,7 +56,7 @@ function AlbumDetail({ album, onClose }) {
   const [tracks, setTracks] = useState([])
   const [hoveredTrack, setHoveredTrack] = useState(null)
   const [loading, setLoading] = useState(true)
-  const { playQueue, currentTrack, isPlaying, playTrack, togglePlay } = usePlayerStore()
+  const { playQueue, currentTrack, isPlaying, playTrack, togglePlay } = usePlayerStore(useShallow(({ playQueue, currentTrack, isPlaying, playTrack, togglePlay }) => ({ playQueue, currentTrack, isPlaying, playTrack, togglePlay })))
   const albumContext = makeAlbumContext(album)
 
   useEffect(() => {

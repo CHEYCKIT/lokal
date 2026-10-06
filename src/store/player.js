@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { packQueue, unpackQueue, QUEUE_KEYS } from '../queueStorage.js'
 import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
 
@@ -107,7 +108,8 @@ function loadQueue() {
   try {
     const data = localStorage.getItem('lokal-queue')
     if (!data) return null
-    const parsed = JSON.parse(data)
+    const parsed = unpackQueue(JSON.parse(data))
+    if (!parsed) return null
 
     if (Array.isArray(parsed.queue)) {
       const queue = sanitizeTrackList(parsed.queue)
@@ -982,22 +984,31 @@ export const useAppStore = create((set, get) => ({
   closeAddToPlaylist: () => set({ addToPlaylistTrack: null, addToPlaylistTrackIds: [] }),
 }))
 
+// The queue is saved for the next session (queueStorage.js): only when part
+// of it changed (not on every progress tick), at most about once a second,
+// and once more when the window closes. If the full queue doesn't fit, the
+// songs around the current one are kept.
+let queueSaveTimer = null
+let lastSavedQueue = null
+function saveQueueNow() {
+  clearTimeout(queueSaveTimer)
+  queueSaveTimer = null
+  const state = usePlayerStore.getState()
+  for (const limit of [Infinity, 500, 100]) {
+    try {
+      localStorage.setItem('lokal-queue', JSON.stringify(packQueue(state, { limit })))
+      return
+    } catch {}
+  }
+  console.error('Failed to save queue to localStorage')
+}
 usePlayerStore.subscribe((state) => {
-  const {
-    queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
-    shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
-    playbackContext,
-  } = state
-
-  const dataToSave = {
-    queue, queueIndex, currentTrack, shuffle, repeat, shuffleQueue,
-    shuffleIndex, playHistory, futureHistory, wasShuffled, originalQueue,
-    playbackContext,
-  }
-
-  try {
-    localStorage.setItem('lokal-queue', JSON.stringify(dataToSave))
-  } catch (e) {
-    console.error('Failed to save queue to localStorage', e)
-  }
+  const current = QUEUE_KEYS.map(key => state[key])
+  if (lastSavedQueue && current.every((value, i) => value === lastSavedQueue[i])) return
+  lastSavedQueue = current
+  if (!queueSaveTimer) queueSaveTimer = setTimeout(saveQueueNow, 800)
 })
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => { if (queueSaveTimer) saveQueueNow() })
+  window.addEventListener('beforeunload', () => { if (queueSaveTimer) saveQueueNow() })
+}

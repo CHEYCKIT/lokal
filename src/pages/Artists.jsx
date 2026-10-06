@@ -157,7 +157,7 @@ export default function Artists() {
   // Only the latest request's answer applies (an earlier search can land late).
   const artistRequestRef = useRef({ id: 0, append: false })
   const navigate = useNavigate()
-  const { playQueue } = usePlayerStore()
+  const playQueue = usePlayerStore(s => s.playQueue)
   const { user } = useAppStore()
   const menu = useContextMenu()
 

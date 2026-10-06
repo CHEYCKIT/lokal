@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, Clock, Disc3, Download, Globe, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
 import { makeAlbumContext } from '../playbackContext'
@@ -216,7 +217,7 @@ export default function Albums() {
   const location = useLocation()
   // Opening a given album: wait for its tracks too, so the grid doesn't show first.
   usePageReady(!loadingAlbums && (!location.state?.album || albumTracks.length > 0))
-  const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore()
+  const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore(useShallow(({ playQueue, currentTrack, isPlaying, togglePlay, playTrack }) => ({ playQueue, currentTrack, isPlaying, togglePlay, playTrack })))
   const albumContext = useMemo(() => makeAlbumContext(selectedAlbum), [selectedAlbum])
 
   // "Full album online": the whole tracklist from the catalogue, the songs the
