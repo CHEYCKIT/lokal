@@ -22,7 +22,7 @@ router.get('/:userId/tracks', (req, res) => {
 // Days with plays (in the listener's time zone), for the Recap page's navigation.
 router.get('/:userId/days', (req, res) => {
   try {
-    res.json(listeningDays(getDB(), req.params.userId || 'guest', { tz: typeof req.query.tz === 'string' ? req.query.tz : undefined }))
+    res.json(listeningDays(getDB(), req.params.userId || 'guest', { tz: typeof req.query.tz === 'string' ? req.query.tz : undefined, sources: typeof req.query.sources === 'string' ? req.query.sources : undefined }))
   } catch (e) {
     res.json({ error: e.message, days: [] })
   }
