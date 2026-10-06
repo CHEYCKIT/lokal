@@ -358,18 +358,6 @@ export default function RightSidebar() {
                     </div>
                   )}
 
-                  {currentTrack && clipNow && (
-                    <div className="flex">
-                      <button
-                        onClick={() => setCoverOff(!coverOff)}
-                        aria-pressed={coverOff}
-                        title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
-                        className={fx ? btnFx : btnClassic}>
-                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName} for This Song`}
-                      </button>
-                    </div>
-                  )}
-
                   {currentTrack && (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
                       <InfoRow
@@ -387,6 +375,17 @@ export default function RightSidebar() {
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
                       {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
                       <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
+                    </div>
+                  )}
+                  {currentTrack && clipNow && (
+                    <div className="flex">
+                      <button
+                        onClick={() => setCoverOff(!coverOff)}
+                        aria-pressed={coverOff}
+                        title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
+                        className={fx ? btnFx : btnClassic}>
+                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName} for This Song`}
+                      </button>
                     </div>
                   )}
                 </div>
