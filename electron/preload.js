@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electron', {
   getTopGenres: () => invoke('scanner:getTopGenres'),
   getAllGenres: () => invoke('scanner:getAllGenres'),
   fetchMissingGenres: () => invoke('scanner:fetchMissingGenres'),
+  genresStatus: () => invoke('scanner:genresStatus'),
   readFileAsDataURL: (path) => ipcRenderer.invoke('dialog:readFileAsDataURL', path),
   
   getPlaylists: (uid) => invoke('scanner:getPlaylists', uid),

@@ -559,6 +559,12 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params))
 })
 
+// Settings > Library > Fill In Genres (see electron/online/genres.js).
+router.post('/fetch-missing-genres', (req, res) => {
+  try { res.json(require('../../electron/online/genres').startLibraryGenres(getDB())) } catch (e) { res.json({ error: e.message }) }
+})
+router.get('/genres-status', (req, res) => res.json(require('../../electron/online/genres').libraryGenresStatus()))
+
 // The library's files in short (see electron/ipc/libraryKeys.js).
 router.get('/library-keys', (req, res) => {
   try { res.json(require('../../electron/ipc/libraryKeys').libraryKeys(getDB())) } catch (e) { res.json([]) }

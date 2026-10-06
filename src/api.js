@@ -496,7 +496,9 @@ export const api = {
   updaterCheck: () => isE() ? el().updaterCheck() : Promise.resolve(),
   getVersion: () => isE() ? el().getVersion() : Promise.resolve('1.0.0'),
   onUpdaterEvent: (fn) => { if (isE()) return el().onUpdaterEvent(fn); return () => {} },
+  // Fill In Genres: starts (or joins) the background lookup; genresStatus reads its progress.
   fetchMissingGenres: () => isE() ? el().fetchMissingGenres() : apiFetch('/tracks/fetch-missing-genres', { method: 'POST' }),
+  genresStatus: () => isE() ? el().genresStatus() : apiFetch('/tracks/genres-status'),
   setManualGenre: (data) => isE() ? el().setManualGenre(data) : apiFetch('/tracks/set-manual-genre', { method: 'POST', body: data }),
   
   updateTrack: (id, data) => isE() ? el().updateTrack(id, data) : apiFetch(`/tracks/${id}`, { method: 'PUT', body: data }),

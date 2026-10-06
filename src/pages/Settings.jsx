@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
-import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Puzzle, Blocks } from 'lucide-react'
+import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
@@ -33,12 +33,13 @@ const SETTINGS_CATEGORIES = [
   { key: 'library', label: 'Library', icon: Music2 },
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'integrations', label: 'Integrations', icon: Zap },
-  { key: 'plugins', label: 'Plugins', icon: Puzzle },
-  { key: 'addons', label: 'Addons', icon: Blocks },
+  { key: 'addons', label: 'Addons & Plugins', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
   { key: 'about', label: 'About', icon: Info },
 ]
+// Tabs that were folded into others: a link to one opens where it went.
+const MOVED_CATEGORIES = { artists: 'library', plugins: 'addons' }
 
 const TRANSLATION_LANGUAGES = [
   ['en', 'English'], ['fr', 'Français'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'], ['pt', 'Português'],
@@ -380,6 +381,29 @@ export default function Settings() {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
+  // Fill In Genres runs in the background; its progress, read every few seconds while it runs.
+  const [genreJob, setGenreJob] = useState(null)
+  useEffect(() => {
+    let timer = null
+    let active = true
+    const poll = async () => {
+      const status = await Promise.resolve(api.genresStatus?.()).catch(() => null)
+      if (!active || !status) return
+      setGenreJob(current => ({ ...status, started: current?.started }))
+      if (status.running) timer = setTimeout(poll, 2500)
+    }
+    if (genreJob?.running) timer = setTimeout(poll, 2500)
+    else if (genreJob === null) poll()
+    return () => { active = false; clearTimeout(timer) }
+  }, [genreJob?.running]) // eslint-disable-line react-hooks/exhaustive-deps
+  const fillGenres = async () => {
+    const status = await Promise.resolve(api.fetchMissingGenres()).catch(e => ({ error: e?.message || 'Could not start' }))
+    setGenreJob(status?.error ? { error: status.error } : { ...status, started: true })
+  }
+  const genreText = genreJob?.error ? genreJob.error
+    : genreJob?.running ? `Looking up… ${genreJob.done} of ${genreJob.total} albums and songs · ${genreJob.updated} songs filled in`
+      : genreJob?.total ? `Done: ${genreJob.updated} of ${genreJob.songs} songs filled in. Songs iTunes doesn't know stay empty.`
+        : genreJob?.started ? 'Every song already has a genre.' : ''
   const [manualGenreArtist, setManualGenreArtist] = useState('')
   const [bgImage, setBgImage] = useState(null)
   const [manualGenreTrack, setManualGenreTrack] = useState('')
@@ -390,11 +414,11 @@ export default function Settings() {
   const [pluginStatus, setPluginStatus] = useState('')
   const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState(() => {
-    const requested = location.state?.category
+    const requested = MOVED_CATEGORIES[location.state?.category] || location.state?.category
     return SETTINGS_CATEGORIES.some(category => category.key === requested) ? requested : 'library'
   })
   useEffect(() => {
-    const requested = location.state?.category
+    const requested = MOVED_CATEGORIES[location.state?.category] || location.state?.category
     if (SETTINGS_CATEGORIES.some(category => category.key === requested)) setActiveCategory(requested)
   }, [location.state?.category])
   // Load the ListenBrainz connection state when Integrations is opened.
@@ -524,7 +548,7 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    if (activeCategory === 'plugins') {
+    if (activeCategory === 'addons') {
       loadPlugins()
     }
   }, [activeCategory])
@@ -1187,10 +1211,9 @@ export default function Settings() {
 
       {/* Switching category: the new one fades in once its data is in, not
           through "Loading…" / "No … yet" first. */}
-      <SectionSwap id={activeCategory} gated={['plugins', 'data', 'addons'].includes(activeCategory)} className="space-y-6">
+      <SectionSwap id={activeCategory} gated={['data', 'addons'].includes(activeCategory)} className="space-y-6">
       <ReadyWhen ready={
-activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!pluginsLoading && !!pluginStatus)
-          : activeCategory === 'data' ? usersTried
+activeCategory === 'data' ? usersTried
           : activeCategory !== 'addons'
       } />
       {api.isElectron && inCategory('about') && (
@@ -1242,107 +1265,6 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
       )}
 
       {inCategory('library') && (
-      <Section title="Library">
-        <Row label="Music Folder">
-          <div className="flex items-center gap-2">
-            <input value={settings.music_folder || ''} onChange={e => set('music_folder', e.target.value)}
-              placeholder="Choose your music folder"
-              className="w-52 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            {api.isElectron && (
-              <button onClick={async () => { const f = await api.openFolder(); if (f) set('music_folder', f) }}
-                className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
-                <FolderOpen size={14} />
-              </button>
-            )}
-          </div>
-        </Row>
-        {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
-          <p className="text-[11px] text-muted -mt-1 mb-2">
-            On Windows, Chrome-based browsers encrypt their cookies in a way yt-dlp can't read (“Failed to decrypt with DPAPI”). Lokal will download without cookies when that happens. Use Firefox or a cookies.txt file instead.
-          </p>
-        )}
-        {statusMessage && <p className="text-xs text-accent ml-2">{statusMessage}</p>}
-              <Row label="Minimum Length" desc="Leave out files shorter than this when scanning, like sound effects or samples. 0 keeps everything.">
-          <div className="flex items-center gap-2">
-            <input type="number" min={0} max={300} value={settings.min_duration ?? 0} onChange={e => set('min_duration', e.target.value)}
-              className="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white text-center outline-none focus:border-accent/50" />
-            <span className="text-xs text-muted">sec</span>
-          </div>
-        </Row>
-        <Row label="Skip Sample Packs" desc="Leave out files named like drum kits, loops or samples, for producers who keep sample packs in their music folder.">
-          <button
-            onClick={() => set('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.skip_drumkit_pattern === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.skip_drumkit_pattern === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Look Up Missing Info" desc="Find a cover online when a song has none, and a genre for songs you stream.">
-          <button
-            onClick={() => set('fetch_online_artwork', settings.fetch_online_artwork === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fetch_online_artwork !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.fetch_online_artwork !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Delete Files Too" desc={api.isElectron
-          ? 'Deleting a song in Lokal also moves its file to the Recycle Bin. Only files in your music folder.'
-          : 'Deleting a song in Lokal also deletes its file from the server, for good. Only files in the music folder.'}>
-          <button
-            onClick={() => set('delete_files_from_disk', settings.delete_files_from_disk === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.delete_files_from_disk === '1' ? 'bg-red-500/15 border-red-500/40 text-red-300' : 'border-border text-muted hover:text-white'}`}>
-            {settings.delete_files_from_disk === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('library') && (
-      <Section title="Genres">
-        <Row label="Fill In Genres" desc="Look up a genre online for every song in your library that has none.">
-          <button onClick={async () => { const result = await api.fetchMissingGenres(); setStatusMessage(`Updated ${result?.updated || 0} of ${result?.total || 0} tracks`) }}
-            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-            Fetch Missing
-          </button>
-        </Row>
-        <Row label="Set Genres" desc="Choose the genre for an artist, album or song yourself.">
-          <button 
-            onClick={() => setShowGenreModal(true)}
-            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center gap-2"
-          >
-            <Tags size={14} /> Configure Overrides
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('library') && (
-      <Section title="Artists">
-        <Row stacked label="Artist Info Source" desc="Where artist pictures and bios come from. Automatic tries the best source for each one.">
-          <div className="inline-flex flex-wrap gap-1 p-0.5 bg-card rounded-lg border border-border">
-            {ARTIST_SOURCES.map(([id, label]) => (
-              <button key={id} onClick={() => set('artist_metadata_source', id)}
-                className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </Row>
-        <Row label="Fill In Artist Pages" desc="When you open an artist, look up their bio and picture if they're missing.">
-          <button
-            onClick={() => set('auto_fetch_artist_metadata', settings.auto_fetch_artist_metadata === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_fetch_artist_metadata === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.auto_fetch_artist_metadata === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-              <Row label="Names With a Comma" desc="Artists whose name has a comma, like Tyler, The Creator, so they aren't split into two artists.">
-          <button onClick={() => setShowCommaModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-            Configure ({keepCommaArtists.length})
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('library') && (
       <Section title="Maintenance">
         <Row label="Rescan Library">
           <button onClick={rescan} disabled={scanning || !settings.music_folder}
@@ -1365,163 +1287,256 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
       </Section>
       )}
 
-
-      {inCategory('data') && (
-      <Section title="Backup">
-        <Row label="Full App Export" desc="Save everything (accounts, settings, themes, playlists, likes, history) to one file. Your music files aren't included.">
-          <button
-            onClick={handleFullExport}
-            disabled={exportingAllData}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
-          >
-            <Download size={13} /> {exportingAllData ? 'Exporting...' : 'Export All'}
-            {fullExported && <span className="text-accent text-xs ml-1">✓</span>}
-          </button>
-        </Row>
-        <Row label="Import Backup" desc="Restore from a backup file. You'll see what it holds before anything is replaced.">
-          <button
-            onClick={readImportBackup}
-            disabled={importingAllData}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
-          >
-            <RefreshCcw size={13} /> {importingAllData ? 'Importing...' : 'Import'}
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('data') && (
-      <Section title="History">
-        <Row label="Export History" desc="Save your listening history as a file.">
-          <div className="relative">
-            <button 
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors"
-            >
-              <Download size={13} /> Export
-              {historyExported && <span className="text-accent text-xs ml-1">✓</span>}
-            </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1 min-w-32 bg-elevated border border-border rounded-lg shadow-xl py-1 z-50">
-                <button
-                  onClick={() => handleHistoryExport('json')}
-                  className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
-                >
-                  <Download size={14} /> JSON
-                </button>
-                <button
-                  onClick={() => handleHistoryExport('csv')}
-                  className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
-                >
-                  <Download size={14} /> CSV
-                </button>
-              </div>
+      {inCategory('library') && (
+      <Section title="Downloads">
+        <Row label="Download Format" desc={`What downloaded songs are saved as. ${(FORMATS.find(f => f.id === savedFormat(settings)) || FORMATS[0]).hint}`}>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {FORMATS.map(option => (
+              <button key={option.id} onClick={() => set('download_format', option.id)} title={option.hint}
+                className={`px-3 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${savedFormat(settings) === option.id ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+                {option.label}
+              </button>
+            ))}
+            {savedFormat(settings) === 'mp3' && (
+              <select value={MP3_BITRATES.includes(String(settings.download_quality)) ? String(settings.download_quality) : '320'} onChange={e => set('download_quality', e.target.value)}
+                aria-label="MP3 bitrate"
+                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+                {MP3_BITRATES.map(rate => <option key={rate} value={rate}>{rate} kbps</option>)}
+              </select>
             )}
           </div>
         </Row>
-      </Section>
-      )}
-
-      {api.isElectron && inCategory('data') && (
-      <Section title="Cache">
-        <Row label="Cache Size Limit" desc="Moving covers and converted copies of songs (Apple Lossless, WMA…) are kept so they load faster. Past this size, the oldest are removed.">
-          <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
-            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
+        <Row label="Simultaneous Downloads" desc="How many downloads run at once; the rest wait. A playlist counts as one.">
+          <select
+            value={settings.download_concurrency || '3'}
+            onChange={e => set('download_concurrency', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </Row>
-        <Row label="In Use" desc={cacheInfo ? `Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.web || 0)) : '—'}</span>
-            <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
-              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
-              {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}
-            </button>
-          </div>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('data') && (
-      <Section title="Playlists">
-        <Row label="Import Playlist" desc="Paste a list of songs, one “Artist - Title” per line.">
-          <button onClick={() => setShowPlaylistImportModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
-            <ListMusic size={14} /> Import
+        <Row label="Add Lyrics to Downloads" desc="Save the lyrics inside each downloaded file, so other players can show them too.">
+          <button
+            onClick={() => set('download_embed_lyrics', settings.download_embed_lyrics === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.download_embed_lyrics !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.download_embed_lyrics !== '0' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Import from Other Platforms" desc="Bring in playlists exported from Spotify (Exportify), YouTube (Google Takeout) or other apps, as CSV, JSON or M3U.">
-          <button onClick={() => { setPlatformImportMode('playlist'); setPlatformImportStatus(''); setPlatformImportPreview(null); setPlatformImportFiles([]); setPlatformImportFileName(''); setPlatformImportFileContent(''); setShowPlatformImportGuide(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
-            <Link size={14} /> Import
+        <Row label="Simpler Artist Names" desc="Use the main artist for downloaded songs, not every name the file lists.">
+          <button
+            onClick={() => set('clean_download_metadata', settings.clean_download_metadata === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.clean_download_metadata !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.clean_download_metadata !== '0' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Import Track Metadata" desc="Add genres, labels and other details from an export (like Exportify) to the songs you already have.">
-          <button onClick={() => { setPlatformImportMode('metadata'); setPlatformImportStatus(''); setPlatformImportPreview(null); setPlatformImportFiles([]); setPlatformImportFileName(''); setPlatformImportFileContent(''); setShowPlatformImportGuide(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
-            <Link size={14} /> Import Metadata
+        <Row label="Add Right Away" desc="When downloading a playlist or album, add each song to your library as soon as it's done, not all at the end.">
+          <button
+            onClick={() => set('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.index_while_downloading === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.index_while_downloading === '1' ? 'On' : 'Off'}
           </button>
         </Row>
-      </Section>
-      )}
-
-      {inCategory('data') && (
-      <Section title="Accounts">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-white font-medium">Local Accounts</p>
-            <button
-              onClick={loadUsers}
-              disabled={usersLoading}
-              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors disabled:opacity-50"
-            >
-              {usersLoading ? 'Loading...' : 'Refresh'}
-            </button>
-          </div>
-          <p className="text-xs text-muted">
-            Delete accounts directly from Lokal if one was created with the wrong password or is no longer needed.
+        {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
+          <p className="text-[11px] text-muted -mt-1 mb-2">
+            On Windows, Chrome-based browsers lock their cookies, so downloads go ahead without your YouTube sign-in. Use Firefox or a cookies.txt file to keep it.
           </p>
-          {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
-          <div className="space-y-2">
-            {!usersLoading && usersTried && appUsers.length === 0 && (
-              <p className="text-xs text-muted">No local accounts found.</p>
+        )}
+      </Section>
+      )}
+
+      {inCategory('library') && (
+      <Section title="Genres">
+        <Row label="Set Genres" desc="Choose the genre for an artist, album or song yourself.">
+          <button 
+            onClick={() => setShowGenreModal(true)}
+            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center gap-2"
+          >
+            <Tags size={14} /> Configure Overrides
+          </button>
+        </Row>
+        <Row label="Fill In Genres" desc={genreText || 'Look up a genre online for every song that has none, one album at a time. A big library takes a while; it runs in the background.'}>
+          <button onClick={fillGenres} disabled={!!genreJob?.running}
+            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50">
+            {genreJob?.running ? 'Running…' : 'Fill In'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('library') && (
+      <Section title="Artists">
+              <Row label="Names With a Comma" desc="Artists whose name has a comma, like Tyler, The Creator, so they aren't split into two artists.">
+          <button onClick={() => setShowCommaModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+            Configure ({keepCommaArtists.length})
+          </button>
+        </Row>
+        <Row label="Fill In Artist Pages" desc="When you open an artist, look up their bio and picture if they're missing.">
+          <button
+            onClick={() => set('auto_fetch_artist_metadata', settings.auto_fetch_artist_metadata === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_fetch_artist_metadata === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.auto_fetch_artist_metadata === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row stacked label="Artist Info Source" desc="Where artist pictures and bios come from. Automatic tries the best source for each one.">
+          <div className="inline-flex flex-wrap gap-1 p-0.5 bg-card rounded-lg border border-border">
+            {ARTIST_SOURCES.map(([id, label]) => (
+              <button key={id} onClick={() => set('artist_metadata_source', id)}
+                className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('library') && (
+      <Section title="Library">
+        <Row label="Delete Files Too" desc={api.isElectron
+          ? 'Deleting a song in Lokal also moves its file to the Recycle Bin. Only files in your music folder.'
+          : 'Deleting a song in Lokal also deletes its file from the server, for good. Only files in the music folder.'}>
+          <button
+            onClick={() => set('delete_files_from_disk', settings.delete_files_from_disk === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.delete_files_from_disk === '1' ? 'bg-red-500/15 border-red-500/40 text-red-300' : 'border-border text-muted hover:text-white'}`}>
+            {settings.delete_files_from_disk === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Look Up Missing Info" desc="Find a cover online when a song has none, and a genre for songs you stream.">
+          <button
+            onClick={() => set('fetch_online_artwork', settings.fetch_online_artwork === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fetch_online_artwork !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.fetch_online_artwork !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Skip Sample Packs" desc="Leave out files named like drum kits, loops or samples, for producers who keep sample packs in their music folder.">
+          <button
+            onClick={() => set('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.skip_drumkit_pattern === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.skip_drumkit_pattern === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Minimum Length" desc="Leave out files shorter than this when scanning, like sound effects or samples. 0 keeps everything.">
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} max={300} value={settings.min_duration ?? 0} onChange={e => set('min_duration', e.target.value)}
+              className="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white text-center outline-none focus:border-accent/50" />
+            <span className="text-xs text-muted">sec</span>
+          </div>
+        </Row>
+        <Row label="Music Folder">
+          <div className="flex items-center gap-2">
+            <input value={settings.music_folder || ''} onChange={e => set('music_folder', e.target.value)}
+              placeholder="Choose your music folder"
+              className="w-52 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+            {api.isElectron && (
+              <button onClick={async () => { const f = await api.openFolder(); if (f) set('music_folder', f) }}
+                className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
+                <FolderOpen size={14} />
+              </button>
             )}
-            {appUsers.map((account) => (
-              <div key={account.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card/40">
-                <div className="min-w-0">
-                  <p className="text-sm text-white truncate">
-                    {account.display_name || account.username}
-                    {user?.id === account.id && <span className="text-xs text-accent ml-2">Current</span>}
-                  </p>
-                  <p className="text-xs text-muted truncate">@{account.username}</p>
-                </div>
-                <button
-                  onClick={() => setUserToDelete(account)}
-                  className="px-3 py-1.5 rounded-lg text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
-                >
-                  Delete
-                </button>
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('playback') && (
+      <Section title="Equalizer">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm text-white font-medium">10-Band EQ</p>
+              <p className="text-xs text-muted mt-1">Preset: {eqPreset === 'custom' ? 'Custom' : EQ_PRESETS[eqPreset]?.label || EQ_PRESETS[DEFAULT_EQ_PRESET].label}</p>
+            </div>
+            <button onClick={() => applyEqGains(EQ_PRESETS[DEFAULT_EQ_PRESET].gains, DEFAULT_EQ_PRESET)}
+              className="text-xs text-muted hover:text-white transition-colors">Reset</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(EQ_PRESETS).map(([key, preset]) => (
+              <button
+                key={key}
+                onClick={() => applyEqGains(preset.gains, key)}
+                className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${eqPreset === key ? 'bg-accent/20 border-accent/50 text-accent' : 'bg-card border-border text-muted hover:text-white'}`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-end justify-center gap-3 h-40 overflow-x-auto pb-2">
+            {EQ_BANDS.map((band, i) => (
+              <div key={band} className="flex flex-col items-center gap-2">
+                <span className="text-xs font-display" style={{ color: '#e8ff57', fontSize: 10 }}>
+                  {eqGains[i] > 0 ? '+' : ''}{(eqGains[i] || 0).toFixed(1)}
+                </span>
+                <input type="range" min={-12} max={12} step={0.5} value={eqGains[i] || 0}
+                  onChange={e => setEQ(i, parseFloat(e.target.value))}
+                  className="accent-accent"
+                  style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 24, height: 104, cursor: 'pointer' }} />
+                <span className="text-muted" style={{ fontSize: 9 }}>{band}</span>
               </div>
             ))}
           </div>
+          <p className="text-xs text-muted mt-3 text-center opacity-50">The equalizer starts after your first click in the app.</p>
         </div>
       </Section>
       )}
 
-      {inCategory('data') && (
-      <Section title="Danger Zone">
-        <Row label="Clear Library" desc="Remove every song, playlist, like and play from Lokal, keeping your accounts and settings. Your music files aren't touched.">
-          <button onClick={() => setShowClearModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors">
-            <Trash2 size={13} /> Clear
+      {inCategory('playback') && (
+      <Section title="Playback">
+        <Row label="Crossfade" desc="Fade into the next song. Skipping doesn't fade.">
+          <div className="flex items-center gap-2">
+            <input type="range" min={0} max={12} step={0.5} value={settings.crossfade_seconds || 0}
+              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
+            <span className="text-xs text-muted w-10">{settings.crossfade_seconds || 0}s</span>
+          </div>
+        </Row>
+        <Row label="Streaming Quality" desc="For songs played from YouTube Music. Data saver uses less than half the data. SoundCloud has one quality; addons have their own setting.">
+          <select
+            value={settings.online_quality || 'best'}
+            onChange={e => set('online_quality', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="best">Best</option>
+            <option value="saver">Data saver</option>
+          </select>
+        </Row>
+        <Row stacked label="Play From" desc="When a song isn't in your library, Lokal looks for it in these, top first. Addons you turn on are added here.">
+          <PlaybackSourceSettings value={settings.playback_search_order} onChange={value => set('playback_search_order', value)} />
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('playback') && (
+      <Section title="Lyrics">
+        <Row label="Auto-Translate" desc="Show the translation under each line when a song is in another language.">
+          <button
+            onClick={() => set('lyrics_auto_translate', settings.lyrics_auto_translate === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lyrics_auto_translate === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.lyrics_auto_translate === '1' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Factory Reset Lokal" desc="Start over: erase everything Lokal keeps on this computer, accounts and settings included. Your music files aren't touched.">
+        <Row label="Translation Language" desc="The language lyrics are translated into.">
+          <select value={settings.lyrics_translate_target || 'en'} onChange={e => set('lyrics_translate_target', e.target.value)}
+            className="bg-card border border-border rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-accent/50">
+            {TRANSLATION_LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+          </select>
+        </Row>
+        <Row label="Word-by-Word Sync" desc="Light up each word as it's sung, when the lyrics have word timing.">
           <button
-            onClick={() => setShowFactoryResetModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors"
-          >
-            <Trash2 size={13} /> Factory Reset
+            onClick={() => { const v = settings.word_sync === '0'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.word_sync !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.word_sync !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Time Plain Lyrics" desc="Roughly time lyrics that have no timing, so they scroll with the song.">
+          <button
+            onClick={() => set('unsynced_auto_sync', settings.unsynced_auto_sync === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.unsynced_auto_sync === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.unsynced_auto_sync === '1' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <LyricsSourcesSettings onPersist={(patch) => setSettings(s => ({ ...s, ...patch }))} />
+        <Row label="Clear Lyrics Cache">
+          <button onClick={() => api.clearLyricsDb()}
+            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors flex items-center gap-2">
+            <RefreshCw size={13} /> Clear
           </button>
         </Row>
       </Section>
@@ -1530,32 +1545,6 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
       {inCategory('integrations') && (
       <Section title="Account Connections">
         <ProviderConnections settingsOverride={settings} onSettingsChanged={patch => setSettings(previous => ({ ...previous, ...patch }))} onListenBrainzChanged={setLbStatus} />
-      </Section>
-      )}
-
-      {inCategory('integrations') && (
-      <Section title="Discord Rich Presence">
-        <Row label="Use Lokal's Discord App" desc="Show Lokal's name and icon on your Discord profile.">
-          <button
-            onClick={() => set('discord_use_default_app_id', usingDefaultDiscordId ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${usingDefaultDiscordId ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {usingDefaultDiscordId ? 'On' : 'Off'}
-          </button>
-        </Row>
-        {!usingDefaultDiscordId && (
-          <Row label="Your Own Discord App" desc="The ID of a Discord app you made, to show its name and icon instead.">
-            <input value={settings.discord_client_id || ''} onChange={e => set('discord_client_id', e.target.value)}
-              placeholder={DEFAULT_DISCORD_CLIENT_ID}
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-        )}
-        <Row label="Connect on Startup" desc="Show what you're playing on Discord as soon as Lokal opens.">
-          <button
-            onClick={() => set('discord_auto_connect', settings.discord_auto_connect === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.discord_auto_connect === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
       </Section>
       )}
 
@@ -1591,6 +1580,32 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
             }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${!!(lbStatus?.connected && lbStatus.enabled) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {!!(lbStatus?.connected && lbStatus.enabled) ? 'On' : 'Off'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('integrations') && (
+      <Section title="Discord Rich Presence">
+        <Row label="Use Lokal's Discord App" desc="Show Lokal's name and icon on your Discord profile.">
+          <button
+            onClick={() => set('discord_use_default_app_id', usingDefaultDiscordId ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${usingDefaultDiscordId ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {usingDefaultDiscordId ? 'On' : 'Off'}
+          </button>
+        </Row>
+        {!usingDefaultDiscordId && (
+          <Row label="Your Own Discord App" desc="The ID of a Discord app you made, to show its name and icon instead.">
+            <input value={settings.discord_client_id || ''} onChange={e => set('discord_client_id', e.target.value)}
+              placeholder={DEFAULT_DISCORD_CLIENT_ID}
+              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+          </Row>
+        )}
+        <Row label="Connect on Startup" desc="Show what you're playing on Discord as soon as Lokal opens.">
+          <button
+            onClick={() => set('discord_auto_connect', settings.discord_auto_connect === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.discord_auto_connect === '1' ? 'On' : 'Off'}
           </button>
         </Row>
       </Section>
@@ -1698,176 +1713,20 @@ activeCategory === 'plugins' ? peekCache('settings:plugins') !== undefined || (!
         </Section>
       )}
 
-
-      {inCategory('playback') && (
-      <Section title="Playback">
-        <Row stacked label="Play From" desc="When a song isn't in your library, Lokal looks for it in these, top first. Addons you turn on are added here.">
-          <PlaybackSourceSettings value={settings.playback_search_order} onChange={value => set('playback_search_order', value)} />
-        </Row>
-        <Row label="Streaming Quality" desc="For songs played from YouTube Music. Data saver uses less than half the data. SoundCloud has one quality; addons have their own setting.">
-          <select
-            value={settings.online_quality || 'best'}
-            onChange={e => set('online_quality', e.target.value)}
-            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="best">Best</option>
-            <option value="saver">Data saver</option>
-          </select>
-        </Row>
-        <Row label="Crossfade" desc="Fade into the next song. Skipping doesn't fade.">
-          <div className="flex items-center gap-2">
-            <input type="range" min={0} max={12} step={0.5} value={settings.crossfade_seconds || 0}
-              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
-            <span className="text-xs text-muted w-10">{settings.crossfade_seconds || 0}s</span>
-          </div>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('playback') && (
-      <Section title="Downloads">
-        <Row label="Download Format" desc={`What downloaded songs are saved as. ${(FORMATS.find(f => f.id === savedFormat(settings)) || FORMATS[0]).hint}`}>
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {FORMATS.map(option => (
-              <button key={option.id} onClick={() => set('download_format', option.id)} title={option.hint}
-                className={`px-3 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${savedFormat(settings) === option.id ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                {option.label}
-              </button>
-            ))}
-            {savedFormat(settings) === 'mp3' && (
-              <select value={MP3_BITRATES.includes(String(settings.download_quality)) ? String(settings.download_quality) : '320'} onChange={e => set('download_quality', e.target.value)}
-                aria-label="MP3 bitrate"
-                className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-                {MP3_BITRATES.map(rate => <option key={rate} value={rate}>{rate} kbps</option>)}
-              </select>
-            )}
-          </div>
-        </Row>
-        <Row label="Simultaneous Downloads" desc="How many downloads run at once; the rest wait. A playlist counts as one.">
-          <select
-            value={settings.download_concurrency || '3'}
-            onChange={e => set('download_concurrency', e.target.value)}
-            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </Row>
-        <Row label="Add Right Away" desc="When downloading a playlist or album, add each song to your library as soon as it's done, not all at the end.">
-          <button
-            onClick={() => set('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.index_while_downloading === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.index_while_downloading === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Simpler Artist Names" desc="Use the main artist for downloaded songs, not every name the file lists.">
-          <button
-            onClick={() => set('clean_download_metadata', settings.clean_download_metadata === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.clean_download_metadata !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.clean_download_metadata !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Add Lyrics to Downloads" desc="Save the lyrics inside each downloaded file, so other players can show them too.">
-          <button
-            onClick={() => set('download_embed_lyrics', settings.download_embed_lyrics === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.download_embed_lyrics !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.download_embed_lyrics !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('playback') && (
-      <Section title="Lyrics">
-        <LyricsSourcesSettings onPersist={(patch) => setSettings(s => ({ ...s, ...patch }))} />
-        <Row label="Word-by-Word Sync" desc="Light up each word as it's sung, when the lyrics have word timing.">
-          <button
-            onClick={() => { const v = settings.word_sync === '0'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.word_sync !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.word_sync !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Translation Language" desc="The language lyrics are translated into.">
-          <select value={settings.lyrics_translate_target || 'en'} onChange={e => set('lyrics_translate_target', e.target.value)}
-            className="bg-card border border-border rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-accent/50">
-            {TRANSLATION_LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-          </select>
-        </Row>
-        <Row label="Auto-Translate" desc="Show the translation under each line when a song is in another language.">
-          <button
-            onClick={() => set('lyrics_auto_translate', settings.lyrics_auto_translate === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lyrics_auto_translate === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.lyrics_auto_translate === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Time Plain Lyrics" desc="Roughly time lyrics that have no timing, so they scroll with the song.">
-          <button
-            onClick={() => set('unsynced_auto_sync', settings.unsynced_auto_sync === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.unsynced_auto_sync === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.unsynced_auto_sync === '1' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Clear Lyrics Cache">
-          <button onClick={() => api.clearLyricsDb()}
-            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors flex items-center gap-2">
-            <RefreshCw size={13} /> Clear
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('playback') && (
-      <Section title="Equalizer">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm text-white font-medium">10-Band EQ</p>
-              <p className="text-xs text-muted mt-1">Preset: {eqPreset === 'custom' ? 'Custom' : EQ_PRESETS[eqPreset]?.label || EQ_PRESETS[DEFAULT_EQ_PRESET].label}</p>
-            </div>
-            <button onClick={() => applyEqGains(EQ_PRESETS[DEFAULT_EQ_PRESET].gains, DEFAULT_EQ_PRESET)}
-              className="text-xs text-muted hover:text-white transition-colors">Reset</button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(EQ_PRESETS).map(([key, preset]) => (
-              <button
-                key={key}
-                onClick={() => applyEqGains(preset.gains, key)}
-                className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${eqPreset === key ? 'bg-accent/20 border-accent/50 text-accent' : 'bg-card border-border text-muted hover:text-white'}`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-end justify-center gap-3 h-40 overflow-x-auto pb-2">
-            {EQ_BANDS.map((band, i) => (
-              <div key={band} className="flex flex-col items-center gap-2">
-                <span className="text-xs font-display" style={{ color: '#e8ff57', fontSize: 10 }}>
-                  {eqGains[i] > 0 ? '+' : ''}{(eqGains[i] || 0).toFixed(1)}
-                </span>
-                <input type="range" min={-12} max={12} step={0.5} value={eqGains[i] || 0}
-                  onChange={e => setEQ(i, parseFloat(e.target.value))}
-                  className="accent-accent"
-                  style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 24, height: 104, cursor: 'pointer' }} />
-                <span className="text-muted" style={{ fontSize: 9 }}>{band}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted mt-3 text-center opacity-50">The equalizer starts after your first click in the app.</p>
-        </div>
-      </Section>
-      )}
-
       {inCategory('addons') && (
       <Section title="Addons">
         <AddonsSettings />
       </Section>
       )}
 
-      {inCategory('plugins') && (
+      {inCategory('addons') && (
       <Section title="Plugins">
         <div className="space-y-3">
           <div className="flex gap-2">
             <input
               value={pluginInstallFolder}
               onChange={e => setPluginInstallFolder(e.target.value)}
-              placeholder="C:\\Users\\you\\MyPluginFolder"
+              placeholder="Your plugin's folder"
               className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-accent/50"
             />
             {api.isElectron && (
@@ -2210,25 +2069,6 @@ module.exports = {
       )}
 
       {inCategory('appearance') && (
-      <Section title="Player Bar">
-        <Row label="Glass" desc="The player bar floats over the page, blurred. Turn off for a plain bar, which is lighter if playback stutters.">
-          <button
-            onClick={() => set('glass_player_bar', settings.glass_player_bar === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.glass_player_bar !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.glass_player_bar !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-        <Row label="Waveform" desc="Moving bars next to the volume while music plays.">
-          <button
-            onClick={() => set('player_waveform', settings.player_waveform === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.player_waveform !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.player_waveform !== '0' ? 'On' : 'Off'}
-          </button>
-        </Row>
-      </Section>
-      )}
-
-      {inCategory('appearance') && (
       <Section title="Now Playing">
         <Row label="Colour Background" desc="Colour the side panel and full screen player from the album cover. Off: a dark background.">
           <button
@@ -2306,6 +2146,25 @@ module.exports = {
       )}
 
       {inCategory('appearance') && (
+      <Section title="Player Bar">
+        <Row label="Glass" desc="The player bar floats over the page, blurred. Turn off for a plain bar, which is lighter if playback stutters.">
+          <button
+            onClick={() => set('glass_player_bar', settings.glass_player_bar === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.glass_player_bar !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.glass_player_bar !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+        <Row label="Waveform" desc="Moving bars next to the volume while music plays.">
+          <button
+            onClick={() => set('player_waveform', settings.player_waveform === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.player_waveform !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.player_waveform !== '0' ? 'On' : 'Off'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
       <Section title="Layout">
         <Row
           label="Side Panels"
@@ -2370,6 +2229,167 @@ module.exports = {
             onClick={() => { const v = !autoOpenSidePanel; setAutoOpenSidePanel(v); set('auto_open_side_panel', v ? '1' : '0') }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${autoOpenSidePanel ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {autoOpenSidePanel ? 'On' : 'Off'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('data') && (
+      <Section title="Accounts">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-white font-medium">Local Accounts</p>
+            <button
+              onClick={loadUsers}
+              disabled={usersLoading}
+              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors disabled:opacity-50"
+            >
+              {usersLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+          <p className="text-xs text-muted">
+            Delete accounts directly from Lokal if one was created with the wrong password or is no longer needed.
+          </p>
+          {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
+          <div className="space-y-2">
+            {!usersLoading && usersTried && appUsers.length === 0 && (
+              <p className="text-xs text-muted">No local accounts found.</p>
+            )}
+            {appUsers.map((account) => (
+              <div key={account.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card/40">
+                <div className="min-w-0">
+                  <p className="text-sm text-white truncate">
+                    {account.display_name || account.username}
+                    {user?.id === account.id && <span className="text-xs text-accent ml-2">Current</span>}
+                  </p>
+                  <p className="text-xs text-muted truncate">@{account.username}</p>
+                </div>
+                <button
+                  onClick={() => setUserToDelete(account)}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+      )}
+
+      {inCategory('data') && (
+      <Section title="Playlists">
+        <Row label="Import Playlist" desc="Paste a list of songs, one “Artist - Title” per line.">
+          <button onClick={() => setShowPlaylistImportModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
+            <ListMusic size={14} /> Import
+          </button>
+        </Row>
+        <Row label="Import from Other Platforms" desc="Bring in playlists exported from Spotify (Exportify), YouTube (Google Takeout) or other apps, as CSV, JSON or M3U.">
+          <button onClick={() => { setPlatformImportMode('playlist'); setPlatformImportStatus(''); setPlatformImportPreview(null); setPlatformImportFiles([]); setPlatformImportFileName(''); setPlatformImportFileContent(''); setShowPlatformImportGuide(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
+            <Link size={14} /> Import
+          </button>
+        </Row>
+        <Row label="Import Track Metadata" desc="Add genres, labels and other details from an export (like Exportify) to the songs you already have.">
+          <button onClick={() => { setPlatformImportMode('metadata'); setPlatformImportStatus(''); setPlatformImportPreview(null); setPlatformImportFiles([]); setPlatformImportFileName(''); setPlatformImportFileContent(''); setShowPlatformImportGuide(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
+            <Link size={14} /> Import Metadata
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('data') && (
+      <Section title="Backup">
+        <Row label="Full App Export" desc="Save everything (accounts, settings, themes, playlists, likes, history) to one file. Your music files aren't included.">
+          <button
+            onClick={handleFullExport}
+            disabled={exportingAllData}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
+          >
+            <Download size={13} /> {exportingAllData ? 'Exporting...' : 'Export All'}
+            {fullExported && <span className="text-accent text-xs ml-1">✓</span>}
+          </button>
+        </Row>
+        <Row label="Import Backup" desc="Restore from a backup file. You'll see what it holds before anything is replaced.">
+          <button
+            onClick={readImportBackup}
+            disabled={importingAllData}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
+          >
+            <RefreshCcw size={13} /> {importingAllData ? 'Importing...' : 'Import'}
+          </button>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('data') && (
+      <Section title="History">
+        <Row label="Export History" desc="Save your listening history as a file.">
+          <div className="relative">
+            <button 
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors"
+            >
+              <Download size={13} /> Export
+              {historyExported && <span className="text-accent text-xs ml-1">✓</span>}
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 min-w-32 bg-elevated border border-border rounded-lg shadow-xl py-1 z-50">
+                <button
+                  onClick={() => handleHistoryExport('json')}
+                  className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
+                >
+                  <Download size={14} /> JSON
+                </button>
+                <button
+                  onClick={() => handleHistoryExport('csv')}
+                  className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
+                >
+                  <Download size={14} /> CSV
+                </button>
+              </div>
+            )}
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {api.isElectron && inCategory('data') && (
+      <Section title="Cache">
+        <Row label="Cache Size Limit" desc="Moving covers and converted copies of songs (Apple Lossless, WMA…) are kept so they load faster. Past this size, the oldest are removed.">
+          <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
+            className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
+          </select>
+        </Row>
+        <Row label="In Use" desc={cacheInfo ? `Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
+              {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}
+            </button>
+          </div>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('data') && (
+      <Section title="Danger Zone">
+        <Row label="Clear Library" desc="Remove every song, playlist, like and play from Lokal, keeping your accounts and settings. Your music files aren't touched.">
+          <button onClick={() => setShowClearModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors">
+            <Trash2 size={13} /> Clear
+          </button>
+        </Row>
+        <Row label="Factory Reset Lokal" desc="Start over: erase everything Lokal keeps on this computer, accounts and settings included. Your music files aren't touched.">
+          <button
+            onClick={() => setShowFactoryResetModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors"
+          >
+            <Trash2 size={13} /> Factory Reset
           </button>
         </Row>
       </Section>

@@ -57,3 +57,32 @@ test('the details panel asks for one song; each is looked up once; off with "Fet
   assert.equal(await genres.trackGenre(d, 'addon', { fetchImpl }), null)
   assert.equal(calls.length, 1)
 })
+
+test("Fill In Genres: one lookup per album, by that artist, for files and streams; songs without an album by title", async () => {
+  const d = new DatabaseSync(':memory:')
+  d.exec(`CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, title TEXT, artist TEXT, album TEXT, album_artist TEXT, genre TEXT);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);`)
+  const add = d.prepare('INSERT INTO tracks VALUES (?, ?, ?, ?, ?, ?, ?)')
+  add.run('a1', '/m/1.flac', 'In the Stone', 'Earth, Wind & Fire', 'I Am', 'Earth, Wind & Fire', null)
+  add.run('a2', '/m/2.flac', 'Star', 'Earth, Wind & Fire', 'I Am (Expanded Edition)', 'Earth, Wind & Fire', null)
+  add.run('a3', 'ghost://youtube/online/x', 'Wait', 'Earth, Wind & Fire', 'I Am', 'Earth, Wind & Fire', null)
+  add.run('b1', '/m/3.flac', 'Loose Song', 'Basia', null, null, null)
+  add.run('c1', '/m/4.flac', 'Kept', 'Basia', 'Time and Tide', null, 'Jazz')
+  add.run('imp', 'ghost://import/z', 'Imported', 'Basia', 'Time and Tide', null, null)
+  const calls = []
+  const fetchImpl = async url => {
+    calls.push(decodeURIComponent(String(url)).replace(/\+/g, ' '))
+    const results = /entity=album/.test(url)
+      ? [{ artistName: 'Someone Else', collectionName: 'I Am', primaryGenreName: 'Rock' }, { artistName: 'Earth, Wind & Fire', collectionName: 'I Am', primaryGenreName: 'R&B/Soul' }]
+      : [{ artistName: 'Basia', trackName: 'Loose Song', primaryGenreName: 'Pop' }]
+    return { ok: true, json: async () => ({ results }) }
+  }
+  genres.startLibraryGenres(d, { fetchImpl, gapMs: 0 })
+  for (let i = 0; i < 50 && genres.libraryGenresStatus().running; i++) await new Promise(r => setTimeout(r, 10))
+  const status = genres.libraryGenresStatus()
+  assert.equal(status.running, false)
+  assert.equal(status.total, 2) // the album (three songs, an edition named apart) and the loose song
+  assert.equal(status.updated, 4)
+  assert.deepEqual(d.prepare("SELECT id, genre FROM tracks ORDER BY id").all().map(r => [r.id, r.genre]), [['a1', 'R&B/Soul'], ['a2', 'R&B/Soul'], ['a3', 'R&B/Soul'], ['b1', 'Pop'], ['c1', 'Jazz'], ['imp', null]])
+  assert.equal(calls.length, 2)
+})

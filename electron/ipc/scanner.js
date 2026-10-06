@@ -1955,23 +1955,9 @@ function registerV4Handlers(ipcMain) {
       db.prepare('INSERT INTO play_history (user_id, track_id, seconds_played, session_id) VALUES (?, ?, ?, ?)').run(uid, trackId, Math.round(seconds || 0), sessionId)
     } catch(e) { console.warn('incrementPlayTime:', e.message) }
   })
-  ipcMain.handle('scanner:fetchMissingGenres', async () => {
-    const db = getDB()
-    const tracks = db.prepare("SELECT id, title, artist FROM tracks WHERE genre IS NULL OR genre = '' LIMIT 500").all()
-    let updated = 0
-    for (const track of tracks) {
-      console.log(`[fetchMissingGenres] Fetching genre for: "${track.title}" by "${track.artist}"`)
-      const result = await fetchExternalMetadata(track.title, track.artist, track.id)
-      if (result?.genre) {
-        db.prepare('UPDATE tracks SET genre = ? WHERE id = ?').run(result.genre, track.id)
-        console.log(`[fetchMissingGenres] Updated "${track.title}" with genre: "${result.genre}"`)
-        updated++
-      }
-      await new Promise(r => setTimeout(r, 200))
-    }
-    console.log(`[fetchMissingGenres] Done: updated ${updated} of ${tracks.length} tracks`)
-    return { updated, total: tracks.length }
-  })
+  // Settings > Library > Fill In Genres (see electron/online/genres.js).
+  ipcMain.handle('scanner:fetchMissingGenres', () => require('../online/genres').startLibraryGenres(getDB()))
+  ipcMain.handle('scanner:genresStatus', () => require('../online/genres').libraryGenresStatus())
   ipcMain.handle('scanner:setManualGenre', async (_, { artist, track, album, genre }) => {
     const db = getDB()
     if (!artist || !genre) {

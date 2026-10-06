@@ -100,4 +100,77 @@ async function trackGenre(db, trackId, options = {}) {
   return lookupGenre(db, row, options)
 }
 
-module.exports = { itunesGenre, fillOnlineGenres, backfillOnlineGenres, trackGenre, _forget: () => looked.clear() }
+/**
+ * The genre iTunes gives the album `album` by `artist`, or null; only an
+ * album by that artist counts, the same title first.
+ */
+async function itunesAlbumGenre(album, artist, { fetchImpl = fetch, timeoutMs = 5000 } = {}) {
+  const name = String(album || '').trim()
+  const by = String(artist || '').trim()
+  if (!name || !by) return null
+  const lead = plain(by.split(/,|&| x | and /i)[0]) || plain(by)
+  const res = await fetchImpl(`https://itunes.apple.com/search?${new URLSearchParams({ term: `${by} ${bareTitle(name)}`.slice(0, 200), entity: 'album', limit: '10' })}`, { signal: AbortSignal.timeout(timeoutMs) })
+  if (!res?.ok) return null
+  const data = await res.json().catch(() => null)
+  const byArtist = (Array.isArray(data?.results) ? data.results : []).filter(result => {
+    const found = plain(result.artistName)
+    return found && (found === plain(by) || found.includes(lead) || lead.includes(found))
+  })
+  const want = plain(bareTitle(name))
+  const pick = byArtist.find(result => plain(bareTitle(result.collectionName)) === want)
+  const genre = typeof pick?.primaryGenreName === 'string' ? pick.primaryGenreName.trim().slice(0, 100) : ''
+  return genre || null
+}
+
+// Settings > Library > Fill In Genres: every song without a genre (files and
+// streamed songs), one lookup per album (a song on its own: by its title).
+// iTunes answers about 20 searches a minute, so lookups are paced to that
+// and run in the background; the page reads the progress (libraryGenresStatus).
+const ITUNES_GAP_MS = 3200
+let libraryJob = null
+
+function libraryGenreGroups(db) {
+  const rows = db.prepare(`
+    SELECT id, title, artist, album, album_artist FROM tracks
+    WHERE (genre IS NULL OR genre = '') AND (file_path NOT LIKE 'ghost://%' OR ${STREAMED})
+  `).all()
+  const groups = new Map()
+  for (const row of rows) {
+    const artist = row.album_artist || row.artist || ''
+    const key = row.album ? `album\0${plain(artist)}\0${plain(bareTitle(row.album))}` : `song\0${row.id}`
+    if (!groups.has(key)) groups.set(key, { album: row.album || null, artist, title: row.title, artistOfSong: row.artist, ids: [] })
+    groups.get(key).ids.push(row.id)
+  }
+  return [...groups.values()]
+}
+
+/** Start filling in genres (unless already running); its status. */
+function startLibraryGenres(db, { fetchImpl = fetch, gapMs = ITUNES_GAP_MS } = {}) {
+  if (libraryJob?.running) return libraryGenresStatus()
+  if (!enabled(db)) return { error: 'Turn on "Look Up Missing Info" first.' }
+  const groups = libraryGenreGroups(db)
+  const job = libraryJob = { running: true, total: groups.length, done: 0, updated: 0, songs: groups.reduce((sum, group) => sum + group.ids.length, 0) }
+  ;(async () => {
+    for (const group of groups) {
+      try {
+        const genre = (group.album ? await itunesAlbumGenre(group.album, group.artist, { fetchImpl }).catch(() => null) : null)
+          || await itunesGenre(group.title, group.artistOfSong || group.artist, { fetchImpl }).catch(() => null)
+        if (genre) {
+          const update = db.prepare("UPDATE tracks SET genre = ? WHERE id = ? AND (genre IS NULL OR genre = '')")
+          for (const id of group.ids) job.updated += update.run(genre, id).changes || 0
+        }
+      } catch {}
+      job.done += 1
+      if (job.done < groups.length) await new Promise(resolve => setTimeout(resolve, gapMs))
+    }
+    job.running = false
+  })()
+  return libraryGenresStatus()
+}
+
+/** { running, total (albums and loose songs), done, songs (without a genre at the start), updated (songs given one) } */
+function libraryGenresStatus() {
+  return libraryJob ? { ...libraryJob } : { running: false, total: 0, done: 0, songs: 0, updated: 0 }
+}
+
+module.exports = { itunesGenre, itunesAlbumGenre, fillOnlineGenres, backfillOnlineGenres, trackGenre, startLibraryGenres, libraryGenresStatus, _forget: () => looked.clear() }
