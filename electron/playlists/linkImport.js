@@ -52,6 +52,7 @@ function playlistLinkProblem(link) {
   let url
   try { url = new URL(String(link || '').trim()) } catch { return 'Paste a link to a playlist.' }
   if (!/^https?:$/.test(url.protocol)) return 'Only http(s) links can be imported.'
+  if (platformOf(url.href) === 'link') return 'Only YouTube, SoundCloud and Bandcamp playlists can be imported.'
   if (isYouTube(url.href)) {
     const list = url.searchParams.get('list') || ''
     if (!list) return "That link isn't a playlist. Open the playlist and copy its link."
