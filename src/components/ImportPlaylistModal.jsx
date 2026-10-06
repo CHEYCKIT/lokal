@@ -21,9 +21,9 @@ function Tab({ active, icon: Icon, children, onClick }) {
   )
 }
 
-function LinkImport({ onDone }) {
+function LinkImport({ onDone, initialUrl = '' }) {
   const user = useAppStore(s => s.user)
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState(initialUrl)
   const [reading, setReading] = useState(false)
   const [preview, setPreview] = useState(null)
   const [selected, setSelected] = useState(new Set())
@@ -44,6 +44,9 @@ function LinkImport({ onDone }) {
     setSelected(new Set(result.entries.map(e => e.key)))
     setName(result.title || '')
   }
+
+  // Opened with a link (Save as playlist on a pasted link): read it right away.
+  useEffect(() => { if (initialUrl) read() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const chosen = useMemo(() => (preview?.entries || []).filter(e => selected.has(e.key)), [preview, selected])
   const ghostCount = chosen.filter(e => e.status !== 'In library').length
@@ -229,10 +232,12 @@ export default function ImportPlaylistModal() {
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState('link')
   const [session, setSession] = useState(0)
+  const [linkUrl, setLinkUrl] = useState('')
 
   useEffect(() => {
     const handler = (e) => {
       setSource(e?.detail?.source === 'file' ? 'file' : 'link')
+      setLinkUrl(typeof e?.detail?.url === 'string' ? e.detail.url : '')
       setSession(n => n + 1)
       setOpen(true)
     }
@@ -253,7 +258,7 @@ export default function ImportPlaylistModal() {
           <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>From a link</Tab>
           <Tab active={source === 'file'} icon={FileUp} onClick={() => setSource('file')}>From a file</Tab>
         </div>
-        {source === 'link' ? <LinkImport key={`l${session}`} onDone={done} /> : <FileImport key={`f${session}`} onDone={done} />}
+        {source === 'link' ? <LinkImport key={`l${session}`} onDone={done} initialUrl={linkUrl} /> : <FileImport key={`f${session}`} onDone={done} />}
       </div>
     </Modal>
   )
