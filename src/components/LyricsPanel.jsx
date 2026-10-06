@@ -765,7 +765,7 @@ export default function LyricsPanel({
           // views already have their own header there, so they go without.
           style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
         >
-          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden ? '' : undefined}>
             <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
               Translate
@@ -778,7 +778,7 @@ export default function LyricsPanel({
             )}
           </div>
           <div className="flex-1" />
-          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden ? '' : undefined}>
             {sources.length > 0 && result?.source && (
               <SourceMenu
                 sources={sources}
