@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   getTracks: (o) => invoke('scanner:getTracks', o),
   searchTracks: (q) => invoke('scanner:search', q),
+  libraryKeys: () => invoke('library:keys'),
   searchLyrics: (q) => invoke('scanner:searchLyrics', q),
   getArtists: () => invoke('scanner:getArtists'),
   getArtistsPage: (opts) => invoke('scanner:getArtistsPage', opts),

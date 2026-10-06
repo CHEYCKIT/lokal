@@ -211,9 +211,10 @@ export default function OnlineResults({ query, soulseekFor = null }) {
                   </button>
                   <SaveToLibraryButton
                     source={{ provider: item.provider, id: String(item.id) }}
-                    meta={{ title: item.title, artist: item.artist }}
+                    meta={{ title: item.title, artist: item.artist, artists: item.artists }}
                     getTrack={async () => (await asTracks([item]))[0]}
                     size={15}
+                    offerUpgrade
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100"
                   />
                   <span className="text-xs text-muted font-display w-10 text-right">{fmtDuration(item.duration)}</span>

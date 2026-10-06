@@ -559,6 +559,11 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params))
 })
 
+// The library's files in short (see electron/ipc/libraryKeys.js).
+router.get('/library-keys', (req, res) => {
+  try { res.json(require('../../electron/ipc/libraryKeys').libraryKeys(getDB())) } catch (e) { res.json([]) }
+})
+
 router.get('/search', (req, res) => {
   // Every word in one of the fields, in any order (electron/librarySearch.js).
   res.json(require('../../electron/librarySearch').searchTracks(getDB(), String(req.query.q || ''), 60))

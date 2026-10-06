@@ -7,9 +7,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Check, Download, AlertCircle, Search } from 'lucide-react'
+import { Check, Download, AlertCircle, Search, ArrowUpCircle } from 'lucide-react'
 import { useDownloads } from '../store/downloads'
 import { downloadUrlFor, isGhostTrack, providerLabel as labelOf, saveToLibrary, streamRef, sourceRefKey } from '../onlineTracks'
+import { libraryCopy, useLibraryIndex } from '../libraryIndex'
 
 const SAVING = new Set(['queued', 'downloading', 'finishing'])
 
@@ -20,8 +21,10 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
  * @param meta      { title, artist } (for the Soulseek search when there's no track yet)
  * @param size      icon size
  * @param className extra classes (e.g. hover-only visibility while idle)
+ * @param offerUpgrade a low-quality copy in the library can be replaced by this
+ *                  version (Search); elsewhere it's just "In your library"
  */
-export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '' }) {
+export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false }) {
   const nav = useNavigate()
   const ref = streamRef(track) || source
   const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
@@ -38,6 +41,16 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   const job = useDownloads(s => s.jobs.find(j => !j.removed && ((refKey && j.sourceRef === refKey) || (url && j.url === url) || (jobId && j.id === jobId))) || null)
   // Already in the library (the download was refused as a duplicate).
   const [inLibrary, setInLibrary] = useState(false)
+  // In the library already, downloaded before or a file of the user's own:
+  // by where it was downloaded from, or by artist and title (libraryIndex.js).
+  const libraryIndex = useLibraryIndex()
+  const song = { artist: meta?.artist ?? track?.artist, artists: meta?.artists ?? track?.artists, title: meta?.title ?? track?.title }
+  const copy = libraryCopy(libraryIndex, { ref, sourceRef: refKey, ...song })
+  // A low-quality copy (a 128 kbps MP3, say) of a search result: this
+  // version can be downloaded to replace it. Everywhere else (Home, the
+  // player) it's just in the library.
+  const upgradable = offerUpgrade && !!copy?.low && !!ref
+  const owned = !!copy && !upgradable
   const [requested, setRequested] = useState(false)
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }
@@ -51,8 +64,9 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     setInLibrary(false); setRequested(false); setError(null); setJobId(null)
   }, [refKey])
 
-  const state = error || job?.status === 'error' || job?.status === 'missing' ? 'failed'
-    : inLibrary || job?.status === 'done' ? 'saved'
+  const state = !error && !job && !requested && !inLibrary && upgradable ? 'upgrade'
+    : error || job?.status === 'error' || job?.status === 'missing' ? 'failed'
+    : inLibrary || job?.status === 'done' || owned ? 'saved'
       : (job && SAVING.has(job.status)) || requested ? 'saving'
         : 'idle'
   useEffect(() => { if (job) setRequested(false) }, [job])
@@ -72,10 +86,14 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
 
   const resolveTrack = async () => getTrack ? await getTrack() : track
 
+  // Only the library check says it's there (not a download of this song):
+  // it can still be downloaded from the menu (another version, say).
+  const ownedOnly = state === 'saved' && owned && !inLibrary && job?.status !== 'done'
+
   /** Download from where the song streams. */
-  const saveFromSource = async () => {
+  const saveFromSource = async ({ force = false } = {}) => {
     setMenu(null)
-    if (state === 'saving' || state === 'saved') return
+    if (state === 'saving' || (state === 'saved' && !(force && ownedOnly))) return
     setError(null)
     setRequested(true)
     const clickedKey = refKey
@@ -105,19 +123,22 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     nav('/search', { state: { soulseek: { query: [artist, title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/i, ''), replaceTrackId: target?.id, title, artist } } })
   }
 
-  const label = state === 'saved' ? 'Saved to library'
+  const label = state === 'upgrade' ? 'In your library in low quality: click to download this version (it replaces the file if it\'s better)'
+    : ownedOnly ? 'In your library (right-click to download it anyway)'
+    : state === 'saved' ? 'Saved to library'
     : state === 'saving' ? 'Saving to your library…'
       : state === 'failed' ? `Couldn't save${error ? `: ${error}` : ''}. Click to try again`
         : `Save to library (right-click for Soulseek)`
-  const Icon = state === 'saved' ? Check : state === 'failed' ? AlertCircle : Download
-  const color = state === 'saved' ? 'text-accent' : state === 'saving' ? 'text-accent animate-pulse' : state === 'failed' ? 'text-red' : 'text-muted hover:text-accent'
+  const Icon = state === 'saved' ? Check : state === 'failed' ? AlertCircle : state === 'upgrade' ? ArrowUpCircle : Download
+  const color = state === 'upgrade' ? 'text-amber-300/80 hover:text-accent'
+    : state === 'saved' ? 'text-accent' : state === 'saving' ? 'text-accent animate-pulse' : state === 'failed' ? 'text-red' : 'text-muted hover:text-accent'
 
   return (
     <>
       <button
         onClick={(e) => { e.stopPropagation(); saveFromSource() }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }) }}
-        disabled={state === 'saving' || state === 'saved'}
+        disabled={state === 'saving' || (state === 'saved' && !ownedOnly)}
         title={label}
         aria-label={label}
         className={`flex-shrink-0 transition-all ${color} ${state === 'idle' ? className : ''}`}
@@ -132,7 +153,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
           className="w-56 rounded-xl border border-border bg-elevated py-1 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <button role="menuitem" onClick={saveFromSource} disabled={state === 'saving' || state === 'saved'}
+          <button role="menuitem" onClick={() => saveFromSource({ force: true })} disabled={state === 'saving' || (state === 'saved' && !ownedOnly)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm text-text hover:bg-card disabled:opacity-50">
             <Download size={14} className="text-muted" /> Download from {providerLabel}
           </button>

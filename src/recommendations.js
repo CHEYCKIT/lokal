@@ -32,7 +32,7 @@ const stripFeatured = suffix => /\b(?:remix|live|cover)\b/i.test(recommendationK
 const SAME_RECORDING = '(?:(?:\\d{4}\\s+)?(?:digital(?:ly)?\\s+)?remaster(?:ed)?(?:\\s+\\d{4})?(?:\\s+version)?|(?:album|single|mono|stereo|lp)\\s+version|mono|stereo)'
 const sameRecordingBracket = new RegExp(`\\s*[([]${SAME_RECORDING}[)\\]]`, 'gi')
 const sameRecordingSuffix = new RegExp(`\\s+[-–—]\\s+${SAME_RECORDING}\\s*$`, 'i')
-const titleKey = title => recommendationKey(String(title || '')
+export const titleKey = title => recommendationKey(String(title || '')
   .replace(sameRecordingBracket, '')
   .replace(sameRecordingSuffix, '')
   .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio|album version|single version)[)\]]/gi, '')
