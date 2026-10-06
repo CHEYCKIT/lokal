@@ -124,7 +124,7 @@ function sanitizeEntries(list) {
   const out = []
   for (const item of Array.isArray(list) ? list.slice(0, MAX_ENTRIES * 2) : []) {
     const title = text(item?.title, 300)
-    const sourceUrl = httpUrl(item?.source_url)
+    const sourceUrl = httpUrl(item?.source_url, { rejectPrivateHosts: true })
     if (!title || !sourceUrl || seen.has(sourceUrl)) continue
     seen.add(sourceUrl)
     const duration = Number(item.duration)
