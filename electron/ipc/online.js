@@ -9,6 +9,7 @@ const { runJsonSearch, mapSearchResult } = require('../download/search')
 const sources = require('../online/sources')
 const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
+const { spelling } = require('../online/spelling')
 const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
 let accountSession
 
@@ -71,6 +72,8 @@ function registerOnlineHandlers(ipcMain) {
   })
   // The sources the search page can switch between: built-in ones, then addons.
   ipcMain.handle('online:providers', () => providers())
+  // A misspelt search ("micheal jackson"): the library's spelling, else YouTube Music's.
+  ipcMain.handle('online:spelling', (_, query) => spelling(getDB(), query))
   ipcMain.handle('online:artwork', (_, items) => discoveryArtwork(items))
   ipcMain.handle('online:signIn', (event, options) => accountSession.signIn({ mode: options?.mode || 'embedded', onProgress: status => { if (!event.sender.isDestroyed()) event.sender.send('online:signInStatus', status) } }))
   ipcMain.handle('online:cancelSignIn', () => accountSession.cancelSignIn())

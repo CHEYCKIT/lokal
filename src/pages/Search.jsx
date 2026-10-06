@@ -39,6 +39,12 @@ export default function Search() {
   const [recentItems, setRecentItems] = useState(getRecentItems)
   const recentTrackSelectionRef = useRef(0)
   const searchSeqRef = useRef(0)
+  // A misspelt search ("micheal jackson") is searched corrected, Spotify-like:
+  // { from, to } while it is. The online sources get the corrected query too.
+  // "Search for ... instead" searches the text as typed (exactRef).
+  const [correction, setCorrection] = useState(null)
+  const [onlineQuery, setOnlineQuery] = useState(query)
+  const exactRef = useRef('')
   const nav = useNavigate()
   const { playQueue, queue, playTrack } = usePlayerStore()
   const isSearchStarted = !!query.trim()
@@ -54,15 +60,24 @@ export default function Search() {
   /** Search tracks, albums and lyrics for `q`; results from an outdated search are ignored. */
   const doSearch = useCallback(async (q) => {
     const seq = ++searchSeqRef.current
-    if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); setSearching(false); return }
+    if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); setSearching(false); setCorrection(null); setOnlineQuery(''); return }
     setSearching(true)
     let res, albumRes, lyricsRes
+    const searchLibrary = text => Promise.all([api.searchTracks(text), api.searchAlbums(text), api.searchLyrics(text)])
     try {
-      ;[res, albumRes, lyricsRes] = await Promise.all([
-        api.searchTracks(q),
-        api.searchAlbums(q),
-        api.searchLyrics(q),
-      ])
+      ;[res, albumRes, lyricsRes] = await searchLibrary(q)
+      const found = (Array.isArray(res) ? res : res?.tracks || []).length || (res?.artists || []).length || (Array.isArray(albumRes) ? albumRes : []).length
+      let corrected = null
+      // Nothing as typed: maybe a typo. Corrected the library's way (or YouTube Music's).
+      if (!found && exactRef.current !== q.trim()) {
+        const spelling = await Promise.resolve(api.searchSpelling?.(q)).catch(() => null)
+        if (seq !== searchSeqRef.current) return
+        corrected = spelling?.corrected || null
+        if (corrected) [res, albumRes, lyricsRes] = await searchLibrary(corrected)
+      }
+      if (seq !== searchSeqRef.current) return
+      setCorrection(corrected ? { from: q.trim(), to: corrected } : null)
+      setOnlineQuery(corrected || q)
     } catch (error) {
       // Only the latest search may change what's shown.
       if (seq !== searchSeqRef.current) return
@@ -265,6 +280,14 @@ export default function Search() {
 
       {showSearchResults && !link && (
         <>
+          {correction && correction.from === query.trim() && (
+            <p role="status" className="text-sm text-muted">
+              Showing results for <button type="button" onClick={() => setQuery(correction.to)} className="font-medium italic text-white hover:underline">{correction.to}</button>
+              <span className="mx-2 text-subtle">·</span>
+              <button type="button" onClick={() => { exactRef.current = correction.from; doSearch(correction.from) }} className="hover:text-white hover:underline">Search for “{correction.from}” instead</button>
+            </p>
+          )}
+
           {artists.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Artists</h2>
@@ -346,11 +369,11 @@ export default function Search() {
           {query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
             <div className="flex items-center gap-3 py-3 text-muted">
               <Music size={18} className="opacity-40" />
-              <p className="text-sm">Nothing in your library for "{query}"</p>
+              <p className="text-sm">Nothing in your library for "{correction?.from === query.trim() ? correction.to : query}"</p>
             </div>
           )}
 
-          <OnlineResults query={query} soulseekFor={soulseekFor} />
+          <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} />
         </>
       )}
     </div>

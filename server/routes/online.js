@@ -79,6 +79,8 @@ router.post('/download-url/:provider/:id', async (req, res) => {
 })
 
 // Addons (Settings → Addons).
+// A misspelt search ("micheal jackson"): the library's spelling, else YouTube Music's.
+router.get('/spelling', async (req, res) => res.json(await require('../../electron/online/spelling').spelling(getDB(), String(req.query.q || '')).catch(() => ({ corrected: null }))))
 router.get('/addons', (req, res) => { sources.addons.refreshManifests(getDB()).catch(() => {}); res.json(sources.addons.list(getDB())) })
 // An addon's album and artist pages (when its manifest offers them).
 for (const [path, read] of [['addon-album', 'album'], ['addon-artist', 'artist']]) {
