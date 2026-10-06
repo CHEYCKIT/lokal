@@ -11,7 +11,7 @@ import { ArrowLeft, Disc3, Download, Music, Play, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import OnlineSongList from './OnlineSongList'
-import { loadArtistChannel, loadOnlineAlbum, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
+import { loadAddonArtist, loadArtistChannel, loadOnlineAlbum, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
@@ -44,6 +44,9 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
     setSongs({ loading: true, tracks: [], error: '' })
     setAlbums({ loading: true, items: [] })
     ;(async () => {
+      // YouTube Music's channel of this very artist first, then the
+      // catalogues by name (YouTube Music, Last.fm), then an addon with artist
+      // pages, then a search of the playback sources.
       const channel = await loadArtistChannel(fallbackName, { anchor, hints })
       if (!isCurrent()) return
       if (channel) {
@@ -56,10 +59,22 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
       let result = { tracks: [], error: '' }
       let found = fallbackName
       for (const candidate of names) {
-        result = await loadOnlineArtistSongs(candidate, undefined, { isCurrent })
+        result = await loadOnlineArtistSongs(candidate, undefined, { isCurrent, searchSources: false })
         if (!isCurrent()) return
         found = candidate
         if (result.tracks.length) break
+      }
+      if (!result.tracks.length) {
+        const fromAddon = await loadAddonArtist(fallbackName, { anchor, hints }).catch(() => null)
+        if (!isCurrent()) return
+        if (fromAddon) {
+          setSongs({ loading: false, tracks: fromAddon.tracks, error: '', name: fromAddon.name, image: fromAddon.image })
+          setAlbums({ loading: false, items: fromAddon.albums })
+          return
+        }
+        result = await loadOnlineArtistSongs(fallbackName, undefined, { isCurrent, skipSources: ['youtube', 'lastfm'] })
+        if (!isCurrent()) return
+        found = fallbackName
       }
       setSongs({ loading: false, tracks: result.tracks, error: result.error, name: found })
       const items = await loadOnlineArtistAlbums(found, result.tracks)
@@ -92,9 +107,10 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const albumItems = libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items
 
   const play = (selected, list = popularTracks) => playOnline(list, { selected, name, path })
-  const openAlbum = album => nav(onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId }), { state: { artwork: album.artwork_url || null } })
+  const albumPath = album => onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
+  const openAlbum = album => nav(albumPath(album), { state: { artwork: album.artwork_url || null } })
   const albumTracks = async album => {
-    const result = await loadOnlineAlbum({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url })
+    const result = await loadOnlineAlbum({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
     if (!result.tracks.length) showToast(result.error || `No songs were found for “${album.title}”.`)
     return result.tracks
   }
@@ -104,7 +120,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
     try { await work() } finally { setBusy(false) }
   }
   const openAlbumMenu = (event, album) => menu.open(event, [
-    { label: 'Play album', icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId }) }) } },
+    { label: 'Play album', icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: albumPath(album) }) } },
     { label: 'Download album', icon: Download, onSelect: () => withBusy(async () => { const tracks = await albumTracks(album); if (tracks.length) await downloadOnline(tracks, { label: `“${album.title}”` }) }) },
     { separator: true },
     { label: 'Open album', icon: Disc3, onSelect: () => openAlbum(album) },

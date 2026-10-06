@@ -53,7 +53,7 @@ function providers() {
   return [
     { id: 'yt', label: 'YouTube Music' },
     { id: 'sc', label: 'SoundCloud' },
-    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true })),
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
   ]
 }
 
@@ -84,7 +84,20 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
     try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }
   })
-  ipcMain.handle('addons:list', () => sources.addons.list(getDB()))
+  // Addons' manifests are read again now and then (new resources, settings).
+  sources.addons.refreshManifests(getDB()).catch(() => {})
+  ipcMain.handle('addons:list', () => { sources.addons.refreshManifests(getDB()).catch(() => {}); return sources.addons.list(getDB()) })
+  // An addon's album and artist pages (when its manifest offers them).
+  ipcMain.handle('online:addonAlbum', async (_, provider, id) => {
+    const key = sources.addons.keyOfProvider(provider)
+    if (!key) return { error: 'Not an addon.' }
+    try { return await sources.addons.album(getDB(), key, id) } catch (e) { return { error: e.message } }
+  })
+  ipcMain.handle('online:addonArtist', async (_, provider, id) => {
+    const key = sources.addons.keyOfProvider(provider)
+    if (!key) return { error: 'Not an addon.' }
+    try { return await sources.addons.artist(getDB(), key, id) } catch (e) { return { error: e.message } }
+  })
   ipcMain.handle('addons:install', async (_, url) => {
     try { return await sources.addons.install(getDB(), url) } catch (e) { return { error: e.message } }
   })

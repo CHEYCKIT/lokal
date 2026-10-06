@@ -133,6 +133,12 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
     if (reusePlayable && playableRecommendation(candidate)) return candidate
     const videoId = recommendationVideoId(candidate)
     try {
+      // A song from an addon's own album or artist page: that very song, no search.
+      if (candidate.exact && /^a-/.test(String(candidate.provider || '')) && candidate.id != null) {
+        const saved = await timed(() => client.onlineSave([candidate]), timeoutMs).catch(() => null)
+        const row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
+        if (row && isCurrent()) return { ...row, title: candidate.title, artist: candidate.artist, album: candidate.album || row.album, artwork_url: candidate.artwork_url || row.artwork_url, source: candidate.source || 'addon' }
+      }
       const local = searchLocal ? await timed(() => client.searchTracks(candidate.title), timeoutMs).catch(() => null) : null
       const rows = Array.isArray(local) ? local : Array.isArray(local?.tracks) ? local.tracks : []
       // Imported ghosts and previously cached streams must not override a newly

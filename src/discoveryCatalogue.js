@@ -2,7 +2,8 @@ import { api } from './api.js'
 import { playbackSources, recommendationKey, timed, uniqueSongs } from './recommendations.js'
 
 /** Metadata identifies album tracks; each song is then resolved in playback priority order. */
-export async function loadDiscoveryCatalogue(options, client = api, { isCurrent = () => true, onProgress = () => {}, timeoutMs = 12000, skipSources = [] } = {}) {
+/** searchSources: false stops after the catalogues (YouTube Music, Last.fm), before searching the playback sources. */
+export async function loadDiscoveryCatalogue(options, client = api, { isCurrent = () => true, onProgress = () => {}, timeoutMs = 12000, skipSources = [], searchSources = true } = {}) {
   const excluded = new Set(skipSources)
   // Native artist results include real song IDs, avoiding a second ambiguous search.
   const sources = options.type === 'artist' || options.source === 'youtube' ? ['youtube', 'lastfm'] : ['lastfm', 'youtube']
@@ -15,6 +16,7 @@ export async function loadDiscoveryCatalogue(options, client = api, { isCurrent 
     const tracks = uniqueSongs(result?.tracks)
     if (tracks.length) return { tracks: options.type === 'artist' ? tracks.slice(0, 24) : tracks, catalogueSource: source }
   }
+  if (!searchSources) return { tracks: [], error: options.type === 'album' ? `No catalogue has “${options.album}” by ${options.artist}.` : `No catalogue has songs by ${options.artist}.` }
   for (const source of await playbackSources(client, timeoutMs)) {
     if (excluded.has(source.id)) continue
     if (!isCurrent()) return { tracks: [] }

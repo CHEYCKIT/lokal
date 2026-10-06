@@ -10,7 +10,8 @@
 //   { type: 'library' | 'mix' | 'search' | 'recap', name }
 //   { type: 'discovery', name, path? }   online songs; path: their album or artist page
 
-import { isOnlineTrack, onlineAlbumPath } from './onlineBrowse.js'
+import { isOnlineTrack, trackAlbumPath } from './onlineBrowse.js'
+import { streamRef } from './onlineTracks.js'
 
 export function makePlaylistContext(playlist, fallbackId = null) {
   const id = playlist?.id ?? fallbackId
@@ -111,7 +112,8 @@ export function navigateToTrackAlbum(nav, track) {
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
   if (isOnlineTrack(track)) {
-    nav(onlineAlbumPath({ artist: track.album_artist || track.artist, album: track.album }), { state: { artwork: track.artwork_url || null, highlightTitle: track.title } })
+    const ref = streamRef(track)
+    nav(trackAlbumPath(track), { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: { title: track.title, album: track.album, provider: ref?.provider || null, id: ref?.id || null } } })
     return true
   }
   nav('/albums', { state: { album: context.album, highlightTrackId: track?.id || null } })

@@ -32,6 +32,10 @@ export default function OnlineAlbum() {
   const artist = params.get('artist') || ''
   const album = params.get('album') || ''
   const albumId = params.get('albumId') || ''
+  // An addon's album: that addon and its album id (see onlineAlbumPath).
+  const provider = params.get('source') || ''
+  const sourceAlbumId = params.get('sourceAlbum') || ''
+  const anchor = location.state?.anchor || null
   const artwork = location.state?.artwork || ''
   const highlightTitle = location.state?.highlightTitle || ''
   const [state, setState] = useState({ loading: true, tracks: [], error: '', progress: '' })
@@ -47,18 +51,18 @@ export default function OnlineAlbum() {
       const own = await libraryAlbum({ artist, album })
       if (!isCurrent()) return
       if (own) { nav('/albums', { replace: true, state: { album: own } }); return }
-      const result = await loadOnlineAlbum({ artist, album, albumId, artwork }, undefined, {
+      const result = await loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
         isCurrent, onProgress: progress => { if (isCurrent()) setState(current => ({ ...current, progress })) },
       })
-      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '' })
+      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '' })
     })()
     return () => { request.current++ }
-  }, [artist, album, albumId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [artist, album, albumId, provider, sourceAlbumId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   usePageReady(true)
   const { tracks } = state
-  const cover = artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
-  const path = onlineAlbumPath({ artist, album, albumId })
+  const cover = state.artwork || artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
+  const path = onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumId })
   const label = `“${album}”`
   const run = async (key, work) => {
     if (busy) return

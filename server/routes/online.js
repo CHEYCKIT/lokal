@@ -58,10 +58,11 @@ router.get('/search', async (req, res) => {
 
 // The sources the search page can switch between: built-in ones, then addons.
 router.get('/providers', (req, res) => {
+  sources.addons.refreshManifests(getDB()).catch(() => {})
   res.json([
     { id: 'yt', label: 'YouTube Music' },
     { id: 'sc', label: 'SoundCloud' },
-    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true })),
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
   ])
 })
 
@@ -78,7 +79,15 @@ router.post('/download-url/:provider/:id', async (req, res) => {
 })
 
 // Addons (Settings → Addons).
-router.get('/addons', (req, res) => res.json(sources.addons.list(getDB())))
+router.get('/addons', (req, res) => { sources.addons.refreshManifests(getDB()).catch(() => {}); res.json(sources.addons.list(getDB())) })
+// An addon's album and artist pages (when its manifest offers them).
+for (const [path, read] of [['addon-album', 'album'], ['addon-artist', 'artist']]) {
+  router.get(`/${path}/:provider/:id`, async (req, res) => {
+    const key = sources.addons.keyOfProvider(req.params.provider)
+    if (!key) return res.status(400).json({ error: 'Not an addon.' })
+    try { res.json(await sources.addons[read](getDB(), key, req.params.id)) } catch (e) { res.json({ error: e.message }) }
+  })
+}
 router.post('/addons', async (req, res) => {
   try { res.json(await sources.addons.install(getDB(), req.body?.url)) } catch (e) { res.status(400).json({ error: e.message }) }
 })
