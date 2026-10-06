@@ -14,6 +14,7 @@ import { useSelection } from '../selection'
 import { releaseKey, useReleaseActions } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import OnlineArtist, { OnlineArtistSections, useOnlineArtist } from '../components/OnlineArtist'
+import RefreshButton from '../components/RefreshButton'
 import { isConnected, setConnected } from '../onlineBrowse'
 
 export default function Artist() {
@@ -236,6 +237,7 @@ export default function Artist() {
             className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${connected ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border bg-elevated text-white/80 hover:border-accent/30 hover:text-white'}`}>
             <Globe size={14} /> {connected ? 'Online: on' : 'More online'}
           </button>
+          {connected && <RefreshButton onClick={onlineData.refresh} loading={onlineData.loading} loadedAt={onlineData.loadedAt} className="bg-elevated" />}
         </div>
 
         {artist.bio && (

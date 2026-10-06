@@ -8,8 +8,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, ListPlus, Play, Shuffle } from 'lucide-react'
 import DiscoveryImage from '../components/DiscoveryImage'
 import OnlineSongList from '../components/OnlineSongList'
+import RefreshButton from '../components/RefreshButton'
 import { usePageReady } from '../pageCache'
-import { libraryAlbum, loadOnlineAlbum, onlineAlbumPath } from '../onlineBrowse'
+import { albumCacheKey, libraryAlbum, loadOnlineAlbumCached, onlineAlbumPath, peekOnline } from '../onlineBrowse'
 import { downloadOnline, playOnline, resolveOnline } from '../onlineActions'
 import { saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
@@ -38,14 +39,22 @@ export default function OnlineAlbum() {
   const anchor = location.state?.anchor || null
   const artwork = location.state?.artwork || ''
   const highlightTitle = location.state?.highlightTitle || ''
-  const [state, setState] = useState({ loading: true, tracks: [], error: '', progress: '' })
+  // Kept once loaded (see cachedOnline): coming back shows it at once.
+  const cacheKey = albumCacheKey({ artist, album, albumId, provider, sourceAlbumId })
+  const fromCache = () => {
+    const hit = peekOnline(cacheKey)
+    return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', loadedAt: hit.at } : null
+  }
+  const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '' })
   const [busy, setBusy] = useState('')
+  const [reload, setReload] = useState(0)
   const request = useRef(0)
 
   useEffect(() => {
     const version = ++request.current
     const isCurrent = () => version === request.current
-    setState({ loading: true, tracks: [], error: '', progress: '' })
+    const cached = reload ? null : fromCache()
+    setState(cached || { loading: true, tracks: [], error: '', progress: '' })
     ;(async () => {
       // In the library after all (downloaded since, say): its own page.
       const own = await libraryAlbum({ artist, album })
@@ -53,13 +62,14 @@ export default function OnlineAlbum() {
       // Opened as an online album: show it whole there ("Full album online"),
       // not only the songs the library has.
       if (own) { nav('/albums', { replace: true, state: { album: own, connect: true } }); return }
-      const result = await loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
+      if (cached) return
+      const result = await loadOnlineAlbumCached({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
         isCurrent, onProgress: progress => { if (isCurrent()) setState(current => ({ ...current, progress })) },
-      })
-      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '' })
+      }, { refresh: reload > 0 })
+      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '', loadedAt: Date.now() })
     })()
     return () => { request.current++ }
-  }, [artist, album, albumId, provider, sourceAlbumId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [artist, album, albumId, provider, sourceAlbumId, reload]) // eslint-disable-line react-hooks/exhaustive-deps
 
   usePageReady(true)
   const { tracks } = state
@@ -100,6 +110,7 @@ export default function OnlineAlbum() {
             <button onClick={() => { const list = shuffled(tracks); play(list[0], list) }} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> Shuffle</button>
             <button onClick={download} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? 'Finding songs…' : 'Download album'}</button>
             <button onClick={savePlaylist} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><ListPlus size={15} /> {busy === 'playlist' ? 'Saving…' : 'Save as playlist'}</button>
+            <RefreshButton onClick={() => setReload(n => n + 1)} loading={state.loading} loadedAt={state.loadedAt} />
           </div>
         </div>
       </div>

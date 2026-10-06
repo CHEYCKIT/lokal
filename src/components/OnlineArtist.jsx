@@ -5,13 +5,14 @@
 // sections ("More online"): with the songs the library has marked, and only
 // the albums it doesn't have.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, Music, Play, Radio } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import OnlineSongList from './OnlineSongList'
-import { loadAddonArtist, loadArtistChannel, loadOnlineAlbum, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
+import RefreshButton from './RefreshButton'
+import { artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
@@ -22,14 +23,20 @@ import { useAppStore } from '../store/player'
 export const nameFromSlug = id => String(id || '').replace(/^a-/, '').split('-').filter(Boolean).map(word => word[0].toUpperCase() + word.slice(1)).join(' ')
 
 /**
- * An artist's popular songs and albums online: { songs, albums, name }
- * (nothing loads until `enabled`). From their YouTube Music channel when it
- * can be told apart from namesakes (`anchor`: a song of theirs; `hints`: the
- * library's titles by them), else by name.
+ * An artist's popular songs and albums online: { songs, albums, name,
+ * refresh, loadedAt } (nothing loads until `enabled`). From their YouTube
+ * Music channel when it can be told apart from namesakes (`anchor`: a song
+ * of theirs; `hints`: the library's titles by them), else by name. Kept once
+ * loaded (see cachedOnline): coming back shows it at once; refresh() looks
+ * it up again.
  */
 export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, hints = [] } = {}) {
-  const [songs, setSongs] = useState({ loading: true, tracks: [], error: '' })
-  const [albums, setAlbums] = useState({ loading: true, items: [] })
+  const cacheKey = artistCacheKey(fallbackName)
+  const fromCache = () => peekOnline(cacheKey)
+  const [songs, setSongs] = useState(() => fromCache()?.value.songs || { loading: true, tracks: [], error: '' })
+  const [albums, setAlbums] = useState(() => fromCache()?.value.albums || { loading: true, items: [] })
+  const [loadedAt, setLoadedAt] = useState(() => fromCache()?.at || 0)
+  const [reload, setReload] = useState(0)
   const request = useRef(0)
 
   // The artist's own spelling ("Earth, Wind & Fire"), from their songs.
@@ -41,8 +48,22 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
     if (!enabled || !fallbackName) return undefined
     const version = ++request.current
     const isCurrent = () => version === request.current
+    const cached = reload ? null : fromCache()
+    if (cached) {
+      setSongs(cached.value.songs)
+      setAlbums(cached.value.albums)
+      setLoadedAt(cached.at)
+      return () => { request.current++ }
+    }
     setSongs({ loading: true, tracks: [], error: '' })
     setAlbums({ loading: true, items: [] })
+    const done = (nextSongs, nextAlbums) => {
+      if (!isCurrent()) return
+      setSongs(nextSongs)
+      setAlbums(nextAlbums)
+      setLoadedAt(Date.now())
+      if (nextSongs.tracks.length || nextAlbums.items.length) keepOnline(cacheKey, { songs: nextSongs, albums: nextAlbums })
+    }
     ;(async () => {
       // YouTube Music's channel of this very artist first, then the
       // catalogues by name (YouTube Music, Last.fm), then an addon with artist
@@ -50,8 +71,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
       const channel = await loadArtistChannel(fallbackName, { anchor, hints })
       if (!isCurrent()) return
       if (channel) {
-        setSongs({ loading: false, tracks: channel.tracks, error: '', name: channel.name, image: channel.image })
-        setAlbums({ loading: false, items: channel.albums })
+        done({ loading: false, tracks: channel.tracks, error: '', name: channel.name, image: channel.image }, { loading: false, items: channel.albums })
         return
       }
       // "Drake, Future": the whole name first, then the first artist.
@@ -68,22 +88,23 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
         const fromAddon = await loadAddonArtist(fallbackName, { anchor, hints }).catch(() => null)
         if (!isCurrent()) return
         if (fromAddon) {
-          setSongs({ loading: false, tracks: fromAddon.tracks, error: '', name: fromAddon.name, image: fromAddon.image })
-          setAlbums({ loading: false, items: fromAddon.albums })
+          done({ loading: false, tracks: fromAddon.tracks, error: '', name: fromAddon.name, image: fromAddon.image }, { loading: false, items: fromAddon.albums })
           return
         }
         result = await loadOnlineArtistSongs(fallbackName, undefined, { isCurrent, skipSources: ['youtube', 'lastfm'] })
         if (!isCurrent()) return
         found = fallbackName
       }
-      setSongs({ loading: false, tracks: result.tracks, error: result.error, name: found })
+      const nextSongs = { loading: false, tracks: result.tracks, error: result.error, name: found }
+      setSongs(nextSongs)
       const items = await loadOnlineArtistAlbums(found, result.tracks)
-      if (isCurrent()) setAlbums({ loading: false, items })
+      done(nextSongs, { loading: false, items })
     })()
     return () => { request.current++ }
-  }, [fallbackName, enabled]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fallbackName, enabled, reload]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { songs, albums, name }
+  const refresh = useCallback(() => setReload(n => n + 1), [])
+  return { songs, albums, name, refresh, loadedAt, loading: songs.loading || albums.loading }
 }
 
 /**
@@ -110,7 +131,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const albumPath = album => onlineAlbumPath({ artist: album.artist || name, album: album.title, albumId: album.albumId, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
   const openAlbum = album => nav(albumPath(album), { state: { artwork: album.artwork_url || null } })
   const albumTracks = async album => {
-    const result = await loadOnlineAlbum({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
+    const result = await loadOnlineAlbumCached({ artist: album.artist || name, album: album.title, albumId: album.albumId, artwork: album.artwork_url, provider: album.provider, sourceAlbumId: album.sourceAlbumId })
     if (!result.tracks.length) showToast(result.error || `No songs were found for “${album.title}”.`)
     return result.tracks
   }
@@ -200,6 +221,7 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
               <button onClick={() => play(songs.tracks[0])} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
               <button onClick={() => openRadio(nav, { artist: name, type: 'artist' }, userId)} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50"><Radio size={15} /> Artist radio</button>
               <button onClick={downloadPopular} disabled={!songs.tracks.length || busy} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy ? 'Finding songs…' : 'Download popular songs'}</button>
+              <RefreshButton onClick={data.refresh} loading={data.loading} loadedAt={data.loadedAt} className="border-white/15 bg-black/30 backdrop-blur-sm" />
             </div>
           </div>
         </div>
