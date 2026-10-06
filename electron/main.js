@@ -19,7 +19,7 @@ const { registerLyricsHandlers } = require('./ipc/lyrics')
 const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
 const { registerCacheHandlers } = require('./ipc/cache')
 const { registerUserHandlers } = require('./ipc/users')
-const { registerDiscordHandlers } = require('./ipc/discord')
+const { registerDiscordHandlers, disconnectForQuit } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
 const { registerListenBrainzHandlers } = require('./ipc/listenbrainz')
 const { registerToolsHandlers } = require('./ipc/tools')
@@ -747,10 +747,19 @@ app.on('will-quit', () => {
   try { stopSmtcBridge() } catch {}
 })
 
-app.on('before-quit', () => {
+// Discord keeps showing the last song if the app quits without clearing it:
+// quitting waits (a second at most) for that once, then carries on.
+let discordCleared = false
+app.on('before-quit', (event) => {
   if (isUpdating) {
     if (mainWindow) {
       mainWindow.destroy();
     }
+  }
+  // Not while installing an update: the installer takes over the quit.
+  if (!discordCleared && !isUpdating) {
+    discordCleared = true
+    event.preventDefault()
+    disconnectForQuit().finally(() => app.quit())
   }
 });

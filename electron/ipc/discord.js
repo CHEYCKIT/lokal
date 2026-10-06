@@ -248,4 +248,14 @@ process.on('unhandledRejection', async (err) => {
   await cleanupAndExit(1)
 })
 
-module.exports = { registerDiscordHandlers }
+/**
+ * On quitting: clear the status and disconnect, waiting at most `timeoutMs`
+ * (Discord otherwise kept showing the last song for a while). Resolves
+ * whether or not Discord answered.
+ */
+function disconnectForQuit(timeoutMs = 1000) {
+  if (!rpcClient && !artworkServer) return Promise.resolve()
+  return Promise.race([disconnectRpc().catch(() => {}), new Promise(resolve => setTimeout(resolve, timeoutMs))])
+}
+
+module.exports = { registerDiscordHandlers, disconnectForQuit }

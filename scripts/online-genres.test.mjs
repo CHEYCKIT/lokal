@@ -86,3 +86,20 @@ test("Fill In Genres: one lookup per album, by that artist, for files and stream
   assert.deepEqual(d.prepare("SELECT id, genre FROM tracks ORDER BY id").all().map(r => [r.id, r.genre]), [['a1', 'R&B/Soul'], ['a2', 'R&B/Soul'], ['a3', 'R&B/Soul'], ['b1', 'Pop'], ['c1', 'Jazz'], ['imp', null]])
   assert.equal(calls.length, 2)
 })
+
+test('"Music" counts as no genre: it gets looked up and replaced; iTunes answering "Music" is no answer', async () => {
+  assert.equal(genres.noGenre('Music'), true)
+  assert.equal(genres.noGenre(' music '), true)
+  assert.equal(genres.noGenre('Electronic'), false)
+  const d = new DatabaseSync(':memory:')
+  d.exec(`CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, title TEXT, artist TEXT, album TEXT, album_artist TEXT, genre TEXT);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);`)
+  d.prepare('INSERT INTO tracks VALUES (?, ?, ?, ?, ?, ?, ?)').run('m1', '/m/1.mp3', 'Canopus', 'Premier Contact', 'Hamburger Galaxy', null, 'Music')
+  d.prepare('INSERT INTO tracks VALUES (?, ?, ?, ?, ?, ?, ?)').run('m2', '/m/2.mp3', 'Other', 'Nobody', 'Nothing', null, 'Music')
+  const fetchImpl = async url => ({ ok: true, json: async () => ({ results: /Premier/.test(decodeURIComponent(String(url))) && /entity=album/.test(url)
+    ? [{ artistName: 'Premier Contact', collectionName: 'Hamburger Galaxy', primaryGenreName: 'Electronic' }]
+    : [{ artistName: 'Nobody', collectionName: 'Nothing', trackName: 'Other', primaryGenreName: 'Music' }] }) })
+  genres.startLibraryGenres(d, { fetchImpl, gapMs: 0 })
+  for (let i = 0; i < 50 && genres.libraryGenresStatus().running; i++) await new Promise(r => setTimeout(r, 10))
+  assert.deepEqual(d.prepare('SELECT id, genre FROM tracks ORDER BY id').all().map(r => [r.id, r.genre]), [['m1', 'Electronic'], ['m2', 'Music']])
+})

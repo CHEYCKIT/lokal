@@ -17,8 +17,12 @@ import {
 } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
 import { isStreamed, trackArtURL } from '../onlineTracks'
+
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
+
+// "Music" is a placeholder some files carry, not a genre.
+const isPlaceholderGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
 
 function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
   if (!value) return null
@@ -74,12 +78,13 @@ export default function RightSidebar() {
   const [foundGenre, setFoundGenre] = useState({ id: null, genre: null })
   useEffect(() => {
     const id = currentTrack?.id
-    if (!id || currentTrack.genre || !isStreamed(currentTrack)) return undefined
+    if (!id || !isPlaceholderGenre(currentTrack.genre) || !isStreamed(currentTrack)) return undefined
     let current = true
     Promise.resolve(api.onlineGenre?.(id)).then(genre => { if (current && genre) setFoundGenre({ id, genre }) }).catch(() => {})
     return () => { current = false }
   }, [currentTrack?.id, currentTrack?.genre]) // eslint-disable-line react-hooks/exhaustive-deps
-  const genre = currentTrack?.genre || (foundGenre.id === currentTrack?.id ? foundGenre.genre : null)
+  // "Music" is a placeholder some files carry, not a genre: not shown.
+  const genre = (!isPlaceholderGenre(currentTrack?.genre) && currentTrack.genre) || (foundGenre.id === currentTrack?.id ? foundGenre.genre : null)
   const canOpenContext = isContextNavigable(playbackContext)
   const wordSync = wordSyncEnabled()
   // Backend-persisted setting (Settings' Unsynced Lyrics Auto-Sync toggle
