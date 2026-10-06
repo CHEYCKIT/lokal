@@ -319,15 +319,17 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSea
   }, [open])
   const label = sources.find(s => s.id === current)?.label || current
   return (
-    <div ref={ref} className="relative">
+    // It takes the room left beside Translate/Romanize and shortens the
+    // source's name to fit (a narrow sidebar cut it off at the edge).
+    <div ref={ref} className="relative min-w-0">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md ${TOOLBAR_FADE}`}
-        title="Lyrics source"
+        className={`flex max-w-full items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-md ${TOOLBAR_FADE}`}
+        title={label ? `Lyrics source: ${label}` : 'Lyrics source'}
       >
-        {busy ? <Loader2 size={11} className="animate-spin" /> : null}
-        <span className="max-w-[9rem] truncate">{label || 'Source'}</span>
-        <ChevronDown size={11} />
+        {busy ? <Loader2 size={11} className="flex-shrink-0 animate-spin" /> : null}
+        <span className="min-w-0 max-w-[9rem] truncate">{label || 'Source'}</span>
+        <ChevronDown size={11} className="flex-shrink-0" />
       </button>
       <AnimatePresence>
         {open && (
@@ -779,7 +781,7 @@ export default function LyricsPanel({
           // views already have their own header there, so they go without.
           style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
         >
-          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
+          <div className={`flex flex-shrink-0 items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
             <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
               Translate
@@ -792,7 +794,7 @@ export default function LyricsPanel({
             )}
           </div>
           <div className="flex-1" />
-          <div className={`flex items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
+          <div className={`flex min-w-0 items-center justify-end gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
             {sources.length > 0 && result?.source && (
               <SourceMenu
                 sources={sources}
