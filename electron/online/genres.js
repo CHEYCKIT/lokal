@@ -6,6 +6,10 @@
 
 const STREAMED = "(file_path LIKE 'ghost://youtube/online/%' OR file_path LIKE 'ghost://soundcloud/online/%' OR file_path LIKE 'ghost://addon/%')"
 const GAP_MS = 300
+// No genre: none, or the placeholder "Music" some files and sources carry
+// (it says nothing; recaps leave it out too). Such songs get looked up.
+const NO_GENRE = "(genre IS NULL OR TRIM(genre) = '' OR LOWER(TRIM(genre)) = 'music')"
+const noGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
 
 // Songs already looked up this run (found or not): not asked again.
 const looked = new Map()
@@ -42,19 +46,19 @@ async function itunesGenre(title, artist, { fetchImpl = fetch, timeoutMs = 5000 
   const want = plain(bareTitle(name))
   const pick = byArtist.find(result => plain(bareTitle(result.trackName)) === want) || byArtist[0]
   const genre = typeof pick?.primaryGenreName === 'string' ? pick.primaryGenreName.trim().slice(0, 100) : ''
-  return genre || null
+  return noGenre(genre) ? null : genre
 }
 
 /** Look up and keep one streamed song's genre (once per run); its genre, or null. */
 async function lookupGenre(db, row, options = {}) {
   if (!row?.id) return null
-  if (row.genre) return row.genre
+  if (!noGenre(row.genre)) return row.genre
   if (looked.has(row.id)) return looked.get(row.id)
   if (!enabled(db)) return null
   const pending = (async () => {
     const genre = await itunesGenre(row.title, row.artist, options).catch(() => null)
     if (genre) {
-      try { db.prepare(`UPDATE tracks SET genre = ? WHERE id = ? AND (genre IS NULL OR genre = '') AND ${STREAMED}`).run(genre, row.id) } catch {}
+      try { db.prepare(`UPDATE tracks SET genre = ? WHERE id = ? AND ${NO_GENRE} AND ${STREAMED}`).run(genre, row.id) } catch {}
     }
     return genre
   })()
@@ -66,7 +70,7 @@ async function lookupGenre(db, row, options = {}) {
 
 /** In the background, one at a time: the genres of the streamed songs among `rows` that have none. */
 function fillOnlineGenres(db, rows = [], options = {}) {
-  const list = (Array.isArray(rows) ? rows : []).filter(row => row?.id && !row.genre && /^ghost:\/\/(youtube\/online|soundcloud\/online|addon)\//.test(String(row.file_path || '')) && !looked.has(row.id))
+  const list = (Array.isArray(rows) ? rows : []).filter(row => row?.id && noGenre(row.genre) && /^ghost:\/\/(youtube\/online|soundcloud\/online|addon)\//.test(String(row.file_path || '')) && !looked.has(row.id))
   if (!list.length || !enabled(db)) return queue
   queue = queue.then(async () => {
     for (const row of list) {
@@ -84,7 +88,7 @@ function backfillOnlineGenres(db, { limit = 300, ...options } = {}) {
   try {
     rows = db.prepare(`
       SELECT t.id, t.title, t.artist, t.genre, t.file_path FROM tracks t
-      WHERE (t.genre IS NULL OR t.genre = '') AND ${STREAMED.replace(/file_path/g, 't.file_path')}
+      WHERE ${NO_GENRE.replace(/genre/g, 't.genre')} AND ${STREAMED.replace(/file_path/g, 't.file_path')}
         AND EXISTS (SELECT 1 FROM play_history ph WHERE ph.track_id = t.id)
       LIMIT ?
     `).all(limit)
@@ -119,7 +123,7 @@ async function itunesAlbumGenre(album, artist, { fetchImpl = fetch, timeoutMs = 
   const want = plain(bareTitle(name))
   const pick = byArtist.find(result => plain(bareTitle(result.collectionName)) === want)
   const genre = typeof pick?.primaryGenreName === 'string' ? pick.primaryGenreName.trim().slice(0, 100) : ''
-  return genre || null
+  return noGenre(genre) ? null : genre
 }
 
 // Settings > Library > Fill In Genres: every song without a genre (files and
@@ -132,7 +136,7 @@ let libraryJob = null
 function libraryGenreGroups(db) {
   const rows = db.prepare(`
     SELECT id, title, artist, album, album_artist FROM tracks
-    WHERE (genre IS NULL OR genre = '') AND (file_path NOT LIKE 'ghost://%' OR ${STREAMED})
+    WHERE ${NO_GENRE} AND (file_path NOT LIKE 'ghost://%' OR ${STREAMED})
   `).all()
   const groups = new Map()
   for (const row of rows) {
@@ -156,7 +160,7 @@ function startLibraryGenres(db, { fetchImpl = fetch, gapMs = ITUNES_GAP_MS } = {
         const genre = (group.album ? await itunesAlbumGenre(group.album, group.artist, { fetchImpl }).catch(() => null) : null)
           || await itunesGenre(group.title, group.artistOfSong || group.artist, { fetchImpl }).catch(() => null)
         if (genre) {
-          const update = db.prepare("UPDATE tracks SET genre = ? WHERE id = ? AND (genre IS NULL OR genre = '')")
+          const update = db.prepare(`UPDATE tracks SET genre = ? WHERE id = ? AND ${NO_GENRE}`)
           for (const id of group.ids) job.updated += update.run(genre, id).changes || 0
         }
       } catch {}
@@ -173,4 +177,4 @@ function libraryGenresStatus() {
   return libraryJob ? { ...libraryJob } : { running: false, total: 0, done: 0, songs: 0, updated: 0 }
 }
 
-module.exports = { itunesGenre, itunesAlbumGenre, fillOnlineGenres, backfillOnlineGenres, trackGenre, startLibraryGenres, libraryGenresStatus, _forget: () => looked.clear() }
+module.exports = { noGenre, itunesGenre, itunesAlbumGenre, fillOnlineGenres, backfillOnlineGenres, trackGenre, startLibraryGenres, libraryGenresStatus, _forget: () => looked.clear() }
