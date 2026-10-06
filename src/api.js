@@ -298,6 +298,8 @@ export const api = {
   onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
   onlinePrepare: (provider, id, force = false) => isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }),
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
+  // A misspelt search's correction: { corrected, source } (corrected null when none).
+  searchSpelling: (q) => isE() ? el().searchSpelling(q) : apiFetch(`/online/spelling?q=${encodeURIComponent(q)}`),
   discoveryArtwork: items => isE() ? el().discoveryArtwork(items) : apiFetch('/online/artwork', { method: 'POST', body: { items } }),
   discoveryCatalogue: options => options.source === 'youtube'
     ? (isE() ? el().youtubeCatalogue(options) : apiFetch('/online/catalogue', { method: 'POST', body: options }))

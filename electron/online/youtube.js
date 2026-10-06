@@ -185,6 +185,39 @@ async function searchSongs(query, { limit = 10, fetchImpl = fetch } = {}) {
   return results.slice(0, limit)
 }
 
+const spellCache = new Map() // query -> { at, corrected }
+
+/**
+ * YouTube Music's spelling correction for `query` ("micheal jackson" ->
+ * "michael jackson"), from its "Showing results for" / "Did you mean", or
+ * null. Cached for ten minutes.
+ */
+async function spellCheck(query, { fetchImpl = fetch } = {}) {
+  const q = String(query || '').trim()
+  if (q.length < 3) return null
+  const key = q.toLowerCase()
+  const cached = spellCache.get(key)
+  if (cached && Date.now() - cached.at < SEARCH_TTL_MS) return cached.corrected
+  const anonymous = await anonymousRequest(fetchImpl)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
+  let corrected = null
+  try {
+    const res = await fetchImpl(SEARCH_URL, { method: 'POST', headers: anonymous.headers, signal: controller.signal, body: JSON.stringify({ context: { client: anonymous.client }, query: q, params: SONGS_PARAMS }) })
+    if (res.ok) {
+      walkObjects(await res.json(), node => {
+        const renderer = node.showingResultsForRenderer || node.didYouMeanRenderer
+        const runs = renderer?.correctedQuery?.runs
+        if (!corrected && Array.isArray(runs)) corrected = runs.map(run => run.text || '').join('').trim() || null
+      })
+    }
+  } catch {} finally { clearTimeout(timer) }
+  if (corrected && corrected.toLowerCase() === key) corrected = null
+  if (spellCache.size > 200) spellCache.delete(spellCache.keys().next().value)
+  spellCache.set(key, { at: Date.now(), corrected })
+  return corrected
+}
+
 // -------------------------------------------------------------- account data
 
 function cookieValue(header, names) {
@@ -880,7 +913,7 @@ function videoIdFromUrl(url) {
 }
 
 module.exports = {
-  searchSongs, parseSearch, parseItem, parseDuration,
+  searchSongs, spellCheck, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
   resolveStream, fetchStream, streamError, videoIdFromUrl,
