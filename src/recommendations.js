@@ -32,7 +32,31 @@ const stripFeatured = suffix => /\b(?:remix|live|cover)\b/i.test(recommendationK
 const SAME_RECORDING = '(?:(?:\\d{4}\\s+)?(?:digital(?:ly)?\\s+)?remaster(?:ed)?(?:\\s+\\d{4})?(?:\\s+version)?|(?:album|single|mono|stereo|lp)\\s+version|mono|stereo)'
 const sameRecordingBracket = new RegExp(`\\s*[([]${SAME_RECORDING}[)\\]]`, 'gi')
 const sameRecordingSuffix = new RegExp(`\\s+[-–—]\\s+${SAME_RECORDING}\\s*$`, 'i')
+// "[Explicit]", "(Clean Version)": labels of the same recording.
+const contentLabel = /\s*[([](?:explicit|clean)(?:\s+version)?[)\]]/gi
+// A credit in brackets or after the name: "[feat. Joi]", "(ft. X)", " feat. Y".
+const featBracket = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]*[)\]]/gi
+const featSuffix = /\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i
+
+/** An artist without the guests credited with them: "Estelle [feat. Joi]" -> "Estelle". */
+export const mainArtist = artist => String(artist || '').replace(featBracket, '').replace(featSuffix, '').trim()
+
+/**
+ * A title to search with: without guests, "[Explicit]" and remaster labels
+ * ("American Boy (feat. Kanye West)" -> "American Boy"). A remix or live
+ * version keeps its label.
+ */
+export const searchTitle = title => String(title || '')
+  .replace(contentLabel, '')
+  .replace(sameRecordingBracket, '')
+  .replace(sameRecordingSuffix, '')
+  .replace(featBracket, stripFeatured)
+  .replace(featSuffix, stripFeatured)
+  .replace(/\s{2,}/g, ' ')
+  .trim() || String(title || '').trim()
+
 export const titleKey = title => recommendationKey(String(title || '')
+  .replace(contentLabel, '')
   .replace(sameRecordingBracket, '')
   .replace(sameRecordingSuffix, '')
   .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio|album version|single version)[)\]]/gi, '')
@@ -53,7 +77,14 @@ export function recommendationTitles(title) {
 export function recommendationQueries(candidate) {
   const artist = String(candidate.artist || '').normalize('NFC').trim()
   const lead = String(candidate.artists?.[0] || artist).normalize('NFC').trim()
-  return [...new Set(recommendationTitles(candidate.title).flatMap(title => [artist, lead].map(name => `${name} ${title}`.trim())))].slice(0, 6)
+  // Clean names first ("Estelle Grateful", not "Estelle [feat. Teedra Moses &
+  // Russell Taylor] Grateful", which sources often can't find), then the
+  // album's own artist, then the names as given.
+  const names = [...new Set([mainArtist(artist), mainArtist(lead), mainArtist(candidate.album_artist), artist, lead].filter(Boolean))]
+  const titles = [...new Set([...recommendationTitles(searchTitle(candidate.title)), ...recommendationTitles(candidate.title)])]
+  const queries = []
+  for (const title of titles) for (const name of names) queries.push(`${name} ${title}`.trim())
+  return [...new Set(queries)].slice(0, 6)
 }
 
 export function recommendationMatch(candidate, results) {
@@ -61,6 +92,10 @@ export function recommendationMatch(candidate, results) {
   const artist = recommendationKey(candidate?.artist)
   if (!titles[0] || !artist) return null
   const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
+  // The same artists without their guests ("Estelle [feat. Joi]" is Estelle),
+  // and, on an album's page, the album's artist ("Estelle, D-Nice & ...").
+  const artistKeys = new Set([artist, leadArtist, recommendationKey(mainArtist(candidate.artist)), recommendationKey(mainArtist(candidate.artists?.[0])), recommendationKey(mainArtist(candidate.album_artist))].filter(Boolean))
+  const sameArtist = name => artistKeys.has(recommendationKey(mainArtist(name)).replace(/ topic$/, ''))
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
   // Of the matches, the one from the same album comes first (a compilation's
@@ -71,8 +106,7 @@ export function recommendationMatch(candidate, results) {
     const resultTitle = prefix && [artist, leadArtist].includes(recommendationKey(prefix[1])) ? prefix[2] : name
     if (!recommendationTitles(resultTitle).map(titleKey).some(title => titles.includes(title))) return false
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
-    return artists.some(name => recommendationKey(name).replace(/ topic$/, '') === leadArtist)
-      || recommendationKey(result.artist).replace(/ topic$/, '') === artist
+    return artists.some(sameArtist) || sameArtist(result.artist)
   })
   const album = recommendationKey(candidate.album)
   return (album && matches.find(result => recommendationKey(result.album) === album)) || matches[0] || null
