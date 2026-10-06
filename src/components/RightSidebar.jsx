@@ -161,7 +161,11 @@ export default function RightSidebar() {
     ].filter(Boolean))
   }
 
-  const btnFx = 'flex-1 py-2 bg-white/10 border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/15 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5 backdrop-blur-md'
+  // No backdrop blur on these (nor on the panel): the colour behind them is
+  // already a blurred image, and blur filters nested in this panel made
+  // Chromium flash dark bands over them whenever anything repainted (hovering
+  // a list in the page, a playing canvas).
+  const btnFx = 'flex-1 py-2 bg-white/[0.12] border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/20 transition-colors font-display uppercase tracking-wider flex items-center justify-center gap-1.5'
   const btnClassic = 'flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5'
 
   const contextBlock = currentTrack && playbackContext?.name ? (
@@ -214,7 +218,7 @@ export default function RightSidebar() {
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
             className="h-full flex flex-col border-l border-border"
-            style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+            style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)' }}
           >
           <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0 border-b border-border">
             <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
@@ -314,7 +318,7 @@ export default function RightSidebar() {
                   )}
 
                   {currentTrack && (
-                    <div className={fx ? 'bg-black/20 rounded-xl border border-white/10 px-4 py-1 backdrop-blur-md' : 'bg-card rounded-xl border border-border px-4 py-1'}>
+                    <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
                       <InfoRow
                         fx={fx}
                         label="Album"
