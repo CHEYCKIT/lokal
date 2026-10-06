@@ -260,6 +260,7 @@ module.exports = {
   enqueueSoulseek,
   registerExtraDownloaderHandlers,
   registerPlaylistArchiveHandlers,
+  manager,
   terminateProcessTree,
   markInterruptedPlaylistsIncomplete,
   markPlaylistIncomplete,

@@ -765,6 +765,46 @@ function registerPlaylistHandlers() {
     }
   });
 
+  ipcMain.handle('playlist:previewLink', async (event, payload = {}) => {
+    try {
+      const linkImport = require('../playlists/linkImport');
+      const { manager } = require('./downloader');
+      const { findYtDlp } = require('./tools');
+      const playlist = await linkImport.fetchPlaylist({ ytdlp: findYtDlp(), url: payload?.url, settings: manager().settings() });
+      if (playlist.error) return { error: playlist.error };
+      const { rows, matched, ghostable } = linkImport.previewEntries(getDB(), playlist.entries, { findTrack });
+      return { ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, entries: rows };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  ipcMain.handle('playlist:importLink', async (event, payload = {}) => {
+    try {
+      const linkImport = require('../playlists/linkImport');
+      const name = String(payload?.name || '').trim().slice(0, 200);
+      if (!name) return { error: 'Please enter a playlist name' };
+      const entries = linkImport.sanitizeEntries(payload?.entries);
+      if (!entries.length) return { error: 'No tracks selected' };
+      const result = linkImport.importLinkEntries(getDB(), {
+        name,
+        userId: payload?.userId,
+        entries,
+        platform: linkImport.platformOf(entries[0].source_url),
+        helpers: { findTrack, createGhostTrack },
+      });
+      let downloads = null;
+      if (payload?.downloadAfter && result.ghosts.length) {
+        const { manager } = require('./downloader');
+        downloads = linkImport.queueGhostDownloads(manager(), result.ghosts);
+      }
+      const { ghosts, ...summary } = result;
+      return { ok: true, ...summary, downloads };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
   ipcMain.handle('playlist:importExternalMetadata', async (event, payload = {}) => {
     try {
       return importExternalMetadata(getDB(), payload)

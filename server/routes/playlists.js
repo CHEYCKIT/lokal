@@ -783,6 +783,42 @@ router.post('/external-import', (req, res) => {
   res.json({ ok: true, playlistId, name, fileCount, total: entries.length, matched, ghosted, unresolved: unresolved.slice(0, 50) })
 })
 
+router.post('/link-preview', async (req, res) => {
+  try {
+    const linkImport = require('../../electron/playlists/linkImport')
+    const download = require('./download')
+    const playlist = await linkImport.fetchPlaylist({ ytdlp: download.findBinary('yt-dlp'), url: req.body?.url, settings: download.manager().settings() })
+    if (playlist.error) return res.status(400).json({ error: playlist.error })
+    const { rows, matched, ghostable } = linkImport.previewEntries(getDB(), playlist.entries, { findTrack })
+    res.json({ ok: true, title: playlist.title, owner: playlist.owner, platform: playlist.platform, total: rows.length, matched, ghostable, skipped: playlist.skipped, truncated: playlist.truncated, entries: rows })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+router.post('/link-import', (req, res) => {
+  try {
+    const linkImport = require('../../electron/playlists/linkImport')
+    const name = String(req.body?.name || '').trim().slice(0, 200)
+    if (!name) return res.status(400).json({ error: 'Please enter a playlist name' })
+    const entries = linkImport.sanitizeEntries(req.body?.entries)
+    if (!entries.length) return res.status(400).json({ error: 'No tracks selected' })
+    const result = linkImport.importLinkEntries(getDB(), {
+      name,
+      userId: req.body?.userId,
+      entries,
+      platform: linkImport.platformOf(entries[0].source_url),
+      helpers: { findTrack, createGhostTrack },
+    })
+    let downloads = null
+    if (req.body?.downloadAfter && result.ghosts.length) downloads = linkImport.queueGhostDownloads(require('./download').manager(), result.ghosts)
+    const { ghosts, ...summary } = result
+    res.json({ ok: true, ...summary, downloads })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 router.post('/external-import-metadata', (req, res) => {
   try {
     res.json(importExternalMetadata(getDB(), req.body || {}))

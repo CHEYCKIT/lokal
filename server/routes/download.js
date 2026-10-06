@@ -242,5 +242,6 @@ router.post('/playlist/remove-archive', (req, res) => {
 
 // Shared with the online routes (streaming with the same yt-dlp).
 router.findBinary = findBinary
+router.manager = manager
 
 module.exports = router

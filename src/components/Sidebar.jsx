@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react'
+import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles, Import } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { openSmartPlaylistEditor } from '../smartPlaylists'
+import { openPlaylistImport } from '../playlistImport'
 import { getLastHomePath } from '../recommendationSession'
 
 const NAV = [
@@ -332,6 +333,10 @@ export default function Sidebar() {
             <button onClick={() => openSmartPlaylistEditor()} title="New smart playlist" aria-label="New smart playlist"
               className="text-muted hover:text-white transition-colors p-0.5 rounded">
               <Sparkles size={13} />
+            </button>
+            <button onClick={() => openPlaylistImport()} title="Import playlist" aria-label="Import playlist"
+              className="text-muted hover:text-white transition-colors p-0.5 rounded">
+              <Import size={13} />
             </button>
             <button onClick={startNewPlaylist} title="New playlist" aria-label="New playlist"
               className="text-muted hover:text-white transition-colors p-0.5 rounded">
