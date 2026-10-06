@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, Search, Maximize2 } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
@@ -13,6 +13,23 @@ import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } fr
 import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL } from '../onlineTracks'
+
+// The cover's size (square), and the lyrics/queue panel's width beside it.
+const COVER_SIZE = 'min(34rem, 54vh)'
+const PANEL_WIDTH = 'min(52vw, 780px)'
+// The header and the cover's controls hide (and the cursor too) after this
+// long without the mouse moving.
+const IDLE_MS = 3000
+
+/** A round button on the cover (like, playlist, queue, lyrics). */
+function CoverButton({ onClick, label, active = false, children }) {
+  return (
+    <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
+      className={`relative w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm transition-colors ${active ? 'bg-white/25 text-accent' : 'bg-black/30 text-white/85 hover:bg-white/20 hover:text-white'}`}>
+      {children}
+    </button>
+  )
+}
 
 function fmt(s) {
   if (!s || isNaN(s)) return '0:00'
@@ -147,7 +164,7 @@ export default function FullscreenPlayer() {
     showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
     likedIds, setLiked, audioRef, cfAudioRef, activeAudioElement,
-    playbackContext,
+    playbackContext, setVolume,
   } = usePlayerStore()
   const { user, openAddToPlaylist } = useAppStore()
   const nav = useNavigate()
@@ -327,7 +344,12 @@ export default function FullscreenPlayer() {
     // (see the Expand Lyrics button below), so while it's showing, Escape
     // should close *that* first instead of also tearing down this whole
     // fullscreen view underneath it.
-    const h = (e) => { if (e.key === 'Escape') toggleFullscreen() }
+    const h = (e) => {
+      if (e.key !== 'Escape') return
+      // In the whole-screen mode, Escape leaves that first (the player stays).
+      if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); return }
+      toggleFullscreen()
+    }
     if (showFullscreen && !showLyricsFullscreen) document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
   }, [showFullscreen, showLyricsFullscreen])
@@ -344,15 +366,6 @@ export default function FullscreenPlayer() {
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat
 
-  const scrub = (e) => {
-    if (!duration) return
-    const r = e.currentTarget.getBoundingClientRect()
-    const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration
-    const { audioRef, cfAudioRef, activeAudioElement } = usePlayerStore.getState()
-    const activeEl = activeAudioElement === 'primary' ? audioRef?.current : cfAudioRef?.current
-    if (activeEl) activeEl.currentTime = t
-    setProgress(t)
-  }
 
   const toggleLike = async () => {
     if (!currentTrack) return
@@ -367,6 +380,65 @@ export default function FullscreenPlayer() {
     api.importLyrics(currentTrack.id, lyrics, type)
     setRefreshKey(k => k + 1)
     setShowSearch(false)
+  }
+
+  // Idle: after a few seconds without the mouse moving, the header and the
+  // cover's controls fade out and the cursor hides; any movement brings them
+  // back. Not while the pointer rests on the header or the lyrics search is open.
+  const [idle, setIdle] = useState(false)
+  const overChromeRef = useRef(false)
+  useEffect(() => {
+    if (!showFullscreen || showLyricsFullscreen) { setIdle(false); return undefined }
+    let timer = null
+    const wake = () => {
+      setIdle(false)
+      clearTimeout(timer)
+      timer = setTimeout(() => { if (!overChromeRef.current) setIdle(true) }, IDLE_MS)
+    }
+    wake()
+    const events = ['mousemove', 'mousedown', 'wheel', 'keydown', 'touchstart']
+    events.forEach(type => window.addEventListener(type, wake, { passive: true }))
+    return () => { clearTimeout(timer); events.forEach(type => window.removeEventListener(type, wake)) }
+  }, [showFullscreen, showLyricsFullscreen])
+  const chromeHidden = idle && !showSearch
+  const [coverHover, setCoverHover] = useState(false)
+  const controlsShown = coverHover && !chromeHidden
+
+  // The whole screen (the OS's full screen), on top of this view; left when
+  // the view closes.
+  const [screenFull, setScreenFull] = useState(() => !!document.fullscreenElement)
+  useEffect(() => {
+    const onChange = () => setScreenFull(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+  const toggleScreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    else document.documentElement.requestFullscreen?.().catch(() => {})
+  }
+  useEffect(() => {
+    if (!open && document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+  }, [open])
+
+  // Seeking: click or drag along the bar.
+  const barRef = useRef(null)
+  const seekTo = (clientX) => {
+    const bar = barRef.current
+    const { duration: length, audioRef: primary, cfAudioRef: crossfade, activeAudioElement: active } = usePlayerStore.getState()
+    if (!bar || !length) return
+    const r = bar.getBoundingClientRect()
+    const t = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * length
+    const el = active === 'primary' ? primary?.current : crossfade?.current
+    if (el) el.currentTime = t
+    setProgress(t)
+  }
+  const startScrub = (event) => {
+    event.preventDefault()
+    seekTo(event.clientX)
+    const move = e => seekTo(e.clientX)
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
   }
 
   const isAutoSynced = settings.unsynced_auto_sync === '1'
@@ -391,7 +463,7 @@ export default function FullscreenPlayer() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 flex overflow-hidden"
-          style={{ WebkitAppRegion: 'no-drag' }}
+          style={{ WebkitAppRegion: 'no-drag', cursor: chromeHidden && !lyricsMode ? 'none' : undefined }}
           // Marks this exact DOM node so the useEffect above can reach and
           // hide it (and any stuck earlier copies) directly if its exit
           // animation never completes -- see that effect's comment.
@@ -443,39 +515,52 @@ export default function FullscreenPlayer() {
             transition={lyricsMode ? FULLSCREEN_OUT : FULLSCREEN_IN}
             style={{ pointerEvents: lyricsMode ? 'none' : undefined }}>
 
-          <div className="absolute top-5 left-5 z-20 flex items-center gap-2">
-            <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
-              <X size={15} />
-            </button>
-            {/* Straight to full-screen lyrics (the view to come back from
-                has a Player button). */}
-            {currentTrack && (
-              <button onClick={() => switchFullscreenView('lyrics')} title="Switch to full-screen lyrics"
-                className="h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 hover:text-white transition-colors backdrop-blur-sm">
-                <Maximize2 size={13} /> Lyrics
+          {/* The header: close, lyrics view, what's playing from, full screen.
+              It fades out (and the cursor hides) after a few seconds without
+              the mouse moving, and comes back as soon as it moves. */}
+          <div className={`absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 transition-opacity duration-300 ${chromeHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+            onMouseEnter={() => { overChromeRef.current = true }} onMouseLeave={() => { overChromeRef.current = false }}>
+            <div className="flex items-center gap-2">
+              <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
+                <X size={15} />
               </button>
-            )}
-          </div>
-
-          {playbackContext?.name && (
-            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-20 max-w-[60%] text-center pointer-events-none">
-              <p className="text-[10px] font-display uppercase tracking-[0.28em] text-white/45">
-                {contextLabel(playbackContext)}
-              </p>
-              {canOpenContext ? (
-                <button
-                  onClick={openContext}
-                  title={`Go to ${playbackContext.name}`}
-                  className="pointer-events-auto mt-1 max-w-full truncate text-sm font-medium text-white/85 hover:text-white hover:underline transition-colors">
-                  {playbackContext.name}
+              {/* Straight to full-screen lyrics (the view to come back from
+                  has a Player button). */}
+              {currentTrack && (
+                <button onClick={() => switchFullscreenView('lyrics')} title="Switch to full-screen lyrics"
+                  className="h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 hover:text-white transition-colors backdrop-blur-sm">
+                  <Maximize2 size={13} /> Lyrics
                 </button>
-              ) : (
-                <p className="mt-1 truncate text-sm font-medium text-white/85">{playbackContext.name}</p>
               )}
             </div>
-          )}
-          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 px-12 py-8 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'mr-auto pl-48' : 'mx-auto'}`}>
+            {playbackContext?.name && (
+              <div className="min-w-0 max-w-[50%] text-center">
+                <p className="text-[10px] font-display uppercase tracking-[0.28em] text-white/45">
+                  {contextLabel(playbackContext)}
+                </p>
+                {canOpenContext ? (
+                  <button
+                    onClick={openContext}
+                    title={`Go to ${playbackContext.name}`}
+                    className="mt-1 max-w-full truncate text-sm font-medium text-white/85 hover:text-white hover:underline transition-colors">
+                    {playbackContext.name}
+                  </button>
+                ) : (
+                  <p className="mt-1 truncate text-sm font-medium text-white/85">{playbackContext.name}</p>
+                )}
+              </div>
+            )}
+            <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm">
+              {screenFull ? <Minimize size={15} /> : <Expand size={15} />}
+            </button>
+          </div>
+
+          {/* The cover, with the controls over it (shown while the pointer is
+              on it), then the progress, the title and the artist. Clear of
+              the header, so a tall canvas doesn't run into "Playing from". */}
+          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 min-w-0 px-12 pt-24 pb-12 ${showFullscreen ? 'transition-all duration-500' : ''}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentTrack?.id || 'none'}
@@ -484,14 +569,16 @@ export default function FullscreenPlayer() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-                className="relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 mb-8 flex-shrink-0 bg-white/5 flex items-center justify-center"
+                onMouseEnter={() => setCoverHover(true)}
+                onMouseLeave={() => setCoverHover(false)}
+                className="group/cover relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
                 // A tall (9:16) canvas plays in the card itself, which grows to
                 // its shape. (It used to fill the whole screen behind the
                 // lyrics panel, whose blur then had to be redone every video
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
-                  ? { height: 'min(30rem, 56vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: '20rem', height: '20rem' }}
+                  ? { height: 'min(38rem, 62vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
+                  : { width: COVER_SIZE, height: COVER_SIZE }}
               >
                 {artSrc
                   ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
@@ -499,128 +586,97 @@ export default function FullscreenPlayer() {
                 }
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
+
+                {currentTrack && (
+                  <div className={`absolute inset-0 z-10 flex flex-col justify-between transition-opacity duration-200 has-[:focus-visible]:opacity-100 ${controlsShown ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/65 pointer-events-none" />
+                    <div className="relative flex items-center justify-center gap-2 pt-4">
+                      <CoverButton onClick={toggleLike} label={isLiked ? 'Remove from Liked Songs' : 'Add to Liked Songs'} active={isLiked}>
+                        <Heart size={17} fill={isLiked ? 'currentColor' : 'none'} />
+                        <AnimatePresence>
+                          {likeAnim && (
+                            <motion.span initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 2.5, opacity: 0 }} exit={{}}
+                              transition={{ duration: 0.5 }} className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <Heart size={17} className="text-accent" fill="currentColor" />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </CoverButton>
+                      <CoverButton onClick={() => openAddToPlaylist(currentTrack)} label="Add to a playlist"><ListPlus size={17} /></CoverButton>
+                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')} label={fullscreenPanel === 'queue' ? 'Hide the queue' : 'Show the queue'} active={fullscreenPanel === 'queue'}><ListMusic size={17} /></CoverButton>
+                      <CoverButton onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')} label={fullscreenPanel === 'lyrics' ? 'Hide the lyrics' : 'Show the lyrics'} active={fullscreenPanel === 'lyrics'}><Mic2 size={17} /></CoverButton>
+                    </div>
+                    <div className="relative flex items-center justify-center gap-5 pb-5">
+                      <button onClick={toggleShuffle} title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-white/75 hover:text-white'}`}>
+                        <Shuffle size={19} />
+                      </button>
+                      <button onClick={prev} title="Previous" aria-label="Previous" className="text-white/90 hover:text-white transition-colors">
+                        <SkipBack size={26} fill="currentColor" />
+                      </button>
+                      <motion.button onClick={togglePlay} whileTap={{ scale: 0.9 }} title={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'}
+                        className="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 shadow-2xl transition-transform">
+                        {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="translate-x-0.5" />}
+                      </motion.button>
+                      <button onClick={() => next(false)} title="Next" aria-label="Next" className="text-white/90 hover:text-white transition-colors">
+                        <SkipForward size={26} fill="currentColor" />
+                      </button>
+                      <button onClick={toggleRepeat} title="Repeat" aria-label="Repeat" aria-pressed={repeat !== 'none'} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-white/75 hover:text-white'}`}>
+                        <RepeatIcon size={19} />
+                      </button>
+                    </div>
+                    {/* Volume, up the right edge. */}
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex h-40 w-7 flex-col items-center justify-end gap-1.5 rounded-full bg-black/35 py-2 backdrop-blur-sm">
+                      <input type="range" min={0} max={1} step={0.01} value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
+                        aria-label="Volume" title={`Volume ${Math.round(volume * 100)}%`}
+                        className="h-28 w-1.5 cursor-pointer accent-white" style={{ writingMode: 'vertical-lr', direction: 'rtl' }} />
+                      <Volume2 size={12} className="text-white/70" />
+                    </div>
+                  </div>
+                )}
               </motion.div>
             </AnimatePresence>
+
+            <div className="mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
+              <span className="w-10 text-right text-xs tabular-nums text-white/60">{fmt(progress)}</span>
+              <div ref={barRef} className="group/bar relative h-1.5 flex-1 cursor-pointer rounded-full bg-white/20 hover:h-2 transition-[height]"
+                onPointerDown={startScrub} role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)}>
+                <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${duration ? Math.min(100, (progress / duration) * 100) : 0}%` }} />
+              </div>
+              <span className="w-10 text-xs tabular-nums text-white/60">{fmt(duration)}</span>
+            </div>
 
             <AnimatePresence mode="wait">
               <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="w-full text-center mb-6">
-                <h2 className="text-2xl font-display text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
-                <p className="text-sm text-white/50 mt-1 truncate">{currentTrack?.artist}</p>
-                {currentTrack?.album && <p className="text-xs text-white/30 mt-0.5 truncate">{currentTrack.album}</p>}
+                className="mt-5 text-center" style={{ width: COVER_SIZE }}>
+                <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
+                <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
+                {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
               </motion.div>
             </AnimatePresence>
-
-            <div className="flex items-center gap-5 mb-6">
-              <div className="relative">
-                <motion.button onClick={toggleLike}
-                  whileTap={{ scale: 0.8 }}
-                  className={`transition-colors ${isLiked ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}>
-                  <Heart size={22} fill={isLiked ? 'currentColor' : 'none'} />
-                </motion.button>
-                <AnimatePresence>
-                  {likeAnim && (
-                    <motion.div initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 2.5, opacity: 0 }} exit={{}}
-                      transition={{ duration: 0.5 }}
-                      className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <Heart size={22} className="text-accent" fill="currentColor" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <button onClick={() => openAddToPlaylist(currentTrack)}
-                className="text-white/35 hover:text-white/70 transition-colors text-xs font-display uppercase tracking-wider">
-                + Playlist
-              </button>
-              <button
-                onClick={() => setFullscreenPanel(p => p === 'queue' ? 'none' : 'queue')}
-                className={`transition-colors ${fullscreenPanel === 'queue' ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}
-                title={fullscreenPanel === 'queue' ? 'Hide Queue' : 'Show Queue'}
-              >
-                <ListMusic size={18} />
-              </button>
-              <button
-                onClick={() => setFullscreenPanel(p => p === 'lyrics' ? 'none' : 'lyrics')}
-                className={`transition-colors ${fullscreenPanel === 'lyrics' ? 'text-accent' : 'text-white/35 hover:text-white/70'}`}
-                title={fullscreenPanel === 'lyrics' ? 'Hide Lyrics' : 'Show Lyrics'}
-              >
-                <Mic2 size={18} />
-              </button>
-            </div>
-
-            <div className="w-64 space-y-1.5 mb-4">
-              <div className="w-full h-0.5 bg-white/15 rounded-full cursor-pointer group" onClick={scrub}>
-                <div className="h-full bg-white rounded-full relative transition-none"
-                  style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}>
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100" />
-                </div>
-              </div>
-              <div className="flex justify-between text-xs font-display text-white/35">
-                <span>{fmt(progress)}</span><span>{fmt(duration)}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-6">
-              <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-white/35 hover:text-white'}`}>
-                <Shuffle size={20} />
-              </button>
-              <button onClick={prev} className="text-white/60 hover:text-white transition-colors">
-                <SkipBack size={28} fill="currentColor" />
-              </button>
-              <motion.button onClick={togglePlay} whileTap={{ scale: 0.9 }}
-                className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 shadow-2xl transition-transform">
-                {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="translate-x-0.5" />}
-              </motion.button>
-              <button onClick={() => next(false)} className="text-white/60 hover:text-white transition-colors">
-                <SkipForward size={28} fill="currentColor" />
-              </button>
-              <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-white/35 hover:text-white'}`}>
-                <RepeatIcon size={20} />
-              </button>
-            </div>
-
           </div>
 
           {currentTrack && (
               // Panel visibility (and which panel) is driven entirely by the
-              // Queue/Lyrics buttons above, not by whether lyrics happen to
-              // exist -- Search for lyrics used to live down here as its own
-              // separate button, but that was a second, redundant way to get
-              // to search that only showed up once you already knew lyrics
-              // were missing. The real flow is: open Lyrics, then use the
-              // panel's own top-right search button, same as windowed mode.
+              // Queue/Lyrics buttons on the cover, not by whether lyrics
+              // happen to exist; with lyrics missing, the panel shows its own
+              // "no lyrics" state and search, same as windowed mode.
               <div
-                className={`relative z-10 flex flex-col overflow-hidden ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                style={{ width: isPanelVisible ? '420px' : '0px' }}
+                className={`relative z-10 flex flex-col overflow-hidden pt-24 pb-10 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                style={{ width: isPanelVisible ? PANEL_WIDTH : '0px' }}
               >
                 {(fullscreenPanel !== 'none' ? fullscreenPanel : lastPanelRef.current) === 'queue' ? (
                   <QueueContent variant="fullscreen" />
                 ) : (
                   <>
-                    <div className="px-8 pt-6 pb-3 flex-shrink-0 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-display text-white/30 uppercase tracking-[0.2em]">Lyrics</p>
-                        <p className="text-xs text-white/20 mt-0.5 truncate">{currentTrack.title} — {currentTrack.artist}</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={toggleLyricsFullscreen}
-                          className="p-2 text-white/30 hover:text-white transition-colors"
-                          title="Expand lyrics"
-                        >
-                          <Maximize2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => setShowSearch(true)}
-                          className="p-2 text-white/30 hover:text-white transition-colors"
-                          title="Search lyrics"
-                        >
-                          <Search size={14} />
-                        </button>
-                      </div>
+                    <div className={`absolute right-6 top-[4.5rem] z-10 flex items-center gap-1 transition-opacity duration-300 ${chromeHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                      <button onClick={toggleLyricsFullscreen} className="p-2 text-white/40 hover:text-white transition-colors" title="Expand lyrics" aria-label="Expand lyrics">
+                        <Maximize2 size={15} />
+                      </button>
+                      <button onClick={() => setShowSearch(true)} className="p-2 text-white/40 hover:text-white transition-colors" title="Search lyrics" aria-label="Search lyrics">
+                        <Search size={15} />
+                      </button>
                     </div>
-
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 pr-6">
                       <LyricsPanel
                         key={`${currentTrack?.id}-${refreshKey}`}
                         track={currentTrack}
@@ -629,7 +685,7 @@ export default function FullscreenPlayer() {
                         fullscreen
                         wordSync={wordSync}
                         onSearchRequest={() => setShowSearch(true)}
-                        textScale={1.15}
+                        textScale={1.6}
                         isAutoSynced={isAutoSynced}
                       />
                     </div>
