@@ -5,8 +5,27 @@ import { fileURLToPath } from 'url'
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// React Compiler (automatic memoization), for these files only. They render
+// on every player tick (progress, volume, likes): memoized, a re-render of the
+// right sidebar no longer re-renders every queue row under it, which with a
+// 4,600-song queue was ~100 ms of work per tick.
+//
+// Opt-in, file by file: the compiler reads property paths it depends on
+// (`user.id`) during render, even when the code only reads them in a handler
+// behind a null check, so a component that renders with that object null
+// would crash. A file goes on this list once its compiled output has been
+// checked for that (scripts/react-compiler.test.mjs).
+export const COMPILED = [
+  'QueuePanel', 'RightSidebar', 'FullscreenPlayer', 'LyricsPanel', 'LyricsSidePanel', 'LyricsFullscreen',
+  'Sidebar', 'ArtworkBackdrop', 'ContextMenu', 'Modal',
+]
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({
+    babel: {
+      plugins: [['babel-plugin-react-compiler', { sources: filename => COMPILED.some(name => filename.endsWith(`${path.sep}src${path.sep}components${path.sep}${name}.jsx`)) }]],
+    },
+  })],
   resolve: { alias: { '@': path.resolve(dirname, 'src') } },
   base: './',
   build: { 
