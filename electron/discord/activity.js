@@ -15,32 +15,33 @@ function publicUrl(value) {
   } catch { return null }
 }
 
-function songButton(track) {
-  const youtubeId = /^yt:([\w-]{11})$/.exec(track.source_ref || '')?.[1]
+function youtubeId(track) {
+  const ref = /^yt:([\w-]{11})$/.exec(track.source_ref || '')?.[1]
     || /^ghost:\/\/youtube\/online\/([\w-]{11})$/.exec(track.file_path || '')?.[1]
-  if (youtubeId) return { label: 'Play on YouTube Music', url: `https://music.youtube.com/watch?v=${youtubeId}` }
+  if (ref) return ref
   const source = publicUrl(track.source_url)
-  if (source) {
-    const host = source.hostname.replace(/^www\./, '')
-    if (['youtube.com', 'music.youtube.com', 'youtu.be'].includes(host)) {
-      const id = host === 'youtu.be' ? source.pathname.slice(1) : source.searchParams.get('v')
-      if (/^[\w-]{11}$/.test(id || '')) return { label: 'Play on YouTube Music', url: `https://music.youtube.com/watch?v=${id}` }
-    }
-    if (host === 'soundcloud.com') return { label: 'Play on SoundCloud', url: `${source.origin}${source.pathname}` }
-    if (host === 'open.spotify.com' && /^\/track\/[\w]+$/.test(source.pathname)) return { label: 'Play on Spotify', url: `${source.origin}${source.pathname}` }
+  const host = source?.hostname.replace(/^www\./, '')
+  if (!['youtube.com', 'music.youtube.com', 'youtu.be'].includes(host)) return null
+  const id = host === 'youtu.be' ? source.pathname.slice(1) : source.searchParams.get('v')
+  return /^[\w-]{11}$/.test(id || '') ? id : null
+}
+
+function songButton(track) {
+  // Keep the full song identity when it fits Discord's 512-character URL limit.
+  const prefix = 'https://www.youtube.com/results?search_query='
+  let query = ''
+  for (const character of [track.artist, track.title].filter(value => typeof value === 'string').join(' ').trim()) {
+    if (prefix.length + encodeURIComponent(query + character).length > 512) break
+    query += character
   }
-  const query = Array.from([track.artist, track.title].filter(value => typeof value === 'string').join(' ').trim()).slice(0, 32).join('')
-  return query ? { label: 'Find on YouTube Music', url: `https://music.youtube.com/search?q=${encodeURIComponent(query)}` } : null
+  return { label: 'Search on YouTube', url: prefix + encodeURIComponent(query || 'music') }
 }
 
 function artworkUrl(track) {
   const url = publicUrl(track.artwork_url)
   if (url) return url.href
-  const button = songButton(track)
-  if (button?.label === 'Play on YouTube Music') {
-    return `https://i.ytimg.com/vi/${new URL(button.url).searchParams.get('v')}/hqdefault.jpg`
-  }
-  return null
+  const id = youtubeId(track)
+  return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
 }
 
 function milliseconds(track, field) {

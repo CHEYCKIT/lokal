@@ -24,7 +24,7 @@ test('listening payload has real progress, source cover, and both buttons', () =
   assert.deepEqual(activity.timestamps, { start: now - 30000, end: now + 210000 })
   assert.equal(activity.assets.large_image, 'https://covers.example/album.jpg')
   assert.deepEqual(activity.buttons, [
-    { label: 'Play on YouTube Music', url: 'https://music.youtube.com/watch?v=abcdefghijk' },
+    { label: 'Search on YouTube', url: 'https://www.youtube.com/results?search_query=Artist%20Song' },
     { label: 'View App on GitHub', url: 'https://github.com/sipbuu/lokal' },
   ])
 })
@@ -43,14 +43,14 @@ test('milliseconds, short songs, seek limits, and delayed artwork keep accurate 
 test('local files get a search button, never a file URL or private addon media link', () => {
   for (const source_url of ['file:///music/private.flac', 'https://localhost/secret', 'https://addon.example/audio?token=secret']) {
     const activity = buildActivity({ ...song, source_url, artwork_url: 'file:///cover.png' }, true, { now })
-    assert.equal(activity.buttons[0].label, 'Find on YouTube Music')
+    assert.equal(activity.buttons[0].label, 'Search on YouTube')
     assert.equal(activity.assets.large_image, 'lokal_music')
     assert.equal(JSON.stringify(activity).includes('secret'), false)
     assert.equal(JSON.stringify(activity).includes('file:'), false)
   }
   const publicSong = buildActivity({ ...song, source_url: 'https://soundcloud.com/artist/song?tracking=private' }, true)
-  assert.equal(publicSong.buttons[0].url, 'https://soundcloud.com/artist/song')
-  assert.equal(publicSong.buttons[0].label, 'Play on SoundCloud')
+  assert.equal(publicSong.buttons[0].url, 'https://www.youtube.com/results?search_query=Artist%20Song')
+  assert.equal(publicSong.buttons[0].label, 'Search on YouTube')
 })
 
 test('short and Unicode labels and invalid timing produce valid activity fields', () => {
@@ -128,18 +128,18 @@ test('artwork arriving after a skip or pause cannot restore old playback', async
   const lookups = []
   const call = service({ rpc: { Client }, fetchImpl: () => new Promise(resolve => lookups.push(resolve)) })
   await call('connect', '123')
-  await call('setActivity', song, true)
-  const next = { ...song, id: 'two', title: 'Second song' }
+  await call('setActivity', { ...song, album: '' }, true)
+  const next = { ...song, id: 'two', title: 'Second song', album: '' }
   await call('setActivity', next, true)
-  lookups[0]({ ok: true, json: async () => ({ results: [{ trackName: 'Song', artistName: 'Artist', artworkUrl100: 'https://covers.example/first-100x100bb.jpg' }] }) })
+  lookups[0]({ ok: true, json: async () => ({ data: [{ title: 'Song', artist: { name: 'Artist' }, album: { cover_big: 'https://covers.example/first.jpg' } }] }) })
   await flush()
   assert.equal(sent.at(-1).details, 'Second song')
   await call('setActivity', next, false)
-  lookups[1]({ ok: true, json: async () => ({ results: [{ trackName: 'Second song', artistName: 'Artist', artworkUrl100: 'https://covers.example/second-100x100bb.jpg' }] }) })
+  lookups[1]({ ok: true, json: async () => ({ data: [{ title: 'Second song', artist: { name: 'Artist' }, album: { cover_big: 'https://covers.example/second.jpg' } }] }) })
   await flush()
   assert.equal(sent.at(-1).details, 'Second song')
   assert.equal(sent.at(-1).timestamps, undefined)
-  assert.match(sent.at(-1).assets.large_image, /second-600x600bb/)
+  assert.match(sent.at(-1).assets.large_image, /second\.jpg/)
   await call('setActivity', null, false)
   assert.equal(sent.at(-1), null)
   await call('disconnect')
@@ -207,10 +207,73 @@ test('real discord-rpc client sends Listening and buttons over the IPC transport
   assert.equal(frame.cmd, 'SET_ACTIVITY')
   assert.equal(frame.args.pid, process.pid)
   assert.equal(frame.args.activity.type, 2)
-  assert.equal(frame.args.activity.buttons.length, 2)
+  assert.deepEqual(frame.args.activity.buttons, [
+    { label: 'Search on YouTube', url: 'https://www.youtube.com/results?search_query=Artist%20Song' },
+    { label: 'View App on GitHub', url: 'https://github.com/sipbuu/lokal' },
+  ])
   assert.equal(frame.args.activity.timestamps.end - frame.args.activity.timestamps.start, 240000)
   await call('disconnect')
   assert.equal(frames.at(-1).cmd, 'SET_ACTIVITY')
   assert.deepEqual(frames.at(-1).args, { pid: process.pid })
   assert.equal((await call('status')).connected, false)
+})
+
+test('local album cover resolves by exact artist and album when the song is absent', async () => {
+  const sent = []
+  const requests = []
+  class Client extends EventEmitter {
+    async login() { this.user = { id: 'fixture' } }
+    async request(command, args) { sent.push(args.activity) }
+    async clearActivity() {}
+    async destroy() {}
+  }
+  const call = service({ rpc: { Client }, fetchImpl: async url => {
+    requests.push(url)
+    return { ok: true, json: async () => ({ data: [
+      { title: 'New Beginnings', artist: { name: 'Voice Of Reason' }, cover_big: 'https://covers.example/wrong.jpg' },
+      { title: 'New Beginnings', artist: { name: 'REASON' }, cover_big: 'https://covers.example/reason.jpg' },
+    ] }) }
+  } })
+  await call('connect', '123')
+  await call('setActivity', { ...song, title: 'Flick It Up', artist: 'Reason', album: 'New Beginnings', artwork_path: '/private/cover.jpg' }, true)
+  await flush()
+  assert.equal(sent.at(-1).assets.large_image, 'https://covers.example/reason.jpg')
+  assert.equal(sent.at(-1).details, 'Flick It Up')
+  assert.equal(requests.length, 1)
+  assert.match(requests[0], /^https:\/\/api.deezer.com\/search\/album\?/)
+  assert.equal(JSON.stringify(sent).includes('/private/'), false)
+  await call('disconnect')
+})
+
+test('album lookup falls back to iTunes and retains both buttons when source art is missing', async () => {
+  const sent = []
+  const requests = []
+  class Client extends EventEmitter {
+    async login() { this.user = { id: 'fixture' } }
+    async request(command, args) { sent.push(args.activity) }
+    async clearActivity() {}
+    async destroy() {}
+  }
+  const call = service({ rpc: { Client }, fetchImpl: async url => {
+    requests.push(url)
+    return { ok: true, json: async () => url.includes('deezer') ? { data: [] } : { results: [
+      { collectionName: 'Album', artistName: 'Artist', artworkUrl100: 'https://covers.example/100x100bb.jpg' },
+    ] } }
+  } })
+  await call('connect', '123')
+  await call('setActivity', song, true)
+  await flush()
+  assert.equal(sent.at(-1).assets.large_image, 'https://covers.example/600x600bb.jpg')
+  assert.equal(sent.at(-1).buttons.length, 2)
+  assert.equal(requests.length, 2)
+  await call('disconnect')
+})
+
+test('YouTube search retains long song names within Discord URL limits', () => {
+  const track = { artist: 'An Artist', title: 'A Song Title That Is Longer Than Thirty Two Characters' }
+  const activity = buildActivity(track, true)
+  assert.equal(new URL(activity.buttons[0].url).searchParams.get('search_query'), `${track.artist} ${track.title}`)
+  assert.equal(activity.buttons[1].url, 'https://github.com/sipbuu/lokal')
+  const unicode = buildActivity({ artist: '🎵'.repeat(100), title: '長い曲名' }, true)
+  assert.ok(unicode.buttons[0].url.length <= 512)
 })
