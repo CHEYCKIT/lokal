@@ -451,11 +451,16 @@ export default function FullscreenPlayer() {
 
 
   const toggleLike = async () => {
-    if (!currentTrack) return
-    const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
-    const liked = typeof r === 'boolean' ? r : r?.liked ?? false
-    setLiked(currentTrack.id, liked)
-    if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 700) }
+    if (!currentTrack || likeBusy.current) return
+    likeBusy.current = true
+    try {
+      const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
+      const liked = typeof r === 'boolean' ? r : r?.liked ?? false
+      setLiked(currentTrack.id, liked)
+      if (liked && !reduceMotion) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 700) }
+    } finally {
+      likeBusy.current = false
+    }
   }
 
   // Double-clicking the cover itself (not a button or the volume pill on it)
@@ -464,7 +469,6 @@ export default function FullscreenPlayer() {
   const doubleClickLike = async (event) => {
     if (!currentTrack || likeBusy.current) return
     if (event.target.closest?.('button, a, input, [role="slider"]')) return
-    likeBusy.current = true
     window.clearTimeout(burstTimer.current)
     setBurst({ id: Date.now(), trackId: currentTrack.id, kind: isLiked ? 'unlike' : 'like' })
     burstTimer.current = window.setTimeout(() => setBurst(null), 1200)
@@ -472,8 +476,6 @@ export default function FullscreenPlayer() {
       await toggleLike()
     } catch {
       setBurst(null)
-    } finally {
-      likeBusy.current = false
     }
   }
 
