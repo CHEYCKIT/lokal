@@ -184,11 +184,11 @@ export default function PlayerBar() {
                     onClick={handleTitleClick}
                     onContextMenu={openTrackMenu}
                     title={`Go to album: ${currentTrack.album}`}
-                    className="text-sm font-medium truncate text-white hover:text-accent hover:underline transition-colors text-left min-w-0">
+                    className="text-sm font-medium truncate text-text hover:text-accent hover:underline transition-colors text-left min-w-0">
                     {currentTrack.title}
                   </button>
                 ) : (
-                   <p onContextMenu={openTrackMenu} className="text-sm font-medium truncate text-white">{currentTrack?.title || '—'}</p>
+                   <p onContextMenu={openTrackMenu} className="text-sm font-medium truncate text-text">{currentTrack?.title || '—'}</p>
                 )}
                 {!!currentTrack?.explicit && (
                   <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">
@@ -225,7 +225,7 @@ export default function PlayerBar() {
         {currentTrack && (
           <div className="relative flex-shrink-0">
             <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
-              className={`w-5 h-5 flex items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-subtle hover:text-white'}`}>
+              className={`w-5 h-5 flex items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}>
               <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
             </motion.button>
             <AnimatePresence>
@@ -241,23 +241,23 @@ export default function PlayerBar() {
         )}
         {currentTrack && (
           <button onClick={() => openAddToPlaylist(currentTrack)} title="Add to playlist"
-            className="flex-shrink-0 text-subtle hover:text-accent transition-colors">
+            className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
             <Plus size={14} />
           </button>
         )}
-        {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-subtle" />}
+        {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-text/90" />}
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
         <div className="flex items-center gap-4">
-          <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-subtle hover:text-white'}`} title={shuffle ? "Shuffle on" : "Shuffle off"}><Shuffle size={15} /></button>
-          <button onClick={prev} className="text-muted hover:text-white transition-colors" title="Previous"><SkipBack size={18} fill="currentColor" /></button>
+          <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={shuffle ? "Shuffle on" : "Shuffle off"}><Shuffle size={15} /></button>
+          <button onClick={prev} className="text-text/90 hover:text-text transition-colors" title="Previous"><SkipBack size={18} fill="currentColor" /></button>
           <motion.button onClick={togglePlay} disabled={!currentTrack} whileTap={{ scale: 0.88 }}
             className="w-9 h-9 bg-accent text-base rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40">
             {isPlaying ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" className="translate-x-0.5" />}
           </motion.button>
-          <button onClick={next} className="text-muted hover:text-white transition-colors" title="Next"><SkipForward size={18} fill="currentColor" /></button>
-          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-subtle hover:text-white'}`} title={`Repeat: ${repeat}`}><RepeatIcon size={15} /></button>
+          <button onClick={next} className="text-text/90 hover:text-text transition-colors" title="Next"><SkipForward size={18} fill="currentColor" /></button>
+          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={`Repeat: ${repeat}`}><RepeatIcon size={15} /></button>
         </div>
         <div className="flex items-center gap-2 w-full max-w-md">
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
@@ -281,16 +281,16 @@ export default function PlayerBar() {
             </div>
           )}
           <AudioOutputPicker />
-          <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-subtle hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
-          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Queue"><ListMusic size={16} /></button>
-          <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-subtle hover:text-white'}`} title="Now Playing">< PanelRight size={16} /></button>
-          <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-subtle hover:text-accent transition-colors disabled:opacity-30" title="Mini Player"><Radio size={15} /></button>
-          <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-subtle hover:text-white transition-colors disabled:opacity-30" title="Fullscreen"><Maximize2 size={15} /></button>
+          <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-text/90 hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
+          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Queue"><ListMusic size={16} /></button>
+          <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Now Playing">< PanelRight size={16} /></button>
+          <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-text/90 hover:text-accent transition-colors disabled:opacity-30" title="Mini Player"><Radio size={15} /></button>
+          <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-text/90 hover:text-text transition-colors disabled:opacity-30" title="Fullscreen"><Maximize2 size={15} /></button>
           
           <div className="relative flex items-center justify-center">
             <button 
               onClick={() => setShowSleepTimer(!showSleepTimer)} 
-              className={`flex items-center justify-center transition-colors ${sleepTimerEndTime ? 'text-accent' : 'text-subtle hover:text-white'}`} 
+              className={`flex items-center justify-center transition-colors ${sleepTimerEndTime ? 'text-accent' : 'text-text/90 hover:text-text'}`} 
               title={sleepTimerEndTime ? `Sleep timer: ${sleepTimerDisplay}` : "Sleep Timer"}
             >
               <Moon size={16} />
@@ -303,7 +303,7 @@ export default function PlayerBar() {
           </div>
           
           <div className="flex items-center gap-1.5 ml-1">
-            <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} className="text-muted hover:text-white transition-colors">
+            <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} className="text-text/90 hover:text-text transition-colors">
               {volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
             <input type="range" min={0} max={1} step={0.01} value={volume}
