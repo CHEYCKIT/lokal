@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
+import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
@@ -236,6 +237,10 @@ export default function FullscreenPlayer() {
   const nav = useNavigate()
   const wordSync = wordSyncEnabled()
   const [likeAnim, setLikeAnim] = useState(false)
+  const [burst, setBurst] = useState(null)
+  const likeBusy = useRef(false)
+  const burstTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(burstTimer.current), [])
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()
   const [fsCanvas, setFsCanvas] = useState(false)
@@ -446,11 +451,32 @@ export default function FullscreenPlayer() {
 
 
   const toggleLike = async () => {
-    if (!currentTrack) return
-    const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
-    const liked = typeof r === 'boolean' ? r : r?.liked ?? false
-    setLiked(currentTrack.id, liked)
-    if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 700) }
+    if (!currentTrack || likeBusy.current) return
+    likeBusy.current = true
+    try {
+      const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
+      const liked = typeof r === 'boolean' ? r : r?.liked ?? false
+      setLiked(currentTrack.id, liked)
+      if (liked && !reduceMotion) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 700) }
+    } finally {
+      likeBusy.current = false
+    }
+  }
+
+  // Double-clicking the cover itself (not a button or the volume pill on it)
+  // likes the song; doing it again un-likes it. One at a time, so a quick triple
+  // click can't get the heart and the server out of step.
+  const doubleClickLike = async (event) => {
+    if (!currentTrack || likeBusy.current) return
+    if (event.target.closest?.('button, a, input, [role="slider"]')) return
+    window.clearTimeout(burstTimer.current)
+    setBurst({ id: Date.now(), trackId: currentTrack.id, kind: isLiked ? 'unlike' : 'like' })
+    burstTimer.current = window.setTimeout(() => setBurst(null), 1200)
+    try {
+      await toggleLike()
+    } catch {
+      setBurst(null)
+    }
   }
 
   const handleLyricsSelect = (lyrics, type) => {
@@ -654,7 +680,8 @@ export default function FullscreenPlayer() {
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
                 onMouseEnter={() => setCoverHover(true)}
                 onMouseLeave={() => setCoverHover(false)}
-                className="group/cover relative rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
+                onDoubleClick={doubleClickLike}
+                className="group/cover relative select-none rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
                 // A tall (9:16) canvas plays in the card itself, which grows to
                 // its shape. (It used to fill the whole screen behind the
                 // lyrics panel, whose blur then had to be redone every video
@@ -717,6 +744,7 @@ export default function FullscreenPlayer() {
                     </div>
                   </div>
                 )}
+                {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
               </motion.div>
             </AnimatePresence>
 

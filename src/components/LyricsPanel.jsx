@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
 import LyricsSearchDrawer from './LyricsSearchDrawer'
+import LyricBreakDots from './LyricBreakDots'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
 import {
-  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits,
+  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits, withOutroBreak,
 } from '../lyrics/timing'
 
 // ---------------------------------------------------------------------------
@@ -146,35 +147,18 @@ function paintVoice(voiceEl, units, t, live) {
   })
 }
 
-function paintGap(dotsEl, line, until, t) {
-  if (!dotsEl) return
-  const span = Math.max(0.001, until - line.time)
-  const through = Math.min(1, Math.max(0, (t - line.time) / span))
-  const dots = dotsEl.children
-  for (let i = 0; i < dots.length; i++) {
-    const lit = Math.min(1, Math.max(0, through * dots.length - i))
-    dots[i].style.opacity = String(0.28 + 0.72 * lit)
-  }
-  // A gentle breath while it waits; it gathers itself just before the vocal returns.
-  const remaining = until - t
-  const breath = 1 + 0.06 * Math.sin((t - line.time) * Math.PI * 1.4)
-  const gather = remaining < 0.5 ? 1 - 0.25 * (1 - remaining / 0.5) : 1
-  dotsEl.style.transform = `scale(${(breath * gather).toFixed(4)})`
-}
-
 // ---------------------------------------------------------------- rows
 
 const Row = React.memo(function Row({
-  line, index, until, distance, isFocused, isLive, isPast, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
+  line, index, until, clock, distance, isFocused, isLive, isPast, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
 }) {
   const rowRef = useRef(null)
   const leadRef = useRef(null)
   const bgRef = useRef(null)
   const subRef = useRef(null)
-  const dotsRef = useRef(null)
 
   useEffect(() => {
-    registerRow(index, { rowEl: rowRef.current, leadEl: leadRef.current, bgEl: bgRef.current, subEl: subRef.current, dotsEl: dotsRef.current })
+    registerRow(index, { rowEl: rowRef.current, leadEl: leadRef.current, bgEl: bgRef.current, subEl: subRef.current })
     return () => registerRow(index, null)
   })
 
@@ -190,11 +174,13 @@ const Row = React.memo(function Row({
 
   if (line.gap) {
     const open = isFocused && synced
+    const breakEnd = Number.isFinite(line.end) && line.end > line.time ? line.end : until
+    const exitLead = line.outro ? 0.05 : FOCUS_LEAD_S + 0.04
     return (
       <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
         <div
           style={{
-            height: open ? `${baseSize * 1.35}rem` : 0,
+            height: open ? `${baseSize * 1.5}rem` : 0,
             opacity: open ? 1 : 0,
             transition: `height 420ms ${EASE}, opacity 360ms ${EASE}`,
             overflow: 'hidden',
@@ -203,13 +189,8 @@ const Row = React.memo(function Row({
             justifyContent: alignEnd ? 'flex-end' : 'flex-start',
             paddingInline: '0.75rem',
           }}
-          aria-label="Instrumental"
         >
-          <div ref={dotsRef} className="flex items-center" style={{ gap: `${baseSize * 0.2}rem`, transformOrigin: 'left center' }}>
-            {[0, 1, 2].map(i => (
-              <span key={i} className="rounded-full bg-white" style={{ width: `${baseSize * 0.36}rem`, height: `${baseSize * 0.36}rem`, opacity: 0.28 }} />
-            ))}
-          </div>
+          <LyricBreakDots start={line.time} end={breakEnd - exitLead} getTime={clock} active={open} size={baseSize * 0.5} align={alignEnd ? 'end' : 'start'} />
         </div>
       </div>
     )
@@ -446,7 +427,11 @@ export default function LyricsPanel({
   const lastScrollIdx = useRef(-1)
   const paintedRows = useRef(new Set())
 
-  const lines = result?.lines || []
+  const crossfadeSeconds = usePlayerStore(s => s.crossfadeSeconds)
+  const lines = useMemo(
+    () => withOutroBreak(result?.lines || [], { duration: track?.duration, crossfade: crossfadeSeconds, synced: result?.type === 'synced' }),
+    [result, track?.duration, crossfadeSeconds],
+  )
   const synced = result?.type === 'synced'
   const nonLatin = useMemo(() => hasNonLatin(lines), [lines])
 
@@ -645,7 +630,7 @@ export default function LyricsPanel({
         const refs = rowsRef.current.get(i)
         const line = lines[i]
         if (!refs || !line) continue
-        if (line.gap) { paintGap(refs.dotsEl, line, nextTimes[i], t); continue }
+        if (line.gap) continue
         if (!wordSync) continue
         paintVoice(refs.leadEl, line.words, t, true)
         paintVoice(refs.bgEl, line.bgWords, t, true)
@@ -881,6 +866,7 @@ export default function LyricsPanel({
                   line={line}
                   index={i}
                   until={nextTimes[i]}
+                  clock={now}
                   distance={focusIdx >= 0 ? Math.abs(i - focusIdx) : i + 1}
                   isFocused={i === focusIdx}
                   isLive={liveSet.has(i)}
