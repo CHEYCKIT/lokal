@@ -35,6 +35,23 @@ body {
   user-select: none;
   -webkit-app-region: no-drag;
 }
+
+/* Most of the interface predates themes and uses Tailwind's literal white
+   text utilities. Keep those utilities readable on the Light theme (and make
+   them follow custom theme text colours elsewhere) without requiring a risky
+   component-by-component rewrite. */
+.text-white { color: var(--text) !important; }
+.text-white\/90 { color: rgb(var(--text-rgb) / 0.9) !important; }
+.text-white\/80 { color: rgb(var(--text-rgb) / 0.8) !important; }
+.text-white\/70 { color: rgb(var(--text-rgb) / 0.7) !important; }
+.text-white\/60 { color: rgb(var(--text-rgb) / 0.6) !important; }
+.text-white\/50 { color: rgb(var(--text-rgb) / 0.5) !important; }
+.text-white\/40 { color: rgb(var(--text-rgb) / 0.4) !important; }
+.text-white\/30 { color: rgb(var(--text-rgb) / 0.3) !important; }
+.text-white\/20 { color: rgb(var(--text-rgb) / 0.2) !important; }
+.text-white\/10 { color: rgb(var(--text-rgb) / 0.1) !important; }
+.hover\\:text-white:hover { color: var(--text) !important; }
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
