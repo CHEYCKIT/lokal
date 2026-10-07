@@ -692,12 +692,21 @@ export default function Settings() {
     setDeduplicateResult('')
     try {
       const result = await api.deduplicatePlaylist(deduplicatePlaylistId)
-      if (result?.error) throw new Error(result.error)
-      const count = Number(result?.removed) || 0
+      if (result?.error === 'Playlist not found') {
+        setDeduplicateResult('This playlist no longer exists. Please select another playlist.')
+        return
+      }
+      if (result?.error === 'Smart playlists cannot be deduplicated.') {
+        setDeduplicateResult('Choose a regular playlist. Smart playlists manage their songs automatically.')
+        return
+      }
+      if (!result?.ok) throw new Error(result?.error || 'Unexpected deduplication response')
+      const count = Number(result.removed) || 0
       setDeduplicateResult(count ? `Removed ${count} duplicate song${count === 1 ? '' : 's'}.` : 'No duplicate songs were found.')
       window.dispatchEvent(new CustomEvent('lokal:playlist-updated', { detail: { playlistId: deduplicatePlaylistId } }))
     } catch (e) {
-      setDeduplicateResult(`Could not remove duplicates: ${e.message}`)
+      console.error('Playlist duplicate removal failed:', e)
+      setDeduplicateResult('We couldn’t remove duplicate songs. Please try again. If this keeps happening, restart Lokal and try again.')
     } finally {
       setDeduplicatingPlaylist(false)
     }
