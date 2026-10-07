@@ -483,7 +483,7 @@ function buildImportPreview(db, entries = []) {
   return { total: entries.length, matched, ghostable: Math.max(entries.length - matched, 0), rows: rows.slice(0, 12) }
 }
 
-function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = null) {
+function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = null, options = {}) {
   const ghost = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'").get(ghostTrackId)
   const target = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(targetTrackId)
   if (!ghost) return { error: 'Ghost track not found' }
@@ -494,10 +494,45 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = nul
     if (!ghostSourceIdentity || ghostSourceIdentity !== sourceIdentity) return { ok: false, skipped: true, error: 'Ghost track source does not match downloaded source' }
   }
 
+  // Mass playlist downloads must never turn a wrong provider match into a
+  // library file carrying the ghost's metadata. The indexed file has to agree
+  // with the requested title/artist first; otherwise leave the ghost unresolved.
+  if (options.requireMetadataMatch) {
+    const wantedTitle = normalizeMatchValue(ghost.title)
+    const wantedArtist = normalizeMatchValue(ghost.artist)
+    const actualTitle = normalizeMatchValue(target.title)
+    const actualArtist = normalizeMatchValue(target.artist)
+    const wantedDuration = Number(ghost.duration) || 0
+    const actualDuration = Number(target.duration) || 0
+    const durationMatches = !(wantedDuration > 0 && actualDuration > 0) || Math.abs(wantedDuration - actualDuration) <= 10
+    if (!wantedTitle || !wantedArtist || !actualTitle || !actualArtist ||
+        wantedTitle !== actualTitle || wantedArtist !== actualArtist || !durationMatches) {
+      return {
+        ok: false,
+        skipped: true,
+        error: 'Downloaded file metadata does not match "' + (ghost.title || 'the requested song') + '" by ' + (ghost.artist || 'the requested artist'),
+      }
+    }
+  }
+
   const run = db.transaction(() => {
     applyImportedMetadata(db, targetTrackId, ghost)
-    db.prepare('UPDATE OR IGNORE playlist_tracks SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId)
-    db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(ghostTrackId)
+
+    if (options.dedupePlaylist) {
+      // Resolving several ghost rows can legitimately find the same library
+      // track. Do not turn that into repeated entries in one playlist.
+      const ghostRows = db.prepare('SELECT id, playlist_id FROM playlist_tracks WHERE track_id = ?').all(ghostTrackId)
+      const existing = db.prepare('SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ? AND id <> ? LIMIT 1')
+      const update = db.prepare('UPDATE playlist_tracks SET track_id = ? WHERE id = ?')
+      const remove = db.prepare('DELETE FROM playlist_tracks WHERE id = ?')
+      for (const row of ghostRows) {
+        if (existing.get(row.playlist_id, targetTrackId, row.id)) remove.run(row.id)
+        else update.run(targetTrackId, row.id)
+      }
+    } else {
+      db.prepare('UPDATE playlist_tracks SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId)
+    }
+
     // A streamed ghost can have been liked and played: keep that on the file.
     db.prepare('UPDATE OR IGNORE user_likes SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId)
     db.prepare('UPDATE OR IGNORE play_history SET track_id = ? WHERE track_id = ?').run(targetTrackId, ghostTrackId)
