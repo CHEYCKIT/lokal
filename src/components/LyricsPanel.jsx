@@ -189,7 +189,7 @@ const Row = React.memo(function Row({
             paddingInline: '0.75rem',
           }}
         >
-          <LyricBreakDots start={line.time} end={breakEnd} getTime={clock} active={open} size={baseSize * 0.5} align={alignEnd ? 'end' : 'start'} />
+          <LyricBreakDots start={line.time} end={breakEnd - FOCUS_LEAD_S - 0.04} getTime={clock} active={open} size={baseSize * 0.5} align={alignEnd ? 'end' : 'start'} />
         </div>
       </div>
     )

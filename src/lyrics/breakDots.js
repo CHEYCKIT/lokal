@@ -14,8 +14,12 @@
 //   wave        an energy wave runs through them, a whole number of times per
 //               break, stronger as the break goes on (and extra `pulses`, e.g.
 //               beat times, each send a ripple of their own)
-//   anticipate  they draw together and glow as the vocal is about to return
-//   release     they burst upward and evaporate, finishing as the panel moves on
+//   anticipate  they pull together into one glowing drip as the vocal is about to return
+//   release     the drip swells, lifts and evaporates; it is gone at `end`
+//
+// `end` is when the droplets must be gone, not when the vocal returns: the
+// lyrics panel hands focus to the next line a little before that (the row
+// collapses), so callers pass the break's end minus that lead.
 
 export const DOTS = 3
 export const R0 = 10
@@ -26,7 +30,7 @@ export const HEIGHT = 56
 export const CY = HEIGHT / 2 + 2
 
 export const ENTER_S = 0.7
-export const ANTICIPATE_S = 0.6
+export const ANTICIPATE_S = 0.75
 export const OUTRO_S = 0.3
 const RELEASE_LEAD_S = 0.06
 
@@ -73,10 +77,10 @@ export function targetsAt(t, start, end, { calm = false } = {}) {
   const out = { alpha: smooth(u / 0.22), progress, grip, release, energy, s: [], y: [], x: [], b: [] }
   for (let i = 0; i < DOTS; i++) {
     const lit = smooth(progress * DOTS - i)
-    const leaving = calm ? 0 : smooth(clamp(release * 1.4 - i * 0.2))
+    const leaving = calm ? 0 : smooth(clamp(release * 1.25 - i * 0.08))
     const pulse = calm ? 0 : waveAt(u, period, i) * energy * (1 - grip) * enter
-    const spread = (0.15 + 0.85 * enter) * (1 - 0.4 * grip) * (1 + 1.1 * leaving)
-    out.s.push((0.78 + 0.22 * lit + 0.42 * pulse) * (1 + 0.22 * grip) * (1 - leaving))
+    const spread = (0.15 + 0.85 * enter) * (1 - 0.92 * grip) * (1 + 0.6 * leaving)
+    out.s.push((0.78 + 0.22 * lit + 0.42 * pulse) * (1 + 0.3 * grip) * (1 - leaving))
     out.y.push(-9 * pulse + 4 * grip - 13 * leaving)
     out.x.push((i - mid) * S0 * spread)
     const glowing = 0.3 + 0.7 * lit
@@ -153,7 +157,7 @@ export function createBreakDots() {
         }
         if (!state.popped && rem <= popAt) {
           state.popped = true
-          for (let i = 0; i < DOTS; i++) { state.sv[i] += 5 + i * 1.2; state.yv[i] -= 70 + i * 20; state.xv[i] += (i - mid) * 90 }
+          for (let i = 0; i < DOTS; i++) { state.sv[i] += 5 + i * 1.2; state.yv[i] -= 90; state.xv[i] += (i - mid) * 60 }
         }
       }
       const span = clamp(dt, 0, 0.1)

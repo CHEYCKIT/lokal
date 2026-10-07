@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { test } from 'node:test'
 import { createBreakDots, DOTS, R0, S0, WIDTH, HEIGHT, wavePeriod, waveAt, targetsAt, OUTRO_S } from '../src/lyrics/breakDots.js'
 
@@ -68,14 +69,23 @@ test('the wave builds as the break goes on', () => {
   assert.ok(swell(START + 2, START + 4.6) < swell(END - 4.4, END - 1.6))
 })
 
-test('the droplets gather before the vocal returns, then burst apart', () => {
+test('the droplets merge into one drip, which swells and evaporates', () => {
   const frames = play()
   const middle = spacing(at(frames, START + 6))
-  const gathered = Math.min(...frames.filter(f => f.t > END - 0.55 && f.t < END - 0.2).map(spacing))
-  assert.ok(gathered < middle * 0.85, `gathered ${gathered} vs ${middle}`)
-  const parting = frames.filter(f => f.t > END - OUTRO_S - 0.1 && f.t <= END - 0.05)
-  assert.ok(Math.max(...parting.map(spacing)) > gathered * 1.1, 'they fly apart')
+  const merged = Math.min(...frames.filter(f => f.t > END - 0.9 && f.t < END - 0.2).map(spacing))
+  assert.ok(merged < middle * 0.25, `merged ${merged} vs ${middle}`)
+  const dripAt = frames.filter(f => f.t > END - 0.75 && f.t < END - 0.35)
+  assert.ok(dripAt.some(f => f.dots.every(d => d.b > 0.9 && d.r > R0)), 'one lit drip before it goes')
   assert.ok(at(frames, END - 0.02).dots.every(d => d.r < 1.5 && d.b < 0.2))
+})
+
+test('the whole sequence is over before the panel hands focus to the next line', () => {
+  const lead = 0.3
+  const panel = fs.readFileSync(new URL('../src/components/LyricsPanel.jsx', import.meta.url), 'utf8')
+  assert.match(panel, /end=\{breakEnd - FOCUS_LEAD_S/)
+  const frames = play({}, { end: END - lead - 0.04, to: END })
+  const stillThere = frames.filter(f => f.t >= END - lead && f.visible).flatMap(f => f.dots.map(d => d.r))
+  assert.ok(stillThere.length === 0 || Math.max(...stillThere) < 0.5)
 })
 
 test('nothing shows outside the break', () => {
