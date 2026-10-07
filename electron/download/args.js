@@ -9,6 +9,7 @@
 //             so the UI no longer offers it (old callers still work)
 
 const path = require('path')
+const crypto = require('crypto')
 const { cookieArgs } = require('../ipc/ytCookies')
 const { jsRuntime } = require('../online/jsRuntime')
 
@@ -52,10 +53,15 @@ function metadataArgs(settings) {
   ]
 }
 
-function outputTemplate(kind, outputDir) {
+function outputTemplate(kind, outputDir, addonSource) {
   // No "NA" folders: a track without an album goes under "Singles".
   if (kind === 'playlist') return path.join(outputDir, '%(playlist|Playlist)s', '%(artist,uploader|Unknown Artist)s', '%(title)s.%(ext)s')
-  return path.join(outputDir, '%(artist,uploader|Unknown Artist)s', '%(album|Singles)s', '%(title)s.%(ext)s')
+  // Addon endpoints commonly all end in /file.flac. Isolate their temporary
+  // filenames before tagging moves each download to its artist/album folder.
+  const suffix = addonSource?.provider && addonSource?.id
+    ? ' [' + crypto.createHash('sha256').update(`${addonSource.provider}\0${addonSource.id}`).digest('hex').slice(0, 16) + ']'
+    : ''
+  return path.join(outputDir, '%(artist,uploader|Unknown Artist)s', '%(album|Singles)s', `%(title)s${suffix}.%(ext)s`)
 }
 
 function isSoundCloud(url) {
@@ -87,7 +93,7 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
     // metadata; --parse-metadata below only rewrites `artist`.)
     '--print', 'after_move:lokalmeta:%(.{channel,uploader,track,artist,artists,creator,title,fulltitle,album})j',
     '--print', 'after_move:filepath:%(filepath)s',
-    '--output', outputTemplate(kind, outputDir),
+    '--output', outputTemplate(kind, outputDir, addonSource),
     '--trim-filenames', '180',
     '--newline',
     '--progress',

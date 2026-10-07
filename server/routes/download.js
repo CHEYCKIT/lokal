@@ -36,16 +36,17 @@ function manager() {
     requireFfmpeg: false,
     index: async (filepath, opts) => {
       const { indexSingleFile } = require('../../electron/ipc/scanner')
+      let lastError
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
           if (fs.existsSync(filepath)) {
             const result = await indexSingleFile(filepath, opts)
-            if (result?.id) return result
+            if (result?.id || result?.error) return result
           }
-        } catch {}
+        } catch (error) { lastError = error }
         await new Promise(r => setTimeout(r, 700))
       }
-      return null
+      return { error: lastError?.message || 'Downloaded file could not be indexed' }
     },
     emit: () => {},
   }, 0)
@@ -83,7 +84,7 @@ function addonSourceOf(value) {
 }
 function enqueue(kind) {
   return (req, res) => {
-    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, replaceImported, addonSource, tags } = req.body || {}
+    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, replaceImported, addonSource, tags, expectedDuration } = req.body || {}
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
     if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
       return res.status(400).json({ error: 'Invalid playlistId' })
@@ -97,6 +98,8 @@ function enqueue(kind) {
     // An addon track: a fresh link is asked for each time the job starts.
     if (kind === 'single' && addonSourceOf(addonSource)) opts.addonSource = addonSourceOf(addonSource)
     // What the source said about the song, for a file that comes without tags.
+    const duration = Number(expectedDuration)
+    if (kind === 'single' && Number.isFinite(duration) && duration > 0 && duration < 36000) opts.expectedDuration = duration
     if (kind === 'single') opts.tags = require('../../electron/download/postprocess').knownTagsOf(tags)
     const result = manager().enqueue(kind, url, opts)
     // Already in the library isn't a failure: the app shows the song as saved.

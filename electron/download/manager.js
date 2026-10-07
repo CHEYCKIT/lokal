@@ -252,6 +252,7 @@ class DownloadManager {
         pendingIndex: Array.isArray(data.pendingIndex) ? data.pendingIndex : [],
         downloadedTracks: data.downloadedTracks || [],
         indexedTracks: data.indexedTracks || [],
+        libraryFailures: data.libraryFailures || 0,
         lyricsCount: data.lyricsCount || 0,
         totalTracks: data.totalTracks ?? null,
         currentTrack: data.currentTrack ?? null,
@@ -278,7 +279,10 @@ class DownloadManager {
 
   /** The library track downloaded from the online song `ref`, or null. */
   libraryTrackWithRef(ref) {
-    try { return this.db().prepare("SELECT id, title FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref) || null } catch { return null }
+    try {
+      const track = this.db().prepare("SELECT id, title, file_path FROM tracks WHERE source_ref = ? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(ref)
+      return track && fs.existsSync(track.file_path) ? track : null
+    } catch { return null }
   }
 
   /** Is `trackId` a streamed (ghost) track of the online song `ref`? */
@@ -374,6 +378,7 @@ class DownloadManager {
       error: null,
       downloadedTracks: [],
       indexedTracks: [],
+      libraryFailures: 0,
       filepaths: [],
       lyricsCount: 0,
       totalTracks: null,
@@ -413,6 +418,7 @@ class DownloadManager {
       error: job.error || null,
       downloadedTracks: job.downloadedTracks,
       indexedTracks: job.indexedTracks,
+      libraryFailures: job.libraryFailures || 0,
       lyricsCount: job.lyricsCount || 0,
       totalTracks: job.totalTracks ?? null,
       currentTrack: job.currentTrack ?? null,
@@ -473,41 +479,43 @@ class DownloadManager {
     const check = kind === 'soulseek' ? { tools: {} } : this.checkTools()
     if (check.error) return check
     if (kind === 'soulseek' && (!opts.username || !opts.filename)) return { error: 'Pick a file from the Soulseek results.' }
-    const duplicate = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.url === url && j.kind === kind)
-    if (duplicate) return { downloadId: duplicate.id, playlistId: duplicate.playlistId, duplicate: true }
-    // The same online song, whatever the link: one download at a time, and
-    // none once it's in the library (the streamed copy it was saved from
-    // then takes the library copy's place at once).
+    // Merge all playlist requests even when they use exactly the same URL.
+    // Addon identities take precedence: a shared endpoint can serve different songs.
     const ref = jobSourceRef(kind, url, opts)
-    if (ref) {
-      const running = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop && j.sourceRef === ref)
-      if (running) {
-        // This click's streamed copy is replaced too once the file is in.
-        if (opts.replaceTrackId && opts.replaceTrackId !== running.opts.replaceTrackId) {
-          if (!running.opts.replaceTrackId) running.opts.replaceTrackId = opts.replaceTrackId
-          else running.opts.alsoReplace = [...new Set([...(running.opts.alsoReplace || []), opts.replaceTrackId])]
-          this.persist(running)
-        }
-        if (opts.replaceImported?.length) {
-          running.opts.replaceImported = [...new Set([...(running.opts.replaceImported || []), ...opts.replaceImported])]
-          this.persist(running)
-        }
-        return { downloadId: running.id, duplicate: true }
+    const running = [...this.jobs.values()].find(j => ACTIVE.has(j.status) && !j.stop &&
+      (ref ? j.sourceRef === ref : j.url === url && j.kind === kind))
+    if (running) {
+      if (opts.replaceTrackId && opts.replaceTrackId !== running.opts.replaceTrackId) {
+        if (!running.opts.replaceTrackId) running.opts.replaceTrackId = opts.replaceTrackId
+        else running.opts.alsoReplace = [...new Set([...(running.opts.alsoReplace || []), opts.replaceTrackId])]
       }
+      if (opts.replaceImported?.length) {
+        running.opts.replaceImported = [...new Set([...(running.opts.replaceImported || []), ...opts.replaceImported])]
+      }
+      this.persist(running)
+      return { downloadId: running.id, playlistId: running.playlistId, duplicate: true }
+    }
+    if (ref) {
       const owned = this.libraryTrackWithRef(ref)
       if (owned) {
+        try {
+          const db = this.db()
+          const { resolveGhostTrack } = require('../../server/routes/playlists')
+          db.transaction(() => {
+            for (const ghostId of new Set(opts.replaceImported || [])) {
+              const swapped = resolveGhostTrack(db, ghostId, owned.id, null, { requireMetadataMatch: true, dedupePlaylist: true })
+              if (!swapped?.ok) throw new Error(swapped?.error || 'Could not resolve imported track')
+            }
+          })()
+          if (opts.replaceImported?.length) this.deps.onLibraryUpdated?.({ id: owned.id })
+        } catch (error) {
+          return { error: `Library copy could not replace the requested playlist tracks: ${error.message}` }
+        }
         // Only a streamed copy of this very song takes the library copy's place.
         if (opts.replaceTrackId && this.isStreamedCopyOf(opts.replaceTrackId, ref)) {
           try {
             const { resolveGhostTrack } = require('../../server/routes/playlists')
             if (resolveGhostTrack(this.db(), opts.replaceTrackId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
-          } catch {}
-        }
-        // Songs of an imported playlist this one was found for: the file takes their place.
-        for (const ghostId of opts.replaceImported || []) {
-          try {
-            const { resolveGhostTrack } = require('../../server/routes/playlists')
-            if (resolveGhostTrack(this.db(), ghostId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
           } catch {}
         }
         return { alreadyInLibrary: true, trackId: owned.id, error: `Already in your library: ${owned.title || 'this song'}` }
@@ -1048,7 +1056,24 @@ class DownloadManager {
     if (!index) return
     try {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
-      const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
+      const result = await index(filepath, {
+        deferGhostResolution: true,
+        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined,
+        metadata: job.opts?.tags
+          ? {
+              title: job.opts.tags.title,
+              artist: job.opts.tags.artist,
+              album: job.opts.tags.album,
+              duration: job.opts.expectedDuration,
+            }
+          : undefined,
+      }) || { error: 'Downloaded file could not be indexed' }
+      if (result?.error) {
+        job.libraryFailures = (job.libraryFailures || 0) + 1
+        job.outputLines.push(`[Lokal] Downloaded file was not added to the library: ${result.error}`)
+        this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+        return result
+      }
       // The same song, downloaded before (from YouTube, say) and now in better
       // quality (an addon's FLAC): the new file takes the old one's place in
       // its track, which keeps its playlists, likes and history. Otherwise
@@ -1094,12 +1119,65 @@ class DownloadManager {
           replaced.add(ghostId)
           job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
         }
+        // Songs of an imported playlist (a CSV, a pasted list) this download
+        // was found for: they must actually take their ghost row's place before
+        // this download can count as library-added.
+        let importedReplacementFailed = false
+        const importedGhosts = job.kind === 'single' ? [...new Set(job.opts?.replaceImported || [])] : []
+        if (importedGhosts.length) {
+          try {
+            const db = this.db()
+            db.transaction(() => {
+              for (const ghostId of importedGhosts) {
+                const swapped = resolveGhostTrack(db, ghostId, result.id, null, { requireMetadataMatch: true, dedupePlaylist: true })
+                if (!swapped?.ok) throw new Error(swapped?.error || 'Could not resolve imported track')
+              }
+            })()
+            for (const ghostId of importedGhosts) {
+              replaced.add(ghostId)
+              job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
+            }
+          } catch (error) {
+            importedReplacementFailed = true
+            job.outputLines.push(`[Lokal] Kept the unresolved playlist tracks: ${error.message || error}`)
+          }
+        }
+
+        if (importedReplacementFailed) {
+          const message = 'Downloaded audio, but it could not be matched back to the requested playlist track'
+          job.outputLines.push(`[Lokal] ${message}`)
+          job.libraryFailures = (job.libraryFailures || 0) + 1
+          this.update(job, { message, removed: false }, { persist: true, force: true })
+
+          // This track was newly indexed only for this failed playlist
+          // resolution. Do not leave a mismatched file in the library.
+          if (!result.duplicate) {
+            let removeFile = false
+            if (result.success === true) {
+              try {
+                const db = this.db()
+                db.transaction(() => {
+                  db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(result.id)
+                  db.prepare('DELETE FROM tracks WHERE id = ?').run(result.id)
+                })()
+                removeFile = true
+              } catch {}
+            } else {
+              const existing = this.db().prepare('SELECT file_path FROM tracks WHERE id = ?').get(result.id)
+              removeFile = !existing || path.resolve(existing.file_path) !== path.resolve(filepath)
+            }
+            try { if (removeFile && fs.existsSync(filepath)) await fs.remove(filepath) } catch {}
+          }
+          return { ...result, error: message, libraryAdded: false }
+        }
+
         if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
           try {
             const addon = job.opts.addonSource
             // Several clicks on the same song (search list, player bar) while
             // it downloaded: each one's streamed copy.
             for (const ghostId of [job.opts.replaceTrackId, ...(job.opts.alsoReplace || [])]) {
+              if (replaced.has(ghostId)) continue
               if (addon) {
                 if (ghostId === onlineTrackId(addon.provider, addon.id)) replace(ghostId, null)
               } else {
@@ -1108,29 +1186,29 @@ class DownloadManager {
             }
           } catch {}
         }
-        // Songs of an imported playlist (a CSV, a pasted list) this download
-        // was found for: they have no source of their own to check, the
-        // match was made by title and artist when it was queued.
-        if (job.kind === 'single') {
-          for (const ghostId of job.opts?.replaceImported || []) {
-            if (!replaced.has(ghostId)) {
-              try { replace(ghostId, null, { requireMetadataMatch: true, dedupePlaylist: true }) } catch {}
-            }
-          }
-        }
+        // The imported batch has committed; ordinary ISRC matching can now run.
+        try { require('../ipc/playlists').resolveGhostsByIsrc(this.db(), result.id) } catch {}
         // The same song liked or added to a playlist from another source.
         try {
           const track = this.db().prepare('SELECT id, title, artist, duration FROM tracks WHERE id = ?').get(result.id)
           for (const ghostId of streamedTwins(this.db(), track)) if (!replaced.has(ghostId)) replace(ghostId, null)
         } catch {}
+
         // Only now does the list show the song (which refreshes the library
         // pages): once it has taken the streamed version's place, so a
         // playlist or Liked Songs doesn't reload in between.
         job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
         this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false }, { force: true })
         try { this.deps.onLibraryUpdated?.(result) } catch {}
+        return { ...result, libraryAdded: true }
       }
-    } catch {}
+      return result
+    } catch (error) {
+      job.libraryFailures = (job.libraryFailures || 0) + 1
+      job.outputLines.push(`[Lokal] Could not add the download to the library: ${error.message || error}`)
+      this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+      return { error: error.message || String(error), libraryAdded: false }
+    }
   }
 
   /**
@@ -1195,6 +1273,8 @@ class DownloadManager {
     }
 
     const partial = job.kind === 'playlist' && job.downloadedTracks.length > (job.tracksAtStart || 0)
+    const failures = job.libraryFailures || 0
+    const libraryWarning = failures ? ` · ${failures} not added to library` : ''
     if (code === 0 && !err) {
       this.markPlaylist(job, 'completed')
       const n = job.downloadedTracks.length
@@ -1203,7 +1283,9 @@ class DownloadManager {
         status: 'done',
         progress: 100,
         speed: null, eta: null,
-        message: job.kind === 'playlist' ? `${n} track${n === 1 ? '' : 's'} downloaded${lyrics}` : `Downloaded${lyrics}`,
+        message: job.kind === 'playlist'
+          ? `${n} track${n === 1 ? '' : 's'} downloaded${libraryWarning}${lyrics}`
+          : failures ? `Downloaded, but ${failures} not added to library${lyrics}` : `Downloaded${lyrics}`,
         currentTrack: job.totalTracks || n || null,
         totalTracks: job.totalTracks || n || null,
         finishedAt: Date.now(),
@@ -1235,7 +1317,7 @@ class DownloadManager {
         status: 'done',
         progress: 100,
         speed: null, eta: null,
-        message: `${job.downloadedTracks.length} downloaded${failed ? `, ${failed} unavailable` : ''}`,
+        message: `${job.downloadedTracks.length} downloaded${failed ? `, ${failed} unavailable` : ''}${libraryWarning}`,
         finishedAt: Date.now(),
       }, { persist: true })
       return

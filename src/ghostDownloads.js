@@ -32,7 +32,15 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
     try {
       // A streamed song (YouTube, SoundCloud, an addon) already has its source.
       if (streamRef(ghost)) {
-        tally(await save(ghost, { isCurrent }).catch(error => ({ error: error.message })))
+        tally(await save(ghost, {
+          isCurrent,
+          tags: {
+            title: ghost.title || undefined,
+            artist: ghost.artist || undefined,
+            album: ghost.album || undefined,
+          },
+          expectedDuration: ghost.duration,
+        }).catch(error => ({ error: error.message })))
         return
       }
       const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined }], client, {
@@ -52,7 +60,16 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
         else result.failed++
         return
       }
-      tally(await save(found, { replaceImported: [ghost.id], isCurrent }).catch(error => ({ error: error.message })))
+      tally(await save(found, {
+        replaceImported: [ghost.id],
+        isCurrent,
+        tags: {
+          title: ghost.title || undefined,
+          artist: ghost.artist || undefined,
+          album: ghost.album || undefined,
+        },
+        expectedDuration: ghost.duration,
+      }).catch(error => ({ error: error.message })))
     } catch {
       result.failed++
     } finally {
