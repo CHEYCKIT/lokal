@@ -1083,9 +1083,14 @@ class DownloadManager {
         // one, so the song is checked by the addon's own id instead.)
         const { resolveGhostTrack } = require('../../server/routes/playlists')
         const replaced = new Set()
-        const replace = (ghostId, identity) => {
-          const swapped = resolveGhostTrack(this.db(), ghostId, result.id, identity)
-          if (!swapped?.ok) return
+        const replace = (ghostId, identity, options = {}) => {
+          const swapped = resolveGhostTrack(this.db(), ghostId, result.id, identity, options)
+          if (!swapped?.ok) {
+            if (swapped?.skipped && swapped.error) {
+              job.outputLines.push(`[Lokal] Kept the unresolved track (${ghostId}): ${swapped.error}`)
+            }
+            return
+          }
           replaced.add(ghostId)
           job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
         }
@@ -1108,7 +1113,9 @@ class DownloadManager {
         // match was made by title and artist when it was queued.
         if (job.kind === 'single') {
           for (const ghostId of job.opts?.replaceImported || []) {
-            if (!replaced.has(ghostId)) { try { replace(ghostId, null) } catch {} }
+            if (!replaced.has(ghostId)) {
+              try { replace(ghostId, null, { requireMetadataMatch: true, dedupePlaylist: true }) } catch {}
+            }
           }
         }
         // The same song liked or added to a playlist from another source.
