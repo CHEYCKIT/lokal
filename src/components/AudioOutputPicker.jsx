@@ -117,7 +117,7 @@ export default function AudioOutputPicker() {
       <button type="button" onClick={openPicker} disabled={!supported}
         aria-label={`Audio output: ${currentLabel}`} aria-expanded={open} aria-haspopup="menu"
         title={supported ? `Audio output: ${currentLabel}` : 'Audio output selection is unavailable'}
-        className={`transition-colors ${open || outputDeviceId !== 'default' ? 'text-accent' : 'text-subtle hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`}>
+        className={`transition-colors ${open || outputDeviceId !== 'default' ? 'text-accent' : 'text-text/90 hover:text-text'} disabled:cursor-not-allowed disabled:opacity-40`}>
         <DeviceIcon kind={currentKind} />
       </button>
       {open && (
