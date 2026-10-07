@@ -437,7 +437,7 @@ test('imported addon ghosts match guest credits and original/single version labe
   assert.ok(recommendationMatch(candidates[2], [{ title: 'Never Enough', artist: 'Boris Dlugosch, Róisín Murphy' }]))
   assert.ok(recommendationMatch(candidates[3], [{ title: 'All Mine', artist: 'Lead Artist' }]))
   assert.equal(recommendationMatch(candidates[2], [{ title: 'Never Enough - Club Mix', artist: 'Boris Dlugosch, Róisín Murphy' }]), null)
-  assert.equal(recommendationQueries({ title: 'With You', artist: 'Lead Artist, Guest One, Guest Two' })[0], 'Lead Artist, Guest One, Guest Two With You')
+  assert.equal(recommendationQueries({ title: 'With You', artist: 'Lead Artist, Guest One, Guest Two' })[0], 'Lead Artist With You')
   const searches = []
   const { client } = clientMock({
     getSettings: async () => ({ playback_search_order: `['${addon}']` }),
@@ -457,4 +457,36 @@ test('imported addon ghosts match guest credits and original/single version labe
   assert.ok(searches.some(([query]) => query === 'FakeFunk Luv2U'))
   assert.ok(searches.some(([query]) => query.includes('Never Enough')))
   assert.ok(searches.some(([query]) => query === 'Lead Artist All Mine'))
+})
+
+
+test('flattened CSV credits search the lead artist first and match provider credit variants', () => {
+  for (const artist of ['2Pac, Outlawz', '2Pac;Outlawz', '2Pac, Outlawz, Guest']) {
+    const candidate = { title: "Hit 'Em Up - Single Version", artist }
+    assert.equal(recommendationQueries(candidate)[0], "2Pac Hit 'Em Up")
+    for (const credit of ['2Pac', '2Pac, Outlawz', '2Pac feat. Outlawz']) {
+      const result = { title: "Hit 'Em Up", artist: credit }
+      assert.equal(recommendationMatch(candidate, [result]), result)
+    }
+    for (const result of [
+      { title: "Hit 'Em Up", artist: 'Outlawz' },
+      { title: "Hit 'Em Up", artist: '2Pac Tribute' },
+      { title: "Hit 'Em Up (Live)", artist: '2Pac' },
+      { title: "Hit 'Em Up (Remix)", artist: '2Pac' },
+    ]) assert.equal(recommendationMatch(candidate, [result]), null)
+  }
+})
+
+test('comma-containing artist names and structured credits are preserved', () => {
+  for (const name of ['Earth, Wind & Fire', 'Tyler, The Creator', 'Crosby, Stills, Nash & Young', 'Emerson, Lake & Palmer']) {
+    for (const artist of [name, name + ', Guest']) {
+      const candidate = { title: 'Song', artist }
+      assert.equal(recommendationQueries(candidate)[0], name + ' Song')
+      assert.ok(recommendationMatch(candidate, [{ title: 'Song', artist: name }]))
+      assert.equal(recommendationMatch(candidate, [{ title: 'Song', artist: name.split(',')[0] }]), null)
+    }
+  }
+  const candidate = { title: 'Song', artist: 'Custom, Band, Guest', artists: ['Custom, Band', 'Guest'] }
+  assert.equal(recommendationQueries(candidate)[0], 'Custom, Band Song')
+  assert.equal(recommendationMatch(candidate, [{ title: 'Song', artist: 'Custom' }]), null)
 })
