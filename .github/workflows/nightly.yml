@@ -181,10 +181,12 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
+      # Banner generation is optional and must not block publishing artifacts.
       - name: Install Playwright
+        continue-on-error: true
         run: |
-          npm install playwright
-          npx playwright install --with-deps chromium
+          npm install --prefix "$RUNNER_TEMP/lokal-banner" --no-save --package-lock=false --ignore-scripts playwright@1.63.0
+          node "$RUNNER_TEMP/lokal-banner/node_modules/playwright/cli.js" install --with-deps chromium
 
       - name: Get Last Commit Info
         id: commit_info
@@ -200,6 +202,7 @@ jobs:
       - name: Generate Nightly Banner
         id: banner
         env:
+          NODE_PATH: ${{ runner.temp }}/lokal-banner/node_modules
           # Passed through the environment and read via process.env below
           # instead of interpolated straight into the JS source -- inputs.ref
           # is a write-authorized but still user-controlled string, and a ref
