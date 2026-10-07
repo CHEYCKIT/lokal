@@ -1,4 +1,8 @@
 const { buildActivity, artworkUrl } = require('../discord/activity')
+const { createArtworkResolver } = require('../discoveryArtwork')
+
+// Discord needs public image URLs; local files must never be used or uploaded.
+const resolveArtwork = createArtworkResolver({ fetchImpl: (...args) => fetch(...args) })
 
 let rpcClient = null
 let connectionGeneration = 0
@@ -47,28 +51,20 @@ function getFirstArtist(artistString) {
 }
 
 function artworkKey(track) {
-  return JSON.stringify([track.title, track.artist, track.album])
+  return JSON.stringify([track.title, track.artist, track.album, track.album_artist])
 }
 
-function normalized(value) {
-  return String(value || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-}
-
-async function fetchiTunesArtwork(track) {
-  const firstArtist = getFirstArtist(track.artist)
-  if (!track.title || !firstArtist) return 'lokal_music'
-  try {
-    const query = encodeURIComponent(`${track.title} ${firstArtist}`)
-    const response = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=5`, { signal: AbortSignal.timeout(5000) })
-    if (!response.ok) return 'lokal_music'
-    const data = await response.json()
-    const title = normalized(track.title)
-    const artist = normalized(firstArtist)
-    const matches = (Array.isArray(data.results) ? data.results : []).filter(result =>
-      normalized(result.trackName) === title && normalized(result.artistName) === artist)
-    const match = matches.find(result => normalized(result.collectionName) === normalized(track.album)) || matches[0]
-    return artworkUrl({ artwork_url: match?.artworkUrl100?.replace('100x100bb', '600x600bb') }) || 'lokal_music'
-  } catch { return 'lokal_music' }
+async function fetchArtwork(track) {
+  const artist = getFirstArtist(track.album_artist || track.artist)
+  if (!artist) return 'lokal_music'
+  // Album identity can still resolve when a song is unavailable in a catalog.
+  if (track.album) {
+    const [album] = await resolveArtwork([{ type: 'album', title: track.album, artist }])
+    const image = artworkUrl({ artwork_url: album?.image })
+    if (image) return image
+  }
+  const [song] = await resolveArtwork([{ type: 'track', title: track.title, artist: getFirstArtist(track.artist) }])
+  return artworkUrl({ artwork_url: song?.image }) || 'lokal_music'
 }
 
 async function closeClient(client) {
@@ -133,7 +129,7 @@ async function publishActivity() {
     }
     const activity = buildActivity(playback.track, playback.isPlaying, {
       receivedAt: playback.at,
-      artwork: artworkCache.get(artworkKey(playback.track)) || 'lokal_music',
+      artwork: artworkCache.get(artworkKey(playback.track))?.image || 'lokal_music',
     })
     // The installed discord-rpc helper omits type/status_display_type. Send
     // the documented activity fields directly to get Discord's listening card.
@@ -153,10 +149,12 @@ async function setActivity(track, isPlaying) {
 function requestArtwork(track) {
   if (!track || artworkUrl(track)) return
   const key = artworkKey(track)
-  if (artworkCache.has(key) || artworkPending.has(key)) return
-  const lookup = fetchiTunesArtwork(track).then(async artwork => {
+  const cached = artworkCache.get(key)
+  const ttl = cached?.image === 'lokal_music' ? 300000 : 86400000
+  if ((cached && Date.now() - cached.at < ttl) || artworkPending.has(key)) return
+  const lookup = fetchArtwork(track).then(async artwork => {
     if (artworkCache.size >= 200) artworkCache.delete(artworkCache.keys().next().value)
-    artworkCache.set(key, artwork)
+    artworkCache.set(key, { image: artwork, at: Date.now() })
     // Publish current playback, never the track/pause state captured before
     // the lookup. A slow result cannot restore a skipped or cleared song.
     if (latestPlayback?.track && artworkKey(latestPlayback.track) === key) await publishActivity()

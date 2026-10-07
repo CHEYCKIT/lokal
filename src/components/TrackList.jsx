@@ -88,7 +88,7 @@ function SortableHeader({ column, label, children, sort, onSortChange, className
   </button>
 }
 
-export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null, sort = null, onSortChange = null, trackNumbers = null }) {
+export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null, sort = null, onSortChange = null, trackNumbers = null, toolbarStart = null }) {
   const resolvedPlaybackRef = useRef(0)
   const resolvedToastRef = useRef(null)
   useEffect(() => () => { resolvedPlaybackRef.current++; resolvedToastRef.current?.close() }, [])
@@ -744,7 +744,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         ]}
       />
 
-      <div className="mb-1 flex justify-end px-2">
+      <div className="mb-1 flex items-center justify-between gap-3 px-2">
+        {toolbarStart || <span />}
         <TrackColumnPicker columns={columns} playlist={!!playlistId}
           onChange={(key, value) => setColumn(profile, key, value)} onReset={() => resetColumns(profile)} />
       </div>
