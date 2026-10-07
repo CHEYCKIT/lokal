@@ -4,6 +4,7 @@
 // a YouTube video or a SoundCloud track (e.g. an imported playlist entry).
 
 import { api } from './api.js'
+import { downloadBatchCurrent } from './downloadCancellation.js'
 
 export const PROVIDER_LABELS = { yt: 'YouTube', sc: 'SoundCloud' }
 
@@ -119,6 +120,8 @@ export function downloadUrlFor(track) {
  * file is in, it takes the ghost track's place in playlists, likes and history.
  */
 export async function saveToLibrary(track, extra = {}) {
+  const isCurrent = downloadBatchCurrent(extra.isCurrent)
+  if (!isCurrent()) return { cancelled: true }
   const ref = streamRef(track)
   let url = downloadUrlFor(track)
   if (ref && isAddonProvider(ref.provider)) {
@@ -128,6 +131,7 @@ export async function saveToLibrary(track, extra = {}) {
     url = got.url
   }
   if (!url) return { error: 'Not a streamed song' }
+  if (!isCurrent()) return { cancelled: true }
   return api.downloadYT(url, {
     title: [track.artist, track.title].filter(Boolean).join(' - ') || undefined,
     thumbnail: track.artwork_url || undefined,
@@ -154,6 +158,7 @@ export async function saveToLibrary(track, extra = {}) {
 
 /** Queue unique streamed songs, keeping local files and failed downloads separate. */
 export async function saveTracksToLibrary(tracks, { isCurrent = () => true, onProgress, save = saveToLibrary } = {}) {
+  isCurrent = downloadBatchCurrent(isCurrent)
   const result = { started: 0, existing: 0, failed: 0 }
   const seen = new Set()
   let refresh = false
@@ -164,9 +169,10 @@ export async function saveTracksToLibrary(tracks, { isCurrent = () => true, onPr
     seen.add(key)
     if (track.file_path && !isGhostTrack(track)) { result.existing++; continue }
     onProgress?.(`Queuing download of “${track.title}”…`)
-    const response = await save(track).catch(error => ({ error: error.message }))
-    if (response?.error) result.failed++
-    else if (response?.alreadyInLibrary) { result.existing++; refresh = true }
+    const response = await save(track, { isCurrent }).catch(error => ({ error: error.message }))
+    if (response?.cancelled) break
+    if (response?.alreadyInLibrary) { result.existing++; refresh = true }
+    else if (response?.error) result.failed++
     else result.started++
   }
   if (refresh && typeof window !== 'undefined') window.dispatchEvent(new Event('lokal:refresh'))

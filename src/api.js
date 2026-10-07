@@ -1,4 +1,5 @@
 import { updateYoutubeAccountStatus, clearYoutubeAccountStatus, youtubeAccountStatusRevision } from './youtubeAccountStatus.js'
+import { cancelDownloadBatches } from './downloadCancellation.js'
 
 const isE = () => {
   try {
@@ -369,7 +370,10 @@ export const api = {
   getDownloadQueue: () => isE() ? el().getDownloadQueue() : apiFetch('/download/queue'),
   retryDownload: (id) => isE() ? el().retryDownload(id) : apiFetch('/download/retry', { method:'POST', body:{id} }),
   removeDownload: (id) => isE() ? el().removeDownload(id) : apiFetch('/download/remove', { method:'POST', body:{id} }),
-  cancelAllDownloads: () => isE() ? el().cancelAllDownloads() : apiFetch('/download/cancel-all', { method:'POST', body:{} }),
+  cancelAllDownloads: () => {
+    cancelDownloadBatches()
+    return isE() ? el().cancelAllDownloads() : apiFetch('/download/cancel-all', { method:'POST', body:{} })
+  },
   clearFinishedDownloads: () => isE() ? el().clearFinishedDownloads() : apiFetch('/download/clear-finished', { method:'POST', body:{} }),
   markDownloadsSeen: () => isE() ? el().markDownloadsSeen() : apiFetch('/download/seen', { method:'POST', body:{} }),
   cacheUsage: () => isE() ? el().cacheUsage() : Promise.resolve(null),

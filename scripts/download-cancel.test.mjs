@@ -50,3 +50,22 @@ test('cancelling a running download also stops what it started', { skip: process
   assert.ok(Date.now() - started < 5000, 'stopped without waiting for the timeout')
   assert.equal(await stopsWithin(childPid, 2000), true, 'the launcher\'s child was stopped too')
 })
+
+test('cancel all marks queued jobs and an already-exited job as stopped without starting another queued job', async () => {
+  const mgr = new DownloadManager()
+  const queued = { id: 'queued', kind: 'single', status: 'queued', opts: {}, outputLines: [] }
+  const finishing = { id: 'finishing', kind: 'single', status: 'downloading', exited: true, opts: {}, outputLines: [] }
+  mgr.jobs.set(queued.id, queued)
+  mgr.jobs.set(finishing.id, finishing)
+  mgr.update = (job, patch) => Object.assign(job, patch)
+  let pumped = 0
+  mgr.pump = () => { pumped++ }
+
+  const result = await mgr.cancelAll()
+
+  assert.deepEqual(result, { success: true, count: 2 })
+  assert.equal(queued.status, 'cancelled')
+  assert.equal(finishing.status, 'cancelled')
+  assert.equal(finishing.stop, 'cancelled')
+  assert.equal(pumped, 0)
+})

@@ -24,7 +24,10 @@ function resolveFormat(opts = {}, settings = {}) {
   return { format, quality }
 }
 
-function audioArgs({ format, quality }) {
+function audioArgs({ format, quality, directAudio = false }) {
+  // Direct addon audio already has its container. Original downloads need no
+  // extraction, and the addon metadata is written by Lokal's file tagger.
+  if (directAudio && format === 'original') return []
   switch (format) {
     case 'original': return ['-f', 'bestaudio/best', '-x', '--audio-format', 'best', '--audio-quality', '0']
     case 'm4a': return ['-f', 'bestaudio[ext=m4a]/bestaudio/best', '-x', '--audio-format', 'm4a', '--audio-quality', '0']
@@ -72,12 +75,12 @@ function isYouTube(url) {
 /**
  * @returns {{ args: string[], cookies: { args, notes, usedBrowser } }}
  */
-function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [] }) {
+function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [], addonSource = false }) {
   const cookies = cookieArgs(settings, { withoutCookies, url })
+  const directAudio = !!addonSource && !isYouTube(url) && !isSoundCloud(url)
   const args = [
-    ...audioArgs(format),
-    '--embed-thumbnail',
-    '--embed-metadata',
+    ...audioArgs({ ...format, directAudio }),
+    ...(directAudio ? [] : ['--embed-thumbnail', '--embed-metadata']),
     // What the video said about itself, before our metadata rewrites, printed
     // just ahead of the path so each file can be matched to its own details.
     // (`artists` is the source's own credit list, e.g. SoundCloud's publisher
@@ -95,7 +98,7 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
       ? ['--yes-playlist', '--ignore-errors', ...(archivePath ? ['--download-archive', archivePath] : [])]
       : ['--no-playlist']),
     ...cookies.args,
-    ...metadataArgs(settings),
+    ...(directAudio ? [] : metadataArgs(settings)),
   ]
   // YouTube's stream links need a JavaScript runtime once cookies are given (jsRuntime.js).
   const runtime = isYouTube(url) ? jsRuntime() : { args: [], options: {} }
