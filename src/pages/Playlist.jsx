@@ -504,17 +504,6 @@ export default function Playlist() {
                 <AlertCircle size={15} /> Resolve Ghost Songs ({ghostTracks.length})
               </button>
             )}
-            {!!ghostTracks.length && (
-              <button
-                onClick={downloadAllGhosts}
-                disabled={downloadingGhosts}
-                title="Find each one on your playback sources (in the order set in Settings) and download it; the file takes its place here"
-                className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40"
-              >
-                <Download size={15} /> {downloadingGhosts ? 'Finding songs…' : `Download all (${ghostTracks.length})`}
-              </button>
-            )}
-
             {smart ? (
               <button
                 onClick={() => openSmartPlaylistEditor(playlist)}
