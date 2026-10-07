@@ -38,16 +38,21 @@ const contentLabel = /\s*[([](?:explicit|clean)(?:\s+version)?[)\]]/gi
 const featBracket = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]*[)\]]/gi
 const featSuffix = /\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i
 
-const hasFeaturedTitle = title => /\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]*[)\]]|\s+(?:feat\.?|ft\.?|featuring)\s+/i.test(String(title || ''))
-// Imported playlist metadata can flatten lead and guest artists into one
-// comma-separated string. Only add its first name when the title explicitly
-// carries a guest credit; names such as "Tyler, The Creator" stay intact.
-const featuredLeadArtist = (artist, title) => hasFeaturedTitle(title) && String(artist || '').split(/\s*,\s*/).length >= 3
-  ? String(artist).split(/\s*,\s*/)[0].trim()
-  : ''
-
 /** An artist without the guests credited with them: "Estelle [feat. Joi]" -> "Estelle". */
 export const mainArtist = artist => String(artist || '').replace(featBracket, '').replace(featSuffix, '').trim()
+
+// CSV imports flatten semicolon-separated credits into commas. Keep known
+// comma-containing artist names intact, including when followed by guests.
+const COMMA_ARTISTS = ['Tyler, The Creator', 'Earth, Wind & Fire', 'Crosby, Stills, Nash & Young', 'Crosby, Stills & Nash', 'Emerson, Lake & Palmer']
+function leadArtist(candidate) {
+  // A provider's structured credit is authoritative; never split that name.
+  if (candidate.artists?.[0]) return mainArtist(candidate.artists[0])
+  const artist = mainArtist(candidate.artist).normalize('NFC')
+  if (artist.includes(';')) return artist.split(';')[0].trim()
+  const lower = artist.toLowerCase()
+  const preserved = COMMA_ARTISTS.find(name => lower === name.toLowerCase() || lower.startsWith(name.toLowerCase() + ','))
+  return preserved ? artist.slice(0, preserved.length) : artist.split(',')[0].trim()
+}
 
 /**
  * A title to search with: without guests, "[Explicit]" and remaster labels
@@ -84,11 +89,11 @@ export function recommendationTitles(title) {
 
 export function recommendationQueries(candidate) {
   const artist = String(candidate.artist || '').normalize('NFC').trim()
-  const lead = String(candidate.artists?.[0] || artist).normalize('NFC').trim()
+  const lead = leadArtist(candidate)
   // Clean names first ("Estelle Grateful", not "Estelle [feat. Teedra Moses &
   // Russell Taylor] Grateful", which sources often can't find), then the
   // album's own artist, then the names as given.
-  const names = [...new Set([featuredLeadArtist(artist, candidate.title), mainArtist(artist), mainArtist(lead), mainArtist(candidate.album_artist), artist, lead].filter(Boolean))]
+  const names = [...new Set([lead, mainArtist(artist), mainArtist(candidate.album_artist), artist].filter(Boolean))]
   const titles = [...new Set([...recommendationTitles(searchTitle(candidate.title)), ...recommendationTitles(candidate.title)])]
   const queries = []
   for (const title of titles) for (const name of names) queries.push(`${name} ${title}`.trim())
@@ -99,10 +104,10 @@ export function recommendationMatch(candidate, results) {
   const titles = recommendationTitles(candidate?.title).map(titleKey)
   const artist = recommendationKey(candidate?.artist)
   if (!titles[0] || !artist) return null
-  const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
+  const leadKey = recommendationKey(leadArtist(candidate)).replace(/ topic$/, '')
   // The same artists without their guests ("Estelle [feat. Joi]" is Estelle),
   // and, on an album's page, the album's artist ("Estelle, D-Nice & ...").
-  const artistKeys = new Set([artist, leadArtist, recommendationKey(mainArtist(candidate.artist)), recommendationKey(mainArtist(candidate.artists?.[0])), recommendationKey(mainArtist(candidate.album_artist)), recommendationKey(featuredLeadArtist(candidate.artist, candidate.title))].filter(Boolean))
+  const artistKeys = new Set([artist, leadKey, recommendationKey(mainArtist(candidate.artist)), recommendationKey(mainArtist(candidate.artists?.[0])), recommendationKey(mainArtist(candidate.album_artist))].filter(Boolean))
   const sameArtist = name => artistKeys.has(recommendationKey(mainArtist(name)).replace(/ topic$/, ''))
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.
@@ -111,10 +116,10 @@ export function recommendationMatch(candidate, results) {
   const matches = (Array.isArray(results) ? results : []).filter(result => {
     const name = String(result?.title || '')
     const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
-    const resultTitle = prefix && [artist, leadArtist].includes(recommendationKey(prefix[1])) ? prefix[2] : name
+    const resultTitle = prefix && sameArtist(prefix[1]) ? prefix[2] : name
     if (!recommendationTitles(resultTitle).map(titleKey).some(title => titles.includes(title))) return false
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
-    return artists.some(sameArtist) || sameArtist(result.artist)
+    return artists.some(sameArtist) || sameArtist(result.artist) || sameArtist(leadArtist(result))
   })
   const album = recommendationKey(candidate.album)
   return (album && matches.find(result => recommendationKey(result.album) === album)) || matches[0] || null
