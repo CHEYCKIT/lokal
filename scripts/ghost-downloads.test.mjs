@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { execFileSync } from 'node:child_process'
 
 globalThis.window = globalThis.window || { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} }
 globalThis.localStorage = globalThis.localStorage || { getItem: () => null, setItem() {}, removeItem() {} }
@@ -104,4 +105,46 @@ test('1,901 CSV ghosts follow addon, YouTube, SoundCloud order and keep each rep
     assert.equal(options.tags.artist, ghosts[i].artist)
     assert.equal(options.expectedDuration, ghosts[i].duration)
   }
+})
+
+
+test('supplied CSV collaborations resolve with lead-only source search and retain every credit', { skip: !process.env.LOKAL_STRESS_CSV }, async t => {
+  const { searchTitle } = await import('../src/recommendations.js')
+  const rows = JSON.parse(execFileSync('python3', ['-c', 'import csv,json,sys; print(json.dumps(list(csv.DictReader(open(sys.argv[1],encoding="utf-8-sig")))))', process.env.LOKAL_STRESS_CSV], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }))
+    .filter(row => row['Artist Name(s)'].includes(';'))
+  assert.ok(rows.length > 0)
+  const providers = ['a-0123456789', 'yt', 'sc']
+  const ghosts = rows.map((row, i) => ({ id: `csv-${i}`, file_path: `ghost://import/csv/${i}`, title: row['Track Name'],
+    artist: [...new Set(row['Artist Name(s)'].split(/[;,]/).map(s => s.trim()).filter(Boolean))].join(', '), album: row['Album Name'], duration: Number(row['Duration (ms)']) / 1000 }))
+  const catalogue = new Map()
+  rows.forEach((row, i) => {
+    const artist = row['Artist Name(s)'].split(';')[0]
+    const query = `${artist} ${searchTitle(row['Track Name'])}`
+    if (!catalogue.has(query)) catalogue.set(query, { id: String(i).padStart(11, '0'), title: row['Track Name'], artist, provider: providers[i % 3] })
+  })
+  const saved = []
+  const attempts = []
+  const client = {
+    getSettings: async () => ({ playback_search_order: JSON.stringify(providers) }),
+    onlineProviders: async () => providers.map(id => ({ id })),
+    searchTracks: async () => [],
+    onlineSearch: async (query, provider) => {
+      const match = catalogue.get(query)
+      attempts.push({ query, provider })
+      return { results: match?.provider === provider ? [match] : [] }
+    },
+    onlinePrepare: async () => ({ ok: true }),
+    onlineSave: async items => items.map(item => ({ ...item, id: `${item.provider}-${item.id}`,
+      file_path: item.provider === 'yt' ? `ghost://youtube/online/${item.id}` : item.provider === 'sc' ? `ghost://soundcloud/online/${item.id}` : `ghost://addon/0123456789/${item.id}` })),
+  }
+  const result = await downloadGhostSongs(ghosts, { client, concurrency: 6, save: async (track, options) => { saved.push({ track, options }); return { downloadId: track.id } } })
+  assert.deepEqual(result, { started: ghosts.length, existing: 0, failed: 0, notFound: 0 })
+  assert.equal(new Set(saved.map(item => item.options.replaceImported[0])).size, ghosts.length)
+  for (const { options } of saved) {
+    const ghost = ghosts[Number(options.replaceImported[0].slice(4))]
+    assert.deepEqual(options.tags, { title: ghost.title, artist: ghost.artist, album: ghost.album })
+    assert.equal(options.expectedDuration, ghost.duration)
+  }
+  for (const [query, match] of catalogue) assert.deepEqual(attempts.filter(a => a.query === query).map(a => a.provider).filter((p, i, all) => all.indexOf(p) === i), providers.slice(0, providers.indexOf(match.provider) + 1))
+  t.diagnostic(`${ghosts.length} actual CSV collaborations resolved with addon → YouTube → SoundCloud fallback; canonical credits preserved.`)
 })

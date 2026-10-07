@@ -41,6 +41,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
     fs.rmSync(dir, { recursive: true, force: true })
   })
   const count = Number(process.env.LOKAL_STRESS_TRACKS) || 12
+  const multipleArtists = process.env.LOKAL_STRESS_MULTI_ARTIST === '1'
   const milliseconds = process.env.LOKAL_STRESS_MS !== '0'
   const withIsrc = process.env.LOKAL_STRESS_ISRC !== '0'
   const collide = process.env.LOKAL_STRESS_COLLIDE !== '0'
@@ -87,7 +88,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
     findTools: () => ({ ytdlp, ffmpeg: process.env.LOKAL_STRESS_FFMPEG || '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe' }),
     resolveAddonUrl: async (p, id) => (await sources.resolveStream(p, id, { db, force: true })).url,
   })
-  const csv = [`title,artist,album,${milliseconds ? 'duration_ms' : 'duration'},isrc`, ...catalogue.map(row => `${row.title},${row.artist},${row.album},${row.duration * (milliseconds ? 1000 : 1)},${row.isrc || ''}`)].join('\n')
+  const csv = [`title,artist,album,${milliseconds ? 'duration_ms' : 'duration'},isrc`, ...catalogue.map(row => `${row.title},${multipleArtists ? row.artist + ';Guest Artist;Another Guest' : row.artist},${row.album},${row.duration * (milliseconds ? 1000 : 1)},${row.isrc || ''}`)].join('\n')
   const imported = await (await fetch(`${base}/playlists/external-import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Stress CSV', fileType: 'csv', fileContent: csv }) })).json()
   assert.equal(imported.ghosted, count)
   const rows = () => db.prepare('SELECT t.* FROM playlist_tracks p JOIN tracks t ON t.id = p.track_id WHERE p.playlist_id = ? ORDER BY p.position').all(imported.playlistId)
@@ -132,9 +133,10 @@ test('CSV playlist downloads through a local addon leave playable library files'
   for (const row of playlistRows) {
     const expected = catalogue.find(item => item.title === row.title)
     assert.ok(expected)
-    assert.equal(row.artist, expected.artist)
+    assert.equal(row.artist, multipleArtists ? expected.artist + ', Guest Artist, Another Guest' : expected.artist)
     const metadata = await mm.parseFile(row.file_path)
     assert.equal(metadata.common.title, expected.title)
+    assert.equal(metadata.common.artist, row.artist)
     assert.ok(Math.abs(metadata.format.duration - expected.duration) < 0.1)
     assert.equal(fingerprint(row.file_path), fingerprints.get(expected.id), `Wrong audio for ${expected.id}`)
     assert.deepEqual(metadata.common.picture?.[0]?.data, covers.get(expected.id), `Wrong cover for ${expected.id}`)
