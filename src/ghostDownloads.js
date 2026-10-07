@@ -52,7 +52,16 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
         else result.failed++
         return
       }
-      tally(await save(found, { replaceImported: [ghost.id], isCurrent }).catch(error => ({ error: error.message })))
+      tally(await save(found, {
+        replaceImported: [ghost.id],
+        isCurrent,
+        tags: {
+          title: ghost.title || undefined,
+          artist: ghost.artist || undefined,
+          album: ghost.album || undefined,
+        },
+        expectedDuration: ghost.duration,
+      }).catch(error => ({ error: error.message })))
     } catch {
       result.failed++
     } finally {
