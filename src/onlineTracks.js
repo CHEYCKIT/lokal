@@ -146,13 +146,19 @@ export async function saveToLibrary(track, extra = {}) {
     // from what the addon said (only where the file has nothing).
     tags: ref && isAddonProvider(ref.provider)
       ? {
-          title: track.title || undefined, artist: track.artist || undefined, album: track.album || undefined,
-          cover: /^https:\/\//.test(String(track.artwork_url || '')) ? track.artwork_url : undefined,
+          title: extra.tags?.title || track.title || undefined,
+          artist: extra.tags?.artist || track.artist || undefined,
+          album: extra.tags?.album || track.album || undefined,
+          cover: extra.tags?.cover || (/^https:\/\//.test(String(track.artwork_url || '')) ? track.artwork_url : undefined),
           // What else the addon said: the file gets it where it has nothing.
-          year: track.year || undefined, track: track.track_num || undefined, disc: track.disc_num || undefined,
-          isrc: track.isrc || undefined, genre: track.genre || undefined,
+          year: extra.tags?.year || track.year || undefined,
+          track: extra.tags?.track || track.track_num || undefined,
+          disc: extra.tags?.disc || track.disc_num || undefined,
+          isrc: extra.tags?.isrc || track.isrc || undefined,
+          genre: extra.tags?.genre || track.genre || undefined,
         }
       : undefined,
+    expectedDuration: Number(extra.expectedDuration) > 0 ? Number(extra.expectedDuration) : undefined,
   })
 }
 
