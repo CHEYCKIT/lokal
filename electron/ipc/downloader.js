@@ -150,6 +150,10 @@ function registerDownloaderHandlers(ipcMain) {
       ? { provider, id: source.id } : undefined
     // What the source said about the song, for a file that comes without tags.
     clean.tags = require('../download/postprocess').knownTagsOf(clean.tags)
+    // Songs of an imported playlist the file takes the place of.
+    clean.replaceImported = Array.isArray(clean.replaceImported)
+      ? clean.replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)
+      : undefined
     return manager().enqueue('single', url, clean)
   })
   ipcMain.handle('downloader:linkInfo', (_, url) => require('../download/linkInfo').linkInfo(url, { ytdlp: findYtDlp(), settings: manager().settings() }))

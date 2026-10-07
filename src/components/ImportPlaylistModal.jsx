@@ -3,7 +3,9 @@ import { FileUp, Link2, ListMusic, Loader2 } from 'lucide-react'
 import Modal from './Modal'
 import { api } from '../api'
 import { useAppStore } from '../store/player'
-import { showToast } from './Toaster'
+import { showLoadingToast, showToast } from './Toaster'
+import { isGhostTrack } from '../onlineTracks'
+import { downloadGhostSongs, ghostDownloadMessage } from '../ghostDownloads'
 import { plural } from '../plural'
 import { FILE_PLATFORMS, formatDuration } from '../playlistImport'
 
@@ -144,9 +146,22 @@ function LinkImport({ onDone, initialUrl = '' }) {
   )
 }
 
+// The songs a file or list import couldn't match become ghost songs; this
+// downloads them from the playback sources once the playlist is made.
+function DownloadGhostsOption({ count, checked, onChange }) {
+  if (!count) return null
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5 text-xs text-muted">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5" />
+      <span>Also download the {plural(count, 'song')} not in the library yet, from your playback sources (in the order set in Settings). Each file takes its ghost song's place in the playlist.{count > 200 ? ' That is a lot: they download a few at a time and can be cancelled from the download list.' : ''}</span>
+    </label>
+  )
+}
+
 function FileImport({ onDone }) {
   const user = useAppStore(s => s.user)
   const [platform, setPlatform] = useState('spotify')
+  const [downloadGhosts, setDownloadGhosts] = useState(false)
   const [files, setFiles] = useState([])
   const [preview, setPreview] = useState(null)
   const [name, setName] = useState('')
@@ -191,7 +206,7 @@ function FileImport({ onDone }) {
     }).catch(e => ({ error: e.message }))
     setImporting(false)
     if (result?.error) { setError(result.error); return }
-    onDone(result)
+    onDone(result, { downloadGhosts })
   }
 
   return (
@@ -216,6 +231,7 @@ function FileImport({ onDone }) {
             <input value={name} onChange={e => setName(e.target.value)} className={input} />
           </div>
           <p className="text-xs text-muted">{plural(preview.total, 'track')} found · {preview.matched} already in your library · {preview.ghostable} will be ghost songs</p>
+          <DownloadGhostsOption count={preview.ghostable} checked={downloadGhosts} onChange={setDownloadGhosts} />
         </>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
@@ -235,6 +251,7 @@ function ListImport({ onDone }) {
   const user = useAppStore(s => s.user)
   const [name, setName] = useState('')
   const [list, setList] = useState('')
+  const [downloadGhosts, setDownloadGhosts] = useState(false)
   const [preview, setPreview] = useState(null)
   const [reading, setReading] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -265,7 +282,7 @@ function ListImport({ onDone }) {
     const result = await api.importExternalPlaylist({ name: name.trim(), userId: user?.id || 'guest', files: files(), sourcePlatform: 'generic' }).catch(e => ({ error: e.message }))
     setImporting(false)
     if (result?.error) { setError(result.error); return }
-    onDone(result)
+    onDone(result, { downloadGhosts })
   }
 
   return (
@@ -287,12 +304,26 @@ function ListImport({ onDone }) {
           {preview ? `${plural(preview.total, 'song')} · ${preview.matched} in your library · ${preview.ghostable} will be ghost songs` : 'Reading the list…'}
         </p>
       )}
+      {preview && <DownloadGhostsOption count={preview.ghostable} checked={downloadGhosts} onChange={setDownloadGhosts} />}
       {error && <p className="text-xs text-red-400">{error}</p>}
       <button type="button" onClick={submit} disabled={importing || !preview?.total} className={`${primary} w-full flex items-center justify-center gap-2`}>
         {importing && <Loader2 size={14} className="animate-spin" />} Import {preview?.total ? plural(preview.total, 'song') : 'playlist'}
       </button>
     </div>
   )
+}
+
+/** In the background: the playlist's ghost songs, found and downloaded (ghostDownloads.js). */
+async function downloadPlaylistGhosts(playlistId) {
+  const toast = showLoadingToast('Finding the songs not in your library…')
+  try {
+    const tracks = await api.getPlaylistTracks(playlistId)
+    const ghosts = (Array.isArray(tracks) ? tracks : []).filter(isGhostTrack)
+    const result = await downloadGhostSongs(ghosts, { onProgress: message => toast.update(message) })
+    toast.close(ghostDownloadMessage(result))
+  } catch {
+    toast.close("Couldn't download the playlist's songs.")
+  }
 }
 
 export default function ImportPlaylistModal() {
@@ -312,10 +343,11 @@ export default function ImportPlaylistModal() {
     return () => window.removeEventListener('lokal:playlist-import', handler)
   }, [])
 
-  const done = (result) => {
+  const done = (result, { downloadGhosts = false } = {}) => {
     setOpen(false)
     window.dispatchEvent(new CustomEvent('lokal:playlist-created', { detail: { playlistId: result.playlistId } }))
     showToast(`Imported ${plural(result.total || 0, 'track')}${result.ghosted ? ` (${result.ghosted} ghost)` : ''}`)
+    if (downloadGhosts && result.ghosted && result.playlistId) downloadPlaylistGhosts(result.playlistId)
   }
 
   return (
