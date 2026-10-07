@@ -159,6 +159,10 @@ function registerDownloaderHandlers(ipcMain) {
     clean.replaceImported = Array.isArray(clean.replaceImported)
       ? clean.replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)
       : undefined
+    clean.confirmedImported = Array.isArray(clean.confirmedImported)
+      ? clean.confirmedImported.filter(id => clean.replaceImported?.includes(id)) : undefined
+    clean.manuallySelectedImported = Array.isArray(clean.manuallySelectedImported)
+      ? clean.manuallySelectedImported.filter(id => clean.replaceImported?.includes(id)) : undefined
     return manager().enqueue('single', url, clean)
   })
   ipcMain.handle('downloader:linkInfo', (_, url) => require('../download/linkInfo').linkInfo(url, { ytdlp: findYtDlp(), settings: manager().settings() }))

@@ -84,7 +84,7 @@ function addonSourceOf(value) {
 }
 function enqueue(kind) {
   return (req, res) => {
-    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, replaceImported, addonSource, tags, expectedDuration } = req.body || {}
+    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, replaceImported, confirmedImported, manuallySelectedImported, addonSource, tags, expectedDuration } = req.body || {}
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
     if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
       return res.status(400).json({ error: 'Invalid playlistId' })
@@ -95,6 +95,8 @@ function enqueue(kind) {
     if (kind === 'single' && typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId)) opts.replaceTrackId = replaceTrackId
     // Songs of an imported playlist the file takes the place of.
     if (kind === 'single' && Array.isArray(replaceImported)) opts.replaceImported = replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)
+    if (kind === 'single' && Array.isArray(confirmedImported)) opts.confirmedImported = confirmedImported.filter(id => opts.replaceImported?.includes(id))
+    if (kind === 'single' && Array.isArray(manuallySelectedImported)) opts.manuallySelectedImported = manuallySelectedImported.filter(id => opts.replaceImported?.includes(id))
     // An addon track: a fresh link is asked for each time the job starts.
     if (kind === 'single' && addonSourceOf(addonSource)) opts.addonSource = addonSourceOf(addonSource)
     // What the source said about the song, for a file that comes without tags.

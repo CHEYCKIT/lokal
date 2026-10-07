@@ -29,6 +29,9 @@ import DiscoveryImage from './DiscoveryImage'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
 import { navigateToTrackAlbum } from '../playbackContext'
+import { downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
+import { useGhostDownloadSources } from './useGhostDownloadSources'
+import { useGhostDurationConfirmation } from './useGhostDurationConfirmation'
 import { nextPlaylistSort } from '../playlistSorting'
 
 const LARGE_LIST_STEP = 200
@@ -133,6 +136,9 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   // [start, end) slice of mergedTracks currently mounted (large lists only).
   const [windowRange, setWindowRange] = useState({ start: 0, end: LARGE_LIST_STEP })
   const [ghostTrack, setGhostTrack] = useState(null)
+  const { confirmDuration, durationChoice, isCurrent: ghostResolverOpen } = useGhostDurationConfirmation(!!ghostTrack)
+  const { source: ghostSource, sourceChoice } = useGhostDownloadSources(!!ghostTrack)
+  const ghostSearchSequence = useRef(0)
   const [ghostQuery, setGhostQuery] = useState('')
   const [ghostSearchResults, setGhostSearchResults] = useState([])
   const [ghostSearchLoading, setGhostSearchLoading] = useState(false)
@@ -338,7 +344,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }, [isLargeList, updateWindowFromScroll])
 
   useEffect(() => {
-    if (!ghostTrack) {
+    if (!ghostTrack || !ghostSource) {
       setGhostQuery('')
       setGhostSearchResults([])
       setGhostSearchLoading(false)
@@ -347,26 +353,33 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       setGhostActionStatus('')
       return
     }
+    const sequence = ++ghostSearchSequence.current
     const run = async () => {
+      setGhostSearchResults([])
       setGhostSearchLoading(true)
       setGhostLocalLoading(true)
       setGhostActionStatus('')
       try {
-        const query = String(ghostTrack.title || '').trim()
+        const query = [ghostTrack.artist, ghostTrack.title].filter(Boolean).join(' ')
         setGhostQuery(query)
-        const result = await api.searchYT(query, 1)
+        const result = await ghostDownloadSuggestions(query, ghostSource)
+        if (sequence !== ghostSearchSequence.current) return
         setGhostSearchResults(Array.isArray(result?.results) ? result.results.slice(0, 6) : Array.isArray(result) ? result.slice(0, 6) : [])
-        const localResult = await api.searchTracks(query)
+        const localResult = await api.searchTracks(ghostTrack.title)
+        if (sequence !== ghostSearchSequence.current) return
         setGhostLocalResults(Array.isArray(localResult?.tracks) ? localResult.tracks.slice(0, 8) : [])
       } catch (e) {
+        if (sequence !== ghostSearchSequence.current) return
         setGhostActionStatus('Search failed: ' + e.message)
       } finally {
+        if (sequence !== ghostSearchSequence.current) return
         setGhostSearchLoading(false)
         setGhostLocalLoading(false)
       }
     }
     run()
-  }, [ghostTrack])
+    return () => { ghostSearchSequence.current++ }
+  }, [ghostTrack, ghostSource])
 
   const refreshGhostMatches = async (queryOverride = '') => {
     const query = String(queryOverride || ghostQuery || ghostTrack?.title || '').trim()
@@ -374,17 +387,23 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       setGhostActionStatus('Enter a search query first.')
       return
     }
+    const sequence = ++ghostSearchSequence.current
+    setGhostSearchResults([])
     setGhostSearchLoading(true)
     setGhostLocalLoading(true)
     setGhostActionStatus('')
     try {
-      const result = await api.searchYT(query, 1)
+      const result = await ghostDownloadSuggestions(query, ghostSource)
+      if (sequence !== ghostSearchSequence.current) return
       setGhostSearchResults(Array.isArray(result?.results) ? result.results.slice(0, 6) : Array.isArray(result) ? result.slice(0, 6) : [])
       const localResult = await api.searchTracks(query)
+      if (sequence !== ghostSearchSequence.current) return
       setGhostLocalResults(Array.isArray(localResult?.tracks) ? localResult.tracks.slice(0, 8) : [])
     } catch (e) {
+      if (sequence !== ghostSearchSequence.current) return
       setGhostActionStatus('Search failed: ' + e.message)
     } finally {
+      if (sequence !== ghostSearchSequence.current) return
       setGhostSearchLoading(false)
       setGhostLocalLoading(false)
     }
@@ -692,15 +711,17 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const downloadGhostResult = async (item) => {
-    if (!item?.url) return
+    if (!item) return
     setGhostActionStatus('Starting download...')
     try {
-      const result = await api.downloadYT(item.url, { title: item.title, thumbnail: item.thumbnail || undefined, from: 'Ghost track' })
+      const result = await queueGhostResult(ghostTrack, item, { confirmDuration, isCurrent: ghostResolverOpen })
+      if (result?.cancelled) { setGhostActionStatus('Skipped.'); return }
       if (result?.error) {
         setGhostActionStatus('Download failed: ' + result.error)
         return
       }
-      setGhostActionStatus('Download started. Resolve this ghost track after the song finishes indexing.')
+      setGhostActionStatus(result?.alreadyInLibrary ? 'Replaced with your library copy.' : 'Download started. This playlist entry will be replaced when it finishes.')
+      if (result?.alreadyInLibrary) window.dispatchEvent(new Event('lokal:refresh'))
     } catch (e) {
       setGhostActionStatus('Download failed: ' + e.message)
     }
@@ -1028,6 +1049,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         width="max-w-2xl"
       >
         <div className="space-y-4">
+          {durationChoice}
           <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center flex-shrink-0">
@@ -1093,7 +1115,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           </div>
 
           <div className="rounded-xl border border-border bg-card/30 overflow-hidden">
-            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Suggested Downloads</div>
+            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Suggested Downloads<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
             <div className="divide-y divide-border">
               {ghostSearchLoading && (
                 <div className="px-4 py-6 text-sm text-muted">Searching…</div>
@@ -1108,12 +1130,12 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                     onClick={() => downloadGhostResult(item)}
                     className="px-3 py-1.5 rounded-lg bg-accent/15 border border-accent/25 text-accent text-xs hover:bg-accent/25 transition-colors flex items-center gap-1.5"
                   >
-                    <Download size={12} /> Download
+                    <Download size={12} /> Download & replace
                   </button>
                 </div>
               ))}
               {!ghostSearchLoading && !ghostSearchResults.length && (
-                <div className="px-4 py-6 text-sm text-muted">No suggestions yet. Try Search YouTube.</div>
+                <div className="px-4 py-6 text-sm text-muted">No suggestions yet. Try another source or search query.</div>
               )}
             </div>
           </div>

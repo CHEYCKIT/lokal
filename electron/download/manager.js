@@ -492,6 +492,13 @@ class DownloadManager {
       if (opts.replaceImported?.length) {
         running.opts.replaceImported = [...new Set([...(running.opts.replaceImported || []), ...opts.replaceImported])]
       }
+      // Approval belongs to the individual playlist row, not the shared job.
+      if (opts.confirmedImported?.length) {
+        running.opts.confirmedImported = [...new Set([...(running.opts.confirmedImported || []), ...opts.confirmedImported.filter(id => opts.replaceImported?.includes(id))])]
+      }
+      if (opts.manuallySelectedImported?.length) {
+        running.opts.manuallySelectedImported = [...new Set([...(running.opts.manuallySelectedImported || []), ...opts.manuallySelectedImported.filter(id => opts.replaceImported?.includes(id))])]
+      }
       this.persist(running)
       return { downloadId: running.id, playlistId: running.playlistId, duplicate: true }
     }
@@ -503,7 +510,7 @@ class DownloadManager {
           const { resolveGhostTrack } = require('../../server/routes/playlists')
           db.transaction(() => {
             for (const ghostId of new Set(opts.replaceImported || [])) {
-              const swapped = resolveGhostTrack(db, ghostId, owned.id, null, { requireMetadataMatch: true, dedupePlaylist: true })
+              const swapped = resolveGhostTrack(db, ghostId, owned.id, null, { requireMetadataMatch: !opts.manuallySelectedImported?.includes(ghostId), dedupePlaylist: true, allowDurationMismatch: opts.confirmedImported?.includes(ghostId) === true })
               if (!swapped?.ok) throw new Error(swapped?.error || 'Could not resolve imported track')
             }
           })()
@@ -1129,7 +1136,7 @@ class DownloadManager {
             const db = this.db()
             db.transaction(() => {
               for (const ghostId of importedGhosts) {
-                const swapped = resolveGhostTrack(db, ghostId, result.id, null, { requireMetadataMatch: true, dedupePlaylist: true })
+                const swapped = resolveGhostTrack(db, ghostId, result.id, null, { requireMetadataMatch: !job.opts.manuallySelectedImported?.includes(ghostId), dedupePlaylist: true, allowDurationMismatch: job.opts.confirmedImported?.includes(ghostId) === true })
                 if (!swapped?.ok) throw new Error(swapped?.error || 'Could not resolve imported track')
               }
             })()

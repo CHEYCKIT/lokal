@@ -77,3 +77,13 @@ test('canonical ghost metadata is forwarded for YouTube and SoundCloud too', asy
     assert.equal(options.expectedDuration, 202)
   }
 })
+
+test('approved alternate duration reaches provider downloader with its ghost IDs', async t => {
+  let options
+  t.mock.method(api, 'downloadYT', async (_, opts) => { options = opts; return {} })
+  await saveToLibrary(tracks[0], { replaceImported: ['csv'], confirmedImported: ['csv'], manuallySelectedImported: ['csv'], expectedDuration: 210 })
+  assert.deepEqual(options.replaceImported, ['csv'])
+  assert.deepEqual(options.confirmedImported, ['csv'])
+  assert.deepEqual(options.manuallySelectedImported, ['csv'])
+  assert.equal(options.expectedDuration, 210)
+})

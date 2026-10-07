@@ -23,7 +23,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
   globalThis.window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} }
   globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
   const { api } = await import('../src/api.js')
-  const { downloadGhostSongs } = await import('../src/ghostDownloads.js')
+  const { downloadGhostSongs, downloadGhostResult, ghostDownloadSuggestions } = await import('../src/ghostDownloads.js')
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-csv-stress-'))
   const priorDir = process.env.LOKAL_DATA_DIR
@@ -41,6 +41,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
     fs.rmSync(dir, { recursive: true, force: true })
   })
   const count = Number(process.env.LOKAL_STRESS_TRACKS) || 12
+  const alternateDuration = process.env.LOKAL_STRESS_ALTERNATE_DURATION === '1'
   const multipleArtists = process.env.LOKAL_STRESS_MULTI_ARTIST === '1'
   const milliseconds = process.env.LOKAL_STRESS_MS !== '0'
   const withIsrc = process.env.LOKAL_STRESS_ISRC !== '0'
@@ -88,7 +89,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
     findTools: () => ({ ytdlp, ffmpeg: process.env.LOKAL_STRESS_FFMPEG || '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe' }),
     resolveAddonUrl: async (p, id) => (await sources.resolveStream(p, id, { db, force: true })).url,
   })
-  const csv = [`title,artist,album,${milliseconds ? 'duration_ms' : 'duration'},isrc`, ...catalogue.map(row => `${row.title},${multipleArtists ? row.artist + ';Guest Artist;Another Guest' : row.artist},${row.album},${row.duration * (milliseconds ? 1000 : 1)},${row.isrc || ''}`)].join('\n')
+  const csv = [`title,artist,album,${milliseconds ? 'duration_ms' : 'duration'},isrc`, ...catalogue.map(row => `${row.title},${multipleArtists ? row.artist + ';Guest Artist;Another Guest' : row.artist},${row.album},${(row.duration + (alternateDuration ? 280 : 0)) * (milliseconds ? 1000 : 1)},${row.isrc || ''}`)].join('\n')
   const imported = await (await fetch(`${base}/playlists/external-import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Stress CSV', fileType: 'csv', fileContent: csv }) })).json()
   assert.equal(imported.ghosted, count)
   const rows = () => db.prepare('SELECT t.* FROM playlist_tracks p JOIN tracks t ON t.id = p.track_id WHERE p.playlist_id = ? ORDER BY p.position').all(imported.playlistId)
@@ -109,7 +110,21 @@ test('CSV playlist downloads through a local addon leave playable library files'
     if (!String(url).startsWith(base + '/')) throw new Error(`Unexpected external request: ${new URL(url).hostname}`)
     return originalFetch(url, opts)
   })
-  const queued = await downloadGhostSongs(rows(), { client, concurrency: 6, onProgress: message => { if (/ (?:\d*[05]0)\//.test(message)) console.log(message) } })
+  let confirmations = 0
+  const confirmDuration = async (ghost, found) => { confirmations++; assert.ok(ghost.duration - found.duration > 10); return true }
+  let queued
+  if (process.env.LOKAL_STRESS_MANUAL === '1') {
+    const attempts = await Promise.all(rows().map(async ghost => {
+      const suggestions = await ghostDownloadSuggestions(`${ghost.artist} ${ghost.title}`, provider, client)
+      const item = suggestions.find(item => item.title === ghost.title)
+      assert.ok(item, 'manually select the requested song, not a substring result')
+      return downloadGhostResult(ghost, item, { client, confirmDuration })
+    }))
+    queued = { started: attempts.filter(result => result?.downloadId).length }
+  } else {
+    queued = await downloadGhostSongs(rows(), { client, concurrency: 6, confirmDuration, onProgress: message => { if (/ (?:\d*[05]0)\//.test(message)) console.log(message) } })
+  }
+  assert.equal(confirmations, alternateDuration ? count : 0)
   assert.equal(queued.started, count, JSON.stringify(queued))
   console.log('Queue submissions finished:', JSON.stringify(queued))
   const deadline = Date.now() + 480000
@@ -133,6 +148,7 @@ test('CSV playlist downloads through a local addon leave playable library files'
   for (const row of playlistRows) {
     const expected = catalogue.find(item => item.title === row.title)
     assert.ok(expected)
+    assert.ok(Math.abs(row.duration - expected.duration) < 0.1, "library retains measured duration")
     assert.equal(row.artist, multipleArtists ? expected.artist + ', Guest Artist, Another Guest' : expected.artist)
     const metadata = await mm.parseFile(row.file_path)
     assert.equal(metadata.common.title, expected.title)

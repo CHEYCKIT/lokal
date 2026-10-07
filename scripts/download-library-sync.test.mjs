@@ -223,3 +223,91 @@ test('non-Latin CSV titles and artists can resolve to their matching library fil
   assert.equal(result.libraryAdded, true)
   assert.ok(db.prepare('SELECT track_id FROM playlist_tracks').all().every(row => row.track_id === 'target'))
 })
+
+for (const approved of [[], ['g1'], ['g1', 'g2']]) {
+  test(`alternate duration approvals stay scoped to rows: ${approved.join(',') || 'none'}`, async t => {
+    const { db, filepath, mgr, job } = downloadFixture(t, { skipped: true }, false)
+    db.prepare("UPDATE tracks SET duration = 492 WHERE id IN ('g1', 'g2')").run()
+    job.opts.confirmedImported = approved
+    const result = await mgr.indexOne(job, filepath)
+    if (approved.length === 2) {
+      assert.equal(result.libraryAdded, true)
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM playlist_tracks WHERE track_id = ?').get('target').n, 2) // imported rows dedupe; pre-existing streamed row also resolves
+      assert.equal(db.prepare('SELECT duration FROM tracks WHERE id = ?').get('target').duration, 200)
+    } else {
+      assert.equal(result.libraryAdded, false)
+      assert.deepEqual(db.prepare('SELECT track_id FROM playlist_tracks ORDER BY position').all().map(r => r.track_id), ['g1', 'g2', 'streamed'])
+      assert.ok(db.prepare('SELECT id FROM tracks WHERE id = ?').get('target'))
+    }
+  })
+}
+
+test('duration approval never permits the wrong title', async t => {
+  const { db, filepath, mgr, job } = downloadFixture(t, { skipped: true })
+  job.opts.confirmedImported = ['g1', 'g2']
+  assert.equal((await mgr.indexOne(job, filepath)).libraryAdded, false)
+  assert.equal(db.prepare("SELECT track_id FROM playlist_tracks WHERE position = 0").get().track_id, 'g1')
+})
+
+test('manually selected source can replace a differently tagged ghost', async t => {
+  const { db, filepath, mgr, job } = downloadFixture(t, { skipped: true })
+  job.opts.manuallySelectedImported = ['g2']
+  assert.equal((await mgr.indexOne(job, filepath)).libraryAdded, true)
+  assert.equal(db.prepare('SELECT track_id FROM track_aliases WHERE old_id = ?').get('g2').track_id, 'target')
+})
+
+for (const approved of [false, true]) {
+  test(`already downloaded alternate length needs approval: ${approved}`, t => {
+    const { db, mgr } = downloadFixture(t, { skipped: true }, false)
+    db.prepare("UPDATE tracks SET source_ref = 'a-0123456789:song' WHERE id = 'target'").run()
+    db.prepare("UPDATE tracks SET duration = 492 WHERE id = 'g1'").run()
+    mgr.configure({ findTools: () => ({ ytdlp: 'unused' }) })
+    mgr.pump = () => {}
+    const result = mgr.enqueue('single', 'https://addon.example/file.flac', {
+      title: 'Song', addonSource: { provider: 'a-0123456789', id: 'song' }, replaceImported: ['g1'], confirmedImported: approved ? ['g1'] : [],
+    })
+    if (approved) {
+      assert.equal(result.alreadyInLibrary, true)
+      assert.equal(db.prepare('SELECT track_id FROM track_aliases WHERE old_id = ?').get('g1').track_id, 'target')
+    } else {
+      assert.match(result.error, /could not replace/)
+      assert.equal(db.prepare('SELECT track_id FROM playlist_tracks WHERE position = 0').get().track_id, 'g1')
+    }
+  })
+}
+
+test('shared queued job merges only approvals belonging to requested rows', t => {
+  const { db } = fixture(t)
+  const mgr = new DownloadManager()
+  mgr.configure({ getDB: () => db, findTools: () => ({ ytdlp: 'unused' }) })
+  mgr.pump = () => {}
+  const url = 'https://www.youtube.com/watch?v=aaaaaaaaaaa'
+  const first = mgr.enqueue('single', url, { replaceImported: ['g1'] })
+  mgr.enqueue('single', url, { replaceImported: ['g2'], confirmedImported: ['g2', 'g1'], manuallySelectedImported: ['g2', 'g1'] })
+  const job = mgr.jobs.get(first.downloadId)
+  assert.deepEqual(job.opts.confirmedImported, ['g2'])
+  assert.deepEqual(job.opts.manuallySelectedImported, ['g2'])
+  clearTimeout(job.emitTimer)
+})
+
+test('desktop and web download handlers preserve only row-scoped approvals', t => {
+  const manager = require('../electron/download/manager.js').getDownloadManager()
+  const calls = []
+  const fake = { init() {}, enqueue: (kind, url, opts) => { calls.push(opts); return { downloadId: 'job' } } }
+  t.mock.method(manager, 'configure', () => fake)
+  const handlers = new Map()
+  require('../electron/ipc/downloader.js').registerDownloaderHandlers({ handle: (name, handler) => handlers.set(name, handler) })
+  const router = require('../server/routes/download.js')
+  const web = router.stack.find(layer => layer.route?.path === '/' && layer.route.methods.post).route.stack[0].handle
+  const opts = { replaceImported: ['g1', 'bad/id'], confirmedImported: ['g1', 'g2', 'bad/id'], manuallySelectedImported: ['g1', 'g2'], expectedDuration: 210 }
+  handlers.get('downloader:download')(null, 'https://youtube.com/watch?v=aaaaaaaaaaa', opts)
+  const response = { status() { return this }, json() {} }
+  web({ body: { url: 'https://youtube.com/watch?v=aaaaaaaaaaa', ...opts } }, response)
+  assert.equal(calls.length, 2)
+  for (const call of calls) {
+    assert.deepEqual(call.replaceImported, ['g1'])
+    assert.deepEqual(call.confirmedImported, ['g1'])
+    assert.deepEqual(call.manuallySelectedImported, ['g1'])
+    assert.equal(call.expectedDuration, 210)
+  }
+})

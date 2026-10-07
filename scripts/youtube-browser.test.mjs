@@ -107,7 +107,7 @@ test('browser launch uses private CDP pipes while retaining options, context/coo
     assert.equal(options.pipe, true)
     assert.ok(options.args.includes('--remote-debugging-pipe'))
     assert.ok(!options.args.some(value => /^--remote-debugging-(?:port|address)/.test(value)))
-    for (const value of ['--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=980,760', '--lang=en-US', '--app=about:blank']) assert.ok(options.args.includes(value))
+    for (const value of ['--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=480,800', '--lang=en-US', '--app=about:blank']) assert.ok(options.args.includes(value))
     assert.ok(!options.args.includes('--enable-automation'))
     for (const flag of ['handleSIGINT', 'handleSIGTERM', 'handleSIGHUP']) assert.equal(options[flag], false)
     const profile = options.args.find(value => value.startsWith('--user-data-dir=')).slice('--user-data-dir='.length)
