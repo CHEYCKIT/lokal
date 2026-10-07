@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildRecommendationMix, loadRecommendationPage, playbackFallbackMessage, matchCover, recommendationMatch, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
+import { buildRecommendationMix, loadRecommendationPage, playbackFallbackMessage, matchCover, recommendationMatch, recommendationQueries, resolveRecommendationTracks, songKey } from '../src/recommendations.js'
 import { orderedPlaybackSources } from '../src/playbackSources.js'
 import { buildRadio } from '../src/radioActions.js'
 
@@ -423,4 +423,38 @@ test('guests and Explicit labels: searched without them, matched either way (Est
   // Still another song, or another artist's, isn't taken.
   assert.equal(match(grateful, [{ title: 'Grateful', artist: 'Someone Else' }]), null)
   assert.equal(match(americanBoy, [{ title: 'American Boy (Remix)', artist: 'Estelle' }]), null)
+})
+
+test('imported addon ghosts match guest credits and original/single version labels', async () => {
+  const candidates = [
+    { title: 'Nasty Girl (feat. Diddy, Nelly, Jagged Edge)', artist: 'The Notorious B.I.G., Avery Storm, Diddy, Nelly, Jagged Edge' },
+    { title: 'Luv2U - Original Mix', artist: 'FakeFunk' },
+    { title: 'Never Enough - Single Version', artist: 'Boris Dlugosch, Róisín Murphy' },
+    { title: 'All Mine [feat. Guest One & Guest Two]', artist: 'Lead Artist, Guest One, Guest Two' },
+  ]
+  assert.ok(recommendationMatch(candidates[0], [{ title: 'Nasty Girl', artist: 'The Notorious B.I.G.' }]))
+  assert.ok(recommendationMatch(candidates[1], [{ title: 'Luv2U', artist: 'FakeFunk' }]))
+  assert.ok(recommendationMatch(candidates[2], [{ title: 'Never Enough', artist: 'Boris Dlugosch, Róisín Murphy' }]))
+  assert.ok(recommendationMatch(candidates[3], [{ title: 'All Mine', artist: 'Lead Artist' }]))
+  assert.equal(recommendationMatch(candidates[2], [{ title: 'Never Enough - Club Mix', artist: 'Boris Dlugosch, Róisín Murphy' }]), null)
+  assert.equal(recommendationQueries({ title: 'With You', artist: 'Lead Artist, Guest One, Guest Two' })[0], 'Lead Artist, Guest One, Guest Two With You')
+  const searches = []
+  const { client } = clientMock({
+    getSettings: async () => ({ playback_search_order: `['${addon}']` }),
+    onlineProviders: async () => [{ id: addon }],
+    onlineSearch: async (query, provider) => {
+      searches.push([query, provider])
+      const result = query.includes('Nasty Girl') ? { id: 'nasty', title: 'Nasty Girl', artist: 'The Notorious B.I.G.' }
+        : query.includes('Luv2U') ? { id: 'luv2u', title: 'Luv2U', artist: 'FakeFunk' }
+          : query.includes('All Mine') ? { id: 'all-mine', title: 'All Mine', artist: 'Lead Artist' }
+            : { id: 'never', title: 'Never Enough', artist: 'Boris Dlugosch, Róisín Murphy' }
+      return { results: [result] }
+    },
+  })
+  const resolved = await resolveRecommendationTracks(candidates, client, { sources: [{ id: addon }], prepareStreams: false })
+  assert.equal(resolved.length, 4)
+  assert.ok(searches.some(([query]) => query === 'The Notorious B.I.G. Nasty Girl'))
+  assert.ok(searches.some(([query]) => query === 'FakeFunk Luv2U'))
+  assert.ok(searches.some(([query]) => query.includes('Never Enough')))
+  assert.ok(searches.some(([query]) => query === 'Lead Artist All Mine'))
 })

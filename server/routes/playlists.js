@@ -6,6 +6,7 @@ const path = require('path')
 const { getDB, getStorageDir } = require('../../electron/ipc/db')
 const { normalizeIsrc } = require('../../electron/quality')
 const { fetchCoverData } = require('../../electron/playlists/remoteCover')
+const { deduplicatePlaylist } = require('../../electron/playlists/deduplicate')
 
 function parseCsvLine(line) {
   const result = []
@@ -884,6 +885,16 @@ router.put('/:id/reorder', (req, res) => {
   })
   
   res.json({ ok: true })
+})
+
+router.post('/:id/deduplicate', (req, res) => {
+  try {
+    const result = deduplicatePlaylist(getDB(), req.params.id)
+    if (result.error) return res.status(result.error === 'Playlist not found' ? 404 : 400).json(result)
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 router.delete('/:id', (req, res) => {

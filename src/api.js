@@ -250,6 +250,7 @@ export const api = {
   importLinkPlaylist: (payload) => isE() ? el().importLinkPlaylist(payload) : apiFetch('/playlists/link-import', { method:'POST', body:payload }),
   resolveGhostTrack: (ghostTrackId, targetTrackId) => isE() ? el().resolveGhostTrack(ghostTrackId, targetTrackId) : apiFetch('/playlists/resolve-ghost', { method:'POST', body:{ ghostTrackId, targetTrackId } }),
   reorderPlaylist: (pl, trackIds) => isE() ? el().reorderPlaylist(pl, trackIds) : apiFetch(`/playlists/${pl}/reorder`, { method:'PUT', body:{trackIds} }),
+  deduplicatePlaylist: pl => isE() ? el().deduplicatePlaylist(pl) : apiFetch(`/playlists/${pl}/deduplicate`, { method:'POST' }),
   getMixes: (uid) => isE() ? el().getMixes(uid) : apiFetch(`/mixes?userId=${uid||'guest'}`),
   getLyrics: (tid, ti, ar, al, dur, fp, opts = {}) => isE() ? el().getLyrics(tid, ti, ar, al, dur, fp, opts) : apiFetch(`/lyrics/${tid}?${new URLSearchParams({title:ti||'',artist:ar||'',album:al||'',duration:dur||'',filePath:fp||'',refresh:opts.refresh?'1':''})}`),
   getLyricsFrom: (providerId, tid, ti, ar, al, dur, fp) => isE() ? el().getLyricsFrom(providerId, tid, ti, ar, al, dur, fp) : apiFetch(`/lyrics/${tid}/from/${encodeURIComponent(providerId)}?${new URLSearchParams({title:ti||'',artist:ar||'',album:al||'',duration:dur||'',filePath:fp||''})}`),

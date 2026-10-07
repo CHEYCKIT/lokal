@@ -266,6 +266,10 @@ export default function Settings() {
   const [mergingAll, setMergingAll] = useState(false)
   const [mergeAllResult, setMergeAllResult] = useState(null)
   const [showMergeAllConfirm, setShowMergeAllConfirm] = useState(false)
+  const [deduplicatePlaylists, setDeduplicatePlaylists] = useState([])
+  const [deduplicatePlaylistId, setDeduplicatePlaylistId] = useState('')
+  const [deduplicatingPlaylist, setDeduplicatingPlaylist] = useState(false)
+  const [deduplicateResult, setDeduplicateResult] = useState('')
   const [keepCommaArtists, setKeepCommaArtists] = useState([])
   const [commaInput, setCommaInput] = useState('')
   const [showCommaModal, setShowCommaModal] = useState(false)
@@ -439,6 +443,18 @@ export default function Settings() {
   const exclusiveSidePanels = usePlayerStore(s => s.exclusiveSidePanels)
   const fileInputRef = useRef(null)
   const { themeName, themeOverrides, showAdvanced, setShowAdvanced, selectTheme, setAccent, saveOverride, saveOverrides, resetTheme, textScale, setTextScale } = useTheme()
+
+  useEffect(() => {
+    if (activeCategory !== 'library') return
+    let live = true
+    api.getPlaylists(user?.id).then(result => {
+      if (!live || !Array.isArray(result)) return
+      const regular = result.filter(playlist => !playlist.smart_rules)
+      setDeduplicatePlaylists(regular)
+      setDeduplicatePlaylistId(current => regular.some(playlist => String(playlist.id) === String(current)) ? current : String(regular[0]?.id || ''))
+    }).catch(() => { if (live) setDeduplicatePlaylists([]) })
+    return () => { live = false }
+  }, [activeCategory, user?.id])
 
   useEffect(() => {
 
@@ -668,6 +684,23 @@ export default function Settings() {
     const groups = await api.checkPossibleDuplicates()
     setPossibleDups(Array.isArray(groups) ? groups : [])
     setShowPossibleDups(true)
+  }
+
+  const removePlaylistDuplicates = async () => {
+    if (!deduplicatePlaylistId || deduplicatingPlaylist) return
+    setDeduplicatingPlaylist(true)
+    setDeduplicateResult('')
+    try {
+      const result = await api.deduplicatePlaylist(deduplicatePlaylistId)
+      if (result?.error) throw new Error(result.error)
+      const count = Number(result?.removed) || 0
+      setDeduplicateResult(count ? `Removed ${count} duplicate song${count === 1 ? '' : 's'}.` : 'No duplicate songs were found.')
+      window.dispatchEvent(new CustomEvent('lokal:playlist-updated', { detail: { playlistId: deduplicatePlaylistId } }))
+    } catch (e) {
+      setDeduplicateResult(`Could not remove duplicates: ${e.message}`)
+    } finally {
+      setDeduplicatingPlaylist(false)
+    }
   }
 
   const mergePossibleDup = async (group, keepId) => {
@@ -1287,6 +1320,29 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('library') && (
       <Section title="Library">
+        <Row stacked label="Remove Duplicate Songs" desc="Choose a playlist to remove repeated songs from it. The first occurrence stays in its original position; other playlist entries are removed. Library files are not touched.">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Playlist to remove duplicates from"
+              value={deduplicatePlaylistId}
+              onChange={event => { setDeduplicatePlaylistId(event.target.value); setDeduplicateResult('') }}
+              disabled={!deduplicatePlaylists.length || deduplicatingPlaylist}
+              className="min-w-48 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50 disabled:opacity-50"
+            >
+              {!deduplicatePlaylists.length && <option value="">No regular playlists</option>}
+              {deduplicatePlaylists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={removePlaylistDuplicates}
+              disabled={!deduplicatePlaylistId || deduplicatingPlaylist}
+              className="flex items-center gap-2 rounded-lg border border-accent/25 bg-accent/15 px-4 py-2 text-sm text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-40"
+            >
+              <Trash2 size={14} /> {deduplicatingPlaylist ? 'Removing…' : 'Remove duplicates'}
+            </button>
+          </div>
+          {deduplicateResult && <p role="status" className="text-xs text-muted">{deduplicateResult}</p>}
+        </Row>
         <Row label="Delete Files Too" desc={api.isElectron
           ? 'Deleting a song in Lokal also moves its file to the Recycle Bin. Only files in your music folder.'
           : 'Deleting a song in Lokal also deletes its file from the server, for good. Only files in the music folder.'}>

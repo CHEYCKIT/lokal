@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('electron', {
   importLinkPlaylist: (payload) => invoke('playlist:importLink', payload),
   resolveGhostTrack: (ghostTrackId, targetTrackId) => invoke('playlist:resolveGhostTrack', ghostTrackId, targetTrackId),
   reorderPlaylist: (pl, trackIds) => invoke('scanner:reorderPlaylist', pl, trackIds),
+  deduplicatePlaylist: (pl) => invoke('scanner:deduplicatePlaylist', pl),
 
   
   toggleLike: (t, uid) => invoke('scanner:toggleLike', t, uid),
