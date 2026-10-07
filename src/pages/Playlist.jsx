@@ -609,8 +609,18 @@ export default function Playlist() {
         >
           <div className="grid md:grid-cols-[260px_1fr] gap-4">
             <div className="rounded-2xl border border-border bg-card/40 overflow-hidden">
-              <div className="px-4 py-3 border-b border-border">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
                 <p className="text-xs font-display uppercase tracking-[0.24em] text-muted">Unresolved Tracks</p>
+                <button
+                  type="button"
+                  onClick={downloadAllGhosts}
+                  disabled={downloadingGhosts || !ghostTracks.length}
+                  title="Find and download every unresolved song"
+                  aria-label="Download all unresolved songs"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/15 px-2.5 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50"
+                >
+                  <Download size={12} /> {downloadingGhosts ? 'Finding…' : 'Download all'}
+                </button>
               </div>
               <div className="max-h-[28rem] overflow-y-auto divide-y divide-border">
                 {ghostTracks.map(track => {
