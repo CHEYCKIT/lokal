@@ -28,8 +28,8 @@ export function uniqueSongs(items) {
 
 const stripFeatured = suffix => /\b(?:remix|live|cover)\b/i.test(recommendationKey(suffix)) ? suffix : ''
 // The same recording under another label: "(2011 Remaster)", "- Remastered
-// 2003", "- Single Version", "(Mono)". Live, remix, edit... stay different songs.
-const SAME_RECORDING = '(?:(?:\\d{4}\\s+)?(?:digital(?:ly)?\\s+)?remaster(?:ed)?(?:\\s+\\d{4})?(?:\\s+version)?|(?:album|single|mono|stereo|lp)\\s+version|mono|stereo)'
+// 2003", "- Original Mix", "- Single Version", "(Mono)". Live, remix, edit... stay different songs.
+const SAME_RECORDING = '(?:(?:\\d{4}\\s+)?(?:digital(?:ly)?\\s+)?remaster(?:ed)?(?:\\s+\\d{4})?(?:\\s+version)?|(?:album|single|mono|stereo|lp)\\s+version|original\\s+mix|mono|stereo)'
 const sameRecordingBracket = new RegExp(`\\s*[([]${SAME_RECORDING}[)\\]]`, 'gi')
 const sameRecordingSuffix = new RegExp(`\\s+[-–—]\\s+${SAME_RECORDING}\\s*$`, 'i')
 // "[Explicit]", "(Clean Version)": labels of the same recording.
@@ -37,6 +37,14 @@ const contentLabel = /\s*[([](?:explicit|clean)(?:\s+version)?[)\]]/gi
 // A credit in brackets or after the name: "[feat. Joi]", "(ft. X)", " feat. Y".
 const featBracket = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]*[)\]]/gi
 const featSuffix = /\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i
+
+const hasFeaturedTitle = title => /\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]*[)\]]|\s+(?:feat\.?|ft\.?|featuring)\s+/i.test(String(title || ''))
+// Imported playlist metadata can flatten lead and guest artists into one
+// comma-separated string. Only add its first name when the title explicitly
+// carries a guest credit; names such as "Tyler, The Creator" stay intact.
+const featuredLeadArtist = (artist, title) => hasFeaturedTitle(title) && String(artist || '').split(/\s*,\s*/).length >= 3
+  ? String(artist).split(/\s*,\s*/)[0].trim()
+  : ''
 
 /** An artist without the guests credited with them: "Estelle [feat. Joi]" -> "Estelle". */
 export const mainArtist = artist => String(artist || '').replace(featBracket, '').replace(featSuffix, '').trim()
@@ -80,7 +88,7 @@ export function recommendationQueries(candidate) {
   // Clean names first ("Estelle Grateful", not "Estelle [feat. Teedra Moses &
   // Russell Taylor] Grateful", which sources often can't find), then the
   // album's own artist, then the names as given.
-  const names = [...new Set([mainArtist(artist), mainArtist(lead), mainArtist(candidate.album_artist), artist, lead].filter(Boolean))]
+  const names = [...new Set([featuredLeadArtist(artist, candidate.title), mainArtist(artist), mainArtist(lead), mainArtist(candidate.album_artist), artist, lead].filter(Boolean))]
   const titles = [...new Set([...recommendationTitles(searchTitle(candidate.title)), ...recommendationTitles(candidate.title)])]
   const queries = []
   for (const title of titles) for (const name of names) queries.push(`${name} ${title}`.trim())
@@ -94,7 +102,7 @@ export function recommendationMatch(candidate, results) {
   const leadArtist = recommendationKey(candidate.artists?.[0] || candidate.artist).replace(/ topic$/, '')
   // The same artists without their guests ("Estelle [feat. Joi]" is Estelle),
   // and, on an album's page, the album's artist ("Estelle, D-Nice & ...").
-  const artistKeys = new Set([artist, leadArtist, recommendationKey(mainArtist(candidate.artist)), recommendationKey(mainArtist(candidate.artists?.[0])), recommendationKey(mainArtist(candidate.album_artist))].filter(Boolean))
+  const artistKeys = new Set([artist, leadArtist, recommendationKey(mainArtist(candidate.artist)), recommendationKey(mainArtist(candidate.artists?.[0])), recommendationKey(mainArtist(candidate.album_artist)), recommendationKey(featuredLeadArtist(candidate.artist, candidate.title))].filter(Boolean))
   const sameArtist = name => artistKeys.has(recommendationKey(mainArtist(name)).replace(/ topic$/, ''))
   // Require both title and artist. A catalogue search is playback resolution,
   // not a second recommendation engine. Covers/remixes must not replace songs.

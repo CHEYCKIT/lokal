@@ -1363,6 +1363,7 @@ function registerScannerHandlers(ipcMain) {
     })
     return { ok: true }
   })
+  ipcMain.handle('scanner:deduplicatePlaylist', (_, plId) => deduplicatePlaylist(getDB(), plId))
   ipcMain.handle('artist:updateBio', (_, artistId, bio) => getDB().prepare('UPDATE artists SET bio = ?, bio_source = ?, bio_fetched_at = ? WHERE id = ?').run(bio, 'manual', Date.now(), artistId))
   ipcMain.handle('artist:setImage', async (_, artistId, imageData) => { const buf = Buffer.from(imageData.split(',')[1], 'base64'); const imgPath = path.join(getStorageDir(), 'artwork', `artist-${artistId}.jpg`); await fs.writeFile(imgPath, buf); getDB().prepare('UPDATE artists SET image_path = ?, image_source = ?, image_fetched_at = ? WHERE id = ?').run(imgPath, 'manual', Date.now(), artistId); return imgPath })
   ipcMain.handle('artist:rename', (_, artistId, newName) => { const db = getDB(); lockArtistLinks(db, artistId); const newId = 'a-' + newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); db.prepare('UPDATE tracks SET artist = ? WHERE artist = (SELECT name FROM artists WHERE id = ?)').run(newName, artistId); db.prepare('UPDATE artists SET id = ?, name = ? WHERE id = ?').run(newId, newName, artistId); db.prepare('UPDATE artist_track_links SET artist_id = ? WHERE artist_id = ?').run(newId, artistId) })
