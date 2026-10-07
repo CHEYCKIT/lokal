@@ -144,7 +144,7 @@ export async function saveToLibrary(track, extra = {}) {
     addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,
     // An addon's file is a bare audio link, without tags: name and tag it
     // from what the addon said (only where the file has nothing).
-    tags: extra.replaceImported?.length
+    tags: extra.tags || extra.replaceImported?.length
       ? {
           title: extra.tags?.title || track.title || undefined,
           artist: extra.tags?.artist || track.artist || undefined,

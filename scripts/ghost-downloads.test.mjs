@@ -66,3 +66,42 @@ test('streamed ghosts pass canonical metadata and cancellation to the downloader
   assert.equal(saved[0].options.expectedDuration, 201)
   assert.equal(saved[0].options.isCurrent(), true)
 })
+
+test('1,901 CSV ghosts follow addon, YouTube, SoundCloud order and keep each replacement identity', async () => {
+  const count = 1901
+  const providers = ['a-0123456789', 'yt', 'sc']
+  const attempts = new Map()
+  const saved = []
+  const ghosts = Array.from({ length: count }, (_, i) => ({ ...imported(i), duration: 200 + i % 30 }))
+  const client = {
+    getSettings: async () => ({ playback_search_order: JSON.stringify(providers) }),
+    onlineProviders: async () => providers.map(id => ({ id })),
+    searchTracks: async () => [],
+    onlineSearch: async (query, provider) => {
+      const i = Number(query.match(/Song (\d+)/)[1])
+      const log = attempts.get(i) || []
+      if (log.at(-1) !== provider) log.push(provider)
+      attempts.set(i, log)
+      const wanted = providers[i % 3]
+      if (provider !== wanted) return { results: [] }
+      return { results: [{ id: provider === 'yt' ? String(i).padStart(11, '0') : String(i), provider, title: `Song ${i}`, artist: `Artist ${i}`, duration: 200 + i % 30 }] }
+    },
+    onlinePrepare: async () => ({ ok: true }),
+    onlineSave: async items => items.map(item => ({ ...item,
+      id: `${item.provider}-${item.id}`,
+      file_path: item.provider === 'yt' ? `ghost://youtube/online/${item.id}` : item.provider === 'sc' ? `ghost://soundcloud/online/${item.id}` : `ghost://addon/0123456789/${item.id}`,
+    })),
+  }
+  const result = await downloadGhostSongs(ghosts, { client, concurrency: 6, save: async (track, options) => { saved.push({ track, options }); return { downloadId: track.id } } })
+  assert.deepEqual(result, { started: count, existing: 0, failed: 0, notFound: 0 })
+  assert.equal(new Set(saved.map(item => item.options.replaceImported[0])).size, count)
+  for (let i = 0; i < count; i++) assert.deepEqual(attempts.get(i), providers.slice(0, i % 3 + 1))
+  for (const { track, options } of saved) {
+    const i = Number(track.title.slice(5))
+    assert.equal(track.provider, providers[i % 3])
+    assert.deepEqual(options.replaceImported, [`g${i}`])
+    assert.equal(options.tags.title, ghosts[i].title)
+    assert.equal(options.tags.artist, ghosts[i].artist)
+    assert.equal(options.expectedDuration, ghosts[i].duration)
+  }
+})

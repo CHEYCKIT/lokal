@@ -64,3 +64,16 @@ test('missing addon links remain actionable download failures', async () => {
   try { assert.deepEqual(await saveToLibrary(tracks[2]), { error: 'Reconnect the addon' }) }
   finally { api.onlineDownloadUrl = original }
 })
+
+test('canonical ghost metadata is forwarded for YouTube and SoundCloud too', async t => {
+  const calls = []
+  t.mock.method(api, 'downloadYT', async (url, options) => { calls.push(options); return { downloadId: 'job' } })
+  for (const track of tracks.slice(0, 2)) {
+    await saveToLibrary(track, { tags: { title: 'CSV title', artist: 'CSV artist', album: 'CSV album' }, expectedDuration: 202 })
+  }
+  for (const options of calls) {
+    assert.equal(options.tags.title, 'CSV title')
+    assert.equal(options.tags.artist, 'CSV artist')
+    assert.equal(options.expectedDuration, 202)
+  }
+})

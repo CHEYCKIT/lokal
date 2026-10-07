@@ -1750,13 +1750,15 @@ async function indexSingleFile(filePath, opts = {}) {
     const albumOverride = typeof wanted.album === 'string' && wanted.album.trim() ? wanted.album.trim() : null
     const wantedDuration = Number(wanted.duration) || 0
     let duration = Number(existing.duration) || 0
-    if (wantedDuration > 0 && trackId !== existing.file_hash) {
+    let currentMeta
+    if (trackId !== existing.file_hash && (wantedDuration > 0 || titleOverride || artistOverride || albumOverride)) {
       let timeout
       try {
         const meta = await Promise.race([
           mm.parseFile(filePath, { duration: true, skipCovers: true }),
           new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000) }),
         ])
+        currentMeta = meta
         duration = Number(meta.format.duration) || 0
       } catch { return { error: 'Failed to parse metadata' } }
       finally { clearTimeout(timeout) }
@@ -1764,17 +1766,22 @@ async function indexSingleFile(filePath, opts = {}) {
     if (wantedDuration > 0 && duration > 0 && Math.abs(duration - wantedDuration) > 12) {
       return { error: 'Downloaded audio duration does not match the requested track' }
     }
-    if (titleOverride || artistOverride || albumOverride) {
+    if (titleOverride || artistOverride || albumOverride || currentMeta) {
       const updates = []
       const params = []
       if (titleOverride && existing.title !== titleOverride) { updates.push('title = ?'); params.push(titleOverride) }
       if (artistOverride && existing.artist !== artistOverride) { updates.push('artist = ?'); params.push(artistOverride) }
       if (albumOverride && existing.album !== albumOverride) { updates.push('album = ?'); params.push(albumOverride) }
+      if (currentMeta) {
+        updates.push('duration = ?', 'file_hash = ?', 'last_modified = ?')
+        params.push(duration, trackId, stat.mtimeMs)
+      }
       if (updates.length) {
         params.push(existing.id)
         db.transaction(() => {
           db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
           if (artistOverride && existing.artist !== artistOverride) updateTrackArtistLinks(db, existing.id, artistOverride)
+          if (currentMeta) quality.saveFields(db, existing.id, quality.qualityFields(currentMeta), { fileChanged: true })
         })()
       }
       return { skipped: true, id: existing.id, repaired: !!updates.length }
@@ -1782,11 +1789,13 @@ async function indexSingleFile(filePath, opts = {}) {
     return { skipped: true, id: existing.id }
   }
   let meta
+  let parseTimeout
   try {
     const parsePromise = mm.parseFile(filePath, { duration: true, skipCovers: false })
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000))
+    const timeoutPromise = new Promise((_, reject) => { parseTimeout = setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000) })
     meta = await Promise.race([parsePromise, timeoutPromise])
   } catch { return { error: 'Failed to parse metadata' } }
+  finally { clearTimeout(parseTimeout) }
   const c = meta.common
   const rawTitle = c.title?.trim()
   const rawArtist = pickPreferredArtist(c)
@@ -1885,7 +1894,7 @@ async function indexSingleFile(filePath, opts = {}) {
       }
     }
     applyPendingImportedMetadataToTrack(db, trackId)
-    resolveGhostsByIsrc(db, trackId)
+    if (!opts.deferGhostResolution) resolveGhostsByIsrc(db, trackId)
   })
   
   insertTransaction()

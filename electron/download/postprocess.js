@@ -199,10 +199,8 @@ function refile(filePath, { artist, title, album, outputDir }) {
   try {
     fs.mkdirSync(dir, { recursive: true })
     fs.renameSync(filePath, target)
-    // Leave no empty "Channel/Singles" folders behind.
-    for (let d = path.dirname(filePath), i = 0; i < 2 && d !== outputDir; i++, d = path.dirname(d)) {
-      try { if (!fs.readdirSync(d).length) fs.rmdirSync(d); else break } catch { break }
-    }
+    // Other download workers may be about to open files in the old folder.
+    // Removing an empty directory here races with yt-dlp's mkdir/open sequence.
     return target
   } catch { return filePath }
 }

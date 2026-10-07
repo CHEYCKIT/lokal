@@ -46,6 +46,7 @@ for (const [stored, current, rejected] of [[100, 200, false], [200, 100, true]])
     } else {
       assert.equal(result.id, 'existing')
       assert.equal(result.repaired, true)
+      assert.equal(db.prepare('SELECT duration FROM tracks').get().duration, current)
     }
   })
 }
@@ -115,7 +116,7 @@ for (const indexResult of [{ success: true }, { skipped: true }, { duplicate: tr
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM track_aliases').get().n, 0)
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tracks WHERE id = 'target'").get().n, indexResult.success ? 0 : 1)
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM artist_track_links WHERE track_id = 'target'").get().n, indexResult.success ? 0 : 1)
-    assert.equal(fs.existsSync(filepath), !!indexResult.duplicate)
+    assert.equal(fs.existsSync(filepath), !indexResult.success)
     assert.equal(job.outputLines.some(line => line.includes('Replaced the streamed version')), false)
     assert.deepEqual(db.pragma('foreign_key_check'), [])
   })
@@ -146,4 +147,79 @@ test('partial playlist completion includes indexing failures', async () => {
   await mgr.onExit(job, 1)
   assert.equal(job.status, 'done')
   assert.equal(job.message, '2 downloaded, 1 unavailable · 1 not added to library')
+})
+
+for (const provider of ['a-0123456789', 'yt', 'sc']) {
+  test(`duplicate ${provider} queue requests retain all imported playlist targets`, t => {
+    const { db } = fixture(t)
+    const mgr = new DownloadManager()
+    mgr.configure({ getDB: () => db, findTools: () => ({ ytdlp: 'unused' }) })
+    mgr.pump = () => {}
+    const url = provider === 'yt' ? 'https://www.youtube.com/watch?v=aaaaaaaaaaa'
+      : provider === 'sc' ? 'https://api.soundcloud.com/tracks/123' : 'https://addon.example/file.flac'
+    const opts = { title: 'Song', addonSource: provider.startsWith('a-') ? { provider, id: 'song' } : undefined }
+    const first = mgr.enqueue('single', url, { ...opts, replaceImported: ['g1'], replaceTrackId: 'stream1' })
+    const second = mgr.enqueue('single', url, { ...opts, replaceImported: ['g2'], replaceTrackId: 'stream2' })
+    assert.equal(second.downloadId, first.downloadId)
+    const job = mgr.jobs.get(first.downloadId)
+    assert.deepEqual(job.opts.replaceImported, ['g1', 'g2'])
+    assert.deepEqual(job.opts.alsoReplace, ['stream2'])
+    clearTimeout(job.emitTimer)
+  })
+}
+
+test('an empty index result is reported as a library failure', async t => {
+  const { db, filepath } = fixture(t)
+  const mgr = new DownloadManager()
+  mgr.configure({ getDB: () => db, index: async () => null })
+  mgr.update = (job, patch) => Object.assign(job, patch)
+  const job = { kind: 'single', opts: {}, outputLines: [], indexedTracks: [] }
+  const result = await mgr.indexOne(job, filepath)
+  assert.match(result.error, /could not be indexed/)
+  assert.equal(job.libraryFailures, 1)
+  assert.equal(job.indexedTracks.length, 0)
+})
+
+test('a failed cleanup never removes audio still referenced by a playlist', async t => {
+  const { db, filepath, mgr, job } = downloadFixture(t, { success: true })
+  db.prepare("INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ('p', 'target', 3)").run()
+  const result = await mgr.indexOne(job, filepath)
+  assert.equal(result.libraryAdded, false)
+  assert.ok(fs.existsSync(filepath))
+  assert.ok(db.prepare("SELECT id FROM tracks WHERE id = 'target'").get())
+  assert.deepEqual(db.pragma('foreign_key_check'), [])
+})
+
+test('reusing an owned source validates the full imported batch before replacing anything', t => {
+  const { db, filepath, mgr } = downloadFixture(t, { skipped: true })
+  db.prepare("UPDATE tracks SET source_ref = 'a-0123456789:song' WHERE id = 'target'").run()
+  mgr.configure({ findTools: () => ({ ytdlp: 'unused' }) })
+  mgr.pump = () => {}
+  const result = mgr.enqueue('single', 'https://addon.example/file.flac', {
+    title: 'Song', addonSource: { provider: 'a-0123456789', id: 'song' }, replaceImported: ['g1', 'g2'],
+  })
+  assert.match(result.error, /could not replace/)
+  assert.equal(result.alreadyInLibrary, undefined)
+  assert.deepEqual(db.prepare('SELECT track_id FROM playlist_tracks ORDER BY position').all().map(r => r.track_id), ['g1', 'g2', 'streamed'])
+  assert.ok(fs.existsSync(filepath))
+})
+
+test('desktop ghost resolution honors match checks, deduplication, and completed aliases', t => {
+  const { db } = downloadFixture(t, { success: true })
+  const { resolveGhostTrack } = require('../electron/ipc/playlists.js')
+  const options = { requireMetadataMatch: true, dedupePlaylist: true }
+  assert.equal(resolveGhostTrack(db, 'g2', 'target', null, options).ok, false)
+  db.prepare("INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ('p', 'target', 3)").run()
+  assert.equal(resolveGhostTrack(db, 'g1', 'target', null, options).ok, true)
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM playlist_tracks WHERE track_id = 'target'").get().n, 1)
+  assert.equal(resolveGhostTrack(db, 'g1', 'target', null, options).ok, true)
+  assert.deepEqual(db.pragma('foreign_key_check'), [])
+})
+
+test('non-Latin CSV titles and artists can resolve to their matching library file', async t => {
+  const { db, filepath, mgr, job } = downloadFixture(t, { success: true }, false)
+  db.prepare('UPDATE tracks SET title = ?, artist = ?').run('夜の音楽', '音楽家')
+  const result = await mgr.indexOne(job, filepath)
+  assert.equal(result.libraryAdded, true)
+  assert.ok(db.prepare('SELECT track_id FROM playlist_tracks').all().every(row => row.track_id === 'target'))
 })
