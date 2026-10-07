@@ -1449,14 +1449,7 @@ function registerScannerHandlers(ipcMain) {
     const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
     const result = db.prepare(sql).run(...params)
     if (data.artist !== undefined) {
-      db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
-      for (const name of splitArtists(data.artist)) {
-        const artistId = 'a-' + slugify(name)
-        db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
-        db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
-        db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, trackId)
-      }
-      db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+      updateTrackArtistLinks(db, trackId, data.artist)
     }
     if (data.instrumental === 1 || data.instrumental === true) {
       clearLyricsStateForTrack(db, trackId, currentTrack.file_path)
@@ -1734,24 +1727,89 @@ function downloadImageWithTimeout(url, dest, timeoutMs) {
   })
 }
 
+function updateTrackArtistLinks(db, trackId, artist) {
+  db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
+  for (const name of splitArtists(artist)) {
+    const artistId = 'a-' + slugify(name)
+    db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
+    db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
+    db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, trackId)
+  }
+  db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+}
+
 async function indexSingleFile(filePath, opts = {}) {
   const db = getDB()
   const stat = fs.statSync(filePath)
   const trackId = 't-' + hashFile(filePath, stat)
   const existing = db.prepare('SELECT * FROM tracks WHERE file_hash = ? OR file_path = ?').get(trackId, filePath)
-  if (existing) return { skipped: true, id: existing.id }
+  if (existing) {
+    const wanted = opts.metadata || {}
+    const titleOverride = typeof wanted.title === 'string' && wanted.title.trim() ? wanted.title.trim() : null
+    const artistOverride = typeof wanted.artist === 'string' && wanted.artist.trim() ? wanted.artist.trim() : null
+    const albumOverride = typeof wanted.album === 'string' && wanted.album.trim() ? wanted.album.trim() : null
+    const wantedDuration = Number(wanted.duration) || 0
+    let duration = Number(existing.duration) || 0
+    let currentMeta
+    if (trackId !== existing.file_hash && (wantedDuration > 0 || titleOverride || artistOverride || albumOverride)) {
+      let timeout
+      try {
+        const meta = await Promise.race([
+          mm.parseFile(filePath, { duration: true, skipCovers: true }),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000) }),
+        ])
+        currentMeta = meta
+        duration = Number(meta.format.duration) || 0
+      } catch { return { error: 'Failed to parse metadata' } }
+      finally { clearTimeout(timeout) }
+    }
+    if (wantedDuration > 0 && duration > 0 && Math.abs(duration - wantedDuration) > 12) {
+      return { error: 'Downloaded audio duration does not match the requested track' }
+    }
+    if (titleOverride || artistOverride || albumOverride || currentMeta) {
+      const updates = []
+      const params = []
+      if (titleOverride && existing.title !== titleOverride) { updates.push('title = ?'); params.push(titleOverride) }
+      if (artistOverride && existing.artist !== artistOverride) { updates.push('artist = ?'); params.push(artistOverride) }
+      if (albumOverride && existing.album !== albumOverride) { updates.push('album = ?'); params.push(albumOverride) }
+      if (currentMeta) {
+        updates.push('duration = ?', 'file_hash = ?', 'last_modified = ?')
+        params.push(duration, trackId, stat.mtimeMs)
+      }
+      if (updates.length) {
+        params.push(existing.id)
+        db.transaction(() => {
+          db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+          if (artistOverride && existing.artist !== artistOverride) updateTrackArtistLinks(db, existing.id, artistOverride)
+          if (currentMeta) quality.saveFields(db, existing.id, quality.qualityFields(currentMeta), { fileChanged: true })
+        })()
+      }
+      return { skipped: true, id: existing.id, repaired: !!updates.length }
+    }
+    return { skipped: true, id: existing.id }
+  }
   let meta
+  let parseTimeout
   try {
     const parsePromise = mm.parseFile(filePath, { duration: true, skipCovers: false })
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000))
+    const timeoutPromise = new Promise((_, reject) => { parseTimeout = setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000) })
     meta = await Promise.race([parsePromise, timeoutPromise])
   } catch { return { error: 'Failed to parse metadata' } }
+  finally { clearTimeout(parseTimeout) }
   const c = meta.common
   const rawTitle = c.title?.trim()
   const rawArtist = pickPreferredArtist(c)
-  const title = rawTitle || extractTitleFromFilename(filePath)
-  const artist = rawArtist || extractArtistFromFolder(filePath)
+  const requested = opts.metadata || {}
+  const requestedTitle = typeof requested.title === 'string' && requested.title.trim() ? requested.title.trim() : ''
+  const requestedArtist = typeof requested.artist === 'string' && requested.artist.trim() ? requested.artist.trim() : ''
+  const requestedAlbum = typeof requested.album === 'string' && requested.album.trim() ? requested.album.trim() : ''
+  const title = requestedTitle || rawTitle || extractTitleFromFilename(filePath)
+  const artist = requestedArtist || rawArtist || extractArtistFromFolder(filePath)
   const duration = meta.format.duration || 0
+  const requestedDuration = Number(requested.duration) || 0
+  if (requestedDuration > 0 && duration > 0 && Math.abs(duration - requestedDuration) > 12) {
+    return { error: 'Downloaded audio duration does not match the requested track' }
+  }
   if (!title || !artist) return { error: 'Missing title/artist' }
   if (!rawTitle) console.log(`[indexSingleFile] Fallback title from filename: ${filePath} -> "${title}"`)
   if (!rawArtist) console.log(`[indexSingleFile] Fallback artist from folder: ${filePath} -> "${artist}"`)
@@ -1784,7 +1842,7 @@ async function indexSingleFile(filePath, opts = {}) {
   }
 
   const replaygain = c.replaygain_track_gain || null
-  const album = c.album?.trim() || 'Unknown Album'
+  const album = requestedAlbum || c.album?.trim() || 'Unknown Album'
   // A streamed (ghost) copy of the song isn't a copy in the library: the file
   // is added, and then takes the ghost's place.
   const dupe = db.prepare("SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? AND (album IS NULL OR album = ? OR ? IS NULL OR album IS NULL) AND ABS(duration - ?) < 2 AND file_path NOT LIKE 'ghost://%'").get(title.toLowerCase(), artist.toLowerCase(), album, album, duration)
@@ -1836,7 +1894,7 @@ async function indexSingleFile(filePath, opts = {}) {
       }
     }
     applyPendingImportedMetadataToTrack(db, trackId)
-    resolveGhostsByIsrc(db, trackId)
+    if (!opts.deferGhostResolution) resolveGhostsByIsrc(db, trackId)
   })
   
   insertTransaction()

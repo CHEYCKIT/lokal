@@ -89,16 +89,17 @@ function manager() {
     requireFfmpeg: true,
     index: async (filepath, opts) => {
       const { indexSingleFile } = require('./scanner')
+      let lastError
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
           if (fs.existsSync(filepath)) {
             const result = await indexSingleFile(filepath, opts)
-            if (result?.id) return result
+            if (result?.id || result?.error) return result
           }
-        } catch {}
+        } catch (error) { lastError = error }
         await new Promise(r => setTimeout(r, 700))
       }
-      return null
+      return { error: lastError?.message || 'Downloaded file could not be indexed' }
     },
     onLibraryUpdated: (result) => broadcast('library:updated', result),
     // YouTube refused a download: get the latest yt-dlp (unless we already have it).
@@ -150,6 +151,10 @@ function registerDownloaderHandlers(ipcMain) {
       ? { provider, id: source.id } : undefined
     // What the source said about the song, for a file that comes without tags.
     clean.tags = require('../download/postprocess').knownTagsOf(clean.tags)
+    const expectedDuration = Number(clean.expectedDuration)
+    clean.expectedDuration = Number.isFinite(expectedDuration) && expectedDuration > 0 && expectedDuration < 36000
+      ? expectedDuration
+      : undefined
     // Songs of an imported playlist the file takes the place of.
     clean.replaceImported = Array.isArray(clean.replaceImported)
       ? clean.replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)

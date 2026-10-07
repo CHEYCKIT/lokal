@@ -29,7 +29,7 @@ function parseCsvLine(line) {
     }
   }
   result.push(cur)
-  return result.map(s => s.trim().replace(/^"|"$/g, ''))
+  return result.map(s => s.trim())
 }
 
 function firstGenre(value) {
@@ -135,7 +135,7 @@ function parseCSV(fileContent) {
       title,
       artist,
       album,
-      duration: durationCol !== -1 ? parseNumber(values[durationCol]) : null,
+      duration: durationCol !== -1 ? require('../../electron/playlists/importDuration').csvDuration(values[durationCol], headers[durationCol]) : null,
       source_url: urlCol !== -1 ? values[urlCol] : null,
       genres,
       genre: firstGenre(genres),
@@ -266,10 +266,11 @@ function collectImportEntries(payload = {}) {
 
 function normalizeMatchValue(value) {
   return String(value || '')
+    .normalize('NFKC')
     .toLowerCase()
     .replace(/\(.*?\)|\[.*?\]/g, ' ')
     .replace(/\b(?:feat|ft|featuring|remaster(?:ed)?|deluxe|radio edit|explicit|clean|version|mix)\b/gi, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -285,25 +286,25 @@ function findTrack(db, entry) {
   const normalizedArtist = normalizeArtistList(entry.artist)
   const primaryArtist = String(normalizedArtist || '').split(/\s*,\s*/).map(s => s.trim()).filter(Boolean)[0] || null
   if (entry.file_path) {
-    track = db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(entry.file_path)
+    track = db.prepare("SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND file_path = ?").get(entry.file_path)
     if (!track) {
       const filename = entry.file_path.split(/[/\\]/).pop().replace(/\.[^.]+$/, '').toLowerCase()
-      track = db.prepare('SELECT id FROM tracks WHERE LOWER(title) = ? LIMIT 1').get(filename)
+      track = db.prepare("SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) = ? LIMIT 1").get(filename)
     }
   }
   if (!track && entry.title && normalizedArtist) {
-    track = db.prepare('SELECT id FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? LIMIT 1').get(entry.title.toLowerCase(), normalizedArtist.toLowerCase())
+    track = db.prepare("SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) = ? AND LOWER(artist) = ? LIMIT 1").get(entry.title.toLowerCase(), normalizedArtist.toLowerCase())
   }
   if (!track && entry.title && primaryArtist) {
-    track = db.prepare('SELECT id FROM tracks WHERE LOWER(title) = ? AND (LOWER(artist) = ? OR LOWER(artist) LIKE ?) LIMIT 1').get(entry.title.toLowerCase(), primaryArtist.toLowerCase(), `%${primaryArtist.toLowerCase()}%`)
+    track = db.prepare("SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) = ? AND (LOWER(artist) = ? OR LOWER(artist) LIKE ?) LIMIT 1").get(entry.title.toLowerCase(), primaryArtist.toLowerCase(), `%${primaryArtist.toLowerCase()}%`)
   }
-  if (!track && entry.title) {
-    track = db.prepare('SELECT id FROM tracks WHERE LOWER(title) = ? LIMIT 1').get(entry.title.toLowerCase())
+  if (!track && entry.title && !normalizedArtist) {
+    track = db.prepare("SELECT id FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) = ? LIMIT 1").get(entry.title.toLowerCase())
   }
   if (!track && entry.title && normalizedArtist) {
     const titleNorm = normalizeMatchValue(entry.title)
     const artistNorm = normalizeMatchValue(normalizedArtist)
-    const candidates = db.prepare('SELECT id, title, artist FROM tracks WHERE LOWER(title) LIKE ? LIMIT 50').all(`%${entry.title.toLowerCase().slice(0, 18)}%`)
+    const candidates = db.prepare("SELECT id, title, artist FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND LOWER(title) LIKE ? LIMIT 50").all(`%${entry.title.toLowerCase().slice(0, 18)}%`)
     let best = null
     let bestScore = 0
     for (const candidate of candidates) {
@@ -486,8 +487,12 @@ function buildImportPreview(db, entries = []) {
 function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = null, options = {}) {
   const ghost = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path LIKE 'ghost://%'").get(ghostTrackId)
   const target = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(targetTrackId)
-  if (!ghost) return { error: 'Ghost track not found' }
   if (!target) return { error: 'Target track not found' }
+  if (!ghost) {
+    // A rescan or a previous successful attempt may already have resolved it.
+    const alias = db.prepare('SELECT track_id FROM track_aliases WHERE old_id = ?').get(ghostTrackId)
+    return alias?.track_id === targetTrackId ? { ok: true, track: target } : { error: 'Ghost track not found' }
+  }
   if (sourceIdentity) {
     const { sourceIdentity: identityOf } = require('../../electron/online/sources')
     const ghostSourceIdentity = identityOf(ghost.source_url)

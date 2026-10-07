@@ -39,3 +39,16 @@ test('ordinary downloads and explicitly converted addon downloads retain their f
   assert.equal(converted.includes('--embed-thumbnail'), false)
   assert.equal(converted.includes('--parse-metadata'), false)
 })
+
+test('addon songs with identical media filenames get isolated, stable output paths', () => {
+  const output = source => {
+    const args = buildArgs({ ...base, addonSource: source }).args
+    return args[args.indexOf('--output') + 1]
+  }
+  const first = { provider: 'a-0123456789', id: 'first' }
+  assert.equal(output(first), output(first))
+  assert.notEqual(output(first), output({ ...first, id: 'second' }))
+  assert.notEqual(output(first), output({ ...first, provider: 'a-9876543210' }))
+  assert.ok(output({ ...first, id: '../../escape/%(title)s' }).startsWith('/music/'))
+  assert.equal(output({ ...first, id: '../../escape/%(title)s' }).includes('escape'), false)
+})
