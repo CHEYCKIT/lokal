@@ -1739,7 +1739,29 @@ async function indexSingleFile(filePath, opts = {}) {
   const stat = fs.statSync(filePath)
   const trackId = 't-' + hashFile(filePath, stat)
   const existing = db.prepare('SELECT * FROM tracks WHERE file_hash = ? OR file_path = ?').get(trackId, filePath)
-  if (existing) return { skipped: true, id: existing.id }
+  if (existing) {
+    const wanted = opts.metadata || {}
+    const titleOverride = typeof wanted.title === 'string' && wanted.title.trim() ? wanted.title.trim() : null
+    const artistOverride = typeof wanted.artist === 'string' && wanted.artist.trim() ? wanted.artist.trim() : null
+    const albumOverride = typeof wanted.album === 'string' && wanted.album.trim() ? wanted.album.trim() : null
+    const wantedDuration = Number(wanted.duration) || 0
+    if (wantedDuration > 0 && Number(existing.duration) > 0 && Math.abs(Number(existing.duration) - wantedDuration) > 12) {
+      return { error: 'Downloaded audio duration does not match the requested track' }
+    }
+    if (titleOverride || artistOverride || albumOverride) {
+      const updates = []
+      const params = []
+      if (titleOverride && existing.title !== titleOverride) { updates.push('title = ?'); params.push(titleOverride) }
+      if (artistOverride && existing.artist !== artistOverride) { updates.push('artist = ?'); params.push(artistOverride) }
+      if (albumOverride && existing.album !== albumOverride) { updates.push('album = ?'); params.push(albumOverride) }
+      if (updates.length) {
+        params.push(existing.id)
+        db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+      }
+      return { skipped: true, id: existing.id, repaired: !!updates.length }
+    }
+    return { skipped: true, id: existing.id }
+  }
   let meta
   try {
     const parsePromise = mm.parseFile(filePath, { duration: true, skipCovers: false })
@@ -1749,9 +1771,17 @@ async function indexSingleFile(filePath, opts = {}) {
   const c = meta.common
   const rawTitle = c.title?.trim()
   const rawArtist = pickPreferredArtist(c)
-  const title = rawTitle || extractTitleFromFilename(filePath)
-  const artist = rawArtist || extractArtistFromFolder(filePath)
+  const requested = opts.metadata || {}
+  const requestedTitle = typeof requested.title === 'string' && requested.title.trim() ? requested.title.trim() : ''
+  const requestedArtist = typeof requested.artist === 'string' && requested.artist.trim() ? requested.artist.trim() : ''
+  const requestedAlbum = typeof requested.album === 'string' && requested.album.trim() ? requested.album.trim() : ''
+  const title = requestedTitle || rawTitle || extractTitleFromFilename(filePath)
+  const artist = requestedArtist || rawArtist || extractArtistFromFolder(filePath)
   const duration = meta.format.duration || 0
+  const requestedDuration = Number(requested.duration) || 0
+  if (requestedDuration > 0 && duration > 0 && Math.abs(duration - requestedDuration) > 12) {
+    return { error: 'Downloaded audio duration does not match the requested track' }
+  }
   if (!title || !artist) return { error: 'Missing title/artist' }
   if (!rawTitle) console.log(`[indexSingleFile] Fallback title from filename: ${filePath} -> "${title}"`)
   if (!rawArtist) console.log(`[indexSingleFile] Fallback artist from folder: ${filePath} -> "${artist}"`)
@@ -1784,7 +1814,7 @@ async function indexSingleFile(filePath, opts = {}) {
   }
 
   const replaygain = c.replaygain_track_gain || null
-  const album = c.album?.trim() || 'Unknown Album'
+  const album = requestedAlbum || c.album?.trim() || 'Unknown Album'
   // A streamed (ghost) copy of the song isn't a copy in the library: the file
   // is added, and then takes the ghost's place.
   const dupe = db.prepare("SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? AND (album IS NULL OR album = ? OR ? IS NULL OR album IS NULL) AND ABS(duration - ?) < 2 AND file_path NOT LIKE 'ghost://%'").get(title.toLowerCase(), artist.toLowerCase(), album, album, duration)
