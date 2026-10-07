@@ -1449,14 +1449,7 @@ function registerScannerHandlers(ipcMain) {
     const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
     const result = db.prepare(sql).run(...params)
     if (data.artist !== undefined) {
-      db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
-      for (const name of splitArtists(data.artist)) {
-        const artistId = 'a-' + slugify(name)
-        db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
-        db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
-        db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, trackId)
-      }
-      db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+      updateTrackArtistLinks(db, trackId, data.artist)
     }
     if (data.instrumental === 1 || data.instrumental === true) {
       clearLyricsStateForTrack(db, trackId, currentTrack.file_path)
@@ -1734,6 +1727,17 @@ function downloadImageWithTimeout(url, dest, timeoutMs) {
   })
 }
 
+function updateTrackArtistLinks(db, trackId, artist) {
+  db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
+  for (const name of splitArtists(artist)) {
+    const artistId = 'a-' + slugify(name)
+    db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
+    db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
+    db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, trackId)
+  }
+  db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+}
+
 async function indexSingleFile(filePath, opts = {}) {
   const db = getDB()
   const stat = fs.statSync(filePath)
@@ -1745,7 +1749,19 @@ async function indexSingleFile(filePath, opts = {}) {
     const artistOverride = typeof wanted.artist === 'string' && wanted.artist.trim() ? wanted.artist.trim() : null
     const albumOverride = typeof wanted.album === 'string' && wanted.album.trim() ? wanted.album.trim() : null
     const wantedDuration = Number(wanted.duration) || 0
-    if (wantedDuration > 0 && Number(existing.duration) > 0 && Math.abs(Number(existing.duration) - wantedDuration) > 12) {
+    let duration = Number(existing.duration) || 0
+    if (wantedDuration > 0 && trackId !== existing.file_hash) {
+      let timeout
+      try {
+        const meta = await Promise.race([
+          mm.parseFile(filePath, { duration: true, skipCovers: true }),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000) }),
+        ])
+        duration = Number(meta.format.duration) || 0
+      } catch { return { error: 'Failed to parse metadata' } }
+      finally { clearTimeout(timeout) }
+    }
+    if (wantedDuration > 0 && duration > 0 && Math.abs(duration - wantedDuration) > 12) {
       return { error: 'Downloaded audio duration does not match the requested track' }
     }
     if (titleOverride || artistOverride || albumOverride) {
@@ -1756,7 +1772,10 @@ async function indexSingleFile(filePath, opts = {}) {
       if (albumOverride && existing.album !== albumOverride) { updates.push('album = ?'); params.push(albumOverride) }
       if (updates.length) {
         params.push(existing.id)
-        db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+        db.transaction(() => {
+          db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+          if (artistOverride && existing.artist !== artistOverride) updateTrackArtistLinks(db, existing.id, artistOverride)
+        })()
       }
       return { skipped: true, id: existing.id, repaired: !!updates.length }
     }

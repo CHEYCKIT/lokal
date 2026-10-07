@@ -52,3 +52,17 @@ test('not found, failed downloads and streamed ghosts are told apart', async () 
   assert.deepEqual(saved.sort(), [['yt-aaaaaaaaaa2', ['g2']], ['yt-bbbbbbbbbbb', undefined]])
   assert.equal(ghostDownloadMessage(result), '1 already in your library; 1 not found on your playback sources; 1 unavailable')
 })
+
+test('streamed ghosts pass canonical metadata and cancellation to the downloader', async () => {
+  const ghost = { id: 'yt-bbbbbbbbbbb', title: 'Canonical title', artist: 'Canonical artist', album: 'Album', duration: 201, file_path: 'ghost://youtube/online/bbbbbbbbbbb' }
+  const saved = []
+  const result = await downloadGhostSongs([ghost], {
+    client: client(),
+    save: async (track, options) => { saved.push({ track, options }); return {} },
+  })
+  assert.equal(result.started, 1)
+  assert.equal(saved[0].track, ghost)
+  assert.deepEqual(saved[0].options.tags, { title: ghost.title, artist: ghost.artist, album: ghost.album })
+  assert.equal(saved[0].options.expectedDuration, 201)
+  assert.equal(saved[0].options.isCurrent(), true)
+})

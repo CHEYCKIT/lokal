@@ -1113,39 +1113,29 @@ class DownloadManager {
           replaced.add(ghostId)
           job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
         }
-        if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
-          try {
-            const addon = job.opts.addonSource
-            // Several clicks on the same song (search list, player bar) while
-            // it downloaded: each one's streamed copy.
-            for (const ghostId of [job.opts.replaceTrackId, ...(job.opts.alsoReplace || [])]) {
-              if (addon) {
-                if (ghostId === onlineTrackId(addon.provider, addon.id)) replace(ghostId, null)
-              } else {
-                replace(ghostId, job.kind === 'single' ? sourceIdentity(job.url) : null)
-              }
-            }
-          } catch {}
-        }
         // Songs of an imported playlist (a CSV, a pasted list) this download
         // was found for: they must actually take their ghost row's place before
         // this download can count as library-added.
         let importedReplacementFailed = false
-        if (job.kind === 'single') {
-          for (const ghostId of job.opts?.replaceImported || []) {
-            if (!replaced.has(ghostId)) {
-              try {
-                replace(ghostId, null, { requireMetadataMatch: true, dedupePlaylist: true })
-              } catch {}
+        const importedGhosts = job.kind === 'single' ? [...new Set(job.opts?.replaceImported || [])] : []
+        if (importedGhosts.length) {
+          try {
+            const db = this.db()
+            db.transaction(() => {
+              for (const ghostId of importedGhosts) {
+                const swapped = resolveGhostTrack(db, ghostId, result.id, null, { requireMetadataMatch: true, dedupePlaylist: true })
+                if (!swapped?.ok) throw new Error(swapped?.error || 'Could not resolve imported track')
+              }
+            })()
+            for (const ghostId of importedGhosts) {
+              replaced.add(ghostId)
+              job.outputLines.push(`[Lokal] Replaced the streamed version (${ghostId}) with this file`)
             }
-            if (!replaced.has(ghostId)) importedReplacementFailed = true
+          } catch (error) {
+            importedReplacementFailed = true
+            job.outputLines.push(`[Lokal] Kept the unresolved playlist tracks: ${error.message || error}`)
           }
         }
-        // The same song liked or added to a playlist from another source.
-        try {
-          const track = this.db().prepare('SELECT id, title, artist, duration FROM tracks WHERE id = ?').get(result.id)
-          for (const ghostId of streamedTwins(this.db(), track)) if (!replaced.has(ghostId)) replace(ghostId, null)
-        } catch {}
 
         if (importedReplacementFailed) {
           const message = 'Downloaded audio, but it could not be matched back to the requested playlist track'
@@ -1156,14 +1146,40 @@ class DownloadManager {
           // This track was newly indexed only for this failed playlist
           // resolution. Do not leave a mismatched file in the library.
           if (!result.duplicate) {
-            try {
-              this.db().prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(result.id)
-              this.db().prepare('DELETE FROM tracks WHERE id = ?').run(result.id)
-            } catch {}
+            if (result.success === true) {
+              try {
+                const db = this.db()
+                db.transaction(() => {
+                  db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(result.id)
+                  db.prepare('DELETE FROM tracks WHERE id = ?').run(result.id)
+                })()
+              } catch {}
+            }
             try { if (fs.existsSync(filepath)) await fs.remove(filepath) } catch {}
           }
           return { ...result, error: message, libraryAdded: false }
         }
+
+        if (job.opts?.replaceTrackId && (job.kind === 'single' || job.kind === 'soulseek')) {
+          try {
+            const addon = job.opts.addonSource
+            // Several clicks on the same song (search list, player bar) while
+            // it downloaded: each one's streamed copy.
+            for (const ghostId of [job.opts.replaceTrackId, ...(job.opts.alsoReplace || [])]) {
+              if (replaced.has(ghostId)) continue
+              if (addon) {
+                if (ghostId === onlineTrackId(addon.provider, addon.id)) replace(ghostId, null)
+              } else {
+                replace(ghostId, job.kind === 'single' ? sourceIdentity(job.url) : null)
+              }
+            }
+          } catch {}
+        }
+        // The same song liked or added to a playlist from another source.
+        try {
+          const track = this.db().prepare('SELECT id, title, artist, duration FROM tracks WHERE id = ?').get(result.id)
+          for (const ghostId of streamedTwins(this.db(), track)) if (!replaced.has(ghostId)) replace(ghostId, null)
+        } catch {}
 
         // Only now does the list show the song (which refreshes the library
         // pages): once it has taken the streamed version's place, so a
@@ -1244,12 +1260,12 @@ class DownloadManager {
     }
 
     const partial = job.kind === 'playlist' && job.downloadedTracks.length > (job.tracksAtStart || 0)
+    const failures = job.libraryFailures || 0
+    const libraryWarning = failures ? ` · ${failures} not added to library` : ''
     if (code === 0 && !err) {
       this.markPlaylist(job, 'completed')
       const n = job.downloadedTracks.length
-      const failures = job.libraryFailures || 0
       const lyrics = job.lyricsCount ? ` · lyrics for ${job.lyricsCount}` : ''
-      const libraryWarning = failures ? ` · ${failures} not added to library` : ''
       this.update(job, {
         status: 'done',
         progress: 100,
@@ -1288,7 +1304,7 @@ class DownloadManager {
         status: 'done',
         progress: 100,
         speed: null, eta: null,
-        message: `${job.downloadedTracks.length} downloaded${failed ? `, ${failed} unavailable` : ''}`,
+        message: `${job.downloadedTracks.length} downloaded${failed ? `, ${failed} unavailable` : ''}${libraryWarning}`,
         finishedAt: Date.now(),
       }, { persist: true })
       return
