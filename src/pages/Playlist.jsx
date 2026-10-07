@@ -477,7 +477,7 @@ export default function Playlist() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-4 overflow-x-auto pb-2 whitespace-nowrap [&>button]:shrink-0">
         <button
           onClick={() => playQueue(playableTracks, 0, playbackContext)}
           disabled={!playableTracks.length}
@@ -485,8 +485,6 @@ export default function Playlist() {
         >
           <Play size={16} fill="currentColor" className="translate-x-px" /> Play All
         </button>
-
-        <div className="basis-full h-0" />
 
         <button
           onClick={shuffleTracks}
@@ -541,45 +539,44 @@ export default function Playlist() {
         )}
       </div>
 
-      {!!tracks.length && (
-        <div className="mb-1 flex justify-end px-2">
-          {playlistSearchOpen ? (
-            <div className="flex w-full max-w-xs items-center gap-2 rounded-full border border-accent/40 bg-elevated px-4 py-2.5 text-sm text-white focus-within:border-accent">
-              <Search size={15} className="flex-shrink-0 text-muted" />
-              <input
-                ref={playlistSearchRef}
-                value={playlistSearch}
-                onChange={event => setPlaylistSearch(event.target.value)}
-                onKeyDown={event => { if (event.key === 'Escape') { setPlaylistSearchOpen(false); setPlaylistSearch('') } }}
-                placeholder="Search this playlist"
-                aria-label="Search this playlist"
-                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
-              />
-              <button
-                type="button"
-                onClick={() => { setPlaylistSearchOpen(false); setPlaylistSearch('') }}
-                aria-label="Close playlist search"
-                className="flex-shrink-0 text-muted transition-colors hover:text-white"
-              >
-                <X size={15} />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setPlaylistSearchOpen(true)}
-              aria-label="Search this playlist"
-              title="Search this playlist"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-elevated text-muted transition-colors hover:border-accent/30 hover:text-white"
-            >
-              <Search size={15} />
-            </button>
-          )}
-        </div>
-      )}
-
       {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
+        toolbarStart={!!tracks.length && (
+          <div className="min-w-0 flex-1">
+            {playlistSearchOpen ? (
+              <div className="flex w-full max-w-xs items-center gap-2 rounded-full border border-accent/40 bg-elevated px-4 py-2.5 text-sm text-white focus-within:border-accent">
+                <Search size={15} className="flex-shrink-0 text-muted" />
+                <input
+                  ref={playlistSearchRef}
+                  value={playlistSearch}
+                  onChange={event => setPlaylistSearch(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Escape') { setPlaylistSearchOpen(false); setPlaylistSearch('') } }}
+                  placeholder="Search this playlist"
+                  aria-label="Search this playlist"
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setPlaylistSearchOpen(false); setPlaylistSearch('') }}
+                  aria-label="Close playlist search"
+                  className="flex-shrink-0 text-muted transition-colors hover:text-white"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPlaylistSearchOpen(true)}
+                aria-label="Search this playlist"
+                title="Search this playlist"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-elevated text-muted transition-colors hover:border-accent/30 hover:text-white"
+              >
+                <Search size={15} />
+              </button>
+            )}
+          </div>
+        )}
         tracks={visibleTracks}
         sort={sort}
         onSortChange={setSort}
