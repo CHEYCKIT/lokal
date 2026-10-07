@@ -249,7 +249,7 @@ export const api = {
   importExternalTrackMetadata: (payload) => isE() ? el().importExternalTrackMetadata(payload) : apiFetch('/playlists/external-import-metadata', { method:'POST', body:payload }),
   previewLinkPlaylist: (payload) => isE() ? el().previewLinkPlaylist(payload) : apiFetch('/playlists/link-preview', { method:'POST', body:payload }),
   importLinkPlaylist: (payload) => isE() ? el().importLinkPlaylist(payload) : apiFetch('/playlists/link-import', { method:'POST', body:payload }),
-  resolveGhostTrack: (ghostTrackId, targetTrackId, options = {}) => isE() ? el().resolveGhostTrack(ghostTrackId, targetTrackId, options) : apiFetch('/playlists/resolve-ghost', { method:'POST', body:{ ghostTrackId, targetTrackId, ...options } }),
+  resolveGhostTrack: (ghostTrackId, targetTrackId, options = {}) => isE() ? el().resolveGhostTrack(ghostTrackId, targetTrackId, options) : apiFetch('/playlists/resolve-ghost', { method:'POST', body:{ ghostTrackId, targetTrackId, options } }),
   reorderPlaylist: (pl, trackIds) => isE() ? el().reorderPlaylist(pl, trackIds) : apiFetch(`/playlists/${pl}/reorder`, { method:'PUT', body:{trackIds} }),
   deduplicatePlaylist: pl => isE() ? el().deduplicatePlaylist(pl) : apiFetch(`/playlists/${pl}/deduplicate`, { method:'POST' }),
   getMixes: (uid) => isE() ? el().getMixes(uid) : apiFetch(`/mixes?userId=${uid||'guest'}`),
