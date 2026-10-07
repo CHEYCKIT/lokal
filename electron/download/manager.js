@@ -1048,7 +1048,22 @@ class DownloadManager {
     if (!index) return
     try {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
-      const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
+      const result = await index(filepath, {
+        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined,
+        metadata: job.opts?.tags
+          ? {
+              title: job.opts.tags.title,
+              artist: job.opts.tags.artist,
+              album: job.opts.tags.album,
+              duration: job.opts.expectedDuration,
+            }
+          : undefined,
+      })
+      if (result?.error) {
+        job.outputLines.push(`[Lokal] Downloaded file was not added to the library: ${result.error}`)
+        this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+        return result
+      }
       // The same song, downloaded before (from YouTube, say) and now in better
       // quality (an addon's FLAC): the new file takes the old one's place in
       // its track, which keeps its playlists, likes and history. Otherwise
@@ -1130,7 +1145,12 @@ class DownloadManager {
         this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false }, { force: true })
         try { this.deps.onLibraryUpdated?.(result) } catch {}
       }
-    } catch {}
+      return result
+    } catch (error) {
+      job.outputLines.push(`[Lokal] Could not add the download to the library: ${error.message || error}`)
+      this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+      return { error: error.message || String(error) }
+    }
   }
 
   /**
