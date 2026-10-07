@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast, showLoadingToast } from './Toaster'
 import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
@@ -29,6 +29,7 @@ import DiscoveryImage from './DiscoveryImage'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
 import { navigateToTrackAlbum } from '../playbackContext'
+import { nextPlaylistSort } from '../playlistSorting'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -73,7 +74,21 @@ function fmtAddedAt(ts) {
   return date.toLocaleDateString()
 }
 
-export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null }) {
+function SortableHeader({ column, label, children, sort, onSortChange, className = '' }) {
+  if (!onSortChange) return <span className={className}>{children}</span>
+  const active = sort?.column === column
+  const next = nextPlaylistSort(sort, column)
+  const direction = next.direction === 'asc' ? 'ascending' : 'descending'
+  const Arrow = sort?.direction === 'desc' ? ChevronDown : ChevronUp
+  return <button type="button" aria-label={`Sort by ${label} ${direction}`} aria-pressed={active}
+    title={`Sort by ${label} ${direction}`} data-sort-column={column} data-sort-direction={active ? sort.direction : undefined}
+    onClick={event => { event.stopPropagation(); onSortChange(next) }}
+    className={`flex min-w-0 items-center gap-1 rounded uppercase hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? 'text-accent' : ''} ${className}`}>
+    <span className="truncate">{children}</span>{active && <Arrow size={11} className="shrink-0" aria-hidden="true" />}
+  </button>
+}
+
+export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null, sort = null, onSortChange = null, trackNumbers = null }) {
   const resolvedPlaybackRef = useRef(0)
   const resolvedToastRef = useRef(null)
   useEffect(() => () => { resolvedPlaybackRef.current++; resolvedToastRef.current?.close() }, [])
@@ -92,7 +107,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const savedColumns = useTrackColumnsStore(state => state.profiles[profile])
   const setColumn = useTrackColumnsStore(state => state.setColumn)
   const resetColumns = useTrackColumnsStore(state => state.resetColumns)
-  const columns = trackColumnPreferences(savedColumns, showQuality, !!playlistId)
+  const columns = trackColumnPreferences(savedColumns, showQuality, !!playlistId || !!onSortChange)
   const listRef = useRef(null)
   const [listWidth, setListWidth] = useState(0)
   useLayoutEffect(() => {
@@ -144,7 +159,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   const anyStreamed = useMemo(() => tracks.some(t => isStreamed(t)), [tracks])
   const anyLiked = useMemo(() => tracks.some(track => likedIds.has(track.id)), [tracks, likedIds])
   const actionSlots = (showPlayNext ? 1 : 0) + (anyStreamed || resolveTracks ? 1 : 0) + (showAddToQueue ? 1 : 0) + (onQuickAdd ? 1 : 0) + 4
-  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId, actionSlots, likedTrack: anyLiked, extraColumns })
+  const layout = trackColumnLayout(listWidth, columns, { playlist: !!playlistId && !!onReorder, actionSlots, likedTrack: anyLiked, extraColumns })
   const mergedTracks = tracks.map(track => trackOverrides[track.id] ? { ...track, ...trackOverrides[track.id] } : track)
   const navigate = useNavigate()
   const menu = useContextMenu()
@@ -546,6 +561,10 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const handleDragStart = (e, track) => {
+    if (!onReorder) {
+      e.preventDefault()
+      return
+    }
     setDraggedId(track.id)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', track.id)
@@ -557,6 +576,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const handleDragOver = (e, track) => {
+    if (!onReorder) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (dragOverId !== track.id) {
@@ -569,6 +589,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   }
 
   const handleDrop = (e, targetTrack) => {
+    if (!onReorder) return
     e.preventDefault()
     setDragOverId(null)
     if (!draggedId || draggedId === targetTrack.id) {
@@ -729,17 +750,18 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       </div>
       <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
         {layout.grip && <span />}
-        {layout.number && <span className="text-center">#</span>}
+        {layout.number && <SortableHeader column="number" label="playlist number" sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{layout.album ? 'Title' : 'Title / Album'}</span>
         {layout.album && <span className="truncate">Album</span>}
         {layout.source && <span className="flex justify-center" title="Source"><Globe size={12} aria-hidden="true" /><span className="sr-only">Source</span></span>}
         {layout.quality && <span className="text-center">Quality</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
-        {layout.added && <span className="truncate text-right tracking-normal">Date added</span>}
-        {layout.time && <span className="text-right">Time</span>}
+        {layout.added && <SortableHeader column="added" label="date added" sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
+        {layout.time && <SortableHeader column="time" label="duration" sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
         <span className="sr-only">Actions</span>
         <span aria-hidden="true" />
       </div>
+      {onSortChange && <span className="sr-only" role="status">Sorted by {sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'}, {sort?.direction === 'desc' ? 'descending' : 'ascending'}</span>}
 
       <div ref={rowsRef}>
       {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: topSpacerHeight }} />}
@@ -770,7 +792,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             {...motionProps}
             data-track-row
             ref={isHighlighted ? highlightRowRef : undefined}
-            draggable={!!playlistId}
+            draggable={!!playlistId && !!onReorder}
             onDragStart={(e) => handleDragStart(e, track)}
             onDragOver={(e) => handleDragOver(e, track)}
             onDragLeave={handleDragLeave}
@@ -791,7 +813,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               </div>
             )}
 
-            {layout.number && <div className="flex items-center justify-center h-7 text-xs text-muted font-display">
+            {layout.number && <div data-track-column="number" className="flex items-center justify-center h-7 text-xs text-muted font-display">
               {isGhost ? (
                 <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} className="text-yellow-300 hover:text-yellow-200 transition-colors" title="Ghost song">
                   <AlertCircle size={14} />
@@ -800,7 +822,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`} className={isCurrent ? 'text-accent' : 'text-white'}>
                   {isCurrent && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
                 </button>
-              ) : <span className={isCurrent ? 'text-accent' : ''}>{trackIndex + 1}</span>}
+              ) : <span className={isCurrent ? 'text-accent' : ''}>{trackNumbers?.get(track.playlist_track_id ?? track.id) ?? trackIndex + 1}</span>}
             </div>}
 
             <div className="min-w-0 flex items-center gap-2.5">
@@ -857,8 +879,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               )
             })()}
             {extraColumns.map(column => layout[column.key] && <span key={column.key} data-track-column={column.key} className="truncate text-right text-xs text-muted">{column.render(track)}</span>)}
-            {layout.added && <p className="truncate text-right text-xs text-muted/60" title={track.added_at ? addedDate(track.added_at).toLocaleString() : undefined}>{fmtAddedAt(track.added_at)}</p>}
-            {layout.time && <span className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>}
+            {layout.added && <p data-track-column="added" className="truncate text-right text-xs text-muted/60" title={track.added_at ? addedDate(track.added_at).toLocaleString() : undefined}>{fmtAddedAt(track.added_at)}</p>}
+            {layout.time && <span data-track-column="time" className="text-xs text-muted text-right font-display">{fmt(track.duration)}</span>}
             {/* More stays reachable even with every optional column off. */}
             <div className="flex items-center justify-end gap-1.5">
               <div className={`${layout.actions ? 'flex' : 'hidden'} items-center justify-end gap-1.5`}>

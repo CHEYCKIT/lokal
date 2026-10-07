@@ -16,6 +16,7 @@ import { plural } from '../plural'
 import { downloadGhostSongs, ghostDownloadMessage } from '../ghostDownloads'
 import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
+import { sortPlaylistTracks } from '../playlistSorting'
 
 export default function Playlist() {
   const { id } = useParams()
@@ -29,6 +30,10 @@ export default function Playlist() {
   // playlist, so the keys never change while mounted.
   const cacheKey = isLiked ? `playlist:liked:${user?.id || 'guest'}` : `playlist:${id}`
   const [tracks, setTracks, tracksCached] = useCachedState(`${cacheKey}:tracks`, [])
+  const [sort, setSort] = useState({ column: 'number', direction: 'asc' })
+  const sortedTracks = useMemo(() => sortPlaylistTracks(tracks, sort), [tracks, sort])
+  const trackNumbers = useMemo(() => new Map(tracks.map((track, index) => [track.playlist_track_id ?? track.id, index + 1])), [tracks])
+  const manualOrder = sort.column === 'number' && sort.direction === 'asc'
   const [playlist, setPlaylist, metaCached] = useCachedState(`${cacheKey}:meta`, null)
   // A playlist is ready from the cache only with its name too (left before
   // that came in, it would show "Playlist" until it did).
@@ -80,7 +85,7 @@ export default function Playlist() {
   }, [location.pathname, location.state, nav])
 
   // Online songs are ghost tracks too, but they stream, so they play.
-  const playableTracks = useMemo(() => tracks.filter(track => isPlayable(track)), [tracks])
+  const playableTracks = useMemo(() => sortedTracks.filter(track => isPlayable(track)), [sortedTracks])
   // Songs to resolve: entries with nothing to play (an import that found no
   // file). Streamed songs (a saved YouTube Music mix...) are ghost rows too,
   // but they play, so they aren't missing anything.
@@ -538,12 +543,15 @@ export default function Playlist() {
 
       {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
-        tracks={tracks}
+        tracks={sortedTracks}
+        sort={sort}
+        onSortChange={setSort}
+        trackNumbers={trackNumbers}
         showQuality
         reduceMotion
         onRemove={!isLiked && !smart ? removeTrack : null}
         playlistId={!isLiked && !smart ? id : null}
-        onReorder={!isLiked && !smart ? handleReorder : null}
+        onReorder={!isLiked && !smart && manualOrder ? handleReorder : null}
         context={playbackContext}
         highlightTrackId={highlightTrackId}
         highlightRequestKey={highlightRequestKey}
