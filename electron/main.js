@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const log = require('electron-log')
+const { attachFullscreenSleepBlocker } = require('./fullscreenSleepBlocker')
 
 const date = new Date().toISOString().replace(/[:.]/g, '-')
 log.transports.file.fileName = `lokal-${date}.log`
@@ -358,6 +359,7 @@ function createWindow() {
       backgroundThrottling: false,
     },
   })
+  attachFullscreenSleepBlocker(mainWindow, { app, powerSaveBlocker })
   const sendVisibility = (hidden) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:visibility', hidden) }
   mainWindow.on('minimize', () => sendVisibility(true))
   mainWindow.on('hide', () => sendVisibility(true))
