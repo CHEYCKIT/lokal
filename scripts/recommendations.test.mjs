@@ -490,3 +490,68 @@ test('comma-containing artist names and structured credits are preserved', () =>
   assert.equal(recommendationQueries(candidate)[0], 'Custom, Band Song')
   assert.equal(recommendationMatch(candidate, [{ title: 'Song', artist: 'Custom' }]), null)
 })
+
+test('YouTube upload titles identify the artist independently of the channel', () => {
+  const target = { title: 'Ring My Bell', artist: 'Anita Ward', duration: 491.933 }
+  for (const title of ['Anita Ward - Ring My Bell', 'Anita Ward – Ring My Bell (Lyrics)', 'Anita Ward - Ring My Bell [HQ]', 'Ring My Bell - Anita Ward']) {
+    const result = { provider: 'yt', title, artist: 'malacomg', artists: ['malacomg'], duration: 492 }
+    assert.equal(recommendationMatch(target, [result]), result, title)
+  }
+  for (const title of ['Ring My Bell', 'Someone Else - Ring My Bell', 'Anita Ward - Ring My Bell (Live)', 'Anita Ward - Ring My Bell (Re-Recorded)', 'Anita Ward - Ring My Bell (Remix)', 'Anita Ward - Ring My Bell (Cover)']) {
+    assert.equal(recommendationMatch(target, [{ provider: 'yt', title, artist: 'malacomg', duration: 492 }]), null, title)
+  }
+  assert.equal(recommendationMatch(target, [{ provider: 'sc', title: 'Anita Ward - Ring My Bell', artist: 'Someone Else', duration: 492 }]), null)
+})
+
+test('duration selects the requested recording before the same-album shorter edit', () => {
+  const target = { title: 'Ring My Bell', artist: 'Anita Ward', album: 'Ring My Bell', duration: 491.933 }
+  const short = { ...target, id: 'short', duration: 210 }
+  const full = { ...target, id: 'full', album: 'Disco Collection', duration: 492 }
+  assert.equal(recommendationMatch(target, [short, full]), full)
+  assert.equal(recommendationMatch(target, [short]), null)
+  assert.equal(recommendationMatch(target, [{ ...full, title: 'Ring My Bell (Re-Recorded)' }]), null)
+  assert.equal(recommendationMatch(target, [{ ...full, duration: null }])?.id, 'full')
+})
+
+test('plain YouTube search is tried before the next source when Music has no matching recording', async () => {
+  const target = { title: 'Ring My Bell', artist: 'Anita Ward', album: 'Ring My Bell', duration: 491.933 }
+  const attempts = []
+  const { client, saved } = clientMock({
+    onlineSearch: async (query, provider) => {
+      attempts.push(provider)
+      return { results: [{ id: 'short', ...target, duration: 210 }] }
+    },
+    searchYT: async (query, page) => {
+      attempts.push('yt-video')
+      assert.equal(query, 'Anita Ward Ring My Bell')
+      assert.equal(page, 1)
+      return { results: [{ id: 'abcdefghijk', title: 'Anita Ward - Ring My Bell', channel: 'malacomg', duration: 492 }] }
+    },
+  })
+  const [found] = await resolveRecommendationTracks([target], client, { sources: [{ id: addon }, { id: 'yt' }, { id: 'sc' }] })
+  assert.ok(found)
+  assert.deepEqual(attempts, [addon, 'yt', 'yt-video'])
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].id, 'abcdefghijk')
+  assert.equal(saved[0].provider, 'yt')
+})
+
+test('a failed or unsuitable video fallback continues source order, while cancellation stops it', async () => {
+  for (const videoResponse of [{ error: 'Search unavailable' }, { results: [{ id: 'abcdefghijk', title: 'Artist 1 - Song 1 (Cover)', channel: 'Uploader' }] }]) {
+    const attempts = []
+    const { client } = clientMock({
+      onlineSearch: async (_query, provider) => { attempts.push(provider); return { results: provider === 'sc' ? [{ ...song(1), id: '123', provider }] : [] } },
+      searchYT: async () => { attempts.push('yt-video'); return videoResponse },
+    })
+    const [found] = await resolveRecommendationTracks([song(1)], client, { sources: [{ id: 'yt' }, { id: 'sc' }] })
+    assert.equal(found?.provider, 'sc')
+    assert.deepEqual(attempts, ['yt', 'yt-video', 'sc'])
+  }
+  let current = true
+  const { client, saved } = clientMock({
+    onlineSearch: async () => ({ results: [] }),
+    searchYT: async () => { current = false; return { results: [{ id: 'abcdefghijk', title: 'Artist 1 - Song 1', channel: 'Uploader' }] } },
+  })
+  assert.deepEqual(await resolveRecommendationTracks([song(1)], client, { sources: [{ id: 'yt' }], isCurrent: () => current }), [])
+  assert.equal(saved.length, 0)
+})

@@ -43,7 +43,7 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
         }).catch(error => ({ error: error.message })))
         return
       }
-      const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined }], client, {
+      const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined, duration: ghost.duration }], client, {
         sources,
         isCurrent,
         preserveMatchMetadata: true,

@@ -148,3 +148,46 @@ test('supplied CSV collaborations resolve with lead-only source search and retai
   for (const [query, match] of catalogue) assert.deepEqual(attempts.filter(a => a.query === query).map(a => a.provider).filter((p, i, all) => all.indexOf(p) === i), providers.slice(0, providers.indexOf(match.provider) + 1))
   t.diagnostic(`${ghosts.length} actual CSV collaborations resolved with addon → YouTube → SoundCloud fallback; canonical credits preserved.`)
 })
+
+test('CSV duration skips a short addon edit and queues a matching YouTube upload with canonical tags', async () => {
+  const ghost = { ...imported(1), title: 'Ring My Bell', artist: 'Anita Ward', album: 'Ring My Bell', duration: 491.933 }
+  const providers = ['a-0123456789', 'yt', 'sc']
+  const attempts = [], saved = []
+  const c = {
+    ...client(),
+    getSettings: async () => ({ playback_search_order: JSON.stringify(providers) }),
+    onlineProviders: async () => providers.map(id => ({ id })),
+    onlineSearch: async (_query, provider) => {
+      attempts.push(provider)
+      return { results: provider === providers[0] ? [{ id: 'short', title: ghost.title, artist: ghost.artist, duration: 210 }] : [] }
+    },
+    searchYT: async () => {
+      attempts.push('yt-video')
+      return { results: [{ id: 'abcdefghijk', title: 'Anita Ward - Ring My Bell', channel: 'malacomg', duration: 492 }] }
+    },
+  }
+  const result = await downloadGhostSongs([ghost], { client: c, save: async (track, options) => { saved.push({ track, options }); return { downloadId: 'one' } } })
+  assert.deepEqual(result, { started: 1, existing: 0, failed: 0, notFound: 0 })
+  assert.deepEqual(attempts, [providers[0], 'yt', 'yt-video'])
+  assert.equal(saved[0].track.id, 'yt-abcdefghijk')
+  assert.deepEqual(saved[0].options.tags, { title: ghost.title, artist: ghost.artist, album: ghost.album })
+  assert.equal(saved[0].options.expectedDuration, 491.933)
+  assert.deepEqual(saved[0].options.replaceImported, [ghost.id])
+})
+
+test('CSV duration selects the full addon recording instead of downloading the first shorter result', async () => {
+  const ghost = { ...imported(1), title: 'Ring My Bell', artist: 'Anita Ward', duration: 491.933 }
+  const addon = 'a-0123456789'
+  const c = {
+    ...client(),
+    getSettings: async () => ({ playback_search_order: JSON.stringify([addon, 'yt']) }),
+    onlineProviders: async () => [{ id: addon }, { id: 'yt' }],
+    onlineSearch: async (_query, provider) => {
+      assert.equal(provider, addon)
+      return { results: [{ id: 'short', title: ghost.title, artist: ghost.artist, duration: 210 }, { id: 'full', title: ghost.title, artist: ghost.artist, duration: 492 }] }
+    },
+    onlineSave: async items => items.map(item => ({ ...item, file_path: `ghost://addon/0123456789/${item.id}` })),
+  }
+  const result = await downloadGhostSongs([ghost], { client: c, save: async track => { assert.equal(track.id, 'full'); return {} } })
+  assert.equal(result.started, 1)
+})
