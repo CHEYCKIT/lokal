@@ -49,7 +49,7 @@ const runtime = {
     const respond = request => {
       const url = new URL(request.url)
       if (!['accounts.google.com', 'accounts.google.co.uk', 'music.youtube.com', 'www.youtube.com'].includes(url.hostname)) unexpectedRequests.push(request.url)
-      if (failLogin && url.hostname === 'music.youtube.com') return Response.error()
+      if (failLogin && url.hostname === 'accounts.google.com') return Response.error()
       if (url.hostname === 'www.youtube.com' && url.pathname === '/signin') return Response.redirect(`${MUSIC}/`)
       return new Response(url.pathname.startsWith('/youtubei/') ? '{}' : html, { headers: { 'content-type': url.pathname.startsWith('/youtubei/') ? 'application/json' : 'text/html' } })
     }
@@ -81,7 +81,11 @@ const seed = async (jar, value) => {
   await jar.cookies.set({ url: 'https://accounts.google.com', domain: '.google.com', path: '/', name: 'SID', value: 'fixture-google-session', httpOnly: true, secure: true, expirationDate: COOKIE_EXPIRY })
 }
 const ready = window => waitFor(() => !window.isDestroyed() && window.webContents.getURL().startsWith(MUSIC) && !window.webContents.isLoadingMainFrame(), 'Music document ready')
+const loginReady = window => waitFor(() => !window.isDestroyed() && window.webContents.getURL().startsWith('https://accounts.google.com/') && !window.webContents.isLoadingMainFrame(), 'Google sign-in document ready')
 const signIn = async (window, value) => {
+  await loginReady(window)
+  // Seed Music storage as well to retain the full-profile restart coverage.
+  await window.loadURL(MUSIC)
   await ready(window)
   await window.webContents.executeJavaScript(`localStorage.setItem('fixture-site-state', '${value}-music-state'); document.getElementById('signin').click()`)
   await waitFor(() => window.webContents.getURL().startsWith('https://accounts.google.com/') && !window.webContents.isLoadingMainFrame(), 'website-initiated Google login')
@@ -102,6 +106,8 @@ async function checkRestoredProfile() {
   assert.equal(JSON.parse(auth.cookies)['user-agent'], jar.getUserAgent())
   const login = await openEmbeddedYouTubeLogin({ electron: runtime, session: jar })
   const window = windows.at(-1)
+  await loginReady(window)
+  await window.loadURL(MUSIC)
   await ready(window)
   const first = await window.webContents.executeJavaScript('window.firstScript')
   assert.equal(first.storage, 'verified-account-music-state', 'Music localStorage survives a real Electron shutdown/restart')
@@ -124,7 +130,8 @@ app.whenReady().then(async () => {
     stage = 'standalone login initialization'
     const login = await openEmbeddedYouTubeLogin({ electron: runtime })
     const window = windows.at(-1), jar = window.webContents.session
-    await ready(window)
+    await loginReady(window)
+    assert.deepEqual(window.getSize(), [480, 800])
     const first = await window.webContents.executeJavaScript('window.firstScript')
     assert.equal(first.webdriver, false)
     assert.match(first.getter, /\[native code\]/, 'the login window must retain the native webdriver getter')

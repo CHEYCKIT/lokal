@@ -139,6 +139,8 @@ export async function saveToLibrary(track, extra = {}) {
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
     // Songs of an imported playlist the file takes the place of (ghostDownloads.js).
     ...(extra.replaceImported?.length ? { replaceImported: extra.replaceImported } : {}),
+    ...(extra.manuallySelectedImported?.length ? { manuallySelectedImported: extra.manuallySelectedImported } : {}),
+    ...(extra.confirmedImported?.length ? { confirmedImported: extra.confirmedImported } : {}),
     // An addon's link expires: the downloader asks the addon for a fresh one
     // each time the job starts (queued, restarted or retried).
     addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,

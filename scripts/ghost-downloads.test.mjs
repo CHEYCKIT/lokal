@@ -148,3 +148,166 @@ test('supplied CSV collaborations resolve with lead-only source search and retai
   for (const [query, match] of catalogue) assert.deepEqual(attempts.filter(a => a.query === query).map(a => a.provider).filter((p, i, all) => all.indexOf(p) === i), providers.slice(0, providers.indexOf(match.provider) + 1))
   t.diagnostic(`${ghosts.length} actual CSV collaborations resolved with addon → YouTube → SoundCloud fallback; canonical credits preserved.`)
 })
+
+test('CSV duration skips a short addon edit and queues a matching YouTube upload with canonical tags', async () => {
+  const ghost = { ...imported(1), title: 'Ring My Bell', artist: 'Anita Ward', album: 'Ring My Bell', duration: 491.933 }
+  const providers = ['a-0123456789', 'yt', 'sc']
+  const attempts = [], saved = []
+  const c = {
+    ...client(),
+    getSettings: async () => ({ playback_search_order: JSON.stringify(providers) }),
+    onlineProviders: async () => providers.map(id => ({ id })),
+    onlineSearch: async (_query, provider) => {
+      attempts.push(provider)
+      return { results: provider === providers[0] ? [{ id: 'short', title: ghost.title, artist: ghost.artist, duration: 210 }] : [] }
+    },
+    searchYT: async () => {
+      attempts.push('yt-video')
+      return { results: [{ id: 'abcdefghijk', title: 'Anita Ward - Ring My Bell', channel: 'malacomg', duration: 492 }] }
+    },
+  }
+  const result = await downloadGhostSongs([ghost], { client: c, save: async (track, options) => { saved.push({ track, options }); return { downloadId: 'one' } } })
+  assert.deepEqual(result, { started: 1, existing: 0, failed: 0, notFound: 0 })
+  assert.deepEqual(attempts, [providers[0], 'yt', 'yt-video'])
+  assert.equal(saved[0].track.id, 'yt-abcdefghijk')
+  assert.deepEqual(saved[0].options.tags, { title: ghost.title, artist: ghost.artist, album: ghost.album })
+  assert.equal(saved[0].options.expectedDuration, 491.933)
+  assert.deepEqual(saved[0].options.replaceImported, [ghost.id])
+})
+
+test('CSV duration selects the full addon recording instead of downloading the first shorter result', async () => {
+  const ghost = { ...imported(1), title: 'Ring My Bell', artist: 'Anita Ward', duration: 491.933 }
+  const addon = 'a-0123456789'
+  const c = {
+    ...client(),
+    getSettings: async () => ({ playback_search_order: JSON.stringify([addon, 'yt']) }),
+    onlineProviders: async () => [{ id: addon }, { id: 'yt' }],
+    onlineSearch: async (_query, provider) => {
+      assert.equal(provider, addon)
+      return { results: [{ id: 'short', title: ghost.title, artist: ghost.artist, duration: 210 }, { id: 'full', title: ghost.title, artist: ghost.artist, duration: 492 }] }
+    },
+    onlineSave: async items => items.map(item => ({ ...item, file_path: `ghost://addon/0123456789/${item.id}` })),
+  }
+  const result = await downloadGhostSongs([ghost], { client: c, save: async track => { assert.equal(track.id, 'full'); return {} } })
+  assert.equal(result.started, 1)
+})
+
+for (const accept of [true, false]) {
+  test(`Ring My Bell differing length requires approval (${accept})`, async () => {
+    const ghost = { ...imported(1), title: 'Ring My Bell', artist: 'Anita Ward', duration: 491.933 }
+    const c = client({ online: [{ title: ghost.title, artist: ghost.artist, duration: 210, vid: 'aaaaaaaaaa1' }] })
+    const saved = [], prompts = []
+    const result = await downloadGhostSongs([ghost], {
+      client: c, confirmDuration: async (wanted, found) => { prompts.push([wanted.duration, found.duration]); return accept },
+      save: async (track, options) => { saved.push(options); return {} },
+    })
+    assert.deepEqual(prompts, [[491.933, 210]])
+    assert.equal(result.started, accept ? 1 : 0)
+    if (accept) {
+      assert.equal(saved[0].expectedDuration, 210)
+      assert.deepEqual(saved[0].confirmedImported, [ghost.id])
+      assert.deepEqual(saved[0].replaceImported, [ghost.id])
+    } else {
+      assert.equal(saved.length, 0)
+      assert.equal(result.declined, 1)
+      assert.match(ghostDownloadMessage(result), /1 skipped/)
+    }
+  })
+}
+
+test('close matches stay automatic and cancellation while asking prevents download', async () => {
+  const ghost = { ...imported(1), duration: 200 }
+  const c = client({ online: [{ title: ghost.title, artist: ghost.artist, duration: 210, vid: 'aaaaaaaaaa1' }] })
+  let prompts = 0, saves = 0, current = true
+  const options = { client: c, isCurrent: () => current, save: async () => { saves++; return {} }, confirmDuration: async () => { prompts++; current = false; return true } }
+  assert.equal((await downloadGhostSongs([ghost], options)).started, 1)
+  assert.equal(prompts, 0)
+  ghost.duration = 492
+  assert.equal((await downloadGhostSongs([ghost], options)).cancelled, true)
+  assert.equal(prompts, 1)
+  assert.equal(saves, 1)
+})
+
+test('approved library version forwards duration permission without downloading', async () => {
+  const ghost = { ...imported(1), duration: 492 }
+  const c = client({ inLibrary: [{ ...ghost, duration: 210, id: 'local', file_path: '/music/song.flac' }] })
+  let options
+  c.resolveGhostTrack = async (id, target, opts) => { options = opts; return { ok: true } }
+  const result = await downloadGhostSongs([ghost], { client: c, confirmDuration: async () => true, save: async () => assert.fail('must reuse local file') })
+  assert.equal(result.existing, 1)
+  assert.equal(options.allowDurationMismatch, true)
+  assert.equal(options.requireMetadataMatch, true)
+})
+
+test('manual suggestion downloads and replaces only its selected ghost', async () => {
+  const { downloadGhostResult } = await import('../src/ghostDownloads.js')
+  const ghost = { ...imported(1), duration: 492 }
+  const item = { url: 'https://youtube.com/watch?v=aaaaaaaaaaa', title: 'Artist 1 - Song 1', channel: 'Uploader', duration: 210 }
+  const calls = []
+  const client = { downloadYT: async (...args) => { calls.push(args); return { downloadId: 'job' } } }
+  assert.equal((await downloadGhostResult(ghost, item, { client, confirmDuration: async () => false })).cancelled, true)
+  assert.equal(calls.length, 0)
+  await downloadGhostResult(ghost, item, { client, confirmDuration: async () => true })
+  const [url, opts] = calls[0]
+  assert.equal(url, item.url)
+  assert.deepEqual(opts.replaceImported, [ghost.id])
+  assert.deepEqual(opts.confirmedImported, [ghost.id])
+  assert.deepEqual(opts.manuallySelectedImported, [ghost.id])
+  assert.equal(opts.expectedDuration, 210)
+  assert.equal(opts.tags.artist, ghost.artist)
+  assert.equal(opts.tags.title, ghost.title)
+})
+
+test('a close match on the next source takes priority over an earlier different length', async () => {
+  const ghost = { ...imported(1), duration: 200 }
+  const c = client()
+  c.getSettings = async () => ({ playback_search_order: '["yt","sc"]' })
+  c.onlineProviders = async () => [{ id: 'yt' }, { id: 'sc' }]
+  c.onlineSearch = async (_, provider) => ({ results: [{ title: ghost.title, artist: ghost.artist, id: provider === 'yt' ? 'aaaaaaaaaaa' : '123', provider, duration: provider === 'yt' ? 400 : 200 }] })
+  c.onlineSave = async items => items.map(item => ({ ...item, file_path: `ghost://${item.provider === 'sc' ? 'soundcloud' : 'youtube'}/online/${item.id}` }))
+  const saved = []
+  await downloadGhostSongs([ghost], { client: c, confirmDuration: () => assert.fail('close match needs no approval'), save: async t => { saved.push(t); return {} } })
+  assert.equal(saved[0].provider, 'sc')
+})
+
+for (const provider of ['yt', 'sc', 'a-0123456789']) {
+  test(`manual suggestions search only selected source ${provider}`, async () => {
+    const { ghostDownloadSuggestions } = await import('../src/ghostDownloads.js')
+    const calls = []
+    const c = {
+      searchYT: async query => { calls.push(['yt', query]); return { results: [{ id: 'song' }, { id: 'preview', preview: true }] } },
+      onlineSearch: async (query, source) => { calls.push([source, query]); return { results: [{ id: 'song' }, { id: 'preview', preview: true }] } },
+    }
+    const rows = await ghostDownloadSuggestions('Anita Ward Ring My Bell', provider, c)
+    assert.deepEqual(calls, [[provider, 'Anita Ward Ring My Bell']])
+    assert.deepEqual(rows, [{ id: 'song', provider }])
+  })
+}
+
+for (const provider of ['sc', 'a-0123456789']) {
+  test(`manual ${provider} result without a URL is downloaded through its provider`, async () => {
+    const { downloadGhostResult } = await import('../src/ghostDownloads.js')
+    const ghost = { ...imported(1), duration: 492 }
+    const item = { id: '123', provider, title: ghost.title, artist: ghost.artist, duration: 210 }
+    const saved = []
+    const c = { onlineSave: async items => { assert.deepEqual(items, [item]); return [{ ...item, id: 'streamed', file_path: 'ghost://source/123' }] } }
+    const result = await downloadGhostResult(ghost, item, { client: c, confirmDuration: async () => true, save: async (track, options) => { saved.push({ track, options }); return { downloadId: 'queued' } } })
+    assert.equal(result.downloadId, 'queued')
+    assert.equal(saved[0].track.provider, provider)
+    assert.deepEqual(saved[0].options.replaceImported, [ghost.id])
+    assert.deepEqual(saved[0].options.manuallySelectedImported, [ghost.id])
+    assert.deepEqual(saved[0].options.confirmedImported, [ghost.id])
+    assert.equal(saved[0].options.expectedDuration, 210)
+  })
+}
+
+test('selected provider errors are reported and cancellation during preparation queues nothing', async () => {
+  const { downloadGhostResult, ghostDownloadSuggestions } = await import('../src/ghostDownloads.js')
+  await assert.rejects(ghostDownloadSuggestions('song', 'sc', { onlineSearch: async () => ({ error: 'Source unavailable' }) }), /Source unavailable/)
+  let current = true
+  const result = await downloadGhostResult(imported(1), { provider: 'sc', id: '123' }, {
+    client: { onlineSave: async () => { current = false; return [{ id: 'streamed' }] } },
+    isCurrent: () => current, save: () => assert.fail('cancelled selection must not download'),
+  })
+  assert.equal(result.cancelled, true)
+})

@@ -72,7 +72,7 @@ export const titleKey = title => recommendationKey(String(title || '')
   .replace(contentLabel, '')
   .replace(sameRecordingBracket, '')
   .replace(sameRecordingSuffix, '')
-  .replace(/\s*[([](?:official (?:audio|video)|lyrics?|audio|album version|single version)[)\]]/gi, '')
+  .replace(/\s*[([](?:official (?:music video|audio|video)|lyrics?|audio|hq|hd|album version|single version)[)\]]/gi, '')
   .replace(/\s*[([](?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+[)\]]/gi, stripFeatured)
   .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.+$/i, stripFeatured))
 
@@ -100,7 +100,15 @@ export function recommendationQueries(candidate) {
   return [...new Set(queries)].slice(0, 6)
 }
 
-export function recommendationMatch(candidate, results) {
+function matchingDuration(candidate, result) {
+  const expected = Number(candidate?.duration)
+  const actual = Number(result?.duration)
+  // Same tolerance as final playlist replacement; unknown durations are still
+  // checked against the downloaded audio by the scanner.
+  return !(Number.isFinite(expected) && expected > 0 && Number.isFinite(actual) && actual > 0) || Math.abs(expected - actual) <= 10
+}
+
+export function recommendationMatch(candidate, results, { provider } = {}) {
   const titles = recommendationTitles(candidate?.title).map(titleKey)
   const artist = recommendationKey(candidate?.artist)
   if (!titles[0] || !artist) return null
@@ -114,10 +122,18 @@ export function recommendationMatch(candidate, results) {
   // Of the matches, the one from the same album comes first (a compilation's
   // copy would bring another cover, and its colours, along).
   const matches = (Array.isArray(results) ? results : []).filter(result => {
+    if (!matchingDuration(candidate, result)) return false
     const name = String(result?.title || '')
     const prefix = name.match(/^(.+?)\s+[-–—|]\s+(.+)$/)
-    const resultTitle = prefix && sameArtist(prefix[1]) ? prefix[2] : name
+    const suffix = name.match(/^(.+)\s+[-–—|]\s+(.+)$/)
+    const prefixedArtist = prefix && sameArtist(prefix[1])
+    const youtube = (provider || result.provider) === 'yt'
+    const suffixedArtist = youtube && suffix && sameArtist(suffix[2])
+    const resultTitle = prefixedArtist ? prefix[2] : suffixedArtist ? suffix[1] : name
     if (!recommendationTitles(resultTitle).map(titleKey).some(title => titles.includes(title))) return false
+    // Video uploaders need not be the performer. Only trust an explicit exact
+    // artist/title pair; a bare title on an unrelated channel is insufficient.
+    if (youtube && (prefixedArtist || suffixedArtist)) return true
     const artists = Array.isArray(result.artists) ? result.artists : [result.artist]
     return artists.some(sameArtist) || sameArtist(result.artist) || sameArtist(leadArtist(result))
   })
@@ -214,7 +230,7 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
       const rows = Array.isArray(local) ? local : Array.isArray(local?.tracks) ? local.tracks : []
       // Imported ghosts and previously cached streams must not override a newly
       // configured provider order. Only a real library file takes precedence.
-      let row = rows.find(track => playableRecommendation(track) && !track.file_path.startsWith('ghost://') && songKey(track) === songKey(candidate))
+      let row = rows.find(track => playableRecommendation(track) && !track.file_path.startsWith('ghost://') && songKey(track) === songKey(candidate) && matchingDuration(candidate, track))
       if (!row) {
         for (const [index, source] of sources.entries()) {
           if (!isCurrent()) return null
@@ -233,8 +249,24 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
                 const response = await timed(() => client.onlineSearch(query, source.id), remaining)
                 if (!isCurrent()) return null
                 if (response?.error) { searchError = response.error; break }
-                match = recommendationMatch(candidate, response?.results)
+                match = recommendationMatch(candidate, response?.results, { provider: source.id })
                 if (match) break
+              }
+              // The Music catalogue can answer successfully but omit a song
+              // that exists as a regular upload. Try videos within YouTube's
+              // turn, before moving to the next configured playback source.
+              if (!match && !searchError && source.id === 'yt' && typeof client.searchYT === 'function') {
+                if (!isCurrent()) return null
+                const remaining = deadline - Date.now()
+                if (remaining <= 0) throw new Error('Provider lookup timed out')
+                const response = await timed(() => client.searchYT(recommendationQueries(candidate)[0], 1), remaining)
+                if (!isCurrent()) return null
+                searchError = response?.error || ''
+                const videos = (Array.isArray(response) ? response : response?.results || []).map(video => ({
+                  ...video, provider: 'yt', artist: video.artist || video.channel || '',
+                  artists: video.artists || [video.artist || video.channel || ''], kind: 'video',
+                }))
+                match = recommendationMatch(candidate, videos, { provider: 'yt' })
               }
             }
             if (searchError) { failed('unavailable', searchError); continue }

@@ -509,7 +509,7 @@ function resolveGhostTrack(db, ghostTrackId, targetTrackId, sourceIdentity = nul
     const actualArtist = normalizeMatchValue(target.artist)
     const wantedDuration = Number(ghost.duration) || 0
     const actualDuration = Number(target.duration) || 0
-    const durationMatches = !(wantedDuration > 0 && actualDuration > 0) || Math.abs(wantedDuration - actualDuration) <= 10
+    const durationMatches = options.allowDurationMismatch === true || !(wantedDuration > 0 && actualDuration > 0) || Math.abs(wantedDuration - actualDuration) <= 10
     if (!wantedTitle || !wantedArtist || !actualTitle || !actualArtist ||
         wantedTitle !== actualTitle || wantedArtist !== actualArtist || !durationMatches) {
       return {

@@ -13,9 +13,11 @@ import { openShareCard, coversOf } from '../shareCard'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
 import { plural } from '../plural'
-import { downloadGhostSongs, ghostDownloadMessage } from '../ghostDownloads'
+import { downloadGhostSongs, ghostDownloadMessage, downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
 import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
+import { useGhostDownloadSources } from '../components/useGhostDownloadSources'
+import { useGhostDurationConfirmation } from '../components/useGhostDurationConfirmation'
 import { sortPlaylistTracks } from '../playlistSorting'
 import { filterPlaylistTracks } from '../playlistSearch'
 
@@ -50,10 +52,13 @@ export default function Playlist() {
   const visibleTracks = useMemo(() => filterPlaylistTracks(sortedTracks, playlistSearch), [sortedTracks, playlistSearch])
   const [showAddSongs, setShowAddSongs] = useState(false)
   const [showResolveGhosts, setShowResolveGhosts] = useState(false)
+  const { confirmDuration, durationChoice, isCurrent: ghostResolverOpen } = useGhostDurationConfirmation(showResolveGhosts)
+  const { source: ghostSource, sourceChoice } = useGhostDownloadSources(showResolveGhosts)
+  const ghostSearchSequence = useRef(0)
   const [selectedGhostKey, setSelectedGhostKey] = useState(null)
   const [ghostQuery, setGhostQuery] = useState('')
   const [ghostLocalResults, setGhostLocalResults] = useState([])
-  const [ghostYtResults, setGhostYtResults] = useState([])
+  const [ghostDownloadResults, setGhostDownloadResults] = useState([])
   const [ghostSearchLoading, setGhostSearchLoading] = useState(false)
   const [ghostActionStatus, setGhostActionStatus] = useState('')
   const playQueue = usePlayerStore(s => s.playQueue)
@@ -305,51 +310,56 @@ export default function Playlist() {
     // every song called that (Katy Perry, Sister Sledge...) before Salasa's.
     const fallbackQuery = [ghostTrack?.artist, title].map(part => String(part || '').trim()).filter(Boolean).join(' ')
     const query = String(queryOverride || fallbackQuery).trim()
-    if (!ghostTrack || !query) {
+    const sequence = ++ghostSearchSequence.current
+    if (!ghostTrack || !query || !ghostSource) {
       setGhostLocalResults([])
-      setGhostYtResults([])
+      setGhostDownloadResults([])
       return
     }
     setGhostQuery(query)
     setGhostSearchLoading(true)
+    setGhostDownloadResults([])
     setGhostActionStatus('')
     try {
-      const [localResult, ytResult] = await Promise.all([
+      const [localResult, downloadResults] = await Promise.all([
         // Local copies may be tagged differently: the title finds them.
         api.searchTracks(queryOverride ? query : title || query),
-        api.searchYT(query, 1),
+        ghostDownloadSuggestions(query, ghostSource),
       ])
+      if (sequence !== ghostSearchSequence.current) return
       const localTracks = Array.isArray(localResult?.tracks)
         ? localResult.tracks
         : Array.isArray(localResult)
           ? localResult
           : []
-      const ytTracks = Array.isArray(ytResult?.results)
-        ? ytResult.results
-        : Array.isArray(ytResult)
-          ? ytResult
+      const downloadTracks = Array.isArray(downloadResults?.results)
+        ? downloadResults.results
+        : Array.isArray(downloadResults)
+          ? downloadResults
           : []
       setGhostLocalResults(localTracks.filter(track => !String(track.file_path || '').startsWith('ghost://')).slice(0, 8))
-      setGhostYtResults(ytTracks.slice(0, 8))
+      setGhostDownloadResults(downloadTracks.slice(0, 8))
     } catch (e) {
+      if (sequence !== ghostSearchSequence.current) return
       setGhostLocalResults([])
-      setGhostYtResults([])
+      setGhostDownloadResults([])
       setGhostActionStatus('Search failed: ' + e.message)
     } finally {
-      setGhostSearchLoading(false)
+      if (sequence === ghostSearchSequence.current) setGhostSearchLoading(false)
     }
-  }, [])
+  }, [ghostSource])
 
   useEffect(() => {
     if (!showResolveGhosts || !selectedGhost) {
       setGhostQuery('')
       setGhostLocalResults([])
-      setGhostYtResults([])
+      setGhostDownloadResults([])
       setGhostSearchLoading(false)
       setGhostActionStatus('')
       return
     }
     searchGhostMatches(selectedGhost)
+    return () => { ghostSearchSequence.current++ }
   }, [showResolveGhosts, selectedGhost, searchGhostMatches])
 
   const assignGhostTrack = async (ghostTrackId, targetTrackId) => {
@@ -364,7 +374,7 @@ export default function Playlist() {
       const remainingGhosts = ghostTracks.filter(track => track.id !== ghostTrackId)
       setSelectedGhostKey(remainingGhosts[0] ? getGhostKey(remainingGhosts[0]) : null)
       setGhostLocalResults([])
-      setGhostYtResults([])
+      setGhostDownloadResults([])
       setGhostQuery('')
       load()
       window.dispatchEvent(new Event('lokal:refresh'))
@@ -382,7 +392,7 @@ export default function Playlist() {
     setDownloadingGhosts(true)
     const toast = showLoadingToast('Finding the songs not in your library…')
     try {
-      const result = await downloadGhostSongs(ghostTracks, { onProgress: message => toast.update(message) })
+      const result = await downloadGhostSongs(ghostTracks, { confirmDuration, isCurrent: ghostResolverOpen, onProgress: message => toast.update(message) })
       toast.close(ghostDownloadMessage(result))
       if (result.existing) load()
     } catch {
@@ -393,15 +403,17 @@ export default function Playlist() {
   }
 
   const downloadGhostResult = async (item) => {
-    if (!item?.url) return
+    if (!item) return
     setGhostActionStatus('Starting download...')
     try {
-      const result = await api.downloadYT(item.url, { title: item.title, thumbnail: item.thumbnail || undefined, from: 'Ghost track' })
+      const result = await queueGhostResult(selectedGhost, item, { confirmDuration, isCurrent: ghostResolverOpen })
+      if (result?.cancelled) { setGhostActionStatus('Skipped.'); return }
       if (result?.error) {
         setGhostActionStatus('Download failed: ' + result.error)
         return
       }
-      setGhostActionStatus('Download started. Re-run search after indexing finishes.')
+      setGhostActionStatus(result?.alreadyInLibrary ? 'Replaced with your library copy.' : 'Download started. This playlist entry will be replaced when it finishes.')
+      if (result?.alreadyInLibrary) load()
     } catch (e) {
       setGhostActionStatus('Download failed: ' + e.message)
     }
@@ -678,6 +690,7 @@ export default function Playlist() {
             </div>
 
             <div className="space-y-4 min-w-0">
+              {durationChoice}
               {selectedGhost ? (
                 <>
                   <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/5 p-4">
@@ -739,13 +752,14 @@ export default function Playlist() {
 
                     <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
                       <div className="px-4 py-3 border-b border-border">
-                        <p className="text-xs font-display uppercase tracking-[0.22em] text-muted">Download Suggestions</p>
+                        <p className="text-xs font-display uppercase tracking-[0.22em] text-muted mb-2">Download Suggestions</p>
+                        {sourceChoice}
                       </div>
                       <div className="divide-y divide-border">
                         {ghostSearchLoading && (
-                          <div className="px-4 py-8 text-sm text-muted">Searching YouTube…</div>
+                          <div className="px-4 py-8 text-sm text-muted">Searching selected source…</div>
                         )}
-                        {!ghostSearchLoading && ghostYtResults.map(item => (
+                        {!ghostSearchLoading && ghostDownloadResults.map(item => (
                           <div key={item.id || item.url} className="px-4 py-3 flex items-center gap-3">
                             <div className="min-w-0 flex-1">
                               <p className="text-sm text-white truncate">{item.title}</p>
@@ -755,11 +769,11 @@ export default function Playlist() {
                               onClick={() => downloadGhostResult(item)}
                               className="px-3 py-1.5 rounded-lg bg-accent/15 border border-accent/25 text-accent text-xs hover:bg-accent/25 transition-colors flex items-center gap-1.5"
                             >
-                              <Download size={12} /> Download
+                              <Download size={12} /> Download & replace
                             </button>
                           </div>
                         ))}
-                        {!ghostSearchLoading && !ghostYtResults.length && (
+                        {!ghostSearchLoading && !ghostDownloadResults.length && (
                           <div className="px-4 py-8 text-sm text-muted">No download suggestions yet.</div>
                         )}
                       </div>
