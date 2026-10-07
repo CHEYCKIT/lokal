@@ -176,6 +176,7 @@ class DownloadManager {
     this.suspended = false
     this.initialized = false
     this.looseProcs = new Set()
+    this.cancellingAll = false
   }
 
   /** Later callers with a higher priority win per dependency (desktop over web server). */
@@ -546,7 +547,7 @@ class DownloadManager {
   }
 
   pump() {
-    if (this.suspended) return
+    if (this.suspended || this.cancellingAll) return
     const limit = this.concurrency()
     const waiting = [...this.jobs.values()]
       .filter(j => j.status === 'queued' && !j.retryTimer && !j.waitingForTools)
@@ -582,17 +583,30 @@ class DownloadManager {
       this.update(job, { status: 'cancelled', message: 'Cancelled', speed: null, eta: null, finishedAt: Date.now() }, { persist: true })
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
-    // yt-dlp already finished; only the file's lyrics/indexing are left. Let it end as it really did.
-    if (job.exited) return Promise.resolve({ success: true, status: 'finishing' })
+    // yt-dlp already finished. Stop the remaining postprocessing too: without
+    // marking the job, Cancel all appeared to do nothing while lyrics,
+    // conversion and indexing continued and the next queued jobs could start.
+    if (job.exited) {
+      const status = job.kind === 'playlist' ? 'incomplete' : 'cancelled'
+      job.stop = status
+      this.update(job, { status, message: 'Stopping...', speed: null, eta: null, finishedAt: Date.now() }, { persist: true, force: true })
+      return Promise.resolve({ success: true, status: job.stop })
+    }
     job.stop = job.kind === 'playlist' ? 'incomplete' : 'cancelled'
     this.update(job, { message: 'Stopping...' }, { force: true })
     return terminate(job.proc).then(() => ({ success: true, status: job.stop }))
   }
 
   async cancelAll() {
+    if (this.cancellingAll) return { success: true, count: 0 }
+    this.cancellingAll = true
     const ids = [...this.jobs.values()].filter(j => ACTIVE.has(j.status)).map(j => j.id)
-    await Promise.all(ids.map(id => this.cancel(id)))
-    return { success: true, count: ids.length }
+    try {
+      await Promise.all(ids.map(id => this.cancel(id)))
+      return { success: true, count: ids.length }
+    } finally {
+      this.cancellingAll = false
+    }
   }
 
   async remove(id) {
@@ -725,7 +739,7 @@ class DownloadManager {
       } catch {}
     }
 
-    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [] })
+    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [], addonSource: job.opts?.addonSource })
     job.cookies = cookies
     job.errorLines = []
     job.outputLines.push(...cookies.notes)

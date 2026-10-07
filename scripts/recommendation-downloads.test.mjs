@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api } from '../src/api.js'
 import { libraryDownloadMessage, saveToLibrary, saveTracksToLibrary } from '../src/onlineTracks.js'
+import { cancelDownloadBatches } from '../src/downloadCancellation.js'
 
 const tracks = [
   { id: 'yt', title: 'YouTube Song', artist: 'Artist', file_path: 'ghost://youtube/online/abcdefghijk' },
@@ -42,6 +43,19 @@ test('account cancellation stops subsequent download submissions', async () => {
   const saved = []
   await saveTracksToLibrary(tracks, { isCurrent: () => current, save: async track => { saved.push(track.id); current = false; return { downloadId: 'job' } } })
   assert.deepEqual(saved, ['yt'])
+})
+
+test('cancel all stops a bulk save before it submits the next song', async () => {
+  const saved = []
+  const result = await saveTracksToLibrary(tracks, {
+    save: async track => {
+      saved.push(track.id)
+      cancelDownloadBatches()
+      return { downloadId: 'job' }
+    },
+  })
+  assert.deepEqual(saved, ['yt'])
+  assert.deepEqual(result, { started: 1, existing: 0, failed: 0 })
 })
 
 test('missing addon links remain actionable download failures', async () => {

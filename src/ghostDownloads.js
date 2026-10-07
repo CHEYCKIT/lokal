@@ -5,6 +5,7 @@
 // place in the playlist (the downloader's replaceImported).
 
 import { api } from './api.js'
+import { downloadBatchCurrent } from './downloadCancellation.js'
 import { isGhostTrack, saveToLibrary, streamRef } from './onlineTracks.js'
 import { mapLimited, playbackSources, resolveRecommendationTracks } from './recommendations.js'
 
@@ -14,14 +15,16 @@ import { mapLimited, playbackSources, resolveRecommendationTracks } from './reco
  * Returns { started, existing, failed, notFound }.
  */
 export async function downloadGhostSongs(ghosts, { client = api, save = saveToLibrary, onProgress, isCurrent = () => true, concurrency = 3 } = {}) {
+  isCurrent = downloadBatchCurrent(isCurrent)
   const list = (Array.isArray(ghosts) ? ghosts : []).filter(isGhostTrack)
   const result = { started: 0, existing: 0, failed: 0, notFound: 0 }
   if (!list.length) return result
   const sources = await playbackSources(client)
   let done = 0
   const tally = (response) => {
-    if (response?.error) result.failed++
-    else if (response?.alreadyInLibrary) result.existing++
+    if (response?.cancelled) return
+    if (response?.alreadyInLibrary) result.existing++
+    else if (response?.error) result.failed++
     else result.started++
   }
   await mapLimited(list, async (ghost) => {
@@ -29,7 +32,7 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
     try {
       // A streamed song (YouTube, SoundCloud, an addon) already has its source.
       if (streamRef(ghost)) {
-        tally(await save(ghost).catch(error => ({ error: error.message })))
+        tally(await save(ghost, { isCurrent }).catch(error => ({ error: error.message })))
         return
       }
       const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined }], client, { sources, isCurrent })
@@ -42,7 +45,7 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
         else result.failed++
         return
       }
-      tally(await save(found, { replaceImported: [ghost.id] }).catch(error => ({ error: error.message })))
+      tally(await save(found, { replaceImported: [ghost.id], isCurrent }).catch(error => ({ error: error.message })))
     } catch {
       result.failed++
     } finally {
@@ -50,13 +53,15 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
       onProgress?.(`Finding and queuing songs… ${done}/${list.length}`)
     }
   }, concurrency)
+  if (!isCurrent()) result.cancelled = true
   if (result.existing && typeof window !== 'undefined') window.dispatchEvent(new Event('lokal:refresh'))
   return result
 }
 
 /** What downloadGhostSongs did, in a sentence. */
-export function ghostDownloadMessage({ started, existing, failed, notFound }) {
+export function ghostDownloadMessage({ started, existing, failed, notFound, cancelled }) {
   return [
+    cancelled && 'Stopped queuing songs',
     started && `Started ${started} download${started === 1 ? '' : 's'}`,
     existing && `${existing} already in your library`,
     notFound && `${notFound} not found on your playback sources`,

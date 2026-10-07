@@ -17,6 +17,7 @@ import { downloadGhostSongs, ghostDownloadMessage } from '../ghostDownloads'
 import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
 import { sortPlaylistTracks } from '../playlistSorting'
+import { filterPlaylistTracks } from '../playlistSearch'
 
 export default function Playlist() {
   const { id } = useParams()
@@ -43,6 +44,10 @@ export default function Playlist() {
   const [nameVal, setNameVal] = useState(() => playlist?.name || '')
   const [recommendations, setRecommendations] = useCachedState(`${cacheKey}:recs`, [])
   const [loadingRecs, setLoadingRecs] = useState(false)
+  const [playlistSearchOpen, setPlaylistSearchOpen] = useState(false)
+  const [playlistSearch, setPlaylistSearch] = useState('')
+  const playlistSearchRef = useRef(null)
+  const visibleTracks = useMemo(() => filterPlaylistTracks(sortedTracks, playlistSearch), [sortedTracks, playlistSearch])
   const [showAddSongs, setShowAddSongs] = useState(false)
   const [showResolveGhosts, setShowResolveGhosts] = useState(false)
   const [selectedGhostKey, setSelectedGhostKey] = useState(null)
@@ -124,6 +129,10 @@ export default function Playlist() {
   }, [id, user?.id, isLiked, setTracks, setPlaylist])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (playlistSearchOpen) playlistSearchRef.current?.focus()
+  }, [playlistSearchOpen])
 
   useEffect(() => {
     const handleChange = (e) => {
@@ -494,6 +503,41 @@ export default function Playlist() {
           <Share2 size={15} /> Share
         </button>
 
+        {!!tracks.length && (
+          playlistSearchOpen ? (
+            <div className="flex min-w-52 flex-1 items-center gap-2 rounded-full border border-accent/40 bg-elevated px-4 py-2.5 text-sm text-white focus-within:border-accent">
+              <Search size={15} className="flex-shrink-0 text-muted" />
+              <input
+                ref={playlistSearchRef}
+                value={playlistSearch}
+                onChange={event => setPlaylistSearch(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Escape') { setPlaylistSearchOpen(false); setPlaylistSearch('') } }}
+                placeholder="Search this playlist"
+                aria-label="Search this playlist"
+                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
+              />
+              <button
+                type="button"
+                onClick={() => { setPlaylistSearchOpen(false); setPlaylistSearch('') }}
+                aria-label="Close playlist search"
+                className="flex-shrink-0 text-muted transition-colors hover:text-white"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPlaylistSearchOpen(true)}
+              aria-label="Search this playlist"
+              title="Search this playlist"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-elevated text-muted transition-colors hover:border-accent/30 hover:text-white"
+            >
+              <Search size={15} />
+            </button>
+          )
+        )}
+
         {!isLiked && (
           <>
             {!!ghostTracks.length && (
@@ -532,7 +576,7 @@ export default function Playlist() {
 
       {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
-        tracks={sortedTracks}
+        tracks={visibleTracks}
         sort={sort}
         onSortChange={setSort}
         trackNumbers={trackNumbers}
@@ -540,11 +584,14 @@ export default function Playlist() {
         reduceMotion
         onRemove={!isLiked && !smart ? removeTrack : null}
         playlistId={!isLiked && !smart ? id : null}
-        onReorder={!isLiked && !smart && manualOrder ? handleReorder : null}
+         onReorder={!isLiked && !smart && manualOrder && !playlistSearch.trim() ? handleReorder : null}
         context={playbackContext}
         highlightTrackId={highlightTrackId}
         highlightRequestKey={highlightRequestKey}
       />
+      {!!playlistSearch.trim() && !!tracks.length && !visibleTracks.length && (
+        <p role="status" className="py-12 text-center text-sm text-muted">No songs match “{playlistSearch}”.</p>
+      )}
 
       {!isLiked && !smart && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (
         <div className="mt-12 mb-6">

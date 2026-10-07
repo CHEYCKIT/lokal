@@ -197,16 +197,16 @@ export default function PlayerBar() {
                 )}
               </div>
               {currentTrack ? (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {streamed && (
-                    <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="flex-shrink-0 text-[9px] font-display uppercase tracking-wider text-accent">
-                      {streamLabel(currentTrack)} ·
-                    </span>
-                  )}
-                   <button onClick={handleArtistClick} onContextMenu={openTrackMenu}
+                <div className="min-w-0">
+                  <button onClick={handleArtistClick} onContextMenu={openTrackMenu}
                     className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
                     {currentTrack.artist}
                   </button>
+                  {streamed && (
+                    <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="mt-1 block truncate text-[9px] font-display uppercase tracking-wider text-accent">
+                      {streamLabel(currentTrack)}
+                    </span>
+                  )}
                 </div>
               ) : <p className="text-xs text-muted">No track playing</p>}
               {quality && (
