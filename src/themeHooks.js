@@ -50,7 +50,7 @@ export function useTheme() {
     current.current = { name, overrides }
     setThemeName(name)
     setThemeOverrides(overrides)
-    applyTheme({ ...(THEMES[name]?.vars || THEMES.dark.vars), ...overrides })
+    applyTheme({ ...(THEMES[name]?.vars || THEMES.dark.vars), ...overrides }, name)
     return persistTheme(name, overrides)
   }
 
