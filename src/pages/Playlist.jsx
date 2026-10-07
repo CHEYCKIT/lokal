@@ -486,22 +486,7 @@ export default function Playlist() {
           <Play size={16} fill="currentColor" className="translate-x-px" /> Play All
         </button>
 
-        <button
-          onClick={shuffleTracks}
-          disabled={!playableTracks.length}
-          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Shuffle size={15} /> Shuffle
-        </button>
-
-        <button
-          onClick={sharePlaylist}
-          disabled={!tracks.length}
-          title="Share as a picture"
-          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Share2 size={15} /> Share
-        </button>
+        <div className="basis-full h-0" />
 
         {!!tracks.length && (
           playlistSearchOpen ? (
@@ -537,6 +522,23 @@ export default function Playlist() {
             </button>
           )
         )}
+
+        <button
+          onClick={shuffleTracks}
+          disabled={!playableTracks.length}
+          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Shuffle size={15} /> Shuffle
+        </button>
+
+        <button
+          onClick={sharePlaylist}
+          disabled={!tracks.length}
+          title="Share as a picture"
+          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Share2 size={15} /> Share
+        </button>
 
         {!isLiked && (
           <>

@@ -35,12 +35,19 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
         tally(await save(ghost, { isCurrent }).catch(error => ({ error: error.message })))
         return
       }
-      const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined }], client, { sources, isCurrent })
+      const [found] = await resolveRecommendationTracks([{ title: ghost.title, artist: ghost.artist, album: ghost.album || undefined }], client, {
+        sources,
+        isCurrent,
+        preserveMatchMetadata: true,
+      })
       if (!isCurrent()) return
       if (!found) { result.notFound++; return }
       if (!isGhostTrack(found)) {
         // Already a file in the library: it takes the ghost's place now.
-        const swapped = await client.resolveGhostTrack(ghost.id, found.id).catch(() => null)
+        const swapped = await client.resolveGhostTrack(ghost.id, found.id, {
+          requireMetadataMatch: true,
+          dedupePlaylist: true,
+        }).catch(() => null)
         if (swapped?.ok) result.existing++
         else result.failed++
         return

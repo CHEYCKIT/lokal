@@ -189,7 +189,7 @@ export async function playbackAvailability(match, provider, client = api, timeou
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, sources: configuredSources } = {}) {
+export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
@@ -249,11 +249,13 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
         }
       }
       return row && isCurrent() ? {
-        ...row, title: candidate.title, artist: candidate.artist,
+        ...row,
+        title: preserveMatchMetadata ? (row.title || candidate.title) : candidate.title,
+        artist: preserveMatchMetadata ? (row.artist || candidate.artist) : candidate.artist,
         ...(videoId ? { videoId } : {}),
         ...(candidate.artists?.length ? { artists: candidate.artists } : {}),
-        album: candidate.album || row.album,
-        artwork_url: candidate.artwork_url || row.artwork_url,
+        album: preserveMatchMetadata ? (row.album || candidate.album) : (candidate.album || row.album),
+        artwork_url: preserveMatchMetadata ? (row.artwork_url || candidate.artwork_url) : (candidate.artwork_url || row.artwork_url),
         source: candidate.source || 'lastfm', reason: candidate.reason,
         scrobbledAt: candidate.scrobbledAt, scrobbleCount: candidate.scrobbleCount,
       } : null

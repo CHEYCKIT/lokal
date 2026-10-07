@@ -87,7 +87,7 @@ contextBridge.exposeInMainWorld('electron', {
   importExternalTrackMetadata: (payload) => invoke('playlist:importExternalMetadata', payload),
   previewLinkPlaylist: (payload) => invoke('playlist:previewLink', payload),
   importLinkPlaylist: (payload) => invoke('playlist:importLink', payload),
-  resolveGhostTrack: (ghostTrackId, targetTrackId) => invoke('playlist:resolveGhostTrack', ghostTrackId, targetTrackId),
+  resolveGhostTrack: (ghostTrackId, targetTrackId, options = {}) => invoke('playlist:resolveGhostTrack', ghostTrackId, targetTrackId, options),
   reorderPlaylist: (pl, trackIds) => invoke('scanner:reorderPlaylist', pl, trackIds),
   deduplicatePlaylist: (pl) => invoke('scanner:deduplicatePlaylist', pl),
 
