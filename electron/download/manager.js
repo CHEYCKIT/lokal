@@ -487,6 +487,10 @@ class DownloadManager {
           else running.opts.alsoReplace = [...new Set([...(running.opts.alsoReplace || []), opts.replaceTrackId])]
           this.persist(running)
         }
+        if (opts.replaceImported?.length) {
+          running.opts.replaceImported = [...new Set([...(running.opts.replaceImported || []), ...opts.replaceImported])]
+          this.persist(running)
+        }
         return { downloadId: running.id, duplicate: true }
       }
       const owned = this.libraryTrackWithRef(ref)
@@ -496,6 +500,13 @@ class DownloadManager {
           try {
             const { resolveGhostTrack } = require('../../server/routes/playlists')
             if (resolveGhostTrack(this.db(), opts.replaceTrackId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
+          } catch {}
+        }
+        // Songs of an imported playlist this one was found for: the file takes their place.
+        for (const ghostId of opts.replaceImported || []) {
+          try {
+            const { resolveGhostTrack } = require('../../server/routes/playlists')
+            if (resolveGhostTrack(this.db(), ghostId, owned.id, null)?.ok) this.deps.onLibraryUpdated?.({ id: owned.id })
           } catch {}
         }
         return { alreadyInLibrary: true, trackId: owned.id, error: `Already in your library: ${owned.title || 'this song'}` }
@@ -1077,6 +1088,14 @@ class DownloadManager {
               }
             }
           } catch {}
+        }
+        // Songs of an imported playlist (a CSV, a pasted list) this download
+        // was found for: they have no source of their own to check, the
+        // match was made by title and artist when it was queued.
+        if (job.kind === 'single') {
+          for (const ghostId of job.opts?.replaceImported || []) {
+            if (!replaced.has(ghostId)) { try { replace(ghostId, null) } catch {} }
+          }
         }
         // The same song liked or added to a playlist from another source.
         try {

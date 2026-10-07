@@ -118,7 +118,7 @@ export function downloadUrlFor(track) {
  * Save a streamed song to the library with the usual downloader. Once the
  * file is in, it takes the ghost track's place in playlists, likes and history.
  */
-export async function saveToLibrary(track) {
+export async function saveToLibrary(track, extra = {}) {
   const ref = streamRef(track)
   let url = downloadUrlFor(track)
   if (ref && isAddonProvider(ref.provider)) {
@@ -133,6 +133,8 @@ export async function saveToLibrary(track) {
     thumbnail: track.artwork_url || undefined,
     from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
+    // Songs of an imported playlist the file takes the place of (ghostDownloads.js).
+    ...(extra.replaceImported?.length ? { replaceImported: extra.replaceImported } : {}),
     // An addon's link expires: the downloader asks the addon for a fresh one
     // each time the job starts (queued, restarted or retried).
     addonSource: ref && isAddonProvider(ref.provider) ? { provider: ref.provider, id: ref.id } : undefined,

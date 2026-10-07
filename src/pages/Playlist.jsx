@@ -13,6 +13,8 @@ import { openShareCard, coversOf } from '../shareCard'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
 import { plural } from '../plural'
+import { downloadGhostSongs, ghostDownloadMessage } from '../ghostDownloads'
+import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
 
 export default function Playlist() {
@@ -358,6 +360,24 @@ export default function Playlist() {
     }
   }
 
+  // Every ghost song, found on the playback sources and downloaded (or swapped
+  // for the library copy at once when there is one).
+  const [downloadingGhosts, setDownloadingGhosts] = useState(false)
+  const downloadAllGhosts = async () => {
+    if (downloadingGhosts || !ghostTracks.length) return
+    setDownloadingGhosts(true)
+    const toast = showLoadingToast('Finding the songs not in your library…')
+    try {
+      const result = await downloadGhostSongs(ghostTracks, { onProgress: message => toast.update(message) })
+      toast.close(ghostDownloadMessage(result))
+      if (result.existing) load()
+    } catch {
+      toast.close("Couldn't download the playlist's songs.")
+    } finally {
+      setDownloadingGhosts(false)
+    }
+  }
+
   const downloadGhostResult = async (item) => {
     if (!item?.url) return
     setGhostActionStatus('Starting download...')
@@ -477,6 +497,16 @@ export default function Playlist() {
                 className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400/10 border border-yellow-400/20 text-yellow-100 rounded-full font-medium text-sm hover:bg-yellow-400/15 transition-colors"
               >
                 <AlertCircle size={15} /> Resolve Ghost Songs ({ghostTracks.length})
+              </button>
+            )}
+            {!!ghostTracks.length && (
+              <button
+                onClick={downloadAllGhosts}
+                disabled={downloadingGhosts}
+                title="Find each one on your playback sources (in the order set in Settings) and download it; the file takes its place here"
+                className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40"
+              >
+                <Download size={15} /> {downloadingGhosts ? 'Finding songs…' : `Download all (${ghostTracks.length})`}
               </button>
             )}
 
