@@ -150,6 +150,10 @@ function registerDownloaderHandlers(ipcMain) {
       ? { provider, id: source.id } : undefined
     // What the source said about the song, for a file that comes without tags.
     clean.tags = require('../download/postprocess').knownTagsOf(clean.tags)
+    const expectedDuration = Number(clean.expectedDuration)
+    clean.expectedDuration = Number.isFinite(expectedDuration) && expectedDuration > 0 && expectedDuration < 36000
+      ? expectedDuration
+      : undefined
     // Songs of an imported playlist the file takes the place of.
     clean.replaceImported = Array.isArray(clean.replaceImported)
       ? clean.replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)
