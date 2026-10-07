@@ -66,7 +66,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
 
   const state = !error && !job && !requested && !inLibrary && upgradable ? 'upgrade'
     : error || job?.status === 'error' || job?.status === 'missing' ? 'failed'
-    : inLibrary || job?.status === 'done' || owned ? 'saved'
+    : inLibrary || owned ? 'saved'
       : (job && SAVING.has(job.status)) || requested ? 'saving'
         : 'idle'
   useEffect(() => { if (job) setRequested(false) }, [job])
