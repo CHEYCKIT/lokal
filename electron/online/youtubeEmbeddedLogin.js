@@ -33,7 +33,7 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
   const runtime = electron || require('electron')
   const session = candidateSession || runtime.session.fromPartition(`persist:lokal-ytmusic-${crypto.randomUUID()}`)
   const window = new runtime.BrowserWindow({
-    width: 980, height: 760, title: 'Sign in to YouTube Music', autoHideMenuBar: true,
+    width: 480, height: 800, title: 'Sign in to YouTube Music', autoHideMenuBar: true,
     webPreferences: {
       session,
       sandbox: true, contextIsolation: true, nodeIntegration: false,
@@ -136,7 +136,7 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
   contents.on('did-navigate-in-page', changed)
   contents.on('did-finish-load', () => {
     loaded = true
-    onProgress({ message: 'Use Sign in on the YouTube Music page, then complete Google sign-in. Lokal verifies account access automatically.' })
+    onProgress({ message: 'Complete Google sign-in. This window closes once Lokal confirms your YouTube Music connection.' })
     changed()
   })
   contents.on('render-process-gone', () => fail(new Error('The YouTube Music sign-in window stopped responding. Please try again.')))
@@ -144,7 +144,7 @@ async function openEmbeddedYouTubeLogin({ electron, session: candidateSession, s
     if (mainFrame && code !== -3) fail(new Error(`Could not load YouTube Music sign-in: ${description}`))
   })
   try {
-    navigate(`${MUSIC}/`)
+    navigate(regionalLogin.href)
     return {
       session,
       close,

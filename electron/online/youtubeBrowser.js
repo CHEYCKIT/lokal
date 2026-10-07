@@ -80,7 +80,7 @@ async function openYouTubeBrowser({ electron, signal, onChange = () => {}, onClo
     if (signal?.aborted) throw new Error('Sign-in cancelled.')
     // CDP stays on inherited child-process pipes, never a shared local listener.
     // The app owns this temporary profile, never the user's.
-    browser = tools.launch({ executablePath, pipe: true, args: [`--user-data-dir=${profile}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=980,760', ...extraArgs, '--app=about:blank'], env: { ...process.env }, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
+    browser = tools.launch({ executablePath, pipe: true, args: [`--user-data-dir=${profile}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--disable-save-password-bubble', '--window-size=480,800', ...extraArgs, '--app=about:blank'], env: { ...process.env }, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
     signal?.addEventListener('abort', abort, { once: true })
     runtime.app.once('before-quit', abort)
     browser.hasClosed().then(() => { if (!closed && ready) { onClosed(); close().catch(() => {}) } }).catch(() => {})
