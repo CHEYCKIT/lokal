@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
 
@@ -44,4 +46,26 @@ test('smart playlists are not mutated by a regular-playlist maintenance action',
   database.prepare('INSERT INTO playlists (id, smart_rules) VALUES (?, ?)').run('smart-1', '{"rules":[]}')
   assert.deepEqual(deduplicatePlaylist(database, 'smart-1'), { error: 'Smart playlists cannot be deduplicated.', removed: 0 })
   database.close()
+})
+
+
+test('desktop IPC removes duplicates and reports no duplicates on a second pass', t => {
+  const database = db()
+  t.after(() => database.close())
+  database.exec("INSERT INTO playlists VALUES ('playlist-1', NULL); INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ('playlist-1', 'a', 0), ('playlist-1', 'b', 1), ('playlist-1', 'a', 2)")
+  const filename = require.resolve('../electron/ipc/scanner.js')
+  const localRequire = createRequire(filename)
+  const module = { exports: {} }
+  const context = vm.createContext({
+    require: id => id === './db' ? { getDB: () => database } : id === 'electron' ? {} : localRequire(id),
+    module, console, process, Buffer, URL, setTimeout, clearTimeout,
+  })
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename })
+  const handlers = new Map()
+  module.exports.registerScannerHandlers({ handle: (name, handler) => handlers.set(name, handler) })
+  const invoke = playlistId => handlers.get('scanner:deduplicatePlaylist')(null, playlistId)
+  assert.deepEqual(invoke('playlist-1'), { ok: true, removed: 1, remaining: 2 })
+  assert.deepEqual(invoke('playlist-1'), { ok: true, removed: 0, remaining: 2 })
+  assert.deepEqual(invoke('missing'), { error: 'Playlist not found', removed: 0 })
+  assert.deepEqual(database.prepare('SELECT track_id, position FROM playlist_tracks ORDER BY position').all(), [{ track_id: 'a', position: 0 }, { track_id: 'b', position: 1 }])
 })
