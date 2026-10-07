@@ -36,6 +36,7 @@ import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from './api'
+import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast } from './components/Toaster'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
@@ -1699,11 +1700,23 @@ export default function App() {
       replaceAudioSource(el, src)
       beginLastfmPlayback(live.currentTrack)
       if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
-      if (api.isElectron) api.discordSetActivity(currentTrack, usePlayerStore.getState().isPlaying).catch(() => {})
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
   }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback])
+
+  useEffect(() => {
+    if (!api.isElectron) return
+    const publish = createDiscordPublisher({ getState: usePlayerStore.getState, send: api.discordSetActivity })
+    publish()
+    const unsubscribe = usePlayerStore.subscribe(publish)
+    const interval = setInterval(publish, 1000)
+    return () => {
+      unsubscribe()
+      clearInterval(interval)
+      api.discordSetActivity(null, false).catch(() => {})
+    }
+  }, [])
 
   useEffect(() => {
     if (isCrossfadingRef.current) return
@@ -1720,7 +1733,6 @@ export default function App() {
       activeEl.pause(); 
       stopTimer() 
     }
-    if (api.isElectron && currentTrack) api.discordSetActivity(currentTrack, isPlaying).catch(() => {})
   }, [isPlaying])
 
   useEffect(() => {
