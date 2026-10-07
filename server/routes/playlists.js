@@ -866,7 +866,7 @@ router.post('/external-import-metadata', (req, res) => {
 
 router.post('/resolve-ghost', (req, res) => {
   try {
-    res.json(resolveGhostTrack(getDB(), req.body.ghostTrackId, req.body.targetTrackId))
+    res.json(resolveGhostTrack(getDB(), req.body.ghostTrackId, req.body.targetTrackId, null, req.body?.options || {}))
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
