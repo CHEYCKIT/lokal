@@ -627,6 +627,33 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
+  // The song playing becomes the start of a new queue (a radio started from
+  // it), without restarting it: only the queue around it changes.
+  continueAsQueue: (tracks, context = null) => {
+    const list = sanitizeTrackList(tracks)
+    const { currentTrack, shuffle } = get()
+    if (!list.length || !currentTrack || list[0].id !== currentTrack.id) return false
+    if (shuffle) get().initShuffleQueue(list, 0)
+    set({ queue: list, queueIndex: 0, playbackContext: context, futureHistory: [] })
+    return true
+  },
+
+  // More songs at the end of the queue that's playing (a radio still being
+  // built), only while that queue is still the one playing: its context's id
+  // has to match. Songs already in it aren't added twice.
+  extendQueue: (tracks, context) => {
+    const state = get()
+    if (!context?.id || state.playbackContext?.id !== context.id) return
+    const known = new Set(state.queue.map(track => track.id))
+    const extra = sanitizeTrackList(tracks).filter(track => !known.has(track.id))
+    if (!extra.length) return
+    set(s => ({
+      queue: [...s.queue, ...extra],
+      ...(s.shuffle && s.shuffleQueue.length ? { shuffleQueue: [...s.shuffleQueue, ...shuffleArray(extra)] } : {}),
+      ...(s.originalQueue.length ? { originalQueue: [...s.originalQueue, ...extra] } : {}),
+    }))
+  },
+
   addToQueue: (track) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return
