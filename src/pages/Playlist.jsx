@@ -94,7 +94,12 @@ export default function Playlist() {
     const done = () => setLoaded(true)
     if (isLiked) {
       Promise.resolve(api.getLikedTracks(user?.id)).then(t => {
-        setTracks(Array.isArray(t) ? t : [])
+        const liked = Array.isArray(t) ? t : []
+        // Every song here is liked: its hearts (under every id it goes by)
+        // show filled even when the app's liked set predates it (a liked
+        // streamed song since downloaded is a new file, with a new id).
+        usePlayerStore.getState().setLikedMany(liked.flatMap(track => [track.id, ...(track.also_ids || [])]), true)
+        setTracks(liked)
       }).catch(() => {}).finally(done)
       return
     }

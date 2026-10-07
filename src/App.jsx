@@ -1145,9 +1145,14 @@ export default function App() {
     } else {
       load()
     }
+    // A download that added songs: a liked streamed song may now be a file
+    // with an id of its own (its like moved to it), so reload the hearts.
+    const onLibraryChanged = () => { if (!cancelled) load() }
+    window.addEventListener('lokal:refresh', onLibraryChanged)
     return () => {
       cancelled = true
       clearTimeout(syncTimer)
+      window.removeEventListener('lokal:refresh', onLibraryChanged)
     }
   }, [user?.id])
 
