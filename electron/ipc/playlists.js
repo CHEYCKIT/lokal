@@ -814,9 +814,9 @@ function registerPlaylistHandlers() {
     }
   });
 
-  ipcMain.handle('playlist:resolveGhostTrack', async (event, ghostTrackId, targetTrackId) => {
+  ipcMain.handle('playlist:resolveGhostTrack', async (event, ghostTrackId, targetTrackId, options = {}) => {
     try {
-      return resolveGhostTrack(getDB(), ghostTrackId, targetTrackId);
+      return resolveGhostTrack(getDB(), ghostTrackId, targetTrackId, null, options || {});
     } catch (e) {
       return { error: e.message };
     }

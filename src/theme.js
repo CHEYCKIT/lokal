@@ -274,8 +274,9 @@ function hexToRgbNumbers(hex) {
   return `${r} ${g} ${b}`;
 }
 
-export function applyTheme(vars) {
+export function applyTheme(vars, themeName = '') {
   const root = document.documentElement;
+  if (themeName) root.dataset.theme = themeName;
   for (const [k, v] of Object.entries(vars)) {
     root.style.setProperty(k, v);
     

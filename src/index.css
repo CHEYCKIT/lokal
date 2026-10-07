@@ -35,6 +35,46 @@ body {
   user-select: none;
   -webkit-app-region: no-drag;
 }
+
+/* Most of the interface predates themes and uses Tailwind's literal white
+   text utilities. Re-map those to the theme text colour on Light, but keep
+   white text inside dark image/overlay surfaces where it is intentionally
+   used for contrast. */
+html[data-theme="light"] .text-white { color: var(--text) !important; }
+html[data-theme="light"] .text-white\/90 { color: rgb(var(--text-rgb) / 0.9) !important; }
+html[data-theme="light"] .text-white\/80 { color: rgb(var(--text-rgb) / 0.8) !important; }
+html[data-theme="light"] .text-white\/70 { color: rgb(var(--text-rgb) / 0.7) !important; }
+html[data-theme="light"] .text-white\/60 { color: rgb(var(--text-rgb) / 0.6) !important; }
+html[data-theme="light"] .text-white\/50 { color: rgb(var(--text-rgb) / 0.5) !important; }
+html[data-theme="light"] .text-white\/40 { color: rgb(var(--text-rgb) / 0.4) !important; }
+html[data-theme="light"] .text-white\/30 { color: rgb(var(--text-rgb) / 0.3) !important; }
+html[data-theme="light"] .text-white\/20 { color: rgb(var(--text-rgb) / 0.2) !important; }
+html[data-theme="light"] .text-white\/10 { color: rgb(var(--text-rgb) / 0.1) !important; }
+html[data-theme="light"] .hover\\:text-white:hover { color: var(--text) !important; }
+
+html[data-theme="light"] [class*="bg-black"].text-white,
+html[data-theme="light"] [class*="bg-black"].text-white\/90,
+html[data-theme="light"] [class*="bg-black"].text-white\/80,
+html[data-theme="light"] [class*="bg-black"].text-white\/70,
+html[data-theme="light"] [class*="bg-black"].text-white\/60,
+html[data-theme="light"] [class*="bg-black"].text-white\/50,
+html[data-theme="light"] [class*="bg-black"].text-white\/40,
+html[data-theme="light"] [class*="bg-black"].text-white\/30,
+html[data-theme="light"] [class*="bg-black"].text-white\/20,
+html[data-theme="light"] [class*="bg-black"].text-white\/10,
+html[data-theme="light"] [class*="bg-black"] .text-white,
+html[data-theme="light"] [class*="bg-black"] .text-white\/90,
+html[data-theme="light"] [class*="bg-black"] .text-white\/80,
+html[data-theme="light"] [class*="bg-black"] .text-white\/70,
+html[data-theme="light"] [class*="bg-black"] .text-white\/60,
+html[data-theme="light"] [class*="bg-black"] .text-white\/50,
+html[data-theme="light"] [class*="bg-black"] .text-white\/40,
+html[data-theme="light"] [class*="bg-black"] .text-white\/30,
+html[data-theme="light"] [class*="bg-black"] .text-white\/20,
+html[data-theme="light"] [class*="bg-black"] .text-white\/10 {
+  color: #fff !important;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
