@@ -47,7 +47,7 @@ export default function Search() {
   const [onlineQuery, setOnlineQuery] = useState(query)
   const exactRef = useRef('')
   const nav = useNavigate()
-  const { playQueue, queue, playTrack } = usePlayerStore(useShallow(({ playQueue, queue, playTrack }) => ({ playQueue, queue, playTrack })))
+  const { playQueue, playTrack } = usePlayerStore(useShallow(({ playQueue, playTrack }) => ({ playQueue, playTrack })))
   const isSearchStarted = !!query.trim()
   // A pasted link isn't searched for: it's offered for download.
   const link = asLink(query)
@@ -148,38 +148,41 @@ export default function Search() {
     nav('/albums', { state: { album } })
   }
 
+  /** A recent song as a playable track (null if it's gone from the library). */
+  const recentTrack = async (item) => {
+    // A song streamed from search: the item has what it takes to stream it again.
+    if (item.file_path && isStreamed(item)) {
+      return { id: item.id, title: item.name, artist: item.artist, album: item.album, file_path: item.file_path, source_url: item.source_url, artwork_url: item.artwork_url, duration: item.duration }
+    }
+    try {
+      const matches = await api.getTracks({ id: item.id, limit: 1 })
+      return Array.isArray(matches) ? matches[0] || null : null
+    } catch (error) {
+      console.error('Failed to load recent track', error)
+      return null
+    }
+  }
+
   /** Reopen a recent item: an artist or album page, or play a track. */
   const handleRecentItemClick = async (item) => {
     if (item.type === 'artist') {
       nav(`/artist/${item.id}`)
     } else if (item.type === 'track') {
+      // The recent songs play as a list, in the order shown, from the one
+      // clicked (Previous goes back up it). On its own, autoplay followed the
+      // song with unrelated library songs.
       const selectionId = ++recentTrackSelectionRef.current
-      const trackIndex = queue.findIndex(t => t.id === item.id)
-      if (trackIndex >= 0) {
-        playQueue(queue, trackIndex)
-        return
-      }
-      // A song streamed from search: the item has what it takes to stream it again.
-      if (item.file_path && isStreamed(item)) {
-        const track = { id: item.id, title: item.name, artist: item.artist, album: item.album, file_path: item.file_path, source_url: item.source_url, artwork_url: item.artwork_url, duration: item.duration }
-        playTrack(track, [track])
-        return
-      }
-
-      let matches
-      try {
-        matches = await api.getTracks({ id: item.id, limit: 1 })
-      } catch (error) {
-        console.error('Failed to load recent track', error)
-        return
-      }
-
+      const items = recentItems.filter(entry => entry.type === 'track')
+      const tracks = await Promise.all(items.map(recentTrack))
       if (selectionId !== recentTrackSelectionRef.current) return
-
-      const track = Array.isArray(matches) ? matches[0] : null
-      if (track) {
-        playTrack(track, [track])
-      }
+      const list = []
+      let start = -1
+      items.forEach((entry, i) => {
+        if (!tracks[i]) return
+        if (entry.id === item.id) start = list.length
+        list.push(tracks[i])
+      })
+      if (start >= 0) playQueue(list, start, { type: 'search', name: 'Recent' })
     } else if (item.type === 'album') {
       nav('/albums', { state: { album: item } })
     }
