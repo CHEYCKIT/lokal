@@ -252,6 +252,7 @@ class DownloadManager {
         pendingIndex: Array.isArray(data.pendingIndex) ? data.pendingIndex : [],
         downloadedTracks: data.downloadedTracks || [],
         indexedTracks: data.indexedTracks || [],
+        libraryFailures: data.libraryFailures || 0,
         lyricsCount: data.lyricsCount || 0,
         totalTracks: data.totalTracks ?? null,
         currentTrack: data.currentTrack ?? null,
@@ -374,6 +375,7 @@ class DownloadManager {
       error: null,
       downloadedTracks: [],
       indexedTracks: [],
+      libraryFailures: 0,
       filepaths: [],
       lyricsCount: 0,
       totalTracks: null,
@@ -413,6 +415,7 @@ class DownloadManager {
       error: job.error || null,
       downloadedTracks: job.downloadedTracks,
       indexedTracks: job.indexedTracks,
+      libraryFailures: job.libraryFailures || 0,
       lyricsCount: job.lyricsCount || 0,
       totalTracks: job.totalTracks ?? null,
       currentTrack: job.currentTrack ?? null,
@@ -1048,7 +1051,23 @@ class DownloadManager {
     if (!index) return
     try {
       const videoId = job.kind === 'single' ? youTubeId(job.url) : null
-      const result = await index(filepath, { thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined })
+      const result = await index(filepath, {
+        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : undefined,
+        metadata: job.opts?.tags
+          ? {
+              title: job.opts.tags.title,
+              artist: job.opts.tags.artist,
+              album: job.opts.tags.album,
+              duration: job.opts.expectedDuration,
+            }
+          : undefined,
+      })
+      if (result?.error) {
+        job.libraryFailures = (job.libraryFailures || 0) + 1
+        job.outputLines.push(`[Lokal] Downloaded file was not added to the library: ${result.error}`)
+        this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+        return result
+      }
       // The same song, downloaded before (from YouTube, say) and now in better
       // quality (an addon's FLAC): the new file takes the old one's place in
       // its track, which keeps its playlists, likes and history. Otherwise
@@ -1109,13 +1128,17 @@ class DownloadManager {
           } catch {}
         }
         // Songs of an imported playlist (a CSV, a pasted list) this download
-        // was found for: they have no source of their own to check, the
-        // match was made by title and artist when it was queued.
+        // was found for: they must actually take their ghost row's place before
+        // this download can count as library-added.
+        let importedReplacementFailed = false
         if (job.kind === 'single') {
           for (const ghostId of job.opts?.replaceImported || []) {
             if (!replaced.has(ghostId)) {
-              try { replace(ghostId, null, { requireMetadataMatch: true, dedupePlaylist: true }) } catch {}
+              try {
+                replace(ghostId, null, { requireMetadataMatch: true, dedupePlaylist: true })
+              } catch {}
             }
+            if (!replaced.has(ghostId)) importedReplacementFailed = true
           }
         }
         // The same song liked or added to a playlist from another source.
@@ -1123,14 +1146,40 @@ class DownloadManager {
           const track = this.db().prepare('SELECT id, title, artist, duration FROM tracks WHERE id = ?').get(result.id)
           for (const ghostId of streamedTwins(this.db(), track)) if (!replaced.has(ghostId)) replace(ghostId, null)
         } catch {}
+
+        if (importedReplacementFailed) {
+          const message = 'Downloaded audio, but it could not be matched back to the requested playlist track'
+          job.outputLines.push(`[Lokal] ${message}`)
+          job.libraryFailures = (job.libraryFailures || 0) + 1
+          this.update(job, { message, removed: false }, { persist: true, force: true })
+
+          // This track was newly indexed only for this failed playlist
+          // resolution. Do not leave a mismatched file in the library.
+          if (!result.duplicate) {
+            try {
+              this.db().prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(result.id)
+              this.db().prepare('DELETE FROM tracks WHERE id = ?').run(result.id)
+            } catch {}
+            try { if (fs.existsSync(filepath)) await fs.remove(filepath) } catch {}
+          }
+          return { ...result, error: message, libraryAdded: false }
+        }
+
         // Only now does the list show the song (which refreshes the library
         // pages): once it has taken the streamed version's place, so a
         // playlist or Liked Songs doesn't reload in between.
         job.indexedTracks.push({ filepath, id: result.id, title: path.basename(filepath, path.extname(filepath)) })
         this.update(job, { message: `Added to library: ${path.basename(filepath)}`, removed: false }, { force: true })
         try { this.deps.onLibraryUpdated?.(result) } catch {}
+        return { ...result, libraryAdded: true }
       }
-    } catch {}
+      return result
+    } catch (error) {
+      job.libraryFailures = (job.libraryFailures || 0) + 1
+      job.outputLines.push(`[Lokal] Could not add the download to the library: ${error.message || error}`)
+      this.update(job, { message: 'Downloaded, but not added to the library', removed: false }, { persist: true })
+      return { error: error.message || String(error), libraryAdded: false }
+    }
   }
 
   /**
@@ -1198,12 +1247,16 @@ class DownloadManager {
     if (code === 0 && !err) {
       this.markPlaylist(job, 'completed')
       const n = job.downloadedTracks.length
+      const failures = job.libraryFailures || 0
       const lyrics = job.lyricsCount ? ` · lyrics for ${job.lyricsCount}` : ''
+      const libraryWarning = failures ? ` · ${failures} not added to library` : ''
       this.update(job, {
         status: 'done',
         progress: 100,
         speed: null, eta: null,
-        message: job.kind === 'playlist' ? `${n} track${n === 1 ? '' : 's'} downloaded${lyrics}` : `Downloaded${lyrics}`,
+        message: job.kind === 'playlist'
+          ? `${n} track${n === 1 ? '' : 's'} downloaded${libraryWarning}${lyrics}`
+          : failures ? `Downloaded, but ${failures} not added to library${lyrics}` : `Downloaded${lyrics}`,
         currentTrack: job.totalTracks || n || null,
         totalTracks: job.totalTracks || n || null,
         finishedAt: Date.now(),
