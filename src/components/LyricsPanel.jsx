@@ -6,7 +6,7 @@ import LyricBreakDots from './LyricBreakDots'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
 import {
-  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits,
+  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits, withOutroBreak,
 } from '../lyrics/timing'
 
 // ---------------------------------------------------------------------------
@@ -175,6 +175,7 @@ const Row = React.memo(function Row({
   if (line.gap) {
     const open = isFocused && synced
     const breakEnd = Number.isFinite(line.end) && line.end > line.time ? line.end : until
+    const exitLead = line.outro ? 0.05 : FOCUS_LEAD_S + 0.04
     return (
       <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
         <div
@@ -189,7 +190,7 @@ const Row = React.memo(function Row({
             paddingInline: '0.75rem',
           }}
         >
-          <LyricBreakDots start={line.time} end={breakEnd - FOCUS_LEAD_S - 0.04} getTime={clock} active={open} size={baseSize * 0.5} align={alignEnd ? 'end' : 'start'} />
+          <LyricBreakDots start={line.time} end={breakEnd - exitLead} getTime={clock} active={open} size={baseSize * 0.5} align={alignEnd ? 'end' : 'start'} />
         </div>
       </div>
     )
@@ -426,7 +427,11 @@ export default function LyricsPanel({
   const lastScrollIdx = useRef(-1)
   const paintedRows = useRef(new Set())
 
-  const lines = result?.lines || []
+  const crossfadeSeconds = usePlayerStore(s => s.crossfadeSeconds)
+  const lines = useMemo(
+    () => withOutroBreak(result?.lines || [], { duration: track?.duration, crossfade: crossfadeSeconds, synced: result?.type === 'synced' }),
+    [result, track?.duration, crossfadeSeconds],
+  )
   const synced = result?.type === 'synced'
   const nonLatin = useMemo(() => hasNonLatin(lines), [lines])
 

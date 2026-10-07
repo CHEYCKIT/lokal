@@ -82,7 +82,8 @@ test('the droplets merge into one drip, which swells and evaporates', () => {
 test('the whole sequence is over before the panel hands focus to the next line', () => {
   const lead = 0.3
   const panel = fs.readFileSync(new URL('../src/components/LyricsPanel.jsx', import.meta.url), 'utf8')
-  assert.match(panel, /end=\{breakEnd - FOCUS_LEAD_S/)
+  assert.match(panel, /exitLead = line\.outro \? 0\.05 : FOCUS_LEAD_S/)
+  assert.match(panel, /end=\{breakEnd - exitLead\}/)
   const frames = play({}, { end: END - lead - 0.04, to: END })
   const stillThere = frames.filter(f => f.t >= END - lead && f.visible).flatMap(f => f.dots.map(d => d.r))
   assert.ok(stillThere.length === 0 || Math.max(...stillThere) < 0.5)

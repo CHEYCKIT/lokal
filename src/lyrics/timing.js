@@ -36,6 +36,43 @@ export function lineEndOf(line) {
   return Math.max(lead ?? line.time ?? 0, bg ?? 0)
 }
 
+/** A break shorter than this isn't drawn (same threshold the lyrics post-processing uses). */
+export const MIN_BREAK_S = 4
+/** The player only crossfades when it is set above this. */
+const CROSSFADE_MIN_S = 0.5
+
+function knowsEnd(line) {
+  return !!(line.words?.length || line.bgWords?.length || line.endStated === true)
+}
+
+/**
+ * The break after the last sung line, for songs that carry on once the lyrics
+ * stop (lyrics end at 1:40, the song at 2:40). The post-processing can't draw
+ * it, because it doesn't know how long the song is; the panel does.
+ *
+ * It runs from when the singing actually stopped to when the song hands over:
+ * the end of the track, less the crossfade, because with a crossfade the next
+ * song takes over (and these lyrics leave) that many seconds before the file
+ * ends. Like every other break it needs the last line to say when it stopped
+ * (word timings, or a stated end such as a trailing LRC stamp); line-synced
+ * lyrics that only stamp starts are left alone. Returns `lines` itself when
+ * there is nothing to add.
+ */
+export function withOutroBreak(lines, { duration, crossfade = 0, synced = true } = {}) {
+  if (!synced || !Array.isArray(lines) || !lines.length) return lines
+  const total = Number(duration)
+  if (!Number.isFinite(total) || total <= 0) return lines
+  const sung = lines.filter(l => l && !l.gap)
+  const last = sung[sung.length - 1]
+  if (!last || last.time == null || !knowsEnd(last) || lines[lines.length - 1].gap) return lines
+  const start = sung.reduce((latest, l) => Math.max(latest, lineEndOf(l)), 0)
+  const fade = Number(crossfade) > CROSSFADE_MIN_S ? Number(crossfade) : 0
+  const end = total - fade
+  if (!(start > last.time) || end - start < MIN_BREAK_S) return lines
+  const round3 = n => Math.round(n * 1000) / 1000
+  return [...lines, { time: round3(start), end: round3(end), text: '', words: [], gap: true, outro: true }]
+}
+
 /** The line the view is centred on: the last one whose start has passed. */
 export function focusRow(lines, t) {
   let idx = -1
