@@ -145,3 +145,18 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
   .text-balance { text-wrap: balance; }
 }
 
+
+/* Pause at both ends so the beginning and ending of long titles stay readable. */
+@keyframes hover-title-scroll {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(var(--title-scroll-distance)); }
+}
+.hover-scroll-title[data-scrolling] { text-overflow: clip; }
+.hover-scroll-title-text {
+  display: inline-block;
+  animation: hover-title-scroll var(--title-scroll-duration) linear infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-scroll-title[data-scrolling] { white-space: normal; overflow-wrap: anywhere; }
+  .hover-scroll-title-text { animation: none; }
+}
