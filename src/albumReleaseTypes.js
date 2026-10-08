@@ -45,6 +45,17 @@ function saveResolved(cache, key, type) {
   cache[key] = { type: normalizeType(type), checkedAt: Date.now() }
 }
 
+/** Apply classifications already known locally without contacting a catalogue. */
+export function applyCachedReleaseTypes(albums = []) {
+  const cache = readCache()
+  return albums.map(album => {
+    const type = normalizeType(cache[keyFor(album)]?.type)
+    return type && Number(album?.track_count || 0) <= 1
+      ? { ...album, release_type: type, release_type_source: 'online' }
+      : album
+  })
+}
+
 function sameArtist(left, right) {
   const a = recommendationKey(left || '')
   const b = recommendationKey(right || '')
@@ -88,16 +99,15 @@ async function exactCatalogueType(album, client, isCurrent) {
  * The local track count is only a fallback; an album remains an Album even
  * when the library contains only one of its songs.
  */
-export async function resolveLibraryReleaseTypes(albums = [], client = api, { refresh = false, isCurrent = () => true } = {}) {
+export async function resolveLibraryReleaseTypes(albums = [], client = api, { refresh = false, isCurrent = () => true, onProgress } = {}) {
   if (!Array.isArray(albums) || !albums.length || !isCurrent()) return albums
 
-  const candidates = albums.filter(album => Number(album?.track_count || 0) <= 1 && keyFor(album))
+  const candidates = [...new Map(albums
+    .filter(album => Number(album?.track_count || 0) <= 1 && keyFor(album))
+    .map(album => [keyFor(album), album])).values()]
   if (!candidates.length) return albums
 
   const cache = readCache()
-  if (refresh) {
-    for (const album of candidates) delete cache[keyFor(album)]
-  }
 
   const resolved = new Map()
   const pending = []
@@ -110,6 +120,27 @@ export async function resolveLibraryReleaseTypes(albums = [], client = api, { re
       pending.push(album)
     }
   }
+
+  let done = refresh ? 0 : candidates.length - pending.length
+  let matched = refresh ? 0 : resolved.size
+  let failed = 0
+  const report = (current = '') => onProgress?.({ done, total: candidates.length, matched, failed, current })
+  const complete = (album, type) => {
+    if (!isCurrent()) return
+    const key = keyFor(album)
+    if (type) {
+      resolved.set(key, type)
+      saveResolved(cache, key, type)
+      matched++
+    } else {
+      if (!cache[key]?.type) saveResolved(cache, key, null)
+      failed++
+    }
+    done++
+    writeCache(cache)
+    report(album.title)
+  }
+  report()
 
   // Prefer the artist release catalogue: one lookup can classify many local
   // one-track releases and YouTube Music already provides Album/EP/Single.
@@ -127,17 +158,16 @@ export async function resolveLibraryReleaseTypes(albums = [], client = api, { re
   await mapLimit([...byArtist.values()], 4, async group => {
     if (!isCurrent()) return
     const releases = await loadOnlineArtistAlbums(group.artist, group.albums, client).catch(() => [])
+    if (!isCurrent()) return
     const remaining = []
     for (const album of group.albums) {
-      const key = keyFor(album)
       const match = (releases || []).find(release => (
         releaseTitleKey(release?.title) === releaseTitleKey(album.title) &&
         (!release?.artist || sameArtist(release.artist, group.artist))
       ))
       const type = normalizeType(match?.release_type)
       if (type) {
-        resolved.set(key, type)
-        saveResolved(cache, key, type)
+        complete(album, type)
       } else {
         remaining.push(album)
       }
@@ -149,25 +179,11 @@ export async function resolveLibraryReleaseTypes(albums = [], client = api, { re
   // types at all. Resolve misses through the exact album catalogue lookup.
   await mapLimit(unresolved, 4, async album => {
     if (!isCurrent()) return
-    const key = keyFor(album)
     const type = await exactCatalogueType(album, client, isCurrent).catch(() => null)
-    if (type) {
-      resolved.set(key, type)
-      saveResolved(cache, key, type)
-    } else {
-      // Remember the failed lookup briefly so a large library does not hammer
-      // the catalogues every time Albums is opened. Manual refresh clears it.
-      saveResolved(cache, key, null)
-    }
+    complete(album, type)
   })
 
-  if (pending.length) writeCache(cache)
-
-  return albums.map(album => {
-    const key = keyFor(album)
-    const type = resolved.get(key)
-    return type ? { ...album, release_type: type, release_type_source: 'online' } : album
-  })
+  return applyCachedReleaseTypes(albums)
 }
 
 export function clearLibraryReleaseTypeCache() {

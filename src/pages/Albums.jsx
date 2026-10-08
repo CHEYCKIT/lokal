@@ -20,11 +20,10 @@ import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
 import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useAlbumsPageReleaseTypes } from '../releaseTypes'
-import { clearLibraryReleaseTypeCache, resolveLibraryReleaseTypes } from '../albumReleaseTypes'
+import { applyCachedReleaseTypes } from '../albumReleaseTypes'
+import { startReleaseRefresh, useReleaseRefresh } from '../store/releaseRefresh'
 import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
-
-const PAGE_SIZE = 48
 
 function getAlbumArtwork(album) {
   return api.albumArtURL(album)
@@ -138,21 +137,17 @@ function AlbumHero({ album, trackCount, onPlay, onArtist }) {
 
 // Cards on the first screen skip their own entrance: the page already fades
 // in, and dozens of card animations running with it dropped frames.
-const FIRST_SCREEN_CARDS = 24
-
 /**
  * One release in the grid, Spotify style: the cover shows unobstructed and
  * plays the release (darkened, with a play glyph, on hover); the name and
  * the text under it open it.
  */
-function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false, animateIn = true }) {
+function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false }) {
   const artSrc = getAlbumArtwork(album)
 
   return (
     <motion.div
-      initial={animateIn ? { opacity: 0, y: 10 } : false}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.12, margin: '180px 0px' }}
+      initial={false}
       whileHover={{ y: -3 }}
       onContextMenu={onContextMenu}
       aria-selected={selected}
@@ -208,17 +203,15 @@ export default function Albums() {
   const [albumTracks, setAlbumTracks] = useState([])
   const [loadingAlbums, setLoadingAlbums] = useState(() => !peekCache('albums:all'))
   const [loadingTracks, setLoadingTracks] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
   const [hoveredTrack, setHoveredTrack] = useState(null)
-  const [visibleByType, setVisibleByType] = useState({})
   const [settings, setSettings] = useState(() => peekSettings() || {})
-  const [releaseTypesRefreshing, setReleaseTypesRefreshing] = useState(false)
-  const loadMoreRef = useRef(null)
+  const refreshStatus = useReleaseRefresh()
+  const albumRequest = useRef(0)
   const navigate = useNavigate()
   const location = useLocation()
   // Opening a given album: wait for its tracks too, so the grid doesn't show first.
-  usePageReady(!loadingAlbums && (!location.state?.album || albumTracks.length > 0))
+  usePageReady(!loadingAlbums && (!location.state?.album || (selectedAlbum && !loadingTracks)))
   const { playQueue, currentTrack, isPlaying, togglePlay, playTrack } = usePlayerStore(useShallow(({ playQueue, currentTrack, isPlaying, togglePlay, playTrack }) => ({ playQueue, currentTrack, isPlaying, togglePlay, playTrack })))
   const albumContext = useMemo(() => makeAlbumContext(selectedAlbum), [selectedAlbum])
 
@@ -289,72 +282,43 @@ export default function Albums() {
     return () => clearTimeout(timer)
   }, [highlightTrackReady, highlightTrackId])
 
-  const loadAlbums = (refreshReleaseTypes = false) => {
+  const loadAlbums = () => {
     // The cache, not `albums`: the refresh handler keeps an older render's
     // closure, where the list can still be empty.
     if (!peekCache('albums:all')?.length) setLoadingAlbums(true)
-    if (refreshReleaseTypes) {
-      clearLibraryReleaseTypeCache()
-      setReleaseTypesRefreshing(true)
-    }
 
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(async ([result, loadedSettings]) => {
-      if (!Array.isArray(result)) {
-        setLoadingAlbums(false)
-        setReleaseTypesRefreshing(false)
-        return
-      }
-
-      if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
-      setAlbums(result)
-
-      const resolved = await resolveLibraryReleaseTypes(result, api, {
-        refresh: refreshReleaseTypes,
-        isCurrent: () => true,
-      }).catch(() => result)
-      if (Array.isArray(resolved)) setAlbums(resolved)
-      setLoadingAlbums(false)
-      setReleaseTypesRefreshing(false)
-    }).catch(() => {
-      setLoadingAlbums(false)
-      setReleaseTypesRefreshing(false)
+    const request = ++albumRequest.current
+    // Always paint the local list first; catalogues are only contacted by the
+    // explicit Refresh releases action.
+    Promise.resolve(api.getAllAlbums()).then(result => {
+      if (request === albumRequest.current && Array.isArray(result)) setAlbums(applyCachedReleaseTypes(result))
+    }).catch(() => {}).finally(() => {
+      if (request === albumRequest.current) setLoadingAlbums(false)
     })
+    api.getSettings().then(result => {
+      if (request === albumRequest.current && result && !result.error) setSettings(result)
+    }).catch(() => {})
   }
 
   useEffect(() => {
-    let active = true
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(async ([result, loadedSettings]) => {
-      if (!active) return
-      if (!Array.isArray(result)) {
-        setLoadingAlbums(false)
-        return
-      }
-      if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
-      setAlbums(result)
-
-      const resolved = await resolveLibraryReleaseTypes(result, api, {
-        isCurrent: () => active,
-      }).catch(() => result)
-      if (!active) return
-      if (Array.isArray(resolved)) setAlbums(resolved)
-      setLoadingAlbums(false)
-    }).catch(() => {
-      if (active) setLoadingAlbums(false)
-    })
-    return () => {
-      active = false
-    }
+    loadAlbums()
+    return () => { albumRequest.current++ }
   }, [])
 
   useEffect(() => {
+    const cached = peekCache('albums:all')
+    if (cached) setAlbums(applyCachedReleaseTypes(cached))
+  }, [refreshStatus.finishedAt])
+
+  useEffect(() => {
     const handleRefresh = () => {
-      loadAlbums(true)
+      loadAlbums()
       if (selectedAlbum?.title) {
         setLoadingTracks(true)
         api.getAlbumTracks(selectedAlbum).then((tracks) => {
           setAlbumTracks(Array.isArray(tracks) ? tracks : [])
           setLoadingTracks(false)
-        })
+        }).catch(() => setLoadingTracks(false))
       }
     }
     window.addEventListener('lokal:refresh', handleRefresh)
@@ -362,7 +326,6 @@ export default function Albums() {
   }, [selectedAlbum?.title, selectedAlbum?.album_artist])
 
   useEffect(() => {
-    if (!albums.length) return
     const incomingAlbum = location.state?.album
 
     if (!incomingAlbum) {
@@ -414,46 +377,8 @@ export default function Albums() {
     return base
   }, [albums, query, settings.album_sort_mode])
 
-  useEffect(() => {
-    setVisibleByType({})
-    setLoadingMore(false)
-  }, [filteredAlbums, shownTypes])
-
   const releaseTypes = useMemo(() => releaseTypeCounts(filteredAlbums), [filteredAlbums])
-  const sectionSource = useMemo(() => groupReleases(filteredAlbums, shownTypes).map(group => ({ key: group.type, label: group.label, items: group.items })), [filteredAlbums, shownTypes])
-
-  const groupedAlbums = useMemo(() => {
-    return sectionSource.map((group) => ({
-      ...group,
-      items: group.items.slice(0, visibleByType[group.key] || PAGE_SIZE),
-    }))
-  }, [sectionSource, visibleByType])
-
-  const hasMore = useMemo(() => {
-    return sectionSource.some((group) => (visibleByType[group.key] || PAGE_SIZE) < group.items.length)
-  }, [sectionSource, visibleByType])
-
-  useEffect(() => {
-    const node = loadMoreRef.current
-    if (!node || !hasMore) return
-    const root = document.querySelector('main.flex-1.overflow-y-auto') || null
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries[0]?.isIntersecting || loadingMore) return
-      setLoadingMore(true)
-      window.setTimeout(() => {
-        setVisibleByType((current) => {
-          const next = { ...current }
-          for (const group of sectionSource) {
-            next[group.key] = Math.min((current[group.key] || PAGE_SIZE) + PAGE_SIZE, group.items.length)
-          }
-          return next
-        })
-        setLoadingMore(false)
-      }, 80)
-    }, { root, rootMargin: '800px 0px', threshold: 0.01 })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasMore, loadingMore, sectionSource])
+  const groupedAlbums = useMemo(() => groupReleases(filteredAlbums, shownTypes).map(group => ({ key: group.type, label: group.label, items: group.items })), [filteredAlbums, shownTypes])
 
   useEffect(() => {
     if (!selectedAlbum?.title) return
@@ -473,7 +398,7 @@ export default function Albums() {
       if (!active) return
       setAlbumTracks(Array.isArray(tracks) ? tracks : [])
       setLoadingTracks(false)
-    })
+    }).catch(() => { if (active) setLoadingTracks(false) })
     return () => {
       active = false
     }
@@ -546,8 +471,8 @@ export default function Albums() {
               </p>
               <RefreshButton
                 label="Refresh releases"
-                loading={loadingAlbums || releaseTypesRefreshing}
-                onClick={() => loadAlbums(true)}
+                loading={refreshStatus.running}
+                onClick={() => startReleaseRefresh(albums)}
                 className="shrink-0"
               />
             </div>
@@ -590,6 +515,20 @@ export default function Albums() {
             </div>
           </div>
         </div>
+
+        {(refreshStatus.running || refreshStatus.finishedAt > 0) && (
+          <div className="space-y-2 rounded-2xl border border-border bg-elevated/70 p-4">
+            <p role="status" className="text-xs text-muted">
+              {refreshStatus.error || (refreshStatus.running
+                ? `Refreshing releases · ${refreshStatus.done.toLocaleString()} of ${refreshStatus.total.toLocaleString()} checked · ${refreshStatus.matched.toLocaleString()} matched`
+                : `Refresh complete · ${refreshStatus.matched.toLocaleString()} matched${refreshStatus.failed ? ` · ${refreshStatus.failed.toLocaleString()} not found` : ''}`)}
+            </p>
+            <div role="progressbar" aria-label="Release refresh" aria-valuemin={0} aria-valuemax={refreshStatus.total || 1} aria-valuenow={refreshStatus.done} className="h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${refreshStatus.total ? refreshStatus.done / refreshStatus.total * 100 : refreshStatus.running ? 0 : 100}%` }} />
+            </div>
+            {refreshStatus.running && <p className="text-[11px] text-muted/70">You can leave this page; the refresh keeps going.</p>}
+          </div>
+        )}
 
         {selectedAlbum ? (
           <div className="space-y-6">
@@ -758,17 +697,11 @@ export default function Albums() {
                         if (!releaseSelection.click(releaseKey(album), event)) playAlbumRelease(album)
                       }}
                       onContextMenu={(event) => openReleaseMenu(event, album)}
-                      animateIn={index >= FIRST_SCREEN_CARDS}
                     />
                   ))}
                 </div>
               </section>
             ))}
-            {(hasMore || loadingMore) && (
-              <div ref={loadMoreRef} className="flex min-h-20 items-center justify-center">
-                {loadingMore ? <Loader2 size={18} className="animate-spin text-muted" /> : <p className="text-xs text-muted/60">Scroll for more</p>}
-              </div>
-            )}
           </div>
         )}
       </div>

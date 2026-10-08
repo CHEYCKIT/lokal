@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 globalThis.window = globalThis.window || { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} }
 globalThis.localStorage = globalThis.localStorage || { getItem: () => null, setItem() {}, removeItem() {} }
 
-const { downloadGhostSongs, ghostDownloadMessage } = await import('../src/ghostDownloads.js')
+const { downloadGhostSongs, ghostDownloadMessage, redownloadMissingTrack } = await import('../src/ghostDownloads.js')
 
 const imported = (i) => ({ id: `g${i}`, title: `Song ${i}`, artist: `Artist ${i}`, file_path: `ghost://spotify/pl-1/g${i}` })
 
@@ -66,6 +66,21 @@ test('streamed ghosts pass canonical metadata and cancellation to the downloader
   assert.deepEqual(saved[0].options.tags, { title: ghost.title, artist: ghost.artist, album: ghost.album })
   assert.equal(saved[0].options.expectedDuration, 201)
   assert.equal(saved[0].options.isCurrent(), true)
+})
+
+test('a missing downloaded file can be restored without changing its track identity', async () => {
+  const calls = []
+  const c = {
+    downloadYT: async (url, options) => { calls.push({ url, options }); return { downloadId: 'repair-1' } },
+  }
+  const result = await redownloadMissingTrack({
+    id: 'track-42', missing: true, source_ref: 'yt:abcdefghijk',
+    title: 'Song', artist: 'Artist', album: 'Album', duration: 201,
+  }, { client: c })
+  assert.equal(result.downloadId, 'repair-1')
+  assert.equal(calls[0].url, 'https://music.youtube.com/watch?v=abcdefghijk')
+  assert.equal(calls[0].options.upgradeTrackId, 'track-42')
+  assert.equal(calls[0].options.expectedDuration, 201)
 })
 
 test('1,901 CSV ghosts follow addon, YouTube, SoundCloud order and keep each replacement identity', async () => {
@@ -311,3 +326,25 @@ test('selected provider errors are reported and cancellation during preparation 
   })
   assert.equal(result.cancelled, true)
 })
+
+for (const provider of ['yt', 'sc', 'a-0123456789']) {
+  test(`confirmed ${provider} suggestion repairs the missing row through the download options`, async t => {
+    const { downloadGhostResult } = await import('../src/ghostDownloads.js')
+    const { api } = await import('../src/api.js')
+    const calls = []
+    t.mock.method(api, 'downloadYT', async (url, options) => { calls.push(options); return { downloadId: 'repair' } })
+    t.mock.method(api, 'onlineDownloadUrl', async () => ({ url: 'https://source.example/song' }))
+    const ghost = { id: 'missing', missing: true, title: 'Song', artist: 'Artist', duration: 492 }
+    const item = { id: 'aaaaaaaaaaa', provider, url: 'https://youtube.com/watch?v=aaaaaaaaaaa', duration: 210 }
+    const client = { downloadYT: api.downloadYT, onlineSave: async () => [{
+      ...item, file_path: provider === 'sc' ? 'ghost://soundcloud/online/123' : 'ghost://addon/0123456789/123',
+    }] }
+    await downloadGhostResult(ghost, item, { client, confirmDuration: async () => false })
+    assert.equal(calls.length, 0)
+    await downloadGhostResult(ghost, item, { client, confirmDuration: async () => true })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].upgradeTrackId, ghost.id)
+    assert.equal(calls[0].allowUpgradeDurationMismatch, true)
+    assert.equal(calls[0].expectedDuration, 210)
+  })
+}

@@ -47,7 +47,7 @@ function musicMetadata() {
  * @returns {{ id, oldPath, movedTo }} or { error } (then the caller indexes
  *          the new file as a track of its own, as usual)
  */
-async function upgradeTrackFile(db, trackId, newPath, { storageDir } = {}) {
+async function upgradeTrackFile(db, trackId, newPath, { storageDir, allowDurationMismatch = false } = {}) {
   const track = db.prepare("SELECT * FROM tracks WHERE id = ? AND file_path NOT LIKE 'ghost://%'").get(String(trackId || ''))
   if (!track) return { error: 'The track to upgrade is no longer in the library.' }
   if (!fs.existsSync(newPath)) return { error: 'The new file is missing.' }
@@ -59,7 +59,7 @@ async function upgradeTrackFile(db, trackId, newPath, { storageDir } = {}) {
   try { meta = await mm.parseFile(newPath, { duration: true, skipCovers: true }) } catch { return { error: 'Could not read the new file.' } }
   const duration = Number(meta?.format?.duration) || 0
   // Another song (or a different edit) shouldn't silently replace this one.
-  if (duration && Number(track.duration) && Math.abs(duration - Number(track.duration)) > MAX_LENGTH_DIFFERENCE_S) {
+  if (!allowDurationMismatch && duration && Number(track.duration) && Math.abs(duration - Number(track.duration)) > MAX_LENGTH_DIFFERENCE_S) {
     return { error: `The new file is ${Math.round(duration)} s long and the track ${Math.round(track.duration)} s: not the same recording, so it was added as a separate track.` }
   }
 
