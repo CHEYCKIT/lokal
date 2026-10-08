@@ -62,14 +62,7 @@ export default function OutputPrecisionSettings({ compact = false }) {
           </select>
         </label>
       )}
-      {desktop && capabilities?.supportsExclusive && (
-        <label className="flex items-center gap-2 text-sm text-text">
-          <input type="checkbox" checked={preferences.exclusive} disabled={busy || preferences.precision === 'auto'}
-            onChange={event => choose({ exclusive: event.target.checked })} className="accent-accent" />
-          Windows exclusive mode
-        </label>
-      )}
-      {desktop && capabilities?.supportsExclusive && !compact && <p className="text-xs text-muted">Exclusive mode bypasses the Windows mixer and may prevent other apps from using this device. If the device is busy or unsupported, Lokal uses shared output.</p>}
+      {desktop && capabilities?.supportsExclusive && !compact && <p className="text-xs text-muted">Windows exclusive output is temporarily disabled because it can stutter when Lokal is minimized.</p>}
       <p className="text-xs text-muted" aria-live="polite">
         {status.mode === 'switching'
           ? 'Switching output…'
@@ -82,7 +75,7 @@ export default function OutputPrecisionSettings({ compact = false }) {
       {status.warning && <p role="alert" className="text-xs text-amber-400">{status.warning}</p>}
       {!desktop ? <p className="text-xs text-muted">Choose an output precision in the desktop app. Web playback uses the browser’s output.</p>
         : capabilities?.error ? <p className="text-xs text-muted">{capabilities.error}</p> : null}
-      {!compact && <p className="text-xs text-muted">Auto uses the system-managed output. Explicit modes keep EQ and crossfade, then send stereo PCM to the selected device. Shared output may be converted by the system mixer. Exclusive mode bypasses that mixer; source decoding, EQ and sample-rate conversion can still change the audio, so it does not guarantee bit-perfect playback. Higher precision does not restore detail missing from a recording.</p>}
+      {!compact && <p className="text-xs text-muted">Auto uses the system-managed output. Explicit modes keep EQ and crossfade, then send stereo PCM to the selected device using shared output. Shared output may be converted by the system mixer. Higher precision does not restore detail missing from a recording.</p>}
     </div>
   )
 }
