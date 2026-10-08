@@ -148,7 +148,6 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
   })
 }
 
-/** Queue a replacement for a missing local file while retaining its track id. */
 /** Queue redownloads for every missing library track whose original source is known. */
 export async function repairMissingTracks(tracks, { client = api, onProgress, concurrency = 3, isCurrent = () => true } = {}) {
   isCurrent = downloadBatchCurrent(isCurrent)
