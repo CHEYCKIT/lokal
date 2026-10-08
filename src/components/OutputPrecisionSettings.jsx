@@ -71,7 +71,11 @@ export default function OutputPrecisionSettings({ compact = false }) {
       )}
       {desktop && capabilities?.supportsExclusive && !compact && <p className="text-xs text-muted">Exclusive mode bypasses the Windows mixer and may prevent other apps from using this device. If the device is busy or unsupported, Lokal uses shared output.</p>}
       <p className="text-xs text-muted" aria-live="polite">
-        {native
+        {status.mode === 'switching'
+          ? 'Switching output…'
+          : status.mode === 'idle'
+          ? 'Output released · starts with playback'
+          : native
           ? `App output: ${status.precision === 'float32' ? '32-bit float' : '16-bit PCM'} · ${status.sampleRate / 1000} kHz · stereo · ${status.exclusive ? 'Exclusive' : 'Shared'}`
           : `Auto output${status.sampleRate ? ` · ${status.sampleRate / 1000} kHz processing` : ' · starts with playback'}`}
       </p>
