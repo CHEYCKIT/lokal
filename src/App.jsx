@@ -477,9 +477,8 @@ export default function App() {
     const context = audioCtxRef.current
     if (nativeAudioRef.current) {
       nativeAudioRef.current.browserDeviceId = id
-      // Keep Chromium's speaker released while native output owns it or idle.
+      // Defer device changes while idle; apply them on resume.
       if (!nativeAudioRef.current.playing) return { ok: true }
-      if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
     }
     if (context && typeof context.setSinkId === 'function') {
       try {
@@ -510,7 +509,7 @@ export default function App() {
   useEffect(() => {
     if (!audioOutputReady) return
     applyAudioOutput(outputDeviceId).catch(() => {})
-  }, [audioOutputReady, outputDeviceId, applyAudioOutput])
+  }, [audioOutputReady, outputDeviceId, isPlaying, applyAudioOutput])
 
   const isEventFromActive = useCallback((e) => {
     const activeSide = usePlayerStore.getState().activeAudioElement
@@ -826,8 +825,16 @@ export default function App() {
       nativeAudioRef.current = new NativeAudioBridge(ctx, analyser, window.electron.nativeAudio, status => {
         window.__lokalOutputStatus = status
         window.dispatchEvent(new CustomEvent('lokal:output-status', { detail: status }))
-        // The SMTC silence element opens another shared speaker. Native output
-        // already owns playback; in exclusive mode this extra client conflicts.
+        api.log('info', `[audio-output] ${JSON.stringify({
+          mode: status.mode,
+          precision: status.precision || 'auto',
+          sampleRate: status.sampleRate || ctx.sampleRate,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          warning: status.warning || null,
+        })}`)
+        // Native output is clocked by the speaker, so the SMTC silence element
+        // is redundant while that route is active.
         const keepAlive = smtcKeepAliveRef.current
         if (status.mode !== 'auto' || !usePlayerStore.getState().isPlaying) keepAlive?.pause()
         else keepAlive?.play().catch(() => {})
@@ -848,6 +855,47 @@ export default function App() {
     console.error('Failed to initialize AudioContext:', e)
   }
 }, [])
+
+  useEffect(() => {
+    if (!api.isElectron || !window.electron?.onWindowVisibility) return
+    let previousHidden = null
+    let previous = null
+    let chain = Promise.resolve()
+    const unsubscribe = window.electron.onWindowVisibility(hidden => {
+      if (previousHidden === hidden) return
+      previousHidden = hidden
+      chain = chain.catch(() => {}).then(async () => {
+        const player = usePlayerStore.getState()
+        const active = player.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
+        const native = await window.electron.nativeAudio?.diagnostics?.()
+        const status = window.__lokalOutputStatus || {}
+        const nativeUnderruns = native?.native?.underrunEvents ?? null
+        const underrunDelta = previous?.mode === status.mode && previous?.events !== null &&
+          nativeUnderruns !== null && nativeUnderruns >= previous.events
+          ? nativeUnderruns - previous.events
+          : null
+        const sample = {
+          event: hidden ? 'minimized' : 'restored',
+          isPlaying: player.isPlaying,
+          audioContextState: audioCtxRef.current?.state || null,
+          mode: status.mode || 'auto',
+          precision: status.precision || readOutputPreferences().precision,
+          sampleRate: status.sampleRate || audioCtxRef.current?.sampleRate || null,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          mediaCurrentTime: Number.isFinite(active?.currentTime) ? Number(active.currentTime.toFixed(3)) : null,
+          nativeDiagnosticsAvailable: !!native?.native,
+          native,
+          underrunEventsSincePreviousVisibility: underrunDelta,
+        }
+        api.log('info', `[audio-visibility] ${JSON.stringify(sample)}`)
+        previous = { events: nativeUnderruns, mode: status.mode }
+      }).catch(error => {
+        api.log('warn', `[audio-visibility] diagnostics failed: ${error.message}`)
+      })
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     window.__lokalSetOutputPrecision = async preferences => {
@@ -985,7 +1033,7 @@ export default function App() {
     //safety net for pesky SMTC.
     const el = smtcKeepAliveRef.current
     if (!el) return
-    if (isPlaying && !nativeAudioRef.current?.requestedExclusive && window.__lokalOutputStatus?.mode !== 'native') {
+    if (isPlaying && window.__lokalOutputStatus?.mode !== 'native') {
       el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
     } else {
       el.pause()
