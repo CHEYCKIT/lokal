@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstring>
 #include <vector>
+#include "wasapi-exclusive.h"
 #define MINIAUDIO_IMPLEMENTATION
 #include "vendor/miniaudio.h"
 
@@ -12,12 +13,18 @@ struct Output {
   ma_context context{};
   ma_device device{};
   ma_pcm_rb ring{};
+  WasapiExclusiveOutput wasapi;
+  bool usingWasapiExclusive = false;
   bool initialized = false, open = false;
   std::atomic<uint64_t> frames{0};
   std::atomic<uint64_t> writtenFrames{0}, consumedFrames{0}, discardUntil{0}, discardedFrames{0};
   std::atomic<bool> discardRequested{false}, discardComplete{true};
   std::vector<ma_device_id> ids;
   void close() {
+    if (usingWasapiExclusive) {
+      wasapi.close();
+      usingWasapiExclusive = false;
+    }
     if (open) { ma_device_uninit(&device); ma_pcm_rb_uninit(&ring); open = false; }
   }
   ~Output() { close(); if (initialized) ma_context_uninit(&context); }
@@ -91,6 +98,14 @@ static napi_value open(napi_env env, napi_callback_info info) {
   uint32_t id, rate, bits; bool exclusive = false;
   if (argc != 4 || napi_get_value_bool(env, args[3], &exclusive) != napi_ok || napi_get_value_uint32(env, args[0], &id) != napi_ok || napi_get_value_uint32(env, args[1], &rate) != napi_ok || napi_get_value_uint32(env, args[2], &bits) != napi_ok || id >= self->ids.size() || rate < 8000 || rate > 192000 || (bits != 16 && bits != 32)) return error(env, "Invalid audio configuration.");
   if (exclusive && self->context.backend != ma_backend_wasapi) return error(env, "Exclusive output requires Windows WASAPI.");
+#if defined(_WIN32)
+  if (exclusive) {
+    std::string message;
+    if (!self->wasapi.open(std::wstring(self->ids[id].wasapi), rate, bits, message)) return error(env, message.c_str());
+    self->usingWasapiExclusive = true;
+    return number(env, 1024);
+  }
+#endif
   const ma_format format = bits == 32 ? ma_format_f32 : ma_format_s16;
   if (ma_pcm_rb_init(format, 2, 32768, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
@@ -108,23 +123,32 @@ static napi_value open(napi_env env, napi_callback_info info) {
 }
 static napi_value start(napi_env env, napi_callback_info) {
   auto* self = state(env);
+  if (self->usingWasapiExclusive) {
+    std::string message;
+    if (!self->wasapi.start(message)) return error(env, message.c_str());
+    return nothing(env);
+  }
   if (!self->open || ma_device_start(&self->device) != MA_SUCCESS) return error(env, "Could not start audio output.");
   return nothing(env);
 }
 static napi_value close(napi_env env, napi_callback_info) { state(env)->close(); return nothing(env); }
-static napi_value isOpen(napi_env env, napi_callback_info) { return booleanValue(env, state(env)->open); }
-static napi_value isRunning(napi_env env, napi_callback_info) { auto* s = state(env); return booleanValue(env, s->open && ma_device_is_started(&s->device)); }
-static napi_value rate(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? s->device.sampleRate : 0); }
-static napi_value time(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? double(s->frames.load()) / s->device.sampleRate : 0); }
+static napi_value isOpen(napi_env env, napi_callback_info) { auto* s = state(env); return booleanValue(env, s->usingWasapiExclusive ? s->wasapi.isOpen() : s->open); }
+static napi_value isRunning(napi_env env, napi_callback_info) { auto* s = state(env); return booleanValue(env, s->usingWasapiExclusive ? s->wasapi.isRunning() : s->open && ma_device_is_started(&s->device)); }
+static napi_value rate(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->usingWasapiExclusive ? s->wasapi.sampleRate() : s->open ? s->device.sampleRate : 0); }
+static napi_value time(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->usingWasapiExclusive ? s->wasapi.streamTime() : s->open ? double(s->frames.load()) / s->device.sampleRate : 0); }
 static napi_value backend(napi_env env, napi_callback_info) { auto* s = state(env); return string(env, s->initialized ? ma_get_backend_name(s->context.backend) : "Unavailable"); }
 static napi_value supportsExclusive(napi_env env, napi_callback_info) {
   auto* s = state(env); return booleanValue(env, init(s) && s->context.backend == ma_backend_wasapi);
 }
 static napi_value isExclusive(napi_env env, napi_callback_info) {
-  auto* s = state(env); return booleanValue(env, s->open && s->device.playback.shareMode == ma_share_mode_exclusive);
+  auto* s = state(env); return booleanValue(env, s->usingWasapiExclusive || s->open && s->device.playback.shareMode == ma_share_mode_exclusive);
 }
 static napi_value clear(napi_env env, napi_callback_info) {
   auto* s = state(env);
+  if (s->usingWasapiExclusive) {
+    s->wasapi.clear();
+    return nothing(env);
+  }
   if (s->open) {
     // Stop the consumer before resetting both ring cursors.
     bool running = ma_device_is_started(&s->device);
@@ -138,6 +162,10 @@ static napi_value clear(napi_env env, napi_callback_info) {
 }
 static napi_value discard(napi_env env, napi_callback_info) {
   auto* s = state(env);
+  if (s->usingWasapiExclusive) {
+    s->wasapi.discard();
+    return nothing(env);
+  }
   if (s->open && !s->discardRequested.load(std::memory_order_acquire)) {
     s->discardComplete.store(false, std::memory_order_relaxed);
     s->discardedFrames.store(0, std::memory_order_relaxed);
@@ -148,15 +176,25 @@ static napi_value discard(napi_env env, napi_callback_info) {
 }
 static napi_value discardComplete(napi_env env, napi_callback_info) {
   auto* s = state(env);
+  if (s->usingWasapiExclusive) return booleanValue(env, s->wasapi.discardComplete());
   return booleanValue(env, !s->open || s->discardComplete.load(std::memory_order_acquire));
 }
 static napi_value discardedFrames(napi_env env, napi_callback_info) {
-  return number(env, static_cast<double>(state(env)->discardedFrames.load(std::memory_order_acquire)));
+  auto* s = state(env);
+  return number(env, static_cast<double>(s->usingWasapiExclusive
+    ? s->wasapi.discardedFrames()
+    : s->discardedFrames.load(std::memory_order_acquire)));
 }
 static napi_value write(napi_env env, napi_callback_info info) {
   auto* s = state(env); size_t argc = 1, size = 0; napi_value args[1]; void* input = nullptr; bool isBuffer = false;
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (!s->open || argc != 1 || napi_is_buffer(env, args[0], &isBuffer) != napi_ok || !isBuffer || napi_get_buffer_info(env, args[0], &input, &size) != napi_ok) return error(env, "Invalid audio frame.");
+  if (argc != 1 || napi_is_buffer(env, args[0], &isBuffer) != napi_ok || !isBuffer || napi_get_buffer_info(env, args[0], &input, &size) != napi_ok) return error(env, "Invalid audio frame.");
+  if (s->usingWasapiExclusive) {
+    std::string message;
+    if (!s->wasapi.write(input, size, message)) return error(env, message.c_str());
+    return nothing(env);
+  }
+  if (!s->open) return error(env, "Invalid audio frame.");
   auto bytes = ma_get_bytes_per_frame(s->device.playback.format, 2);
   if (size != 1024 * bytes) return error(env, "Invalid audio frame length.");
   if (ma_pcm_rb_available_write(&s->ring) < 1024) return error(env, "Audio buffer overrun.");
