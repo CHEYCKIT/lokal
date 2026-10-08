@@ -70,10 +70,14 @@ class PCMOutputProcessor extends AudioWorkletProcessor {
         const samples = this.samples
         this.samples = new Float32Array(samples.length)
         if (this.credits > 0) this.sendSamples(samples)
-        else if (this.pendingCount < this.pending.length) {
+        else if (this.pending.length) {
+          if (this.pendingCount === this.pending.length) {
+            this.pendingRead = (this.pendingRead + 1) % this.pending.length
+          } else {
+            this.pendingCount++
+          }
           this.pending[this.pendingWrite] = samples
           this.pendingWrite = (this.pendingWrite + 1) % this.pending.length
-          this.pendingCount++
         }
         this.offset = 0
       }

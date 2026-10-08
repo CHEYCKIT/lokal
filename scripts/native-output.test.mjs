@@ -116,6 +116,23 @@ test('worklet buffers PCM while native credits are delayed and drains it in orde
   assert.equal(processor.pendingCount, 0)
 })
 
+test('worklet replaces stale queued PCM when the pending queue is full', () => {
+  let Processor
+  const messages = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => messages.push(structuredClone(message)) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 1, pendingBlocks: 2 } })
+  for (let i = 1; i <= 4; i++) processor.process([[new Float32Array(128).fill(i)]])
+  assert.equal(processor.pendingCount, 2)
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  assert.deepEqual(messages.map(message => message.samples[0]), [1, 3, 4])
+  assert.equal(processor.pendingCount, 0)
+})
+
 test('worklet interleaves stereo, sends no audible output, bounds messages and discards partial frames on reset', () => {
   let Processor
   const messages = []
