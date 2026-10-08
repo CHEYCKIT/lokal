@@ -509,7 +509,7 @@ export default function App() {
   useEffect(() => {
     if (!audioOutputReady) return
     applyAudioOutput(outputDeviceId).catch(() => {})
-  }, [audioOutputReady, outputDeviceId, applyAudioOutput])
+  }, [audioOutputReady, outputDeviceId, isPlaying, applyAudioOutput])
 
   const isEventFromActive = useCallback((e) => {
     const activeSide = usePlayerStore.getState().activeAudioElement
