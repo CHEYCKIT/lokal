@@ -1,6 +1,9 @@
 const { registerNativeOutput, closeNativeOutput } = require('./audio/output')
 const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker } = require('electron')
 const path = require('path')
+// Keep the renderer at normal priority on Windows while minimized so the
+// AudioWorklet/native output path is not starved by backgrounding.
+if (process.platform === 'win32') app.commandLine.appendSwitch('disable-renderer-backgrounding')
 const fs = require('fs')
 const log = require('electron-log')
 const { attachFullscreenSleepBlocker } = require('./fullscreenSleepBlocker')
