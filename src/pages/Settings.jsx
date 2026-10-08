@@ -263,6 +263,8 @@ export default function Settings() {
   const [showDups, setShowDups] = useState(false)
   const [possibleDups, setPossibleDups] = useState(null)
   const [showPossibleDups, setShowPossibleDups] = useState(false)
+  const [duplicateMessage, setDuplicateMessage] = useState('')
+  const [mergingDuplicate, setMergingDuplicate] = useState(false)
   const [mergingAll, setMergingAll] = useState(false)
   const [mergeAllResult, setMergeAllResult] = useState(null)
   const [showMergeAllConfirm, setShowMergeAllConfirm] = useState(false)
@@ -653,6 +655,7 @@ export default function Settings() {
   }
 
   const checkDuplicates = async () => {
+    setDuplicateMessage('')
     const d = await api.checkDuplicates()
     setDups(Array.isArray(d) ? d : [])
     setShowDups(true)
@@ -662,25 +665,37 @@ export default function Settings() {
     const ids = group.ids.split(',')
     const keepId = ids[0]
     const removeIds = ids.slice(1)
-    await api.mergeDuplicates(keepId, removeIds)
-    setDups(prev => prev.filter(d => d.ids !== group.ids))
+    if (mergingDuplicate || mergingAll) return
+    setMergingDuplicate(true)
+    setDuplicateMessage('')
+    try {
+      const result = await api.mergeDuplicates(keepId, removeIds)
+      if (!result?.ok) throw new Error(result?.error || 'Could not merge these copies. Please try again.')
+      setDuplicateMessage(result.warning || '')
+      setDups(prev => prev.filter(d => d.ids !== group.ids))
+    } catch (error) { setDuplicateMessage(error.message) }
+    finally { setMergingDuplicate(false) }
   }
 
   const mergeAllDuplicates = async () => {
     setMergingAll(true)
+    setDuplicateMessage('')
     setShowMergeAllConfirm(false)
     try {
       const result = await api.mergeAllDuplicates()
       setMergeAllResult(result)
+      setDuplicateMessage([result.error, result.warning].filter(Boolean).join(' '))
       const d = await api.checkDuplicates()
       setDups(Array.isArray(d) ? d : [])
     } catch (e) {
       setMergeAllResult({ error: e.message })
+      setDuplicateMessage(e.message)
     }
     setMergingAll(false)
   }
 
   const checkPossibleDuplicates = async () => {
+    setDuplicateMessage('')
     const groups = await api.checkPossibleDuplicates()
     setPossibleDups(Array.isArray(groups) ? groups : [])
     setShowPossibleDups(true)
@@ -715,8 +730,16 @@ export default function Settings() {
   const mergePossibleDup = async (group, keepId) => {
     const removeIds = (group?.tracks || []).map(track => track.id).filter(id => id !== keepId)
     if (!removeIds.length) return
-    await api.mergeDuplicates(keepId, removeIds)
-    setPossibleDups(prev => prev.filter(item => item.id !== group.id))
+    if (mergingDuplicate) return
+    setMergingDuplicate(true)
+    setDuplicateMessage('')
+    try {
+      const result = await api.mergeDuplicates(keepId, removeIds)
+      if (!result?.ok) throw new Error(result?.error || 'Could not merge these copies. Please try again.')
+      setDuplicateMessage(result.warning || '')
+      setPossibleDups(prev => prev.filter(item => item.id !== group.id))
+    } catch (error) { setDuplicateMessage(error.message) }
+    finally { setMergingDuplicate(false) }
   }
 
   const saveCommaArtists = async () => {
@@ -2476,13 +2499,14 @@ Earth, Wind & Fire"
       </Modal>
 
       <Modal open={showDups} onClose={() => { setShowDups(false); setMergeAllResult(null) }} title="Duplicate Tracks" width="max-w-2xl">
+        {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
         {dups?.length === 0 && <p className="text-accent text-sm text-center py-6">✓ No duplicates found!</p>}
         
         {dups?.length > 0 && (
           <div className="mb-4">
             <button
               onClick={() => setShowMergeAllConfirm(true)}
-              disabled={mergingAll}
+              disabled={mergingAll || mergingDuplicate}
               className="flex items-center gap-2 px-4 py-2 bg-accent/20 border border-accent/50 text-accent rounded-lg text-sm font-medium hover:bg-accent/30 disabled:opacity-40 transition-colors"
             >
               <Zap size={14} />
@@ -2498,7 +2522,7 @@ Earth, Wind & Fire"
         
         {dups?.length > 0 && (
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            <p className="text-xs text-muted mb-2">Merge keeps the best copy (bitrate, cover, album details) and fills it in from the others before removing them.</p>
+            <p className="text-xs text-muted mb-2">Merge keeps the selected copy and fills missing metadata from the others. Removed copies’ audio files go to Trash on desktop and are permanently deleted in web mode, even when “Delete files too” is off.</p>
             {dups.map((d, i) => {
               return (
                 <div key={i} className="p-3 bg-card border border-border rounded-xl flex items-center gap-4">
@@ -2508,6 +2532,7 @@ Earth, Wind & Fire"
                     <p className="text-xs text-muted/40 mt-0.5 truncate">{d.paths}</p>
                   </div>
                   <button
+                    disabled={mergingAll || mergingDuplicate}
                     onClick={() => mergeDup(d)}
                     className="flex-shrink-0 px-3 py-1.5 bg-accent/15 border border-accent/30 text-accent rounded-lg text-xs font-display uppercase tracking-wider hover:bg-accent/25 transition-colors"
                   >
@@ -2533,7 +2558,7 @@ Earth, Wind & Fire"
                 <li>• +3 points if has year</li>
                 <li>• +2 points if has genre</li>
               </ul>
-              <p className="mt-2">The highest scoring copy wins. Loser metadata (artwork, album, year, genre) is patched to winner before deletion.</p>
+              <p className="mt-2">The highest scoring copy wins. Missing metadata is filled from the other copies, then their audio files are removed from your music folder (Trash on desktop; permanently deleted in web mode).</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -2546,6 +2571,7 @@ Earth, Wind & Fire"
       </Modal>
 
       <Modal open={showPossibleDups} onClose={() => setShowPossibleDups(false)} title="Possible Duplicates" width="max-w-4xl">
+        {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
         {possibleDups?.length === 0 && (
           <div className="space-y-2 py-4">
             <p className="text-accent text-sm text-center">✓ No possible duplicates found.</p>
@@ -2556,7 +2582,7 @@ Earth, Wind & Fire"
         {possibleDups?.length > 0 && (
           <div className="space-y-3">
             <p className="text-xs text-muted">
-              This pass is intentionally review-based. Run the exact duplicate checker first, then use this for tracks that look like the same song but do not have identical names.
+              This pass is intentionally review-based. Run the exact duplicate checker first, then use this for tracks that look like the same song but do not have identical names. Keep This removes the other copies’ audio files from your music folder (Trash on desktop; permanently deleted in web mode), even when “Delete files too” is off.
             </p>
             <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {possibleDups.map((group) => (
@@ -2596,6 +2622,7 @@ Earth, Wind & Fire"
                             <p className="text-[10px] text-muted/50 truncate mt-1">{track.file_path}</p>
                           </div>
                           <button
+                            disabled={mergingDuplicate}
                             onClick={() => mergePossibleDup(group, track.id)}
                             className={`flex-shrink-0 px-3 py-2 rounded-lg text-xs font-display uppercase tracking-wider transition-colors ${suggested ? 'bg-accent/20 border border-accent/40 text-accent hover:bg-accent/30' : 'bg-card border border-border text-muted hover:text-white hover:border-accent/30'}`}
                           >

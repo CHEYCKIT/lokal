@@ -65,4 +65,4 @@ function forgetDownloads(trackIds) {
   try { require('../download/manager').getDownloadManager().forgetTracks(trackIds) } catch {}
 }
 
-module.exports = { removeTrackFiles, forgetDownloads, deleteFilesEnabled, isInside }
+module.exports = { moveToTrash, removeTrackFiles, forgetDownloads, deleteFilesEnabled, isInside }
