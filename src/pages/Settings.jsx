@@ -19,6 +19,7 @@ import { useTheme } from '../themeHooks'
 import { ARTIST_SOURCES } from '../artistSources'
 import { repairMissingTracks } from '../ghostDownloads'
 import { plural } from '../plural'
+import { readCrossfadeSettings, CROSSFADE_MIN_S } from '../audio/crossfade'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -660,7 +661,9 @@ export default function Settings() {
     touchedSettingsRef.current.add(k)
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
+    if (k.startsWith('crossfade_')) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
   }
+  const crossfade = readCrossfadeSettings(settings)
 
   const applyEqGains = (nextGains, presetKey = getEqPresetKey(nextGains)) => {
     const normalized = normalizeEqGains(nextGains)
@@ -1509,13 +1512,39 @@ activeCategory === 'data' ? usersTried
       {inCategory('playback') && (
       <Section title="Playback">
         <OutputPrecisionSettings />
-        <Row label="Crossfade" desc="Fade into the next song. Skipping doesn't fade.">
+        <Row label="Crossfade" desc="Start the next song this many seconds before the current one ends. Skipping doesn't fade.">
           <div className="flex items-center gap-2">
-            <input type="range" min={0} max={12} step={0.5} value={settings.crossfade_seconds || 0}
+            <input type="range" min={0} max={20} step={0.5} value={settings.crossfade_seconds || 0}
               onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
             <span className="text-xs text-muted w-10">{settings.crossfade_seconds || 0}s</span>
           </div>
         </Row>
+        {crossfade.beforeEnd > CROSSFADE_MIN_S && (<>
+          <Row label="Fade in" desc="How long the next song takes to reach full volume.">
+            <div className="flex items-center gap-2">
+              <input type="range" min={0} max={10} step={0.1} value={crossfade.fadeIn}
+                onChange={e => set('crossfade_fade_in', e.target.value)} className="w-24 accent-accent" />
+              <span className="text-xs text-muted w-10">{crossfade.fadeIn.toFixed(1)}s</span>
+            </div>
+          </Row>
+          <Row label="Fade out" desc="How long the current song takes to fade away. It stops at the end of the song either way.">
+            <div className="flex items-center gap-2">
+              <input type="range" min={0.5} max={20} step={0.5} value={crossfade.fadeOut}
+                onChange={e => set('crossfade_fade_out', e.target.value)} className="w-24 accent-accent" />
+              <span className="text-xs text-muted w-10">{crossfade.fadeOut.toFixed(1)}s</span>
+            </div>
+          </Row>
+          <Row label="Fade curve" desc="Logarithmic fades evenly to the ear. Linear stays loud, then drops off near the end.">
+            <select
+              value={crossfade.curve}
+              onChange={e => set('crossfade_curve', e.target.value)}
+              className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50"
+            >
+              <option value="logarithmic">Logarithmic</option>
+              <option value="linear">Linear</option>
+            </select>
+          </Row>
+        </>)}
         <Row label="Streaming Quality" desc="For songs played from YouTube Music. Data saver uses less than half the data. SoundCloud has one quality; addons have their own setting.">
           <select
             value={settings.online_quality || 'best'}
