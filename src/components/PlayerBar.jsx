@@ -24,7 +24,7 @@ export default function PlayerBar() {
   const showWaveform = useAppearanceFlag('player_waveform')
   const nav = useNavigate()
   const {
-    currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
+    currentTrack, isPlaying, isBuffering, progress, duration, volume, shuffle, repeat,
     showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
     toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
@@ -32,7 +32,7 @@ export default function PlayerBar() {
     sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
     toggleMiniPlayer,
   } = usePlayerStore(useShallow(({
-    currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
+    currentTrack, isPlaying, isBuffering, progress, duration, volume, shuffle, repeat,
     showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
     toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
@@ -40,7 +40,7 @@ export default function PlayerBar() {
     sleepTimerMinutes, sleepTimerEndTime, setSleepTimer, cancelSleepTimer,
     toggleMiniPlayer,
   }) => ({
-    currentTrack, isPlaying, progress, duration, volume, shuffle, repeat,
+    currentTrack, isPlaying, isBuffering, progress, duration, volume, shuffle, repeat,
     showRightSidebar, showQueue, showLyricsPanel, sidePanelView, exclusiveSidePanels,
     togglePlay, next, prev, setProgress, setVolume, toggleShuffle, toggleRepeat,
     toggleLyricsButton, toggleRightSidebar, toggleFullscreen, toggleQueueButton,
@@ -194,6 +194,14 @@ export default function PlayerBar() {
                   <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">
                     E
                   </span>
+                )}
+                {isBuffering && streamed && (
+                  <span
+                    role="status"
+                    aria-label="Loading track"
+                    title="Loading track"
+                    className="h-3 w-3 flex-shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
+                  />
                 )}
               </div>
               {currentTrack ? (

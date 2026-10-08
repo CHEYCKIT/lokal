@@ -2358,7 +2358,7 @@ export default function App() {
           onError={handleAudioError}
           onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
           onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsBuffering(false); setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
@@ -2372,7 +2372,7 @@ export default function App() {
           onError={handleAudioError}
           onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
           onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsBuffering(false); setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
