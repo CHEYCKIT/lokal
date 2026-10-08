@@ -69,7 +69,8 @@ static napi_value open(napi_env env, napi_callback_info info) {
   if (argc != 4 || napi_get_value_bool(env, args[3], &exclusive) != napi_ok || napi_get_value_uint32(env, args[0], &id) != napi_ok || napi_get_value_uint32(env, args[1], &rate) != napi_ok || napi_get_value_uint32(env, args[2], &bits) != napi_ok || id >= self->ids.size() || rate < 8000 || rate > 192000 || (bits != 16 && bits != 32)) return error(env, "Invalid audio configuration.");
   if (exclusive && self->context.backend != ma_backend_wasapi) return error(env, "Exclusive output requires Windows WASAPI.");
   const ma_format format = bits == 32 ? ma_format_f32 : ma_format_s16;
-  if (ma_pcm_rb_init(format, 2, 32768, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
+  const size_t ringFrames = exclusive ? 131072 : 32768;
+  if (ma_pcm_rb_init(format, 2, ringFrames, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.playback.pDeviceID = &self->ids[id]; config.playback.format = format; config.playback.channels = 2;
   config.playback.shareMode = exclusive ? ma_share_mode_exclusive : ma_share_mode_shared;
