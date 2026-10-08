@@ -305,6 +305,7 @@ export default function App() {
           if (!isCurrent()) return
         }
         usePlayerStore.getState().setIsPlaying(false)
+        usePlayerStore.getState().setIsBuffering(false)
         const message = 'No full-length stream was found in your playback sources.'
         setStreamError({ title: failedTrack.title, message })
         toast.close(message)
@@ -441,7 +442,7 @@ export default function App() {
   const {
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -449,7 +450,7 @@ export default function App() {
   } = usePlayerStore(useShallow(({
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -1703,6 +1704,7 @@ export default function App() {
       cancelCrossfade()
     }
 
+    setIsBuffering(!!streamRef(currentTrack))
     if (!audioRef.current || !currentTrack) return
     if (streamRecoveryRef.current.track !== currentTrack) streamRecoveryRef.current = { track: currentTrack, pending: false, failed: [] }
 
@@ -1736,6 +1738,7 @@ export default function App() {
       audioRef.current.dataset.lokalTrackPending = ''
       audioRef.current.dataset.lokalTrackId = ''
       setIsPlaying(false)
+      setIsBuffering(false)
       return
     }
     setStreamError(null)
@@ -1767,7 +1770,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback])
+  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -1884,11 +1887,12 @@ export default function App() {
     // now playing), or an auto-advanced song is never counted.
     const { activeAudioElement, isPlaying, currentTrack } = usePlayerStore.getState()
     const active = (activeAudioElement === 'primary') === (el === audioRef.current)
+    if (active && String(currentTrack?.id) === pending) setIsBuffering(false)
     if (active && isPlaying && !el.paused && String(currentTrack?.id) === pending) {
       startTimer()
       sendListenBrainzNowPlaying()
     }
-  }, [startTimer, sendListenBrainzNowPlaying])
+  }, [setIsBuffering, startTimer, sendListenBrainzNowPlaying])
 
   const handlePrimaryEnded = useCallback((e) => {
     if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
@@ -2303,7 +2307,9 @@ export default function App() {
           onCanPlay={handleAudioCanPlay}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsBuffering(false); setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
@@ -2315,7 +2321,9 @@ export default function App() {
           onCanPlay={handleAudioCanPlay}
           onEnded={handleCfEnded}
           onError={handleAudioError}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
+          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsBuffering(false); setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
