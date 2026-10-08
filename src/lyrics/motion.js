@@ -210,6 +210,9 @@ export function progressOf(u, t) {
 export function stepWord(u, t, dt, snap = false) {
   const s = stateOf(u)
   const p = progressOf(u, t)
+  // Before it's sung and after, a word that has come to rest stays at rest. Hand
+  // back the very same result so the caller can see nothing changed and skip it.
+  if (!snap && s.rest && s.rest.p === p) return s.rest.result
   // Fast lyrics: the bounce shrinks with the word, down to 40%, so a quick run
   // of syllables doesn't hop and flash.
   const k = 0.4 + 0.6 * clamp01((u.end - u.time - QUICK_S) / (FULL_MOTION_S - QUICK_S))
@@ -217,7 +220,9 @@ export function stepWord(u, t, dt, snap = false) {
   const out = drive(s.word, goal, dt, snap)
   s.fill.goal(p, snap)
   const fill = clamp01(s.fill.step(dt))
-  return { fill, scale: out.scale, y: out.y, glow: out.glow, moving: out.moving || !s.fill.asleep() }
+  const result = { fill, scale: out.scale, y: out.y, glow: out.glow, moving: out.moving || !s.fill.asleep() }
+  if (!result.moving && (p === 0 || p === 1)) s.rest = { p, result }
+  return result
 }
 
 // ---------------------------------------------------------------- held notes
@@ -249,10 +254,14 @@ export function stepLetters(u, t, dt, snap = false) {
   }
   const wordSung = t >= u.end
 
+  // Letters at rest, before the note or after it, are handed back unchanged.
+  const phase = wordSung ? 'done' : t < start ? 'before' : null
+  if (!snap && phase && s.lettersRest && s.lettersRest.phase === phase) return s.lettersRest.steps
+
   const rest = { scale: LETTER.scale(0), y: LETTER.y(0), glow: LETTER.glow(0) }
   const done = { scale: LETTER.scale(1), y: LETTER.y(1), glow: LETTER.glow(1) }
 
-  return springs.map((sp, k) => {
+  const steps = springs.map((sp, k) => {
     const lStart = start + k * slice
     const lEnd = lStart + slice
     const state = t < lStart ? 'not' : t >= lEnd ? 'sung' : 'active'
@@ -278,4 +287,6 @@ export function stepLetters(u, t, dt, snap = false) {
     const fill = state === 'not' ? 0 : state === 'sung' ? 1 : easeSinOut(clamp01((t - lStart) / slice))
     return { fill, scale: out.scale, y: out.y * LETTER_LIFT, glow: out.glow, moving: out.moving }
   })
+  if (phase && !steps.some(x => x.moving)) s.lettersRest = { phase, steps }
+  return steps
 }

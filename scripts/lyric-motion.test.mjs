@@ -123,3 +123,17 @@ test('quick words bounce less than held ones, and the sweep eases across them', 
   assert.ok(atEnd < 1)
   assert.ok(last.fill > 0.999)
 })
+
+test('words at rest return the same result object, so painters can skip them', () => {
+  const u = unit('rest', 10, 10.5)
+  assert.equal(stepWord(u, 1, 1 / 60, true), stepWord(u, 1.02, 1 / 60))
+  stepWord(u, 10.2, 1 / 60)
+  let done
+  for (let t = 10.5; t < 14; t += 1 / 60) done = stepWord(u, t, 1 / 60)
+  assert.equal(done.moving, false)
+  assert.equal(stepWord(u, 14.1, 1 / 60), done)
+  const held = unit('stay', 0, 2)
+  let steps
+  for (let t = 0; t < 6; t += 1 / 60) steps = stepLetters(held, t, 1 / 60)
+  assert.equal(stepLetters(held, 6.1, 1 / 60), steps)
+})
