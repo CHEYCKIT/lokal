@@ -2,8 +2,10 @@
 
 Lokal owns this small N-API bridge. It receives stereo PCM already processed by
 Chromium/Web Audio, then miniaudio supplies WASAPI, CoreAudio, or the available
-Linux audio backend. It uses shared output; the system mixer can convert sample
-format/rate. The UI reports the app stream format, not the DAC's physical format.
+Linux audio backend. Shared output is the default; an opt-in Windows WASAPI exclusive mode bypasses
+the system mixer. Exclusive initialization failure falls back to shared output.
+Chromium uses a silent sink while the native route owns the device. Shared
+output can be converted by the system mixer. The UI reports the app stream format, not the DAC's physical format.
 
 - Vendor: miniaudio **0.11.23**, https://github.com/mackron/miniaudio/tree/0.11.23
 - `vendor/miniaudio.h` SHA-256: `7e4f3f13c8fe66df2080ac3dd12a89193e3c2463cb7f067c798abd7331cd8ee6`

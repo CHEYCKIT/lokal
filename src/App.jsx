@@ -474,6 +474,11 @@ export default function App() {
   const applyAudioOutput = useCallback(async (deviceId = 'default') => {
     const id = String(deviceId || 'default')
     const context = audioCtxRef.current
+    if (nativeAudioRef.current) {
+      nativeAudioRef.current.browserDeviceId = id
+      // Keep Chromium's speaker released while exclusive output owns it.
+      if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
+    }
     if (context && typeof context.setSinkId === 'function') {
       try {
         await context.setSinkId(id)

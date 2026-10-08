@@ -2,8 +2,8 @@ export const normalizePrecision = value => ['auto', 'pcm16', 'float32'].includes
 export function readOutputPreferences() {
   try {
     const data = JSON.parse(localStorage.getItem('lokal-output-precision') || '{}')
-    return { precision: normalizePrecision(data?.precision), deviceName: typeof data?.deviceName === 'string' ? data.deviceName : '' }
-  } catch { return { precision: 'auto', deviceName: '' } }
+    return { precision: normalizePrecision(data?.precision), deviceName: typeof data?.deviceName === 'string' ? data.deviceName : '', exclusive: data?.exclusive === true }
+  } catch { return { precision: 'auto', deviceName: '', exclusive: false } }
 }
 export function saveOutputPreferences(value) {
   try { localStorage.setItem('lokal-output-precision', JSON.stringify(value)) } catch {}
@@ -27,10 +27,11 @@ export class NativeAudioBridge {
   configure(preferences) {
     // Serialize opening/closing the device; rapid UI changes cannot leave two
     // live outputs or let an old result replace a newer route.
+    this.requestedExclusive = preferences.precision !== 'auto' && preferences.exclusive === true
     this.chain = this.chain.catch(() => {}).then(() => this.apply(preferences))
     return this.chain
   }
-  async apply({ precision, deviceName = '' }) {
+  async apply({ precision, deviceName = '', exclusive = false }) {
     await this.fallback()
     if (precision === 'auto') return this.status
     try {
@@ -41,7 +42,15 @@ export class NativeAudioBridge {
         })
         this.node.port.onmessage = event => this.send(event.data)
       }
-      const result = await this.api.open({ precision, deviceName, sampleRate: this.context.sampleRate })
+      if (exclusive) {
+        // Release Chromium's own shared device before trying to claim WASAPI.
+        // A silent sink still clocks the worklet, without holding a speaker open.
+        if (typeof this.context.setSinkId !== 'function') throw new Error('This build cannot release browser output for exclusive mode.')
+        this.previousSink = this.browserDeviceId ?? this.context.sinkId ?? ''
+        await this.context.setSinkId({ type: 'none' })
+        this.silentSink = true
+      }
+      const result = await this.api.open({ precision, deviceName, exclusive, sampleRate: this.context.sampleRate })
       if (!result?.ok) throw new Error(result?.error || 'Native output could not be started.')
       this.session = result.session
       this.frameSize = result.frameSize
@@ -83,6 +92,14 @@ export class NativeAudioBridge {
     this.resetWorklet(false)
     // Silence the native route before reconnecting Chromium to avoid doubled audio.
     try { await this.api.close() } catch {}
+    if (this.silentSink) {
+      try { await this.context.setSinkId(this.browserDeviceId ?? this.previousSink ?? '') }
+      catch {
+        try { await this.context.setSinkId('') }
+        catch { warning = 'Could not restore browser audio output. Select an available output device.' }
+      }
+      this.silentSink = false
+    }
     if (this.node) {
       try { this.source.disconnect(this.node) } catch {}
       this.node.disconnect()

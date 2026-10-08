@@ -64,13 +64,16 @@ static napi_value devices(napi_env env, napi_callback_info) {
 }
 static napi_value open(napi_env env, napi_callback_info info) {
   auto* self = state(env); self->close();
-  size_t argc = 3; napi_value args[3]; napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  uint32_t id, rate, bits;
-  if (argc != 3 || napi_get_value_uint32(env, args[0], &id) != napi_ok || napi_get_value_uint32(env, args[1], &rate) != napi_ok || napi_get_value_uint32(env, args[2], &bits) != napi_ok || id >= self->ids.size() || rate < 8000 || rate > 192000 || (bits != 16 && bits != 32)) return error(env, "Invalid audio configuration.");
+  size_t argc = 4; napi_value args[4]; napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  uint32_t id, rate, bits; bool exclusive = false;
+  if (argc != 4 || napi_get_value_bool(env, args[3], &exclusive) != napi_ok || napi_get_value_uint32(env, args[0], &id) != napi_ok || napi_get_value_uint32(env, args[1], &rate) != napi_ok || napi_get_value_uint32(env, args[2], &bits) != napi_ok || id >= self->ids.size() || rate < 8000 || rate > 192000 || (bits != 16 && bits != 32)) return error(env, "Invalid audio configuration.");
+  if (exclusive && self->context.backend != ma_backend_wasapi) return error(env, "Exclusive output requires Windows WASAPI.");
   const ma_format format = bits == 32 ? ma_format_f32 : ma_format_s16;
   if (ma_pcm_rb_init(format, 2, 8192, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.playback.pDeviceID = &self->ids[id]; config.playback.format = format; config.playback.channels = 2;
+  config.playback.shareMode = exclusive ? ma_share_mode_exclusive : ma_share_mode_shared;
+  config.wasapi.noAutoConvertSRC = exclusive ? MA_TRUE : MA_FALSE;
   config.sampleRate = rate; config.periodSizeInFrames = 1024; config.dataCallback = render; config.pUserData = self;
   if (ma_device_init(&self->context, &config, &self->device) != MA_SUCCESS) {
     ma_pcm_rb_uninit(&self->ring); return error(env, "The device could not accept this output format.");
@@ -89,6 +92,12 @@ static napi_value isRunning(napi_env env, napi_callback_info) { auto* s = state(
 static napi_value rate(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? s->device.sampleRate : 0); }
 static napi_value time(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? double(s->frames.load()) / s->device.sampleRate : 0); }
 static napi_value backend(napi_env env, napi_callback_info) { auto* s = state(env); return string(env, s->initialized ? ma_get_backend_name(s->context.backend) : "Unavailable"); }
+static napi_value supportsExclusive(napi_env env, napi_callback_info) {
+  auto* s = state(env); return boolean(env, init(s) && s->context.backend == ma_backend_wasapi);
+}
+static napi_value isExclusive(napi_env env, napi_callback_info) {
+  auto* s = state(env); return boolean(env, s->open && s->device.playback.shareMode == ma_share_mode_exclusive);
+}
 static napi_value clear(napi_env env, napi_callback_info) {
   auto* s = state(env);
   if (s->open) {
@@ -121,6 +130,8 @@ static napi_value setup(napi_env env, napi_value exports) {
   auto* self = new Output();
   napi_set_instance_data(env, self, [](napi_env, void* data, void*) { delete static_cast<Output*>(data); }, nullptr);
   const napi_property_descriptor methods[] = {
+    {"supportsExclusive", nullptr, supportsExclusive, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"isExclusive", nullptr, isExclusive, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"getDevices", nullptr, devices, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"open", nullptr, open, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"start", nullptr, start, nullptr, nullptr, nullptr, napi_default, nullptr},

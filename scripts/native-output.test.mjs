@@ -11,9 +11,11 @@ function fixture(options = {}) {
   const audio = {
     opened: false, running: false, written: [], clears: 0, streamTime: 0,
     getDevices: () => [{ id: 22, name: 'Speakers', isDefaultOutput: true, outputChannels: 2 }],
-    open(...args) { this.args = args; if (options.rejectFloat && args[2] === 32) throw Error('Unsupported float'); this.opened = true; return options.frameSize || 1024 },
+    open(...args) { this.args = args; if (options.rejectExclusive && args[3]) throw Error('Device busy'); if (options.rejectFloat && args[2] === 32) throw Error('Unsupported float'); this.opened = true; return options.frameSize || 1024 },
     isStreamOpen() { return this.opened }, closeStream() { this.opened = false; this.running = false },
     start() { this.running = true }, isStreamRunning() { return this.running },
+    supportsExclusive: () => options.supportsExclusive !== false,
+    isExclusive() { return this.args?.[3] === true },
     getStreamSampleRate: () => options.rate || 48000, getApi: () => 'test',
     write(buffer) { this.written.push(buffer) }, clearOutputQueue() { this.clears++; this.written = [] },
   }
@@ -133,5 +135,62 @@ test('bridge preserves browser playback when open fails and restores it on write
 
 test('precision preferences default safely when storage is unavailable or invalid', () => {
   assert.equal(normalizePrecision('invalid'), 'auto')
-  assert.deepEqual(readOutputPreferences(), { precision: 'auto', deviceName: '' })
+  assert.deepEqual(readOutputPreferences(), { precision: 'auto', deviceName: '', exclusive: false })
+})
+
+test('exclusive opens before shared; busy device falls back truthfully and preference input is checked', () => {
+  const available = fixture()
+  const exclusive = available.output.open({ precision: 'float32', sampleRate: 48000, exclusive: true })
+  assert.equal(exclusive.exclusive, true)
+  assert.equal(available.audio.args[3], true)
+  const busy = fixture({ rejectExclusive: true })
+  const fallback = busy.output.open({ precision: 'float32', sampleRate: 48000, exclusive: true })
+  assert.equal(fallback.ok, true); assert.equal(fallback.exclusive, false)
+  assert.match(fallback.warning, /Using shared output/)
+  const otherOS = fixture({ supportsExclusive: false })
+  assert.equal(otherOS.output.open({ precision: 'pcm16', sampleRate: 48000, exclusive: true }).exclusive, false)
+  assert.equal(otherOS.output.open({ precision: 'pcm16', sampleRate: 48000, exclusive: 'yes' }).ok, false)
+})
+
+test('exclusive mode releases Chromium speaker before opening and restores the chosen speaker on fallback', async t => {
+  const { bridge, api, destination, routes } = bridgeFixture(t)
+  const calls = []
+  bridge.context.sinkId = 'old-speaker'
+  bridge.browserDeviceId = 'selected-speaker'
+  bridge.context.setSinkId = async sink => { calls.push(sink); bridge.context.sinkId = sink }
+  api.open = async options => {
+    assert.deepEqual(calls.at(-1), { type: 'none' })
+    assert.equal(options.exclusive, true)
+    return { ok: true, session: 'exclusive', exclusive: true, frameSize: 128 }
+  }
+  await bridge.configure({ precision: 'float32', exclusive: true })
+  assert.equal(bridge.silentSink, true)
+  assert.equal(routes.has(destination), false)
+  await bridge.configure({ precision: 'auto' })
+  assert.equal(calls.at(-1), 'selected-speaker')
+  assert.equal(bridge.silentSink, false)
+  assert.equal(routes.has(destination), true)
+})
+
+test('failed exclusive opening restores browser sink and playback', async t => {
+  const { bridge, api, routes, destination } = bridgeFixture(t)
+  const sinks = []
+  bridge.context.setSinkId = async value => sinks.push(value)
+  api.open = async () => ({ ok: false, error: 'Device busy' })
+  await bridge.configure({ precision: 'pcm16', exclusive: true })
+  assert.equal(sinks.at(-1), '')
+  assert.equal(bridge.status.mode, 'auto')
+  assert.ok(routes.has(destination))
+  assert.match(bridge.status.warning, /Device busy/)
+})
+
+test('fallback restores system default when the former browser speaker is unplugged', async t => {
+  const { bridge, api } = bridgeFixture(t)
+  bridge.browserDeviceId = 'unplugged'
+  const sinks = []
+  bridge.context.setSinkId = async value => { sinks.push(value); if (value === 'unplugged') throw Error('Not found') }
+  api.open = async () => ({ ok: false, error: 'Unavailable' })
+  await bridge.configure({ precision: 'pcm16', exclusive: true })
+  assert.equal(sinks.at(-1), '')
+  assert.equal(bridge.status.mode, 'auto')
 })

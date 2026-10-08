@@ -30,7 +30,7 @@ class NativeOutput {
 
   devices() {
     try {
-      return { available: true, devices: this.instance().getDevices().filter(d => d.outputChannels >= 2).map(d => ({
+      return { available: true, supportsExclusive: this.instance().supportsExclusive(), devices: this.instance().getDevices().filter(d => d.outputChannels >= 2).map(d => ({
         name: d.name, isDefault: !!d.isDefaultOutput,
       })) }
     } catch {
@@ -38,9 +38,9 @@ class NativeOutput {
     }
   }
 
-  open({ precision, sampleRate, deviceName = '' }) {
+  open({ precision, sampleRate, deviceName = '', exclusive = false }) {
     this.close()
-    if (!['pcm16', 'float32'].includes(precision) || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000 || typeof deviceName !== 'string' || deviceName.length > 1024) {
+    if (typeof exclusive !== 'boolean' || !['pcm16', 'float32'].includes(precision) || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000 || typeof deviceName !== 'string' || deviceName.length > 1024) {
       return { ok: false, error: 'Unsupported audio output configuration.' }
     }
     try {
@@ -49,28 +49,36 @@ class NativeOutput {
       const selected = deviceName ? devices.find(d => d.name === deviceName) : devices.find(d => d.isDefaultOutput)
       if (!selected) throw new Error('The selected stereo output is disconnected or unavailable.')
       let failure
-      for (const format of precision === 'float32' ? ['float32', 'pcm16'] : ['pcm16']) {
-        const session = randomUUID()
-        try {
-          const frameSize = audio.open(selected.id, sampleRate, format === 'float32' ? 32 : 16)
-          if (!Number.isInteger(frameSize) || frameSize < 128 || frameSize > 8192) throw new Error('Unsupported audio buffer size.')
-          if (audio.getStreamSampleRate() !== sampleRate) throw new Error('This device cannot accept the current playback sample rate.')
-          this.session = session
-          this.precision = format
-          this.frameSize = frameSize
-          this.queued = 0
-          this.status = { ok: true, session, precision: format, sampleRate, channels: 2, frameSize,
-            deviceName: selected.name, backend: audio.getApi(),
-            ...(format !== precision ? { warning: '32-bit float is unavailable on this output. Using 16-bit PCM.' } : {}),
+      const canExclude = exclusive && audio.supportsExclusive()
+      for (const share of canExclude ? [true, false] : [false]) {
+        for (const format of precision === 'float32' ? ['float32', 'pcm16'] : ['pcm16']) {
+          const session = randomUUID()
+          try {
+            const frameSize = audio.open(selected.id, sampleRate, format === 'float32' ? 32 : 16, share)
+            if (!Number.isInteger(frameSize) || frameSize < 128 || frameSize > 8192) throw new Error('Unsupported audio buffer size.')
+            if (audio.getStreamSampleRate() !== sampleRate) throw new Error('This device cannot accept the current playback sample rate.')
+            this.session = session
+            this.precision = format
+            this.frameSize = frameSize
+            this.queued = 0
+            const actualExclusive = audio.isExclusive()
+            if (share && !actualExclusive) throw new Error('The device did not accept exclusive mode.')
+            const warnings = []
+            if (format !== precision) warnings.push('32-bit float is unavailable on this output. Using 16-bit PCM.')
+            if (exclusive && !actualExclusive) warnings.push('Exclusive mode is unavailable or the device is busy. Using shared output.')
+            this.status = { exclusive: actualExclusive, ok: true, session, precision: format, sampleRate, channels: 2, frameSize,
+              deviceName: selected.name, backend: audio.getApi(),
+              ...(warnings.length ? { warning: warnings.join(' ') } : {}),
+            }
+            audio.start()
+            this.lastStreamTime = audio.streamTime
+            this.lastProgressAt = Date.now()
+            return this.status
+          } catch (error) {
+            failure = error
+            if (audio.isStreamOpen()) audio.closeStream()
+            this.session = null
           }
-          audio.start()
-          this.lastStreamTime = audio.streamTime
-          this.lastProgressAt = Date.now()
-          return this.status
-        } catch (error) {
-          failure = error
-          if (audio.isStreamOpen()) audio.closeStream()
-          this.session = null
         }
       }
       throw failure
