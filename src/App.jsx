@@ -476,9 +476,8 @@ export default function App() {
     const context = audioCtxRef.current
     if (nativeAudioRef.current) {
       nativeAudioRef.current.browserDeviceId = id
-      // Defer device changes while idle or exclusive; apply them on resume.
+      // Defer device changes while idle; apply them on resume.
       if (!nativeAudioRef.current.playing) return { ok: true }
-      if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
     }
     if (context && typeof context.setSinkId === 'function') {
       try {
@@ -833,8 +832,8 @@ export default function App() {
           exclusive: status.exclusive === true,
           warning: status.warning || null,
         })}`)
-        // The SMTC silence element opens another shared speaker. Native output
-        // already owns playback; in exclusive mode this extra client conflicts.
+        // Native output is clocked by the speaker, so the SMTC silence element
+        // is redundant while that route is active.
         const keepAlive = smtcKeepAliveRef.current
         if (status.mode !== 'auto' || !usePlayerStore.getState().isPlaying) keepAlive?.pause()
         else keepAlive?.play().catch(() => {})
@@ -1033,7 +1032,7 @@ export default function App() {
     //safety net for pesky SMTC.
     const el = smtcKeepAliveRef.current
     if (!el) return
-    if (isPlaying && !nativeAudioRef.current?.requestedExclusive && window.__lokalOutputStatus?.mode !== 'native') {
+    if (isPlaying && window.__lokalOutputStatus?.mode !== 'native') {
       el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
     } else {
       el.pause()

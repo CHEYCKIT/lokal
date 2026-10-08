@@ -2,15 +2,14 @@
 
 Lokal owns this small N-API bridge. It receives stereo PCM already processed by
 Chromium/Web Audio. Shared output and the non-Windows backends use miniaudio;
-opt-in Windows WASAPI exclusive output uses a dedicated event-driven render
-thread and IAudioClient/IAudioRenderClient. Exclusive initialization failure
-falls back to shared output.
+the native layer also contains an event-driven Windows WASAPI exclusive route.
+Exclusive mode is currently disabled in Lokal's settings and production bridge
+because it underruns when the window is minimized; production native playback
+uses shared mode.
 For native shared output, Chromium stays connected to the selected speaker with
 a silent AudioWorklet output, preserving the hardware clock that drives media
-decoding and processing. Exclusive WASAPI temporarily moves Chromium to its
-silent sink because Windows cannot share that endpoint. Shared output can be
-converted by the system mixer. The UI reports the app stream format, not the
-DAC's physical format.
+decoding and processing. Shared output can be converted by the system mixer.
+The UI reports the app stream format, not the DAC's physical format.
 
 - Vendor: miniaudio **0.11.23**, https://github.com/mackron/miniaudio/tree/0.11.23
 - `vendor/miniaudio.h` SHA-256: `7e4f3f13c8fe66df2080ac3dd12a89193e3c2463cb7f067c798abd7331cd8ee6`
@@ -31,9 +30,9 @@ The AudioWorklet sends PCM through a transferred MessagePort directly to the
 main process; the window's JavaScript thread is not part of audio delivery.
 PCM arrays are cloned because Electron cannot deserialize browser-transferred
 ArrayBuffers on MessagePortMain. Credits bound outstanding blocks.
-When transport credits are delayed, the worklet also retains up to 8 shared or
-48 exclusive PCM blocks (1024 sample frames each). With 24/64 in-flight credits,
-the combined windows fit the native ring's 32/128-block capacity.
+When transport credits are delayed, the worklet retains up to 8 shared PCM
+blocks (1024 sample frames each). With 24 in-flight credits, the combined
+window fits the native ring's 32-block capacity.
 Queue overload trims stale PCM at a WASAPI render boundary rather than stopping
 and restarting the device. The exclusive endpoint is opened with an event
 callback, negotiates a stable device period (including aligned-buffer retry),
