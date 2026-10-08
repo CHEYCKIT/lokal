@@ -1,5 +1,10 @@
-// This node is deliberately silent: only the native output plays its samples.
+// This node is effectively silent: only the native output plays its samples.
 // Credits bound messages in flight; pending blocks absorb short transport stalls.
+// Chromium swaps an all-zero destination for a timer-driven fake sink after
+// ~30s (SilentSinkSuspender). That timer drops render quanta when the window is
+// minimized, starving the native ring, so emit a far-below-LSB keepalive level
+// to keep the worklet clocked by the real device.
+const KEEPALIVE_LEVEL = 1e-9
 class PCMOutputProcessor extends AudioWorkletProcessor {
   constructor() {
     super()
@@ -59,8 +64,9 @@ class PCMOutputProcessor extends AudioWorkletProcessor {
       this.sendSamples(samples)
     }
   }
-  process(inputs) {
+  process(inputs, outputs) {
     if (!this.active || !this.samples) return true
+    for (const channel of outputs?.[0] || []) channel.fill(KEEPALIVE_LEVEL)
     const input = inputs[0]
     const frames = input?.[0]?.length || 128
     for (let i = 0; i < frames; i++) {

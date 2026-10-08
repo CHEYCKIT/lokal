@@ -7,8 +7,12 @@ Exclusive mode is currently disabled in Lokal's settings and production bridge
 because it underruns when the window is minimized; production native playback
 uses shared mode.
 For native shared output, Chromium stays connected to the selected speaker with
-a silent AudioWorklet output, preserving the hardware clock that drives media
-decoding and processing. Shared output can be converted by the system mixer.
+an effectively silent AudioWorklet output, preserving the hardware clock that drives media
+decoding and processing. The worklet emits a constant 1e-9 (about -180 dBFS)
+rather than exact zeros: after 30 s of all-zero output Chromium's
+SilentSinkSuspender swaps the device for a timer-driven fake sink, and that
+timer skips render quanta while the window is minimized, underrunning the
+native ring. Shared output can be converted by the system mixer.
 The UI reports the app stream format, not the DAC's physical format.
 
 - Vendor: miniaudio **0.11.23**, https://github.com/mackron/miniaudio/tree/0.11.23
@@ -44,7 +48,7 @@ Incoming ports are restricted to the main player frame, and sessions reject
 stale blocks. Flush stops the consumer before resetting the native ring.
 
 Native streams open only during playback. Pause/stop closes the native stream
-and suspends the AudioContext, including in Auto mode. The silent AudioWorklet
+and suspends the AudioContext, including in Auto mode. The inaudible AudioWorklet
 output is connected to the selected speaker in shared mode to preserve hardware
 clock pacing. The SMTC silence element is paused during native playback.
 
