@@ -1,3 +1,4 @@
+import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
 import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -360,6 +361,7 @@ export default function App() {
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
   const audioCtxRef = useRef(null)
+  const nativeAudioRef = useRef(null)
   const analyserRef = useRef(null)
   const isCrossfadingRef = useRef(false)
   const audioSourcesInitializedRef = useRef(false)
@@ -472,6 +474,11 @@ export default function App() {
   const applyAudioOutput = useCallback(async (deviceId = 'default') => {
     const id = String(deviceId || 'default')
     const context = audioCtxRef.current
+    if (nativeAudioRef.current) {
+      nativeAudioRef.current.browserDeviceId = id
+      // Keep Chromium's speaker released while exclusive output owns it.
+      if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
+    }
     if (context && typeof context.setSinkId === 'function') {
       try {
         await context.setSinkId(id)
@@ -805,12 +812,39 @@ export default function App() {
       }
     }
 
+    if (window.electron?.nativeAudio && !isIOS) {
+      nativeAudioRef.current = new NativeAudioBridge(ctx, analyser, window.electron.nativeAudio, status => {
+        window.__lokalOutputStatus = status
+        window.dispatchEvent(new CustomEvent('lokal:output-status', { detail: status }))
+      })
+      nativeAudioRef.current.configure(readOutputPreferences())
+      // Discard buffered audio on seeks and explicit pauses, including either
+      // side of a crossfade. Both media elements still feed the same EQ graph.
+      for (const element of [audioRef.current, cfAudioRef.current]) {
+        for (const event of ['seeking', 'pause', 'emptied']) {
+          element.addEventListener(event, () => nativeAudioRef.current?.flush())
+        }
+      }
+    }
     audioSourcesInitializedRef.current = true
     setAudioOutputReady(value => value + 1)
   } catch (e) {
     console.error('Failed to initialize AudioContext:', e)
   }
 }, [])
+
+  useEffect(() => {
+    window.__lokalSetOutputPrecision = async preferences => {
+      saveOutputPreferences(preferences)
+      initAudioCtx()
+      if (!nativeAudioRef.current) return { mode: 'auto', warning: 'Native output is only available in the desktop app.' }
+      return nativeAudioRef.current.configure(preferences)
+    }
+    return () => {
+      delete window.__lokalSetOutputPrecision
+      nativeAudioRef.current?.configure({ precision: 'auto' })
+    }
+  }, [initAudioCtx])
 
   useEffect(() => {
     window.__lokalInitAudio = initAudioCtx

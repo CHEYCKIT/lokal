@@ -1,3 +1,4 @@
+import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
@@ -1464,6 +1465,7 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('playback') && (
       <Section title="Playback">
+        <OutputPrecisionSettings />
         <Row label="Crossfade" desc="Fade into the next song. Skipping doesn't fade.">
           <div className="flex items-center gap-2">
             <input type="range" min={0} max={12} step={0.5} value={settings.crossfade_seconds || 0}
