@@ -348,3 +348,31 @@ for (const provider of ['yt', 'sc', 'a-0123456789']) {
     assert.equal(calls[0].expectedDuration, 210)
   })
 }
+
+
+test('batch repair queues every supported missing library file and reports unsupported rows', async () => {
+  const { repairMissingTracks } = await import('../src/ghostDownloads.js')
+  const calls = []
+  const client = {
+    downloadYT: async (url, options) => { calls.push({ url, options }); return { downloadId: 'queued' } },
+    onlineDownloadUrl: async () => ({ url: 'https://source.example/song' }),
+  }
+  const rows = [
+    { id: 'yt-row', title: 'YT', artist: 'Artist', duration: 200, missing: true, source_ref: 'yt:youtube123' },
+    { id: 'sc-row', title: 'SC', artist: 'Artist', duration: 200, missing: true, source_ref: 'sc:456' },
+    { id: 'addon-row', title: 'Addon', artist: 'Artist', duration: 200, missing: true, source_ref: 'a-0123456789:track' },
+    { id: 'manual-row', title: 'Manual', artist: 'Artist', duration: 200, missing: true, source_ref: '' },
+  ]
+  const progress = []
+  const result = await repairMissingTracks(rows, {
+    client,
+    concurrency: 2,
+    onProgress: value => progress.push(value.done),
+  })
+  assert.equal(result.total, 4)
+  assert.equal(result.queued, 3)
+  assert.equal(result.unsupported, 1)
+  assert.equal(result.failed, 0)
+  assert.deepEqual(progress.sort((a, b) => a - b), [1, 2, 3, 4])
+  assert.equal(calls.length, 3)
+})

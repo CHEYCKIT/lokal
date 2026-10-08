@@ -12,10 +12,10 @@ class PCMOutputProcessor extends AudioWorkletProcessor {
       if (data.type === 'configure') {
         this.active = data.active
         this.epoch = data.epoch
-        this.credits = 3
+        this.credits = 12
         this.offset = 0
         this.samples = new Float32Array(data.frameSize * 2)
-      } else if (data.type === 'credit' && data.epoch === this.epoch) this.credits = Math.min(3, this.credits + 1)
+      } else if (data.type === 'credit' && data.epoch === this.epoch) this.credits = Math.min(12, this.credits + 1)
     }
   }
   process(inputs) {

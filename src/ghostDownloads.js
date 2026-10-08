@@ -6,7 +6,7 @@
 
 import { api } from './api.js'
 import { downloadBatchCurrent } from './downloadCancellation.js'
-import { isGhostTrack, saveToLibrary, streamRef, isAddonProvider } from './onlineTracks.js'
+import { isGhostTrack, saveToLibrary, streamRef, isAddonProvider, missingTrackCanRedownload } from './onlineTracks.js'
 import { mapLimited, playbackSources, resolveRecommendationTracks } from './recommendations.js'
 
 /**
@@ -148,7 +148,33 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
   })
 }
 
-/** Queue a replacement for a missing local file while retaining its track id. */
+/** Queue redownloads for every missing library track whose original source is known. */
+export async function repairMissingTracks(tracks, { client = api, onProgress, concurrency = 3, isCurrent = () => true } = {}) {
+  isCurrent = downloadBatchCurrent(isCurrent)
+  const list = (Array.isArray(tracks) ? tracks : []).filter(track => track?.missing)
+  const result = { total: list.length, queued: 0, unsupported: 0, failed: 0 }
+  let done = 0
+  await mapLimited(list, async track => {
+    if (!isCurrent()) return
+    try {
+      if (!missingTrackCanRedownload(track)) {
+        result.unsupported++
+        return
+      }
+      const response = await redownloadMissingTrack(track, { client })
+      if (response?.error) result.failed++
+      else result.queued++
+    } catch {
+      result.failed++
+    } finally {
+      done++
+      onProgress?.({ done, total: list.length, track })
+    }
+  }, concurrency)
+  if (!isCurrent()) result.cancelled = true
+  return result
+}
+
 export async function redownloadMissingTrack(track, { client = api } = {}) {
   const ref = String(track?.source_ref || '').match(/^([^:]+):(.+)$/)
   if (!track?.missing || !ref) return { error: 'This song has no remembered download source.' }

@@ -17,6 +17,7 @@ import LyricsSourcesSettings from '../components/LyricsSourcesSettings'
 import { THEMES, ACCENT_COLORS, applyTheme } from '../theme'
 import { useTheme } from '../themeHooks'
 import { ARTIST_SOURCES } from '../artistSources'
+import { repairMissingTracks } from '../ghostDownloads'
 import { plural } from '../plural'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
@@ -383,6 +384,7 @@ export default function Settings() {
   const [statusMessage, setStatusMessage] = useState('')
   // Fill In Genres runs in the background; its progress, read every few seconds while it runs.
   const [genreJob, setGenreJob] = useState(null)
+  const [missingRepairJob, setMissingRepairJob] = useState(null)
   useEffect(() => {
     let timer = null
     let active = true
@@ -404,6 +406,38 @@ export default function Settings() {
     : genreJob?.running ? `Looking up… ${genreJob.done} of ${genreJob.total} albums and songs · ${genreJob.updated} songs filled in`
       : genreJob?.total ? `Done: ${genreJob.updated} of ${genreJob.songs} songs filled in. Songs iTunes doesn't know stay empty.`
         : genreJob?.started ? 'Every song already has a genre.' : ''
+  const loadMissingTracks = async () => {
+    const rows = await Promise.resolve(api.getMissingTracks?.()).catch(() => null)
+    return Array.isArray(rows) ? rows : []
+  }
+  useEffect(() => {
+    loadMissingTracks().then(rows => setMissingRepairJob(current => ({ ...(current || {}), missing: rows.length })))
+  }, [])
+  const repairMissingLibraryFiles = async () => {
+    if (missingRepairJob?.running) return
+    const rows = await loadMissingTracks()
+    if (!rows.length) {
+      setMissingRepairJob({ missing: 0, message: 'No missing downloaded files found.' })
+      return
+    }
+    setMissingRepairJob({ missing: rows.length, running: true, done: 0, queued: 0, unsupported: 0, failed: 0 })
+    const result = await repairMissingTracks(rows, {
+      onProgress: ({ done, total }) => setMissingRepairJob(current => ({ ...current, running: true, done, total })),
+    })
+    const remaining = await loadMissingTracks()
+    const summaryParts = []
+    if (result.queued) summaryParts.push('Queued ' + result.queued + ' redownload' + (result.queued === 1 ? '' : 's'))
+    if (result.unsupported) summaryParts.push(result.unsupported + ' need manual matching')
+    if (result.failed) summaryParts.push(result.failed + ' could not be queued')
+    if (result.cancelled) summaryParts.push('repair stopped')
+    const message = summaryParts.join('; ') || (remaining.length ? remaining.length + ' files still missing.' : 'All missing downloads were queued for repair.')
+    setMissingRepairJob({ missing: remaining.length, done: result.total, total: result.total, queued: result.queued, unsupported: result.unsupported, failed: result.failed, cancelled: result.cancelled, message })
+    window.dispatchEvent(new Event('lokal:refresh'))
+  }
+  const missingRepairText = missingRepairJob?.running
+    ? `Queuing ${missingRepairJob.done || 0} of ${missingRepairJob.total || missingRepairJob.missing || 0} missing downloads…`
+    : missingRepairJob?.message
+      || (missingRepairJob?.missing ? `${missingRepairJob.missing} downloaded file${missingRepairJob.missing === 1 ? '' : 's'} missing.` : 'No missing downloaded files detected.')
   const [manualGenreArtist, setManualGenreArtist] = useState('')
   const [bgImage, setBgImage] = useState(null)
   const [manualGenreTrack, setManualGenreTrack] = useState('')
@@ -1227,6 +1261,15 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('library') && (
       <Section title="Maintenance">
+         <Row label="Repair Missing Downloads" desc={`${missingRepairText} Known original sources are redownloaded and attached to the existing library entries; files that need manual matching are left untouched.`}>
+           <button
+             onClick={repairMissingLibraryFiles}
+             disabled={!!missingRepairJob?.running || !missingRepairJob?.missing}
+             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
+           >
+             {missingRepairJob?.running ? 'Repairing…' : 'Repair All'}
+           </button>
+         </Row>
         <Row label="Rescan Library">
           <button onClick={rescan} disabled={scanning || !settings.music_folder}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">

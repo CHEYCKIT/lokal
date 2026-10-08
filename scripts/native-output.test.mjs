@@ -39,8 +39,9 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(status.ok, true); assert.equal(status.precision, 'float32'); assert.equal(audio.args[0], 22)
   assert.equal(output.write('stale', new Float32Array(2048)).stale, true)
   assert.equal(output.write(status.session, new Float32Array(2)).ok, false)
-  for (let i = 0; i < 20; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
-  assert.ok(output.queued <= 6); assert.ok(audio.clears > 0)
+  // The queue is cleared at 24 blocks, so the 25th write must exercise the guard.
+  for (let i = 0; i < 25; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+  assert.ok(output.queued <= 24); assert.ok(audio.clears > 0)
   output.flush(status.session); assert.equal(audio.written.length, 0)
   const newer = open('pcm16')
   assert.notEqual(status.session, newer.session)

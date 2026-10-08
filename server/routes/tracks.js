@@ -530,6 +530,16 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
   return patch().map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
 }
 
+router.get('/missing', (req, res) => {
+  try {
+    const db = getDB()
+    const rows = db.prepare("SELECT id, title, artist, album, duration, source_ref, file_path FROM tracks WHERE file_path NOT LIKE 'ghost://%'").all()
+    res.json(rows.filter(track => track.file_path && !fs.existsSync(track.file_path)).map(track => ({ ...track, missing: true })))
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 router.get('/', (req, res) => {
   const db = getDB()
   const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre, quality } = req.query
