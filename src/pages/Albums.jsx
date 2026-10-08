@@ -540,9 +540,17 @@ export default function Albums() {
           <div>
             <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
             <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">Albums</h1>
-            <p className="mt-3 text-sm text-muted">
-              {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
-            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted">
+                {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
+              </p>
+              <RefreshButton
+                label="Refresh releases"
+                loading={loadingAlbums || releaseTypesRefreshing}
+                onClick={() => loadAlbums(true)}
+                className="shrink-0"
+              />
+            </div>
           </div>
           <div className="flex w-full max-w-xl flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-end">
             {selectedAlbum && (
