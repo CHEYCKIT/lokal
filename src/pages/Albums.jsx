@@ -20,6 +20,7 @@ import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
 import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useAlbumsPageReleaseTypes } from '../releaseTypes'
+import { clearLibraryReleaseTypeCache, resolveLibraryReleaseTypes } from '../albumReleaseTypes'
 import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 
@@ -212,6 +213,7 @@ export default function Albums() {
   const [hoveredTrack, setHoveredTrack] = useState(null)
   const [visibleByType, setVisibleByType] = useState({})
   const [settings, setSettings] = useState(() => peekSettings() || {})
+  const [releaseTypesRefreshing, setReleaseTypesRefreshing] = useState(false)
   const loadMoreRef = useRef(null)
   const navigate = useNavigate()
   const location = useLocation()
@@ -287,24 +289,57 @@ export default function Albums() {
     return () => clearTimeout(timer)
   }, [highlightTrackReady, highlightTrackId])
 
-  const loadAlbums = () => {
+  const loadAlbums = (refreshReleaseTypes = false) => {
     // The cache, not `albums`: the refresh handler keeps an older render's
     // closure, where the list can still be empty.
     if (!peekCache('albums:all')?.length) setLoadingAlbums(true)
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(([result, loadedSettings]) => {
-      if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
+    if (refreshReleaseTypes) {
+      clearLibraryReleaseTypeCache()
+      setReleaseTypesRefreshing(true)
+    }
+
+    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(async ([result, loadedSettings]) => {
+      if (!Array.isArray(result)) {
+        setLoadingAlbums(false)
+        setReleaseTypesRefreshing(false)
+        return
+      }
+
       if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
+      setAlbums(result)
+
+      const resolved = await resolveLibraryReleaseTypes(result, api, {
+        refresh: refreshReleaseTypes,
+        isCurrent: () => true,
+      }).catch(() => result)
+      if (Array.isArray(resolved)) setAlbums(resolved)
       setLoadingAlbums(false)
+      setReleaseTypesRefreshing(false)
+    }).catch(() => {
+      setLoadingAlbums(false)
+      setReleaseTypesRefreshing(false)
     })
   }
 
   useEffect(() => {
     let active = true
-    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(([result, loadedSettings]) => {
+    Promise.all([api.getAllAlbums(), api.getSettings().catch(() => null)]).then(async ([result, loadedSettings]) => {
       if (!active) return
-      if (Array.isArray(result)) setAlbums(result) // an error keeps what's shown
+      if (!Array.isArray(result)) {
+        setLoadingAlbums(false)
+        return
+      }
       if (loadedSettings && !loadedSettings.error) setSettings(loadedSettings)
+      setAlbums(result)
+
+      const resolved = await resolveLibraryReleaseTypes(result, api, {
+        isCurrent: () => active,
+      }).catch(() => result)
+      if (!active) return
+      if (Array.isArray(resolved)) setAlbums(resolved)
       setLoadingAlbums(false)
+    }).catch(() => {
+      if (active) setLoadingAlbums(false)
     })
     return () => {
       active = false
@@ -313,7 +348,7 @@ export default function Albums() {
 
   useEffect(() => {
     const handleRefresh = () => {
-      loadAlbums()
+      loadAlbums(true)
       if (selectedAlbum?.title) {
         setLoadingTracks(true)
         api.getAlbumTracks(selectedAlbum).then((tracks) => {
