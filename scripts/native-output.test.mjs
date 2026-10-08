@@ -233,6 +233,22 @@ test('worklet accepts a deeper credit window for exclusive output', () => {
   assert.equal(messages.length, 49)
 })
 
+test('worklet output stays non-zero but inaudible so Chromium keeps the real device clock', () => {
+  let Processor
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage() {} } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  const outputs = [[new Float32Array(128), new Float32Array(128)]]
+  processor.process([[new Float32Array(128).fill(.5)]], outputs)
+  assert.ok(outputs[0].every(channel => channel.every(sample => sample === 0)))
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128 } })
+  processor.process([[new Float32Array(128).fill(.5)]], outputs)
+  // Any non-zero sample defeats SilentSinkSuspender; stay below 24-bit LSB.
+  assert.ok(outputs[0].every(channel => channel.every(sample => sample !== 0 && Math.abs(sample) < 2 ** -24)))
+})
+
 test('worklet interleaves stereo, sends no audible output, bounds messages and discards partial frames on reset', () => {
   let Processor
   const messages = []
