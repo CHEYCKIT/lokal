@@ -280,7 +280,7 @@ test('a confirmed duration mismatch repairs a missing row instead of creating a 
   const calls = []
   await downloadGhostResult(ghost, item, { client: { downloadYT: async (...args) => { calls.push(args); return { downloadId: 'job' } } }, confirmDuration: async () => true })
   assert.equal(calls[0][1].upgradeTrackId, ghost.id)
-  assert.equal(calls[0][1].allowDurationMismatch, true)
+  assert.equal(calls[0][1].allowUpgradeDurationMismatch, true)
   assert.equal(calls[0][1].replaceImported, undefined)
 })
 
