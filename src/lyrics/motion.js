@@ -137,6 +137,13 @@ const SUNG_LETTER_GLOW = 0.2
 /** A syllable held at least this long is split into letters (s). */
 export const HELD_S = 1.0
 
+// The colour sweep is eased a little too, so a run of very short words washes
+// across instead of stepping from one to the next.
+const FILL_FEEL = [7, 1]
+/** Words sung quicker than this get a gentler bounce (s); at FULL_MOTION_S and longer they get all of it. */
+const QUICK_S = 0.12
+const FULL_MOTION_S = 0.52
+
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
 const easeSinOut = (x) => Math.sin(clamp01(x) * Math.PI / 2)
 
@@ -156,7 +163,7 @@ const states = new WeakMap()
 function stateOf(u) {
   let s = states.get(u)
   if (!s) {
-    s = { word: makeSprings(WORD.scale(0), WORD.y(0), WORD.glow(0)), letters: null }
+    s = { word: makeSprings(WORD.scale(0), WORD.y(0), WORD.glow(0)), fill: new Spring(0, FILL_FEEL[0], FILL_FEEL[1]), letters: null }
     states.set(u, s)
   }
   return s
@@ -203,9 +210,14 @@ export function progressOf(u, t) {
 export function stepWord(u, t, dt, snap = false) {
   const s = stateOf(u)
   const p = progressOf(u, t)
-  const goal = { scale: WORD.scale(p), y: WORD.y(p), glow: WORD.glow(p) }
+  // Fast lyrics: the bounce shrinks with the word, down to 40%, so a quick run
+  // of syllables doesn't hop and flash.
+  const k = 0.4 + 0.6 * clamp01((u.end - u.time - QUICK_S) / (FULL_MOTION_S - QUICK_S))
+  const goal = { scale: 1 + (WORD.scale(p) - 1) * k, y: WORD.y(p) * k, glow: WORD.glow(p) * k }
   const out = drive(s.word, goal, dt, snap)
-  return { fill: p, scale: out.scale, y: out.y, glow: out.glow, moving: out.moving }
+  s.fill.goal(p, snap)
+  const fill = clamp01(s.fill.step(dt))
+  return { fill, scale: out.scale, y: out.y, glow: out.glow, moving: out.moving || !s.fill.asleep() }
 }
 
 // ---------------------------------------------------------------- held notes

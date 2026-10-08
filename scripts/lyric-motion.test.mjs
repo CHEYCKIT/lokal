@@ -103,3 +103,23 @@ test('every letter ends the note lit and at rest', () => {
     assert.equal(s.moving, false)
   }
 })
+
+test('quick words bounce less than held ones, and the sweep eases across them', () => {
+  const peak = (len) => {
+    const u = unit('go', 5, 5 + len)
+    let max = 0
+    for (let t = 4.9; t < 8; t += 1 / 60) max = Math.max(max, stepWord(u, t, 1 / 60).scale)
+    return max
+  }
+  assert.ok(peak(0.12) < peak(0.6))
+  // The sweep lags the word's end slightly, then finishes.
+  const u = unit('go', 5, 5.1)
+  let atEnd
+  let last
+  for (let t = 4.95; t <= 5.6; t += 1 / 60) {
+    last = stepWord(u, t, 1 / 60)
+    if (atEnd === undefined && t >= 5.1) atEnd = last.fill
+  }
+  assert.ok(atEnd < 1)
+  assert.ok(last.fill > 0.999)
+})
