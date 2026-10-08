@@ -19,6 +19,7 @@ import { useCachedState, usePageReady } from '../pageCache'
 import HoverScrollTitle from '../components/HoverScrollTitle'
 import { useGhostDownloadSources } from '../components/useGhostDownloadSources'
 import { useGhostDurationConfirmation } from '../components/useGhostDurationConfirmation'
+import { usePlaylistSortStore, playlistSortPreference } from '../store/playlistSort'
 import { sortPlaylistTracks } from '../playlistSorting'
 import { filterPlaylistTracks } from '../playlistSearch'
 
@@ -34,7 +35,9 @@ export default function Playlist() {
   // playlist, so the keys never change while mounted.
   const cacheKey = isLiked ? `playlist:liked:${user?.id || 'guest'}` : `playlist:${id}`
   const [tracks, setTracks, tracksCached] = useCachedState(`${cacheKey}:tracks`, [])
-  const [sort, setSort] = useState({ column: 'number', direction: 'asc' })
+  const sort = usePlaylistSortStore(state => playlistSortPreference(state.sorts?.[cacheKey]))
+  const saveSort = usePlaylistSortStore(state => state.setSort)
+  const setSort = useCallback(next => saveSort(cacheKey, next), [cacheKey, saveSort])
   const sortedTracks = useMemo(() => sortPlaylistTracks(tracks, sort), [tracks, sort])
   const trackNumbers = useMemo(() => new Map(tracks.map((track, index) => [track.playlist_track_id ?? track.id, index + 1])), [tracks])
   const manualOrder = sort.column === 'number' && sort.direction === 'asc'
