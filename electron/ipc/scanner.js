@@ -1,3 +1,4 @@
+const { mergeDuplicates, mergeAllDuplicates } = require('./mergeDuplicates')
 const path = require('path')
 const fs = require('fs-extra')
 const crypto = require('crypto')
@@ -2050,36 +2051,8 @@ function registerV4Handlers(ipcMain) {
     return enrichAlbumRows(rows)
   })
   ipcMain.handle('scanner:deleteTracks', async (_, ids) => { const db = getDB(); const filePaths = (ids || []).map(id => db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(id)?.file_path); const del = db.transaction((ids) => { for (const id of ids) { db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(id) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } }); del(ids); forgetDownloads(ids); return { success: true, files: await removeTrackFiles(db, filePaths) } })
-  ipcMain.handle('scanner:mergeDuplicates', (_, keepId, removeIds) => {
-    const db = getDB()
-    const merge = db.transaction(() => {
-      const winner = db.prepare('SELECT * FROM tracks WHERE id = ?').get(keepId)
-      if (winner) { for (const id of removeIds) { const loser = db.prepare('SELECT * FROM tracks WHERE id = ?').get(id); if (loser) { if (!winner.artwork_path && loser.artwork_path) db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(loser.artwork_path, keepId); if (!winner.album && loser.album) db.prepare('UPDATE tracks SET album = ? WHERE id = ?').run(loser.album, keepId); if (!winner.year && loser.year) db.prepare('UPDATE tracks SET year = ? WHERE id = ?').run(loser.year, keepId); if (!winner.genre && loser.genre) db.prepare('UPDATE tracks SET genre = ? WHERE id = ?').run(loser.genre, keepId) } } }
-      for (const id of removeIds) { db.prepare('UPDATE OR IGNORE playlist_tracks SET track_id = ? WHERE track_id = ?').run(keepId, id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(id); db.prepare('UPDATE play_history SET track_id = ? WHERE track_id = ?').run(keepId, id); try { db.prepare('UPDATE listening_events SET track_id = ? WHERE track_id = ?').run(keepId, id) } catch {}; db.prepare('UPDATE tracks SET play_count = play_count + (SELECT play_count FROM tracks WHERE id = ?) WHERE id = ?').run(id, keepId); db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(id); db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(id); db.prepare('DELETE FROM tracks WHERE id = ?').run(id) }
-    })
-    merge()
-  })
-  ipcMain.handle('scanner:mergeAllDuplicates', () => {
-    const db = getDB()
-    const groups = db.prepare(`SELECT title, artist, COUNT(*) as count, GROUP_CONCAT(id) as ids FROM tracks GROUP BY LOWER(title), LOWER(artist) HAVING count > 1`).all()
-    let mergedCount = 0
-    for (const group of groups) {
-      const ids = group.ids.split(',')
-      if (ids.length < 2) continue
-      const tracks = ids.map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
-      if (tracks.length < 2) continue
-      const scored = tracks.map(t => ({ track: t, score: scoreTrack(t) }))
-      scored.sort((a, b) => b.score - a.score)
-      const winner = scored[0].track
-      const losers = scored.slice(1).map(s => s.track)
-      const patch = db.transaction(() => {
-        for (const loser of losers) { if (!winner.artwork_path && loser.artwork_path) db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(loser.artwork_path, winner.id); if (!winner.album && loser.album) db.prepare('UPDATE tracks SET album = ? WHERE id = ?').run(loser.album, winner.id); if (!winner.year && loser.year) db.prepare('UPDATE tracks SET year = ? WHERE id = ?').run(loser.year, winner.id); if (!winner.genre && loser.genre) db.prepare('UPDATE tracks SET genre = ? WHERE id = ?').run(loser.genre, winner.id) }
-        for (const loser of losers) { db.prepare('UPDATE OR IGNORE playlist_tracks SET track_id = ? WHERE track_id = ?').run(winner.id, loser.id); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(loser.id); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(loser.id); db.prepare('UPDATE play_history SET track_id = ? WHERE track_id = ?').run(winner.id, loser.id); try { db.prepare('UPDATE listening_events SET track_id = ? WHERE track_id = ?').run(winner.id, loser.id) } catch {}; db.prepare('UPDATE tracks SET play_count = play_count + (SELECT play_count FROM tracks WHERE id = ?) WHERE id = ?').run(loser.id, winner.id); db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(loser.id); db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(loser.id); db.prepare('DELETE FROM tracks WHERE id = ?').run(loser.id) }
-      })
-      patch(); mergedCount += losers.length
-    }
-    return { merged: mergedCount, groups: groups.length }
-  }),
+  ipcMain.handle('scanner:mergeDuplicates', (_, keepId, removeIds) => mergeDuplicates(getDB(), keepId, removeIds))
+  ipcMain.handle('scanner:mergeAllDuplicates', () => mergeAllDuplicates(getDB(), scoreTrack))
   ipcMain.handle('user:getStats', (_, userId) => userStats(getDB(), userId))
   ipcMain.handle('user:getRecap', (_, userId) => {
     const db = getDB()
