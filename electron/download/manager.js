@@ -1047,7 +1047,10 @@ class DownloadManager {
     // as a track of its own below, as usual.
     if (job.opts?.upgradeTrackId && !job.upgradedTrackId) {
       const { upgradeTrackFile } = require('../quality/upgrade')
-      const up = await upgradeTrackFile(this.db(), job.opts.upgradeTrackId, filepath, { storageDir: this.deps.getStorageDir?.(), allowDurationMismatch: job.opts.allowUpgradeDurationMismatch === true }).catch(e => ({ error: e.message }))
+      const up = await upgradeTrackFile(this.db(), job.opts.upgradeTrackId, filepath, {
+        storageDir: this.deps.getStorageDir?.(),
+        allowDurationMismatch: job.opts?.allowDurationMismatch === true || job.opts?.allowUpgradeDurationMismatch === true,
+      }).catch(e => ({ error: e.message }))
       if (up?.id) {
         job.upgradedTrackId = up.id
         try { this.db().prepare('UPDATE tracks SET download_source = ? WHERE id = ?').run(jobSourceLabel(job), up.id) } catch {}

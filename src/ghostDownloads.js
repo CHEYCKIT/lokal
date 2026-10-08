@@ -120,10 +120,14 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
   if (!ghost?.id || !item) return { error: 'Choose a song to replace first' }
   if (!isCurrent()) return { cancelled: true }
   const different = differentDuration(ghost, item)
-  if (different && await confirmDuration?.(ghost, item) !== true) return { cancelled: true }
+  const confirmed = different && await confirmDuration?.(ghost, item) === true
+  if (different && !confirmed) return { cancelled: true }
   if (!isCurrent()) return { cancelled: true }
   const replacement = {
-    ...(ghost.missing ? { upgradeTrackId: ghost.id, allowUpgradeDurationMismatch: different } : {
+    ...(ghost.missing ? {
+      upgradeTrackId: ghost.id,
+      allowUpgradeDurationMismatch: confirmed,
+    } : {
       replaceImported: [ghost.id],
       manuallySelectedImported: [ghost.id],
       ...(different ? { confirmedImported: [ghost.id] } : {}),

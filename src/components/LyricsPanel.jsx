@@ -889,7 +889,7 @@ export default function LyricsPanel({
               <div style={{ height: fullscreen ? '55vh' : 0 }} />
               {sourceLabel && (
                 <p className="px-3 pb-10 text-[11px] text-white/30">
-                  Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
+                  Lyrics via {attribution?.provider || sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
                   {wantTranslation && (embeddedTranslation || translation.lines) ? ` · ${embeddedTranslation ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
                   {attribution?.provider && <span className="block mt-1">Provided by {attribution.provider}</span>}
                   {hasContributors && (

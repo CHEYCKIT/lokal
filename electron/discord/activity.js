@@ -44,10 +44,10 @@ function artworkUrl(track) {
   return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
 }
 
-/** A public fallback that never sends track metadata to the image provider. */
-function fallbackArtwork() {
-  return 'https://ui-avatars.com/api/?name=Lokal&size=512&background=274068&color=ffffff&bold=true&format=png'
-}
+// Discord cannot receive local files, so use the public app icon as a
+// metadata-free fallback until catalogue artwork is found.
+const FALLBACK_ARTWORK = 'https://raw.githubusercontent.com/sipbuu/lokal/main/public/lokal-icon.png'
+function fallbackArtwork() { return FALLBACK_ARTWORK }
 
 function milliseconds(track, field) {
   const explicit = track[`${field}_ms`]

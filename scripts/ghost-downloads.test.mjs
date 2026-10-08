@@ -273,6 +273,17 @@ test('manual suggestion downloads and replaces only its selected ghost', async (
   assert.equal(opts.tags.title, ghost.title)
 })
 
+test('a confirmed duration mismatch repairs a missing row instead of creating a duplicate', async () => {
+  const { downloadGhostResult } = await import('../src/ghostDownloads.js')
+  const ghost = { ...imported(1), id: 'track-missing', missing: true, duration: 492 }
+  const item = { url: 'https://youtube.com/watch?v=aaaaaaaaaaa', title: 'Artist 1 - Song 1', duration: 210 }
+  const calls = []
+  await downloadGhostResult(ghost, item, { client: { downloadYT: async (...args) => { calls.push(args); return { downloadId: 'job' } } }, confirmDuration: async () => true })
+  assert.equal(calls[0][1].upgradeTrackId, ghost.id)
+  assert.equal(calls[0][1].allowDurationMismatch, true)
+  assert.equal(calls[0][1].replaceImported, undefined)
+})
+
 test('a close match on the next source takes priority over an earlier different length', async () => {
   const ghost = { ...imported(1), duration: 200 }
   const c = client()

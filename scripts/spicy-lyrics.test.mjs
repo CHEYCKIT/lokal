@@ -49,6 +49,11 @@ test('Spicy Lyrics commercial responses do not invent contributor credits', () =
   assert.equal(result.attribution.maker, null)
 })
 
+test('Spicy Lyrics omits empty object entries from static lyrics', () => {
+  const result = parse({ Body: { Type: 'Static', Content: [{ Text: '' }, { Text: 'Kept' }] } })
+  assert.deepEqual(result.lines.map(line => line.text), ['Kept'])
+})
+
 test('Spicy Lyrics is inserted before BetterLyrics for legacy source orders', () => {
   const order = sequenceFor(['local', 'betterlyrics', 'betterlyrics_qq', 'lrclib'], [
     'local', 'betterlyrics', 'betterlyrics_qq', 'lrclib', 'spicylyrics',
@@ -126,4 +131,24 @@ test('changing either credential retries negative lyrics without persisting cred
   assert.equal(JSON.parse(meta).settingsKey, undefined)
   assert.equal(meta.includes('synthetic-'), false)
   assert.equal(current.readSettings(db).settingsKey.includes('synthetic-'), false)
+})
+
+test('legacy source settings migrate Spicy Lyrics without overriding an explicit disable', () => {
+  const db = new Database(':memory:')
+  db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)')
+  const put = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+  put.run('lyrics_sources_order', JSON.stringify(['betterlyrics', 'lrclib', 'spicylyrics']))
+  put.run('lyrics_sources_enabled', JSON.stringify(['betterlyrics', 'lrclib']))
+  put.run('spicylyrics_api_key', 'secret-one')
+  put.run('spotify_sp_dc', 'cookie-one')
+  const explicit = service.readSettings(db)
+  assert.equal(explicit.enabled.includes('spicylyrics'), false)
+  assert.equal(explicit.settingsKey.includes('secret-one'), false)
+  assert.equal(explicit.settingsKey, service.readSettings(db).settingsKey)
+  put.run('lyrics_sources_order', JSON.stringify(['betterlyrics', 'lrclib']))
+  const legacy = service.readSettings(db)
+  assert.equal(legacy.enabled.includes('spicylyrics'), true)
+  put.run('spicylyrics_api_key', 'secret-two')
+  assert.notEqual(legacy.settingsKey, service.readSettings(db).settingsKey)
+  db.close()
 })

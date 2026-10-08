@@ -150,7 +150,8 @@ function requestArtwork(track) {
   if (!track || artworkUrl(track)) return
   const key = artworkKey(track)
   const cached = artworkCache.get(key)
-  const ttl = (cached?.image === 'lokal_music' || cached?.image === fallbackArtwork(track)) ? 300000 : 86400000
+  const temporaryFallback = cached?.image === 'lokal_music' || cached?.image === fallbackArtwork(track)
+  const ttl = temporaryFallback ? 300000 : 86400000
   if ((cached && Date.now() - cached.at < ttl) || artworkPending.has(key)) return
   const lookup = fetchArtwork(track).then(async artwork => {
     if (artworkCache.size >= 200) artworkCache.delete(artworkCache.keys().next().value)

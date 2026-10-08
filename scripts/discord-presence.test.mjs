@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { createDiscordPublisher } from '../src/discord.js'
 
 const require = createRequire(import.meta.url)
-const { buildActivity } = require('../electron/discord/activity.js')
+const { buildActivity, fallbackArtwork } = require('../electron/discord/activity.js')
 const flush = () => new Promise(resolve => setImmediate(resolve))
 const song = { id: 'one', title: 'Song', artist: 'Artist', album: 'Album', duration: 240 }
 const now = 1800000000000
@@ -51,6 +51,12 @@ test('local files get a search button, never a file URL or private addon media l
   const publicSong = buildActivity({ ...song, source_url: 'https://soundcloud.com/artist/song?tracking=private' }, true)
   assert.equal(publicSong.buttons[0].url, 'https://www.youtube.com/results?search_query=Artist%20Song')
   assert.equal(publicSong.buttons[0].label, 'Search on YouTube')
+})
+
+test('fallback artwork never includes track metadata', () => {
+  const image = fallbackArtwork({ title: 'Secret title', artist: 'Secret artist' })
+  assert.equal(image.includes('Secret'), false)
+  assert.equal(image.includes('secret'), false)
 })
 
 test('short and Unicode labels and invalid timing produce valid activity fields', () => {
