@@ -30,6 +30,7 @@ import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
+import HoverScrollTitle from './HoverScrollTitle'
 import { useGhostDownloadSources } from './useGhostDownloadSources'
 import { useGhostDurationConfirmation } from './useGhostDurationConfirmation'
 import { nextPlaylistSort } from '../playlistSorting'
@@ -1097,7 +1098,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               {!ghostLocalLoading && ghostLocalResults.map((item) => (
                 <div key={item.id} className="px-4 py-3 flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white truncate">{item.title}</p>
+                    <HoverScrollTitle title={item.title} className="text-sm text-white" />
                     <p className="text-xs text-muted truncate">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
                   </div>
                   <button
@@ -1123,7 +1124,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               {!ghostSearchLoading && ghostSearchResults.map((item) => (
                 <div key={item.id || item.url} className="px-4 py-3 flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white truncate">{item.title}</p>
+                    <HoverScrollTitle title={item.title} className="text-sm text-white" />
                     <p className="text-xs text-muted truncate">{item.channel || item.artist || item.url}</p>
                   </div>
                   <button

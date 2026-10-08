@@ -16,6 +16,7 @@ import { plural } from '../plural'
 import { downloadGhostSongs, ghostDownloadMessage, downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
 import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
+import HoverScrollTitle from '../components/HoverScrollTitle'
 import { useGhostDownloadSources } from '../components/useGhostDownloadSources'
 import { useGhostDurationConfirmation } from '../components/useGhostDurationConfirmation'
 import { sortPlaylistTracks } from '../playlistSorting'
@@ -681,7 +682,7 @@ export default function Playlist() {
                       onClick={() => setSelectedGhostKey(trackKey)}
                       className={`w-full text-left px-4 py-3 transition-colors ${active ? 'bg-accent/10' : 'hover:bg-elevated'}`}
                     >
-                      <p className={`text-sm truncate ${active ? 'text-accent' : 'text-white'}`}>{track.title}</p>
+                      <HoverScrollTitle title={track.title} className={`text-sm ${active ? 'text-accent' : 'text-white'}`} />
                       <p className="text-xs text-muted truncate mt-1">{track.artist}</p>
                     </button>
                   )
@@ -733,7 +734,7 @@ export default function Playlist() {
                         {!ghostSearchLoading && ghostLocalResults.map(item => (
                           <div key={item.id} className="px-4 py-3 flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm text-white truncate">{item.title}</p>
+                              <HoverScrollTitle title={item.title} className="text-sm text-white" />
                               <p className="text-xs text-muted truncate">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
                             </div>
                             <button
@@ -762,7 +763,7 @@ export default function Playlist() {
                         {!ghostSearchLoading && ghostDownloadResults.map(item => (
                           <div key={item.id || item.url} className="px-4 py-3 flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm text-white truncate">{item.title}</p>
+                              <HoverScrollTitle title={item.title} className="text-sm text-white" />
                               <p className="text-xs text-muted truncate">{item.channel || item.artist || item.url}</p>
                             </div>
                             <button
