@@ -1,6 +1,6 @@
 #include <jni.h>
 
-#include "wasapi-exclusive.h"
+#include "wasapi-shared.h"
 
 #include <windows.h>
 #include <audioclient.h>
@@ -20,8 +20,8 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-WasapiExclusiveOutput* outputFrom(jlong handle) {
-  return reinterpret_cast<WasapiExclusiveOutput*>(static_cast<intptr_t>(handle));
+WasapiSharedOutput* outputFrom(jlong handle) {
+  return reinterpret_cast<WasapiSharedOutput*>(static_cast<intptr_t>(handle));
 }
 
 jstring toJavaString(JNIEnv* env, const std::wstring& value) {
@@ -65,7 +65,7 @@ extern "C" {
 JNIEXPORT jlong JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeCreate(JNIEnv* env, jobject) {
   try {
-    return static_cast<jlong>(reinterpret_cast<intptr_t>(new WasapiExclusiveOutput()));
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(new WasapiSharedOutput()));
   } catch (const std::exception& exception) {
     throwIllegalState(env, exception.what());
     return 0;
@@ -152,7 +152,7 @@ JNIEXPORT jstring JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeOpen(JNIEnv* env, jobject, jlong handle,
                                               jstring javaId, jint sampleRate,
                                               jint bits) {
-  WasapiExclusiveOutput* output = outputFrom(handle);
+  WasapiSharedOutput* output = outputFrom(handle);
   if (!output || !javaId) return toJavaString(env, "Invalid native WASAPI handle or device.");
   const jchar* chars = env->GetStringChars(javaId, nullptr);
   if (!chars) return nullptr;
@@ -167,7 +167,7 @@ Java_lokal_wasapi_JniWasapiOutput_nativeOpen(JNIEnv* env, jobject, jlong handle,
 
 JNIEXPORT jstring JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeStart(JNIEnv* env, jobject, jlong handle) {
-  WasapiExclusiveOutput* output = outputFrom(handle);
+  WasapiSharedOutput* output = outputFrom(handle);
   if (!output) return toJavaString(env, "Invalid native WASAPI handle.");
   std::string error;
   if (output->start(error)) return nullptr;
@@ -175,9 +175,18 @@ Java_lokal_wasapi_JniWasapiOutput_nativeStart(JNIEnv* env, jobject, jlong handle
 }
 
 JNIEXPORT jstring JNICALL
+Java_lokal_wasapi_JniWasapiOutput_nativePause(JNIEnv* env, jobject, jlong handle) {
+  WasapiSharedOutput* output = outputFrom(handle);
+  if (!output) return toJavaString(env, "Invalid native WASAPI handle.");
+  std::string error;
+  if (output->pause(error)) return nullptr;
+  return toJavaString(env, error);
+}
+
+JNIEXPORT jstring JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeWrite(JNIEnv* env, jobject, jlong handle,
                                                jbyteArray pcm) {
-  WasapiExclusiveOutput* output = outputFrom(handle);
+  WasapiSharedOutput* output = outputFrom(handle);
   if (!output || !pcm) return toJavaString(env, "Invalid native WASAPI handle or PCM data.");
   const jsize size = env->GetArrayLength(pcm);
   jbyte* bytes = env->GetByteArrayElements(pcm, nullptr);
@@ -191,13 +200,17 @@ Java_lokal_wasapi_JniWasapiOutput_nativeWrite(JNIEnv* env, jobject, jlong handle
 
 JNIEXPORT void JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeClose(JNIEnv*, jobject, jlong handle) {
-  WasapiExclusiveOutput* output = outputFrom(handle);
+  WasapiSharedOutput* output = outputFrom(handle);
   if (output) output->close();
 }
 
 JNIEXPORT void JNICALL
 Java_lokal_wasapi_JniWasapiOutput_nativeDestroy(JNIEnv*, jobject, jlong handle) {
-  delete outputFrom(handle);
+  WasapiSharedOutput* output = outputFrom(handle);
+  if (output) {
+    output->close();
+    delete output;
+  }
 }
 
 }  // extern "C"

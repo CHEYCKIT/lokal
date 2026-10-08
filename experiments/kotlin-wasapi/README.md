@@ -1,17 +1,25 @@
-# Kotlin / Compose WASAPI output prototype
+# Kotlin / Compose file playback prototype
 
-This is an isolated Windows desktop proof of concept for Lokal's playback-output boundary. It does not replace or edit the production Electron playback path. The Kotlin app exposes active output-device selection, Play/Stop, and PCM16 or float32 tone input. It generates a 440 Hz, 48 kHz stereo tone and submits fixed 1024-frame PCM blocks through JNI.
+An isolated Windows desktop playback vertical slice, separate from Lokal's production Electron playback. The Compose UI opens a local audio file, selects an active output device and PCM16 or float32 output, and supports play, pause, resume, and stop. A Kotlin playback engine streams bounded 1024-frame decode blocks through a JNI facade to a shared-mode WASAPI renderer.
 
-The JNI adapter calls Lokal's clean-room `native/audio-output/wasapi-exclusive.{h,cc}` implementation directly; it is referenced from the repository root and is not copied into this prototype. The Kotlin facade and UI are portable JVM/Compose code, but actual output remains Windows-native: WASAPI is a Windows COM API, so even a BitChord-style Kotlin architecture still needs native Windows code (or a library that supplies that native bridge). This prototype does not provide a cross-platform audio backend.
+## Playback pipeline
 
-## Requirements
+```text
+local file -> Java Sound decoder/SPI -> source-rate stereo PCM16 frames
+           -> Kotlin bounded frame staging -> PCM16/float32 conversion
+           -> JNI -> shared-mode WASAPI
+```
+
+This is a clean-room analogue, not BitChord's implementation: no BitChord or Astra source is copied or reused. BitChord's public [desktop documentation](https://github.com/kushagrasinghx/BitChord/blob/2c599a6cd7a195227a11dab5769f88da8fd08194/DESKTOP.md) identifies a Compose Multiplatform JVM desktop app. Its desktop playback is organized around `DesktopPlaybackEngine`, an FFmpeg-backed `DesktopAudioDecoder`, Float32 processing, and `DesktopAudioSink` (Java Sound with a Windows shared-mode WASAPI route); Android instead uses Media3's precision sink and canonical Float32 audio blocks. This prototype borrows only the general separation of playback engine, decoder, and output boundary. It uses Java Sound rather than FFmpeg, its own JNI WASAPI bridge, and has no DSP, route negotiation, production parity, or code sharing. See BitChord's [desktop engine](https://github.com/kushagrasinghx/BitChord/blob/2c599a6cd7a195227a11dab5769f88da8fd08194/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopAudioEngine.kt), [decoder](https://github.com/kushagrasinghx/BitChord/blob/2c599a6cd7a195227a11dab5769f88da8fd08194/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopAudioDecoder.kt), and [sink](https://github.com/kushagrasinghx/BitChord/blob/2c599a6cd7a195227a11dab5769f88da8fd08194/desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopAudioSink.kt) for architectural reference. WASAPI still requires native Windows COM code even when the app/controller is Kotlin; JNI here wraps an isolated shared-mode renderer. Lokal's production Electron code and existing exclusive-mode backend are not modified.
+
+Java Sound supplies WAV decoding; the `mp3spi` and `vorbisspi` providers extend decoding where their SPI format conversions are supported. FLAC decoding is not currently included. Unsupported inputs/conversions fail with an explicit error rather than being silently treated as PCM.
+
+## Requirements and run
 
 - Windows 10/11 x64
-- JDK 17 with `JAVA_HOME` set
+- JDK 17 (`JAVA_HOME`)
 - Visual Studio 2019/2022 C++ x64 build tools and Windows SDK
 - Gradle 8.10.2 or later
-
-## Build and run
 
 From this directory:
 
@@ -21,10 +29,12 @@ gradle test
 gradle run
 ```
 
-`gradle run` builds the JNI DLL first. The native build compiles the checked-in WASAPI implementation from `..\..\native\audio-output\wasapi-exclusive.cc` and places `lokal_wasapi.dll` under `build\native`. Set `-Dlokal.wasapi.library=C:\path\to\lokal_wasapi.dll` to load the JNI library from a different location. Exclusive mode requires the selected device to accept one of the requested sample formats; another application holding the endpoint can make open fail.
+`gradle run` builds `build\native\lokal_wasapi.dll` automatically. The native build compiles only this experiment's `src\main\cpp\wasapi-shared.cpp` and JNI adapter. To exercise a generated local WAV on the first active endpoint in both PCM formats, run:
 
-Run `gradle nativeSmoke` to enumerate active output devices and attempt a 1.5-second tone through the selected first endpoint.
+```powershell
+gradle nativeSmoke
+```
 
-## Scope and limitations
+## Limits
 
-The generated tone validates device enumeration, exclusive open/start/stop, JNI calls, PCM format conversion, and the Kotlin fixed-block staging buffer. It is not a full Lokal playback engine: there is no media decoder, track switching, volume control, resampling, or production integration. Device support and audible output depend on the Windows host and its current endpoint formats.
+This is a small local-file player, not a drop-in Lokal or BitChord engine. It has no queue, seeking, gapless transitions, volume/effects, or production integration. Audio conversion is delegated to installed Java Sound providers and Windows shared-mode WASAPI; supported codecs, rates, channel layouts, and device formats depend on those providers and the selected endpoint. WASAPI playback requires a working Windows audio device.

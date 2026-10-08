@@ -13,8 +13,10 @@ interface WasapiOutput {
     fun devices(): List<AudioDevice>
     fun open(deviceId: String, sampleRate: Int, format: PcmFormat)
     fun start()
+    fun pause()
     fun write(pcm: ByteArray)
     fun close()
+    fun dispose() = close()
 }
 
 class JniWasapiOutput : WasapiOutput {
@@ -43,13 +45,20 @@ class JniWasapiOutput : WasapiOutput {
         nativeStart(handle).throwIfError()
     }
 
+    override fun pause() {
+        nativePause(handle).throwIfError()
+    }
+
     override fun write(pcm: ByteArray) {
         nativeWrite(handle, pcm).throwIfError()
     }
 
     override fun close() {
+        if (handle != 0L) nativeClose(handle)
+    }
+
+    override fun dispose() {
         if (handle != 0L) {
-            nativeClose(handle)
             nativeDestroy(handle)
             handle = 0L
         }
@@ -63,6 +72,7 @@ class JniWasapiOutput : WasapiOutput {
     private external fun nativeDevices(): Array<Array<String>>
     private external fun nativeOpen(handle: Long, deviceId: String, sampleRate: Int, bits: Int): String?
     private external fun nativeStart(handle: Long): String?
+    private external fun nativePause(handle: Long): String?
     private external fun nativeWrite(handle: Long, pcm: ByteArray): String?
     private external fun nativeClose(handle: Long)
     private external fun nativeDestroy(handle: Long)
