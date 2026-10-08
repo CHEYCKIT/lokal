@@ -43,14 +43,14 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(output.write('stale', new Float32Array(2048)).stale, true)
   assert.equal(output.write(status.session, new Float32Array(2)).ok, false)
   // Queue accounting remains intact until the native callback finishes discarding.
-  for (let i = 0; i < 25; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
-  assert.equal(output.queued, 25); assert.equal(output.discardPending, true)
+  for (let i = 0; i < 29; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+  assert.equal(output.queued, 29); assert.equal(output.discardPending, true)
   assert.equal(audio.discards, 1); assert.equal(audio.clears, 0)
-  audio.discardedFrames = 24 * output.frameSize
+  audio.discardedFrames = 28 * output.frameSize
   audio.discardComplete = true
   assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
   assert.equal(output.queued, 2); assert.equal(output.discardPending, false)
-  assert.equal(audio.written.length, 26)
+  assert.equal(audio.written.length, 30)
   output.flush(status.session); assert.equal(audio.written.length, 0)
   assert.equal(audio.clears, 1)
   const newer = open('pcm16')
@@ -63,12 +63,29 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
 test('explicit native flush cancels a pending asynchronous discard', () => {
   const { audio, output, open } = fixture()
   const status = open()
-  for (let i = 0; i < 25; i++) output.write(status.session, new Float32Array(2048))
+  for (let i = 0; i < 29; i++) output.write(status.session, new Float32Array(2048))
   assert.equal(output.discardPending, true)
   output.flush(status.session)
   assert.equal(output.discardPending, false)
   assert.equal(output.queued, 0)
   assert.equal(audio.discardComplete, true)
+})
+
+test('native queue trimming stays inside shared and exclusive ring capacities', () => {
+  for (const { exclusive, limit, capacity } of [
+    { exclusive: false, limit: 28, capacity: 32 },
+    { exclusive: true, limit: 120, capacity: 128 },
+  ]) {
+    const { audio, output } = fixture()
+    const status = output.open({ precision: 'float32', sampleRate: 48000, exclusive })
+    assert.equal(status.exclusive, exclusive)
+    for (let i = 0; i <= limit; i++) {
+      assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+    }
+    assert.equal(audio.discards, 1)
+    assert.equal(output.queued, limit + 1)
+    assert.ok(output.queued < capacity)
+  }
 })
 
 test('unsupported float falls back truthfully; unsupported rates cannot change playback pitch', () => {
@@ -100,7 +117,7 @@ test('native IPC rejects other windows and child frames', () => {
   assert.equal(close({ sender, senderFrame: sender.mainFrame }).ok, true)
 })
 
-test('worklet accepts a deeper credit window for exclusive output', () => {
+test('worklet accepts the bounded shared and exclusive buffering windows', () => {
   let Processor
   const messages = []
   vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
@@ -108,12 +125,38 @@ test('worklet accepts a deeper credit window for exclusive output', () => {
     registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
   })
   const processor = new Processor()
-  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 48 } })
-  for (let i = 0; i < 50; i++) processor.process([[new Float32Array(128), new Float32Array(128)]])
-  assert.equal(messages.length, 48)
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 64, pendingBlocks: 48 } })
+  for (let i = 0; i < 66; i++) processor.process([[new Float32Array(128), new Float32Array(128)]])
+  assert.equal(messages.length, 64)
+  assert.equal(processor.pendingCount, 2)
   processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
   processor.process([[new Float32Array(128), new Float32Array(128)]])
-  assert.equal(messages.length, 49)
+  assert.equal(messages.length, 65)
+})
+
+test('exclusive worklet backlog fits its native ring and drops the oldest stalled audio', () => {
+  let Processor
+  const sent = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => sent.push(structuredClone(message)) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 1024, credits: 64, pendingBlocks: 48 } })
+  const emitBlock = index => {
+    for (let frame = 0; frame < 8; frame++) processor.process([[new Float32Array(128).fill(index)]])
+  }
+  for (let i = 1; i <= 120; i++) emitBlock(i)
+  assert.equal(sent.length, 64)
+  assert.equal(processor.pendingCount, 48)
+  assert.ok(64 + processor.pendingCount <= 131072 / 1024)
+
+  for (let i = 0; i < 48; i++) processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  assert.equal(processor.pendingCount, 0)
+  assert.deepEqual(sent.map(message => message.samples[0]), [
+    ...Array.from({ length: 64 }, (_, i) => i + 1),
+    ...Array.from({ length: 48 }, (_, i) => i + 73),
+  ])
 })
 
 test('worklet buffers PCM while native credits are delayed and drains it in order', () => {
@@ -197,6 +240,44 @@ test('bridge serializes format changes and returns exclusively to browser output
   assert.deepEqual(calls, ['close', 'open', 'flush', 'close'])
 })
 
+test('native routes prime enough bounded PCM for short minimize scheduling stalls', async t => {
+  const shared = bridgeFixture(t)
+  await shared.bridge.configure({ precision: 'float32' })
+  const sharedConfig = shared.sent.filter(message => message.type === 'configure' && message.active).at(-1)
+  assert.equal(sharedConfig.credits, 24)
+  assert.equal(sharedConfig.pendingBlocks, 8)
+
+  const exclusive = bridgeFixture(t)
+  exclusive.bridge.context.setSinkId = async () => {}
+  exclusive.api.open = async () => ({ ok: true, session: 'exclusive', exclusive: true, frameSize: 128 })
+  await exclusive.bridge.configure({ precision: 'float32', exclusive: true })
+  const exclusiveConfig = exclusive.sent.filter(message => message.type === 'configure' && message.active).at(-1)
+  assert.equal(exclusiveConfig.credits, 64)
+  assert.equal(exclusiveConfig.pendingBlocks, 48)
+})
+
+test('idle Auto keeps Chromium on its normal output and releases native routes on pause', async t => {
+  const { bridge, api, calls } = bridgeFixture(t, false)
+  const sinks = []
+  bridge.context.sinkId = 'system-speaker'
+  bridge.context.setSinkId = async value => {
+    sinks.push(value)
+    bridge.context.sinkId = value
+  }
+  await bridge.configure({ precision: 'float32' })
+  assert.deepEqual(sinks, [])
+  assert.equal(bridge.context.state, 'suspended')
+  assert.equal(calls.includes('open'), false)
+
+  api.open = async () => ({ ok: true, session: 'native', exclusive: false, frameSize: 128 })
+  await bridge.setPlaying(true)
+  assert.deepEqual(sinks, [{ type: 'none' }])
+  await bridge.setPlaying(false)
+  assert.equal(bridge.context.state, 'suspended')
+  assert.equal(bridge.context.sinkId, 'system-speaker')
+  assert.deepEqual(sinks, [{ type: 'none' }, 'system-speaker'])
+})
+
 test('bridge preserves browser playback when open fails and restores it on write failure', async t => {
   const { bridge, api, routes, destination } = bridgeFixture(t)
   api.open = async () => ({ ok: false, error: 'Unsupported device' })
@@ -245,7 +326,7 @@ test('exclusive mode releases Chromium speaker before opening and restores the c
   assert.equal(routes.has(destination), false)
   await bridge.configure({ precision: 'auto' })
   assert.equal(calls.at(-1), 'selected-speaker')
-  assert.equal(bridge.silentSink, false)
+  assert.equal(Boolean(bridge.silentSink), false)
   assert.equal(routes.has(destination), true)
 })
 
@@ -325,22 +406,22 @@ test('native shared output also releases the extra Chromium speaker', async t =>
   assert.equal(bridge.silentSink, true)
   await bridge.setPlaying(false)
   assert.equal(bridge.context.state, 'suspended')
-  assert.deepEqual(sinks.at(-1), { type: 'none' })
+  assert.equal(sinks.at(-1), '')
 })
 
-test('idle Auto releases Chromium output and restores the original sink on playback', async t => {
+test('idle Auto preserves the browser sink and resumes without switching devices', async t => {
   const { bridge } = bridgeFixture(t, false)
   const sinks = []
   bridge.context.sinkId = 'original-speaker'
   bridge.context.setSinkId = async value => { sinks.push(value); bridge.context.sinkId = value }
   await bridge.configure({ precision: 'auto' })
-  assert.deepEqual(sinks, [{ type: 'none' }])
-  assert.equal(bridge.previousSink, 'original-speaker')
+  assert.deepEqual(sinks, [])
+  assert.equal(bridge.previousSink, undefined)
   await bridge.setPlaying(true)
-  assert.equal(sinks.at(-1), 'original-speaker')
-  assert.equal(bridge.silentSink, false)
+  assert.equal(sinks.length, 0)
+  assert.equal(Boolean(bridge.silentSink), false)
   await bridge.setPlaying(false)
-  assert.deepEqual(sinks.at(-1), { type: 'none' })
+  assert.equal(sinks.length, 0)
   assert.equal(bridge.context.state, 'suspended')
 })
 
@@ -355,6 +436,7 @@ test('native transitions retain the original browser sink instead of capturing n
   assert.equal(bridge.previousSink, 'selected-speaker')
   await bridge.configure({ precision: 'pcm16' })
   assert.equal(bridge.previousSink, 'selected-speaker')
+  assert.deepEqual(sinks, [{ type: 'none' }])
   await bridge.configure({ precision: 'auto' })
   assert.equal(sinks.at(-1), 'selected-speaker')
   assert.equal(bridge.silentSink, false)
@@ -378,7 +460,7 @@ test('pausing during silent-sink selection does not open a late native stream', 
   await Promise.all([starting, stopping])
   assert.equal(bridge.session, null)
   assert.equal(calls.includes('open'), false)
-  assert.equal(bridge.context.sinkId.type, 'none')
+  assert.equal(bridge.context.sinkId, '')
   assert.equal(bridge.context.state, 'suspended')
 })
 

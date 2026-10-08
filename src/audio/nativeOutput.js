@@ -70,6 +70,7 @@ export class NativeAudioBridge {
         // Do not capture that sink as the speaker to restore later.
         await this.silenceBrowserOutput()
       } else if (exclusive) throw new Error('This build cannot release browser output for exclusive mode.')
+      if (!this.playing) { await this.fallback(); return this.status }
       const result = await this.api.open({ precision, deviceName, exclusive, sampleRate: this.context.sampleRate })
       if (!result?.ok) throw new Error(result?.error || 'Native output could not be started.')
       if (!this.playing) { await this.fallback(); return this.status }
@@ -86,8 +87,9 @@ export class NativeAudioBridge {
   }
   resetWorklet(active) {
     this.epoch++
-    const credits = this.exclusive && active ? 48 : 12
-    const pendingBlocks = this.exclusive && active ? 32 : 8
+    // Keep the transport window below the native PCM ring in each mode.
+    const credits = this.exclusive && active ? 64 : 24
+    const pendingBlocks = this.exclusive && active ? 48 : 8
     this.node?.port.postMessage({ type: 'configure', active, session: this.session, epoch: this.epoch, frameSize: this.frameSize || 1024, credits, pendingBlocks })
   }
   async send({ epoch, samples, error }) {
@@ -134,9 +136,9 @@ export class NativeAudioBridge {
       try { await this.restoreBrowserOutput() }
       catch (error) { warning = error.message }
       await this.context.resume()
-    } else {
-      try { await this.silenceBrowserOutput() }
-      catch { warning = 'Could not release browser audio output while idle.' }
+    } else if (!this.playing && this.silentSink) {
+      try { await this.restoreBrowserOutput() }
+      catch (error) { warning = error.message }
     }
     this.report({ mode: !this.playing ? 'idle' : resume ? 'auto' : 'switching', sampleRate: this.context.sampleRate, ...(warning ? { warning } : {}) })
   }
