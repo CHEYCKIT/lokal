@@ -189,6 +189,7 @@ contextBridge.exposeInMainWorld('electron', {
   cacheTrim: () => invoke('cache:trim'),
   cacheClear: () => invoke('cache:clear'),
   motionCover: (trackId) => invoke('artwork:motion', trackId),
+  musicVideo: (trackId) => invoke('musicVideo:find', trackId),
   spotifyCanvasCheck: () => invoke('artwork:spotifyCheck'),
   soulseekStatus: () => invoke('soulseek:status'),
   soulseekSearch: (text) => invoke('soulseek:search', text),
