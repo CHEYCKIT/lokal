@@ -19,6 +19,7 @@ class NativeOutput {
     this.audio = null
     this.session = null
     this.queued = 0
+    this.discardPending = false
   }
 
   instance() {
@@ -61,6 +62,7 @@ class NativeOutput {
             this.precision = format
             this.frameSize = frameSize
             this.queued = 0
+            this.discardPending = false
             const actualExclusive = audio.isExclusive()
             if (share && !actualExclusive) throw new Error('The device did not accept exclusive mode.')
             const warnings = []
@@ -98,15 +100,25 @@ class NativeOutput {
       if (Date.now() - this.lastProgressAt > 2000) throw new Error('Audio output is no longer responding.')
       this.queued = Math.max(0, this.queued - Math.max(0, time - this.lastStreamTime) * this.status.sampleRate / this.frameSize)
       this.lastStreamTime = time
+      if (this.discardPending && this.audio.isOutputQueueDiscardComplete()) {
+        this.queued = Math.max(0, this.queued - this.audio.getDiscardedFrames() / this.frameSize)
+        this.discardPending = false
+      }
       // Bound latency and memory if the renderer and hardware clocks drift or
       // the main thread stalls. Never replay a long queue of stale audio.
       const clearThreshold = this.status?.exclusive ? 96 : 24
-      if (this.queued >= clearThreshold) {
+      if (this.queued >= clearThreshold && !this.discardPending) {
         // Do not stop/restart WASAPI to trim stale audio; that creates a
         // periodic audible dropout when the device clock falls behind.
-        if (typeof this.audio.discardOutputQueue === 'function') this.audio.discardOutputQueue()
-        else this.audio.clearOutputQueue()
-        this.queued = 0
+        if (typeof this.audio.discardOutputQueue === 'function' &&
+            typeof this.audio.isOutputQueueDiscardComplete === 'function' &&
+            typeof this.audio.getDiscardedFrames === 'function') {
+          this.discardPending = true
+          this.audio.discardOutputQueue()
+        } else {
+          this.audio.clearOutputQueue()
+          this.queued = 0
+        }
       }
       this.audio.write(encodePCM(samples, this.precision))
       this.queued++
@@ -121,12 +133,14 @@ class NativeOutput {
     if (!this.session || session !== this.session) return
     this.audio?.clearOutputQueue()
     this.queued = 0
+    this.discardPending = false
     this.lastStreamTime = this.audio.streamTime
   }
 
   close() {
     this.session = null
     this.queued = 0
+    this.discardPending = false
     this.status = null
     if (this.audio?.isStreamOpen()) {
       try { this.audio.closeStream() } catch {}

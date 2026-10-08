@@ -9,7 +9,7 @@ const { NativeOutput, encodePCM, registerNativeOutput } = require('../electron/a
 
 function fixture(options = {}) {
   const audio = {
-    opened: false, running: false, written: [], clears: 0, discards: 0, streamTime: 0,
+    opened: false, running: false, written: [], clears: 0, discards: 0, discardComplete: true, discardedFrames: 0, streamTime: 0,
     getDevices: () => [{ id: 22, name: 'Speakers', isDefaultOutput: true, outputChannels: 2 }],
     open(...args) { this.args = args; if (options.rejectExclusive && args[3]) throw Error('Device busy'); if (options.rejectFloat && args[2] === 32) throw Error('Unsupported float'); this.opened = true; return options.frameSize || 1024 },
     isStreamOpen() { return this.opened }, closeStream() { this.opened = false; this.running = false },
@@ -17,8 +17,10 @@ function fixture(options = {}) {
     supportsExclusive: () => options.supportsExclusive !== false,
     isExclusive() { return this.args?.[3] === true },
     getStreamSampleRate: () => options.rate || 48000, getApi: () => 'test',
-    write(buffer) { this.written.push(buffer) }, clearOutputQueue() { this.clears++; this.written = [] },
-    discardOutputQueue() { this.discards++; this.written = [] },
+    write(buffer) { this.written.push(buffer) }, clearOutputQueue() { this.clears++; this.written = []; this.discardComplete = true },
+    discardOutputQueue() { this.discards++; this.discardComplete = false; this.discardedFrames = 0 },
+    isOutputQueueDiscardComplete() { return this.discardComplete },
+    getDiscardedFrames() { return this.discardedFrames },
   }
   const output = new NativeOutput(() => audio)
   return { audio, output, open: precision => output.open({ precision: precision || 'float32', sampleRate: 48000 }) }
@@ -40,9 +42,15 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(status.ok, true); assert.equal(status.precision, 'float32'); assert.equal(audio.args[0], 22)
   assert.equal(output.write('stale', new Float32Array(2048)).stale, true)
   assert.equal(output.write(status.session, new Float32Array(2)).ok, false)
-  // Overload trims queued PCM without stopping and restarting the device.
+  // Queue accounting remains intact until the native callback finishes discarding.
   for (let i = 0; i < 25; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
-  assert.ok(output.queued <= 24); assert.ok(audio.discards > 0); assert.equal(audio.clears, 0)
+  assert.equal(output.queued, 25); assert.equal(output.discardPending, true)
+  assert.equal(audio.discards, 1); assert.equal(audio.clears, 0)
+  audio.discardedFrames = 24 * output.frameSize
+  audio.discardComplete = true
+  assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+  assert.equal(output.queued, 2); assert.equal(output.discardPending, false)
+  assert.equal(audio.written.length, 26)
   output.flush(status.session); assert.equal(audio.written.length, 0)
   assert.equal(audio.clears, 1)
   const newer = open('pcm16')
@@ -50,6 +58,17 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(output.write(status.session, new Float32Array(2048)).stale, true)
   assert.equal(audio.written.length, 0)
   output.close(); assert.equal(audio.running, false)
+})
+
+test('explicit native flush cancels a pending asynchronous discard', () => {
+  const { audio, output, open } = fixture()
+  const status = open()
+  for (let i = 0; i < 25; i++) output.write(status.session, new Float32Array(2048))
+  assert.equal(output.discardPending, true)
+  output.flush(status.session)
+  assert.equal(output.discardPending, false)
+  assert.equal(output.queued, 0)
+  assert.equal(audio.discardComplete, true)
 })
 
 test('unsupported float falls back truthfully; unsupported rates cannot change playback pitch', () => {
