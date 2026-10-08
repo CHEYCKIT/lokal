@@ -19,6 +19,7 @@ export class NativeAudioBridge {
     this.session = null
     this.chain = Promise.resolve()
     this.status = { mode: 'auto', sampleRate: context.sampleRate }
+    this.exclusive = false
   }
   report(status) {
     this.status = status
@@ -57,6 +58,7 @@ export class NativeAudioBridge {
       this.source.disconnect(this.context.destination)
       this.source.connect(this.node)
       this.node.connect(this.context.destination)
+      this.exclusive = result.exclusive === true
       this.resetWorklet(true)
       this.report({ ...result, mode: 'native' })
     } catch (error) { await this.fallback(`${error.message} Using Auto output.`) }
@@ -64,7 +66,8 @@ export class NativeAudioBridge {
   }
   resetWorklet(active) {
     this.epoch++
-    this.node?.port.postMessage({ type: 'configure', active, epoch: this.epoch, frameSize: this.frameSize || 1024 })
+    const credits = this.exclusive && active ? 48 : 12
+    this.node?.port.postMessage({ type: 'configure', active, epoch: this.epoch, frameSize: this.frameSize || 1024, credits })
   }
   async send({ epoch, samples }) {
     if (!this.session || epoch !== this.epoch) return
@@ -89,6 +92,7 @@ export class NativeAudioBridge {
   }
   async fallback(warning) {
     this.session = null
+    this.exclusive = false
     this.resetWorklet(false)
     // Silence the native route before reconnecting Chromium to avoid doubled audio.
     try { await this.api.close() } catch {}

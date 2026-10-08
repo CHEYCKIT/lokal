@@ -44,6 +44,11 @@ function artworkUrl(track) {
   return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
 }
 
+/** A public fallback that never sends track metadata to the image provider. */
+function fallbackArtwork() {
+  return 'https://ui-avatars.com/api/?name=Lokal&size=512&background=274068&color=ffffff&bold=true&format=png'
+}
+
 function milliseconds(track, field) {
   const explicit = track[`${field}_ms`]
   const value = explicit != null ? Number(explicit) : Number(track[field]) * 1000
@@ -63,7 +68,7 @@ function buildActivity(track, isPlaying, { now = Date.now(), receivedAt = now, a
     details: text(track.title, 'Unknown Track'),
     state: text(track.artist, 'Unknown Artist'),
     assets: {
-      large_image: artworkUrl(track) || artwork,
+      large_image: artworkUrl(track) || artwork || fallbackArtwork(track),
       large_text: text(track.album, 'Lokal'),
       ...(!isPlaying ? { small_image: 'paused', small_text: 'Paused' } : {}),
     },
@@ -77,4 +82,4 @@ function buildActivity(track, isPlaying, { now = Date.now(), receivedAt = now, a
   return activity
 }
 
-module.exports = { buildActivity, artworkUrl }
+module.exports = { buildActivity, artworkUrl, fallbackArtwork }

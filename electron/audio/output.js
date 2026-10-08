@@ -100,7 +100,8 @@ class NativeOutput {
       this.lastStreamTime = time
       // Bound latency and memory if the renderer and hardware clocks drift or
       // the main thread stalls. Never replay a long queue of stale audio.
-      if (this.queued >= 6) { this.audio.clearOutputQueue(); this.queued = 0 }
+      const clearThreshold = this.status?.exclusive ? 96 : 24
+      if (this.queued >= clearThreshold) { this.audio.clearOutputQueue(); this.queued = 0 }
       this.audio.write(encodePCM(samples, this.precision))
       this.queued++
       return { ok: true }

@@ -39,8 +39,9 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(status.ok, true); assert.equal(status.precision, 'float32'); assert.equal(audio.args[0], 22)
   assert.equal(output.write('stale', new Float32Array(2048)).stale, true)
   assert.equal(output.write(status.session, new Float32Array(2)).ok, false)
-  for (let i = 0; i < 20; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
-  assert.ok(output.queued <= 6); assert.ok(audio.clears > 0)
+  // The queue is cleared at 24 blocks, so the 25th write must exercise the guard.
+  for (let i = 0; i < 25; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+  assert.ok(output.queued <= 24); assert.ok(audio.clears > 0)
   output.flush(status.session); assert.equal(audio.written.length, 0)
   const newer = open('pcm16')
   assert.notEqual(status.session, newer.session)
@@ -76,6 +77,22 @@ test('native IPC rejects other windows and child frames', () => {
   assert.equal(close({ sender: {}, senderFrame: sender.mainFrame }).ok, false)
   assert.equal(close({ sender, senderFrame: {} }).ok, false)
   assert.equal(close({ sender, senderFrame: sender.mainFrame }).ok, true)
+})
+
+test('worklet accepts a deeper credit window for exclusive output', () => {
+  let Processor
+  const messages = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => messages.push(structuredClone(message)) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 48 } })
+  for (let i = 0; i < 50; i++) processor.process([[new Float32Array(128), new Float32Array(128)]])
+  assert.equal(messages.length, 48)
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  processor.process([[new Float32Array(128), new Float32Array(128)]])
+  assert.equal(messages.length, 49)
 })
 
 test('worklet interleaves stereo, sends no audible output, bounds messages and discards partial frames on reset', () => {

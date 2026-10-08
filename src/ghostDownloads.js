@@ -6,7 +6,7 @@
 
 import { api } from './api.js'
 import { downloadBatchCurrent } from './downloadCancellation.js'
-import { isGhostTrack, saveToLibrary, streamRef, isAddonProvider } from './onlineTracks.js'
+import { isGhostTrack, saveToLibrary, streamRef, isAddonProvider, missingTrackCanRedownload } from './onlineTracks.js'
 import { mapLimited, playbackSources, resolveRecommendationTracks } from './recommendations.js'
 
 /**
@@ -123,9 +123,11 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
   if (different && await confirmDuration?.(ghost, item) !== true) return { cancelled: true }
   if (!isCurrent()) return { cancelled: true }
   const replacement = {
-    replaceImported: [ghost.id],
-    manuallySelectedImported: [ghost.id],
-    ...(different ? { confirmedImported: [ghost.id] } : {}),
+    ...(ghost.missing ? { upgradeTrackId: ghost.id, allowUpgradeDurationMismatch: different } : {
+      replaceImported: [ghost.id],
+      manuallySelectedImported: [ghost.id],
+      ...(different ? { confirmedImported: [ghost.id] } : {}),
+    }),
     tags: { title: ghost.title, artist: ghost.artist, album: ghost.album || undefined },
     expectedDuration: Number(item.duration) > 0 ? Number(item.duration) : ghost.duration,
   }
@@ -143,6 +145,58 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
     thumbnail: item.thumbnail || undefined,
     from: 'Ghost track',
     ...replacement,
+  })
+}
+
+/** Queue redownloads for every missing library track whose original source is known. */
+export async function repairMissingTracks(tracks, { client = api, onProgress, concurrency = 3, isCurrent = () => true } = {}) {
+  isCurrent = downloadBatchCurrent(isCurrent)
+  const list = (Array.isArray(tracks) ? tracks : []).filter(track => track?.missing)
+  const result = { total: list.length, queued: 0, unsupported: 0, failed: 0 }
+  let done = 0
+  await mapLimited(list, async track => {
+    if (!isCurrent()) return
+    try {
+      if (!missingTrackCanRedownload(track)) {
+        result.unsupported++
+        return
+      }
+      const response = await redownloadMissingTrack(track, { client })
+      if (response?.error) result.failed++
+      else result.queued++
+    } catch {
+      result.failed++
+    } finally {
+      done++
+      onProgress?.({ done, total: list.length, track })
+    }
+  }, concurrency)
+  if (!isCurrent()) result.cancelled = true
+  return result
+}
+
+export async function redownloadMissingTrack(track, { client = api } = {}) {
+  const ref = String(track?.source_ref || '').match(/^([^:]+):(.+)$/)
+  if (!track?.missing || !ref) return { error: 'This song has no remembered download source.' }
+  const provider = ref[1]
+  let url = null
+  let addonSource
+  if (provider === 'yt') url = `https://music.youtube.com/watch?v=${ref[2]}`
+  else if (provider === 'sc') url = `https://api.soundcloud.com/tracks/${ref[2]}`
+  else if (/^a-[0-9a-f]{10}$/.test(provider)) {
+    addonSource = { provider, id: ref[2] }
+    const resolved = await client.onlineDownloadUrl(provider, ref[2]).catch(() => null)
+    url = resolved?.url || null
+  }
+  if (!url) return { error: 'The original download source is unavailable.' }
+  return client.downloadYT(url, {
+    title: [track.artist, track.title].filter(Boolean).join(' - '),
+    thumbnail: track.artwork_url || undefined,
+    from: 'Redownload missing file',
+    upgradeTrackId: track.id,
+    addonSource,
+    tags: { title: track.title, artist: track.artist, album: track.album || undefined },
+    expectedDuration: track.duration,
   })
 }
 

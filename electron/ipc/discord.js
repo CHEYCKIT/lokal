@@ -1,4 +1,4 @@
-const { buildActivity, artworkUrl } = require('../discord/activity')
+const { buildActivity, artworkUrl, fallbackArtwork } = require('../discord/activity')
 const { createArtworkResolver } = require('../discoveryArtwork')
 
 // Discord needs public image URLs; local files must never be used or uploaded.
@@ -64,7 +64,7 @@ async function fetchArtwork(track) {
     if (image) return image
   }
   const [song] = await resolveArtwork([{ type: 'track', title: track.title, artist: getFirstArtist(track.artist) }])
-  return artworkUrl({ artwork_url: song?.image }) || 'lokal_music'
+  return artworkUrl({ artwork_url: song?.image }) || fallbackArtwork(track)
 }
 
 async function closeClient(client) {
@@ -129,7 +129,7 @@ async function publishActivity() {
     }
     const activity = buildActivity(playback.track, playback.isPlaying, {
       receivedAt: playback.at,
-      artwork: artworkCache.get(artworkKey(playback.track))?.image || 'lokal_music',
+      artwork: artworkCache.get(artworkKey(playback.track))?.image || fallbackArtwork(playback.track),
     })
     // The installed discord-rpc helper omits type/status_display_type. Send
     // the documented activity fields directly to get Discord's listening card.
@@ -150,7 +150,7 @@ function requestArtwork(track) {
   if (!track || artworkUrl(track)) return
   const key = artworkKey(track)
   const cached = artworkCache.get(key)
-  const ttl = cached?.image === 'lokal_music' ? 300000 : 86400000
+  const ttl = (cached?.image === 'lokal_music' || cached?.image === fallbackArtwork(track)) ? 300000 : 86400000
   if ((cached && Date.now() - cached.at < ttl) || artworkPending.has(key)) return
   const lookup = fetchArtwork(track).then(async artwork => {
     if (artworkCache.size >= 200) artworkCache.delete(artworkCache.keys().next().value)

@@ -10,7 +10,7 @@ import { api, peekSettings } from '../api'
 import TrackEditModal from './TrackEditModal'
 import BatchEditModal from './BatchEditModal'
 import Modal from './Modal'
-import { trackArtURL, isPlayable, isStreamed, streamRef, loadAddonNames, isAddonProvider, saveTracksToLibrary, libraryDownloadMessage } from '../onlineTracks'
+import { trackArtURL, isPlayable, isStreamed, streamRef, loadAddonNames, isAddonProvider, saveTracksToLibrary, libraryDownloadMessage, missingTrackCanRedownload } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 // One shared list and limit (15) for recent items (see src/searchHistory.js).
 import { saveRecentItem, recentTrackItem } from '../searchHistory'
@@ -29,7 +29,7 @@ import DiscoveryImage from './DiscoveryImage'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
 import { navigateToTrackAlbum } from '../playbackContext'
-import { downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
+import { downloadGhostResult as queueGhostResult, ghostDownloadSuggestions, redownloadMissingTrack } from '../ghostDownloads'
 import HoverScrollTitle from './HoverScrollTitle'
 import { useGhostDownloadSources } from './useGhostDownloadSources'
 import { useGhostDurationConfirmation } from './useGhostDurationConfirmation'
@@ -443,6 +443,10 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
   const handlePlay = (track, e) => {
     e.stopPropagation()
+    if (track?.missing) {
+      setGhostTrack(track)
+      return
+    }
     if (resolveTracks) {
       if (currentTrack?.id === track.id) togglePlay()
       else playResolved(mergedTracks, track)
@@ -558,7 +562,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     const one = list.length === 1 ? list[0] : null
     const count = list.length > 1 ? ` ${list.length} songs` : ''
     const deletable = resolveTracks ? [] : libraryTracks(list)
-    const oneGhost = one && isGhostTrack(one)
+    const oneGhost = one && (isGhostTrack(one) || one.missing)
     const liked = one && likedIds.has(one.id)
     menu.open(event, [
       { label: one ? 'Play' : `Play${count}`, icon: Play, onSelect: () => (one ? handlePlay(one, { stopPropagation() {} }) : playMany(list)) },
@@ -569,6 +573,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       one && onQuickAdd && { label: 'Add to this playlist', icon: LibraryBig, onSelect: () => handleQuickAdd(one) },
       one && (!oneGhost || needsResolution(one)) && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
        list.some(item => isStreamed(item) || needsResolution(item)) && { label: resolveTracks || !one ? `Download${one ? ' song' : count}` : 'Save to library', icon: Download, onSelect: () => downloadSongs(list) },
+       one?.missing && { label: missingTrackCanRedownload(one) ? 'Redownload missing file' : 'Find replacement for missing file', icon: Download, onSelect: () => setGhostTrack(one) },
       one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(navigate, one) },
@@ -728,6 +733,14 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     }
   }
 
+  const redownloadMissing = async () => {
+    if (!ghostTrack?.missing) return
+    setGhostActionStatus('Starting redownload…')
+    const result = await redownloadMissingTrack(ghostTrack).catch(error => ({ error: error.message }))
+    if (result?.error) setGhostActionStatus('Redownload failed: ' + result.error)
+    else setGhostActionStatus('Redownload started. The existing library entry will be repaired when it finishes.')
+  }
+
   const assignGhostTrack = async (track) => {
     if (!ghostTrack?.id || !track?.id) return
     setGhostActionStatus('Assigning track...')
@@ -801,7 +814,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         const isDragOver = dragOverId === track.id
         const liked = likedIds.has(track.id)
         const src = artSrc(track)
-        const isGhost = isGhostTrack(track) && !needsResolution(track)
+        const isMissing = !!track.missing
+        const isGhost = (isGhostTrack(track) || isMissing) && !needsResolution(track)
         const streamed = isStreamed(track)
         const RowComponent = shouldAnimateRows ? motion.div : 'div'
         const motionProps = shouldAnimateRows ? {
@@ -871,7 +885,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {columns.source && !layout.source && <TrackSourceIcon track={track} addonNames={addonNames} />}
                   <p title={track.title} className={`min-w-0 text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] leading-[14px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
-                  {isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
+                  {isMissing && <span className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">Missing file</span>}
+                  {!isMissing && isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
                 </div>
                 <div className="flex min-w-0 items-center text-xs text-muted leading-4 h-4">
                   {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
@@ -914,6 +929,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   </button>
                 )}
                 {(streamed || needsResolution(track)) && <SaveToLibraryButton track={track} getTrack={needsResolution(track) ? () => resolveDownloadTrack(track) : undefined} meta={track} className="opacity-0 group-hover:opacity-100 focus:opacity-100" />}
+                {isMissing && <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} title="Redownload or find a replacement" aria-label="Redownload or find a replacement" className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-accent hover:text-white transition-all"><Download size={14} /></button>}
                 {showAddToQueue && !isGhost && (
                   <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
@@ -1059,12 +1075,17 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               <div className="min-w-0">
                 <p className="text-sm text-white font-medium">{ghostTrack?.title}</p>
                 <p className="text-xs text-muted mt-1">{ghostTrack?.artist || 'Unknown Artist'}{ghostTrack?.album ? ` · ${ghostTrack.album}` : ''}</p>
-                <p className="text-xs text-muted mt-2">This song was imported from another platform but Lokal could not match it to a local file yet. It stays in the playlist as a placeholder until you resolve it.</p>
+               <p className="text-xs text-muted mt-2">{ghostTrack?.missing ? 'This library entry points to a file that is no longer on disk. Redownload it from a known source or search for a replacement; the existing library entry will be repaired.' : 'This song was imported from another platform but Lokal could not match it to a local file yet. It stays in the playlist as a placeholder until you resolve it.'}</p>
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {ghostTrack?.missing && /^((yt|sc):|a-[0-9a-f]{10}:)/.test(String(ghostTrack.source_ref || '')) && (
+              <button onClick={redownloadMissing} className="px-3 py-2 rounded-lg bg-accent/15 border border-accent/25 text-accent text-sm hover:bg-accent/25 transition-colors flex items-center gap-2">
+                <Download size={14} /> Redownload original
+              </button>
+            )}
             <button
               onClick={() => refreshGhostMatches()}
               className="px-3 py-2 rounded-lg bg-card border border-border text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center gap-2"

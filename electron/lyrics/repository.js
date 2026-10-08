@@ -42,7 +42,13 @@ function sequenceFor(order, enabled) {
   const on = new Set(Array.isArray(enabled) && enabled.length ? enabled : DEFAULT_ORDER)
   const known = (Array.isArray(order) && order.length ? order : DEFAULT_ORDER).filter(id => BY_ID[id])
   // Sources added in an update after the user last saved their order fall in after it.
-  const full = [...known, ...DEFAULT_ORDER.filter(id => !known.includes(id))]
+  const full = [...known]
+  for (const id of DEFAULT_ORDER) {
+    if (full.includes(id)) continue
+    const after = DEFAULT_ORDER.slice(DEFAULT_ORDER.indexOf(id) + 1).find(next => full.includes(next))
+    const at = after ? full.indexOf(after) : full.length
+    full.splice(at, 0, id)
+  }
   return full.filter(id => on.has(id))
 }
 
@@ -67,7 +73,7 @@ function toResult(providerId, output, names = {}) {
     title: names.title,
     artist: names.artist,
   })
-  return result.type ? result : null
+  return result.type ? { ...result, ...(output.attribution ? { attribution: output.attribution } : {}) } : null
 }
 
 // ---------------------------------------------------------------- lookup
@@ -109,7 +115,11 @@ async function lookup(query, options = {}) {
     const job = (async () => {
       if (id !== 'local' && !canQueryOnline) return null
       try {
-        const output = await provider.fetch(q, { signal, hit: id === 'binilyrics' ? hit : null })
+        const output = await withTimeout(provider.fetch({
+          ...q,
+          spicyKey: options.spicyKey,
+          spotifyCookie: options.spotifyCookie,
+        }, { signal, hit: id === 'binilyrics' ? hit : null }), id === 'spicylyrics' ? 10000 : 18000)
         return toResult(id, output, { title: q.searchTitle, artist: q.searchArtist })
       } catch {
         return null
