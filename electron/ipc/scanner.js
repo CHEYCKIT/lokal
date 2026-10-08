@@ -1160,6 +1160,12 @@ function registerScannerHandlers(ipcMain) {
     }
     return { success: false, error: result?.error || 'Could not index file' }
   })
+  ipcMain.handle('scanner:getMissingTracks', () => {
+    const db = getDB()
+    return db.prepare("SELECT id, title, artist, album, duration, source_ref, file_path FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND file_path IS NOT NULL").all()
+      .filter(track => !fs.existsSync(track.file_path))
+      .map(track => ({ ...track, missing: true }))
+  })
   ipcMain.handle('scanner:getTracks', (_, opts = {}) => {
     const db = getDB()
     let sql = 'SELECT * FROM tracks'
