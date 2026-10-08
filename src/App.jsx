@@ -478,7 +478,7 @@ export default function App() {
     const context = audioCtxRef.current
     if (nativeAudioRef.current) {
       nativeAudioRef.current.browserDeviceId = id
-      // Keep Chromium's speaker released while native output owns it or idle.
+      // Defer device changes while idle or exclusive; apply them on resume.
       if (!nativeAudioRef.current.playing) return { ok: true }
       if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
     }
