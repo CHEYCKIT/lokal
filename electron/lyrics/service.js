@@ -7,11 +7,12 @@
 //            search-by-lyrics feature (scanner.searchLyricsEntries) keeps
 //            reading it directly.
 //   meta     JSON { v, sync, duet, isrc, language, translationLang,
-//            romanizationLang, attempts, settingsKey, pinned }.
+//            romanizationLang, attempts, pinned }.
 //            A row without meta was written before this revamp: imported
 //            lyrics are upgraded in place, anything else is refetched once so
 //            old LRCLIB-only answers get the chance to become syllable-synced.
 
+const { createHash } = require('node:crypto')
 const { lookup, parseImported, DEFAULT_ORDER } = require('./repository')
 const { describe } = require('./providers')
 const { finish, isUntimed } = require('./postprocess')
@@ -19,6 +20,10 @@ const translation = require('./translate')
 
 const META_VERSION = 2
 const NEGATIVE_TTL_MS = 3 * 24 * 60 * 60 * 1000
+// Credential fingerprints and negative-cache keys live only in this process.
+// After a restart, retry persisted misses once with the current credentials.
+const negativeSettingsKeys = new WeakMap()
+const fingerprint = value => createHash('sha256').update(value || '').digest('hex')
 
 // ---------------------------------------------------------------- schema
 
@@ -47,15 +52,29 @@ function readSettings(db) {
     const v = s.keep_comma_artists || ''
     keepCommaArtists = v.startsWith('[') ? JSON.parse(v) : v.split('\n').map(x => x.trim()).filter(Boolean)
   } catch { keepCommaArtists = [] }
-  const order = parseList(s.lyrics_sources_order) || DEFAULT_ORDER
-  const enabled = parseList(s.lyrics_sources_enabled) || DEFAULT_ORDER
+  const savedOrder = parseList(s.lyrics_sources_order)
+  const order = savedOrder ? [...savedOrder] : [...DEFAULT_ORDER]
+  // Introduce the new source above BetterLyrics for existing installations,
+  // while preserving every source preference the user explicitly saved.
+  if (!order.includes('spicylyrics')) {
+    const at = order.findIndex(id => id === 'betterlyrics' || id === 'betterlyrics_qq')
+    order.splice(at < 0 ? order.length : at, 0, 'spicylyrics')
+  }
+  const savedEnabled = parseList(s.lyrics_sources_enabled)
+  // Migrate existing installations with the newly available provider enabled;
+  // once the settings page saves an explicit list, later toggles are retained.
+  const enabled = savedEnabled
+    ? [...savedEnabled, ...(!savedOrder?.includes('spicylyrics') && !savedEnabled.includes('spicylyrics') ? ['spicylyrics'] : [])]
+    : DEFAULT_ORDER
   return {
     order,
     enabled,
     prioritizeSyllable: s.lyrics_prioritize_syllable === '1',
     keepCommaArtists,
+    spicyKey: s.spicylyrics_api_key || '',
+    spotifyCookie: s.spotify_sp_dc || '',
     // A negative answer is only trusted while the same sources are configured.
-    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1']),
+    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1', fingerprint(s.spicylyrics_api_key), fingerprint(s.spotify_sp_dc)]),
   }
 }
 
@@ -83,6 +102,7 @@ function writeRow(db, trackId, filePath, result, extra = {}) {
     language: result?.language || null,
     translationLang: result?.translationLang || null,
     romanizationLang: result?.romanizationLang || null,
+    attribution: result?.attribution || null,
     ...extra,
   }
   db.prepare('INSERT OR REPLACE INTO lyrics_cache (track_id, lyrics_type, content, source, fetched_at, file_path, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -104,6 +124,7 @@ function fromRow(row, meta) {
     romanizationLang: meta.romanizationLang,
     attempts: meta.attempts || null,
     pinned: !!meta.pinned,
+    attribution: meta.attribution || null,
   }
 }
 
@@ -199,7 +220,7 @@ async function getLyrics(db, args) {
       if (meta) {
         if (row.source === 'no-results') {
           const fresh = row.fetched_at && Date.now() - row.fetched_at < NEGATIVE_TTL_MS
-          if (fresh && meta.settingsKey === settings.settingsKey) return null
+          if (fresh && negativeSettingsKeys.get(db)?.get(row.track_id) === settings.settingsKey) return null
         } else if (row.lyrics_type === 'synced' && isUntimed(fromRow(row, meta).lines)) {
           // Cached before untimed stamps were recognised (see isUntimed). A
           // source the user picked stays, as the plain text it really is;
@@ -241,7 +262,9 @@ async function getLyrics(db, args) {
     writeRow(db, trackId, filePath, untimedFallback.result, { attempts: kept })
     return { ...untimedFallback.result, attempts: kept }
   }
-  writeRow(db, trackId, filePath, null, { attempts, settingsKey: settings.settingsKey })
+  writeRow(db, trackId, filePath, null, { attempts })
+  if (!negativeSettingsKeys.has(db)) negativeSettingsKeys.set(db, new Map())
+  negativeSettingsKeys.get(db).set(trackId, settings.settingsKey)
   return null
 }
 
@@ -252,7 +275,7 @@ async function getLyricsFrom(db, args, providerId) {
   const filePath = trustedFilePath(db, args.trackId)
   const { result, attempts } = await lookup(
     { title: args.title, artist: args.artist, album: args.album, duration: Number(args.duration) || 0, filePath, keepCommaArtists: settings.keepCommaArtists },
-    { only: providerId },
+    { only: providerId, spicyKey: settings.spicyKey, spotifyCookie: settings.spotifyCookie },
   )
   if (result && !result.instrumental && args.trackId) {
     // Merge this attempt into what the row already knew about the other sources.

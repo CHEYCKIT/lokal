@@ -84,7 +84,7 @@ function addonSourceOf(value) {
 }
 function enqueue(kind) {
   return (req, res) => {
-    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, replaceImported, confirmedImported, manuallySelectedImported, addonSource, tags, expectedDuration } = req.body || {}
+    const { url, format, quality, title, thumbnail, from, playlistId, replaceTrackId, upgradeTrackId, replaceImported, confirmedImported, manuallySelectedImported, addonSource, tags, expectedDuration } = req.body || {}
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL is required' })
     if (playlistId != null && (!PLAYLIST_ID.test(String(playlistId)) || /^\.+$/.test(String(playlistId)))) {
       return res.status(400).json({ error: 'Invalid playlistId' })
@@ -93,6 +93,7 @@ function enqueue(kind) {
     const opts = { format: text(format, 12), quality: text(String(quality ?? ''), 4) || undefined, title: text(title), thumbnail: text(thumbnail, 1000), from: text(from, 120), playlistId: playlistId ?? undefined }
     // The ghost track (a streamed song) this download replaces once it's in the library.
     if (kind === 'single' && typeof replaceTrackId === 'string' && /^[\w.-]{1,120}$/.test(replaceTrackId)) opts.replaceTrackId = replaceTrackId
+    if (kind === 'single' && typeof upgradeTrackId === 'string' && /^[\w.-]{1,120}$/.test(upgradeTrackId)) opts.upgradeTrackId = upgradeTrackId
     // Songs of an imported playlist the file takes the place of.
     if (kind === 'single' && Array.isArray(replaceImported)) opts.replaceImported = replaceImported.filter(id => typeof id === 'string' && /^[\w.-]{1,120}$/.test(id)).slice(0, 20)
     if (kind === 'single' && Array.isArray(confirmedImported)) opts.confirmedImported = confirmedImported.filter(id => opts.replaceImported?.includes(id))

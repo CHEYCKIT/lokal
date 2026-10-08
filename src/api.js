@@ -155,6 +155,7 @@ export const api = {
   streamURL: (t) => `${BASE}/stream/${encodeURIComponent(t.id)}`,
   avatarURL: (id) => `${BASE}/avatar/${id}`,
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
+  getMissingTracks: () => isE() ? el().getMissingTracks() : apiFetch('/tracks/missing'),
   searchTracks: (q) => isE() ? el().searchTracks(q) : apiFetch(`/tracks/search?q=${encodeURIComponent(q)}`),
   // The library's files in short: [[artist, title, source_ref], ...] (see libraryIndex.js).
   libraryKeys: () => isE() ? el().libraryKeys() : apiFetch('/tracks/library-keys'),

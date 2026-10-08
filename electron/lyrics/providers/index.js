@@ -15,6 +15,7 @@
 
 const local = require('./local')
 const bini = require('./bini')
+const spicyLyrics = require('./spicyLyrics')
 const betterLyrics = require('./betterLyrics')
 const lyricsPlus = require('./lyricsPlus')
 const unison = require('./unison')
@@ -25,6 +26,7 @@ const lyricsOvh = require('./lyricsOvh')
 const PROVIDERS = [
   { id: 'local', label: 'Local file', detail: 'Lyrics embedded in the file, or a .ttml/.lrc next to it', wordSynced: true, fetch: local.fetch },
   { id: 'binilyrics', label: 'BiniLyrics', detail: 'Apple Music timings, matched on the exact recording', wordSynced: true, fetch: bini.fetch },
+  { id: 'spicylyrics', label: 'Spicy Lyrics', detail: 'Community and catalogue syncs, including word-level timing', wordSynced: true, fetch: spicyLyrics.fetch },
   { id: 'betterlyrics', label: 'BetterLyrics', detail: 'Apple Music timings, word by word', wordSynced: true, fetch: betterLyrics.fetch },
   { id: 'betterlyrics_qq', label: 'BetterLyrics Portato', detail: 'QQ Music karaoke timings through BetterLyrics', wordSynced: true, fetch: betterLyrics.fetchPortato },
   { id: 'lyricsplus', label: 'LyricsPlus', detail: 'Syllable by syllable, on community mirrors', wordSynced: true, fetch: lyricsPlus.fetch },

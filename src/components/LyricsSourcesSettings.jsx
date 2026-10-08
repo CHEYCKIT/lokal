@@ -16,6 +16,7 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
   const [enabled, setEnabled] = useState([])
   const [defaultOrder, setDefaultOrder] = useState([])
   const [prioritize, setPrioritize] = useState(false)
+  const [spicyKey, setSpicyKey] = useState('')
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
   const [saved, setSaved] = useState(false)
@@ -30,6 +31,7 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
       setDefaultOrder(s.defaultOrder || [])
       setPrioritize(!!s.prioritizeSyllable)
     }).catch(() => {})
+    api.getSettings?.().then(s => setSpicyKey(String(s?.spicylyrics_api_key || ''))).catch(() => {})
     return () => clearTimeout(savedTimer.current)
   }, [])
 
@@ -65,7 +67,9 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
     if (turningOff && enabled.filter(x => rows.includes(x)).length <= 1) return
     const next = turningOff ? enabled.filter(x => x !== id) : [...enabled, id]
     setEnabled(next)
-    persist({ lyrics_sources_enabled: JSON.stringify(next) })
+    // Store the expanded order too. This records that the user has seen the
+    // migrated SpicyLyrics row, so a deliberate disable remains disabled.
+    persist({ lyrics_sources_enabled: JSON.stringify(next), lyrics_sources_order: JSON.stringify(rows) })
   }
   const drop = (targetId) => {
     if (!dragId || dragId === targetId) return
@@ -146,6 +150,22 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
         >
           {prioritize ? 'On' : 'Off'}
         </button>
+      </div>
+
+      <div className="mt-5 space-y-2">
+        <div>
+          <p className="text-sm text-white">Spicy Lyrics secret key <span className="text-muted">(optional)</span></p>
+          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>. It stays in Lokal's backend; a Spotify account isn't required.</p>
+        </div>
+        <input
+          type="password"
+          value={spicyKey}
+          onChange={event => setSpicyKey(event.target.value)}
+          onBlur={() => persist({ spicylyrics_api_key: spicyKey.trim() })}
+          placeholder="SpicyLyrics API key"
+          autoComplete="off"
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+        />
       </div>
 
       <button onClick={reset} className="mt-4 flex items-center gap-1.5 text-xs text-muted hover:text-white transition-colors">

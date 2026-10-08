@@ -277,3 +277,36 @@ test('YouTube search retains long song names within Discord URL limits', () => {
   const unicode = buildActivity({ artist: '🎵'.repeat(100), title: '長い曲名' }, true)
   assert.ok(unicode.buttons[0].url.length <= 512)
 })
+
+test('fallback artwork is independent of private track metadata', () => {
+  const { fallbackArtwork } = require('../electron/discord/activity.js')
+  assert.equal(fallbackArtwork({ artist: 'Private Artist', title: 'Unreleased Song' }), fallbackArtwork())
+  assert.equal(new URL(fallbackArtwork()).protocol, 'https:')
+})
+
+test('generated fallback art retries after five minutes and catalogue art keeps the long TTL', async () => {
+  let at = now, calls = 0
+  const filename = require.resolve('../electron/ipc/discord.js')
+  const localRequire = createRequire(filename)
+  const context = vm.createContext({
+    module: { exports: {} }, process: { on() {} }, console,
+    Date: { now: () => at },
+    require: id => id === '../discoveryArtwork'
+      ? { createArtworkResolver: () => async () => { calls++; return calls === 1 ? [] : [{ image: 'https://covers.example/found.jpg' }] } }
+      : localRequire(id),
+  })
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename })
+  context.track = { ...song, album: '' }
+  const request = async () => { vm.runInContext('requestArtwork(track)', context); await flush() }
+  await request()
+  assert.equal(calls, 1)
+  at += 299999
+  await request()
+  assert.equal(calls, 1)
+  at++
+  await request()
+  assert.equal(calls, 2)
+  at += 300000
+  await request()
+  assert.equal(calls, 2)
+})

@@ -44,9 +44,9 @@ Incoming ports are restricted to the main player frame, and sessions reject
 stale blocks. Flush stops the consumer before resetting the native ring.
 
 Native streams open only during playback. Pause/stop closes the native stream
-and suspends the AudioContext, including in Auto mode. Shared native playback
-also uses Chromium's silent sink to avoid opening a second speaker client.
-The SMTC silence element is paused during native negotiation/playback.
+and suspends the AudioContext, including in Auto mode. The silent AudioWorklet
+output is connected to the selected speaker in shared mode to preserve hardware
+clock pacing. The SMTC silence element is paused during native playback.
 
 Validation: `node --test scripts/native-output.test.mjs`, then (on Linux with a
 PulseAudio null sink named `lokal_test`) `xvfb-run -a node scripts/native-output-smoke.mjs`.

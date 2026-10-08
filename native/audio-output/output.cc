@@ -112,7 +112,8 @@ static napi_value open(napi_env env, napi_callback_info info) {
   }
 #endif
   const ma_format format = bits == 32 ? ma_format_f32 : ma_format_s16;
-  if (ma_pcm_rb_init(format, 2, 32768, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
+  const size_t ringFrames = exclusive ? 131072 : 32768;
+  if (ma_pcm_rb_init(format, 2, ringFrames, nullptr, nullptr, &self->ring) != MA_SUCCESS) return error(env, "Could not allocate audio buffer.");
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.playback.pDeviceID = &self->ids[id]; config.playback.format = format; config.playback.channels = 2;
   config.playback.shareMode = exclusive ? ma_share_mode_exclusive : ma_share_mode_shared;

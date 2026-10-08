@@ -21,7 +21,7 @@ const DEFAULT_MUSIC_PATH = 'C:\\Users\\sipbuu\\Music'
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.ogg', '.wav', '.aac', '.opus', '.wma', '.alac', '.ape'])
 // Same secrets as the web server's SECRET_KEYS (server/routes/settings.js):
 // masked by settings:get, left out of settings:exportAll, kept on import.
-const SECRET_SETTING_KEYS = new Set(['soulseek_api_key', 'spotify_sp_dc', 'listenbrainz_token', 'lastfm_api_secret', 'lastfm_session_key', 'yt_cookie_header'])
+const SECRET_SETTING_KEYS = new Set(['soulseek_api_key', 'spicylyrics_api_key', 'spotify_sp_dc', 'listenbrainz_token', 'lastfm_api_secret', 'lastfm_session_key', 'yt_cookie_header'])
 const SECRET_SETTING_PLACEHOLDER = '••••••••'
 const DRUM_KIT_PATTERNS = /\b(kick|snare|808|hi[- ]?hat|hihat|rimshot|clap|crash|cymbal|drum( kit| loop| sample)?|sample pack|loop kit|one[- ]?shot|fx[- ]?sound|bass[- ]?drum|perc(ussion)?|stem[s]?|acapella)\b/i
 
@@ -1160,6 +1160,12 @@ function registerScannerHandlers(ipcMain) {
     }
     return { success: false, error: result?.error || 'Could not index file' }
   })
+  ipcMain.handle('scanner:getMissingTracks', () => {
+    const db = getDB()
+    return db.prepare("SELECT id, title, artist, album, duration, source_ref, file_path FROM tracks WHERE file_path NOT LIKE 'ghost://%' AND file_path IS NOT NULL").all()
+      .filter(track => !fs.existsSync(track.file_path))
+      .map(track => ({ ...track, missing: true }))
+  })
   ipcMain.handle('scanner:getTracks', (_, opts = {}) => {
     const db = getDB()
     let sql = 'SELECT * FROM tracks'
@@ -1178,7 +1184,7 @@ function registerScannerHandlers(ipcMain) {
     if (quality) { where.push(quality.sql); params.push(...quality.params) }
     if (where.length) sql += ' WHERE ' + where.join(' AND ')
     sql += ` ORDER BY ${opts.sort || 'added_at DESC'} LIMIT ${limit} OFFSET ${offset}`
-    return db.prepare(sql).all(...params)
+    return db.prepare(sql).all(...params).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) }))
   })
   ipcMain.handle('scanner:getArtists', () => {
     const db = getDB()
@@ -1848,7 +1854,16 @@ async function indexSingleFile(filePath, opts = {}) {
   // A streamed (ghost) copy of the song isn't a copy in the library: the file
   // is added, and then takes the ghost's place.
   const dupe = db.prepare("SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(artist) = ? AND (album IS NULL OR album = ? OR ? IS NULL OR album IS NULL) AND ABS(duration - ?) < 2 AND file_path NOT LIKE 'ghost://%'").get(title.toLowerCase(), artist.toLowerCase(), album, album, duration)
-  if (dupe) return { duplicate: true, id: dupe.id }
+  if (dupe) {
+    // A previous download may have left its database row behind after the
+    // audio file was deleted. Reuse that row instead of creating a second
+    // library entry when the song is downloaded or rescanned again.
+    if (!fs.existsSync(dupe.file_path)) {
+      const repaired = await require('../quality/upgrade').upgradeTrackFile(db, dupe.id, filePath, { storageDir: getStorageDir() })
+      if (repaired?.id) return { id: repaired.id, repaired: true }
+    }
+    return { duplicate: true, id: dupe.id }
+  }
   
   const insertTransaction = db.transaction(() => {
     const upsertArtist = db.prepare(`INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)`)
