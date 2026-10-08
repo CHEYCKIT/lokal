@@ -1,4 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
+import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -362,6 +363,8 @@ export default function App() {
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
+  // Crossfades ramp these, after the volume gains, so volume changes never cut a fade short.
+  const fadeGainRef = useRef({ primary: null, cf: null })
   const audioCtxRef = useRef(null)
   const nativeAudioRef = useRef(null)
   const analyserRef = useRef(null)
@@ -780,6 +783,9 @@ export default function App() {
 
     primaryGain.gain.value = volumeRef.current
     cfGain.gain.value = 0
+    const primaryFade = ctx.createGain()
+    const cfFade = ctx.createGain()
+    fadeGainRef.current = { primary: primaryFade, cf: cfFade }
 
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 256
@@ -795,13 +801,15 @@ export default function App() {
       let prev = primarySource
       for (const n of nodes) { prev.connect(n); prev = n }
       prev.connect(primaryGain)
-      primaryGain.connect(analyser)
+      primaryGain.connect(primaryFade)
+      primaryFade.connect(analyser)
       analyser.connect(ctx.destination)
 
       let cfPrev = cfSource
       for (const n of cfNodes) { cfPrev.connect(n); cfPrev = n }
       cfPrev.connect(cfGain)
-      cfGain.connect(analyser)
+      cfGain.connect(cfFade)
+      cfFade.connect(analyser)
     }
 
     try {
@@ -1285,7 +1293,7 @@ export default function App() {
     setAudioRef(audioRef)
     setCfAudioRef(cfAudioRef)
     api.getSettings().then(s => {
-      if (s?.crossfade_seconds) setCrossfade(parseFloat(s.crossfade_seconds) || 0)
+      if (s) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings(s))
       // Sync the backend-persisted Side Panels mode at boot -- previously
       // this only happened once the Settings page itself mounted, so a
       // user who never opened Settings stayed on whatever
@@ -1594,24 +1602,33 @@ export default function App() {
       if (ctx && now !== undefined) inactiveGain.gain.setValueAtTime(0, now)
       else inactiveGain.gain.value = 0
     }
+    for (const fade of [fadeGainRef.current.primary, fadeGainRef.current.cf]) {
+      if (!fade?.gain) continue
+      fade.gain.cancelScheduledValues(now || 0)
+      if (ctx && now !== undefined) fade.gain.setValueAtTime(1, now)
+      else fade.gain.value = 1
+    }
   }, [])
 
   const triggerCrossfade = useCallback((nextTrack) => {
     if (isCrossfadingRef.current) return
     if (!cfAudioRef.current || !audioRef.current || !nextTrack || !audioCtxRef.current) return
     if (!gainNodeRef.current || !cfGainNodeRef.current) return
+    if (!fadeGainRef.current.primary || !fadeGainRef.current.cf) return
 
     isCrossfadingRef.current = true
     const token = ++crossfadeTokenRef.current
     expectedCrossfadeTrackIdRef.current = nextTrack.id
     const ctx = audioCtxRef.current
-    const cfDuration = usePlayerStore.getState().crossfadeSeconds || 3
+    const options = usePlayerStore.getState().crossfade
 
     const isPrimaryActive = usePlayerStore.getState().activeAudioElement === 'primary'
     const fadeOutEl = isPrimaryActive ? audioRef.current : cfAudioRef.current
     const fadeInEl = isPrimaryActive ? cfAudioRef.current : audioRef.current
     const fadeOutGain = isPrimaryActive ? gainNodeRef.current : cfGainNodeRef.current
     const fadeInGain = isPrimaryActive ? cfGainNodeRef.current : gainNodeRef.current
+    const fadeOutNode = isPrimaryActive ? fadeGainRef.current.primary : fadeGainRef.current.cf
+    const fadeInNode = isPrimaryActive ? fadeGainRef.current.cf : fadeGainRef.current.primary
 
     const encodedSrc = audioSrcFor(nextTrack)
     if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
@@ -1708,13 +1725,18 @@ export default function App() {
 
       fadeInEl.play().catch(() => {})
 
+      // The old song fades out over what it has left at most; the new one
+      // fades in on its own (usually shorter) schedule.
+      const { fadeIn, fadeOut } = crossfadeDurations(options, fadeOutEl.duration - fadeOutEl.currentTime)
       const rampNow = ctx.currentTime
-      fadeOutGain.gain.cancelScheduledValues(rampNow)
-      fadeOutGain.gain.setValueAtTime(fadeOutGain.gain.value, rampNow)
-      fadeOutGain.gain.linearRampToValueAtTime(0, rampNow + cfDuration)
-      fadeInGain.gain.cancelScheduledValues(rampNow)
-      fadeInGain.gain.setValueAtTime(0, rampNow)
-      fadeInGain.gain.linearRampToValueAtTime(volumeRef.current, rampNow + cfDuration)
+      for (const gain of [fadeOutGain.gain, fadeInGain.gain]) {
+        gain.cancelScheduledValues(rampNow)
+        gain.setValueAtTime(volumeRef.current, rampNow)
+      }
+      fadeOutNode.gain.cancelScheduledValues(rampNow)
+      fadeOutNode.gain.setValueCurveAtTime(fadeCurve(Math.min(1, fadeOutNode.gain.value), 0, options.curve), rampNow, fadeOut)
+      fadeInNode.gain.cancelScheduledValues(rampNow)
+      fadeInNode.gain.setValueCurveAtTime(fadeCurve(0, 1, options.curve), rampNow, fadeIn)
 
       crossfadeTimeoutRef.current = setTimeout(() => {
         if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
@@ -1722,6 +1744,10 @@ export default function App() {
         const endNow = ctx.currentTime
         fadeInGain.gain.cancelScheduledValues(endNow)
         fadeOutGain.gain.cancelScheduledValues(endNow)
+        for (const fade of [fadeInNode.gain, fadeOutNode.gain]) {
+          fade.cancelScheduledValues(endNow)
+          fade.setValueAtTime(1, endNow)
+        }
         
         if (fadeInGain === gainNodeRef.current) {
           gainNodeRef.current.gain.setValueAtTime(volumeRef.current, endNow)
@@ -1742,7 +1768,7 @@ export default function App() {
         fadeOutEl.dataset.lokalTrackPending = ''
         fadeOutEl.dataset.lokalTrackId = ''
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
-      }, cfDuration * 1000)
+      }, Math.max(fadeIn, fadeOut) * 1000)
     })
   }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
@@ -1858,13 +1884,11 @@ export default function App() {
     try {
       const now = ctx.currentTime
       if (isCrossfadingRef.current) {
-        const maxCurrent = Math.max(primary.value, secondary.value, 0.0001)
-        const nextPrimary = (primary.value / maxCurrent) * volume
-        const nextSecondary = (secondary.value / maxCurrent) * volume
+        // The fade runs on the fade gains: both sides just take the new volume.
         primary.cancelScheduledValues(now)
         secondary.cancelScheduledValues(now)
-        primary.setValueAtTime(nextPrimary, now)
-        secondary.setValueAtTime(nextSecondary, now)
+        primary.setValueAtTime(volume, now)
+        secondary.setValueAtTime(volume, now)
         return
       }
       const activeSide = usePlayerStore.getState().activeAudioElement
@@ -1889,10 +1913,10 @@ export default function App() {
     if (!dur || isNaN(dur) || isCrossfadingRef.current) return
 
     const state = usePlayerStore.getState()
-    const cf = state.crossfadeSeconds || 0
+    const cf = state.crossfade?.beforeEnd || 0
     const remaining = dur - cur
 
-    if (cf > 0.5 && remaining <= cf && remaining > 0.3) {
+    if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
       const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = state
       let nextTrack = null
       
