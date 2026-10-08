@@ -35,7 +35,7 @@ static void render(ma_device* device, void* buffer, const void*, ma_uint32 count
 }
 static napi_value error(napi_env env, const char* message) { napi_throw_error(env, nullptr, message); return nullptr; }
 static napi_value number(napi_env env, double n) { napi_value v; napi_create_double(env, n, &v); return v; }
-static napi_value booleanValue(napi_env env, bool b) { napi_value v; napi_get_booleanValue(env, b, &v); return v; }
+static napi_value booleanValue(napi_env env, bool b) { napi_value v; napi_get_boolean(env, b, &v); return v; }
 static napi_value string(napi_env env, const char* s) { napi_value v; napi_create_string_utf8(env, s, NAPI_AUTO_LENGTH, &v); return v; }
 static napi_value nothing(napi_env env) { napi_value v; napi_get_undefined(env, &v); return v; }
 static Output* state(napi_env env) { void* p; napi_get_instance_data(env, &p); return static_cast<Output*>(p); }
