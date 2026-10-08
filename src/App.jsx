@@ -477,7 +477,8 @@ export default function App() {
     const context = audioCtxRef.current
     if (nativeAudioRef.current) {
       nativeAudioRef.current.browserDeviceId = id
-      // Keep Chromium's speaker released while exclusive output owns it.
+      // Keep Chromium's speaker released while native output owns it or idle.
+      if (!nativeAudioRef.current.playing) return { ok: true }
       if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
     }
     if (context && typeof context.setSinkId === 'function') {
@@ -740,8 +741,10 @@ export default function App() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     audioCtxRef.current = ctx
+    if (!usePlayerStore.getState().isPlaying) ctx.suspend().catch(() => {})
     const keepAudioRunning = () => {
-      if (usePlayerStore.getState().isPlaying && ctx.state === 'suspended') {
+      // Route changes deliberately suspend the context to release its device.
+      if (!nativeAudioRef.current?.transitioning && usePlayerStore.getState().isPlaying && ctx.state === 'suspended') {
         ctx.resume().catch(() => {})
       }
     }
@@ -823,8 +826,14 @@ export default function App() {
       nativeAudioRef.current = new NativeAudioBridge(ctx, analyser, window.electron.nativeAudio, status => {
         window.__lokalOutputStatus = status
         window.dispatchEvent(new CustomEvent('lokal:output-status', { detail: status }))
+        // The SMTC silence element opens another shared speaker. Native output
+        // already owns playback; in exclusive mode this extra client conflicts.
+        const keepAlive = smtcKeepAliveRef.current
+        if (status.mode !== 'auto' || !usePlayerStore.getState().isPlaying) keepAlive?.pause()
+        else keepAlive?.play().catch(() => {})
       })
       nativeAudioRef.current.configure(readOutputPreferences())
+      nativeAudioRef.current.setPlaying(usePlayerStore.getState().isPlaying)
       // Discard buffered audio on seeks and explicit pauses, including either
       // side of a crossfade. Both media elements still feed the same EQ graph.
       for (const element of [audioRef.current, cfAudioRef.current]) {
@@ -849,9 +858,17 @@ export default function App() {
     }
     return () => {
       delete window.__lokalSetOutputPrecision
-      nativeAudioRef.current?.configure({ precision: 'auto' })
+      nativeAudioRef.current?.setPlaying(false)
     }
   }, [initAudioCtx])
+
+  useEffect(() => {
+    const bridge = nativeAudioRef.current
+    if (bridge) bridge.setPlaying(isPlaying).catch(error => api.log('warn', `[audio-output] ${error.message}`))
+    else if (audioCtxRef.current) {
+      audioCtxRef.current[isPlaying ? 'resume' : 'suspend']().catch(() => {})
+    }
+  }, [isPlaying, audioOutputReady])
 
   useEffect(() => {
     window.__lokalInitAudio = initAudioCtx
@@ -900,7 +917,7 @@ export default function App() {
 
   useEffect(() => {
     const resumeAudio = () => {
-      if (usePlayerStore.getState().isPlaying && audioCtxRef.current?.state === 'suspended') {
+      if (!nativeAudioRef.current?.transitioning && usePlayerStore.getState().isPlaying && audioCtxRef.current?.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {})
       }
     }
@@ -968,7 +985,7 @@ export default function App() {
     //safety net for pesky SMTC.
     const el = smtcKeepAliveRef.current
     if (!el) return
-    if (isPlaying) {
+    if (isPlaying && !nativeAudioRef.current?.requestedExclusive && window.__lokalOutputStatus?.mode !== 'native') {
       el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
     } else {
       el.pause()
