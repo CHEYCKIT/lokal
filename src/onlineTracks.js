@@ -115,6 +115,19 @@ export function downloadUrlFor(track) {
   return ref.provider === 'sc' ? `https://api.soundcloud.com/tracks/${ref.id}` : `https://music.youtube.com/watch?v=${ref.id}`
 }
 
+/** Rebuild a download URL for a local file that was downloaded from a known source. */
+export function missingTrackDownloadUrl(track) {
+  const match = String(track?.source_ref || '').match(/^(yt|sc):(.+)$/)
+  if (match) return match[1] === 'sc'
+    ? `https://api.soundcloud.com/tracks/${match[2]}`
+    : `https://music.youtube.com/watch?v=${match[2]}`
+  return null
+}
+
+export function missingTrackCanRedownload(track) {
+  return !!missingTrackDownloadUrl(track) || /^a-[0-9a-f]{10}:.+$/i.test(String(track?.source_ref || ''))
+}
+
 /**
  * Save a streamed song to the library with the usual downloader. Once the
  * file is in, it takes the ghost track's place in playlists, likes and history.
@@ -137,6 +150,7 @@ export async function saveToLibrary(track, extra = {}) {
     thumbnail: track.artwork_url || undefined,
     from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
+    upgradeTrackId: extra.upgradeTrackId,
     // Songs of an imported playlist the file takes the place of (ghostDownloads.js).
     ...(extra.replaceImported?.length ? { replaceImported: extra.replaceImported } : {}),
     ...(extra.manuallySelectedImported?.length ? { manuallySelectedImported: extra.manuallySelectedImported } : {}),

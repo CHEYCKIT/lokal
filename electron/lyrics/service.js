@@ -47,15 +47,29 @@ function readSettings(db) {
     const v = s.keep_comma_artists || ''
     keepCommaArtists = v.startsWith('[') ? JSON.parse(v) : v.split('\n').map(x => x.trim()).filter(Boolean)
   } catch { keepCommaArtists = [] }
-  const order = parseList(s.lyrics_sources_order) || DEFAULT_ORDER
-  const enabled = parseList(s.lyrics_sources_enabled) || DEFAULT_ORDER
+  const savedOrder = parseList(s.lyrics_sources_order)
+  const order = savedOrder ? [...savedOrder] : [...DEFAULT_ORDER]
+  // Introduce the new source above BetterLyrics for existing installations,
+  // while preserving every source preference the user explicitly saved.
+  if (!order.includes('spicylyrics')) {
+    const at = order.findIndex(id => id === 'betterlyrics' || id === 'betterlyrics_qq')
+    order.splice(at < 0 ? order.length : at, 0, 'spicylyrics')
+  }
+  const savedEnabled = parseList(s.lyrics_sources_enabled)
+  // Migrate existing installations with the newly available provider enabled;
+  // once the settings page saves an explicit list, later toggles are retained.
+  const enabled = savedEnabled
+    ? [...savedEnabled, ...(!savedEnabled.includes('spicylyrics') ? ['spicylyrics'] : [])]
+    : DEFAULT_ORDER
   return {
     order,
     enabled,
     prioritizeSyllable: s.lyrics_prioritize_syllable === '1',
     keepCommaArtists,
+    spicyKey: s.spicylyrics_api_key || '',
+    spotifyCookie: s.spotify_sp_dc || '',
     // A negative answer is only trusted while the same sources are configured.
-    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1']),
+    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1', !!s.spicylyrics_api_key, !!s.spotify_sp_dc]),
   }
 }
 
@@ -83,6 +97,7 @@ function writeRow(db, trackId, filePath, result, extra = {}) {
     language: result?.language || null,
     translationLang: result?.translationLang || null,
     romanizationLang: result?.romanizationLang || null,
+    attribution: result?.attribution || null,
     ...extra,
   }
   db.prepare('INSERT OR REPLACE INTO lyrics_cache (track_id, lyrics_type, content, source, fetched_at, file_path, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -104,6 +119,7 @@ function fromRow(row, meta) {
     romanizationLang: meta.romanizationLang,
     attempts: meta.attempts || null,
     pinned: !!meta.pinned,
+    attribution: meta.attribution || null,
   }
 }
 
@@ -252,7 +268,7 @@ async function getLyricsFrom(db, args, providerId) {
   const filePath = trustedFilePath(db, args.trackId)
   const { result, attempts } = await lookup(
     { title: args.title, artist: args.artist, album: args.album, duration: Number(args.duration) || 0, filePath, keepCommaArtists: settings.keepCommaArtists },
-    { only: providerId },
+    { only: providerId, spicyKey: settings.spicyKey, spotifyCookie: settings.spotifyCookie },
   )
   if (result && !result.instrumental && args.trackId) {
     // Merge this attempt into what the row already knew about the other sources.

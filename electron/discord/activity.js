@@ -44,6 +44,15 @@ function artworkUrl(track) {
   return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
 }
 
+/** A deterministic cover-shaped fallback when no provider has artwork. */
+function fallbackArtwork(track) {
+  const label = [track?.artist, track?.title].filter(Boolean).join(' · ') || 'Lokal'
+  let hash = 0
+  for (const character of label) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
+  const hue = Math.abs(hash) % 360
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(label)}&size=512&background=hsl(${hue}%2C45%25%2C28%25)&color=ffffff&bold=true&format=png`
+}
+
 function milliseconds(track, field) {
   const explicit = track[`${field}_ms`]
   const value = explicit != null ? Number(explicit) : Number(track[field]) * 1000
@@ -63,7 +72,7 @@ function buildActivity(track, isPlaying, { now = Date.now(), receivedAt = now, a
     details: text(track.title, 'Unknown Track'),
     state: text(track.artist, 'Unknown Artist'),
     assets: {
-      large_image: artworkUrl(track) || artwork,
+      large_image: artworkUrl(track) || artwork || fallbackArtwork(track),
       large_text: text(track.album, 'Lokal'),
       ...(!isPlaying ? { small_image: 'paused', small_text: 'Paused' } : {}),
     },
@@ -77,4 +86,4 @@ function buildActivity(track, isPlaying, { now = Date.now(), receivedAt = now, a
   return activity
 }
 
-module.exports = { buildActivity, artworkUrl }
+module.exports = { buildActivity, artworkUrl, fallbackArtwork }

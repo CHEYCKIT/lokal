@@ -557,7 +557,7 @@ router.get('/', (req, res) => {
   if (qualityWhere) { where.push(qualityWhere.sql); params.push(...qualityWhere.params) }
   if (where.length) sql += ' WHERE ' + where.join(' AND ')
   sql += ` ORDER BY ${sort} LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`
-  res.json(db.prepare(sql).all(...params))
+  res.json(db.prepare(sql).all(...params).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) })))
 })
 
 // Settings > Library > Fill In Genres (see electron/online/genres.js).
