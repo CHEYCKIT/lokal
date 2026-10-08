@@ -627,9 +627,9 @@ export default function FullscreenPlayer() {
           {/* The header: close, lyrics view, what's playing from, full screen.
               It fades out (and the cursor hides) after a few seconds without
               the mouse moving, and comes back as soon as it moves. */}
-          <div className={`absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 ${chromeHidden ? 'pointer-events-none' : ''}`}
+          <div className={`absolute inset-x-0 top-0 z-20 grid grid-cols-[1fr_minmax(0,2fr)_1fr] items-start gap-4 px-5 pt-5 ${chromeHidden ? 'pointer-events-none' : ''}`}
             onMouseEnter={() => { overChromeRef.current = true }} onMouseLeave={() => { overChromeRef.current = false }}>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={toggleFullscreen} title="Close" aria-label="Close full-screen player"
                 className={`w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
                 <X size={15} />
@@ -644,7 +644,7 @@ export default function FullscreenPlayer() {
               )}
             </div>
             {playbackContext?.name && (
-              <div className={`min-w-0 max-w-[50%] text-center ${chromeFade}`}>
+              <div className={`col-start-2 min-w-0 text-center ${chromeFade}`}>
                 <p className="text-[10px] font-display uppercase tracking-[0.28em] text-white/45">
                   {contextLabel(playbackContext)}
                 </p>
@@ -661,7 +661,7 @@ export default function FullscreenPlayer() {
               </div>
             )}
             <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
-              className={`w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
+              className={`col-start-3 justify-self-end w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
               {screenFull ? <Minimize size={15} /> : <Expand size={15} />}
             </button>
           </div>

@@ -1,3 +1,4 @@
+import OutputPrecisionSettings from './OutputPrecisionSettings'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Headphones, Volume2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -7,7 +8,7 @@ function DeviceIcon({ kind }) {
   return kind === 'headphones' ? <Headphones size={14} aria-hidden="true" /> : <Volume2 size={14} aria-hidden="true" />
 }
 
-export default function AudioOutputPicker() {
+function BrowserAudioOutputPicker() {
   const outputDeviceId = usePlayerStore(state => state.outputDeviceId)
   const setOutputDevice = usePlayerStore(state => state.setOutputDevice)
   const [devices, setDevices] = useState([])
@@ -148,6 +149,37 @@ export default function AudioOutputPicker() {
           <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">Choose the Windows speaker or headset to use for Lokal.</p>
         </div>
       )}
+    </div>
+  )
+}
+
+export default function AudioOutputPicker() {
+  const [native, setNative] = useState(() => window.__lokalOutputStatus?.mode === 'native')
+  const [open, setOpen] = useState(false)
+  const root = useRef(null)
+  useEffect(() => {
+    const update = event => setNative(event.detail.mode === 'native')
+    window.addEventListener('lokal:output-status', update)
+    return () => window.removeEventListener('lokal:output-status', update)
+  }, [])
+  useEffect(() => {
+    if (!open) return
+    const close = event => {
+      if (event.key === 'Escape' || (event.type === 'pointerdown' && !root.current?.contains(event.target))) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', close)
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', close) }
+  }, [open])
+  if (!native) return <BrowserAudioOutputPicker />
+  return (
+    <div ref={root} className="relative flex items-center justify-center">
+      <button type="button" onClick={() => setOpen(value => !value)} aria-label="Native audio output" aria-expanded={open} className="text-accent">
+        <Volume2 size={14} />
+      </button>
+      {open && <div className="absolute bottom-full right-0 z-30 mb-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
+        <OutputPrecisionSettings compact />
+      </div>}
     </div>
   )
 }

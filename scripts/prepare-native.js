@@ -2,6 +2,8 @@ const fs = require('fs')
 const path = require('path')
 const { spawnSync } = require('child_process')
 
+require('./prepare-audio')
+
 if (process.platform !== 'win32') process.exit(0)
 
 const root = path.resolve(__dirname, '..')

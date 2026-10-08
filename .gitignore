@@ -22,3 +22,5 @@ src/photos/
 .vscode/
 electron/native/
 native/smtc-bridge/target/
+
+native/audio-output/build/
