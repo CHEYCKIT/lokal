@@ -458,7 +458,7 @@ export default function App() {
   }) => ({
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
