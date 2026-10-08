@@ -311,3 +311,38 @@ test('desktop and web download handlers preserve only row-scoped approvals', t =
     assert.equal(call.expectedDuration, 210)
   }
 })
+
+for (const confirmed of [false, true]) {
+  test(`missing row upgrade retains its identity only with duration confirmation (${confirmed})`, async t => {
+    const { db, filepath, add } = fixture(t)
+    const missing = path.join(path.dirname(filepath), 'missing.flac')
+    add('missing-row', missing, 'Song', 'Artist', 492)
+    t.mock.method(mm, 'parseFile', async () => ({ format: { duration: 210 } }))
+    const mgr = new DownloadManager()
+    mgr.deps = { getDB: () => db, index: () => { indexed++; return { id: 'separate' } } }
+    let indexed = 0
+    t.mock.method(mgr, 'update', () => {})
+    const job = { opts: { upgradeTrackId: 'missing-row', allowUpgradeDurationMismatch: confirmed }, indexedTracks: [], outputLines: [], kind: 'single', url: '' }
+    await mgr.indexOne(job, filepath)
+    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get('missing-row')
+    assert.equal(row.file_path, confirmed ? filepath : missing)
+    assert.equal(row.duration, confirmed ? 210 : 492)
+    assert.equal(indexed, confirmed ? 0 : 1)
+    assert.equal(job.upgradedTrackId, confirmed ? 'missing-row' : undefined)
+  })
+}
+
+test('album route marks missing files while retaining existing album normalization', t => {
+  const { db, filepath, add } = fixture(t)
+  add('present', filepath)
+  add('missing', `${filepath}.absent`)
+  db.prepare('UPDATE tracks SET album = ?, album_artist = ?').run('Album', 'Artist')
+  const router = require('../server/routes/tracks.js')
+  const handler = router.stack.find(layer => layer.route?.path === '/' && layer.route.methods.get).route.stack[0].handle
+  let rows
+  handler({ query: { album: 'Album', albumArtist: 'Artist' } }, { json: value => { rows = value } })
+  assert.equal(rows.length, 2)
+  assert.equal(rows.find(row => row.id === 'present').missing, false)
+  assert.equal(rows.find(row => row.id === 'missing').missing, true)
+  assert.ok(rows.every(row => row.album === 'Album'))
+})

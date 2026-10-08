@@ -381,6 +381,24 @@ async function findTrackUri(t, track, helpers) {
   return null
 }
 
+/** Resolve a title/artist to the Spotify id used by supported lyric APIs. */
+async function findSpotifyTrackId(track, cookie) {
+  if (!cookieValue(cookie)) return null
+  return queue.then(async () => {
+    const t = await getTokens(cookie)
+    if (!t) return null
+    const norm = value => String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+    const cleanTitle = value => String(value || '').replace(/\s*\([^)]*\)|\s*\[[^\]]*\]/g, '').trim()
+    const firstArtist = value => String(value || '').split(/,|\s+(?:feat\.|ft\.|&|x)\s+/i)[0].trim()
+    const artistsMatch = (want, artists) => {
+      const target = norm(firstArtist(want))
+      return (artists || []).some(name => norm(name) === target || norm(name).includes(target) || target.includes(norm(name)))
+    }
+    const uri = await findTrackUri(t, track, { norm, cleanTitle, splitFirstArtist: firstArtist, artistsMatch })
+    return String(uri || '').match(/^spotify:track:([A-Za-z0-9]{22})$/)?.[1] || null
+  })
+}
+
 /** How the web player gets a canvas now: the "canvas" GraphQL query. */
 async function canvasFromGraphql(t, uri) {
   const headers = { Authorization: `Bearer ${t.accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
@@ -459,4 +477,4 @@ async function checkSpotify(rawCookie) {
   }
 }
 
-module.exports = { fromSpotify, checkSpotify, parseCanvases, cookieValue, TransientError }
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, TransientError }

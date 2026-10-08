@@ -39,6 +39,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { api } from './api'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast } from './components/Toaster'
+import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, providerLabel, streamRef } from './onlineTracks'
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
@@ -739,6 +740,12 @@ export default function App() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     audioCtxRef.current = ctx
+    const keepAudioRunning = () => {
+      if (usePlayerStore.getState().isPlaying && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {})
+      }
+    }
+    ctx.addEventListener('statechange', keepAudioRunning)
 
     const nodes = EQ_AUDIO_BANDS.map((band) => {
       const f = ctx.createBiquadFilter()
@@ -893,18 +900,24 @@ export default function App() {
 
   useEffect(() => {
     const resumeAudio = () => {
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      if (usePlayerStore.getState().isPlaying && audioCtxRef.current?.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {})
       }
     }
-
-    window.addEventListener('focus', resumeAudio)
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibility = () => {
       if (document.visibilityState === 'visible') resumeAudio()
-    })
+    }
+
+    // A music player must keep its audio clock alive while the window loses
+    // focus, is minimized, or a menu briefly takes focus.
+    window.addEventListener('focus', resumeAudio)
+    window.addEventListener('blur', resumeAudio)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       window.removeEventListener('focus', resumeAudio)
+      window.removeEventListener('blur', resumeAudio)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 
@@ -2207,6 +2220,7 @@ export default function App() {
             />
 
             <TitleBar />
+            <ReleaseRefreshBanner />
             <div className="flex flex-1 overflow-hidden" data-app-layout>
               <Sidebar />
               <main ref={pageWidthRef} className="min-w-0 flex-1 overflow-y-auto bg-transparent pb-[var(--player-space,0px)] [scrollbar-gutter:stable]">
@@ -2265,6 +2279,7 @@ export default function App() {
             and the graph outputs silence. */}
         <audio
           ref={audioRef}
+          preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
@@ -2276,6 +2291,7 @@ export default function App() {
         />
         <audio
           ref={cfAudioRef}
+          preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}

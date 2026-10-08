@@ -150,7 +150,7 @@ function paintVoice(voiceEl, units, t, live) {
 // ---------------------------------------------------------------- rows
 
 const Row = React.memo(function Row({
-  line, index, until, clock, distance, isFocused, isLive, isPast, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
+  line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
 }) {
   const rowRef = useRef(null)
   const leadRef = useRef(null)
@@ -164,9 +164,12 @@ const Row = React.memo(function Row({
 
   const alignEnd = duet && line.side === 'end'
   const baseSize = (fullscreen ? 1.85 : 0.98) * textScale
-  // A line still being sung (its backing vocal running past the next line's
-  // start, overlapping voices) stays lit alongside the focused one.
-  const near = isFocused || isLive ? 0 : distance
+  // `isLive` is only for the per-frame word painter. Visual focus is exclusive:
+  // as soon as the next line takes focus, the previous line enters the same
+  // handover transition instead of remaining bright during an overlap. This
+  // makes fast, densely timed verses (Rap God is a good stress case) bounce
+  // from one line to the next without two competing focal points.
+  const near = isFocused ? 0 : distance
   const falloff = browsing ? 0.8 : FALLOFF_ALPHA[Math.min(near, FALLOFF_ALPHA.length - 1)]
   const blur = browsing || !synced ? 0 : FALLOFF_BLUR[Math.min(near, FALLOFF_BLUR.length - 1)]
   const lineOpacity = !synced ? 1 : near === 0 ? 1 : falloff
@@ -232,7 +235,7 @@ const Row = React.memo(function Row({
             lineHeight: 1.22,
             fontWeight: 700,
             letterSpacing: '-0.01em',
-            color: synced ? (isFocused || isPast ? undefined : UNSUNG) : SUNG,
+            color: synced ? (isFocused ? undefined : UNSUNG) : SUNG,
           }}
         >
           {synced && wordSync && line.words?.length ? (
@@ -750,6 +753,8 @@ export default function LyricsPanel({
   // ---- render
   const liveSet = useMemo(() => new Set(liveKey ? liveKey.split(',').map(Number) : []), [liveKey])
   const sourceLabel = sources.find(s => s.id === result?.source)?.label || result?.source
+  const attribution = result?.attribution
+  const hasContributors = !!(attribution?.uploader || attribution?.maker)
   const translationBusy = wantTranslation && !embeddedTranslation && translation.state === 'loading'
   const romanizationBusy = subline === 'romanization' && !embeddedRomanization && romanization.state === 'loading'
   const showToolbar = lines.length > 0
@@ -870,7 +875,6 @@ export default function LyricsPanel({
                   distance={focusIdx >= 0 ? Math.abs(i - focusIdx) : i + 1}
                   isFocused={i === focusIdx}
                   isLive={liveSet.has(i)}
-                  isPast={focusIdx >= 0 && i < focusIdx}
                   synced={synced}
                   browsing={browsing}
                   wordSync={wordSync}
@@ -887,6 +891,14 @@ export default function LyricsPanel({
                 <p className="px-3 pb-10 text-[11px] text-white/30">
                   Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
                   {wantTranslation && (embeddedTranslation || translation.lines) ? ` · ${embeddedTranslation ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
+                  {attribution?.provider && <span className="block mt-1">Provided by {attribution.provider}</span>}
+                  {hasContributors && (
+                    <span className="block mt-1">
+                      {attribution.uploader && <>Uploaded by <a href={attribution.uploader.url} target="_blank" rel="noreferrer" className="hover:text-white/60 underline underline-offset-2">{attribution.uploader.name}</a></>}
+                      {attribution.uploader && attribution.maker && ' · '}
+                      {attribution.maker && <>made by <a href={attribution.maker.url} target="_blank" rel="noreferrer" className="hover:text-white/60 underline underline-offset-2">{attribution.maker.name}</a></>}
+                    </span>
+                  )}
                 </p>
               )}
             </>
