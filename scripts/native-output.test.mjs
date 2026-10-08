@@ -79,6 +79,22 @@ test('native IPC rejects other windows and child frames', () => {
   assert.equal(close({ sender, senderFrame: sender.mainFrame }).ok, true)
 })
 
+test('worklet accepts a deeper credit window for exclusive output', () => {
+  let Processor
+  const messages = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => messages.push(structuredClone(message)) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 48 } })
+  for (let i = 0; i < 50; i++) processor.process([[new Float32Array(128), new Float32Array(128)]])
+  assert.equal(messages.length, 48)
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  processor.process([[new Float32Array(128), new Float32Array(128)]])
+  assert.equal(messages.length, 49)
+})
+
 test('worklet interleaves stereo, sends no audible output, bounds messages and discards partial frames on reset', () => {
   let Processor
   const messages = []
