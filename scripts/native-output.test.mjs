@@ -120,7 +120,8 @@ test('missing dependency, unavailable device, invalid config and device stop are
   const { output, audio, open } = fixture()
   assert.equal(output.open({ precision: 'float32', sampleRate: 48000, deviceName: 'unplugged' }).ok, false)
   assert.equal(output.open({ precision: 'bad', sampleRate: 48000 }).ok, false)
-  const status = open(); audio.running = false
+  const status = open()
+  audio.running = false
   assert.equal(output.write(status.session, new Float32Array(2048)).ok, false)
   assert.equal(output.session, null)
 })
@@ -243,7 +244,7 @@ function bridgeFixture(t, playing = true) {
   globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: message => sent.push(message) } } connect() {} disconnect() {} }
   t.after(() => delete globalThis.AudioWorkletNode)
   const api = {
-    open: async ({ precision }) => { calls.push('open'); return { ok: true, session: precision, precision, frameSize: 128, sampleRate: 48000, channels: 2 } },
+    open: async ({ precision, exclusive }) => { calls.push('open'); return { ok: true, session: precision, precision, exclusive, frameSize: 128, sampleRate: 48000, channels: 2 } },
     close: async () => { calls.push('close') }, flush: async () => { calls.push('flush') }, write: async () => ({ ok: true }),
   }
   const bridge = new NativeAudioBridge(context, source, api)
@@ -292,11 +293,11 @@ test('idle Auto keeps Chromium on its normal output and releases native routes o
 
   api.open = async () => ({ ok: true, session: 'native', exclusive: false, frameSize: 128 })
   await bridge.setPlaying(true)
-  assert.deepEqual(sinks, [{ type: 'none' }])
+  assert.deepEqual(sinks, [])
   await bridge.setPlaying(false)
   assert.equal(bridge.context.state, 'suspended')
   assert.equal(bridge.context.sinkId, 'system-speaker')
-  assert.deepEqual(sinks, [{ type: 'none' }, 'system-speaker'])
+  assert.deepEqual(sinks, [])
 })
 
 test('bridge preserves browser playback when open fails and restores it on write failure', async t => {
@@ -413,21 +414,21 @@ test('pausing during device negotiation cannot leave an exclusive stream open', 
   assert.equal(calls.at(-1), 'close')
 })
 
-test('native shared output also releases the extra Chromium speaker', async t => {
+test('native shared output keeps Chromium connected to the speaker clock', async t => {
   const { bridge, api } = bridgeFixture(t)
   const sinks = []
   bridge.context.setSinkId = async value => sinks.push(value)
   api.open = async options => {
-    assert.deepEqual(sinks.at(-1), { type: 'none' })
-    assert.equal(bridge.status.mode, 'switching', 'do not restart the SMTC shared speaker during native negotiation')
+    assert.equal(sinks.length, 0, 'shared WASAPI mode keeps Chromium connected to its output clock')
     assert.equal(options.exclusive, false)
     return { ok: true, session: 'shared', frameSize: 128 }
   }
   await bridge.configure({ precision: 'float32' })
-  assert.equal(bridge.silentSink, true)
+  assert.equal(Boolean(bridge.silentSink), false)
+  assert.deepEqual(sinks, [])
   await bridge.setPlaying(false)
   assert.equal(bridge.context.state, 'suspended')
-  assert.equal(sinks.at(-1), '')
+  assert.deepEqual(sinks, [])
 })
 
 test('idle Auto preserves the browser sink and resumes without switching devices', async t => {
@@ -452,15 +453,28 @@ test('native transitions retain the original browser sink instead of capturing n
   bridge.browserDeviceId = 'selected-speaker'
   bridge.context.sinkId = 'selected-speaker'
   bridge.context.setSinkId = async value => { sinks.push(value); bridge.context.sinkId = value }
-  await bridge.configure({ precision: 'float32' })
+  bridge.api.open = async ({ precision }) => ({ ok: true, session: precision, precision, exclusive: true, frameSize: 128 })
+  await bridge.configure({ precision: 'float32', exclusive: true })
   assert.deepEqual(sinks, [{ type: 'none' }])
   assert.equal(bridge.previousSink, 'selected-speaker')
-  await bridge.configure({ precision: 'pcm16' })
+  await bridge.configure({ precision: 'pcm16', exclusive: true })
   assert.equal(bridge.previousSink, 'selected-speaker')
   assert.deepEqual(sinks, [{ type: 'none' }])
   await bridge.configure({ precision: 'auto' })
   assert.equal(sinks.at(-1), 'selected-speaker')
   assert.equal(bridge.silentSink, false)
+})
+
+test('exclusive request that falls back to shared restores Chromium output clock', async t => {
+  const { bridge, api } = bridgeFixture(t)
+  const sinks = []
+  bridge.context.sinkId = 'speaker'
+  bridge.context.setSinkId = async value => { sinks.push(value); bridge.context.sinkId = value }
+  api.open = async () => ({ ok: true, session: 'shared-fallback', exclusive: false, frameSize: 128 })
+  await bridge.configure({ precision: 'float32', exclusive: true })
+  assert.deepEqual(sinks, [{ type: 'none' }, 'speaker'])
+  assert.equal(bridge.silentSink, false)
+  assert.equal(bridge.exclusive, false)
 })
 
 test('pausing during silent-sink selection does not open a late native stream', async t => {
@@ -474,7 +488,7 @@ test('pausing during silent-sink selection does not open a late native stream', 
     }
     bridge.context.sinkId = value
   }
-  const starting = bridge.configure({ precision: 'float32' })
+  const starting = bridge.configure({ precision: 'float32', exclusive: true })
   await waiting
   const stopping = bridge.setPlaying(false)
   release()

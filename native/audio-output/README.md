@@ -5,8 +5,12 @@ Chromium/Web Audio. Shared output and the non-Windows backends use miniaudio;
 opt-in Windows WASAPI exclusive output uses a dedicated event-driven render
 thread and IAudioClient/IAudioRenderClient. Exclusive initialization failure
 falls back to shared output.
-Chromium uses a silent sink while the native route owns the device. Shared
-output can be converted by the system mixer. The UI reports the app stream format, not the DAC's physical format.
+For native shared output, Chromium stays connected to the selected speaker with
+a silent AudioWorklet output, preserving the hardware clock that drives media
+decoding and processing. Exclusive WASAPI temporarily moves Chromium to its
+silent sink because Windows cannot share that endpoint. Shared output can be
+converted by the system mixer. The UI reports the app stream format, not the
+DAC's physical format.
 
 - Vendor: miniaudio **0.11.23**, https://github.com/mackron/miniaudio/tree/0.11.23
 - `vendor/miniaudio.h` SHA-256: `7e4f3f13c8fe66df2080ac3dd12a89193e3c2463cb7f067c798abd7331cd8ee6`
@@ -30,12 +34,12 @@ ArrayBuffers on MessagePortMain. Credits bound outstanding blocks.
 When transport credits are delayed, the worklet also retains up to 8 shared or
 48 exclusive PCM blocks (1024 sample frames each). With 24/64 in-flight credits,
 the combined windows fit the native ring's 32/128-block capacity.
-Queue overload trims stale PCM at a WASAPI render boundary rather than
-stopping and restarting the device. The exclusive endpoint is opened with an
-event callback, negotiates a stable device period (including aligned-buffer
-retry), and primes its endpoint buffer before playback starts. It prefers the
-requested sample format and converts between float32 and PCM16 when the
-exclusive endpoint accepts only the alternate format.
+Queue overload trims stale PCM at a WASAPI render boundary rather than stopping
+and restarting the device. The exclusive endpoint is opened with an event
+callback, negotiates a stable device period (including aligned-buffer retry),
+and primes its endpoint buffer before playback starts. It prefers the requested
+sample format and converts between float32 and PCM16 when the exclusive endpoint
+accepts only the alternate format.
 Flush messages use the same port as PCM to preserve ordering across seeks.
 Incoming ports are restricted to the main player frame, and sessions reject
 stale blocks. Flush stops the consumer before resetting the native ring.

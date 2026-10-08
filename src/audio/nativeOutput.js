@@ -65,15 +65,16 @@ export class NativeAudioBridge {
           this.node.port.postMessage({ type: 'transport', port: port2 }, [port2])
         }
       }
-      if (typeof this.context.setSinkId === 'function') {
+      if (exclusive && typeof this.context.setSinkId === 'function') {
         // fallback() leaves Chromium on its silent sink for native output.
-        // Do not capture that sink as the speaker to restore later.
+        // Exclusive WASAPI cannot share the hardware endpoint with Chromium.
         await this.silenceBrowserOutput()
       } else if (exclusive) throw new Error('This build cannot release browser output for exclusive mode.')
       if (!this.playing) { await this.fallback(); return this.status }
       const result = await this.api.open({ precision, deviceName, exclusive, sampleRate: this.context.sampleRate })
       if (!result?.ok) throw new Error(result?.error || 'Native output could not be started.')
       if (!this.playing) { await this.fallback(); return this.status }
+      if (!result.exclusive && this.silentSink) await this.restoreBrowserOutput()
       this.session = result.session
       this.frameSize = result.frameSize
       this.source.disconnect(this.context.destination)
