@@ -28,8 +28,8 @@ main process; the window's JavaScript thread is not part of audio delivery.
 PCM arrays are cloned because Electron cannot deserialize browser-transferred
 ArrayBuffers on MessagePortMain. Credits bound outstanding blocks.
 When transport credits are delayed, the worklet also retains up to 8 shared or
-32 exclusive PCM blocks (1024 sample frames each); combined with its 12/48
-in-flight credits this remains below the native ring's 32/128-block capacity.
+48 exclusive PCM blocks (1024 sample frames each). With 24/64 in-flight credits,
+the combined windows fit the native ring's 32/128-block capacity.
 Queue overload trims stale PCM at a WASAPI render boundary rather than
 stopping and restarting the device. The exclusive endpoint is opened with an
 event callback, negotiates a stable device period (including aligned-buffer
