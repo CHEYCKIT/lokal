@@ -827,6 +827,14 @@ export default function App() {
       nativeAudioRef.current = new NativeAudioBridge(ctx, analyser, window.electron.nativeAudio, status => {
         window.__lokalOutputStatus = status
         window.dispatchEvent(new CustomEvent('lokal:output-status', { detail: status }))
+        api.log('info', `[audio-output] ${JSON.stringify({
+          mode: status.mode,
+          precision: status.precision || 'auto',
+          sampleRate: status.sampleRate || ctx.sampleRate,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          warning: status.warning || null,
+        })}`)
         // The SMTC silence element opens another shared speaker. Native output
         // already owns playback; in exclusive mode this extra client conflicts.
         const keepAlive = smtcKeepAliveRef.current
@@ -849,6 +857,47 @@ export default function App() {
     console.error('Failed to initialize AudioContext:', e)
   }
 }, [])
+
+  useEffect(() => {
+    if (!api.isElectron || !window.electron?.onWindowVisibility) return
+    let previousHidden = null
+    let previous = null
+    let chain = Promise.resolve()
+    const unsubscribe = window.electron.onWindowVisibility(hidden => {
+      if (previousHidden === hidden) return
+      previousHidden = hidden
+      chain = chain.catch(() => {}).then(async () => {
+        const player = usePlayerStore.getState()
+        const active = player.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
+        const native = await window.electron.nativeAudio?.diagnostics?.()
+        const status = window.__lokalOutputStatus || {}
+        const nativeUnderruns = native?.native?.underrunEvents ?? null
+        const underrunDelta = previous?.mode === status.mode && previous?.events !== null &&
+          nativeUnderruns !== null && nativeUnderruns >= previous.events
+          ? nativeUnderruns - previous.events
+          : null
+        const sample = {
+          event: hidden ? 'minimized' : 'restored',
+          isPlaying: player.isPlaying,
+          audioContextState: audioCtxRef.current?.state || null,
+          mode: status.mode || 'auto',
+          precision: status.precision || readOutputPreferences().precision,
+          sampleRate: status.sampleRate || audioCtxRef.current?.sampleRate || null,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          mediaCurrentTime: Number.isFinite(active?.currentTime) ? Number(active.currentTime.toFixed(3)) : null,
+          nativeDiagnosticsAvailable: !!native?.native,
+          native,
+          underrunEventsSincePreviousVisibility: underrunDelta,
+        }
+        api.log('info', `[audio-visibility] ${JSON.stringify(sample)}`)
+        previous = { events: nativeUnderruns, mode: status.mode }
+      }).catch(error => {
+        api.log('warn', `[audio-visibility] diagnostics failed: ${error.message}`)
+      })
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     window.__lokalSetOutputPrecision = async preferences => {

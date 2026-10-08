@@ -63,6 +63,8 @@ struct WasapiExclusiveOutput::Impl {
   std::atomic<uint64_t> writtenFrames{0};
   std::atomic<uint64_t> readFrames{0};
   std::atomic<uint64_t> renderedFrames{0};
+  std::atomic<uint64_t> underrunFrames{0};
+  std::atomic<uint64_t> underrunEvents{0};
   std::atomic<uint64_t> discardTarget{0};
   std::atomic<uint64_t> discardGeneration{0};
   std::atomic<uint64_t> completedDiscardGeneration{0};
@@ -126,6 +128,10 @@ struct WasapiExclusiveOutput::Impl {
     }
     const size_t usedBytes = static_cast<size_t>(available) * bytesPerFrame;
     const size_t totalBytes = static_cast<size_t>(frames) * bytesPerFrame;
+    if (available < frames) {
+      underrunFrames.fetch_add(frames - available, std::memory_order_relaxed);
+      underrunEvents.fetch_add(1, std::memory_order_relaxed);
+    }
     if (usedBytes < totalBytes) std::memset(sourceBuffer.data() + usedBytes, 0, totalBytes - usedBytes);
     if (inputBits == endpointBits) {
       std::memcpy(destination, sourceBuffer.data(), static_cast<size_t>(frames) * endpointBytesPerFrame);
@@ -379,6 +385,8 @@ bool WasapiExclusiveOutput::open(const std::wstring& endpointId, uint32_t sample
   impl_->writtenFrames.store(0);
   impl_->readFrames.store(0);
   impl_->renderedFrames.store(0);
+  impl_->underrunFrames.store(0);
+  impl_->underrunEvents.store(0);
   impl_->discardTarget.store(0);
   impl_->discardGeneration.store(0);
   impl_->completedDiscardGeneration.store(0);
@@ -496,6 +504,17 @@ bool WasapiExclusiveOutput::discardComplete() const {
 uint64_t WasapiExclusiveOutput::discardedFrames() const {
   return impl_->discardedFrames.load(std::memory_order_acquire);
 }
+uint64_t WasapiExclusiveOutput::queuedFrames() const {
+  const uint64_t written = impl_->writtenFrames.load(std::memory_order_acquire);
+  const uint64_t read = impl_->readFrames.load(std::memory_order_acquire);
+  return written - std::min(written, read);
+}
+uint64_t WasapiExclusiveOutput::underrunFrames() const {
+  return impl_->underrunFrames.load(std::memory_order_acquire);
+}
+uint64_t WasapiExclusiveOutput::underrunEvents() const {
+  return impl_->underrunEvents.load(std::memory_order_acquire);
+}
 uint32_t WasapiExclusiveOutput::sampleRate() const {
   return impl_->sampleRate.load(std::memory_order_acquire);
 }
@@ -523,6 +542,9 @@ bool WasapiExclusiveOutput::isOpen() const { return false; }
 bool WasapiExclusiveOutput::isRunning() const { return false; }
 bool WasapiExclusiveOutput::discardComplete() const { return true; }
 uint64_t WasapiExclusiveOutput::discardedFrames() const { return 0; }
+uint64_t WasapiExclusiveOutput::queuedFrames() const { return 0; }
+uint64_t WasapiExclusiveOutput::underrunFrames() const { return 0; }
+uint64_t WasapiExclusiveOutput::underrunEvents() const { return 0; }
 uint32_t WasapiExclusiveOutput::sampleRate() const { return 0; }
 double WasapiExclusiveOutput::streamTime() const { return 0; }
 

@@ -18,6 +18,7 @@ struct Output {
   bool initialized = false, open = false;
   std::atomic<uint64_t> frames{0};
   std::atomic<uint64_t> writtenFrames{0}, consumedFrames{0}, discardUntil{0}, discardedFrames{0};
+  std::atomic<uint64_t> underrunFrames{0}, underrunEvents{0};
   std::atomic<bool> discardRequested{false}, discardComplete{true};
   std::vector<ma_device_id> ids;
   void close() {
@@ -59,6 +60,10 @@ static void render(ma_device* device, void* buffer, const void*, ma_uint32 count
     if (!available) break;
     std::memcpy(static_cast<char*>(buffer) + done * bytes, input, available * bytes);
     ma_pcm_rb_commit_read(&self->ring, available); done += available; consumed += available;
+  }
+  if (done < count) {
+    self->underrunFrames.fetch_add(count - done, std::memory_order_relaxed);
+    self->underrunEvents.fetch_add(1, std::memory_order_relaxed);
   }
   self->consumedFrames.store(consumed, std::memory_order_release);
   self->frames.fetch_add(count, std::memory_order_relaxed);
@@ -120,6 +125,7 @@ static napi_value open(napi_env env, napi_callback_info info) {
   self->open = true; self->frames.store(0); self->writtenFrames.store(0); self->consumedFrames.store(0);
   self->discardUntil.store(0); self->discardRequested.store(false); self->discardComplete.store(true);
   self->discardedFrames.store(0);
+  self->underrunFrames.store(0); self->underrunEvents.store(0);
   return number(env, 1024);
 }
 static napi_value start(napi_env env, napi_callback_info) {
@@ -186,6 +192,27 @@ static napi_value discardedFrames(napi_env env, napi_callback_info) {
     ? s->wasapi.discardedFrames()
     : s->discardedFrames.load(std::memory_order_acquire)));
 }
+static napi_value diagnostics(napi_env env, napi_callback_info) {
+  auto* s = state(env);
+  const bool exclusive = s->usingWasapiExclusive;
+  const uint64_t written = s->writtenFrames.load(std::memory_order_acquire);
+  const uint64_t consumed = s->consumedFrames.load(std::memory_order_acquire);
+  const uint64_t underrunFrames = exclusive
+    ? s->wasapi.underrunFrames() : s->underrunFrames.load(std::memory_order_acquire);
+  const uint64_t underrunEvents = exclusive
+    ? s->wasapi.underrunEvents() : s->underrunEvents.load(std::memory_order_acquire);
+  const uint64_t queuedFrames = exclusive
+    ? s->wasapi.queuedFrames()
+    : written - std::min(written, consumed);
+  napi_value result; napi_create_object(env, &result);
+  napi_set_named_property(env, result, "underrunFrames", number(env, static_cast<double>(underrunFrames)));
+  napi_set_named_property(env, result, "underrunEvents", number(env, static_cast<double>(underrunEvents)));
+  napi_set_named_property(env, result, "queuedFrames", number(env, static_cast<double>(queuedFrames)));
+  napi_set_named_property(env, result, "streamTime", number(env, exclusive
+    ? s->wasapi.streamTime() : s->open && s->device.sampleRate
+      ? static_cast<double>(s->frames.load(std::memory_order_acquire)) / s->device.sampleRate : 0.0));
+  return result;
+}
 static napi_value write(napi_env env, napi_callback_info info) {
   auto* s = state(env); size_t argc = 1, size = 0; napi_value args[1]; void* input = nullptr; bool isBuffer = false;
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
@@ -230,6 +257,7 @@ static napi_value setup(napi_env env, napi_value exports) {
     {"discardOutputQueue", nullptr, discard, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"isOutputQueueDiscardComplete", nullptr, discardComplete, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"getDiscardedFrames", nullptr, discardedFrames, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"getDiagnostics", nullptr, diagnostics, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(methods) / sizeof(methods[0]), methods);
   return exports;

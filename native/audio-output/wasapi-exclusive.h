@@ -23,6 +23,9 @@ public:
   bool isRunning() const;
   bool discardComplete() const;
   uint64_t discardedFrames() const;
+  uint64_t queuedFrames() const;
+  uint64_t underrunFrames() const;
+  uint64_t underrunEvents() const;
   uint32_t sampleRate() const;
   double streamTime() const;
 

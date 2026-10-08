@@ -20,6 +20,8 @@ class NativeOutput {
     this.session = null
     this.queued = 0
     this.discardPending = false
+    this.queueTrimCount = 0
+    this.underrunBaseline = null
   }
 
   instance() {
@@ -63,6 +65,8 @@ class NativeOutput {
             this.frameSize = frameSize
             this.queued = 0
             this.discardPending = false
+            this.queueTrimCount = 0
+            this.underrunBaseline = null
             const actualExclusive = audio.isExclusive()
             if (share && !actualExclusive) throw new Error('The device did not accept exclusive mode.')
             const warnings = []
@@ -108,6 +112,7 @@ class NativeOutput {
       // the main thread stalls. Never replay a long queue of stale audio.
       const clearThreshold = this.status?.exclusive ? 120 : 28
       if (this.queued >= clearThreshold && !this.discardPending) {
+        this.queueTrimCount++
         // Do not stop/restart WASAPI to trim stale audio; that creates a
         // periodic audible dropout when the device clock falls behind.
         if (typeof this.audio.discardOutputQueue === 'function' &&
@@ -122,6 +127,9 @@ class NativeOutput {
       }
       this.audio.write(encodePCM(samples, this.precision))
       this.queued++
+      if (!this.underrunBaseline && typeof this.audio.getDiagnostics === 'function') {
+        this.underrunBaseline = this.audio.getDiagnostics()
+      }
       return { ok: true }
     } catch (error) {
       this.close()
@@ -135,6 +143,31 @@ class NativeOutput {
     this.queued = 0
     this.discardPending = false
     this.lastStreamTime = this.audio.streamTime
+  }
+
+  diagnostics() {
+    const nativeStats = this.session && typeof this.audio?.getDiagnostics === 'function'
+      ? this.audio.getDiagnostics()
+      : null
+    const baseline = this.underrunBaseline
+    const native = nativeStats && {
+      ...nativeStats,
+      underrunFrames: Math.max(0, nativeStats.underrunFrames - (baseline?.underrunFrames || 0)),
+      underrunEvents: Math.max(0, nativeStats.underrunEvents - (baseline?.underrunEvents || 0)),
+    }
+    return {
+      active: !!this.session,
+      precision: this.status?.precision || null,
+      exclusive: this.status?.exclusive === true,
+      sampleRate: this.status?.sampleRate || null,
+      frameSize: this.status?.frameSize || null,
+      deviceName: this.status?.deviceName || null,
+      backend: this.status?.backend || null,
+      queuedBlocks: this.queued,
+      discardPending: this.discardPending,
+      queueTrimCount: this.queueTrimCount,
+      native,
+    }
   }
 
   close() {
@@ -181,6 +214,7 @@ function registerNativeOutput(ipcMain, getWindow) {
     return fn(...args)
   })
   handle('devices', () => output.devices())
+  handle('diagnostics', () => output.diagnostics())
   handle('open', options => output.open(options || {}))
   handle('write', (session, samples) => output.write(session, samples))
   handle('flush', session => { output.flush(session); return { ok: true } })

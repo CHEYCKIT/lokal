@@ -21,6 +21,8 @@ function fixture(options = {}) {
     discardOutputQueue() { this.discards++; this.discardComplete = false; this.discardedFrames = 0 },
     isOutputQueueDiscardComplete() { return this.discardComplete },
     getDiscardedFrames() { return this.discardedFrames },
+    diagnostic: { underrunFrames: 256, underrunEvents: 2, queuedFrames: 1024, streamTime: 1.5 },
+    getDiagnostics() { return this.diagnostic },
   }
   const output = new NativeOutput(() => audio)
   return { audio, output, open: precision => output.open({ precision: precision || 'float32', sampleRate: 48000 }) }
@@ -88,6 +90,22 @@ test('native queue trimming stays inside shared and exclusive ring capacities', 
   }
 })
 
+test('native diagnostics report active output, bounded queue, and underrun counters', () => {
+  const { audio, output, open } = fixture()
+  assert.deepEqual(output.diagnostics(), {
+    active: false, precision: null, exclusive: false, sampleRate: null, frameSize: null,
+    deviceName: null, backend: null, queuedBlocks: 0, discardPending: false, queueTrimCount: 0, native: null,
+  })
+  const status = open()
+  assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
+  audio.diagnostic = { ...audio.diagnostic, underrunFrames: 272, underrunEvents: 3 }
+  assert.deepEqual(output.diagnostics(), {
+    active: true, precision: 'float32', exclusive: false, sampleRate: 48000, frameSize: 1024,
+    deviceName: 'Speakers', backend: 'test', queuedBlocks: 1, discardPending: false, queueTrimCount: 0,
+    native: { underrunFrames: 16, underrunEvents: 1, queuedFrames: 1024, streamTime: 1.5 },
+  })
+})
+
 test('unsupported float falls back truthfully; unsupported rates cannot change playback pitch', () => {
   const fallback = fixture({ rejectFloat: true }).open()
   assert.equal(fallback.precision, 'pcm16'); assert.match(fallback.warning, /Using 16-bit/)
@@ -112,9 +130,12 @@ test('native IPC rejects other windows and child frames', () => {
   const sender = { mainFrame: {} }
   registerNativeOutput({ handle: (channel, fn) => handlers.set(channel, fn), on: (channel, fn) => handlers.set(channel, fn) }, () => ({ webContents: sender }))
   const close = handlers.get('audio-output:close')
+  const diagnostics = handlers.get('audio-output:diagnostics')
   assert.equal(close({ sender: {}, senderFrame: sender.mainFrame }).ok, false)
   assert.equal(close({ sender, senderFrame: {} }).ok, false)
   assert.equal(close({ sender, senderFrame: sender.mainFrame }).ok, true)
+  assert.equal(diagnostics({ sender: {}, senderFrame: sender.mainFrame }).ok, false)
+  assert.equal(diagnostics({ sender, senderFrame: sender.mainFrame }).active, false)
 })
 
 test('worklet accepts the bounded shared and exclusive buffering windows', () => {
