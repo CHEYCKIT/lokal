@@ -111,7 +111,7 @@ class NativeOutput {
   }
 
   flush(session) {
-    if (session !== this.session) return
+    if (!this.session || session !== this.session) return
     this.audio?.clearOutputQueue()
     this.queued = 0
     this.lastStreamTime = this.audio.streamTime
@@ -131,6 +131,30 @@ class NativeOutput {
 const output = new NativeOutput()
 function registerNativeOutput(ipcMain, getWindow) {
   const allowed = event => event.sender === getWindow()?.webContents && event.senderFrame === event.sender.mainFrame
+  let transport
+  ipcMain.on('audio-output:connect', event => {
+    if (!allowed(event) || event.ports?.length !== 1) {
+      for (const port of event.ports || []) port.close()
+      return
+    }
+    transport?.close()
+    const port = event.ports[0]
+    transport = port
+    port.on('message', ({ data }) => {
+      const { session, epoch, samples } = data || {}
+      if (data?.type === 'reset') {
+        try { output.flush(session) }
+        catch (error) { output.close(); port.postMessage({ ok: false, epoch, error: error.message }) }
+        return
+      }
+      const result = output.write(session, samples)
+      port.postMessage({ ...result, epoch })
+    })
+    port.on('close', () => {
+      if (transport === port) { transport = null; output.close() }
+    })
+    port.start()
+  })
   const handle = (channel, fn) => ipcMain.handle(`audio-output:${channel}`, (event, ...args) => {
     if (!allowed(event)) return { ok: false, error: 'Audio output is only available to the player.' }
     return fn(...args)

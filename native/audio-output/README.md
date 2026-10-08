@@ -19,13 +19,24 @@ GCC/Clang and make on Linux). N-API 6 avoids an Electron-specific ABI rebuild.
 The packaged binary lives in `electron/native` and is unpacked from ASAR.
 If unavailable, the app keeps Auto/browser playback and disables explicit modes.
 
-The audio thread never calls JavaScript or allocates. The SPSC PCM ring buffer
-is limited to 8192 frames. Flush stops the consumer before resetting the ring.
-Incoming IPC is restricted to the main player frame, sessions reject stale
-blocks, and both the worklet and the main process bound queued audio.
+The native audio callback never calls JavaScript or allocates. The SPSC PCM ring
+buffer holds at most 32768 frames in shared mode or 131072 in exclusive mode.
+The AudioWorklet sends PCM through a transferred MessagePort directly to the
+main process; the window's JavaScript thread is not part of audio delivery.
+PCM arrays are cloned because Electron cannot deserialize browser-transferred
+ArrayBuffers on MessagePortMain. Credits bound outstanding blocks.
+Flush messages use the same port as PCM to preserve ordering across seeks.
+Incoming ports are restricted to the main player frame, and sessions reject
+stale blocks. Flush stops the consumer before resetting the native ring.
+
+Native streams open only during playback. Pause/stop closes the native stream
+and suspends the AudioContext, including in Auto mode. Shared native playback
+also uses Chromium's silent sink to avoid opening a second speaker client.
+The SMTC silence element is paused during native negotiation/playback.
 
 Validation: `node --test scripts/native-output.test.mjs`, then (on Linux with a
 PulseAudio null sink named `lokal_test`) `xvfb-run -a node scripts/native-output-smoke.mjs`.
 The latter records actual local/HTTP decoded output, both precision modes,
-pause/seek, gain, EQ/mixing, and fallback. Test Windows/macOS devices before
+pause/seek, idle release, gain, EQ/mixing, fallback, and continuous audio during
+800 ms renderer-thread stalls before/after a minimize request. Test Windows/macOS devices before
 claiming physical-device support verified on those platforms.

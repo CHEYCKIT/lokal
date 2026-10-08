@@ -72,7 +72,7 @@ test('missing dependency, unavailable device, invalid config and device stop are
 test('native IPC rejects other windows and child frames', () => {
   const handlers = new Map()
   const sender = { mainFrame: {} }
-  registerNativeOutput({ handle: (channel, fn) => handlers.set(channel, fn) }, () => ({ webContents: sender }))
+  registerNativeOutput({ handle: (channel, fn) => handlers.set(channel, fn), on: (channel, fn) => handlers.set(channel, fn) }, () => ({ webContents: sender }))
   const close = handlers.get('audio-output:close')
   assert.equal(close({ sender: {}, senderFrame: sender.mainFrame }).ok, false)
   assert.equal(close({ sender, senderFrame: {} }).ok, false)
@@ -88,18 +88,20 @@ test('worklet interleaves stereo, sends no audible output, bounds messages and d
   })
   const processor = new Processor()
   processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128 } })
-  for (let i = 0; i < 10; i++) processor.process([[new Float32Array(128).fill(.25), new Float32Array(128).fill(.5)]])
-  assert.equal(messages.length, 3)
+  for (let i = 0; i < 14; i++) processor.process([[new Float32Array(128).fill(.25), new Float32Array(128).fill(.5)]])
+  assert.equal(messages.length, 12)
   assert.deepEqual(Array.from(messages[0].samples.slice(0, 4)), [.25, .5, .25, .5])
   processor.port.onmessage({ data: { type: 'credit', epoch: 0 } }); processor.process([])
-  assert.equal(messages.length, 3)
+  assert.equal(messages.length, 12)
   processor.port.onmessage({ data: { type: 'configure', active: false, epoch: 2, frameSize: 128 } }); processor.process([])
-  assert.equal(messages.length, 3)
+  assert.equal(messages.length, 12)
 })
 
-function bridgeFixture(t) {
+function bridgeFixture(t, playing = true) {
   const destination = {}, routes = new Set([destination]), sent = [], calls = []
-  const context = { sampleRate: 48000, destination, audioWorklet: { addModule: async () => {} } }
+  const context = { sampleRate: 48000, destination, state: 'suspended',
+    suspend: async () => { context.state = 'suspended' }, resume: async () => { context.state = 'running' },
+    audioWorklet: { addModule: async () => {} } }
   const source = { connect: node => routes.add(node), disconnect: node => routes.delete(node) }
   globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: message => sent.push(message) } } connect() {} disconnect() {} }
   t.after(() => delete globalThis.AudioWorkletNode)
@@ -108,6 +110,7 @@ function bridgeFixture(t) {
     close: async () => { calls.push('close') }, flush: async () => { calls.push('flush') }, write: async () => ({ ok: true }),
   }
   const bridge = new NativeAudioBridge(context, source, api)
+  bridge.playing = playing
   return { bridge, api, routes, destination, sent, calls }
 }
 
@@ -118,7 +121,7 @@ test('bridge serializes format changes and returns exclusively to browser output
   bridge.flush()
   await bridge.configure({ precision: 'auto' })
   assert.equal(routes.size, 1); assert.ok(routes.has(destination)); assert.equal(bridge.session, null)
-  assert.deepEqual(calls, ['close', 'open', 'close', 'open', 'flush', 'close'])
+  assert.deepEqual(calls, ['close', 'open', 'flush', 'close'])
 })
 
 test('bridge preserves browser playback when open fails and restores it on write failure', async t => {
@@ -194,4 +197,111 @@ test('fallback restores system default when the former browser speaker is unplug
   await bridge.configure({ precision: 'pcm16', exclusive: true })
   assert.equal(sinks.at(-1), '')
   assert.equal(bridge.status.mode, 'auto')
+})
+
+test('idle preferences never open a device; pause releases native and Chromium outputs, resume restores preference', async t => {
+  for (const precision of ['auto', 'pcm16', 'float32']) {
+    const { bridge, calls } = bridgeFixture(t, false)
+    await bridge.configure({ precision, exclusive: true })
+    assert.equal(calls.includes('open'), false)
+    assert.equal(bridge.context.state, 'suspended')
+    assert.equal(bridge.status.mode, 'idle')
+    bridge.context.setSinkId = async () => {}
+    await bridge.setPlaying(true)
+    assert.equal(bridge.context.state, 'running')
+    assert.equal(bridge.status.mode, precision === 'auto' ? 'auto' : 'native')
+    await bridge.setPlaying(false)
+    assert.equal(bridge.context.state, 'suspended')
+    assert.equal(bridge.session, null)
+    assert.equal(bridge.status.mode, 'idle')
+    assert.equal(calls.at(-1), 'close')
+    await bridge.setPlaying(true)
+    assert.equal(bridge.status.mode, precision === 'auto' ? 'auto' : 'native')
+  }
+})
+
+test('pausing during device negotiation cannot leave an exclusive stream open', async t => {
+  const { bridge, api, calls } = bridgeFixture(t, false)
+  bridge.context.setSinkId = async () => {}
+  let finish, entered
+  const opening = new Promise(resolve => { entered = resolve })
+  api.open = () => { entered(); return new Promise(resolve => { finish = resolve }) }
+  await bridge.configure({ precision: 'float32', exclusive: true })
+  const starting = bridge.setPlaying(true)
+  await opening
+  const stopping = bridge.setPlaying(false)
+  finish({ ok: true, session: 'late', frameSize: 128, exclusive: true })
+  await Promise.all([starting, stopping])
+  assert.equal(bridge.session, null)
+  assert.equal(bridge.context.state, 'suspended')
+  assert.equal(bridge.status.mode, 'idle')
+  assert.equal(calls.at(-1), 'close')
+})
+
+test('native shared output also releases the extra Chromium speaker', async t => {
+  const { bridge, api } = bridgeFixture(t)
+  const sinks = []
+  bridge.context.setSinkId = async value => sinks.push(value)
+  api.open = async options => {
+    assert.deepEqual(sinks.at(-1), { type: 'none' })
+    assert.equal(bridge.status.mode, 'switching', 'do not restart the SMTC shared speaker during native negotiation')
+    assert.equal(options.exclusive, false)
+    return { ok: true, session: 'shared', frameSize: 128 }
+  }
+  await bridge.configure({ precision: 'float32' })
+  assert.equal(bridge.silentSink, true)
+  await bridge.setPlaying(false)
+  assert.equal(bridge.context.state, 'suspended')
+  assert.equal(sinks.at(-1), '')
+})
+
+test('Auto resumes on the speaker selected while output was idle', async t => {
+  const { bridge } = bridgeFixture(t, false)
+  const sinks = []
+  bridge.context.setSinkId = async value => sinks.push(value)
+  await bridge.configure({ precision: 'auto' })
+  bridge.browserDeviceId = 'new-speaker'
+  await bridge.setPlaying(true)
+  assert.equal(sinks.at(-1), 'new-speaker')
+  assert.equal(bridge.context.state, 'running')
+})
+
+test('worklet delivers PCM and receives credits directly without renderer callbacks; stale replies ignored', () => {
+  let Processor
+  const renderer = [], direct = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => renderer.push(message) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  const port = { postMessage: message => direct.push(structuredClone(message)) }
+  processor.port.onmessage({ data: { type: 'transport', port } })
+  processor.port.onmessage({ data: { type: 'configure', active: true, session: 's', epoch: 1, frameSize: 128, credits: 1 } })
+  assert.deepEqual(direct.shift(), { type: 'reset', session: 's', epoch: 1 })
+  const block = [[new Float32Array(128).fill(.25), new Float32Array(128).fill(.5)]]
+  processor.process(block)
+  assert.equal(direct.length, 1)
+  assert.equal(direct[0].session, 's')
+  assert.deepEqual(Array.from(direct[0].samples.slice(0, 4)), [.25, .5, .25, .5])
+  port.onmessage({ data: { epoch: 0, ok: true } })
+  processor.process(block)
+  assert.equal(direct.length, 1)
+  port.onmessage({ data: { epoch: 1, ok: true } })
+  processor.process(block)
+  assert.equal(direct.length, 2)
+  assert.equal(renderer.length, 0)
+  port.onmessage({ data: { epoch: 1, ok: false, error: 'Unplugged' } })
+  assert.equal(renderer[0].error, 'Unplugged')
+  processor.process(block)
+  assert.equal(direct.length, 2)
+})
+
+test('direct PCM transport rejects foreign windows/frames and closes rejected ports', () => {
+  const handlers = new Map(), sender = { mainFrame: {} }
+  registerNativeOutput({ handle() {}, on: (name, fn) => handlers.set(name, fn) }, () => ({ webContents: sender }))
+  let closed = 0
+  const port = { close: () => closed++ }
+  handlers.get('audio-output:connect')({ sender: {}, senderFrame: sender.mainFrame, ports: [port] })
+  handlers.get('audio-output:connect')({ sender, senderFrame: {}, ports: [port] })
+  assert.equal(closed, 2)
 })
