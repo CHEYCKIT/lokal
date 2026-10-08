@@ -891,6 +891,7 @@ export default function LyricsPanel({
                 <p className="px-3 pb-10 text-[11px] text-white/30">
                   Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
                   {wantTranslation && (embeddedTranslation || translation.lines) ? ` · ${embeddedTranslation ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
+                  {attribution?.provider && <span className="block mt-1">Provided by {attribution.provider}</span>}
                   {hasContributors && (
                     <span className="block mt-1">
                       {attribution.uploader && <>Uploaded by <a href={attribution.uploader.url} target="_blank" rel="noreferrer" className="hover:text-white/60 underline underline-offset-2">{attribution.uploader.name}</a></>}

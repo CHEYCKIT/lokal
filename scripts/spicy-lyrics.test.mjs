@@ -73,3 +73,57 @@ test('a manually selected source remains pinned per track in the lyrics cache', 
   assert.equal(lyrics.pinned, true)
   db.close()
 })
+
+test('Static lyrics omit empty object entries and preserve strings', () => {
+  const result = parse({ Body: { Type: 'Static', Content: [{ Text: '' }, {}, null, '', { Text: 'Object line' }, 'String line'] } })
+  assert.deepEqual(result.lines.map(line => line.text), ['Object line', 'String line'])
+})
+
+test('source migration enables unseen Spicy Lyrics but respects an explicit disable', () => {
+  const settings = order => service.readSettings({ prepare: () => ({ all: () => [
+    { key: 'lyrics_sources_order', value: JSON.stringify(order) },
+    { key: 'lyrics_sources_enabled', value: '["local","betterlyrics"]' },
+  ] }) })
+  assert.ok(settings(['local', 'betterlyrics']).enabled.includes('spicylyrics'))
+  const disabled = settings(['local', 'spicylyrics', 'betterlyrics'])
+  assert.deepEqual(disabled.enabled, ['local', 'betterlyrics'])
+  assert.deepEqual(disabled.order, ['local', 'spicylyrics', 'betterlyrics'])
+})
+
+test('changing either credential retries negative lyrics without persisting credentials or fingerprints', async t => {
+  const fs = await import('node:fs')
+  const vm = await import('node:vm')
+  const filename = require.resolve('../electron/lyrics/service.js')
+  const localRequire = createRequire(filename)
+  let calls = 0
+  const context = vm.createContext({ module: { exports: {} }, require: id => id === './repository'
+    ? { ...localRequire(id), lookup: async () => { calls++; return { result: null, attempts: {} } } }
+    : localRequire(id) })
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename })
+  const current = context.module.exports
+  const db = new Database(':memory:')
+  t.after(() => db.close())
+  db.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, instrumental INTEGER);
+    CREATE TABLE lyrics_cache (track_id TEXT PRIMARY KEY, lyrics_type TEXT, content TEXT, source TEXT, fetched_at INTEGER, file_path TEXT, meta TEXT);`)
+  const set = db.prepare('INSERT OR REPLACE INTO settings VALUES (?, ?)')
+  set.run('spicylyrics_api_key', 'synthetic-key-one')
+  set.run('spotify_sp_dc', 'synthetic-cookie-one')
+  const args = { trackId: 'one', title: 'Song', artist: 'Artist' }
+  await current.getLyrics(db, args)
+  await current.getLyrics(db, args)
+  assert.equal(calls, 1)
+  const first = current.readSettings(db).settingsKey
+  set.run('spicylyrics_api_key', 'synthetic-key-two')
+  await current.getLyrics(db, args)
+  assert.equal(calls, 2)
+  assert.notEqual(current.readSettings(db).settingsKey, first)
+  set.run('spotify_sp_dc', 'synthetic-cookie-two')
+  await current.getLyrics(db, args)
+  await current.getLyrics(db, args)
+  assert.equal(calls, 3)
+  const meta = db.prepare('SELECT meta FROM lyrics_cache').get().meta
+  assert.equal(JSON.parse(meta).settingsKey, undefined)
+  assert.equal(meta.includes('synthetic-'), false)
+  assert.equal(current.readSettings(db).settingsKey.includes('synthetic-'), false)
+})

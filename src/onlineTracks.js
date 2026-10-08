@@ -151,6 +151,7 @@ export async function saveToLibrary(track, extra = {}) {
     from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
     replaceTrackId: isGhostTrack(track) ? track.id : undefined,
     upgradeTrackId: extra.upgradeTrackId,
+    allowUpgradeDurationMismatch: extra.allowUpgradeDurationMismatch === true,
     // Songs of an imported playlist the file takes the place of (ghostDownloads.js).
     ...(extra.replaceImported?.length ? { replaceImported: extra.replaceImported } : {}),
     ...(extra.manuallySelectedImported?.length ? { manuallySelectedImported: extra.manuallySelectedImported } : {}),

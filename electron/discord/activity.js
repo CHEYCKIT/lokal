@@ -44,13 +44,9 @@ function artworkUrl(track) {
   return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
 }
 
-/** A deterministic cover-shaped fallback when no provider has artwork. */
-function fallbackArtwork(track) {
-  const label = [track?.artist, track?.title].filter(Boolean).join(' · ') || 'Lokal'
-  let hash = 0
-  for (const character of label) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
-  const hue = Math.abs(hash) % 360
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(label)}&size=512&background=hsl(${hue}%2C45%25%2C28%25)&color=ffffff&bold=true&format=png`
+/** A public fallback that never sends track metadata to the image provider. */
+function fallbackArtwork() {
+  return 'https://ui-avatars.com/api/?name=Lokal&size=512&background=274068&color=ffffff&bold=true&format=png'
 }
 
 function milliseconds(track, field) {

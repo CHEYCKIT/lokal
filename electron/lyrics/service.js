@@ -7,11 +7,12 @@
 //            search-by-lyrics feature (scanner.searchLyricsEntries) keeps
 //            reading it directly.
 //   meta     JSON { v, sync, duet, isrc, language, translationLang,
-//            romanizationLang, attempts, settingsKey, pinned }.
+//            romanizationLang, attempts, pinned }.
 //            A row without meta was written before this revamp: imported
 //            lyrics are upgraded in place, anything else is refetched once so
 //            old LRCLIB-only answers get the chance to become syllable-synced.
 
+const { createHash } = require('node:crypto')
 const { lookup, parseImported, DEFAULT_ORDER } = require('./repository')
 const { describe } = require('./providers')
 const { finish, isUntimed } = require('./postprocess')
@@ -19,6 +20,10 @@ const translation = require('./translate')
 
 const META_VERSION = 2
 const NEGATIVE_TTL_MS = 3 * 24 * 60 * 60 * 1000
+// Credential fingerprints and negative-cache keys live only in this process.
+// After a restart, retry persisted misses once with the current credentials.
+const negativeSettingsKeys = new WeakMap()
+const fingerprint = value => createHash('sha256').update(value || '').digest('hex')
 
 // ---------------------------------------------------------------- schema
 
@@ -59,7 +64,7 @@ function readSettings(db) {
   // Migrate existing installations with the newly available provider enabled;
   // once the settings page saves an explicit list, later toggles are retained.
   const enabled = savedEnabled
-    ? [...savedEnabled, ...(!savedEnabled.includes('spicylyrics') ? ['spicylyrics'] : [])]
+    ? [...savedEnabled, ...(!savedOrder?.includes('spicylyrics') && !savedEnabled.includes('spicylyrics') ? ['spicylyrics'] : [])]
     : DEFAULT_ORDER
   return {
     order,
@@ -69,7 +74,7 @@ function readSettings(db) {
     spicyKey: s.spicylyrics_api_key || '',
     spotifyCookie: s.spotify_sp_dc || '',
     // A negative answer is only trusted while the same sources are configured.
-    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1', !!s.spicylyrics_api_key, !!s.spotify_sp_dc]),
+    settingsKey: JSON.stringify([order.filter(id => enabled.includes(id)), s.lyrics_prioritize_syllable === '1', fingerprint(s.spicylyrics_api_key), fingerprint(s.spotify_sp_dc)]),
   }
 }
 
@@ -215,7 +220,7 @@ async function getLyrics(db, args) {
       if (meta) {
         if (row.source === 'no-results') {
           const fresh = row.fetched_at && Date.now() - row.fetched_at < NEGATIVE_TTL_MS
-          if (fresh && meta.settingsKey === settings.settingsKey) return null
+          if (fresh && negativeSettingsKeys.get(db)?.get(row.track_id) === settings.settingsKey) return null
         } else if (row.lyrics_type === 'synced' && isUntimed(fromRow(row, meta).lines)) {
           // Cached before untimed stamps were recognised (see isUntimed). A
           // source the user picked stays, as the plain text it really is;
@@ -257,7 +262,9 @@ async function getLyrics(db, args) {
     writeRow(db, trackId, filePath, untimedFallback.result, { attempts: kept })
     return { ...untimedFallback.result, attempts: kept }
   }
-  writeRow(db, trackId, filePath, null, { attempts, settingsKey: settings.settingsKey })
+  writeRow(db, trackId, filePath, null, { attempts })
+  if (!negativeSettingsKeys.has(db)) negativeSettingsKeys.set(db, new Map())
+  negativeSettingsKeys.get(db).set(trackId, settings.settingsKey)
   return null
 }
 

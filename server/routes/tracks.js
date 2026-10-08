@@ -541,7 +541,7 @@ router.get('/', (req, res) => {
       params.push(albumArtist)
     }
     const tracks = db.prepare(sql).all(...params)
-    res.json(normalizeAlbumTracks(tracks))
+    res.json(normalizeAlbumTracks(tracks).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) })))
     return
   }
   let sql = 'SELECT * FROM tracks'

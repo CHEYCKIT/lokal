@@ -326,3 +326,25 @@ test('selected provider errors are reported and cancellation during preparation 
   })
   assert.equal(result.cancelled, true)
 })
+
+for (const provider of ['yt', 'sc', 'a-0123456789']) {
+  test(`confirmed ${provider} suggestion repairs the missing row through the download options`, async t => {
+    const { downloadGhostResult } = await import('../src/ghostDownloads.js')
+    const { api } = await import('../src/api.js')
+    const calls = []
+    t.mock.method(api, 'downloadYT', async (url, options) => { calls.push(options); return { downloadId: 'repair' } })
+    t.mock.method(api, 'onlineDownloadUrl', async () => ({ url: 'https://source.example/song' }))
+    const ghost = { id: 'missing', missing: true, title: 'Song', artist: 'Artist', duration: 492 }
+    const item = { id: 'aaaaaaaaaaa', provider, url: 'https://youtube.com/watch?v=aaaaaaaaaaa', duration: 210 }
+    const client = { downloadYT: api.downloadYT, onlineSave: async () => [{
+      ...item, file_path: provider === 'sc' ? 'ghost://soundcloud/online/123' : 'ghost://addon/0123456789/123',
+    }] }
+    await downloadGhostResult(ghost, item, { client, confirmDuration: async () => false })
+    assert.equal(calls.length, 0)
+    await downloadGhostResult(ghost, item, { client, confirmDuration: async () => true })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].upgradeTrackId, ghost.id)
+    assert.equal(calls[0].allowUpgradeDurationMismatch, true)
+    assert.equal(calls[0].expectedDuration, 210)
+  })
+}

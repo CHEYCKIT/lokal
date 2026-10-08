@@ -123,7 +123,7 @@ export async function downloadGhostResult(ghost, item, { client = api, save = sa
   if (different && await confirmDuration?.(ghost, item) !== true) return { cancelled: true }
   if (!isCurrent()) return { cancelled: true }
   const replacement = {
-    ...(ghost.missing ? { upgradeTrackId: ghost.id } : {
+    ...(ghost.missing ? { upgradeTrackId: ghost.id, allowUpgradeDurationMismatch: different } : {
       replaceImported: [ghost.id],
       manuallySelectedImported: [ghost.id],
       ...(different ? { confirmedImported: [ghost.id] } : {}),

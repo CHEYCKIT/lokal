@@ -58,7 +58,7 @@ function parse(body) {
     })).filter(line => line.text), attribution: attribution(lyrics) }
   }
   if (lyrics.Type === 'Static') {
-    return { lines: (lyrics.Content || lyrics.Lines || []).map(line => ({ time: null, end: null, text: String(line?.Text || line || ''), words: [] })).filter(line => line.text), attribution: attribution(lyrics) }
+    return { lines: (lyrics.Content || lyrics.Lines || []).map(line => ({ time: null, end: null, text: String((typeof line === 'object' ? line?.Text : line) ?? ''), words: [] })).filter(line => line.text), attribution: attribution(lyrics) }
   }
   return null
 }
