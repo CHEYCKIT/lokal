@@ -5,6 +5,13 @@ const on = (ch, fn) => { ipcRenderer.on(ch, fn); return () => ipcRenderer.remove
 
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
+  nativeAudio: {
+    devices: () => invoke('audio-output:devices'),
+    open: options => invoke('audio-output:open', options),
+    write: (session, samples) => invoke('audio-output:write', session, samples),
+    flush: session => invoke('audio-output:flush', session),
+    close: () => invoke('audio-output:close'),
+  },
   minimize: () => invoke('window:minimize'),
   setBackgroundColor: (color) => invoke('window:setBackgroundColor', color),
   maximize: () => invoke('window:maximize'),

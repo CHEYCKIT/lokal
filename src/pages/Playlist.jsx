@@ -526,7 +526,7 @@ export default function Playlist() {
                 onClick={() => setShowResolveGhosts(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400/10 border border-yellow-400/20 text-yellow-100 rounded-full font-medium text-sm hover:bg-yellow-400/15 transition-colors"
               >
-                <AlertCircle size={15} /> Resolve Ghost Songs ({ghostTracks.length})
+                <AlertCircle size={15} /> Ghost Songs ({ghostTracks.length})
               </button>
             )}
             {smart ? (
@@ -657,7 +657,7 @@ export default function Playlist() {
         <Modal
           open={showResolveGhosts}
           onClose={() => setShowResolveGhosts(false)}
-          title="Resolve Ghost Songs"
+          title="Ghost Songs"
           width="max-w-5xl"
         >
           <div className="grid md:grid-cols-[260px_1fr] gap-4">

@@ -1,3 +1,4 @@
+const { registerNativeOutput, closeNativeOutput } = require('./audio/output')
 const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker } = require('electron')
 const path = require('path')
 const fs = require('fs')
@@ -359,6 +360,9 @@ function createWindow() {
       backgroundThrottling: false,
     },
   })
+  mainWindow.webContents.on('render-process-gone', closeNativeOutput)
+  mainWindow.webContents.on('did-start-loading', closeNativeOutput)
+  mainWindow.on('closed', closeNativeOutput)
   attachFullscreenSleepBlocker(mainWindow, { app, powerSaveBlocker })
   const sendVisibility = (hidden) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:visibility', hidden) }
   mainWindow.on('minimize', () => sendVisibility(true))
@@ -454,6 +458,7 @@ app.whenReady().then(() => {
   ]) {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }
   }
+  registerNativeOutput(ipcMain, () => mainWindow)
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
   try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
@@ -744,6 +749,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  closeNativeOutput()
   try { shutdownActiveDownloads() } catch {}
   unregisterMediaShortcuts()
   try { stopSmtcBridge() } catch {}

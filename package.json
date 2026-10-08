@@ -110,6 +110,7 @@
     "electron-builder": "^26.15.3",
     "framer-motion": "^11.0.8",
     "lucide-react": "^1.52.0",
+    "node-gyp": "12.4.0",
     "postcss": "^8.4.35",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
