@@ -101,7 +101,13 @@ class NativeOutput {
       // Bound latency and memory if the renderer and hardware clocks drift or
       // the main thread stalls. Never replay a long queue of stale audio.
       const clearThreshold = this.status?.exclusive ? 96 : 24
-      if (this.queued >= clearThreshold) { this.audio.clearOutputQueue(); this.queued = 0 }
+      if (this.queued >= clearThreshold) {
+        // Do not stop/restart WASAPI to trim stale audio; that creates a
+        // periodic audible dropout when the device clock falls behind.
+        if (typeof this.audio.discardOutputQueue === 'function') this.audio.discardOutputQueue()
+        else this.audio.clearOutputQueue()
+        this.queued = 0
+      }
       this.audio.write(encodePCM(samples, this.precision))
       this.queued++
       return { ok: true }

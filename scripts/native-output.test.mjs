@@ -9,7 +9,7 @@ const { NativeOutput, encodePCM, registerNativeOutput } = require('../electron/a
 
 function fixture(options = {}) {
   const audio = {
-    opened: false, running: false, written: [], clears: 0, streamTime: 0,
+    opened: false, running: false, written: [], clears: 0, discards: 0, streamTime: 0,
     getDevices: () => [{ id: 22, name: 'Speakers', isDefaultOutput: true, outputChannels: 2 }],
     open(...args) { this.args = args; if (options.rejectExclusive && args[3]) throw Error('Device busy'); if (options.rejectFloat && args[2] === 32) throw Error('Unsupported float'); this.opened = true; return options.frameSize || 1024 },
     isStreamOpen() { return this.opened }, closeStream() { this.opened = false; this.running = false },
@@ -18,6 +18,7 @@ function fixture(options = {}) {
     isExclusive() { return this.args?.[3] === true },
     getStreamSampleRate: () => options.rate || 48000, getApi: () => 'test',
     write(buffer) { this.written.push(buffer) }, clearOutputQueue() { this.clears++; this.written = [] },
+    discardOutputQueue() { this.discards++; this.written = [] },
   }
   const output = new NativeOutput(() => audio)
   return { audio, output, open: precision => output.open({ precision: precision || 'float32', sampleRate: 48000 }) }
@@ -39,10 +40,11 @@ test('negotiates stereo format, uses device id, bounds queue, rejects stale and 
   assert.equal(status.ok, true); assert.equal(status.precision, 'float32'); assert.equal(audio.args[0], 22)
   assert.equal(output.write('stale', new Float32Array(2048)).stale, true)
   assert.equal(output.write(status.session, new Float32Array(2)).ok, false)
-  // The queue is cleared at 24 blocks, so the 25th write must exercise the guard.
+  // Overload trims queued PCM without stopping and restarting the device.
   for (let i = 0; i < 25; i++) assert.equal(output.write(status.session, new Float32Array(2048)).ok, true)
-  assert.ok(output.queued <= 24); assert.ok(audio.clears > 0)
+  assert.ok(output.queued <= 24); assert.ok(audio.discards > 0); assert.equal(audio.clears, 0)
   output.flush(status.session); assert.equal(audio.written.length, 0)
+  assert.equal(audio.clears, 1)
   const newer = open('pcm16')
   assert.notEqual(status.session, newer.session)
   assert.equal(output.write(status.session, new Float32Array(2048)).stale, true)
@@ -93,6 +95,25 @@ test('worklet accepts a deeper credit window for exclusive output', () => {
   processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
   processor.process([[new Float32Array(128), new Float32Array(128)]])
   assert.equal(messages.length, 49)
+})
+
+test('worklet buffers PCM while native credits are delayed and drains it in order', () => {
+  let Processor
+  const messages = []
+  vm.runInNewContext(fs.readFileSync(new URL('../src/audio/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: message => messages.push(structuredClone(message)) } } },
+    registerProcessor: (_, implementation) => { Processor = implementation }, Float32Array,
+  })
+  const processor = new Processor()
+  processor.port.onmessage({ data: { type: 'configure', active: true, epoch: 1, frameSize: 128, credits: 1, pendingBlocks: 2 } })
+  for (let i = 1; i <= 3; i++) processor.process([[new Float32Array(128).fill(i)]])
+  assert.equal(messages.length, 1)
+  assert.equal(processor.pendingCount, 2)
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  processor.port.onmessage({ data: { type: 'credit', epoch: 1 } })
+  assert.equal(messages.length, 3)
+  assert.deepEqual(messages.map(message => message.samples[0]), [1, 2, 3])
+  assert.equal(processor.pendingCount, 0)
 })
 
 test('worklet interleaves stereo, sends no audible output, bounds messages and discards partial frames on reset', () => {
@@ -268,7 +289,61 @@ test('native shared output also releases the extra Chromium speaker', async t =>
   assert.equal(bridge.silentSink, true)
   await bridge.setPlaying(false)
   assert.equal(bridge.context.state, 'suspended')
-  assert.equal(sinks.at(-1), '')
+  assert.deepEqual(sinks.at(-1), { type: 'none' })
+})
+
+test('idle Auto releases Chromium output and restores the original sink on playback', async t => {
+  const { bridge } = bridgeFixture(t, false)
+  const sinks = []
+  bridge.context.sinkId = 'original-speaker'
+  bridge.context.setSinkId = async value => { sinks.push(value); bridge.context.sinkId = value }
+  await bridge.configure({ precision: 'auto' })
+  assert.deepEqual(sinks, [{ type: 'none' }])
+  assert.equal(bridge.previousSink, 'original-speaker')
+  await bridge.setPlaying(true)
+  assert.equal(sinks.at(-1), 'original-speaker')
+  assert.equal(bridge.silentSink, false)
+  await bridge.setPlaying(false)
+  assert.deepEqual(sinks.at(-1), { type: 'none' })
+  assert.equal(bridge.context.state, 'suspended')
+})
+
+test('native transitions retain the original browser sink instead of capturing none', async t => {
+  const { bridge } = bridgeFixture(t)
+  const sinks = []
+  bridge.browserDeviceId = 'selected-speaker'
+  bridge.context.sinkId = 'selected-speaker'
+  bridge.context.setSinkId = async value => { sinks.push(value); bridge.context.sinkId = value }
+  await bridge.configure({ precision: 'float32' })
+  assert.deepEqual(sinks, [{ type: 'none' }])
+  assert.equal(bridge.previousSink, 'selected-speaker')
+  await bridge.configure({ precision: 'pcm16' })
+  assert.equal(bridge.previousSink, 'selected-speaker')
+  await bridge.configure({ precision: 'auto' })
+  assert.equal(sinks.at(-1), 'selected-speaker')
+  assert.equal(bridge.silentSink, false)
+})
+
+test('pausing during silent-sink selection does not open a late native stream', async t => {
+  const { bridge, calls } = bridgeFixture(t)
+  let release, entered
+  const waiting = new Promise(resolve => { entered = resolve })
+  bridge.context.setSinkId = async value => {
+    if (value?.type === 'none') {
+      entered()
+      await new Promise(resolve => { release = resolve })
+    }
+    bridge.context.sinkId = value
+  }
+  const starting = bridge.configure({ precision: 'float32' })
+  await waiting
+  const stopping = bridge.setPlaying(false)
+  release()
+  await Promise.all([starting, stopping])
+  assert.equal(bridge.session, null)
+  assert.equal(calls.includes('open'), false)
+  assert.equal(bridge.context.sinkId.type, 'none')
+  assert.equal(bridge.context.state, 'suspended')
 })
 
 test('Auto resumes on the speaker selected while output was idle', async t => {
