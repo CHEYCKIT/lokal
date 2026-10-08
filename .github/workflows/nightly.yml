@@ -9,7 +9,7 @@ on:
         default: 'main'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   version:

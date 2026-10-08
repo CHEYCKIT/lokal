@@ -167,7 +167,7 @@ function announceTrackUpdates(tracks) {
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
   playbackContext: null,
-  isPlaying: false, progress: 0, duration: 0,
+  isPlaying: false, isBuffering: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
@@ -705,6 +705,7 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   setProgress: (v) => set({ progress: v }),
+  setIsBuffering: (v) => set({ isBuffering: !!v }),
   setProgressWithAudioUpdate: (v) => {
     const { audioRef, cfAudioRef, activeAudioElement } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef

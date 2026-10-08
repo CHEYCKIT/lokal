@@ -1252,7 +1252,7 @@ class DownloadManager {
   /** A file's quality tier (low, high, lossless, hires). */
   async fileTier(file) {
     const quality = require('../quality')
-    const meta = await require('music-metadata').parseFile(file, { duration: false, skipCovers: true })
+    const meta = await require('../musicMetadata').parseFile(file, { duration: false, skipCovers: true })
     return quality.tierOf({ ...quality.qualityFields(meta), bitrate: meta?.format?.bitrate ? Math.round(meta.format.bitrate / 1000) : null })
   }
 

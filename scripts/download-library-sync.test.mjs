@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url)
 const { initDB, getDB } = require('../electron/ipc/db.js')
 const { indexSingleFile } = require('../electron/ipc/scanner.js')
 const { DownloadManager } = require('../electron/download/manager.js')
-const mm = require('music-metadata')
+const mm = require('../electron/musicMetadata')
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-library-sync-'))
