@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.mjs";
 
 :root {
   --bg: #0a0a0a;
@@ -50,7 +49,7 @@ html[data-theme="light"] .text-white\/40 { color: rgb(var(--text-rgb) / 0.4) !im
 html[data-theme="light"] .text-white\/30 { color: rgb(var(--text-rgb) / 0.3) !important; }
 html[data-theme="light"] .text-white\/20 { color: rgb(var(--text-rgb) / 0.2) !important; }
 html[data-theme="light"] .text-white\/10 { color: rgb(var(--text-rgb) / 0.1) !important; }
-html[data-theme="light"] .hover\\:text-white:hover { color: var(--text) !important; }
+html[data-theme="light"] .hover\:text-white:hover { color: var(--text) !important; }
 
 html[data-theme="light"] [class*="bg-black"].text-white,
 html[data-theme="light"] [class*="bg-black"].text-white\/90,

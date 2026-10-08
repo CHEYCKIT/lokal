@@ -17,7 +17,7 @@ const path = require('path')
 let mm = null
 function metadata() {
   if (mm === null) {
-    try { mm = require('music-metadata') } catch { mm = false }
+    try { mm = require('../musicMetadata') } catch { mm = false }
   }
   return mm || null
 }

@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url)
 const { initDB, getDB } = require('../electron/ipc/db')
 const { mergeDuplicates } = require('../electron/ipc/mergeDuplicates')
 const { scanFolder, registerV4Handlers } = require('../electron/ipc/scanner')
-const mm = require('music-metadata')
+const mm = require('../electron/musicMetadata')
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-duplicates-'))

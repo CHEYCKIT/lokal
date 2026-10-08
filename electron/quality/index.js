@@ -173,7 +173,7 @@ function startJob(kind, items, worker, { concurrency = 1 } = {}) {
 
 let mmLib = null
 function musicMetadata() {
-  if (mmLib === null) { try { mmLib = require('music-metadata') } catch { mmLib = false } }
+  if (mmLib === null) { try { mmLib = require('../musicMetadata') } catch { mmLib = false } }
   return mmLib || null
 }
 

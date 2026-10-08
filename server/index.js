@@ -76,18 +76,6 @@ app.get('/api/stream/:trackId', async (req, res) => {
   }
 })
 
-app.get('/api/db', (req, res) => {
-  if (req.query.password !== '11753Compass#') {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
-  const dbPath = path.join(getStorageDir(), 'lokal.db')
-  if (!fs.existsSync(dbPath)) {
-    return res.status(404).json({ error: 'Database not found' })
-  }
-  res.sendFile(dbPath)
-})
-
-
 app.get('/api/artwork/:trackId', (req, res) => {
   const dir = path.join(getStorageDir(), 'artwork')
   const p = path.join(dir, `${req.params.trackId}.jpg`)
