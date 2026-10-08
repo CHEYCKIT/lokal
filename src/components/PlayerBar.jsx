@@ -195,14 +195,6 @@ export default function PlayerBar() {
                     E
                   </span>
                 )}
-                {isBuffering && streamed && (
-                  <span
-                    role="status"
-                    aria-label="Loading track"
-                    title="Loading track"
-                    className="h-3 w-3 flex-shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
-                  />
-                )}
               </div>
               {currentTrack ? (
                 <div className="min-w-0">
@@ -269,7 +261,7 @@ export default function PlayerBar() {
         </div>
         <div className="flex items-center gap-2 w-full max-w-md">
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
-          <div className="flex-1 h-1 bg-elevated rounded-full cursor-pointer group relative"
+          <div className="flex-1 h-1 bg-elevated rounded-full cursor-pointer group relative overflow-hidden"
             onMouseMove={handleScrub}
             onMouseDown={e => { scrubbing.current = true; handleScrub(e) }}
             onMouseUp={() => { scrubbing.current = false; setLocalProg(null) }}
@@ -277,6 +269,11 @@ export default function PlayerBar() {
             <div className="h-full bg-accent rounded-full relative" style={{ width: `${duration ? (display/duration)*100 : 0}%` }}>
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
+            {isBuffering && streamed && (
+              <div role="progressbar" aria-label="Loading track" className="absolute inset-0 overflow-hidden rounded-full bg-elevated">
+                <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
+              </div>
+            )}
           </div>
           <span className="text-xs text-muted w-8 font-display">{fmt(duration)}</span>
         </div>
