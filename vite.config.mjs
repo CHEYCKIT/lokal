@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -27,12 +28,14 @@ export const isCompiled = (filename) => {
   return COMPILED.some(name => file.endsWith(`/src/components/${name}.jsx`))
 }
 
+const compilerPreset = reactCompilerPreset()
+const compilerFilter = new RegExp(
+  `[\\\\/]src[\\\\/]components[\\\\/](?:${COMPILED.join('|')})\\.jsx(?:\\?.*)?$`
+)
+compilerPreset.rolldown.filter.id = compilerFilter
+
 export default defineConfig({
-  plugins: [react({
-    babel: {
-      plugins: [['babel-plugin-react-compiler', { sources: isCompiled }]],
-    },
-  })],
+  plugins: [react(), babel({ include: compilerFilter, presets: [compilerPreset] })],
   resolve: { alias: { '@': path.resolve(dirname, 'src') } },
   base: './',
   build: { 
