@@ -373,6 +373,6 @@ test('batch repair queues every supported missing library file and reports unsup
   assert.equal(result.queued, 3)
   assert.equal(result.unsupported, 1)
   assert.equal(result.failed, 0)
-  assert.deepEqual(progress.sort((a, b) => a - b), [1, 2, 3])
+  assert.deepEqual(progress.sort((a, b) => a - b), [1, 2, 3, 4])
   assert.equal(calls.length, 3)
 })
