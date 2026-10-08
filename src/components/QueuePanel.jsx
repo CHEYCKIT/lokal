@@ -24,13 +24,13 @@ const ANIMATE_UP_TO = 150
 
 export function QueueContent({ onClose, variant = 'panel' }) {
   const {
-    queue, queueIndex, playQueue, playbackContext,
+    queue, queueIndex, playQueue, playbackContext, isBuffering,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
   } = usePlayerStore(useShallow(({
-    queue, queueIndex, playQueue, playbackContext,
+    queue, queueIndex, playQueue, playbackContext, isBuffering,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
   }) => ({
-    queue, queueIndex, playQueue, playbackContext,
+    queue, queueIndex, playQueue, playbackContext, isBuffering,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
   })))
   const { openAddToPlaylist } = useAppStore()
@@ -172,6 +172,11 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                   isDragOver ? 'border-t-accent' : 'border-t-transparent'
                 }`}
               >
+                {isCurrent && isBuffering && (
+                  <div role="progressbar" aria-label="Loading track" className="absolute bottom-0 left-2 right-2 h-0.5 overflow-hidden rounded-full bg-elevated">
+                    <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
+                  </div>
+                )}
                 {!shuffle && (
                   <div
                     className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 z-20 transition-opacity opacity-0 group-hover:opacity-100"

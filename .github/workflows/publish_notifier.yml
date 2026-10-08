@@ -5,6 +5,9 @@ on:
     types: [published, released]
   workflow_dispatch: 
 
+permissions:
+  contents: read
+
 jobs:
   discord-announcement:
     # Announce real releases only, never the nightly pre-release.
@@ -12,25 +15,33 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Debug Event Data
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "Event Type: ${{ github.event_name }}"
-          echo "Release Tag: ${{ github.event.release.tag_name }}"
+          printf 'Event Type: %s\n' "$EVENT_NAME"
+          printf 'Release Tag: %s\n' "$RELEASE_TAG"
 
       - name: Discord Notification
         shell: bash
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ -z "${{ github.event.release.tag_name }}" ]; then
-            RELEASE_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              https://api.github.com/repos/${{ github.repository }}/releases/latest)
+          if [ "$EVENT_NAME" == "workflow_dispatch" ] || [ -z "$RELEASE_TAG" ]; then
+            RELEASE_DATA=$(curl -fsS -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest")
             TAG=$(echo "$RELEASE_DATA" | jq -r .tag_name)
             NAME=$(echo "$RELEASE_DATA" | jq -r .name)
             URL=$(echo "$RELEASE_DATA" | jq -r .html_url)
           else
-            TAG="${{ github.event.release.tag_name }}"
-            NAME="${{ github.event.release.name }}"
-            URL="${{ github.event.release.html_url }}"
+            TAG="$RELEASE_TAG"
+            NAME="$RELEASE_NAME"
+            URL="$RELEASE_URL"
           fi
           if [ "$NAME" == "null" ] || [ -z "$NAME" ]; then NAME="Release $TAG"; fi
 

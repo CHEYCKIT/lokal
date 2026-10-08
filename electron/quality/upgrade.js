@@ -38,7 +38,7 @@ function freePath(dir, name) {
 
 let mmLib = null
 function musicMetadata() {
-  if (mmLib === null) { try { mmLib = require('music-metadata') } catch { mmLib = false } }
+  if (mmLib === null) { try { mmLib = require('../musicMetadata') } catch { mmLib = false } }
   return mmLib || null
 }
 
