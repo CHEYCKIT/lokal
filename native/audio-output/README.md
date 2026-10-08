@@ -54,3 +54,8 @@ claiming physical-device support verified on those platforms. On Windows with
 a stereo WASAPI endpoint, run `node scripts/native-wasapi-smoke.mjs` to exercise
 exclusive PCM16/float32, caller-thread stalls, flush, discard, and stream
 continuity on the connected device.
+
+The desktop log records output mode changes and minimize/restore snapshots.
+Native snapshots include queued blocks and callback-level underrun frame/event
+counters, making device-specific stutter reproducible from the Settings › Debug
+Logs file without logging every PCM block.

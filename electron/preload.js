@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electron', {
   nativeAudio: {
     directTransport: true,
     devices: () => invoke('audio-output:devices'),
+    diagnostics: () => invoke('audio-output:diagnostics'),
     open: options => invoke('audio-output:open', options),
     write: (session, samples) => invoke('audio-output:write', session, samples),
     flush: session => invoke('audio-output:flush', session),
