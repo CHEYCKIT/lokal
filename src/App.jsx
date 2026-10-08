@@ -1936,12 +1936,11 @@ export default function App() {
     // now playing), or an auto-advanced song is never counted.
     const { activeAudioElement, isPlaying, currentTrack } = usePlayerStore.getState()
     const active = (activeAudioElement === 'primary') === (el === audioRef.current)
-    if (active && String(currentTrack?.id) === pending) setIsBuffering(false)
     if (active && isPlaying && !el.paused && String(currentTrack?.id) === pending) {
       startTimer()
       sendListenBrainzNowPlaying()
     }
-  }, [setIsBuffering, startTimer, sendListenBrainzNowPlaying])
+  }, [startTimer, sendListenBrainzNowPlaying])
 
   const handlePrimaryEnded = useCallback((e) => {
     if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
