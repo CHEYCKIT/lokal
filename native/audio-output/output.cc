@@ -35,7 +35,7 @@ static void render(ma_device* device, void* buffer, const void*, ma_uint32 count
 }
 static napi_value error(napi_env env, const char* message) { napi_throw_error(env, nullptr, message); return nullptr; }
 static napi_value number(napi_env env, double n) { napi_value v; napi_create_double(env, n, &v); return v; }
-static napi_value boolean(napi_env env, bool b) { napi_value v; napi_get_boolean(env, b, &v); return v; }
+static napi_value booleanValue(napi_env env, bool b) { napi_value v; napi_get_booleanValue(env, b, &v); return v; }
 static napi_value string(napi_env env, const char* s) { napi_value v; napi_create_string_utf8(env, s, NAPI_AUTO_LENGTH, &v); return v; }
 static napi_value nothing(napi_env env) { napi_value v; napi_get_undefined(env, &v); return v; }
 static Output* state(napi_env env) { void* p; napi_get_instance_data(env, &p); return static_cast<Output*>(p); }
@@ -55,7 +55,7 @@ static napi_value devices(napi_env env, napi_callback_info) {
     napi_value entry; napi_create_object(env, &entry);
     napi_set_named_property(env, entry, "id", number(env, i));
     napi_set_named_property(env, entry, "name", string(env, infos[i].name));
-    napi_set_named_property(env, entry, "isDefaultOutput", boolean(env, infos[i].isDefault));
+    napi_set_named_property(env, entry, "isDefaultOutput", booleanValue(env, infos[i].isDefault));
     // Channel support is negotiated when opening the stream.
     napi_set_named_property(env, entry, "outputChannels", number(env, 2));
     napi_set_element(env, result, i, entry);
@@ -87,16 +87,16 @@ static napi_value start(napi_env env, napi_callback_info) {
   return nothing(env);
 }
 static napi_value close(napi_env env, napi_callback_info) { state(env)->close(); return nothing(env); }
-static napi_value isOpen(napi_env env, napi_callback_info) { return boolean(env, state(env)->open); }
-static napi_value isRunning(napi_env env, napi_callback_info) { auto* s = state(env); return boolean(env, s->open && ma_device_is_started(&s->device)); }
+static napi_value isOpen(napi_env env, napi_callback_info) { return booleanValue(env, state(env)->open); }
+static napi_value isRunning(napi_env env, napi_callback_info) { auto* s = state(env); return booleanValue(env, s->open && ma_device_is_started(&s->device)); }
 static napi_value rate(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? s->device.sampleRate : 0); }
 static napi_value time(napi_env env, napi_callback_info) { auto* s = state(env); return number(env, s->open ? double(s->frames.load()) / s->device.sampleRate : 0); }
 static napi_value backend(napi_env env, napi_callback_info) { auto* s = state(env); return string(env, s->initialized ? ma_get_backend_name(s->context.backend) : "Unavailable"); }
 static napi_value supportsExclusive(napi_env env, napi_callback_info) {
-  auto* s = state(env); return boolean(env, init(s) && s->context.backend == ma_backend_wasapi);
+  auto* s = state(env); return booleanValue(env, init(s) && s->context.backend == ma_backend_wasapi);
 }
 static napi_value isExclusive(napi_env env, napi_callback_info) {
-  auto* s = state(env); return boolean(env, s->open && s->device.playback.shareMode == ma_share_mode_exclusive);
+  auto* s = state(env); return booleanValue(env, s->open && s->device.playback.shareMode == ma_share_mode_exclusive);
 }
 static napi_value clear(napi_env env, napi_callback_info) {
   auto* s = state(env);
