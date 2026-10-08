@@ -13,6 +13,7 @@ struct Output {
   ma_pcm_rb ring{};
   bool initialized = false, open = false;
   std::atomic<uint64_t> frames{0};
+  std::atomic<bool> discardRequested{false};
   std::vector<ma_device_id> ids;
   void close() {
     if (open) { ma_device_uninit(&device); ma_pcm_rb_uninit(&ring); open = false; }
@@ -23,6 +24,17 @@ static void render(ma_device* device, void* buffer, const void*, ma_uint32 count
   auto* self = static_cast<Output*>(device->pUserData);
   const auto bytes = ma_get_bytes_per_frame(device->playback.format, 2);
   std::memset(buffer, 0, count * bytes);
+  if (self->discardRequested.exchange(false, std::memory_order_acq_rel)) {
+    for (;;) {
+      const ma_uint32 available = ma_pcm_rb_available_read(&self->ring);
+      if (!available) break;
+      ma_uint32 discarded = available;
+      void* input = nullptr;
+      ma_pcm_rb_acquire_read(&self->ring, &discarded, &input);
+      if (!discarded) break;
+      ma_pcm_rb_commit_read(&self->ring, discarded);
+    }
+  }
   ma_uint32 done = 0;
   while (done < count) {
     ma_uint32 available = count - done; void* input = nullptr;
@@ -78,7 +90,7 @@ static napi_value open(napi_env env, napi_callback_info info) {
   if (ma_device_init(&self->context, &config, &self->device) != MA_SUCCESS) {
     ma_pcm_rb_uninit(&self->ring); return error(env, "The device could not accept this output format.");
   }
-  self->open = true; self->frames.store(0);
+  self->open = true; self->frames.store(0); self->discardRequested.store(false);
   return number(env, 1024);
 }
 static napi_value start(napi_env env, napi_callback_info) {
@@ -107,6 +119,11 @@ static napi_value clear(napi_env env, napi_callback_info) {
     ma_pcm_rb_reset(&s->ring);
     if (running && ma_device_start(&s->device) != MA_SUCCESS) return error(env, "Could not resume audio output.");
   }
+  return nothing(env);
+}
+static napi_value discard(napi_env env, napi_callback_info) {
+  auto* s = state(env);
+  if (s->open) s->discardRequested.store(true, std::memory_order_release);
   return nothing(env);
 }
 static napi_value write(napi_env env, napi_callback_info info) {
@@ -143,6 +160,7 @@ static napi_value setup(napi_env env, napi_value exports) {
     {"streamTime", nullptr, nullptr, time, nullptr, nullptr, napi_default, nullptr},
     {"write", nullptr, write, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"clearOutputQueue", nullptr, clear, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"discardOutputQueue", nullptr, discard, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(methods) / sizeof(methods[0]), methods);
   return exports;

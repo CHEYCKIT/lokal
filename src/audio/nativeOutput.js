@@ -66,11 +66,9 @@ export class NativeAudioBridge {
         }
       }
       if (typeof this.context.setSinkId === 'function') {
-        // Release Chromium's own shared device while native output owns audio.
-        // A silent sink still clocks the worklet, without holding a speaker open.
-        this.previousSink = this.browserDeviceId ?? this.context.sinkId ?? ''
-        await this.context.setSinkId({ type: 'none' })
-        this.silentSink = true
+        // fallback() leaves Chromium on its silent sink for native output.
+        // Do not capture that sink as the speaker to restore later.
+        await this.silenceBrowserOutput()
       } else if (exclusive) throw new Error('This build cannot release browser output for exclusive mode.')
       const result = await this.api.open({ precision, deviceName, exclusive, sampleRate: this.context.sampleRate })
       if (!result?.ok) throw new Error(result?.error || 'Native output could not be started.')
@@ -89,7 +87,8 @@ export class NativeAudioBridge {
   resetWorklet(active) {
     this.epoch++
     const credits = this.exclusive && active ? 48 : 12
-    this.node?.port.postMessage({ type: 'configure', active, session: this.session, epoch: this.epoch, frameSize: this.frameSize || 1024, credits })
+    const pendingBlocks = this.exclusive && active ? 32 : 8
+    this.node?.port.postMessage({ type: 'configure', active, session: this.session, epoch: this.epoch, frameSize: this.frameSize || 1024, credits, pendingBlocks })
   }
   async send({ epoch, samples, error }) {
     if (!this.session || epoch !== this.epoch) return
@@ -126,20 +125,36 @@ export class NativeAudioBridge {
     await this.context.suspend()
     // Silence the native route before reconnecting Chromium to avoid doubled audio.
     try { await this.api.close() } catch {}
-    if (this.silentSink || (this.browserDeviceId && typeof this.context.setSinkId === 'function')) {
-      try { await this.context.setSinkId(this.browserDeviceId ?? this.previousSink ?? '') }
-      catch {
-        try { await this.context.setSinkId('') }
-        catch { warning = 'Could not restore browser audio output. Select an available output device.' }
-      }
-      this.silentSink = false
-    }
     if (this.node) {
       try { this.source.disconnect(this.node) } catch {}
       this.node.disconnect()
     }
     this.source.connect(this.context.destination)
-    if (resume && this.playing) await this.context.resume()
+    if (resume && this.playing) {
+      try { await this.restoreBrowserOutput() }
+      catch (error) { warning = error.message }
+      await this.context.resume()
+    } else {
+      try { await this.silenceBrowserOutput() }
+      catch { warning = 'Could not release browser audio output while idle.' }
+    }
     this.report({ mode: !this.playing ? 'idle' : resume ? 'auto' : 'switching', sampleRate: this.context.sampleRate, ...(warning ? { warning } : {}) })
+  }
+  async silenceBrowserOutput() {
+    if (typeof this.context.setSinkId !== 'function') return
+    if (this.silentSink) return
+    this.previousSink = this.browserDeviceId ?? this.context.sinkId ?? ''
+    await this.context.setSinkId({ type: 'none' })
+    this.silentSink = true
+  }
+  async restoreBrowserOutput() {
+    if (!this.silentSink && !this.browserDeviceId) return
+    try { await this.context.setSinkId(this.browserDeviceId ?? this.previousSink ?? '') }
+    catch {
+      try { await this.context.setSinkId('') }
+      catch { throw new Error('Could not restore browser audio output. Select an available output device.') }
+    }
+    this.silentSink = false
+    this.previousSink = null
   }
 }
