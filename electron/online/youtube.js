@@ -847,7 +847,10 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best', videoHe
       '-j', '--no-playlist', '--no-warnings', '--skip-download',
       ...runtime.args,
       ...cookieArgs,
-      `https://music.youtube.com/watch?v=${videoId}`,
+      // YouTube Music is the right page for audio/account formats. Its watch
+      // endpoint can expose an audio-oriented format list, though, so ask the
+      // regular YouTube endpoint when the caller needs a picture.
+      `${quality === 'video' ? 'https://www.youtube.com' : 'https://music.youtube.com'}/watch?v=${videoId}`,
     ]
     let proc
     try { proc = spawn(ytdlp, args, { windowsHide: true, ...runtime.options }) } catch (e) { reject(new Error(`Could not run yt-dlp (${e.message})`)); return }

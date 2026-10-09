@@ -53,6 +53,14 @@ test('native extraction uses the exact recording URL and a hidden Windows proces
   assert.equal(stream.mime, 'audio/webm')
 })
 
+test('video extraction uses the regular YouTube watch endpoint', async t => {
+  const { calls, youtube } = extractorRuns(t, [{ json: { url: 'https://media.example.test/video.mp4', ext: 'mp4', vcodec: 'avc1.640028', height: 1080 } }])
+  const request = youtube.resolveStream('4NRXx6U8ABQ', { ytdlp: '/fixture/yt-dlp', quality: 'video', videoHeight: 1080 })
+  await request
+  assert.equal(calls[0].args.at(-1), 'https://www.youtube.com/watch?v=4NRXx6U8ABQ')
+  assert.match(calls[0].args[calls[0].args.indexOf('-f') + 1], /bestvideo\[height<=1080\]/)
+})
+
 // One fake yt-dlp process per spawn, answered in order.
 function extractorRuns(t, answers) {
   const calls = []
