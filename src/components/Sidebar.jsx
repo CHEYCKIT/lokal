@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles, Import } from 'lucide-react'
+import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles, Import, Clapperboard } from 'lucide-react'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
@@ -15,6 +15,7 @@ const NAV = [
   { icon: BarChart2, label: 'Recap', path: '/recap' },
   { icon: Disc3, label: 'Albums', path: '/albums', tour: 'albums' },
   { icon: Users, label: 'Artists', path: '/artists', tour: 'artists' },
+  { icon: Clapperboard, label: 'Videos', path: '/videos' },
   { icon: AudioWaveform, label: 'Audio Quality', path: '/quality' },
 ]
 

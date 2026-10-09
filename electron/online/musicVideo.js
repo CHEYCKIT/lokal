@@ -483,6 +483,16 @@ function cacheKey(track) {
   return ['v2', track.id, clean(track.title), clean(track.artist), Math.round(Number(track.duration) || 0)].join('|')
 }
 
+/** Already discovered matches only: listing Videos never downloads/scans songs. */
+function knownMusicVideos(tracks, { cacheFile, now = Date.now } = {}) {
+  const cache = readCache(cacheFile)
+  return (tracks || []).flatMap(track => {
+    const hit = cache[cacheKey(track)]
+    if (!hit?.video || !/^[\w-]{11}$/.test(String(hit.video.videoId || '')) || now() - hit.at >= FOUND_TTL_MS) return []
+    return [{ track, video: hit.video }]
+  })
+}
+
 const pending = new Map()
 
 /**
@@ -583,6 +593,6 @@ function videoTimeFor(segments, time) {
 }
 
 module.exports = {
-  findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
+  findMusicVideo, knownMusicVideos, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
   VIDEOS_PARAMS, FPS,
 }

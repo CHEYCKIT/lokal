@@ -126,10 +126,18 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('musicVideo:find', (event, trackId) => musicVideoFor(trackId, {
     onProgress: musicVideoProgress(event, trackId),
   }).catch(() => null))
-  ipcMain.handle('musicVideo:cache', (event, trackId) => musicVideoFor(trackId, {
-    download: true,
-    onProgress: musicVideoProgress(event, trackId),
-  }).catch(e => ({ error: e.message })))
+  ipcMain.handle('musicVideo:cache', (_, trackId) => prepareMusicVideoFor(trackId).catch(e => ({ error: e.message })))
+  ipcMain.handle('musicVideo:list', () => listMusicVideos())
+  ipcMain.handle('musicVideo:save', async (_, trackId, saved = true) => {
+    try {
+      const video = await musicVideoFor(trackId)
+      if (!video) throw new Error('No music video found for this song')
+      ensureVideoLibrary()
+      if (saved) getDB().prepare('INSERT OR REPLACE INTO saved_music_videos (track_id, added_at, video_json) VALUES (?, ?, ?)').run(trackId, Date.now(), JSON.stringify(video))
+      else getDB().prepare('DELETE FROM saved_music_videos WHERE track_id = ?').run(trackId)
+      return { saved: !!saved }
+    } catch (e) { return { error: e.message } }
+  })
   // Settings -> Library -> Maintenance: find every library song's music video
   // now, so they open at once later. One song at a time; cancellable.
   let videoIndexJob = null
@@ -145,7 +153,7 @@ function registerOnlineHandlers(ipcMain) {
       for (const row of rows) {
         if (job.cancelled) break
         send({ running: true, done, total: rows.length, found, title: `${row.artist} — ${row.title}` })
-        const video = await musicVideoFor(row.id, { download: true }).catch(() => null)
+        const video = await prepareMusicVideoFor(row.id, { wait: true }).catch(() => null)
         if (video) found++
         done++
       }
@@ -191,14 +199,23 @@ function songAudioFor(track, canStream, options = {}) {
 }
 
 /** The official music video for a track (see online/musicVideo.js), or null. */
-async function musicVideoFor(trackId, { onProgress, download = false } = {}) {
+async function musicVideoFor(trackId, { onProgress } = {}) {
   const track = getDB().prepare('SELECT id, title, artist, duration, file_path FROM tracks WHERE id = ?').get(trackId)
   if (!track) return null
+  const cacheFile = musicVideoMetadataFile()
+  const matcher = require('../online/musicVideo')
+  const known = matcher.knownMusicVideos([track], { cacheFile })[0]?.video
+  if (known) return known
+  ensureVideoLibrary()
+  try {
+    const saved = JSON.parse(getDB().prepare('SELECT video_json FROM saved_music_videos WHERE track_id = ?').get(trackId)?.video_json || 'null')
+    if (/^[\w-]{11}$/.test(String(saved?.videoId || ''))) return saved
+  } catch {}
   if (accountSession) await accountSession.credentials().catch(() => {})
   const { findFfmpeg } = require('./tools')
   const options = streamOptions()
   const canStream = !!options.ytdlp
-  const video = await require('../online/musicVideo').findMusicVideo(track, {
+  const video = await matcher.findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
     onProgress,
     songAudio: songAudioFor(track, canStream),
@@ -213,17 +230,57 @@ async function musicVideoFor(trackId, { onProgress, download = false } = {}) {
       official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
       url: `https://www.youtube.com/watch?v=${entry.id}`,
     }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
-    cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
+    cacheFile,
   })
-  if (!video || !download) return video
-  const file = await require('../online/musicVideoCache').cachedVideoFile(video.videoId, {
-    ...options,
-    cacheDir: require('../cache').cacheDir('musicVideo'),
-    onProgress,
-    fetchImpl: (url, init) => require('electron').net.fetch(url, init),
-  })
-  if (!file) throw new Error('Could not cache the music video')
-  return { ...video, file }
+  return video
+}
+
+function musicVideoMetadataFile() {
+  return require('path').join(require('electron').app.getPath('userData'), 'music-videos.json')
+}
+
+function ensureVideoLibrary() {
+  getDB().exec('CREATE TABLE IF NOT EXISTS saved_music_videos (track_id TEXT PRIMARY KEY, added_at INTEGER NOT NULL, video_json TEXT NOT NULL)')
+}
+
+function listMusicVideos() {
+  ensureVideoLibrary()
+  const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
+  const saved = new Map(getDB().prepare('SELECT track_id, video_json FROM saved_music_videos').all().map(row => [row.track_id, row.video_json]))
+  const { peekCachedVideoFile, heightOf } = require('../online/musicVideoCache')
+  const options = { cacheDir: require('../cache').cacheDir('musicVideo'), videoHeight: heightOf(settings().video_quality), touch: false }
+  const known = new Map(require('../online/musicVideo').knownMusicVideos(tracks, { cacheFile: musicVideoMetadataFile() }).map(item => [item.track.id, item]))
+  // Saved videos keep their metadata even when discovery expires or the file
+  // is evicted. Disk-cache membership isn't library membership.
+  for (const track of tracks) {
+    if (known.has(track.id) || !saved.has(track.id)) continue
+    try {
+      const video = JSON.parse(saved.get(track.id))
+      if (/^[\w-]{11}$/.test(String(video?.videoId || ''))) known.set(track.id, { track, video })
+    } catch {}
+  }
+  return [...known.values()].sort((a, b) => String(a.track.artist || '').localeCompare(String(b.track.artist || '')) || String(a.track.title || '').localeCompare(String(b.track.title || ''))).map(({ track, video }) => ({
+    track, video: { ...video, thumbnail: `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg` },
+    saved: saved.has(track.id), cached: !!peekCachedVideoFile(video.videoId, options),
+  }))
+}
+
+/** Cache hit returns immediately; a miss becomes a real background queue job. */
+async function prepareMusicVideoFor(trackId, { wait = false } = {}) {
+  const video = await musicVideoFor(trackId)
+  if (!video) return null
+  const { peekCachedVideoFile, heightOf } = require('../online/musicVideoCache')
+  const options = { cacheDir: require('../cache').cacheDir('musicVideo'), videoHeight: heightOf(settings().video_quality) }
+  const file = peekCachedVideoFile(video.videoId, options)
+  if (file) return { ...video, file }
+  const { queueMusicVideo, waitForDownload } = require('./downloader')
+  const queued = queueMusicVideo(video, options)
+  if (queued.error) throw new Error(queued.error)
+  if (!wait) return { ...video, downloadId: queued.downloadId }
+  const job = await waitForDownload(queued.downloadId)
+  const downloaded = peekCachedVideoFile(video.videoId, options)
+  if (!downloaded || job?.status !== 'done') throw new Error(job?.error || 'Could not cache the music video')
+  return { ...video, file: downloaded }
 }
 
 /** Must run before the app is ready: lets <audio> stream (and seek) from lokal-stream://. */

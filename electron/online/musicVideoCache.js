@@ -25,18 +25,26 @@ function cachePath(cacheDir, videoId, height, ext) {
   return path.join(cacheDir, `${videoId}-${height}.${ext}`)
 }
 
-function existingFile(cacheDir, videoId, height) {
+function existingFile(cacheDir, videoId, height, touch = true) {
   for (const ext of ['mp4', 'webm']) {
     const file = cachePath(cacheDir, videoId, height, ext)
     try {
-      if (fs.statSync(file).size > 0) {
+      const stat = fs.statSync(file)
+      if (stat.isFile() && stat.size > 0) {
         const now = new Date()
-        fs.utimesSync(file, now, now)
+        if (touch) fs.utimesSync(file, now, now)
         return file
       }
     } catch {}
   }
   return null
+}
+
+function peekCachedVideoFile(videoId, options = {}) {
+  if (!VIDEO_ID.test(String(videoId || ''))) return null
+  const cacheDir = options.cacheDir || cache.cacheDir('musicVideo')
+  if (!cacheDir) return null
+  return existingFile(cacheDir, videoId, heightOf(options.videoHeight), options.touch !== false)
 }
 
 async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_MS, onProgress } = {}) {
@@ -50,7 +58,8 @@ async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_M
   let timer
   let stalled
   let closed = false
-  const abort = () => { try { reader.cancel() } catch {} }
+  let interrupted = false
+  const abort = () => { interrupted = true; reader.cancel().catch(() => {}) }
   const resetStall = () => {
     clearTimeout(stalled)
     stalled = setTimeout(() => abort(), STALL_TIMEOUT_MS)
@@ -78,6 +87,7 @@ async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_M
     }
     clearTimeout(stalled)
     await close()
+    if (interrupted) throw new Error(signal?.aborted ? 'Music video download cancelled' : 'Music video download timed out')
     if (outputError) throw outputError
     if (!bytes || (expected > 0 && bytes < expected)) throw new Error(`Music video download was incomplete (${bytes} of ${expected} bytes)`)
   } finally {
@@ -108,6 +118,10 @@ async function downloadVideo(videoId, options) {
     }
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController()
+      const parentSignal = options.signal
+      const abortFromParent = () => controller.abort()
+      if (parentSignal?.aborted) controller.abort()
+      else parentSignal?.addEventListener?.('abort', abortFromParent, { once: true })
       let temp = null
       try {
         reportProgress(0, 0)
@@ -129,9 +143,10 @@ async function downloadVideo(videoId, options) {
         return dest
       } catch (error) {
         try { if (temp) fs.unlinkSync(temp) } catch {}
-        if (attempt) throw error
+        if (attempt || options.signal?.aborted) throw error
       } finally {
         controller.abort()
+        parentSignal?.removeEventListener?.('abort', abortFromParent)
       }
     }
     return null
@@ -147,4 +162,4 @@ async function cachedVideoFile(videoId, options = {}) {
   return downloadVideo(videoId, { ...options, cacheDir })
 }
 
-module.exports = { cachedVideoFile, downloadVideo, writeResponse, cachePath, heightOf }
+module.exports = { cachedVideoFile, peekCachedVideoFile, downloadVideo, writeResponse, cachePath, heightOf }

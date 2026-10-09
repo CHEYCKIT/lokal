@@ -146,6 +146,7 @@ function terminate(proc) {
  * the same whichever link it came from; null for anything else.
  */
 function jobSourceRef(kind, url, opts = {}) {
+  if (kind === 'music-video' && opts?.videoId) return `music-video:${opts.videoId}:${opts.videoHeight || 1080}`
   if (kind !== 'single') return null
   const addon = opts?.addonSource
   if (addon?.provider && addon?.id) return sourceRefOf(addon.provider, addon.id)
@@ -360,7 +361,7 @@ class DownloadManager {
   makeJob(kind, url, opts = {}, { id, createdAt } = {}) {
     const videoId = youTubeId(url)
     return {
-      id: id || opts.id || `${kind === 'playlist' ? 'pl' : 'dl'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: id || opts.id || `${kind === 'playlist' ? 'pl' : kind === 'music-video' ? 'mv' : 'dl'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       kind,
       url,
       opts: { ...opts, id: undefined },
@@ -460,6 +461,19 @@ class DownloadManager {
       .map(job => this.snapshot(job))
   }
 
+  /** Wait for a queued job to finish without tying its lifetime to a renderer. */
+  waitFor(id) {
+    this.init()
+    return new Promise(resolve => {
+      const check = () => {
+        const job = this.jobs.get(id)
+        if (!job || !ACTIVE.has(job.status)) { resolve(job ? this.snapshot(job) : null); return }
+        setTimeout(check, 250)
+      }
+      check()
+    })
+  }
+
   checkTools() {
     const tools = this.deps.findTools?.() || {}
     if (!tools.ytdlp) return { error: 'yt-dlp not found. Go to Settings -> External Tools to download it or set a custom path.' }
@@ -476,8 +490,11 @@ class DownloadManager {
     if (!url || typeof url !== 'string') return { error: 'URL is required' }
     if (kind !== 'soulseek' && !isHttpUrl(url)) return { error: 'Only http(s) links can be downloaded.' }
     // Soulseek downloads go through slskd, not yt-dlp.
-    const check = kind === 'soulseek' ? { tools: {} } : this.checkTools()
+    const check = kind === 'soulseek' || kind === 'music-video'
+      ? { tools: this.deps.findTools?.() || {} }
+      : this.checkTools()
     if (check.error) return check
+    if (kind === 'music-video' && !check.tools.ytdlp) return { error: 'yt-dlp not found. Go to Settings → External Tools to download it.' }
     if (kind === 'soulseek' && (!opts.username || !opts.filename)) return { error: 'Pick a file from the Soulseek results.' }
     // Merge all playlist requests even when they use exactly the same URL.
     // Addon identities take precedence: a shared endpoint can serve different songs.
@@ -502,7 +519,7 @@ class DownloadManager {
       this.persist(running)
       return { downloadId: running.id, playlistId: running.playlistId, duplicate: true }
     }
-    if (ref) {
+    if (ref && kind !== 'music-video') {
       const owned = this.libraryTrackWithRef(ref)
       if (owned) {
         try {
@@ -586,6 +603,12 @@ class DownloadManager {
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
     if (job.status !== 'downloading') return Promise.resolve({ success: true, status: job.status })
+    if (job.kind === 'music-video') {
+      job.stop = 'cancelled'
+      job.videoAbort?.abort()
+      this.update(job, { message: 'Stopping…' }, { force: true })
+      return Promise.resolve({ success: true, status: 'cancelled' })
+    }
     if (job.resolvingUrl) {
       // Still asking the addon for a link: nothing is running yet.
       job.stop = 'cancelled'
@@ -666,7 +689,9 @@ class DownloadManager {
     const job = this.jobs.get(id)
     if (!job) return { error: 'Download not found' }
     if (ACTIVE.has(job.status)) return { downloadId: job.id }
-    if (job.kind !== 'soulseek') {
+    if (job.kind === 'music-video') {
+      if (!this.deps.findTools?.()?.ytdlp) return { error: 'yt-dlp not found. Go to Settings → External Tools to download it.' }
+    } else if (job.kind !== 'soulseek') {
       const check = this.checkTools()
       if (check.error) return check
     }
@@ -698,6 +723,7 @@ class DownloadManager {
   // ------------------------------------------------------------- running
 
   start(job) {
+    if (job.kind === 'music-video') return this.startMusicVideo(job)
     // An addon download: its link expires, so ask the addon for a fresh one
     // right before yt-dlp starts (first run, restart or retry alike). The job
     // holds its slot meanwhile.
@@ -805,6 +831,38 @@ class DownloadManager {
     }
     proc.on('close', code => onClose(code))
     proc.on('error', err => onClose(null, err))
+  }
+
+  startMusicVideo(job) {
+    const controller = new AbortController()
+    job.videoAbort = controller
+    job.startedAt = Date.now()
+    job.stop = null
+    this.running++
+    this.update(job, { status: 'downloading', message: 'Downloading music video…', error: null, seen: false }, { persist: true })
+    Promise.resolve().then(() => this.deps.downloadMusicVideo(job.opts.videoId, {
+      ...job.opts,
+      signal: controller.signal,
+      onProgress: progress => {
+        const percent = Number.isFinite(progress?.percent) ? progress.percent : job.progress
+        this.update(job, { progress: percent, message: Number.isFinite(progress?.percent) ? `Downloading music video… ${progress.percent}%` : 'Downloading music video…' })
+      },
+    })).then(file => {
+      if (!file && !job.stop) throw new Error('Music video download produced no file')
+      if (job.stop) {
+        this.update(job, { status: job.stop === 'suspend' ? 'queued' : job.stop, message: job.stop === 'suspend' ? 'Resuming…' : 'Cancelled', finishedAt: job.stop === 'suspend' ? null : Date.now() }, { persist: true })
+        return
+      }
+      this.update(job, { status: 'done', progress: 100, song: file, message: 'Music video downloaded', finishedAt: Date.now() }, { persist: true })
+      this.trimHistory()
+    }).catch(error => {
+      if (job.stop) this.update(job, { status: job.stop === 'suspend' ? 'queued' : job.stop, message: job.stop === 'suspend' ? 'Resuming…' : 'Cancelled', finishedAt: job.stop === 'suspend' ? null : Date.now() }, { persist: true })
+      else this.fail(job, error?.message || 'Music video download failed')
+    }).finally(() => {
+      job.videoAbort = null
+      this.running--
+      this.pump()
+    })
   }
 
   onLine(job, raw, stream) {
@@ -1423,7 +1481,7 @@ class DownloadManager {
   async suspend() {
     this.suspended = true
     const running = [...this.jobs.values()].filter(j => j.status === 'downloading' && !j.exited && j.kind !== 'soulseek')
-    for (const job of running) job.stop = 'suspend'
+    for (const job of running) { job.stop = 'suspend'; job.videoAbort?.abort() }
     await Promise.all(running.map(j => terminate(j.proc)))
     await Promise.all([...this.looseProcs].map(p => terminate(p)))
     return { success: true, count: running.length, ids: running.map(j => j.id) }
@@ -1457,6 +1515,7 @@ class DownloadManager {
         job.status = 'queued'
         job.message = 'Resuming after restart'
         this.persist(job)
+        job.videoAbort?.abort()
         terminate(job.proc)
       }
     }

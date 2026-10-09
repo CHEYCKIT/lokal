@@ -10,7 +10,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
@@ -94,16 +94,17 @@ function statusText(job) {
 
 function Artwork({ job, size = 40 }) {
   const [broken, setBroken] = useState(false)
-  const Icon = job.kind === 'playlist' ? Library : Disc3
+  const Icon = job.kind === 'music-video' ? Clapperboard : job.kind === 'playlist' ? Library : Disc3
+  const width = job.kind === 'music-video' ? Math.round(size * 16 / 9) : size
   if (job.thumbnail && !broken) {
     return (
-      <div className="relative flex-shrink-0 overflow-hidden rounded-lg bg-black/30" style={{ width: size, height: size }}>
+      <div className="relative flex-shrink-0 overflow-hidden rounded-lg bg-black/30" style={{ width, height: size }}>
         <img src={job.thumbnail} alt="" onError={() => setBroken(true)} className="h-full w-full object-cover" />
       </div>
     )
   }
   return (
-    <div className="flex flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/25" style={{ width: size, height: size }}>
+    <div className="flex flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/25" style={{ width, height: size }}>
       <Icon size={size * 0.42} className="text-muted" />
     </div>
   )
