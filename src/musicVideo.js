@@ -32,17 +32,21 @@ export function loadMusicVideo(trackId) {
   return lookups.get(trackId)
 }
 
-/** { video, loading, progress } for a track; a video only once it's been found and checked. */
-export function useMusicVideo(track, enabled = true) {
+/** { video, loading, progress } for a track; optionally cache it for playback. */
+export function useMusicVideo(track, enabled = true, prepare = false) {
   const id = enabled ? track?.id : null
   const [state, setState] = useState({ id: null, video: null })
   useEffect(() => {
     if (!id) return undefined
     bindProgress()
     let current = true
-    loadMusicVideo(id).then(video => { if (current) setState({ id, video }) })
+    loadMusicVideo(id).then(async video => {
+      if (!current || !video || !prepare) { if (current) setState({ id, video }); return }
+      const cached = await Promise.resolve(api.musicVideoCache?.(id)).catch(() => null)
+      if (current) setState({ id, video: cached?.error ? { ...video, error: cached.error } : cached })
+    })
     return () => { current = false }
-  }, [id])
+  }, [id, prepare])
   const progress = useLookupProgress(s => (id ? s[id] : null)) || null
   const mine = !!id && state.id === id
   return { video: mine ? state.video : null, loading: !!id && !mine, progress: mine ? null : progress }

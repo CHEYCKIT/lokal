@@ -35,6 +35,13 @@ function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
   try { localStorage.setItem(YOUTUBE_LOCAL_UNLIKES_KEY, JSON.stringify(stored)) } catch {}
 }
 
+function musicVideoResult(r) {
+  if (r?.error) return r
+  if (!r?.videoId) return null
+  const src = r.file ? electronFileURL(r.file) : null
+  return { ...r, src }
+}
+
 function buildLastfmAuthUrl(apiKey) {
   const callback = isE()
     ? 'lokal://lastfm-auth'
@@ -386,13 +393,13 @@ export const api = {
   motionCover: (trackId) => isE()
     ? el().motionCover(trackId).then(r => (r?.file ? { ...r, src: `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}` } : null))
     : apiFetch(`/artwork-fx/motion/${encodeURIComponent(trackId)}`).then(r => (r?.src ? r : null)),
-  // The official music video of a track (desktop only): { src, segments, ... } or null.
+  // The official music video of a track (desktop only): { videoId, src?, segments, ... } or null.
   musicVideo: (trackId) => isE() && el().musicVideo
-    ? el().musicVideo(trackId).then(r => {
-      if (!r?.videoId || !r.file) return null
-      const src = `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}`
-      return { ...r, src }
-    })
+    ? el().musicVideo(trackId).then(musicVideoResult)
+    : Promise.resolve(null),
+  // Download the discovered video into the shared cache for local playback.
+  musicVideoCache: (trackId) => isE() && el().musicVideoCache
+    ? el().musicVideoCache(trackId).then(musicVideoResult)
     : Promise.resolve(null),
   // How the lookup is going ({ trackId, stage, index, total }), desktop only.
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},

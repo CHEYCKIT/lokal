@@ -120,9 +120,16 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:remove', (_, key) => sources.addons.remove(getDB(), key))
   ipcMain.handle('addons:setEnabled', (_, key, enabled) => sources.addons.setEnabled(getDB(), key, enabled))
   ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
+  const musicVideoProgress = (event, trackId) => update => {
+    try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:progress', { trackId, ...update }) } catch {}
+  }
   ipcMain.handle('musicVideo:find', (event, trackId) => musicVideoFor(trackId, {
-    onProgress: update => { try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:progress', { trackId, ...update }) } catch {} },
+    onProgress: musicVideoProgress(event, trackId),
   }).catch(() => null))
+  ipcMain.handle('musicVideo:cache', (event, trackId) => musicVideoFor(trackId, {
+    download: true,
+    onProgress: musicVideoProgress(event, trackId),
+  }).catch(e => ({ error: e.message })))
   // Settings -> Library -> Maintenance: find every library song's music video
   // now, so they open at once later. One song at a time; cancellable.
   let videoIndexJob = null
@@ -138,7 +145,7 @@ function registerOnlineHandlers(ipcMain) {
       for (const row of rows) {
         if (job.cancelled) break
         send({ running: true, done, total: rows.length, found, title: `${row.artist} — ${row.title}` })
-        const video = await musicVideoFor(row.id).catch(() => null)
+        const video = await musicVideoFor(row.id, { download: true }).catch(() => null)
         if (video) found++
         done++
       }
@@ -184,7 +191,7 @@ function songAudioFor(track, canStream, options = {}) {
 }
 
 /** The official music video for a track (see online/musicVideo.js), or null. */
-async function musicVideoFor(trackId, { onProgress } = {}) {
+async function musicVideoFor(trackId, { onProgress, download = false } = {}) {
   const track = getDB().prepare('SELECT id, title, artist, duration, file_path FROM tracks WHERE id = ?').get(trackId)
   if (!track) return null
   if (accountSession) await accountSession.credentials().catch(() => {})
@@ -208,14 +215,15 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
     }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
     cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
   })
-  if (!video) return null
+  if (!video || !download) return video
   const file = await require('../online/musicVideoCache').cachedVideoFile(video.videoId, {
     ...options,
     cacheDir: require('../cache').cacheDir('musicVideo'),
     onProgress,
     fetchImpl: (url, init) => require('electron').net.fetch(url, init),
   })
-  return file ? { ...video, file } : null
+  if (!file) throw new Error('Could not cache the music video')
+  return { ...video, file }
 }
 
 /** Must run before the app is ready: lets <audio> stream (and seek) from lokal-stream://. */
