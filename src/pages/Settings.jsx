@@ -386,6 +386,28 @@ export default function Settings() {
   // Fill In Genres runs in the background; its progress, read every few seconds while it runs.
   const [genreJob, setGenreJob] = useState(null)
   const [missingRepairJob, setMissingRepairJob] = useState(null)
+  // Settings -> Library -> Maintenance: index every song's music video / lyrics
+  // ahead of time. Progress comes over IPC while either runs.
+  const [videoIndexJob, setVideoIndexJob] = useState(null)
+  const [lyricsIndexJob, setLyricsIndexJob] = useState(null)
+  useEffect(() => {
+    const offVideo = api.onMusicVideoIndexProgress?.(p => setVideoIndexJob(p))
+    const offLyrics = api.onLyricsIndexProgress?.(p => setLyricsIndexJob(p))
+    return () => { offVideo?.(); offLyrics?.() }
+  }, [])
+  const indexAllVideos = () => {
+    if (videoIndexJob?.running) { api.cancelMusicVideoIndex?.(); return }
+    setVideoIndexJob({ running: true, done: 0, total: 0, found: 0 })
+    Promise.resolve(api.indexAllMusicVideos?.()).catch(() => setVideoIndexJob(null))
+  }
+  const indexAllLyrics = () => {
+    if (lyricsIndexJob?.running) { api.cancelLyricsIndex?.(); return }
+    setLyricsIndexJob({ running: true, done: 0, total: 0, found: 0 })
+    Promise.resolve(api.indexAllLyrics?.()).catch(() => setLyricsIndexJob(null))
+  }
+  const indexText = (job, what) => job?.running
+    ? `${job.done || 0} of ${job.total || '…'} songs · ${job.found || 0} ${what} found${job.title ? ` · ${job.title}` : ''}`
+    : job ? `Done: ${job.found || 0} ${what} found for ${job.done || 0} songs${job.cancelled ? ' (stopped)' : ''}` : ''
   useEffect(() => {
     let timer = null
     let active = true
@@ -1291,6 +1313,22 @@ activeCategory === 'data' ? usersTried
             </button>
           </div>
         </Row>
+        {api.isElectron && (
+        <Row label="Index Music Videos" desc={`Finds and matches the official music video for every song in your library now, so they open at once later. ${indexText(videoIndexJob, 'videos')}`.trim()}>
+          <button onClick={indexAllVideos}
+            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+            {videoIndexJob?.running ? 'Stop' : 'Index All'}
+          </button>
+        </Row>
+        )}
+        {api.isElectron && (
+        <Row label="Index Lyrics" desc={`Fetches and keeps the lyrics of every song in your library now, so they open at once later. ${indexText(lyricsIndexJob, 'lyrics')}`.trim()}>
+          <button onClick={indexAllLyrics}
+            className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+            {lyricsIndexJob?.running ? 'Stop' : 'Index All'}
+          </button>
+        </Row>
+        )}
       </Section>
       )}
 
@@ -1554,6 +1592,18 @@ activeCategory === 'data' ? usersTried
             <option value="saver">Data saver</option>
           </select>
         </Row>
+        {api.isElectron && (
+        <Row label="Music Video Quality" desc="The most a music video's picture streams at. Lower uses less data and starts faster.">
+          <select
+            value={settings.video_quality || '1080'}
+            onChange={e => set('video_quality', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="1080">Up to 1080p</option>
+            <option value="720">Up to 720p</option>
+            <option value="480">Up to 480p</option>
+          </select>
+        </Row>
+        )}
         <Row stacked label="Play From" desc="When a song isn't in your library, Lokal looks for it in these, top first. Addons you turn on are added here.">
           <PlaybackSourceSettings value={settings.playback_search_order} onChange={value => set('playback_search_order', value)} />
         </Row>

@@ -390,6 +390,15 @@ export const api = {
   musicVideo: (trackId) => isE() && el().musicVideo
     ? el().musicVideo(trackId).then(r => (r?.videoId ? { ...r, src: `lokal-stream://ytv/${r.videoId}` } : null))
     : Promise.resolve(null),
+  // How the lookup is going ({ trackId, stage, index, total }), desktop only.
+  onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},
+  // Settings -> Library -> Maintenance: index every song's music video / lyrics.
+  indexAllMusicVideos: () => isE() && el().indexAllMusicVideos ? el().indexAllMusicVideos() : Promise.resolve(null),
+  cancelMusicVideoIndex: () => isE() && el().cancelMusicVideoIndex ? el().cancelMusicVideoIndex() : Promise.resolve(null),
+  onMusicVideoIndexProgress: (fn) => isE() && el().onMusicVideoIndexProgress ? el().onMusicVideoIndexProgress((_, p) => fn(p)) : () => {},
+  indexAllLyrics: () => isE() && el().indexAllLyrics ? el().indexAllLyrics() : Promise.resolve(null),
+  cancelLyricsIndex: () => isE() && el().cancelLyricsIndex ? el().cancelLyricsIndex() : Promise.resolve(null),
+  onLyricsIndexProgress: (fn) => isE() && el().onLyricsIndexProgress ? el().onLyricsIndexProgress((_, p) => fn(p)) : () => {},
   playableFile: (fp) => isE() ? el().playableFile(fp) : Promise.resolve(null),
   soulseekStatus: () => isE() ? el().soulseekStatus() : apiFetch('/download/soulseek/status'),
   soulseekSearch: (text) => isE() ? el().soulseekSearch(text) : apiFetch('/download/soulseek/search', { method:'POST', body:{ text } }),

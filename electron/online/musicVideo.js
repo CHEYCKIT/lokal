@@ -54,6 +54,11 @@ const OTHER_VERSION = ['live', 'lyric', 'lyrics', 'visualizer', 'visualiser', 'a
 // Tags around the title that don't change what it is.
 const NOISE_TAG = /[([](?:[^)\]]*\b(?:official|video|hd|hq|4k|remaster(?:ed)?|explicit|clean|uncensored|mv|m\/v|music video)\b[^)\]]*)[)\]]/gi
 const FEAT = /[([]?\s*\b(?:feat\.?|ft\.?|featuring)\s+[^)\]]*[)\]]?/gi
+// Vanity tags at the end of a song's own title -- "(Spice Mix)", "- Radio
+// Edit", "(2011 Remaster)" -- that name a version the original video covers.
+const VANITY_WORD = /\b(?:mix|remix|edit|version|remaster(?:ed)?|rework(?:ed)?|redux|reprise|mono|stereo|deluxe|single|radio|cut|dub|demo|take|session|anniversary|bonus|sped|slowed|extended|edition|master)\b/i
+const VANITY_PAREN = /\s*[([][^()[\]]*[)\]]\s*$/
+const VANITY_DASH = /\s+[-\u2013\u2014]\s+[^-\u2013\u2014]+$/
 
 /** Lowercase words only: no accents, punctuation or "&". */
 function clean(text) {
@@ -64,6 +69,25 @@ function clean(text) {
 /** The title without "(Official Video)", "[4K]", "feat. X". */
 function baseTitle(title) {
   return clean(String(title || '').replace(NOISE_TAG, ' ').replace(FEAT, ' '))
+}
+
+/**
+ * The title without a trailing vanity tag -- "Let's Get It Started (Spice
+ * Mix)" is "Let's Get It Started" -- or null when there's nothing to strip.
+ * Only tags naming a version are stripped: "(What's the Story) Morning Glory"
+ * keeps its parenthesis.
+ */
+function plainTitle(title) {
+  let text = String(title || '').trim()
+  let changed = false
+  for (;;) {
+    const paren = text.match(VANITY_PAREN)
+    if (paren && VANITY_WORD.test(paren[0])) { text = text.slice(0, text.length - paren[0].length).trim(); changed = true; continue }
+    const dash = text.match(VANITY_DASH)
+    if (dash && VANITY_WORD.test(dash[0])) { text = text.slice(0, text.length - dash[0].length).trim(); changed = true; continue }
+    break
+  }
+  return changed && text ? text : null
 }
 
 /** Each artist of "A, B & C feat. D", cleaned. */
@@ -135,8 +159,8 @@ function databaseVideos(track, rows) {
   }).filter(Boolean)
 }
 
-/** Candidates from curated metadata and broad YouTube searches. */
-async function discoveredVideos(track, { fetchImpl = fetch, audioDbSearch = audioDb.searchTracks, youtubeSearch = null } = {}) {
+/** Candidates from curated metadata and broad YouTube searches. `lenient` skips the duration gate (vanity-free fallback: the version's length differs). */
+async function discoveredVideos(track, { fetchImpl = fetch, audioDbSearch = audioDb.searchTracks, youtubeSearch = null, lenient = false } = {}) {
   const query = `${track.artist} ${track.title}`
   const lookups = [
     Promise.resolve().then(async () => databaseVideos(track, await audioDbSearch(track.artist, track.title))),
@@ -148,7 +172,7 @@ async function discoveredVideos(track, { fetchImpl = fetch, audioDbSearch = audi
   const seen = new Set()
   const candidates = results.flatMap(result => result.status === 'fulfilled' ? result.value : []).filter(item => {
     if (!item.videoId || seen.has(item.videoId)) return false
-    if (!isMusicVideoFor(track, item, { requireDuration: !item.database })) return false
+    if (!isMusicVideoFor(track, item, { requireDuration: !lenient && !item.database })) return false
     seen.add(item.videoId)
     return true
   }).sort((a, b) => {
@@ -463,44 +487,70 @@ const pending = new Map()
 
 /**
  * The music video for a track: { videoId, title, artist, duration, thumbnail,
- * segments, check: 'audio' | 'length' }, or null. `songAudio(attempt)` and
- * `videoAudio(videoId, attempt)` say where ffmpeg reads each from:
+ * segments, check: 'audio' | 'length' | 'title' }, or null. `songAudio(attempt)`
+ * and `videoAudio(videoId, attempt)` say where ffmpeg reads each from:
  * { input, headers } (a file or a URL); a second attempt gets a fresh URL.
+ * `onProgress({ stage, index, total })` hears about each step: 'searching',
+ * 'checking' (with index/total), 'fallback' (the vanity-free title's turn).
  */
-async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now, audioDbSearch = audioDb.searchTracks, youtubeSearch } = {}) {
+async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now, audioDbSearch = audioDb.searchTracks, youtubeSearch, onProgress } = {}) {
   if (!track?.title || !track?.artist || !(Number(track.duration) > 30)) return null
+  const progress = (update) => { try { onProgress?.(update) } catch {} }
   const key = cacheKey(track)
   const cache = cacheFile ? readCache(cacheFile) : {}
   const hit = cache[key]
   if (hit && now() - hit.at < (hit.video ? FOUND_TTL_MS : MISSING_TTL_MS)) return hit.video
   if (pending.has(key)) return pending.get(key)
   const job = (async () => {
-    const discovered = await discoveredVideos(track, { fetchImpl, audioDbSearch, youtubeSearch })
-    const candidates = discovered.candidates
-    let songEnv = null
-    let video = null
-    let inconclusive = discovered.inconclusive
-    for (const item of candidates) {
-      const sameLength = !item.database && Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
-      if (ffmpeg && songAudio && videoAudio) {
-        try {
-          songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))
-          const videoEnv = audioFeatures(await decodeFrom(ffmpeg, attempt => videoAudio(item.videoId, attempt)))
-          const segments = alignAudio(songEnv, videoEnv)
-          if (segments) { video = describe(item, segments, 'audio'); break }
-          continue // heard, and it isn't the song
-        } catch {
-          // Couldn't listen (offline, no stream): fall back to the length.
-          inconclusive = true
+    const tryTrack = async (wanted, { acceptByTitle = false, stage = 'searching' } = {}) => {
+      progress({ stage })
+      const discovered = await discoveredVideos(wanted, { fetchImpl, audioDbSearch, youtubeSearch, lenient: acceptByTitle })
+      const candidates = discovered.candidates
+      let songEnv = null
+      let video = null
+      let inconclusive = discovered.inconclusive
+      for (const [index, item] of candidates.entries()) {
+        progress({ stage: 'checking', index: index + 1, total: candidates.length })
+        const sameLength = !item.database && Math.abs(item.duration - wanted.duration) <= SAME_LENGTH_S
+        // By title alone (vanity-free fallback), an absurd length is still out.
+        const plausible = !Number.isFinite(Number(item.duration)) || (item.duration >= 60 && item.duration <= Number(wanted.duration) * 2 + 300)
+        const byTitle = acceptByTitle && plausible
+        if (ffmpeg && songAudio && videoAudio) {
+          try {
+            songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))
+            const videoEnv = audioFeatures(await decodeFrom(ffmpeg, attempt => videoAudio(item.videoId, attempt)))
+            const segments = alignAudio(songEnv, videoEnv)
+            if (segments) { video = describe(item, segments, 'audio'); break }
+            // Heard, and it isn't the song. A vanity-free fallback expects
+            // that (the video is another version's): the title match is enough.
+            if (byTitle) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'title'); break }
+            continue
+          } catch {
+            // Couldn't listen (offline, no stream): fall back to the length.
+            inconclusive = true
+          }
         }
+        if (sameLength) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'length'); break }
+        if (byTitle) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'title'); break }
       }
-      if (sameLength) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'length'); break }
+      return { video, inconclusive }
+    }
+    let { video, inconclusive } = await tryTrack(track)
+    // "Let's Get It Started (Spice Mix)" has no video of its own: try the
+    // title without the vanity tag, taking the original's official video even
+    // when its audio is another version's.
+    const plain = plainTitle(track.title)
+    if (!video && plain && baseTitle(plain) !== baseTitle(track.title)) {
+      const fallback = await tryTrack({ ...track, title: plain }, { acceptByTitle: true, stage: 'fallback' })
+      video = fallback.video
+      inconclusive = inconclusive || fallback.inconclusive
     }
     if (cacheFile && (video || !inconclusive)) {
       const fresh = readCache(cacheFile)
       fresh[key] = { at: now(), video }
       writeCache(cacheFile, fresh)
     }
+    progress({ stage: 'done', found: !!video })
     return video
   })().finally(() => pending.delete(key))
   pending.set(key, job)
@@ -533,6 +583,6 @@ function videoTimeFor(segments, time) {
 }
 
 module.exports = {
-  findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
+  findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
   VIDEOS_PARAMS, FPS,
 }
