@@ -1582,19 +1582,6 @@ activeCategory === 'data' ? usersTried
             {settings.word_sync !== '0' ? 'On' : 'Off'}
           </button>
         </Row>
-        <Row label="Lyrics Animation" desc="Classic is the original look. Fluid (experimental) springs each word as it's sung, with a wave through held notes. Tell us which you prefer.">
-          <div className="flex items-center gap-1">
-            {[['classic', 'Classic'], ['fluid', 'Fluid (experimental)']].map(([value, label]) => {
-              const active = (settings.lyrics_animation_style === 'fluid' ? 'fluid' : 'classic') === value
-              return (
-                <button key={value} onClick={() => set('lyrics_animation_style', value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${active ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </Row>
         <Row label="Time Plain Lyrics" desc="Roughly time lyrics that have no timing, so they scroll with the song.">
           <button
             onClick={() => set('unsynced_auto_sync', settings.unsynced_auto_sync === '1' ? '0' : '1')}
