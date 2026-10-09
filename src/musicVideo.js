@@ -8,6 +8,19 @@ import { usePlayerStore } from './store/player'
 const lookups = new Map()
 const RETRY_MISSING_MS = 10 * 60 * 1000
 
+// How each track's lookup is going ({ stage: 'searching' | 'checking' |
+// 'fallback' | 'done', index, total }), from the main process.
+const useLookupProgress = create(() => ({}))
+let progressBound = false
+function bindProgress() {
+  if (progressBound) return
+  progressBound = true
+  api.onMusicVideoProgress?.(p => {
+    if (!p?.trackId) return
+    useLookupProgress.setState(p.stage === 'done' ? state => { const next = { ...state }; delete next[p.trackId]; return next } : { [p.trackId]: p })
+  })
+}
+
 /** The track's music video ({ src, segments, ... }) or null; asked once per track. */
 export function loadMusicVideo(trackId) {
   if (!trackId) return Promise.resolve(null)
@@ -19,18 +32,20 @@ export function loadMusicVideo(trackId) {
   return lookups.get(trackId)
 }
 
-/** { video, loading } for a track; a video only once it's been found and checked. */
+/** { video, loading, progress } for a track; a video only once it's been found and checked. */
 export function useMusicVideo(track, enabled = true) {
   const id = enabled ? track?.id : null
   const [state, setState] = useState({ id: null, video: null })
   useEffect(() => {
     if (!id) return undefined
+    bindProgress()
     let current = true
     loadMusicVideo(id).then(video => { if (current) setState({ id, video }) })
     return () => { current = false }
   }, [id])
+  const progress = useLookupProgress(s => (id ? s[id] : null)) || null
   const mine = !!id && state.id === id
-  return { video: mine ? state.video : null, loading: !!id && !mine }
+  return { video: mine ? state.video : null, loading: !!id && !mine, progress: mine ? null : progress }
 }
 
 export const useMusicVideoView = create(set => ({

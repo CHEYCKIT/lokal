@@ -34,6 +34,31 @@ function registerLyricsHandlers(ipcMain) {
     const lang = r?.detectedLang || 'unknown'
     return { lang, confidence: lang === 'unknown' ? 0 : 0.9, source: 'remote' }
   })
+
+  // Settings -> Library -> Maintenance: fetch and cache every library song's
+  // lyrics now, so they open at once later. One song at a time; cancellable.
+  let indexJob = null
+  ipcMain.handle('lyrics:indexAll', async (event) => {
+    if (indexJob) return { running: true }
+    const job = { cancelled: false }
+    indexJob = job
+    const send = (payload) => { try { if (!event.sender.isDestroyed()) event.sender.send('lyrics:indexProgress', payload) } catch {} }
+    try {
+      const rows = db.prepare("SELECT id, title, artist, album, duration FROM tracks WHERE title IS NOT NULL AND file_path NOT LIKE 'ghost://%' ORDER BY artist, title").all()
+      let done = 0
+      let found = 0
+      for (const row of rows) {
+        if (job.cancelled) break
+        send({ running: true, done, total: rows.length, found, title: `${row.artist || ''} — ${row.title}` })
+        const lyrics = await service.getLyrics(db, { trackId: row.id, title: row.title, artist: row.artist, album: row.album, duration: row.duration }).catch(() => null)
+        if (lyrics) found++
+        done++
+      }
+      send({ running: false, done, total: rows.length, found, cancelled: job.cancelled })
+      return { done, total: rows.length, found, cancelled: job.cancelled }
+    } finally { indexJob = null }
+  })
+  ipcMain.handle('lyrics:cancelIndex', () => { if (indexJob) indexJob.cancelled = true })
 }
 
 module.exports = { registerLyricsHandlers }

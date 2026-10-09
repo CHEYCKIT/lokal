@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const require = createRequire(import.meta.url)
-const { findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
 const { runJsonSearch } = require('../electron/download/search.js')
 const { songAudioFor } = require('../electron/ipc/online.js')
 
@@ -193,3 +193,44 @@ for (const track of [
     }), 'function')
   })
 }
+
+test('plainTitle strips vanity tags and leaves real titles alone', () => {
+  assert.equal(plainTitle("Let's Get It Started (Spice Mix)"), "Let's Get It Started")
+  assert.equal(plainTitle('Africa - Radio Edit'), 'Africa')
+  assert.equal(plainTitle('One More Time (2011 Remaster) [Deluxe Edition]'), 'One More Time')
+  assert.equal(plainTitle("(What's the Story) Morning Glory"), null, 'a leading parenthesis is the title itself')
+  assert.equal(plainTitle('Blinding Lights'), null)
+  assert.equal(plainTitle('Knives Out - live'), null, 'live is another performance, not a vanity tag')
+})
+
+test('falls back to the vanity-free title and takes its official video by name', async () => {
+  const track = { id: 'spice-mix', title: "Let's Get It Started (Spice Mix)", artist: 'The Black Eyed Peas', duration: 180 }
+  const queries = []
+  const video = await findMusicVideo(track, {
+    fetchImpl: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+    audioDbSearch: async () => [],
+    youtubeSearch: async (query) => {
+      queries.push(query)
+      return query.includes('Spice Mix') ? [] : [{
+        videoId: 'IKqV7DB8Iwg', title: "The Black Eyed Peas - Let's Get It Started (Official Music Video)",
+        artist: 'The Black Eyed Peas', artists: ['The Black Eyed Peas'], duration: 225, kind: 'video', official: true,
+      }]
+    },
+  })
+  assert.ok(video, 'the original version\'s video is found')
+  assert.equal(video.videoId, 'IKqV7DB8Iwg')
+  assert.equal(video.check, 'title')
+  assert.deepEqual(video.segments, [{ start: 0, end: null, offset: 0 }])
+  assert.ok(queries.some(q => q.includes('Spice Mix')) && queries.some(q => !q.includes('Spice Mix')))
+})
+
+test('the lookup reports its progress', async () => {
+  const stages = []
+  await findMusicVideo({ id: 'p1', title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }, {
+    fetchImpl: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+    audioDbSearch: async () => [],
+    onProgress: p => stages.push(p.stage),
+  })
+  assert.ok(stages.includes('searching'))
+  assert.equal(stages[stages.length - 1], 'done')
+})

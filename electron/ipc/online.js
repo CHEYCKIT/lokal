@@ -26,7 +26,12 @@ function streamOptions() {
   const all = settings()
   // Only YouTube streams go through yt-dlp with cookies.
   const cookies = cookieArgs(all, { url: 'https://music.youtube.com/' })
-  return { db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best', ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser }
+  return {
+    db: getDB(), quality: all.online_quality === 'saver' ? 'saver' : 'best',
+    // Settings -> Playback -> Music Video Quality.
+    videoHeight: [1080, 720, 480].includes(Number(all.video_quality)) ? Number(all.video_quality) : 1080,
+    ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser,
+  }
 }
 
 /** Plain YouTube search through yt-dlp, for when YouTube Music can't be reached. */
@@ -115,7 +120,33 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:remove', (_, key) => sources.addons.remove(getDB(), key))
   ipcMain.handle('addons:setEnabled', (_, key, enabled) => sources.addons.setEnabled(getDB(), key, enabled))
   ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
-  ipcMain.handle('musicVideo:find', (_, trackId) => musicVideoFor(trackId).catch(() => null))
+  ipcMain.handle('musicVideo:find', (event, trackId) => musicVideoFor(trackId, {
+    onProgress: update => { try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:progress', { trackId, ...update }) } catch {} },
+  }).catch(() => null))
+  // Settings -> Library -> Maintenance: find every library song's music video
+  // now, so they open at once later. One song at a time; cancellable.
+  let videoIndexJob = null
+  ipcMain.handle('musicVideo:indexAll', async (event) => {
+    if (videoIndexJob) return { running: true }
+    const job = { cancelled: false }
+    videoIndexJob = job
+    const send = (payload) => { try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:indexProgress', payload) } catch {} }
+    try {
+      const rows = getDB().prepare("SELECT id, title, artist, duration FROM tracks WHERE title IS NOT NULL AND artist IS NOT NULL AND duration > 30 AND file_path NOT LIKE 'ghost://%' ORDER BY artist, title").all()
+      let done = 0
+      let found = 0
+      for (const row of rows) {
+        if (job.cancelled) break
+        send({ running: true, done, total: rows.length, found, title: `${row.artist} — ${row.title}` })
+        const video = await musicVideoFor(row.id).catch(() => null)
+        if (video) found++
+        done++
+      }
+      send({ running: false, done, total: rows.length, found, cancelled: job.cancelled })
+      return { done, total: rows.length, found, cancelled: job.cancelled }
+    } finally { videoIndexJob = null }
+  })
+  ipcMain.handle('musicVideo:cancelIndex', () => { if (videoIndexJob) videoIndexJob.cancelled = true })
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
       if (provider === 'yt') await accountSession.credentials()
@@ -153,7 +184,7 @@ function songAudioFor(track, canStream, options = {}) {
 }
 
 /** The official music video for a track (see online/musicVideo.js), or null. */
-async function musicVideoFor(trackId) {
+async function musicVideoFor(trackId, { onProgress } = {}) {
   const track = getDB().prepare('SELECT id, title, artist, duration, file_path FROM tracks WHERE id = ?').get(trackId)
   if (!track) return null
   if (accountSession) await accountSession.credentials().catch(() => {})
@@ -162,6 +193,7 @@ async function musicVideoFor(trackId) {
   const canStream = !!options.ytdlp
   return require('../online/musicVideo').findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
+    onProgress,
     songAudio: songAudioFor(track, canStream),
     videoAudio: canStream ? youtubeAudio : null,
     youtubeSearch: canStream ? query => runJsonSearch(options.ytdlp, query, entry => ({

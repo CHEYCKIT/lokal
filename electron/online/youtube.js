@@ -25,6 +25,7 @@ const DURATION = /^(?:\d+:)?\d{1,2}:\d{2}$/
 const SEARCH_TTL_MS = 10 * 60 * 1000
 const STREAM_MARGIN_MS = 10 * 60 * 1000
 const RESOLVE_TIMEOUT_MS = 30000
+const VIDEO_RESOLVE_TIMEOUT_MS = 90000
 const LIKE_URL = 'https://music.youtube.com/youtubei/v1/like'
 const ACCOUNT_TTL_MS = 5 * 60 * 1000
 
@@ -817,16 +818,32 @@ const QUALITY_ARGS = {
   saver: ['-f', 'worstaudio[acodec=opus][protocol=https]/worstaudio[protocol=https]/worstaudio[protocol=http]/worst[acodec!=none][protocol=https]'],
   // Music video check (musicVideo.js): AAC lines up better than low-rate Opus.
   analysis: ['-f', 'bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/best[acodec!=none][protocol=https]'],
-  // Music videos (musicVideo.js): the picture alone, up to 1080p -- it plays
-  // muted under the song's own audio. H.264 first (hardware decoding), then VP9.
-  video: ['-f', 'bestvideo[height<=1080][vcodec^=avc1][protocol=https]/bestvideo[height<=1080][vcodec^=vp09][protocol=https]/bestvideo[height<=1080][protocol=https]/best[height<=1080][protocol=https]'],
+  // Music videos (musicVideo.js): the picture alone, capped by Settings ->
+  // Playback -> Music Video Quality -- it plays muted under the song's own
+  // audio. H.264 first (hardware decoding), then VP9; muxed files and finally
+  // anything direct as fallbacks, so a video still plays when the capped
+  // video-only formats aren't offered.
+  video: videoFormatArgs(1080),
 }
 
-function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
+/** yt-dlp format args for a music video's picture, capped at `height`. */
+function videoFormatArgs(height) {
+  const h = [1080, 720, 480].includes(Number(height)) ? Number(height) : 1080
+  return ['-f', [
+    `bestvideo[height<=${h}][vcodec^=avc1][protocol=https]`,
+    `bestvideo[height<=${h}][vcodec^=vp09][protocol=https]`,
+    `bestvideo[height<=${h}][protocol=https]`,
+    `best[height<=${h}][protocol=https]`,
+    'bestvideo[protocol=https]',
+    'best[protocol=https]',
+  ].join('/')]
+}
+
+function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best', videoHeight = null }) {
   return new Promise((resolve, reject) => {
     const runtime = jsRuntime()
     const args = [
-      ...(QUALITY_ARGS[quality] || QUALITY_ARGS.best),
+      ...(quality === 'video' ? videoFormatArgs(videoHeight || 1080) : QUALITY_ARGS[quality] || QUALITY_ARGS.best),
       '-j', '--no-playlist', '--no-warnings', '--skip-download',
       ...runtime.args,
       ...cookieArgs,
@@ -837,11 +854,13 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
     let out = ''
     let err = ''
     let timedOut = false
+    // Music videos are far bigger files than songs, and their format lists
+    // longer: give the lookup more time than the audio one.
     const timer = setTimeout(() => {
       timedOut = true
       try { proc.kill() } catch {}
-      reject(new Error('YouTube audio resolution timed out. Try again.'))
-    }, RESOLVE_TIMEOUT_MS)
+      reject(new Error(quality === 'video' ? 'The music video lookup timed out. Try again.' : 'YouTube audio resolution timed out. Try again.'))
+    }, quality === 'video' ? VIDEO_RESOLVE_TIMEOUT_MS : RESOLVE_TIMEOUT_MS)
     proc.stdout.on('data', d => { out += d })
     proc.stderr.on('data', d => { err += d })
     proc.on('error', e => { clearTimeout(timer); reject(new Error(`Could not run yt-dlp (${e.message})`)) })
@@ -853,7 +872,7 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
       const output = err || out
       if (!info?.url) {
         if (runtime.args.length && jsRuntimeRefused(output)) {
-          resolve(runResolve(videoId, { ytdlp, cookieArgs, quality }))
+          resolve(runResolve(videoId, { ytdlp, cookieArgs, quality, videoHeight }))
           return
         }
         if (isCookieError(output)) {
@@ -884,23 +903,23 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
 }
 
 /** The audio URL for a video, from cache or yt-dlp (one lookup at a time per video). */
-async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best' } = {}) {
+async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
   if (!ytdlp) throw new Error('yt-dlp is not installed. Install it from the Download page.')
   const q = QUALITY_ARGS[quality] ? quality : 'best'
-  const key = `${videoId}\n${q}` // a quality change looks the stream up again
+  const key = `${videoId}\n${q}${q === 'video' && videoHeight ? `\n${videoHeight}` : ''}` // a quality change looks the stream up again
   const cached = streamCache.get(key)
   if (!force && cached && cached.expiresAt > Date.now()) return cached
   if (!force && resolving.has(key)) return resolving.get(key)
   const job = (async () => {
     try {
-      return await runResolve(videoId, { ytdlp, cookieArgs, quality: q })
+      return await runResolve(videoId, { ytdlp, cookieArgs, quality: q, videoHeight })
     } catch (e) {
       if (e.cookieError && cookieBrowser) markUnreadable(cookieBrowser)
       // Signed in, yt-dlp only uses player clients that need a JavaScript
       // runtime; signed out, it has one that doesn't. Public songs play the same.
       else if (!(e.formatsMissing && cookieArgs?.length)) throw e
-      return runResolve(videoId, { ytdlp, cookieArgs: [], quality: q })
+      return runResolve(videoId, { ytdlp, cookieArgs: [], quality: q, videoHeight })
     }
   })().then(stream => {
     if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
@@ -916,9 +935,9 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
  * Fetch (a range of) the audio for a video. A refused URL (expired, or tied
  * to another address) is looked up again once.
  */
-async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, quality, signal, fetchImpl = fetch } = {}) {
+async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, quality, videoHeight, signal, fetchImpl = fetch } = {}) {
   const attempt = async (force) => {
-    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force, quality })
+    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force, quality, videoHeight })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
     return { stream, res: await fetchImpl(stream.url, { headers, signal }) }

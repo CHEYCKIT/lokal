@@ -14,6 +14,15 @@ const SEEK_DRIFT_S = 0.35
 const NUDGE_DRIFT_S = 0.04
 const IDLE_MS = 2600
 const EASE = [0.32, 0.72, 0, 1]
+// After a seek the song waits for the video to buffer, up to this long.
+const WAIT_FOR_VIDEO_MS = 20000
+const RECOVER_TRIES = 2
+
+/** The song's audio element, to hold while the video buffers after a seek. */
+function songAudioElement() {
+  const { audioRef, cfAudioRef, activeAudioElement } = usePlayerStore.getState()
+  return (activeAudioElement === 'primary' ? audioRef : cfAudioRef)?.current || null
+}
 
 function fmt(s) {
   if (!Number.isFinite(s) || s < 0) return '0:00'
@@ -32,19 +41,48 @@ export default function MusicVideoPlayer() {
     currentTrack: s.currentTrack, isPlaying: s.isPlaying, togglePlay: s.togglePlay, next: s.next, prev: s.prev,
     progress: s.progress, duration: s.duration, setProgressWithAudioUpdate: s.setProgressWithAudioUpdate,
   })))
-  const { video, loading } = useMusicVideo(currentTrack, open)
+  const { video, loading, progress: lookupProgress } = useMusicVideo(currentTrack, open)
   const reduceMotion = useReducedMotion()
   const videoRef = useRef(null)
   const [ready, setReady] = useState(false)
+  // The video has shown at least one frame: never fall back to the cover art
+  // again (a seek rebuffers like YouTube -- last frame, not the cover).
+  const [everPlayed, setEverPlayed] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [errorText, setErrorText] = useState(null)
+  const [stalled, setStalled] = useState(false)
+  const [buffered, setBuffered] = useState(0)
   // The song is at a moment the video doesn't have (past its end).
   const [outside, setOutside] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
   const [autoSynced, setAutoSynced] = useState(false)
   const [idle, setIdle] = useState(false)
   const idleTimer = useRef(null)
+  const recoverRef = useRef(0)
+  const waitRef = useRef({ holding: false, deadline: 0 })
 
-  useEffect(() => { setReady(false); setFailed(false); setOutside(false) }, [video?.videoId, open])
+  // After a forward seek the video may have nothing buffered yet: the song
+  // waits (paused, play state untouched) until the video can follow.
+  const releaseSong = useCallback(() => {
+    if (!waitRef.current.holding) return
+    waitRef.current.holding = false
+    const audio = songAudioElement()
+    if (audio && audio.paused && usePlayerStore.getState().isPlaying) audio.play().catch(() => {})
+  }, [])
+  const holdSong = useCallback(() => {
+    if (waitRef.current.holding) { waitRef.current.deadline = Date.now() + WAIT_FOR_VIDEO_MS; return }
+    const audio = songAudioElement()
+    if (!audio || audio.paused) return
+    waitRef.current = { holding: true, deadline: Date.now() + WAIT_FOR_VIDEO_MS }
+    audio.pause()
+  }, [])
+
+  useEffect(() => {
+    setReady(false); setEverPlayed(false); setFailed(false); setErrorText(null)
+    setStalled(false); setBuffered(0); setOutside(false)
+    recoverRef.current = 0
+    return releaseSong
+  }, [video?.videoId, open, releaseSong])
   useEffect(() => { if (!currentTrack) hide() }, [currentTrack, hide])
   useEffect(() => {
     if (open) api.getSettings?.().then(s => setAutoSynced(s?.unsynced_auto_sync === '1')).catch(() => {})
@@ -70,7 +108,7 @@ export default function MusicVideoPlayer() {
   }, [open, hide, wake])
 
   // Keep the picture on the song: same moment, same play/pause, paused while
-  // the window is hidden.
+  // the window is hidden. After a seek the song waits for the video to buffer.
   useEffect(() => {
     if (!open || !video) return undefined
     const tick = () => {
@@ -80,6 +118,7 @@ export default function MusicVideoPlayer() {
       const end = Number.isFinite(el.duration) ? el.duration : video.duration
       if (target == null || target < 0 || target > end - 0.05) {
         setOutside(true)
+        releaseSong()
         if (!el.paused) el.pause()
         return
       }
@@ -88,10 +127,12 @@ export default function MusicVideoPlayer() {
       if (Math.abs(drift) > SEEK_DRIFT_S) {
         el.currentTime = target
         el.playbackRate = 1
+        if (el.readyState < 3) holdSong() // nothing buffered there yet
       } else {
         el.playbackRate = Math.abs(drift) > NUDGE_DRIFT_S ? 1 - Math.max(-0.06, Math.min(0.06, drift)) : 1
       }
-      const shouldPlay = usePlayerStore.getState().isPlaying && !document.hidden
+      if (waitRef.current.holding && (el.readyState >= 3 || Date.now() > waitRef.current.deadline)) releaseSong()
+      const shouldPlay = usePlayerStore.getState().isPlaying && !document.hidden && !waitRef.current.holding
       if (shouldPlay && el.paused) el.play().catch(() => {})
       else if (!shouldPlay && !el.paused) el.pause()
     }
@@ -99,21 +140,67 @@ export default function MusicVideoPlayer() {
     const id = setInterval(tick, 200)
     document.addEventListener('visibilitychange', tick)
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick) }
-  }, [open, video])
+  }, [open, video, holdSong, releaseSong])
+
+  // How much of the video is already here, as its loading percentage.
+  const onBuffer = useCallback(() => {
+    const el = videoRef.current
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return
+    let max = 0
+    for (let i = 0; i < el.buffered.length; i++) max = Math.max(max, el.buffered.end(i))
+    setBuffered(Math.min(1, max / el.duration))
+  }, [])
+
+  // A dropped stream (the URL expired, a long seek): reload where the song is
+  // and carry on, before giving up with the reason.
+  const onVideoError = useCallback(() => {
+    const el = videoRef.current
+    if (el && recoverRef.current < RECOVER_TRIES) {
+      recoverRef.current += 1
+      setStalled(true)
+      try {
+        el.load()
+        el.addEventListener('loadeddata', () => {
+          const target = videoTimeFor(video?.segments, songTime())
+          if (target != null && target >= 0) el.currentTime = target
+          if (usePlayerStore.getState().isPlaying && !document.hidden) el.play().catch(() => {})
+        }, { once: true })
+        return
+      } catch {}
+    }
+    setFailed(true)
+    setStalled(false)
+    releaseSong()
+    // The stream protocol answers a failure in plain text: say why.
+    if (video?.src) {
+      fetch(video.src, { headers: { Range: 'bytes=0-1' } })
+        .then(r => (r.ok ? null : r.text()))
+        .then(text => { if (text) setErrorText(String(text).trim().slice(0, 240)) })
+        .catch(() => {})
+    }
+  }, [video, releaseSong])
 
   const art = trackArtURL(currentTrack)
-  const showVideo = !!video && ready && !failed && !outside
+  const showVideo = !!video && !failed && (ready || everPlayed) && !outside
   const status = loading ? 'loading'
     : !video ? 'none'
       : failed ? 'failed'
         : outside ? 'outside'
-          : ready ? 'playing' : 'loading'
+          : ready || everPlayed ? 'playing' : 'loading'
+  const lookupText = lookupProgress?.stage === 'checking' && lookupProgress.total
+    ? `Matching video ${lookupProgress.index} of ${lookupProgress.total}`
+    : lookupProgress?.stage === 'fallback' ? 'Trying the original version'
+      : 'Looking for the music video'
+  const loadingText = loading ? lookupText
+    : buffered > 0 ? `Loading music video — ${Math.round(buffered * 100)}%` : 'Loading music video'
   const message = {
     none: 'No music video for this song',
-    failed: "The music video couldn't be played",
+    failed: errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
     outside: null,
-    loading: 'Loading music video',
+    loading: loadingText,
   }[status]
+  // The cover card never sits over open lyrics; the shade behind them is enough.
+  const showCoverCard = !showVideo && !showLyrics
   const chromeHidden = idle && showVideo
   const fade = { duration: reduceMotion ? 0 : 0.5, ease: EASE }
   const seek = (e) => {
@@ -140,7 +227,7 @@ export default function MusicVideoPlayer() {
           {art && <img src={art} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover scale-125 blur-3xl opacity-50" />}
           <div className="absolute inset-0 bg-black/40" />
           <AnimatePresence>
-            {!showVideo && (
+            {showCoverCard && (
               <motion.div key={`cover-${currentTrack.id}`} className="absolute inset-0 flex flex-col items-center justify-center gap-7"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.08 }} transition={fade}>
                 <div className="relative w-[min(40vh,22rem)] aspect-square rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7)] border border-white/10 bg-white/5">
@@ -165,6 +252,11 @@ export default function MusicVideoPlayer() {
             )}
           </AnimatePresence>
 
+          {/* With the lyrics open the cover card stays away; the status still speaks. */}
+          {!showVideo && showLyrics && message && (
+            <div className="absolute top-20 left-8 text-sm text-white/60" aria-live="polite">{message}</div>
+          )}
+
           {video && !failed && (
             <motion.video
               key={video.videoId}
@@ -174,14 +266,28 @@ export default function MusicVideoPlayer() {
               playsInline
               preload="auto"
               disablePictureInPicture
-              onPlaying={() => setReady(true)}
-              onError={() => setFailed(true)}
+              onPlaying={() => { setReady(true); setEverPlayed(true); setStalled(false); recoverRef.current = 0 }}
+              onWaiting={() => setStalled(true)}
+              onCanPlay={() => setStalled(false)}
+              onProgress={onBuffer}
+              onLoadedMetadata={onBuffer}
+              onError={onVideoError}
               initial={{ opacity: 0 }}
               animate={{ opacity: showVideo ? 1 : 0 }}
               transition={fade}
               className="absolute inset-0 w-full h-full object-contain"
             />
           )}
+
+          {/* Rebuffering after a seek: the frame stays (YouTube style), a quiet spinner over it. */}
+          <AnimatePresence>
+            {showVideo && stalled && (
+              <motion.div key="stall" className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} aria-live="polite" aria-label="Loading the video">
+                <span className="w-10 h-10 rounded-full border-2 border-white/25 border-t-white/90 animate-spin" aria-hidden />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Lyrics over the video's side, on a soft shade. */}
           <AnimatePresence>
