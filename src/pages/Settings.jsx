@@ -313,7 +313,7 @@ export default function Settings() {
   }
   // ListenBrainz: its token is saved only once ListenBrainz confirms it.
   const [lbStatus, setLbStatus] = useState(null)
-  const [cacheInfo, setCacheInfo] = useState(null) // { motion, playback, web, limit, limits } | { busy }
+  const [cacheInfo, setCacheInfo] = useState(null) // { motion, playback, musicVideo, web, limit, limits } | { busy }
   const refreshCache = () => { Promise.resolve(api.cacheUsage?.()).then(info => { if (info && !info.error) setCacheInfo(info) }).catch(() => {}) }
   const setCacheLimit = async (mb) => {
     await Promise.resolve(api.saveSettings({ cache_limit_mb: String(mb) })).catch(() => {})
@@ -2439,15 +2439,15 @@ module.exports = {
 
       {api.isElectron && inCategory('data') && (
       <Section title="Cache">
-        <Row label="Cache Size Limit" desc="Moving covers and converted copies of songs (Apple Lossless, WMA…) are kept so they load faster. Past this size, the oldest are removed.">
+        <Row label="Cache Size Limit" desc="Moving covers, music videos, and converted copies of songs (Apple Lossless, WMA…) are kept so they load faster. Past this size, the oldest are removed.">
           <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
           </select>
         </Row>
-        <Row label="In Use" desc={cacheInfo ? `Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
+        <Row label="In Use" desc={cacheInfo ? `Music videos ${fmtBytes(cacheInfo.musicVideo)} · Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.web || 0)) : '—'}</span>
             <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
               {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}

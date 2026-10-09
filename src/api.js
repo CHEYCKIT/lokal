@@ -388,7 +388,11 @@ export const api = {
     : apiFetch(`/artwork-fx/motion/${encodeURIComponent(trackId)}`).then(r => (r?.src ? r : null)),
   // The official music video of a track (desktop only): { src, segments, ... } or null.
   musicVideo: (trackId) => isE() && el().musicVideo
-    ? el().musicVideo(trackId).then(r => (r?.videoId ? { ...r, src: `lokal-stream://ytv/${r.videoId}` } : null))
+    ? el().musicVideo(trackId).then(r => {
+      if (!r?.videoId || !r.file) return null
+      const src = `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}`
+      return { ...r, src }
+    })
     : Promise.resolve(null),
   // How the lookup is going ({ trackId, stage, index, total }), desktop only.
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},

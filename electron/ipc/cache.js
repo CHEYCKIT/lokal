@@ -9,7 +9,7 @@ async function report() {
   const used = cache.usage()
   let web = 0
   try { web = await session.defaultSession.getCacheSize() } catch {}
-  return { motion: used.motion, playback: used.playback, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
+  return { motion: used.motion, playback: used.playback, musicVideo: used.musicVideo, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
 }
 
 function registerCacheHandlers(ipcMain) {
