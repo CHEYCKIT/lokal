@@ -41,7 +41,7 @@ export default function MusicVideoPlayer() {
     currentTrack: s.currentTrack, isPlaying: s.isPlaying, togglePlay: s.togglePlay, next: s.next, prev: s.prev,
     progress: s.progress, duration: s.duration, setProgressWithAudioUpdate: s.setProgressWithAudioUpdate,
   })))
-  const { video, loading, progress: lookupProgress } = useMusicVideo(currentTrack, open)
+  const { video, loading, progress: lookupProgress } = useMusicVideo(currentTrack, open, open)
   const reduceMotion = useReducedMotion()
   const videoRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -175,22 +175,24 @@ export default function MusicVideoPlayer() {
   }, [video, releaseSong])
 
   const art = trackArtURL(currentTrack)
-  const showVideo = !!video && !failed && (ready || everPlayed) && !outside
+  const showVideo = !!video?.src && !video.error && !failed && (ready || everPlayed) && !outside
   const status = loading ? 'loading'
     : !video ? 'none'
+      : video.error ? 'failed'
       : failed ? 'failed'
         : outside ? 'outside'
           : ready || everPlayed ? 'playing' : 'loading'
   const lookupText = lookupProgress?.stage === 'checking' && lookupProgress.total
     ? `Matching video ${lookupProgress.index} of ${lookupProgress.total}`
     : lookupProgress?.stage === 'fallback' ? 'Trying the original version'
-      : lookupProgress?.stage === 'downloading' ? 'Downloading music video'
+      : lookupProgress?.stage === 'downloading'
+        ? `Downloading music video${Number.isFinite(lookupProgress.percent) ? ` — ${lookupProgress.percent}%` : ''}`
       : 'Looking for the music video'
   const loadingText = loading ? lookupText
     : buffered > 0 ? `Loading music video — ${Math.round(buffered * 100)}%` : 'Loading music video'
   const message = {
     none: 'No music video for this song',
-    failed: errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
+    failed: video?.error ? `The music video couldn't be cached: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
     outside: null,
     loading: loadingText,
   }[status]
@@ -252,7 +254,7 @@ export default function MusicVideoPlayer() {
             <div className="absolute top-20 left-8 text-sm text-white/60" aria-live="polite">{message}</div>
           )}
 
-          {video && !failed && (
+          {video?.src && !video.error && !failed && (
             <motion.video
               key={video.videoId}
               ref={videoRef}

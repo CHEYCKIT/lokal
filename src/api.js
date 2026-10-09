@@ -35,6 +35,13 @@ function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
   try { localStorage.setItem(YOUTUBE_LOCAL_UNLIKES_KEY, JSON.stringify(stored)) } catch {}
 }
 
+function musicVideoResult(r) {
+  if (r?.error) return r
+  if (!r?.videoId) return null
+  const src = r.file ? electronFileURL(r.file) : null
+  return { ...r, src }
+}
+
 function buildLastfmAuthUrl(apiKey) {
   const callback = isE()
     ? 'lokal://lastfm-auth'

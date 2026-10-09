@@ -39,7 +39,7 @@ function existingFile(cacheDir, videoId, height) {
   return null
 }
 
-async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_MS } = {}) {
+async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_MS, onProgress } = {}) {
   if (!res?.ok || !res.body?.getReader) throw new Error(`Music video download failed (HTTP ${res?.status || 0})`)
   const expected = Number(res.headers.get('content-length')) || 0
   const reader = res.body.getReader()
@@ -73,6 +73,7 @@ async function writeResponse(res, temp, { signal, timeoutMs = DOWNLOAD_TIMEOUT_M
       if (!value?.byteLength) continue
       bytes += value.byteLength
       resetStall()
+      onProgress?.(bytes, expected)
       if (!output.write(Buffer.from(value))) await once(output, 'drain')
     }
     clearTimeout(stalled)
@@ -97,11 +98,19 @@ async function downloadVideo(videoId, options) {
   if (found) return found
   if (jobs.has(key)) return jobs.get(key)
   const job = (async () => {
+    let lastReport = 0
+    const reportProgress = (received, total) => {
+      const now = Date.now()
+      const percent = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : null
+      if (percent !== 100 && now - lastReport < 150) return
+      lastReport = now
+      onProgress?.({ stage: 'downloading', percent })
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController()
       let temp = null
       try {
-        onProgress?.({ stage: 'downloading', percent: null })
+        reportProgress(0, 0)
         const { res, mime } = await fetchStream(videoId, {
           ...options, quality: 'video', videoHeight: height, force: attempt > 0,
           signal: controller.signal, fetchImpl,
@@ -112,6 +121,7 @@ async function downloadVideo(videoId, options) {
         await writeResponse(res, temp, {
           signal: controller.signal,
           timeoutMs: options.timeoutMs || DOWNLOAD_TIMEOUT_MS,
+          onProgress: reportProgress,
         })
         fs.renameSync(temp, dest)
         trim({ keep: [dest] })

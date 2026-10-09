@@ -190,6 +190,7 @@ contextBridge.exposeInMainWorld('electron', {
   cacheClear: () => invoke('cache:clear'),
   motionCover: (trackId) => invoke('artwork:motion', trackId),
   musicVideo: (trackId) => invoke('musicVideo:find', trackId),
+  musicVideoCache: (trackId) => invoke('musicVideo:cache', trackId),
   onMusicVideoProgress: (fn) => on('musicVideo:progress', fn),
   indexAllMusicVideos: () => invoke('musicVideo:indexAll'),
   cancelMusicVideoIndex: () => invoke('musicVideo:cancelIndex'),
