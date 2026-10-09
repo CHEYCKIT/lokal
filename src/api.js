@@ -140,14 +140,6 @@ export function wordSyncEnabled() {
   try { return localStorage.getItem('word-sync') !== '0' } catch { return true }
 }
 
-/**
- * Which lyrics word animation is chosen in Settings: 'classic' (default) or
- * 'fluid' (experimental, spring-driven). Synchronous, like wordSyncEnabled.
- */
-export function lyricsMotionStyle() {
-  return settingsSnapshot?.lyrics_animation_style === 'fluid' ? 'fluid' : 'classic'
-}
-
 export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
