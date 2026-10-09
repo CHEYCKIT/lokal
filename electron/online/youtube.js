@@ -25,7 +25,9 @@ const DURATION = /^(?:\d+:)?\d{1,2}:\d{2}$/
 const SEARCH_TTL_MS = 10 * 60 * 1000
 const STREAM_MARGIN_MS = 10 * 60 * 1000
 const RESOLVE_TIMEOUT_MS = 30000
-const VIDEO_RESOLVE_TIMEOUT_MS = 90000
+// Video extraction precedes a potentially large download; allow slow yt-dlp
+// clients and YouTube's challenge responses enough time to finish.
+const VIDEO_RESOLVE_TIMEOUT_MS = 180000
 const LIKE_URL = 'https://music.youtube.com/youtubei/v1/like'
 const ACCOUNT_TTL_MS = 5 * 60 * 1000
 
@@ -935,17 +937,17 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
 }
 
 /**
- * Fetch (a range of) the audio for a video. A refused URL (expired, or tied
+ * Fetch (a range of) a YouTube media stream. A refused URL (expired, or tied
  * to another address) is looked up again once.
  */
-async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, quality, videoHeight, signal, fetchImpl = fetch } = {}) {
+async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, quality, videoHeight, force = false, signal, fetchImpl = fetch } = {}) {
   const attempt = async (force) => {
     const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force, quality, videoHeight })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
     return { stream, res: await fetchImpl(stream.url, { headers, signal }) }
   }
-  let { stream, res } = await attempt(false)
+  let { stream, res } = await attempt(force)
   if (res.status === 403 || res.status === 410) {
     try { await res.body?.cancel?.() } catch {}
     ;({ stream, res } = await attempt(true))

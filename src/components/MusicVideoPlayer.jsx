@@ -151,8 +151,8 @@ export default function MusicVideoPlayer() {
     setBuffered(Math.min(1, max / el.duration))
   }, [])
 
-  // A dropped stream (the URL expired, a long seek): reload where the song is
-  // and carry on, before giving up with the reason.
+  // A local cached file should not drop, but retain recovery for files removed
+  // by the cache limit while the player is open.
   const onVideoError = useCallback(() => {
     const el = videoRef.current
     if (el && recoverRef.current < RECOVER_TRIES) {
@@ -171,13 +171,7 @@ export default function MusicVideoPlayer() {
     setFailed(true)
     setStalled(false)
     releaseSong()
-    // The stream protocol answers a failure in plain text: say why.
-    if (video?.src) {
-      fetch(video.src, { headers: { Range: 'bytes=0-1' } })
-        .then(r => (r.ok ? null : r.text()))
-        .then(text => { if (text) setErrorText(String(text).trim().slice(0, 240)) })
-        .catch(() => {})
-    }
+    setErrorText('The cached video file is no longer available')
   }, [video, releaseSong])
 
   const art = trackArtURL(currentTrack)
@@ -190,6 +184,7 @@ export default function MusicVideoPlayer() {
   const lookupText = lookupProgress?.stage === 'checking' && lookupProgress.total
     ? `Matching video ${lookupProgress.index} of ${lookupProgress.total}`
     : lookupProgress?.stage === 'fallback' ? 'Trying the original version'
+      : lookupProgress?.stage === 'downloading' ? 'Downloading music video'
       : 'Looking for the music video'
   const loadingText = loading ? lookupText
     : buffered > 0 ? `Loading music video — ${Math.round(buffered * 100)}%` : 'Loading music video'

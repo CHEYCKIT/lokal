@@ -191,7 +191,7 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
   const { findFfmpeg } = require('./tools')
   const options = streamOptions()
   const canStream = !!options.ytdlp
-  return require('../online/musicVideo').findMusicVideo(track, {
+  const video = await require('../online/musicVideo').findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
     onProgress,
     songAudio: songAudioFor(track, canStream),
@@ -208,6 +208,14 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
     }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
     cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
   })
+  if (!video) return null
+  const file = await require('../online/musicVideoCache').cachedVideoFile(video.videoId, {
+    ...options,
+    cacheDir: require('../cache').cacheDir('musicVideo'),
+    onProgress,
+    fetchImpl: (url, init) => require('electron').net.fetch(url, init),
+  })
+  return file ? { ...video, file } : null
 }
 
 /** Must run before the app is ready: lets <audio> stream (and seek) from lokal-stream://. */

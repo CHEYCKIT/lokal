@@ -2,6 +2,8 @@
 //   motion-covers/    moving covers (.mp4), downloaded once (electron/artwork/motion.js)
 //   playback-cache/   playable copies of files the player can't decode
 //                     (Apple Lossless, WMA...; electron/download/convert.js)
+//   music-video-cache/ downloaded music videos, so playback doesn't depend on
+//                     an expiring YouTube URL (electron/online/musicVideoCache.js)
 // Everything in them can be made again. When they're over the limit together,
 // the files used longest ago go first; the one being played is kept.
 // Chromium's own web cache is reported and cleared from the desktop app's
@@ -14,7 +16,7 @@ const db = require('./ipc/db')
 const MB = 1024 * 1024
 const DEFAULT_LIMIT_MB = 4096
 const LIMITS_MB = [512, 1024, 2048, 4096, 8192, 16384]
-const DIRS = { motion: 'motion-covers', playback: 'playback-cache' }
+const DIRS = { motion: 'motion-covers', playback: 'playback-cache', musicVideo: 'music-video-cache' }
 
 function cacheDir(name) {
   const root = db.getStorageDir()
