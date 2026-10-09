@@ -3,19 +3,21 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
 import LyricsSearchDrawer from './LyricsSearchDrawer'
 import LyricBreakDots from './LyricBreakDots'
-import { api } from '../api'
+import { api, lyricsMotionStyle } from '../api'
 import { usePlayerStore } from '../store/player'
 import {
-  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits, withOutroBreak,
+  canGrow, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits, withOutroBreak,
 } from '../lyrics/timing'
+import { stepWord, stepLetters } from '../lyrics/motion'
+import { canGrowClassic, growLetters, unitProgress, unitLift } from '../lyrics/classic'
 
 // ---------------------------------------------------------------------------
 // Apple Music-style lyrics.
 //
-// Everything that moves every frame (the sweep across each syllable, the lift
+// Everything that moves every frame (the sweep across each syllable, the spring
 // of the word being sung, the swell and glow of a held note, the interlude
 // dots) is written straight to the DOM from one requestAnimationFrame loop, for
-// only the lines actually being sung. React renders the list and re-renders
+// only the lines actually being sung or still easing back to rest. React renders the list and re-renders
 // only when the focused line changes.
 // ---------------------------------------------------------------------------
 
@@ -30,8 +32,10 @@ const HANDOVER_MS = 420
 
 // Falloff either side of the focused line, indexed by distance. Subtle close in
 // (so you can read ahead and behind), letting go further out.
-const FALLOFF_ALPHA = [1, 0.62, 0.5, 0.42, 0.34]
-const FALLOFF_BLUR = [0, 0.8, 1.2, 1.8, 2.4]
+// Per animation style (Settings > Lyrics): "classic" is the original look,
+// "fluid" the spring-driven one (src/lyrics/motion.js).
+const FALLOFF_ALPHA = { classic: [1, 0.62, 0.5, 0.42, 0.34], fluid: [1, 0.6, 0.5, 0.5, 0.5] }
+const FALLOFF_BLUR = { classic: [0, 0.8, 1.2, 1.8, 2.4], fluid: [0, 2.05, 3.2, 4.35, 5.5] } // fluid: 0.9px + 1.15px per line away, up to 5.5
 const UNSUNG = 'rgba(255,255,255,0.42)'
 const SUNG = 'rgba(255,255,255,1)'
 
@@ -43,23 +47,72 @@ function writeSubline(v) {
   window.dispatchEvent(new CustomEvent('lokal:lyrics-subline', { detail: v }))
 }
 
+// Which word animation is on: 'classic' or 'fluid'. Chosen only in Settings >
+// Lyrics; every mounted panel follows it live.
+function useLyricsStyle() {
+  const [style, setStyle] = useState(lyricsMotionStyle)
+  useEffect(() => {
+    let seq = 0
+    const sync = () => {
+      const mine = ++seq
+      api.getSettings().then(s => { if (mine === seq) setStyle(s?.lyrics_animation_style === 'fluid' ? 'fluid' : 'classic') }).catch(() => {})
+    }
+    sync()
+    window.addEventListener('lokal:settings-saved', sync)
+    return () => window.removeEventListener('lokal:settings-saved', sync)
+  }, [])
+  return style
+}
+
 // Where the player actually is, read from the audio element every frame when
 // possible (the store's `progress` only updates a few times a second).
-function useLyricClock(progress) {
+//
+// Fluid style: an audio element's currentTime advances in coarse steps (tens of
+// ms), so animating straight off it looks like a low frame rate however fast we
+// paint. Instead one estimate runs on the display clock and is pulled gently
+// towards the element's time, which keeps it smooth without drifting. A seek (or
+// any big disagreement) snaps it.
+function useLyricClock(progress, smooth) {
   const anchor = useRef({ t: progress, at: performance.now() })
   useEffect(() => { anchor.current = { t: progress, at: performance.now() } }, [progress])
+  const est = useRef({ value: progress, at: 0, raw: -1 })
+  const smoothRef = useRef(smooth)
+  smoothRef.current = smooth
   return useCallback(() => {
     const s = usePlayerStore.getState()
     const el = s.activeAudioElement === 'cf' ? s.cfAudioRef?.current : s.audioRef?.current
-    if (el && Number.isFinite(el.currentTime) && el.currentTime > 0) return el.currentTime
-    const { t, at } = anchor.current
-    return t + (s.isPlaying ? Math.min((performance.now() - at) / 1000, 0.6) : 0)
+    if (!smoothRef.current) {
+      if (el && Number.isFinite(el.currentTime) && el.currentTime > 0) return el.currentTime
+      const { t, at } = anchor.current
+      return t + (s.isPlaying ? Math.min((performance.now() - at) / 1000, 0.6) : 0)
+    }
+    const frameAt = performance.now()
+    const e = est.current
+    if (e.at === frameAt) return e.value // every caller within a frame sees the same time
+    let raw
+    let playing = !!s.isPlaying
+    let rate = 1
+    if (el && Number.isFinite(el.currentTime) && el.currentTime > 0) {
+      raw = el.currentTime
+      playing = !el.paused && !el.ended && !el.seeking
+      rate = el.playbackRate || 1
+    } else {
+      const { t, at } = anchor.current
+      raw = t + (s.isPlaying ? Math.min((frameAt - at) / 1000, 0.6) : 0)
+    }
+    const dt = e.at ? Math.min((frameAt - e.at) / 1000, 0.1) : 0
+    let next = e.value + (playing ? dt * rate : 0)
+    const error = raw - next
+    if (!e.at || Math.abs(error) > 0.12 || !playing) next = raw
+    else next += error * 0.12
+    est.current = { value: next, at: frameAt, raw }
+    return next
   }, [])
 }
 
 // ---------------------------------------------------------------- word markup
 
-function sweepStyle() {
+function sweepStyleClassic() {
   return {
     display: 'inline-block',
     whiteSpace: 'pre',
@@ -75,8 +128,27 @@ function sweepStyle() {
   }
 }
 
+function sweepStyle() {
+  return {
+    display: 'inline-block',
+    whiteSpace: 'pre',
+    // The lit part runs to --gp; the edge fades over the next 18% of the word.
+    backgroundImage: `linear-gradient(90deg, ${SUNG} 0%, ${SUNG} var(--gp, -20%), ${UNSUNG} calc(var(--gp, -20%) + 18%), ${UNSUNG} 100%)`,
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    color: 'transparent',
+    transformOrigin: 'center 72%',
+    // A touch of room so the glow and the lift aren't clipped by the line box.
+    paddingBlock: '0.06em',
+    marginBlock: '-0.06em',
+  }
+}
+
 /** One vocal (lead or background): units grouped into unbreakable words. */
-function Voice({ units, text, wordSync, className, style, voiceRef }) {
+function Voice({ units, text, wordSync, className, style, voiceRef, mode }) {
+  const fluid = mode === 'fluid'
+  const sweep = fluid ? sweepStyle : sweepStyleClassic
   if (!wordSync || !units?.length) {
     return <span ref={voiceRef} data-voice="plain" dir="auto" className={className} style={style}>{text}</span>
   }
@@ -84,22 +156,29 @@ function Voice({ units, text, wordSync, className, style, voiceRef }) {
   return (
     <span ref={voiceRef} data-voice="timed" dir="auto" className={className} style={style}>
       {groups.map((group, gi) => {
-        const grow = group.units.length === 1 && canGrow(group.units[0].unit)
+        const classicGrow = !fluid && group.units.length === 1 && canGrowClassic(group.units[0].unit)
         return (
           <React.Fragment key={gi}>
             {/* One unbreakable box per word; the space sits between boxes so
                 the line can still wrap there (a space inside an inline-block
                 would be collapsed away). */}
             <span style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
-              {group.units.map(({ unit, index }) => (
-                grow ? (
+              {group.units.map(({ unit, index }, j) => (
+                (fluid ? canGrow(unit) : classicGrow) ? (
                   <span key={index} data-u={index} data-grow="1" style={{ display: 'inline-block', whiteSpace: 'pre' }}>
                     {Array.from(unit.word).map((ch, ci) => (
-                      <span key={ci} data-l={ci} style={sweepStyle()}>{ch}</span>
+                      <span key={ci} data-l={ci} style={sweep()}>{ch}</span>
                     ))}
                   </span>
                 ) : (
-                  <span key={index} data-u={index} style={sweepStyle()}>{unit.word}</span>
+                  <span
+                    key={index}
+                    data-u={index}
+                    // Syllables of one word lean in towards their neighbours as they scale (see paintVoice).
+                    data-tp={fluid && j > 0 ? '1' : undefined}
+                    data-tn={fluid && j < group.units.length - 1 ? '1' : undefined}
+                    style={sweep()}
+                  >{unit.word}</span>
                 )
               ))}
             </span>
@@ -113,10 +192,117 @@ function Voice({ units, text, wordSync, className, style, voiceRef }) {
 
 // ---------------------------------------------------------------- per-frame painter
 
-function paintVoice(voiceEl, units, t, live) {
+// Last value written per element and property, so a spring's endless sub-pixel
+// decay doesn't rewrite the same style every frame.
+const written = new WeakMap()
+function put(el, prop, value) {
+  let m = written.get(el)
+  if (!m) { m = {}; written.set(el, m) }
+  if (m[prop] === value) return
+  m[prop] = value
+  if (prop.startsWith('--')) el.style.setProperty(prop, value)
+  else el.style[prop] = value
+}
+
+function glowShadow(glow, blurBase, blurGain) {
+  const a = Math.min(glow * 0.35, 1)
+  return a > 0.01 ? `0 0 ${(blurBase + blurGain * glow).toFixed(1)}px rgba(255,255,255,${a.toFixed(3)})` : ''
+}
+
+/** Where the lit edge sits for a given fill (0..1): from just off the left to just past the right. */
+const gradientPos = (fill) => `${(-20 + 120 * fill).toFixed(2)}%`
+
+// What a voice is made of, found once instead of querying the DOM every frame.
+// Rebuilt when the units change (a new song) or React swapped the elements.
+const voiceCache = new WeakMap()
+function itemsOf(voiceEl, units) {
+  let c = voiceCache.get(voiceEl)
+  if (c && c.units === units && (!c.items.length || c.items[0].el.isConnected)) return c.items
+  const items = []
+  voiceEl.querySelectorAll('[data-u]').forEach((el) => {
+    const u = units[Number(el.dataset.u)]
+    if (!u) return
+    items.push({
+      el,
+      u,
+      grow: !!el.dataset.grow,
+      letters: el.dataset.grow ? Array.from(el.querySelectorAll('[data-l]')) : null,
+      tp: !!el.dataset.tp,
+      tn: !!el.dataset.tn,
+      width: 0,
+      widthAt: 0,
+      lastWord: null,
+      lastLetters: null,
+    })
+  })
+  voiceCache.set(voiceEl, { units, items })
+  return items
+}
+
+/**
+ * Advance one vocal to time `t` and write it to the DOM. `dt` is the frame
+ * time the springs advance by; `snap` puts every spring straight on its goal
+ * (a seek, or bringing an idle line to rest). Returns true while anything in
+ * the voice is still moving.
+ *
+ * Words at rest hand back the same result object frame after frame, and those
+ * are skipped outright: in a fast verse most of a line is waiting or done.
+ */
+function paintVoiceFluid(voiceEl, units, t, dt, snap) {
+  if (!voiceEl || !units?.length) return false
+  let moving = false
+  const items = itemsOf(voiceEl, units)
+  for (let n = 0; n < items.length; n++) {
+    const item = items[n]
+    const { el, u } = item
+    if (item.grow) {
+      // A held syllable moves letter by letter; the syllable itself stays put.
+      const steps = stepLetters(u, t, dt, snap)
+      const w = stepWord(u, t, dt, snap)
+      moving = moving || w.moving
+      if (steps === item.lastLetters) continue
+      item.lastLetters = steps
+      for (let li = 0; li < steps.length; li++) {
+        const s = steps[li]
+        const lEl = item.letters[li]
+        if (!lEl) continue
+        moving = moving || s.moving
+        put(lEl, '--gp', gradientPos(s.fill))
+        put(lEl, 'transform', `translate3d(0, ${s.y.toFixed(4)}em, 0) scale(${s.scale.toFixed(4)})`)
+        put(lEl, 'textShadow', glowShadow(s.glow, 4, 12))
+      }
+      continue
+    }
+    const w = stepWord(u, t, dt, snap)
+    moving = moving || w.moving
+    if (w === item.lastWord) continue
+    item.lastWord = w
+    // Scaling shrinks a syllable towards its middle, which would open a gap
+    // between it and the rest of its word; pull it back towards its neighbours.
+    // The width is measured now and then, not every frame (a read forces layout).
+    let pull = 0
+    if ((item.tp || item.tn) && w.scale !== 1) {
+      const now = performance.now()
+      if (!item.width || now - item.widthAt > 1000) { item.width = el.offsetWidth; item.widthAt = now }
+      const inset = item.width * (1 - w.scale) / 2
+      if (item.tp) pull -= inset
+      if (item.tn) pull += inset
+    }
+    put(el, '--gp', gradientPos(w.fill))
+    put(el, 'transform', `translate3d(${pull.toFixed(2)}px, ${w.y.toFixed(4)}em, 0) scale(${w.scale.toFixed(4)})`)
+    put(el, 'textShadow', glowShadow(w.glow, 4, 2))
+  }
+  return moving
+}
+
+/**
+ * The classic painter: a function of the clock alone, no springs. `live` is
+ * whether the line is being sung right now; otherwise the voice is put in its
+ * resting state (all lit if it's behind us, all dim if it's ahead).
+ */
+function paintVoiceClassic(voiceEl, units, t, live) {
   if (!voiceEl || !units?.length) return
-  const els = voiceEl.querySelectorAll('[data-u]')
-  els.forEach((el) => {
+  voiceEl.querySelectorAll('[data-u]').forEach((el) => {
     const u = units[Number(el.dataset.u)]
     if (!u) return
     if (el.dataset.grow) {
@@ -147,10 +333,17 @@ function paintVoice(voiceEl, units, t, live) {
   })
 }
 
+/** Paints one voice in the chosen style. Returns true while it is still moving (classic never is: it follows the clock). */
+function paintVoice(mode, voiceEl, units, t, dt, snap, live) {
+  if (mode === 'fluid') return paintVoiceFluid(voiceEl, units, t, dt, snap)
+  paintVoiceClassic(voiceEl, units, t, live)
+  return false
+}
+
 // ---------------------------------------------------------------- rows
 
 const Row = React.memo(function Row({
-  line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
+  line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow, mode,
 }) {
   const rowRef = useRef(null)
   const leadRef = useRef(null)
@@ -170,8 +363,8 @@ const Row = React.memo(function Row({
   // makes fast, densely timed verses (Rap God is a good stress case) bounce
   // from one line to the next without two competing focal points.
   const near = isFocused ? 0 : distance
-  const falloff = browsing ? 0.8 : FALLOFF_ALPHA[Math.min(near, FALLOFF_ALPHA.length - 1)]
-  const blur = browsing || !synced ? 0 : FALLOFF_BLUR[Math.min(near, FALLOFF_BLUR.length - 1)]
+  const falloff = browsing ? 0.8 : FALLOFF_ALPHA[mode][Math.min(near, FALLOFF_ALPHA[mode].length - 1)]
+  const blur = browsing || !synced ? 0 : FALLOFF_BLUR[mode][Math.min(near, FALLOFF_BLUR[mode].length - 1)]
   const lineOpacity = !synced ? 1 : near === 0 ? 1 : falloff
   const seekable = synced && Number.isFinite(line.time)
 
@@ -180,7 +373,7 @@ const Row = React.memo(function Row({
     const breakEnd = Number.isFinite(line.end) && line.end > line.time ? line.end : until
     const exitLead = line.outro ? 0.05 : FOCUS_LEAD_S + 0.04
     return (
-      <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
+      <div ref={rowRef} data-row={index} className="w-full" style={mode === 'fluid' ? undefined : { willChange: 'transform' }}>
         <div
           style={{
             height: open ? `${baseSize * 1.5}rem` : 0,
@@ -206,7 +399,7 @@ const Row = React.memo(function Row({
   const bgUnits = line.bgWords || []
 
   return (
-    <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
+    <div ref={rowRef} data-row={index} className="w-full" style={mode === 'fluid' ? undefined : { willChange: 'transform' }}>
       <div
         role={seekable ? 'button' : undefined}
         tabIndex={seekable ? 0 : undefined}
@@ -239,7 +432,7 @@ const Row = React.memo(function Row({
           }}
         >
           {synced && wordSync && line.words?.length ? (
-            <Voice voiceRef={leadRef} units={line.words} text={line.text} wordSync />
+            <Voice key={mode} voiceRef={leadRef} units={line.words} text={line.text} wordSync mode={mode} />
           ) : (
             <span
               ref={leadRef}
@@ -253,7 +446,7 @@ const Row = React.memo(function Row({
         {hasBg && (
           <div style={{ fontSize: `${baseSize * 0.68}rem`, lineHeight: 1.25, fontWeight: 600, marginTop: '0.15em', opacity: 0.78 }}>
             {synced && wordSync && bgUnits.length ? (
-              <Voice voiceRef={bgRef} units={bgUnits} text={line.bgText} wordSync />
+              <Voice key={mode} voiceRef={bgRef} units={bgUnits} text={line.bgText} wordSync mode={mode} />
             ) : (
               <span ref={bgRef} data-voice="plain" style={{ color: !synced || isFocused ? SUNG : UNSUNG, transition: `color ${HANDOVER_MS}ms ${EASE}` }}>{line.bgText}</span>
             )}
@@ -270,7 +463,7 @@ const Row = React.memo(function Row({
               style={{ overflow: 'hidden' }}
             >
               <div ref={subRef} dir="auto" style={{ fontSize: `${baseSize * 0.56}rem`, lineHeight: 1.3, fontWeight: 600, marginTop: '0.2em', color: 'rgba(255,255,255,0.72)' }}>
-                {subText && (synced && wordSync && subUnits ? <Voice units={subUnits} text={subText} wordSync /> : <span>{subText}</span>)}
+                {subText && (synced && wordSync && subUnits ? <Voice key={mode} units={subUnits} text={subText} wordSync mode={mode} /> : <span>{subText}</span>)}
                 {subBg && <div style={{ fontSize: '0.85em', opacity: 0.8 }}>{subBg}</div>}
               </div>
             </motion.div>
@@ -406,7 +599,8 @@ export default function LyricsPanel({
   toolbarHidden = false,
 }) {
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
-  const now = useLyricClock(progress)
+  const mode = useLyricsStyle()
+  const now = useLyricClock(progress, mode === 'fluid')
   const [result, setResult] = useState(() => (track?.id && lyricsCache.has(track.id) ? lyricsCache.get(track.id) : null))
   // Loading from the first render when there's nothing to show yet, so a new
   // panel never flashes "no lyrics" before its request has even started.
@@ -429,6 +623,9 @@ export default function LyricsPanel({
   const browseTimer = useRef(null)
   const lastScrollIdx = useRef(-1)
   const paintedRows = useRef(new Set())
+  const paintedLines = useRef(null)
+  const paintedMode = useRef(mode)
+  const restPhase = useRef(new Map())
 
   const crossfadeSeconds = usePlayerStore(s => s.crossfadeSeconds)
   const lines = useMemo(
@@ -615,48 +812,77 @@ export default function LyricsPanel({
   useEffect(() => {
     if (!synced || !lines.length) return
     let raf
-    const tick = () => {
+    let lastFrame = performance.now()
+    let lastT = now()
+    const paintRow = (i, t, dt, snap, live) => {
+      const refs = rowsRef.current.get(i)
+      const line = lines[i]
+      if (!refs || !line || line.gap || !wordSync) return false
+      let moving = paintVoice(mode, refs.leadEl, line.words, t, dt, snap, live)
+      moving = paintVoice(mode, refs.bgEl, line.bgWords, t, dt, snap, live) || moving
+      const sub = subLines?.[i]
+      if (live && sub?.words?.length && refs.subEl) moving = paintVoice(mode, refs.subEl.querySelector('[data-voice="timed"]'), sub.words, t, dt, snap, live) || moving
+      return moving
+    }
+    const tick = (frameAt) => {
       raf = requestAnimationFrame(tick)
       const t = now()
+      const at = typeof frameAt === 'number' ? frameAt : performance.now()
+      // Springs advance by real frame time; a stalled tab mustn't fire one huge step.
+      const dt = Math.min(0.05, Math.max(0, (at - lastFrame) / 1000))
+      lastFrame = at
+      // The clock jumped (a seek): every spring goes straight to where it belongs.
+      const snap = Math.abs(t - lastT) > 0.6
+      lastT = t
       const live = new Set(activeRows(lines, t))
-      // Lines that just stopped being sung get settled into their final state once.
+      const next = new Set()
+      // A line stays in the loop after it stops being sung until its words have
+      // finished easing back to rest.
+      for (const i of live) { paintRow(i, t, dt, snap, true); next.add(i) }
       for (const i of paintedRows.current) {
         if (live.has(i)) continue
-        const refs = rowsRef.current.get(i)
-        const line = lines[i]
-        if (refs && line && wordSync) {
-          paintVoice(refs.leadEl, line.words, t, false)
-          paintVoice(refs.bgEl, line.bgWords, t, false)
-        }
+        if (paintRow(i, t, dt, snap, false)) next.add(i)
       }
-      for (const i of live) {
-        const refs = rowsRef.current.get(i)
-        const line = lines[i]
-        if (!refs || !line) continue
-        if (line.gap) continue
-        if (!wordSync) continue
-        paintVoice(refs.leadEl, line.words, t, true)
-        paintVoice(refs.bgEl, line.bgWords, t, true)
-        const sub = subLines?.[i]
-        if (sub?.words?.length && refs.subEl) paintVoice(refs.subEl.querySelector('[data-voice="timed"]'), sub.words, t, true)
+      // Only rows in the loop get their words promoted to compositor layers
+      // (see index.css); a layer for every word of a long song costs more than it saves.
+      for (const i of next) {
+        if (paintedRows.current.has(i)) continue
+        restPhase.current.delete(i)
+        const el = rowsRef.current.get(i)?.rowEl
+        if (el) el.dataset.live = '1'
       }
-      paintedRows.current = live
+      for (const i of paintedRows.current) {
+        if (next.has(i)) continue
+        const el = rowsRef.current.get(i)?.rowEl
+        if (el) delete el.dataset.live
+      }
+      paintedRows.current = next
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [synced, lines, nextTimes, now, wordSync, subLines])
+  }, [synced, lines, nextTimes, now, wordSync, subLines, mode])
 
-  // When the list re-renders, bring every timed line to its correct resting state.
+  // When the list re-renders, bring idle timed lines to their resting state: not
+  // yet sung, or sung. Lines still being animated are left to the loop above, so
+  // a handover doesn't cut the spring of the line that was just sung. A row is
+  // only touched when it changes side (or is new), so a focus change in a
+  // two-hundred line song doesn't repaint two hundred lines.
   useLayoutEffect(() => {
     if (!synced || !wordSync) return
+    // Row indices from a previous song's lines mean nothing to these ones.
+    if (paintedLines.current !== lines || paintedMode.current !== mode) { paintedLines.current = lines; paintedMode.current = mode; paintedRows.current = new Set(); restPhase.current = new Map() }
     const t = now()
     rowsRef.current.forEach((refs, i) => {
       const line = lines[i]
-      if (!line || line.gap) return
-      paintVoice(refs.leadEl, line.words, t, false)
-      paintVoice(refs.bgEl, line.bgWords, t, false)
+      if (!line || line.gap || paintedRows.current.has(i)) return
+      const phase = t < (line.time ?? 0) ? -1 : t >= lineEndOf(line) ? 1 : 0
+      const seen = restPhase.current.get(i)
+      if (phase !== 0 && seen && seen.refs === refs && seen.phase === phase) return
+      paintVoice(mode, refs.leadEl, line.words, t, 0, true, false)
+      paintVoice(mode, refs.bgEl, line.bgWords, t, 0, true, false)
+      restPhase.current.set(i, { refs, phase })
     })
-  }, [lines, synced, wordSync, focusIdx, subLines, now])
+  }, [lines, synced, wordSync, focusIdx, subLines, now, mode])
 
   // ---- scrolling: native scroll for browsing, a staggered glide for following
   const anchorFraction = fullscreen ? 0.22 : 0.26
@@ -872,12 +1098,15 @@ export default function LyricsPanel({
                   index={i}
                   until={nextTimes[i]}
                   clock={now}
-                  distance={focusIdx >= 0 ? Math.abs(i - focusIdx) : i + 1}
+                  // Capped: the falloff stops at 4 lines, so rows beyond that keep identical props
+                  // and a focus change doesn't re-render the whole song.
+                  distance={Math.min(focusIdx >= 0 ? Math.abs(i - focusIdx) : i + 1, 5)}
                   isFocused={i === focusIdx}
                   isLive={liveSet.has(i)}
                   synced={synced}
                   browsing={browsing}
                   wordSync={wordSync}
+                  mode={mode}
                   fullscreen={fullscreen}
                   textScale={textScale}
                   duet={!!result?.duet}

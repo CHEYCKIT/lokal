@@ -168,6 +168,13 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
   .hover-scroll-title-text { animation: none; }
 }
 
+/* Lyrics: only the rows being sung (or easing back to rest) get their words
+   promoted to their own layers; see LyricsPanel's frame loop. */
+[data-row][data-live="1"] [data-u],
+[data-row][data-live="1"] [data-l] {
+  will-change: transform;
+}
+
 /* Music video player (MusicVideoPlayer.jsx): the loading sheen over the cover and the little bars. */
 @keyframes mv-shimmer {
   0% { transform: translateX(0); }
