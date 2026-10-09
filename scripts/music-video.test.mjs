@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const { isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { songAudioFor } = require('../electron/ipc/online.js')
 
 const track = { title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
 const video = (fields) => ({ videoId: 'abcdefghijk', kind: 'video', official: true, artists: ['The Weeknd'], artist: 'The Weeknd', duration: 263, ...fields })
@@ -76,3 +77,31 @@ test('follows a skit in the middle of the video', () => {
 test('rejects a video whose audio is another song', () => {
   assert.equal(alignAudio(audioFeatures(song(90, 3)), audioFeatures(song(100, 4))), null)
 })
+
+for (const track of [
+  { file_path: 'ghost://soundcloud/online/123' },
+  { file_path: 'ghost://addon/0123456789/track%2Fone' },
+]) {
+  test(`full music-video matching resolves ${track.file_path.split('://')[1].split('/')[0]} audio through sources.resolveStream`, async () => {
+    const calls = []
+    const getAudio = songAudioFor(track, true, {
+      options: { db: 'db', ytdlp: '/fixture/yt-dlp' },
+      resolve: async (provider, id, options) => {
+        calls.push({ provider, id, options })
+        return { url: `https://media.example.test/${provider}/${encodeURIComponent(id)}`, headers: { Authorization: 'test' } }
+      },
+    })
+    assert.ok(getAudio)
+    assert.deepEqual(await getAudio(0), {
+      input: `https://media.example.test/${track.file_path.startsWith('ghost://soundcloud') ? 'sc/123' : 'a-0123456789/track%2Fone'}`,
+      headers: { Authorization: 'test' },
+    })
+    assert.deepEqual(await getAudio(1), {
+      input: `https://media.example.test/${track.file_path.startsWith('ghost://soundcloud') ? 'sc/123' : 'a-0123456789/track%2Fone'}`,
+      headers: { Authorization: 'test' },
+    })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].options.force, false)
+    assert.equal(calls[1].options.force, true)
+  })
+}

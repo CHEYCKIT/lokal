@@ -132,10 +132,22 @@ async function youtubeAudio(videoId, attempt = 0) {
 }
 
 /** Where ffmpeg reads a track's own audio from, for the music video check. */
-function songAudioFor(track, canStream) {
+function resolvedSourceAudio(provider, id, { resolve = sources.resolveStream, options = streamOptions() } = {}) {
+  return async attempt => {
+    const stream = await resolve(provider, id, { ...options, force: attempt > 0 })
+    return { input: stream.url, headers: stream.headers }
+  }
+}
+
+function songAudioFor(track, canStream, options = {}) {
   const file = String(track?.file_path || '')
-  const own = file.match(/^ghost:\/\/youtube\/online\/([\w-]{11})$/)
-  if (own) return canStream ? attempt => youtubeAudio(own[1], attempt) : null
+  const ref = sources.streamRef(track)
+  if (ref && canStream) {
+    if (ref.provider === 'yt') return attempt => youtubeAudio(ref.id, attempt)
+    // SoundCloud and addon streams are resolved by the shared source layer so
+    // the music-video matcher receives the same fresh URL as playback.
+    return resolvedSourceAudio(ref.provider, ref.id, options)
+  }
   if (file && !file.startsWith('ghost://') && require('fs').existsSync(file)) return async () => ({ input: file, headers: {} })
   return null
 }
@@ -197,4 +209,4 @@ function registerStreamProtocol(protocol, net) {
   })
 }
 
-module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers }
+module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio }
