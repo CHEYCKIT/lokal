@@ -142,7 +142,7 @@ function resolvedSourceAudio(provider, id, { resolve = sources.resolveStream, op
 function songAudioFor(track, canStream, options = {}) {
   const file = String(track?.file_path || '')
   const ref = sources.streamRef(track)
-  if (ref && canStream) {
+  if (ref && (ref.provider !== 'yt' || canStream)) {
     if (ref.provider === 'yt') return attempt => youtubeAudio(ref.id, attempt)
     // SoundCloud and addon streams are resolved by the shared source layer so
     // the music-video matcher receives the same fresh URL as playback.
@@ -158,11 +158,22 @@ async function musicVideoFor(trackId) {
   if (!track) return null
   if (accountSession) await accountSession.credentials().catch(() => {})
   const { findFfmpeg } = require('./tools')
-  const canStream = !!streamOptions().ytdlp
+  const options = streamOptions()
+  const canStream = !!options.ytdlp
   return require('../online/musicVideo').findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
     songAudio: songAudioFor(track, canStream),
     videoAudio: canStream ? youtubeAudio : null,
+    youtubeSearch: canStream ? query => runJsonSearch(options.ytdlp, query, entry => ({
+      ...entry,
+      id: entry.id,
+      videoId: entry.id,
+      artist: entry.channel || entry.uploader || '',
+      artists: [entry.channel || entry.uploader || ''].filter(Boolean),
+      kind: 'video',
+      official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
+      url: `https://www.youtube.com/watch?v=${entry.id}`,
+    }), 1, 10) : null,
     cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
   })
 }
