@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import test from 'node:test'
 import { createRequire } from 'node:module'
+import os from 'node:os'
+import path from 'node:path'
 
 const require = createRequire(import.meta.url)
-const { isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { findMusicVideo, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
 const { songAudioFor } = require('../electron/ipc/online.js')
 
 const track = { title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
@@ -76,6 +79,43 @@ test('follows a skit in the middle of the video', () => {
 
 test('rejects a video whose audio is another song', () => {
   assert.equal(alignAudio(audioFeatures(song(90, 3)), audioFeatures(song(100, 4))), null)
+})
+
+test('does not cache a missing video when audio checking was inconclusive', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-music-video-'))
+  const cacheFile = path.join(directory, 'music-videos.json')
+  const track = { id: 'online-track', title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
+  const result = {
+    contents: [{ musicResponsiveListItemRenderer: {
+      navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk', watchEndpointMusicSupportedConfigs: { watchEndpointMusicConfig: { musicVideoType: 'MUSIC_VIDEO_TYPE_OMV' } } } },
+      flexColumns: [
+        { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: 'Blinding Lights (Official Video)' }] } } },
+        { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [
+          { text: 'The Weeknd', navigationEndpoint: { browseEndpoint: { browseId: 'UC1234567890', browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ARTIST' } } } } },
+          { text: ' • ' }, { text: '3:40' },
+        ] } } },
+      ],
+    } }],
+  }
+  let searches = 0
+  const fetchImpl = async url => String(url).endsWith('/')
+    ? { ok: true, text: async () => '' }
+    : { ok: true, json: async () => { searches++; return result } }
+  const options = {
+    ffmpeg: '/definitely/missing/ffmpeg',
+    songAudio: async () => ({ input: 'song', headers: {} }),
+    videoAudio: async () => ({ input: 'video', headers: {} }),
+    fetchImpl,
+    cacheFile,
+  }
+  try {
+    assert.equal(await findMusicVideo(track, options), null)
+    assert.equal(fs.existsSync(cacheFile), false)
+    assert.equal(await findMusicVideo(track, options), null)
+    assert.equal(searches, 2)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 for (const track of [

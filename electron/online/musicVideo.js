@@ -416,6 +416,7 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
       .sort((a, b) => Math.abs(a.duration - track.duration) - Math.abs(b.duration - track.duration)).slice(0, 3)
     let songEnv = null
     let video = null
+    let inconclusive = false
     for (const item of candidates) {
       const sameLength = Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
       if (ffmpeg && songAudio && videoAudio) {
@@ -427,11 +428,12 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
           continue // heard, and it isn't the song
         } catch {
           // Couldn't listen (offline, no stream): fall back to the length.
+          inconclusive = true
         }
       }
       if (sameLength) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'length'); break }
     }
-    if (cacheFile) {
+    if (cacheFile && (video || !inconclusive)) {
       const fresh = readCache(cacheFile)
       fresh[key] = { at: now(), video }
       writeCache(cacheFile, fresh)
