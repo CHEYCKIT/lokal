@@ -79,7 +79,7 @@ function sameArtist(a, b) {
 }
 
 /** Whether a search result is the song's own official music video. */
-function isMusicVideoFor(track, item, { requireOfficial = true } = {}) {
+function isMusicVideoFor(track, item, { requireOfficial = true, requireDuration = true } = {}) {
   if (!item?.videoId || item.kind === 'song' || (requireOfficial && !item.official)) return false
   const songNames = artistNames(track.artist)
   const videoNames = artistNames((item.artists || []).join(', ') || item.artist)
@@ -87,11 +87,12 @@ function isMusicVideoFor(track, item, { requireOfficial = true } = {}) {
   // "Artist - Title (Official Video)" or just "Title (Official Video)".
   let title = String(item.title || '')
   const dash = title.match(/^(.+?)\s+[-–—]\s+(.+)$/)
-  if (dash && artistNames(dash[1]).some(name => songNames.includes(name))) title = dash[2]
+  if (dash && artistNames(dash[1]).some(name => songNames.some(wantedName => sameArtist(name, wantedName)))) title = dash[2]
   const wanted = baseTitle(track.title)
   if (!wanted || baseTitle(title) !== wanted) return false
   const songWords = new Set(clean(track.title).split(' '))
   if (clean(item.title).split(' ').some(word => OTHER_VERSION.includes(word) && !songWords.has(word))) return false
+  if (!requireDuration) return true
   const duration = Number(item.duration)
   const length = Number(track.duration)
   if (!(duration > 0) || !(length > 0)) return false
@@ -125,9 +126,10 @@ function databaseVideos(track, rows) {
       title: row.strTrack || track.title,
       artist: row.strArtist || track.artist,
       artists: [row.strArtist || track.artist],
-      duration: Number(row.intDuration) > 0 ? Number(row.intDuration) / 1000 : Number(track.duration),
+      duration: null,
       thumbnail: row.strTrackThumb || null,
       source: 'theaudiodb',
+      database: true,
       official: true,
     })
   }).filter(Boolean)
@@ -146,11 +148,13 @@ async function discoveredVideos(track, { fetchImpl = fetch, audioDbSearch = audi
   const seen = new Set()
   const candidates = results.flatMap(result => result.status === 'fulfilled' ? result.value : []).filter(item => {
     if (!item.videoId || seen.has(item.videoId)) return false
+    if (!isMusicVideoFor(track, item, { requireDuration: !item.database })) return false
     seen.add(item.videoId)
-    return isMusicVideoFor(track, item)
+    return true
   }).sort((a, b) => {
     const source = item => item.source === 'theaudiodb' ? 0 : 1
-    return source(a) - source(b) || Math.abs(Number(a.duration) - Number(track.duration)) - Math.abs(Number(b.duration) - Number(track.duration))
+    const distance = item => Number.isFinite(Number(item.duration)) ? Math.abs(Number(item.duration) - Number(track.duration)) : Infinity
+    return source(a) - source(b) || distance(a) - distance(b)
   })
   return { candidates: candidates.slice(0, 8), inconclusive: results.some(result => result.status === 'rejected') }
 }
@@ -477,7 +481,7 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
     let video = null
     let inconclusive = discovered.inconclusive
     for (const item of candidates) {
-      const sameLength = Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
+      const sameLength = !item.database && Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
       if (ffmpeg && songAudio && videoAudio) {
         try {
           songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))

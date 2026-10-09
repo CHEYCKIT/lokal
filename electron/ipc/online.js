@@ -173,7 +173,7 @@ async function musicVideoFor(trackId) {
       kind: 'video',
       official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
       url: `https://www.youtube.com/watch?v=${entry.id}`,
-    }), 1, 10) : null,
+    }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
     cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
   })
 }

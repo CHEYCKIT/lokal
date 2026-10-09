@@ -7,6 +7,7 @@ import path from 'node:path'
 
 const require = createRequire(import.meta.url)
 const { findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { runJsonSearch } = require('../electron/download/search.js')
 const { songAudioFor } = require('../electron/ipc/online.js')
 
 const track = { title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
@@ -98,7 +99,38 @@ test('normalizes artist articles in curated music-video metadata', () => {
     [{ strTrack: "Let's Get It Started", strArtist: 'The Black Eyed Peas', intDuration: '225000', strMusicVid: 'https://www.youtube.com/watch?v=IKqV7DB8Iwg' }],
   )
   assert.equal(videos[0].videoId, 'IKqV7DB8Iwg')
-  assert.ok(isMusicVideoFor({ title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 }, videos[0]))
+  assert.ok(isMusicVideoFor({ title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 }, videos[0], { requireDuration: false }))
+  assert.ok(isMusicVideoFor(
+    { title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 },
+    { ...videos[0], title: "The Black Eyed Peas - Let's Get It Started (Official Video)", duration: 225 },
+  ))
+})
+
+test('a rejected curated row does not hide a later valid result with the same video id', async () => {
+  const found = await discoveredVideos(
+    { title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 },
+    {
+      audioDbSearch: async () => [{ strTrack: 'Wrong Song', strArtist: 'Black Eyed Peas', strMusicVid: 'https://www.youtube.com/watch?v=IKqV7DB8Iwg' }],
+      fetchImpl: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+      youtubeSearch: async () => [{ videoId: 'IKqV7DB8Iwg', title: "The Black Eyed Peas - Let's Get It Started (Official Video)", artist: 'Black Eyed Peas', artists: ['Black Eyed Peas'], duration: 225, kind: 'video', official: true }],
+    },
+  )
+  assert.deepEqual(found.candidates.map(item => item.videoId), ['IKqV7DB8Iwg'])
+})
+
+test('yt-dlp discovery is bounded when the child stalls', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-ytdlp-'))
+  const script = path.join(directory, 'yt-dlp-stall.sh')
+  fs.writeFileSync(script, '#!/bin/sh\nsleep 1\n')
+  fs.chmodSync(script, 0o755)
+  try {
+    const started = Date.now()
+    const result = await runJsonSearch(script, 'song', () => null, 1, 10, undefined, { timeoutMs: 20 })
+    assert.equal(result.error, 'YouTube search timed out')
+    assert.ok(Date.now() - started < 500)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('does not cache a missing video when audio checking was inconclusive', async () => {
