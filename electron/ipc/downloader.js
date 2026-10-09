@@ -119,6 +119,14 @@ function manager() {
       broadcast('tools:downloadProgress', { tool: 'yt-dlp', status: 'done', message: `yt-dlp updated${after?.installedVersion ? ` to ${after.installedVersion}` : ''}. Retrying your downloads.` })
       return { updated: true, version: after?.installedVersion || null }
     },
+    downloadMusicVideo: (videoId, opts) => {
+      const online = require('./online')
+      return require('../online/musicVideoCache').downloadVideo(videoId, {
+        ...online.streamOptions(),
+        ...opts,
+        fetchImpl: (url, init) => require('electron').net.fetch(url, init),
+      })
+    },
     emit: (snapshot) => broadcast('downloader:progress', snapshot),
   }, 10)
 }
@@ -219,6 +227,19 @@ function registerExtraDownloaderHandlers(ipcMain) {
   ipcMain.handle('downloader:downloadPlaylist', (_, url, opts = {}) => manager().enqueue('playlist', url, opts || {}))
 }
 
+function queueMusicVideo(video, options = {}) {
+  return manager().enqueue('music-video', `https://www.youtube.com/watch?v=${video.videoId}`, {
+    videoId: video.videoId,
+    title: video.title || 'Music video',
+    from: 'Music Video',
+    thumbnail: `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`,
+    cacheDir: options.cacheDir,
+    videoHeight: options.videoHeight,
+  })
+}
+
+function waitForDownload(id) { return manager().waitFor(id) }
+
 function registerPlaylistArchiveHandlers(ipcMain) {
   ipcMain.handle('downloader:getDownloadedPlaylists', () => {
     return getDB().prepare('SELECT * FROM downloaded_playlists ORDER BY COALESCE(last_downloaded_at, created_at) DESC').all()
@@ -287,6 +308,8 @@ module.exports = {
     return { success: true, count: downloads.count, ids: downloads.ids }
   },
   resumeDownloadsAfterToolUpdate: () => manager().resume(),
+  queueMusicVideo,
+  waitForDownload,
   shutdownActiveDownloads: () => {
     manager().shutdown()
     for (const proc of searchProcesses) terminateProcessTree(proc)

@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { cachedVideoFile } = require('../electron/online/musicVideoCache.js')
+const { cachedVideoFile, peekCachedVideoFile } = require('../electron/online/musicVideoCache.js')
 
 test('music videos download once and reuse the local cache file', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-video-cache-'))
@@ -24,7 +24,9 @@ test('music videos download once and reuse the local cache file', async () => {
   }
   try {
     const options = { cacheDir: dir, fetchStream, trim: value => trimmed.push(value) }
+    assert.equal(peekCachedVideoFile('4NRXx6U8ABQ', options), null)
     const first = await cachedVideoFile('4NRXx6U8ABQ', options)
+    assert.equal(peekCachedVideoFile('4NRXx6U8ABQ', options), first)
     const second = await cachedVideoFile('4NRXx6U8ABQ', options)
     assert.equal(first, second)
     assert.equal(downloads, 1)

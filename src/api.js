@@ -401,6 +401,9 @@ export const api = {
   musicVideoCache: (trackId) => isE() && el().musicVideoCache
     ? el().musicVideoCache(trackId).then(musicVideoResult)
     : Promise.resolve(null),
+  musicVideoList: () => isE() && el().musicVideoList ? el().musicVideoList() : Promise.resolve([]),
+  musicVideoSave: (trackId, saved = true) => isE() && el().musicVideoSave
+    ? el().musicVideoSave(trackId, saved) : Promise.resolve({ error: 'Music videos are available in the desktop app.' }),
   // How the lookup is going ({ trackId, stage, index, total }), desktop only.
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},
   // Settings -> Library -> Maintenance: index every song's music video / lyrics.

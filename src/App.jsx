@@ -23,6 +23,7 @@ import Home from './pages/Home'
 import Albums from './pages/Albums'
 import OnlineAlbum from './pages/OnlineAlbum'
 import Artists from './pages/Artists'
+import Videos from './pages/Videos'
 import Library from './pages/Library'
 import Search from './pages/Search'
 import Artist from './pages/Artist'
@@ -246,6 +247,7 @@ function AnimatedRoutes() {
         <Route path="/home/:tab/*" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />
         <Route path="/artists" element={<PageTransition gated><Artists /></PageTransition>} />
+        <Route path="/videos" element={<PageTransition gated><Videos /></PageTransition>} />
         <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
         <Route path="/search" element={<PageTransition><Search /></PageTransition>} />
         <Route path="/artist/:id" element={<PageTransition><Artist /></PageTransition>} />

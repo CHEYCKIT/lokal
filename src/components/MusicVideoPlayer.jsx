@@ -1,28 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Mic2, Clapperboard } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Mic2, Clapperboard, Expand, Minimize } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { api, wordSyncEnabled } from '../api'
 import { trackArtURL } from '../onlineTracks'
 import { useMusicVideo, useMusicVideoView, videoTimeFor, songTime } from '../musicVideo'
+import { syncVideo, seekVideo } from '../musicVideoPlayback'
 
 // Further apart than this and the video jumps to the song; closer, it catches
 // up by playing a touch faster or slower, which you can't see.
-const SEEK_DRIFT_S = 0.35
-const NUDGE_DRIFT_S = 0.04
 const IDLE_MS = 2600
 const EASE = [0.32, 0.72, 0, 1]
-// After a seek the song waits for the video to buffer, up to this long.
-const WAIT_FOR_VIDEO_MS = 20000
 const RECOVER_TRIES = 2
-
-/** The song's audio element, to hold while the video buffers after a seek. */
-function songAudioElement() {
-  const { audioRef, cfAudioRef, activeAudioElement } = usePlayerStore.getState()
-  return (activeAudioElement === 'primary' ? audioRef : cfAudioRef)?.current || null
-}
 
 function fmt(s) {
   if (!Number.isFinite(s) || s < 0) return '0:00'
@@ -37,9 +28,9 @@ function fmt(s) {
  */
 export default function MusicVideoPlayer() {
   const { open, hide } = useMusicVideoView(useShallow(s => ({ open: s.open, hide: s.hide })))
-  const { currentTrack, isPlaying, togglePlay, next, prev, progress, duration, setProgressWithAudioUpdate } = usePlayerStore(useShallow(s => ({
+  const { currentTrack, isPlaying, togglePlay, next, prev, progress, duration } = usePlayerStore(useShallow(s => ({
     currentTrack: s.currentTrack, isPlaying: s.isPlaying, togglePlay: s.togglePlay, next: s.next, prev: s.prev,
-    progress: s.progress, duration: s.duration, setProgressWithAudioUpdate: s.setProgressWithAudioUpdate,
+    progress: s.progress, duration: s.duration,
   })))
   const { video, loading, progress: lookupProgress } = useMusicVideo(currentTrack, open, open)
   const reduceMotion = useReducedMotion()
@@ -51,7 +42,9 @@ export default function MusicVideoPlayer() {
   const [failed, setFailed] = useState(false)
   const [errorText, setErrorText] = useState(null)
   const [stalled, setStalled] = useState(false)
-  const [buffered, setBuffered] = useState(0)
+  const [slowLoad, setSlowLoad] = useState(false)
+  const [screenFull, setScreenFull] = useState(() => !!document.fullscreenElement)
+  const screenOwned = useRef(false)
   // The song is at a moment the video doesn't have (past its end).
   const [outside, setOutside] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
@@ -59,30 +52,38 @@ export default function MusicVideoPlayer() {
   const [idle, setIdle] = useState(false)
   const idleTimer = useRef(null)
   const recoverRef = useRef(0)
-  const waitRef = useRef({ holding: false, deadline: 0 })
-
-  // After a forward seek the video may have nothing buffered yet: the song
-  // waits (paused, play state untouched) until the video can follow.
-  const releaseSong = useCallback(() => {
-    if (!waitRef.current.holding) return
-    waitRef.current.holding = false
-    const audio = songAudioElement()
-    if (audio && audio.paused && usePlayerStore.getState().isPlaying) audio.play().catch(() => {})
-  }, [])
-  const holdSong = useCallback(() => {
-    if (waitRef.current.holding) { waitRef.current.deadline = Date.now() + WAIT_FOR_VIDEO_MS; return }
-    const audio = songAudioElement()
-    if (!audio || audio.paused) return
-    waitRef.current = { holding: true, deadline: Date.now() + WAIT_FOR_VIDEO_MS }
-    audio.pause()
-  }, [])
 
   useEffect(() => {
     setReady(false); setEverPlayed(false); setFailed(false); setErrorText(null)
-    setStalled(false); setBuffered(0); setOutside(false)
+    setStalled(false); setOutside(false)
     recoverRef.current = 0
-    return releaseSong
-  }, [video?.videoId, open, releaseSong])
+  }, [video?.videoId, open])
+  // A cached file's brief decode needs no loading card/text. Downloads alone
+  // get progress, after a short delay to avoid a flash on a cache hit.
+  useEffect(() => {
+    setSlowLoad(false)
+    if (!open || !loading) return undefined
+    const timer = setTimeout(() => setSlowLoad(true), 500)
+    return () => clearTimeout(timer)
+  }, [open, loading, currentTrack?.id])
+  useEffect(() => {
+    const changed = () => setScreenFull(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', changed)
+    return () => document.removeEventListener('fullscreenchange', changed)
+  }, [])
+  useEffect(() => {
+    if (!open && screenOwned.current) {
+      screenOwned.current = false
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    }
+  }, [open])
+  const toggleScreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    else {
+      screenOwned.current = true
+      document.documentElement.requestFullscreen?.().catch(() => { screenOwned.current = false })
+    }
+  }
   useEffect(() => { if (!currentTrack) hide() }, [currentTrack, hide])
   useEffect(() => {
     if (open) api.getSettings?.().then(s => setAutoSynced(s?.unsynced_auto_sync === '1')).catch(() => {})
@@ -98,6 +99,7 @@ export default function MusicVideoPlayer() {
     wake()
     const onKey = (e) => {
       if (e.key !== 'Escape') return
+      if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); e.stopImmediatePropagation(); return }
       // Ours alone: the full screen player under this shouldn't close too.
       e.stopImmediatePropagation()
       e.preventDefault()
@@ -107,49 +109,23 @@ export default function MusicVideoPlayer() {
     return () => { window.removeEventListener('keydown', onKey, true); clearTimeout(idleTimer.current) }
   }, [open, hide, wake])
 
-  // Keep the picture on the song: same moment, same play/pause, paused while
-  // the window is hidden. After a seek the song waits for the video to buffer.
-  useEffect(() => {
-    if (!open || !video) return undefined
-    const tick = () => {
-      const el = videoRef.current
-      if (!el || el.readyState < 1) return
-      const target = videoTimeFor(video.segments, songTime())
-      const end = Number.isFinite(el.duration) ? el.duration : video.duration
-      if (target == null || target < 0 || target > end - 0.05) {
-        setOutside(true)
-        releaseSong()
-        if (!el.paused) el.pause()
-        return
-      }
-      setOutside(false)
-      const drift = el.currentTime - target
-      if (Math.abs(drift) > SEEK_DRIFT_S) {
-        el.currentTime = target
-        el.playbackRate = 1
-        if (el.readyState < 3) holdSong() // nothing buffered there yet
-      } else {
-        el.playbackRate = Math.abs(drift) > NUDGE_DRIFT_S ? 1 - Math.max(-0.06, Math.min(0.06, drift)) : 1
-      }
-      if (waitRef.current.holding && (el.readyState >= 3 || Date.now() > waitRef.current.deadline)) releaseSong()
-      const shouldPlay = usePlayerStore.getState().isPlaying && !document.hidden && !waitRef.current.holding
-      if (shouldPlay && el.paused) el.play().catch(() => {})
-      else if (!shouldPlay && !el.paused) el.pause()
-    }
-    tick()
-    const id = setInterval(tick, 200)
-    document.addEventListener('visibilitychange', tick)
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick) }
-  }, [open, video, holdSong, releaseSong])
+  const sync = useCallback(() => {
+    const result = syncVideo(videoRef.current, {
+      time: songTime(), segments: video?.segments, duration: video?.duration,
+      isPlaying: usePlayerStore.getState().isPlaying, hidden: document.hidden,
+    })
+    if (result) setOutside(result.outside)
+  }, [video])
 
-  // How much of the video is already here, as its loading percentage.
-  const onBuffer = useCallback(() => {
-    const el = videoRef.current
-    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return
-    let max = 0
-    for (let i = 0; i < el.buffered.length; i++) max = Math.max(max, el.buffered.end(i))
-    setBuffered(Math.min(1, max / el.duration))
-  }, [])
+  // Sync immediately on media readiness and play-state changes, with a small
+  // periodic drift correction. Buffering the muted picture never pauses music.
+  useEffect(() => {
+    if (!open || !video?.src) return undefined
+    sync()
+    const id = setInterval(sync, 200)
+    document.addEventListener('visibilitychange', sync)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', sync) }
+  }, [open, video?.src, isPlaying, sync])
 
   // A local cached file should not drop, but retain recovery for files removed
   // by the cache limit while the player is open.
@@ -170,9 +146,8 @@ export default function MusicVideoPlayer() {
     }
     setFailed(true)
     setStalled(false)
-    releaseSong()
-    setErrorText('The cached video file is no longer available')
-  }, [video, releaseSong])
+    setErrorText(el?.error?.message || 'Could not open the cached video')
+  }, [video])
 
   const art = trackArtURL(currentTrack)
   const showVideo = !!video?.src && !video.error && !failed && (ready || everPlayed) && !outside
@@ -185,11 +160,11 @@ export default function MusicVideoPlayer() {
   const lookupText = lookupProgress?.stage === 'checking' && lookupProgress.total
     ? `Matching video ${lookupProgress.index} of ${lookupProgress.total}`
     : lookupProgress?.stage === 'fallback' ? 'Trying the original version'
+      : lookupProgress?.stage === 'queued' ? 'Music video queued for download'
       : lookupProgress?.stage === 'downloading'
         ? `Downloading music video${Number.isFinite(lookupProgress.percent) ? ` — ${lookupProgress.percent}%` : ''}`
       : 'Looking for the music video'
-  const loadingText = loading ? lookupText
-    : buffered > 0 ? `Loading music video — ${Math.round(buffered * 100)}%` : 'Loading music video'
+  const loadingText = loading && slowLoad ? lookupText : null
   const message = {
     none: 'No music video for this song',
     failed: video?.error ? `The music video couldn't be cached: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
@@ -202,7 +177,9 @@ export default function MusicVideoPlayer() {
   const fade = { duration: reduceMotion ? 0 : 0.5, ease: EASE }
   const seek = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
-    if (duration > 0) setProgressWithAudioUpdate(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration)
+    if (duration > 0) seekVideo(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration, {
+      state: usePlayerStore.getState(), element: videoRef.current, segments: video?.segments,
+    })
   }
 
   return (
@@ -229,7 +206,7 @@ export default function MusicVideoPlayer() {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.08 }} transition={fade}>
                 <div className="relative w-[min(40vh,22rem)] aspect-square rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7)] border border-white/10 bg-white/5">
                   {art ? <img src={art} alt="" className="w-full h-full object-cover" /> : <span className="absolute inset-0 flex items-center justify-center text-white/10 text-7xl">♪</span>}
-                  {status === 'loading' && (
+                  {status === 'loading' && slowLoad && (
                     <div className="absolute inset-0 overflow-hidden" aria-hidden>
                       <div className="absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-[mv-shimmer_1.6s_ease-in-out_infinite]" />
                     </div>
@@ -265,9 +242,10 @@ export default function MusicVideoPlayer() {
               disablePictureInPicture
               onPlaying={() => { setReady(true); setEverPlayed(true); setStalled(false); recoverRef.current = 0 }}
               onWaiting={() => setStalled(true)}
-              onCanPlay={() => setStalled(false)}
-              onProgress={onBuffer}
-              onLoadedMetadata={onBuffer}
+              onCanPlay={() => { setStalled(false); sync() }}
+              onLoadedMetadata={sync}
+              onLoadedData={() => { if (!videoRef.current?.seeking) setReady(true); sync() }}
+              onSeeked={() => { setReady(true); setStalled(false); sync() }}
               onError={onVideoError}
               initial={{ opacity: 0 }}
               animate={{ opacity: showVideo ? 1 : 0 }}
@@ -311,6 +289,10 @@ export default function MusicVideoPlayer() {
                 <X size={18} />
               </button>
               <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-white/60"><Clapperboard size={13} /> Music Video</span>
+              <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Enter full screen'} aria-label={screenFull ? 'Exit full screen' : 'Enter full screen'}
+                className="ml-auto w-10 h-10 flex items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16] transition-colors">
+                {screenFull ? <Minimize size={18} /> : <Expand size={18} />}
+              </button>
             </div>
             <div className={`absolute left-8 right-8 bottom-7 flex flex-col gap-3 ${chromeHidden ? '' : 'pointer-events-auto'}`}>
               <div className="flex items-end justify-between gap-6">
