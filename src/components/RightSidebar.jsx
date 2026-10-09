@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Film } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Film, Clapperboard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -9,6 +9,7 @@ import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import { useMotionCoverOff } from '../motionCoverPrefs'
+import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { api, wordSyncEnabled } from '../api'
 import {
   contextLabel,
@@ -193,6 +194,9 @@ export default function RightSidebar() {
     return () => { current = false }
   }, [currentTrack?.id])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
+  // The official music video, once found and checked (musicVideo.js).
+  const { video: musicVideo } = useMusicVideo(currentTrack)
+  const showMusicVideo = useMusicVideoView(s => s.show)
   const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
   const infoRef = useRef(null)
   const [infoHeight, setInfoHeight] = useState(0)
@@ -386,6 +390,16 @@ export default function RightSidebar() {
                       <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
                   )}
+                  <AnimatePresence initial={false}>
+                    {currentTrack && musicVideo && (
+                      <motion.div key="music-video" className="flex"
+                        initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+                        <button onClick={showMusicVideo} title="Play the official music video, in time with the song" className={fx ? btnFx : btnClassic}>
+                          <Clapperboard size={11} /> Music Video
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   {currentTrack && clipNow && (
                     <div className="flex">
                       <button

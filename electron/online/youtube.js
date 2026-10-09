@@ -815,6 +815,11 @@ const QUALITY_ARGS = {
   // direct file with audio in it (a small muxed video) rather than a manifest.
   best: ['-f', 'bestaudio[protocol=https]/bestaudio[protocol=http]/best[acodec!=none][protocol=https]', '-S', 'abr'],
   saver: ['-f', 'worstaudio[acodec=opus][protocol=https]/worstaudio[protocol=https]/worstaudio[protocol=http]/worst[acodec!=none][protocol=https]'],
+  // Music video check (musicVideo.js): AAC lines up better than low-rate Opus.
+  analysis: ['-f', 'bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/best[acodec!=none][protocol=https]'],
+  // Music videos (musicVideo.js): the picture alone, up to 1080p -- it plays
+  // muted under the song's own audio. H.264 first (hardware decoding), then VP9.
+  video: ['-f', 'bestvideo[height<=1080][vcodec^=avc1][protocol=https]/bestvideo[height<=1080][vcodec^=vp09][protocol=https]/bestvideo[height<=1080][protocol=https]/best[height<=1080][protocol=https]'],
 }
 
 function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
@@ -863,6 +868,10 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best' }) {
         return
       }
       const ext = info.ext || ''
+      if (quality === 'video') {
+        resolve({ format: [info.vcodec, info.height ? `${info.height}p` : null].filter(Boolean).join(' ') || null, url: info.url, headers: info.http_headers || {}, mime: ext === 'webm' ? 'video/webm' : 'video/mp4', expiresAt: expiryOf(info.url) })
+        return
+      }
       resolve({
         format: [info.acodec, info.abr ? `${Math.round(info.abr)} kbps` : null].filter(Boolean).join(' ') || null,
         url: info.url,
@@ -907,12 +916,12 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
  * Fetch (a range of) the audio for a video. A refused URL (expired, or tied
  * to another address) is looked up again once.
  */
-async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, fetchImpl = fetch } = {}) {
+async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, quality, signal, fetchImpl = fetch } = {}) {
   const attempt = async (force) => {
-    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force })
+    const stream = await resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser, force, quality })
     const headers = { ...stream.headers }
     if (range) headers.Range = range
-    return { stream, res: await fetchImpl(stream.url, { headers }) }
+    return { stream, res: await fetchImpl(stream.url, { headers, signal }) }
   }
   let { stream, res } = await attempt(false)
   if (res.status === 403 || res.status === 410) {
@@ -929,7 +938,7 @@ function videoIdFromUrl(url) {
 }
 
 module.exports = {
-  searchSongs, spellCheck, parseSearch, parseItem, parseDuration,
+  searchSongs, innertubeSearch, spellCheck, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
   resolveStream, fetchStream, streamError, videoIdFromUrl,

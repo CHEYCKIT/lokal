@@ -1,0 +1,475 @@
+// Official music videos for songs, Apple Music style: found on YouTube Music,
+// then checked against the song itself so the wrong video never shows.
+//
+//   1. search: YouTube Music's Videos tab; only official music videos (OMV)
+//      whose title and artist are the song's, and none of the other versions
+//      (live, lyric video, remix, cover...);
+//   2. check: with ffmpeg, the song's audio is lined up against the video's
+//      (onset envelopes, correlated window by window). That finds where the
+//      song sits in the video -- an intro, a skit in the middle -- as a map
+//      from song time to video time, and rejects a video whose audio isn't
+//      the song. Without ffmpeg only videos as long as the song are used,
+//      played from the start.
+//
+// The video plays muted, following the song's own audio (see
+// src/musicVideo.js), so lossless files, EQ and crossfade are untouched.
+
+const { spawn } = require('child_process')
+const fs = require('fs')
+const path = require('path')
+const yt = require('./youtube')
+
+// YouTube Music's "Videos" filter.
+const VIDEOS_PARAMS = 'EgWKAQIQAWoMEA4QChADEAQQCRAF'
+const RATE = 8000 // Hz, mono: plenty for onsets
+const HOP = 160 // samples per frame: 50 frames a second
+const FPS = RATE / HOP
+const WINDOW_S = 12
+const STEP_S = 8
+// A window's match counts from this correlation; the song is in the video when
+// most windows match and well on average.
+const COARSE_CORRELATION = 0.2
+const COARSE_CANDIDATES = 12
+const CANDIDATE_CORRELATION = 0.2
+const NO_MATCH_SCORE = 0.25
+const OFFSET_CHANGE_COST = 0.3
+const SAME_OFFSET_S = 0.1
+const MIN_COVERAGE = 0.5
+const MIN_MEAN_CORRELATION = 0.38
+// The video may start a little before the song (cut-in) and run longer
+// (intros, skits, end scenes) by this much.
+const LEAD_S = 4
+const MAX_EXTRA_S = 240
+const SAME_LENGTH_S = 3
+const DECODE_TIMEOUT_MS = 120000
+const FOUND_TTL_MS = 60 * 24 * 60 * 60 * 1000
+const MISSING_TTL_MS = 3 * 24 * 60 * 60 * 1000
+
+// Words in a video's title that mean it isn't the recording itself, unless the
+// song's own title has them too.
+const OTHER_VERSION = ['live', 'lyric', 'lyrics', 'visualizer', 'visualiser', 'audio', 'cover', 'remix', 'sped', 'slowed', 'reverb', 'karaoke',
+  'instrumental', 'teaser', 'trailer', 'behind', 'making', 'reaction', 'acoustic', '8d', 'nightcore', 'boosted', 'extended', 'piano',
+  'tutorial', 'practice', 'performance', 'session', 'concert', 'tour', 'rehearsal', 'shorts', 'loop', 'hour', 'mashup', 'parody']
+// Tags around the title that don't change what it is.
+const NOISE_TAG = /[([](?:[^)\]]*\b(?:official|video|hd|hq|4k|remaster(?:ed)?|explicit|clean|uncensored|mv|m\/v|music video)\b[^)\]]*)[)\]]/gi
+const FEAT = /[([]?\s*\b(?:feat\.?|ft\.?|featuring)\s+[^)\]]*[)\]]?/gi
+
+/** Lowercase words only: no accents, punctuation or "&". */
+function clean(text) {
+  return String(text || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/&/g, ' and ').replace(/[^a-z0-9\u00c0-\uffff]+/g, ' ').trim()
+}
+
+/** The title without "(Official Video)", "[4K]", "feat. X". */
+function baseTitle(title) {
+  return clean(String(title || '').replace(NOISE_TAG, ' ').replace(FEAT, ' '))
+}
+
+/** Each artist of "A, B & C feat. D", cleaned. */
+function artistNames(artist) {
+  return String(artist || '').split(/\s*(?:,|;|\/|&|\bx\b|\bfeat\.?|\bft\.?|\bfeaturing|\band\b)\s*/i)
+    .map(name => clean(name).replace(/\s*(?:vevo|official|topic)$/, '').trim()).filter(Boolean)
+}
+
+/** Whether a search result is the song's own official music video. */
+function isMusicVideoFor(track, item, { requireOfficial = true } = {}) {
+  if (!item?.videoId || item.kind === 'song' || (requireOfficial && !item.official)) return false
+  const songNames = artistNames(track.artist)
+  const videoNames = artistNames((item.artists || []).join(', ') || item.artist)
+  if (!songNames.length || !videoNames.some(name => songNames.includes(name))) return false
+  // "Artist - Title (Official Video)" or just "Title (Official Video)".
+  let title = String(item.title || '')
+  const dash = title.match(/^(.+?)\s+[-–—]\s+(.+)$/)
+  if (dash && artistNames(dash[1]).some(name => songNames.includes(name))) title = dash[2]
+  const wanted = baseTitle(track.title)
+  if (!wanted || baseTitle(title) !== wanted) return false
+  const songWords = new Set(clean(track.title).split(' '))
+  if (clean(item.title).split(' ').some(word => OTHER_VERSION.includes(word) && !songWords.has(word))) return false
+  const duration = Number(item.duration)
+  const length = Number(track.duration)
+  if (!(duration > 0) || !(length > 0)) return false
+  return duration >= length - LEAD_S && duration <= length + MAX_EXTRA_S
+}
+
+async function searchVideos(query, fetchImpl = fetch) {
+  return yt.innertubeSearch(query, VIDEOS_PARAMS, fetchImpl)
+}
+
+// ------------------------------------------------------------ audio check
+
+const FFT_SIZE = 256
+const BANDS = 8
+const HANN = Float64Array.from({ length: FFT_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / FFT_SIZE))
+// Log-spaced bands, 100 Hz to 3.8 kHz, as FFT bins.
+const BAND_EDGES = Array.from({ length: BANDS + 1 }, (_, i) => Math.round(FFT_SIZE / RATE * 100 * (3800 / 100) ** (i / BANDS)))
+
+function fft(re, im) {
+  const n = re.length
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1
+    for (; j & bit; bit >>= 1) j ^= bit
+    j ^= bit
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]] }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1
+    const angle = -2 * Math.PI / len
+    for (let k = 0; k < half; k++) {
+      const c = Math.cos(angle * k)
+      const sn = Math.sin(angle * k)
+      for (let i = k; i < n; i += len) {
+        const xr = re[i + half] * c - im[i + half] * sn
+        const xi = re[i + half] * sn + im[i + half] * c
+        re[i + half] = re[i] - xr
+        im[i + half] = im[i] - xi
+        re[i] += xr
+        im[i] += xi
+      }
+    }
+  }
+}
+
+/**
+ * Onsets per frame: how much louder each band got since the last frame
+ * (`bands`), and all bands together (`env`). Two encodes of the same master
+ * line up on these through a different codec or mix level; the bands tell a
+ * chorus from its repeat far better than loudness alone.
+ */
+function audioFeatures(samples, { hop = HOP } = {}) {
+  const frames = samples.length >= FFT_SIZE ? Math.floor((samples.length - FFT_SIZE) / hop) + 1 : 0
+  const bands = Array.from({ length: BANDS }, () => new Float32Array(frames))
+  const env = new Float32Array(frames)
+  const re = new Float64Array(FFT_SIZE)
+  const im = new Float64Array(FFT_SIZE)
+  const prev = new Float64Array(BANDS)
+  for (let f = 0; f < frames; f++) {
+    for (let i = 0; i < FFT_SIZE; i++) { re[i] = samples[f * hop + i] * HANN[i]; im[i] = 0 }
+    fft(re, im)
+    for (let b = 0; b < BANDS; b++) {
+      let energy = 0
+      for (let k = BAND_EDGES[b], end = Math.max(BAND_EDGES[b + 1], k + 1); k < end; k++) energy += re[k] * re[k] + im[k] * im[k]
+      const level = Math.log10(1e-9 + energy)
+      const flux = f ? Math.max(0, level - prev[b]) : 0
+      prev[b] = level
+      bands[b][f] = flux
+      env[f] += flux
+    }
+  }
+  return { env, bands }
+}
+
+/** Pearson correlation of song bands [s, s + win) with video bands [p, p + win), all bands at once. */
+function bandCorrelation(song, s, video, p, win) {
+  let num = 0
+  let da = 0
+  let db = 0
+  for (let b = 0; b < song.length; b++) {
+    const x = song[b]
+    const y = video[b]
+    let mx = 0
+    let my = 0
+    for (let i = 0; i < win; i++) { mx += x[s + i]; my += y[p + i] }
+    mx /= win
+    my /= win
+    for (let i = 0; i < win; i++) {
+      const u = x[s + i] - mx
+      const v = y[p + i] - my
+      num += u * v
+      da += u * u
+      db += v * v
+    }
+  }
+  return da > 0 && db > 0 ? num / Math.sqrt(da * db) : 0
+}
+
+/** Pearson correlation of `a` (mean/norm given) with b[p, p + a.length). */
+function correlate(a, aMean, aNorm, b, p, sums, squares) {
+  const n = a.length
+  const bSum = sums[p + n] - sums[p]
+  const bMean = bSum / n
+  const bVar = squares[p + n] - squares[p] - bSum * bMean
+  if (bVar <= 1e-9) return 0
+  let dot = 0
+  for (let i = 0; i < n; i++) dot += (a[i] - aMean) * b[p + i]
+  return dot / (aNorm * Math.sqrt(bVar))
+}
+
+/**
+ * Where the song's audio sits in the video's: [{ start, end, offset }] in
+ * seconds (video time = song time + offset from `start` to `end`), or null
+ * when too little of the song is found in the video.
+ *
+ * Each window of the song keeps its few best matches in the video; the path
+ * through them that changes offset the least wins (Viterbi). So a chorus that
+ * also matches its repeat elsewhere doesn't pull the video off, while a real
+ * skit or cut still moves it.
+ */
+function alignAudio(songFeatures, videoFeatures, options = {}) {
+  const { windows, path } = matchAudio(songFeatures, videoFeatures, options)
+  if (!windows.length) return null
+  const groups = forwardGroups(path.filter(Boolean))
+  const matched = groups.flatMap(g => g.items)
+  if (matched.length / windows.length < MIN_COVERAGE) return null
+  if (matched.reduce((n, m) => n + m.corr, 0) / matched.length < MIN_MEAN_CORRELATION) return null
+  return groups.map((g, index) => ({
+    start: index ? g.items[0].start : 0,
+    end: index < groups.length - 1 ? groups[index + 1].items[0].start : null,
+    offset: Math.round(g.offset * 1000) / 1000,
+  }))
+}
+
+/**
+ * The matched windows as runs at one offset, keeping the runs that play the
+ * video forward (an offset can grow -- an intro, a skit -- but a video doesn't
+ * jump back to replay the song) with the most correlation between them. A
+ * lone window off on its own is a chorus matching its repeat: dropped.
+ */
+function forwardGroups(matched) {
+  const runs = []
+  for (const m of matched) {
+    const last = runs[runs.length - 1]
+    if (last && Math.abs(m.offset - last.offset) <= SAME_OFFSET_S) { last.items.push(m); last.offset = median(last.items.map(x => x.offset)); continue }
+    runs.push({ offset: m.offset, items: [m] })
+  }
+  const kept = runs.length > 1 ? runs.filter(r => r.items.length > 1) : runs
+  const weight = kept.map(r => r.items.reduce((n, m) => n + m.corr, 0))
+  const best = weight.slice()
+  const from = kept.map(() => -1)
+  for (let i = 0; i < kept.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (kept[i].offset >= kept[j].offset - SAME_OFFSET_S && best[j] + weight[i] > best[i]) { best[i] = best[j] + weight[i]; from[i] = j }
+    }
+  }
+  const chosen = []
+  for (let i = best.indexOf(Math.max(...best)); i >= 0; i = from[i]) chosen.unshift(kept[i])
+  // Runs at the same offset either side of a dropped one are one segment.
+  const groups = []
+  for (const r of chosen) {
+    const last = groups[groups.length - 1]
+    if (last && Math.abs(r.offset - last.offset) <= SAME_OFFSET_S) { last.items.push(...r.items); last.offset = median(last.items.map(x => x.offset)) }
+    else groups.push({ offset: r.offset, items: [...r.items] })
+  }
+  return groups
+}
+
+/** Each audible window of the song with its best matches in the video, and the chosen path through them. */
+function matchAudio(songFeatures, videoFeatures, { fps = FPS, windowS = WINDOW_S, stepS = STEP_S, leadS = LEAD_S, maxExtraS = MAX_EXTRA_S } = {}) {
+  const song = songFeatures.env
+  const video = videoFeatures.env
+  const win = Math.round(windowS * fps)
+  const step = Math.round(stepS * fps)
+  if (song.length < win || video.length < win) return { windows: [], path: [] }
+  const sums = new Float64Array(video.length + 1)
+  const squares = new Float64Array(video.length + 1)
+  for (let i = 0; i < video.length; i++) { sums[i + 1] = sums[i] + video[i]; squares[i + 1] = squares[i] + video[i] * video[i] }
+  const lead = Math.round(leadS * fps)
+  const extra = Math.round(maxExtraS * fps)
+  const apart = Math.round(0.5 * fps)
+  const windows = []
+  for (let s = 0; s + win <= song.length; s += step) {
+    const a = song.subarray(s, s + win)
+    let mean = 0
+    for (let i = 0; i < win; i++) mean += a[i]
+    mean /= win
+    let norm = 0
+    for (let i = 0; i < win; i++) norm += (a[i] - mean) ** 2
+    if (norm < 1e-4) continue // silence: nothing to line up
+    norm = Math.sqrt(norm)
+    const from = Math.max(0, s - lead)
+    const to = Math.min(video.length - win, s + extra)
+    if (to < from) { windows.push({ start: s / fps, candidates: [] }); continue }
+    const scores = new Float32Array(to - from + 1)
+    for (let p = from; p <= to; p++) scores[p - from] = correlate(a, mean, norm, video, p, sums, squares)
+    // Loudness finds the likely places; the bands pick the right one.
+    const candidates = peaks(scores, apart, COARSE_CANDIDATES).map(i => {
+      const at = from + i
+      const fine = [-1, 0, 1].map(d => (at + d >= 0 && at + d + win <= video.length ? bandCorrelation(songFeatures.bands, s, videoFeatures.bands, at + d, win) : -1))
+      return { offset: (at + subFrame(fine, 1) - s) / fps, corr: fine[1] }
+    }).filter(c => c.corr >= CANDIDATE_CORRELATION).sort((x, y) => y.corr - x.corr).slice(0, 5)
+    windows.push({ start: s / fps, candidates })
+  }
+  return { windows, path: windows.length ? bestPath(windows) : [] }
+}
+
+/** The best few local maxima of `scores` (indices), at least `apart` from each other. */
+function peaks(scores, apart, count) {
+  const found = []
+  for (let i = 0; i < scores.length; i++) {
+    const v = scores[i]
+    if (v < COARSE_CORRELATION || v < (scores[i - 1] ?? -1) || v < (scores[i + 1] ?? -1)) continue
+    const near = found.findIndex(j => Math.abs(j - i) <= apart)
+    if (near >= 0) { if (v > scores[found[near]]) found[near] = i; continue }
+    found.push(i)
+  }
+  return found.sort((x, y) => scores[y] - scores[x]).slice(0, count)
+}
+
+/** Where the peak at `i` really is, between frames (a parabola through its neighbours). */
+function subFrame(scores, i) {
+  const y0 = scores[i - 1] ?? scores[i]
+  const y1 = scores[i]
+  const y2 = scores[i + 1] ?? scores[i]
+  const curve = y0 - 2 * y1 + y2
+  return curve < 0 ? Math.max(-0.5, Math.min(0.5, (y0 - y2) / (2 * curve))) : 0
+}
+
+/** One candidate (or none) per window: the most correlation for the fewest offset changes. */
+function bestPath(windows) {
+  let prev = null
+  const back = []
+  for (const w of windows) {
+    const states = [null, ...w.candidates]
+    const score = states.map(state => (state ? state.corr : NO_MATCH_SCORE))
+    const from = states.map(() => -1)
+    if (prev) {
+      for (let i = 0; i < states.length; i++) {
+        let best = -Infinity
+        for (let j = 0; j < prev.states.length; j++) {
+          const a = prev.states[j]
+          const b = states[i]
+          const change = a && b && Math.abs(a.offset - b.offset) > SAME_OFFSET_S ? OFFSET_CHANGE_COST : 0
+          const value = prev.score[j] - change
+          if (value > best) { best = value; from[i] = j }
+        }
+        score[i] += best
+      }
+    }
+    back.push(from)
+    prev = { states, score }
+  }
+  let at = prev.score.indexOf(Math.max(...prev.score))
+  const path = []
+  for (let k = windows.length - 1; k >= 0; k--) {
+    const state = [null, ...windows[k].candidates][at]
+    path.unshift(state && { start: windows[k].start, ...state })
+    at = back[k][at]
+  }
+  return path
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)]
+}
+
+/** Mono 8 kHz samples of a file or URL, through ffmpeg. */
+function decodeMono(ffmpeg, input, { headers = {}, seconds = 900 } = {}) {
+  return new Promise((resolve, reject) => {
+    const headerText = Object.entries(headers || {}).map(([k, v]) => `${k}: ${v}\r\n`).join('')
+    const args = ['-v', 'error', '-nostdin', ...(headerText && /^https?:/.test(input) ? ['-headers', headerText] : []),
+      '-i', input, '-t', String(seconds), '-vn', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', 'pipe:1']
+    let proc
+    try { proc = spawn(ffmpeg, args, { windowsHide: true }) } catch (e) { reject(e); return }
+    const chunks = []
+    let err = ''
+    const timer = setTimeout(() => { try { proc.kill() } catch {} reject(new Error('ffmpeg took too long')) }, DECODE_TIMEOUT_MS)
+    proc.stdout.on('data', d => chunks.push(d))
+    proc.stderr.on('data', d => { err += d })
+    proc.on('error', e => { clearTimeout(timer); reject(e) })
+    proc.on('close', code => {
+      clearTimeout(timer)
+      const data = Buffer.concat(chunks)
+      if (code !== 0 && !data.length) { reject(new Error(err.trim().split('\n').pop() || `ffmpeg exited with ${code}`)); return }
+      const copy = new Uint8Array(data.length - (data.length % 4))
+      copy.set(data.subarray(0, copy.length))
+      resolve(new Float32Array(copy.buffer))
+    })
+  })
+}
+
+// ------------------------------------------------------------------ lookup
+
+function readCache(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) || {} } catch { return {} }
+}
+
+function writeCache(file, cache) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const entries = Object.entries(cache).sort((a, b) => b[1].at - a[1].at).slice(0, 2000)
+    fs.writeFileSync(file, JSON.stringify(Object.fromEntries(entries)))
+  } catch {}
+}
+
+function cacheKey(track) {
+  return [track.id, clean(track.title), clean(track.artist), Math.round(Number(track.duration) || 0)].join('|')
+}
+
+const pending = new Map()
+
+/**
+ * The music video for a track: { videoId, title, artist, duration, thumbnail,
+ * segments, check: 'audio' | 'length' }, or null. `songAudio(attempt)` and
+ * `videoAudio(videoId, attempt)` say where ffmpeg reads each from:
+ * { input, headers } (a file or a URL); a second attempt gets a fresh URL.
+ */
+async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now } = {}) {
+  if (!track?.title || !track?.artist || !(Number(track.duration) > 30)) return null
+  const key = cacheKey(track)
+  const cache = cacheFile ? readCache(cacheFile) : {}
+  const hit = cache[key]
+  if (hit && now() - hit.at < (hit.video ? FOUND_TTL_MS : MISSING_TTL_MS)) return hit.video
+  if (pending.has(key)) return pending.get(key)
+  const job = (async () => {
+    const results = await searchVideos(`${track.artist} ${track.title}`, fetchImpl)
+    const candidates = results.filter(item => isMusicVideoFor(track, item))
+      .sort((a, b) => Math.abs(a.duration - track.duration) - Math.abs(b.duration - track.duration)).slice(0, 3)
+    let songEnv = null
+    let video = null
+    let inconclusive = false
+    for (const item of candidates) {
+      const sameLength = Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
+      if (ffmpeg && songAudio && videoAudio) {
+        try {
+          songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))
+          const videoEnv = audioFeatures(await decodeFrom(ffmpeg, attempt => videoAudio(item.videoId, attempt)))
+          const segments = alignAudio(songEnv, videoEnv)
+          if (segments) { video = describe(item, segments, 'audio'); break }
+          continue // heard, and it isn't the song
+        } catch {
+          // Couldn't listen (offline, no stream): fall back to the length.
+          inconclusive = true
+        }
+      }
+      if (sameLength) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'length'); break }
+    }
+    if (cacheFile && (video || !inconclusive)) {
+      const fresh = readCache(cacheFile)
+      fresh[key] = { at: now(), video }
+      writeCache(cacheFile, fresh)
+    }
+    return video
+  })().finally(() => pending.delete(key))
+  pending.set(key, job)
+  return job
+}
+
+/** Decoded audio from `source(attempt)`, trying a fresh source once (stream URLs can be refused). */
+async function decodeFrom(ffmpeg, source) {
+  let error = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const from = await source(attempt)
+      if (!from) throw new Error('No audio to check against')
+      return await decodeMono(ffmpeg, from.input, { headers: from.headers })
+    } catch (e) {
+      error = e
+    }
+  }
+  throw error
+}
+
+function describe(item, segments, check) {
+  return { videoId: item.videoId, title: item.title, artist: item.artist, duration: item.duration, thumbnail: item.thumbnail || null, segments, check }
+}
+
+/** Video time for a song time (seconds), from the segments; null where the video has no such moment. */
+function videoTimeFor(segments, time) {
+  const segment = (segments || []).find(s => time >= s.start && (s.end == null || time < s.end))
+  return segment ? time + segment.offset : null
+}
+
+module.exports = {
+  findMusicVideo, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
+  VIDEOS_PARAMS, FPS,
+}

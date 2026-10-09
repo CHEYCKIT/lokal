@@ -9,6 +9,7 @@ import TitleBar from './components/TitleBar'
 import { usePageWidth } from './pageWidth'
 import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
+import MusicVideoPlayer from './components/MusicVideoPlayer'
 import QueuePanel from './components/QueuePanel'
 import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
@@ -2325,6 +2326,7 @@ export default function App() {
             <PlayerBar />
             {/* Also full-screen lyrics: one overlay, two layouts. */}
             <FullscreenPlayer />
+            <MusicVideoPlayer />
             <AuthModal />
             <ProfileModal />
             <AddToPlaylistModal />

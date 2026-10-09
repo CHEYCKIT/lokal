@@ -386,6 +386,10 @@ export const api = {
   motionCover: (trackId) => isE()
     ? el().motionCover(trackId).then(r => (r?.file ? { ...r, src: `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}` } : null))
     : apiFetch(`/artwork-fx/motion/${encodeURIComponent(trackId)}`).then(r => (r?.src ? r : null)),
+  // The official music video of a track (desktop only): { src, segments, ... } or null.
+  musicVideo: (trackId) => isE() && el().musicVideo
+    ? el().musicVideo(trackId).then(r => (r?.videoId ? { ...r, src: `lokal-stream://ytv/${r.videoId}` } : null))
+    : Promise.resolve(null),
   playableFile: (fp) => isE() ? el().playableFile(fp) : Promise.resolve(null),
   soulseekStatus: () => isE() ? el().soulseekStatus() : apiFetch('/download/soulseek/status'),
   soulseekSearch: (text) => isE() ? el().soulseekSearch(text) : apiFetch('/download/soulseek/search', { method:'POST', body:{ text } }),
