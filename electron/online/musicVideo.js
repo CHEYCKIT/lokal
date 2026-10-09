@@ -1,9 +1,9 @@
 // Official music videos for songs, Apple Music style: found on YouTube Music,
 // then checked against the song itself so the wrong video never shows.
 //
-//   1. search: YouTube Music's Videos tab; only official music videos (OMV)
-//      whose title and artist are the song's, and none of the other versions
-//      (live, lyric video, remix, cover...);
+//   1. discovery: curated TheAudioDB links, YouTube Music's Videos tab and
+//      broad YouTube searches, all narrowed to official music videos whose
+//      title and artist are the song's;
 //   2. check: with ffmpeg, the song's audio is lined up against the video's
 //      (onset envelopes, correlated window by window). That finds where the
 //      song sits in the video -- an intro, a skit in the middle -- as a map
@@ -18,8 +18,9 @@ const { spawn } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const yt = require('./youtube')
+const audioDb = require('../theAudioDb')
 
-// YouTube Music's "Videos" filter.
+// YouTube Music's "Videos" filter, retained as one discovery source.
 const VIDEOS_PARAMS = 'EgWKAQIQAWoMEA4QChADEAQQCRAF'
 const RATE = 8000 // Hz, mono: plenty for onsets
 const HOP = 160 // samples per frame: 50 frames a second
@@ -71,20 +72,27 @@ function artistNames(artist) {
     .map(name => clean(name).replace(/\s*(?:vevo|official|topic)$/, '').trim()).filter(Boolean)
 }
 
+function sameArtist(a, b) {
+  if (a === b) return true
+  const withoutArticle = value => value.replace(/^the\s+/, '')
+  return withoutArticle(a) === withoutArticle(b)
+}
+
 /** Whether a search result is the song's own official music video. */
-function isMusicVideoFor(track, item, { requireOfficial = true } = {}) {
+function isMusicVideoFor(track, item, { requireOfficial = true, requireDuration = true } = {}) {
   if (!item?.videoId || item.kind === 'song' || (requireOfficial && !item.official)) return false
   const songNames = artistNames(track.artist)
   const videoNames = artistNames((item.artists || []).join(', ') || item.artist)
-  if (!songNames.length || !videoNames.some(name => songNames.includes(name))) return false
+  if (!songNames.length || !videoNames.some(name => songNames.some(wantedName => sameArtist(name, wantedName)))) return false
   // "Artist - Title (Official Video)" or just "Title (Official Video)".
   let title = String(item.title || '')
   const dash = title.match(/^(.+?)\s+[-–—]\s+(.+)$/)
-  if (dash && artistNames(dash[1]).some(name => songNames.includes(name))) title = dash[2]
+  if (dash && artistNames(dash[1]).some(name => songNames.some(wantedName => sameArtist(name, wantedName)))) title = dash[2]
   const wanted = baseTitle(track.title)
   if (!wanted || baseTitle(title) !== wanted) return false
   const songWords = new Set(clean(track.title).split(' '))
   if (clean(item.title).split(' ').some(word => OTHER_VERSION.includes(word) && !songWords.has(word))) return false
+  if (!requireDuration) return true
   const duration = Number(item.duration)
   const length = Number(track.duration)
   if (!(duration > 0) || !(length > 0)) return false
@@ -93,6 +101,62 @@ function isMusicVideoFor(track, item, { requireOfficial = true } = {}) {
 
 async function searchVideos(query, fetchImpl = fetch) {
   return yt.innertubeSearch(query, VIDEOS_PARAMS, fetchImpl)
+}
+
+const OFFICIAL_VIDEO = /\b(?:official(?:\s+music)?\s+video|official\s+mv|music\s+video)\b/i
+
+function markOfficial(item) {
+  const channel = item.channel || item.uploader || item.artist || ''
+  return {
+    ...item,
+    videoId: item.videoId || item.id,
+    artists: item.artists || (channel ? [channel] : []),
+    artist: item.artist || channel,
+    kind: item.kind || 'video',
+    official: !!item.official || /VEVO$/i.test(channel) || OFFICIAL_VIDEO.test(item.title || ''),
+  }
+}
+
+function databaseVideos(track, rows) {
+  return (rows || []).map(row => {
+    const videoId = yt.videoIdFromUrl(row?.strMusicVid)
+    if (!videoId) return null
+    return markOfficial({
+      videoId,
+      title: row.strTrack || track.title,
+      artist: row.strArtist || track.artist,
+      artists: [row.strArtist || track.artist],
+      duration: null,
+      thumbnail: row.strTrackThumb || null,
+      source: 'theaudiodb',
+      database: true,
+      official: true,
+    })
+  }).filter(Boolean)
+}
+
+/** Candidates from curated metadata and broad YouTube searches. */
+async function discoveredVideos(track, { fetchImpl = fetch, audioDbSearch = audioDb.searchTracks, youtubeSearch = null } = {}) {
+  const query = `${track.artist} ${track.title}`
+  const lookups = [
+    Promise.resolve().then(async () => databaseVideos(track, await audioDbSearch(track.artist, track.title))),
+    searchVideos(query, fetchImpl).then(items => items.map(markOfficial)),
+    yt.innertubeSearch(query, null, fetchImpl).then(items => items.map(markOfficial)),
+  ]
+  if (youtubeSearch) lookups.push(Promise.resolve(youtubeSearch(`${query} official music video`)).then(result => (result?.results || result || []).map(markOfficial)))
+  const results = await Promise.allSettled(lookups)
+  const seen = new Set()
+  const candidates = results.flatMap(result => result.status === 'fulfilled' ? result.value : []).filter(item => {
+    if (!item.videoId || seen.has(item.videoId)) return false
+    if (!isMusicVideoFor(track, item, { requireDuration: !item.database })) return false
+    seen.add(item.videoId)
+    return true
+  }).sort((a, b) => {
+    const source = item => item.source === 'theaudiodb' ? 0 : 1
+    const distance = item => Number.isFinite(Number(item.duration)) ? Math.abs(Number(item.duration) - Number(track.duration)) : Infinity
+    return source(a) - source(b) || distance(a) - distance(b)
+  })
+  return { candidates: candidates.slice(0, 8), inconclusive: results.some(result => result.status === 'rejected') }
 }
 
 // ------------------------------------------------------------ audio check
@@ -392,7 +456,7 @@ function writeCache(file, cache) {
 }
 
 function cacheKey(track) {
-  return [track.id, clean(track.title), clean(track.artist), Math.round(Number(track.duration) || 0)].join('|')
+  return ['v2', track.id, clean(track.title), clean(track.artist), Math.round(Number(track.duration) || 0)].join('|')
 }
 
 const pending = new Map()
@@ -403,7 +467,7 @@ const pending = new Map()
  * `videoAudio(videoId, attempt)` say where ffmpeg reads each from:
  * { input, headers } (a file or a URL); a second attempt gets a fresh URL.
  */
-async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now } = {}) {
+async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now, audioDbSearch = audioDb.searchTracks, youtubeSearch } = {}) {
   if (!track?.title || !track?.artist || !(Number(track.duration) > 30)) return null
   const key = cacheKey(track)
   const cache = cacheFile ? readCache(cacheFile) : {}
@@ -411,14 +475,13 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
   if (hit && now() - hit.at < (hit.video ? FOUND_TTL_MS : MISSING_TTL_MS)) return hit.video
   if (pending.has(key)) return pending.get(key)
   const job = (async () => {
-    const results = await searchVideos(`${track.artist} ${track.title}`, fetchImpl)
-    const candidates = results.filter(item => isMusicVideoFor(track, item))
-      .sort((a, b) => Math.abs(a.duration - track.duration) - Math.abs(b.duration - track.duration)).slice(0, 3)
+    const discovered = await discoveredVideos(track, { fetchImpl, audioDbSearch, youtubeSearch })
+    const candidates = discovered.candidates
     let songEnv = null
     let video = null
-    let inconclusive = false
+    let inconclusive = discovered.inconclusive
     for (const item of candidates) {
-      const sameLength = Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
+      const sameLength = !item.database && Math.abs(item.duration - track.duration) <= SAME_LENGTH_S
       if (ffmpeg && songAudio && videoAudio) {
         try {
           songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))
@@ -470,6 +533,6 @@ function videoTimeFor(segments, time) {
 }
 
 module.exports = {
-  findMusicVideo, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
+  findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
   VIDEOS_PARAMS, FPS,
 }

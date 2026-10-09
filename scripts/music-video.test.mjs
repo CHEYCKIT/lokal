@@ -6,7 +6,8 @@ import os from 'node:os'
 import path from 'node:path'
 
 const require = createRequire(import.meta.url)
-const { findMusicVideo, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { findMusicVideo, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, artistNames, audioFeatures, alignAudio, videoTimeFor, FPS } = require('../electron/online/musicVideo.js')
+const { runJsonSearch } = require('../electron/download/search.js')
 const { songAudioFor } = require('../electron/ipc/online.js')
 
 const track = { title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
@@ -81,38 +82,78 @@ test('rejects a video whose audio is another song', () => {
   assert.equal(alignAudio(audioFeatures(song(90, 3)), audioFeatures(song(100, 4))), null)
 })
 
+test('uses curated music-video links even when YouTube Music has no OMV result', async () => {
+  const track = { id: 'blinding-lights', title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
+  const rows = [{ strTrack: 'Blinding Lights', strArtist: 'The Weeknd', intDuration: '201000', strMusicVid: 'https://www.youtube.com/watch?v=4NRXx6U8ABQ' }]
+  const found = await discoveredVideos(track, {
+    audioDbSearch: async () => rows,
+    fetchImpl: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+  })
+  assert.deepEqual(found.candidates.map(item => item.videoId), ['4NRXx6U8ABQ'])
+  assert.equal(found.inconclusive, false)
+})
+
+test('normalizes artist articles in curated music-video metadata', () => {
+  const videos = databaseVideos(
+    { title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 },
+    [{ strTrack: "Let's Get It Started", strArtist: 'The Black Eyed Peas', intDuration: '225000', strMusicVid: 'https://www.youtube.com/watch?v=IKqV7DB8Iwg' }],
+  )
+  assert.equal(videos[0].videoId, 'IKqV7DB8Iwg')
+  assert.ok(isMusicVideoFor({ title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 }, videos[0], { requireDuration: false }))
+  assert.ok(isMusicVideoFor(
+    { title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 },
+    { ...videos[0], title: "The Black Eyed Peas - Let's Get It Started (Official Video)", duration: 225 },
+  ))
+})
+
+test('a rejected curated row does not hide a later valid result with the same video id', async () => {
+  const found = await discoveredVideos(
+    { title: "Let's Get It Started", artist: 'Black Eyed Peas', duration: 225 },
+    {
+      audioDbSearch: async () => [{ strTrack: 'Wrong Song', strArtist: 'Black Eyed Peas', strMusicVid: 'https://www.youtube.com/watch?v=IKqV7DB8Iwg' }],
+      fetchImpl: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+      youtubeSearch: async () => [{ videoId: 'IKqV7DB8Iwg', title: "The Black Eyed Peas - Let's Get It Started (Official Video)", artist: 'Black Eyed Peas', artists: ['Black Eyed Peas'], duration: 225, kind: 'video', official: true }],
+    },
+  )
+  assert.deepEqual(found.candidates.map(item => item.videoId), ['IKqV7DB8Iwg'])
+})
+
+test('yt-dlp discovery is bounded when the child stalls', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-ytdlp-'))
+  const script = path.join(directory, 'yt-dlp-stall.sh')
+  fs.writeFileSync(script, '#!/bin/sh\nsleep 1\n')
+  fs.chmodSync(script, 0o755)
+  try {
+    const started = Date.now()
+    const result = await runJsonSearch(script, 'song', () => null, 1, 10, undefined, { timeoutMs: 20 })
+    assert.equal(result.error, 'YouTube search timed out')
+    assert.ok(Date.now() - started < 500)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('does not cache a missing video when audio checking was inconclusive', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-music-video-'))
   const cacheFile = path.join(directory, 'music-videos.json')
   const track = { id: 'online-track', title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
-  const result = {
-    contents: [{ musicResponsiveListItemRenderer: {
-      navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk', watchEndpointMusicSupportedConfigs: { watchEndpointMusicConfig: { musicVideoType: 'MUSIC_VIDEO_TYPE_OMV' } } } },
-      flexColumns: [
-        { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: 'Blinding Lights (Official Video)' }] } } },
-        { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [
-          { text: 'The Weeknd', navigationEndpoint: { browseEndpoint: { browseId: 'UC1234567890', browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ARTIST' } } } } },
-          { text: ' • ' }, { text: '3:40' },
-        ] } } },
-      ],
-    } }],
-  }
   let searches = 0
   const fetchImpl = async url => String(url).endsWith('/')
     ? { ok: true, text: async () => '' }
-    : { ok: true, json: async () => { searches++; return result } }
+    : { ok: true, json: async () => { searches++; return {} } }
   const options = {
     ffmpeg: '/definitely/missing/ffmpeg',
     songAudio: async () => ({ input: 'song', headers: {} }),
     videoAudio: async () => ({ input: 'video', headers: {} }),
     fetchImpl,
+    audioDbSearch: async () => [{ strTrack: 'Blinding Lights', strArtist: 'The Weeknd', intDuration: '230000', strMusicVid: 'https://www.youtube.com/watch?v=abcdefghijk' }],
     cacheFile,
   }
   try {
     assert.equal(await findMusicVideo(track, options), null)
     assert.equal(fs.existsSync(cacheFile), false)
     assert.equal(await findMusicVideo(track, options), null)
-    assert.equal(searches, 2)
+    assert.equal(searches, 4)
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }
@@ -143,5 +184,12 @@ for (const track of [
     assert.equal(calls.length, 2)
     assert.equal(calls[0].options.force, false)
     assert.equal(calls[1].options.force, true)
+  })
+
+  test(`${track.file_path.split('://')[1].split('/')[0]} audio does not depend on yt-dlp`, () => {
+    assert.equal(typeof songAudioFor(track, false, {
+      options: { db: 'db' },
+      resolve: async () => ({ url: 'https://media.example.test/audio', headers: {} }),
+    }), 'function')
   })
 }
