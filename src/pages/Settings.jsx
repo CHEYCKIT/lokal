@@ -1314,7 +1314,7 @@ activeCategory === 'data' ? usersTried
           </div>
         </Row>
         {api.isElectron && (
-        <Row label="Index Music Videos" desc={`Finds and matches the official music video for every song in your library now, so they open at once later. ${indexText(videoIndexJob, 'videos')}`.trim()}>
+        <Row label="Index Music Videos" desc={`Finds the official music video for every song in your library now, so its video button appears straight away. Nothing is downloaded. ${indexText(videoIndexJob, 'videos')}`.trim()}>
           <button onClick={indexAllVideos}
             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
             {videoIndexJob?.running ? 'Stop' : 'Index All'}

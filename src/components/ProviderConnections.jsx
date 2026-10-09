@@ -145,7 +145,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
     setYoutubeSigningIn(true)
     setYoutubeState({ message: '', tone: 'muted' })
     try {
-      const result = await api.youtubeSignIn({ mode: 'embedded' })
+      const result = await api.youtubeSignIn({})
       await loadSettings(true)
       const verified = result?.authenticated === true && !result.error
       setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: verified ? 'success' : 'error' })

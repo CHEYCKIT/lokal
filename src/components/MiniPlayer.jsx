@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api, wordSyncEnabled } from '../api'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import { trackArtURL } from '../onlineTracks'
+import { useMusicVideo, songTime } from '../musicVideo'
+import { syncVideo } from '../musicVideoPlayback'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -26,6 +28,11 @@ export default function MiniPlayer({ windowed = false }) {
     toggleMiniPlayer, likedIds, setLiked
   })))
   const { user } = useAppStore()
+
+  const [videoMode, setVideoMode] = useState(false)
+  const { video: musicVideo, loading: videoLoading } = useMusicVideo(currentTrack, true, videoMode)
+  const showVideo = videoMode && !!musicVideo?.src && !musicVideo.error
+  const videoRef = useRef(null)
 
   const [lyricsLines, setLyricsLines] = useState([])
   const [lyricsType, setLyricsType] = useState(null)
@@ -211,6 +218,17 @@ export default function MiniPlayer({ windowed = false }) {
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => {
+    if (!showVideo) return undefined
+    const sync = () => syncVideo(videoRef.current, {
+      time: songTime(), segments: musicVideo.segments, duration: musicVideo.duration,
+      isPlaying: usePlayerStore.getState().isPlaying, hidden: document.hidden,
+    })
+    sync()
+    const id = setInterval(sync, 200)
+    return () => clearInterval(id)
+  }, [showVideo, musicVideo?.segments, musicVideo?.duration, isPlaying])
+
   const artSrc = trackArtURL(currentTrack)
 
   const handleScrub = (e) => {
@@ -265,14 +283,44 @@ export default function MiniPlayer({ windowed = false }) {
         </button>
       </div>
 
-      <div className={`flex items-center gap-3 ${windowed ? 'p-4' : 'p-3'}`}>
-        <div className={`${windowed ? 'w-20 h-20' : 'w-16 h-16'} rounded-lg overflow-hidden flex-shrink-0 bg-card`}>
-          {artSrc ? (
-            <img src={artSrc} alt="Artwork" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-subtle text-2xl">-</div>
-          )}
+      {showVideo && (
+        <div className={`group/video relative aspect-video bg-black overflow-hidden ${windowed ? 'mx-4 mt-4 rounded-lg' : 'mx-3 mt-3 rounded-md'}`}>
+          <video
+            key={musicVideo.videoId}
+            ref={videoRef}
+            src={musicVideo.src}
+            muted
+            playsInline
+            preload="auto"
+            disablePictureInPicture
+            className="w-full h-full object-contain"
+          />
+          <button
+            onClick={() => setVideoMode(false)}
+            title="Show artwork"
+            aria-label="Show artwork"
+            className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover/video:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <X size={14} />
+          </button>
         </div>
+      )}
+
+      <div className={`flex items-center gap-3 ${windowed ? 'p-4' : 'p-3'}`}>
+        {!showVideo && (
+          <div className={`${windowed ? 'w-20 h-20' : 'w-16 h-16'} relative rounded-lg overflow-hidden flex-shrink-0 bg-card`}>
+            {artSrc ? (
+              <img src={artSrc} alt="Artwork" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-subtle text-2xl">-</div>
+            )}
+            {videoMode && videoLoading && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/40" aria-label="Loading the music video">
+                <span className="w-5 h-5 rounded-full border-2 border-white/25 border-t-white/90 animate-spin" aria-hidden />
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <p className={`${windowed ? 'text-base' : 'text-sm'} font-medium truncate text-white`}>{currentTrack?.title || '-'}</p>
@@ -339,6 +387,17 @@ export default function MiniPlayer({ windowed = false }) {
           >
             <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
           </button>
+          {musicVideo && (
+            <button
+              onClick={() => setVideoMode(on => !on)}
+              title={videoMode ? 'Show artwork' : 'Show music video'}
+              aria-label={videoMode ? 'Show artwork' : 'Show music video'}
+              aria-pressed={videoMode}
+              className={`transition-colors p-2 ${videoMode ? 'text-accent' : 'text-muted hover:text-white'}`}
+            >
+              <Clapperboard size={16} />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

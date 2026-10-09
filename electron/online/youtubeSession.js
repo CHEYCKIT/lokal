@@ -104,7 +104,8 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     if (!result.authenticated) job.session.clearStorageData().catch(() => {})
     job.resolve(result)
   }
-  const signIn = ({ mode = 'embedded', onProgress = () => {}, verifyPollMs = 1500 } = {}) => {
+  // Electron can't show Windows Hello passkey prompts, so Windows and Linux sign in through a real Chromium browser.
+  const signIn = ({ mode = process.platform === 'darwin' ? 'embedded' : 'browser', onProgress = () => {}, verifyPollMs = 1500 } = {}) => {
     if (!['embedded', 'browser'].includes(mode)) return Promise.resolve({ authenticated: false, error: 'Unknown YouTube Music sign-in mode.' })
     if (loginJob) { loginJob.browser?.focus(); return loginJob.promise }
     getSession()

@@ -907,16 +907,53 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best', videoHe
   })
 }
 
-/** The audio URL for a video, from cache or yt-dlp (one lookup at a time per video). */
+const PLAYER_URL = 'https://music.youtube.com/youtubei/v1/player?prettyPrint=false'
+const IOS_USER_AGENT = 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)'
+const IOS_CLIENT = { clientName: 'IOS', clientVersion: '20.10.4', deviceModel: 'iPhone16,2', osName: 'iPhone', osVersion: '18.3.2.22D82', hl: 'en', gl: 'US' }
+const DIRECT_RESOLVE_TIMEOUT_MS = 8000
+
+/**
+ * Audio links from InnerTube's iOS player client: no signatures to solve and
+ * no cookies or JavaScript runtime, so it answers far faster than yt-dlp.
+ * Throws when the song has no direct audio here (yt-dlp is the fallback).
+ */
+async function directAudio(videoId, quality) {
+  const res = await fetch(PLAYER_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'user-agent': IOS_USER_AGENT },
+    body: JSON.stringify({ context: { client: IOS_CLIENT }, videoId, contentCheckOk: true, racyCheckOk: true }),
+    signal: AbortSignal.timeout(DIRECT_RESOLVE_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`InnerTube player returned ${res.status}`)
+  const json = await res.json()
+  const audio = (json.streamingData?.adaptiveFormats || []).filter(f => f.url && String(f.mimeType || '').startsWith('audio/'))
+  if (!audio.length) throw new Error('No direct audio formats')
+  const byBitrate = (a, b) => (a.bitrate || 0) - (b.bitrate || 0)
+  const sorted = [...audio].sort(byBitrate)
+  const format = quality === 'saver' ? sorted[0] : sorted.at(-1)
+  const codec = /codecs="([^"]+)"/.exec(format.mimeType)?.[1]
+  return {
+    format: [codec, format.bitrate ? `${Math.round(format.bitrate / 1000)} kbps` : null].filter(Boolean).join(' ') || null,
+    url: format.url,
+    headers: { 'user-agent': IOS_USER_AGENT },
+    mime: format.mimeType.split(';')[0],
+    expiresAt: expiryOf(format.url),
+  }
+}
+
+/** The audio URL for a video, from cache, InnerTube or yt-dlp (one lookup at a time per video). */
 async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
-  if (!ytdlp) throw new Error('yt-dlp is not installed. Install it from the Download page.')
   const q = QUALITY_ARGS[quality] ? quality : 'best'
   const key = `${videoId}\n${q}${q === 'video' && videoHeight ? `\n${videoHeight}` : ''}` // a quality change looks the stream up again
   const cached = streamCache.get(key)
   if (!force && cached && cached.expiresAt > Date.now()) return cached
   if (!force && resolving.has(key)) return resolving.get(key)
   const job = (async () => {
+    if (q === 'best' || q === 'saver') {
+      try { return await directAudio(videoId, q) } catch {}
+    }
+    if (!ytdlp) throw new Error('yt-dlp is not installed. Install it from the Download page.')
     try {
       return await runResolve(videoId, { ytdlp, cookieArgs, quality: q, videoHeight })
     } catch (e) {

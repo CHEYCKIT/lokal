@@ -88,7 +88,7 @@ function registerOnlineHandlers(ipcMain) {
   // A misspelt search ("micheal jackson"): the library's spelling, else YouTube Music's.
   ipcMain.handle('online:spelling', (_, query) => spelling(getDB(), query))
   ipcMain.handle('online:artwork', (_, items) => discoveryArtwork(items))
-  ipcMain.handle('online:signIn', (event, options) => accountSession.signIn({ mode: options?.mode || 'embedded', onProgress: status => { if (!event.sender.isDestroyed()) event.sender.send('online:signInStatus', status) } }))
+  ipcMain.handle('online:signIn', (event, options) => accountSession.signIn({ mode: options?.mode, onProgress: status => { if (!event.sender.isDestroyed()) event.sender.send('online:signInStatus', status) } }))
   ipcMain.handle('online:cancelSignIn', () => accountSession.cancelSignIn())
   ipcMain.handle('online:disconnect', () => accountSession.disconnect())
   ipcMain.handle('online:catalogue', (_, options) => accountRequest(({ cookies, fetchImpl }) => youtube.fetchCatalogue(options, cookies, fetchImpl)).catch(e => ({ error: e.message })))
@@ -153,7 +153,7 @@ function registerOnlineHandlers(ipcMain) {
       for (const row of rows) {
         if (job.cancelled) break
         send({ running: true, done, total: rows.length, found, title: `${row.artist} — ${row.title}` })
-        const video = await prepareMusicVideoFor(row.id, { wait: true }).catch(() => null)
+        const video = await musicVideoFor(row.id).catch(() => null)
         if (video) found++
         done++
       }

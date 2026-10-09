@@ -139,7 +139,17 @@ jobs:
           echo "Building nightly version $(node -p "require('./package.json').version")"
 
       - name: Build Application
-        run: npm run build -- --publish never
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          mac_args=()
+          if [ "$RUNNER_OS" = "macOS" ] && [ -z "$CSC_LINK" ]; then mac_args+=("-c.mac.identity=-"); fi
+          npm run build -- --publish never "${mac_args[@]}"
 
       - name: Rename release files for this runner
         shell: bash
