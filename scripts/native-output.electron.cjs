@@ -14,7 +14,7 @@ app.setPath('userData', path.join(temp, 'profile'))
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.on('window-all-closed', () => {})
 let window, server, recorder
-const timeout = setTimeout(() => { console.error('Native output smoke timed out'); cleanup(1) }, 45000)
+const timeout = setTimeout(() => { console.error('Native output smoke timed out'); cleanup(1) }, 60000)
 function cleanup(code) {
   clearTimeout(timeout)
   closeNativeOutput()
@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
   for (let i = 0; i < 100 && !await run('!!window.fixture'); i++) await wait(20)
   assert.ok(await run('!!window.fixture'), 'real module and worklet bridge must load')
   const chunks = []
-  recorder = spawn('parecord', ['--raw', '--format=float32le', '--rate=48000', '--channels=2', '--device=lokal_test.monitor'])
+  recorder = spawn('parecord', ['--raw', '--latency-msec=20', '--format=float32le', '--rate=48000', '--channels=2', '--device=lokal_test.monitor'])
   recorder.stdout.on('data', chunk => chunks.push(chunk))
   recorder.stderr.on('data', data => process.stderr.write(data))
   recorder.on('error', error => { throw error })
@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
     await wait(1200) // allow device buffers and monitor latency to settle
     chunks.length = 0
     await wait(500)
-    assert.equal(await run('fixture.bridge.status.mode'), native ? 'native' : 'auto', 'route must stay active throughout capture')
+    assert.equal(await run('fixture.bridge.status.mode'), native ? 'native' : await run('fixture.bridge.playing') ? 'auto' : 'idle', 'route must stay active throughout capture')
     const pcm = Buffer.concat(chunks)
     let sum = 0
     for (let i = 0; i + 4 <= pcm.length; i += 4) sum += pcm.readFloatLE(i) ** 2
@@ -85,7 +85,30 @@ app.whenReady().then(async () => {
     assert.ok(silent ? rms < .001 : rms > .02, `expected ${silent ? 'silence' : 'audio'}, RMS=${rms}`)
     return { result, rms }
   }
-  const float = await measure(`(async () => { await fixture.ctx.resume(); const s = await fixture.bridge.configure({ precision:'float32' }); await fixture.a.play(); return s })()`)
+  await run(`fixture.bridge.configure({ precision:'float32', exclusive:true })`)
+  assert.equal(await run('fixture.bridge.status.mode'), 'idle')
+  assert.equal(await run('fixture.ctx.state'), 'suspended')
+  const float = await measure(`(async () => { await fixture.bridge.configure({ precision:'float32' }); const s = await fixture.bridge.setPlaying(true); await fixture.a.play(); return s })()`)
+  // Block only the renderer's main thread: the worklet and main-process port
+  // must keep delivering PCM while UI scheduling is unavailable.
+  async function stallRenderer() {
+    chunks.length = 0
+    await run(`(() => { const until = performance.now() + 800; while (performance.now() < until) {} })()`)
+    const pcm = Buffer.concat(chunks)
+    let silentFrames = 0, longestSilence = 0
+    for (let i = 0; i + 8 <= pcm.length; i += 8) {
+      silentFrames = Math.abs(pcm.readFloatLE(i)) < .001 && Math.abs(pcm.readFloatLE(i + 4)) < .001 ? silentFrames + 1 : 0
+      longestSilence = Math.max(longestSilence, silentFrames)
+    }
+    assert.ok(pcm.length > 48000 * 8 * .5, 'capture covers renderer stall')
+    assert.ok(longestSilence < 4800, `renderer stall interrupted audio for ${longestSilence / 48} ms`)
+    console.log('Renderer stall max silence (ms):', longestSilence / 48)
+  }
+  await stallRenderer()
+  window.show(); window.minimize()
+  await measure('fixture.bridge.status')
+  await stallRenderer()
+  window.restore()
   assert.equal(float.result.precision, 'float32'); assert.equal(float.result.mode, 'native')
   const int = await measure(`fixture.bridge.configure({ precision:'pcm16' })`)
   assert.equal(int.result.precision, 'pcm16'); assert.equal(int.result.mode, 'native')
@@ -94,7 +117,11 @@ app.whenReady().then(async () => {
   assert.match(unavailableExclusive.result.warning, /Using shared output/)
   assert.equal(await run('fixture.ctx.sinkId.type'), 'none')
   await measure(`fixture.a.currentTime = 4`)
-  await measure(`fixture.a.pause()`, true)
+  await measure(`(async () => { fixture.a.pause(); await fixture.bridge.setPlaying(false) })()`, true, false)
+  assert.equal(await run('fixture.ctx.state'), 'suspended')
+  assert.equal(await run('fixture.bridge.session'), null)
+  assert.equal(await run('fixture.bridge.status.mode'), 'idle')
+  await run('fixture.bridge.setPlaying(true)')
   await measure(`(async () => { fixture.ga.gain.value=0; fixture.gb.gain.value=1; await fixture.b.play() })()`)
   const quiet = await measure(`fixture.gb.gain.value=.25`)
   assert.ok(quiet.rms < int.rms * .4, 'volume must survive native routing')
@@ -102,6 +129,6 @@ app.whenReady().then(async () => {
   const fallback = await measure(`fixture.bridge.configure({ precision:'float32', deviceName:'disconnected fixture device' })`, false, false)
   assert.equal(fallback.result.mode, 'auto'); assert.match(fallback.result.warning, /Using Auto/)
   await measure(`fixture.bridge.configure({ precision:'auto' })`, false, false)
-  console.log('Native output smoke passed: local + HTTP decode, float32 + PCM16, seek, pause, gain, EQ/mixing, device fallback and Auto; real captured PulseAudio output.')
+  console.log('Native output smoke passed: local + HTTP decode, float32 + PCM16, seek, pause, gain, EQ/mixing, device fallback and Auto; renderer stalls/minimize, idle release; real captured PulseAudio output.')
   cleanup(0)
 }).catch(error => { console.error(error); cleanup(1) })

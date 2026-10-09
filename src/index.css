@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.mjs";
 
 :root {
   --bg: #0a0a0a;
@@ -21,7 +20,6 @@
   --text-scale: 1;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   font-size: calc(16px * var(--text-scale, 1));
@@ -50,7 +48,7 @@ html[data-theme="light"] .text-white\/40 { color: rgb(var(--text-rgb) / 0.4) !im
 html[data-theme="light"] .text-white\/30 { color: rgb(var(--text-rgb) / 0.3) !important; }
 html[data-theme="light"] .text-white\/20 { color: rgb(var(--text-rgb) / 0.2) !important; }
 html[data-theme="light"] .text-white\/10 { color: rgb(var(--text-rgb) / 0.1) !important; }
-html[data-theme="light"] .hover\\:text-white:hover { color: var(--text) !important; }
+html[data-theme="light"] .hover\:text-white:hover { color: var(--text) !important; }
 
 html[data-theme="light"] [class*="bg-black"].text-white,
 html[data-theme="light"] [class*="bg-black"].text-white\/90,
@@ -100,6 +98,15 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
 }
 .wave-loader span:nth-child(2) { animation-delay: 0.15s; }
 .wave-loader span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes queue-loading-seekbar {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+.queue-loading-seekbar { animation: queue-loading-seekbar 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .queue-loading-seekbar { animation: none; width: 100%; opacity: 0.5; }
+}
 
 @keyframes wave-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -166,4 +173,14 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
 [data-row][data-live="1"] [data-u],
 [data-row][data-live="1"] [data-l] {
   will-change: transform;
+}
+
+/* Music video player (MusicVideoPlayer.jsx): the loading sheen over the cover and the little bars. */
+@keyframes mv-shimmer {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(400%); }
+}
+@keyframes mv-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
 }

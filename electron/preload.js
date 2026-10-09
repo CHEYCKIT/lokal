@@ -2,11 +2,19 @@ const { contextBridge, ipcRenderer } = require('electron')
 const invoke = (ch, ...a) => ipcRenderer.invoke(ch, ...a)
 const on = (ch, fn) => { ipcRenderer.on(ch, fn); return () => ipcRenderer.removeListener(ch, fn) }
 
+// Transfer the worklet's port once; PCM then travels straight to the main
+// process without scheduling a callback on the window's JavaScript thread.
+window.addEventListener('message', event => {
+  if (event.source !== window || event.data?.type !== 'lokal:audio-output-port' || event.ports.length !== 1) return
+  ipcRenderer.postMessage('audio-output:connect', null, [event.ports[0]])
+})
 
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   nativeAudio: {
+    directTransport: true,
     devices: () => invoke('audio-output:devices'),
+    diagnostics: () => invoke('audio-output:diagnostics'),
     open: options => invoke('audio-output:open', options),
     write: (session, samples) => invoke('audio-output:write', session, samples),
     flush: session => invoke('audio-output:flush', session),
@@ -181,6 +189,7 @@ contextBridge.exposeInMainWorld('electron', {
   cacheTrim: () => invoke('cache:trim'),
   cacheClear: () => invoke('cache:clear'),
   motionCover: (trackId) => invoke('artwork:motion', trackId),
+  musicVideo: (trackId) => invoke('musicVideo:find', trackId),
   spotifyCanvasCheck: () => invoke('artwork:spotifyCheck'),
   soulseekStatus: () => invoke('soulseek:status'),
   soulseekSearch: (text) => invoke('soulseek:search', text),

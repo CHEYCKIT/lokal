@@ -3,6 +3,7 @@ const fs = require('fs-extra')
 const http = require('http')
 const https = require('https')
 const { getStorageDir } = require('./db')
+const audioDb = require('../theAudioDb')
 
 const ARTIST_METADATA_TTL_MS = 1000 * 60 * 60 * 24 * 7
 const USER_AGENT = 'Lokal/1.9.0 (https://github.com/sipbuu/lokal)'
@@ -134,24 +135,13 @@ async function fetchMusicBrainzArtistMetadata(name) {
 // ---------------------------------------------------------------- TheAudioDB
 // Bios, artist photos (and fanart) for most well-known artists. The free
 // public key allows about 30 requests a minute, so calls are spaced out.
-const AUDIODB = 'https://www.theaudiodb.com/api/v1/json/123'
-const AUDIODB_GAP_MS = 2100
-let audioDbNextAt = 0
-
-async function audioDbGet(url) {
-  const wait = audioDbNextAt - Date.now()
-  audioDbNextAt = Math.max(Date.now(), audioDbNextAt) + AUDIODB_GAP_MS
-  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
-  return getJson(url)
-}
-
 const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
 
 async function searchAudioDbArtists(query) {
   const normalized = String(query || '').trim()
   if (!normalized) return []
   try {
-    const data = await audioDbGet(`${AUDIODB}/search.php?s=${encodeURIComponent(normalized)}`)
+    const data = await audioDb.get('search.php', { s: normalized })
     return Array.isArray(data?.artists) ? data.artists : []
   } catch {
     return []

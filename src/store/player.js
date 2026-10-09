@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { packQueue, unpackQueue, QUEUE_KEYS } from '../queueStorage.js'
 import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
+import { CROSSFADE_DEFAULTS } from '../audio/crossfade.js'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
@@ -167,7 +168,7 @@ function announceTrackUpdates(tracks) {
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
   playbackContext: null,
-  isPlaying: false, progress: 0, duration: 0,
+  isPlaying: false, isBuffering: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
@@ -192,7 +193,7 @@ export const usePlayerStore = create((set, get) => ({
   // localStorage-seeded default, so a slow response can never clobber a
   // selection the user already made while it was in flight.
   exclusiveSidePanelsUserSet: false,
-  audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, _fetchingRelated: false,
+  audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, crossfade: { ...CROSSFADE_DEFAULTS }, _fetchingRelated: false,
   activeAudioElement: 'primary',
   outputDeviceId: readOutputDevice(),
 
@@ -705,6 +706,7 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   setProgress: (v) => set({ progress: v }),
+  setIsBuffering: (v) => set({ isBuffering: !!v }),
   setProgressWithAudioUpdate: (v) => {
     const { audioRef, cfAudioRef, activeAudioElement } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
@@ -846,7 +848,9 @@ export const usePlayerStore = create((set, get) => ({
     return sidePanelModeTransition(s, value)
   }),
   setIsPlaying: (v) => set({ isPlaying: v }),
-  setCrossfade: (v) => set({ crossfadeSeconds: v }),
+  setCrossfade: (v) => set(s => ({ crossfadeSeconds: v, crossfade: { ...s.crossfade, beforeEnd: v } })),
+  // Options from the stored `crossfade_*` settings (see audio/crossfade.js).
+  setCrossfadeOptions: (crossfade) => set({ crossfade, crossfadeSeconds: crossfade.beforeEnd }),
 
   sleepTimerMinutes: 0,
   sleepTimerEndTime: null,

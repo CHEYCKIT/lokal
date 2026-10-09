@@ -1,6 +1,6 @@
 {
   "name": "lokal-music",
-  "version": "6.0.2",
+  "version": "6.1.1",
   "description": "Local-first music player built w/ Electron and React. Designed for people with large local music libraries who'd like a modern listening experience w/o the burdens of streaming subscriptions.",
   "author": "sipbuu <97703296+sipbuu@users.noreply.github.com>",
   "main": "electron/main.js",
@@ -55,7 +55,18 @@
       ],
       "fileAssociations": [
         {
-          "ext": ["mp3", "flac", "m4a", "ogg", "wav", "aac", "opus", "wma", "alac", "ape"],
+          "ext": [
+            "mp3",
+            "flac",
+            "m4a",
+            "ogg",
+            "wav",
+            "aac",
+            "opus",
+            "wma",
+            "alac",
+            "ape"
+          ],
           "name": "Audio File",
           "description": "Audio File",
           "role": "Viewer",
@@ -83,7 +94,7 @@
   },
   "dependencies": {
     "@puppeteer/browsers": "^3.2.3",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
@@ -94,16 +105,17 @@
     "electron-updater": "^6.8.9",
     "express": "^4.18.3",
     "fs-extra": "^11.3.3",
-    "multer": "^1.4.5-lts.1",
-    "music-metadata": "^7.14.0",
+    "music-metadata": "^12.0.0",
     "node-taglib-sharp": "^6.0.3",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
     "@electron/rebuild": "^4.2.0",
-    "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.17",
+    "@rolldown/plugin-babel": "^0.2.4",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.2",
     "babel-plugin-react-compiler": "^1.0.0",
     "concurrently": "^8.2.2",
     "electron": "^44.5.1",
@@ -111,16 +123,19 @@
     "framer-motion": "^11.0.8",
     "lucide-react": "^1.52.0",
     "node-gyp": "12.4.0",
-    "postcss": "^8.4.35",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^6.22.3",
-    "tailwindcss": "^3.4.1",
-    "vite": "^5.1.4",
+    "react-router-dom": "^7.18.4",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.4",
     "wait-on": "^7.2.0",
     "zustand": "^4.5.2"
   },
   "engines": {
     "node": ">=22.12.0"
+  },
+  "overrides": {
+    "qs": "^6.16.0",
+    "uuid": "^11.1.1"
   }
 }

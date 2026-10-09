@@ -48,20 +48,33 @@ function mapArtistResult(entry) {
 /**
  * @param track optional (proc) => proc, to register the process for shutdown
  */
-function runJsonSearch(ytdlp, searchTerm, mapper, page = 1, limit = 10, track = p => p) {
+function runJsonSearch(ytdlp, searchTerm, mapper, page = 1, limit = 10, track = p => p, { timeoutMs = 30000 } = {}) {
   const safePage = Math.max(1, parseInt(page, 10) || 1)
   const fetchCount = safePage * limit + 1
   const args = [`ytsearch${fetchCount}:${searchTerm}`, '--dump-json', '--flat-playlist', '--skip-download', '--quiet', '--no-warnings']
 
   return new Promise((resolve) => {
     let proc
+    let settled = false
+    let timer
+    const finish = result => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
     try { proc = track(spawn(ytdlp, args, { windowsHide: true })) } catch {
-      resolve({ error: 'Failed to run yt-dlp', results: [], page: safePage, hasMore: false })
+      finish({ error: 'Failed to run yt-dlp', results: [], page: safePage, hasMore: false })
       return
     }
+    timer = setTimeout(() => {
+      try { proc.kill() } catch {}
+      finish({ error: 'YouTube search timed out', results: [], page: safePage, hasMore: false })
+    }, timeoutMs)
     let stdout = ''
     proc.stdout.on('data', data => { stdout += data.toString() })
     proc.on('close', () => {
+      if (settled) return
       const mapped = []
       const seen = new Set()
       for (const line of stdout.trim().split(/\r?\n/).filter(Boolean)) {
@@ -82,9 +95,9 @@ function runJsonSearch(ytdlp, searchTerm, mapper, page = 1, limit = 10, track = 
         .map((item, i) => ({ item, i }))
         .sort((a, b) => (Number(!!b.item.topic) - Number(!!a.item.topic)) || a.i - b.i)
         .map(x => x.item)
-      resolve({ results: pageItems, page: safePage, hasMore: mapped.length > end })
+      finish({ results: pageItems, page: safePage, hasMore: mapped.length > end })
     })
-    proc.on('error', () => resolve({ error: 'Failed to run yt-dlp', results: [], page: safePage, hasMore: false }))
+    proc.on('error', () => finish({ error: 'Failed to run yt-dlp', results: [], page: safePage, hasMore: false }))
   })
 }
 

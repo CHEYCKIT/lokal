@@ -115,12 +115,66 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:remove', (_, key) => sources.addons.remove(getDB(), key))
   ipcMain.handle('addons:setEnabled', (_, key, enabled) => sources.addons.setEnabled(getDB(), key, enabled))
   ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
+  ipcMain.handle('musicVideo:find', (_, trackId) => musicVideoFor(trackId).catch(() => null))
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
       if (provider === 'yt') await accountSession.credentials()
       const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
       return { ok: true, preview: !!stream.preview }
     } catch (e) { return { error: e.message } }
+  })
+}
+
+/** Where ffmpeg reads a YouTube video's audio from; a retry gets a fresh URL in another format. */
+async function youtubeAudio(videoId, attempt = 0) {
+  const stream = await youtube.resolveStream(videoId, { ...streamOptions(), quality: attempt ? 'saver' : 'analysis', force: attempt > 0 })
+  return { input: stream.url, headers: stream.headers }
+}
+
+/** Where ffmpeg reads a track's own audio from, for the music video check. */
+function resolvedSourceAudio(provider, id, { resolve = sources.resolveStream, options = streamOptions() } = {}) {
+  return async attempt => {
+    const stream = await resolve(provider, id, { ...options, force: attempt > 0 })
+    return { input: stream.url, headers: stream.headers }
+  }
+}
+
+function songAudioFor(track, canStream, options = {}) {
+  const file = String(track?.file_path || '')
+  const ref = sources.streamRef(track)
+  if (ref && (ref.provider !== 'yt' || canStream)) {
+    if (ref.provider === 'yt') return attempt => youtubeAudio(ref.id, attempt)
+    // SoundCloud and addon streams are resolved by the shared source layer so
+    // the music-video matcher receives the same fresh URL as playback.
+    return resolvedSourceAudio(ref.provider, ref.id, options)
+  }
+  if (file && !file.startsWith('ghost://') && require('fs').existsSync(file)) return async () => ({ input: file, headers: {} })
+  return null
+}
+
+/** The official music video for a track (see online/musicVideo.js), or null. */
+async function musicVideoFor(trackId) {
+  const track = getDB().prepare('SELECT id, title, artist, duration, file_path FROM tracks WHERE id = ?').get(trackId)
+  if (!track) return null
+  if (accountSession) await accountSession.credentials().catch(() => {})
+  const { findFfmpeg } = require('./tools')
+  const options = streamOptions()
+  const canStream = !!options.ytdlp
+  return require('../online/musicVideo').findMusicVideo(track, {
+    ffmpeg: findFfmpeg(),
+    songAudio: songAudioFor(track, canStream),
+    videoAudio: canStream ? youtubeAudio : null,
+    youtubeSearch: canStream ? query => runJsonSearch(options.ytdlp, query, entry => ({
+      ...entry,
+      id: entry.id,
+      videoId: entry.id,
+      artist: entry.channel || entry.uploader || '',
+      artists: [entry.channel || entry.uploader || ''].filter(Boolean),
+      kind: 'video',
+      official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
+      url: `https://www.youtube.com/watch?v=${entry.id}`,
+    }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
+    cacheFile: require('path').join(require('electron').app.getPath('userData'), 'music-videos.json'),
   })
 }
 
@@ -150,7 +204,12 @@ function registerStreamProtocol(protocol, net) {
       // waits forever, and songs stop playing until Lokal restarts.
       const upstream = new AbortController()
       request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
-      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range: request.headers.get('Range'), signal: upstream.signal, fetchImpl: (u, init) => net.fetch(u, init) })
+      const fetchImpl = (u, init) => net.fetch(u, init)
+      const range = request.headers.get('Range')
+      // ytv: a music video's picture (musicVideo.js).
+      const { res, mime } = provider === 'ytv'
+        ? await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range, signal: upstream.signal, fetchImpl })
+        : await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)
@@ -161,4 +220,4 @@ function registerStreamProtocol(protocol, net) {
   })
 }
 
-module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers }
+module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio }

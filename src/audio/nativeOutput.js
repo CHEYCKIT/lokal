@@ -2,11 +2,11 @@ export const normalizePrecision = value => ['auto', 'pcm16', 'float32'].includes
 export function readOutputPreferences() {
   try {
     const data = JSON.parse(localStorage.getItem('lokal-output-precision') || '{}')
-    return { precision: normalizePrecision(data?.precision), deviceName: typeof data?.deviceName === 'string' ? data.deviceName : '', exclusive: data?.exclusive === true }
+    return { precision: normalizePrecision(data?.precision), deviceName: typeof data?.deviceName === 'string' ? data.deviceName : '', exclusive: false }
   } catch { return { precision: 'auto', deviceName: '', exclusive: false } }
 }
 export function saveOutputPreferences(value) {
-  try { localStorage.setItem('lokal-output-precision', JSON.stringify(value)) } catch {}
+  try { localStorage.setItem('lokal-output-precision', JSON.stringify({ ...value, exclusive: false })) } catch {}
 }
 
 export class NativeAudioBridge {
@@ -19,22 +19,37 @@ export class NativeAudioBridge {
     this.session = null
     this.chain = Promise.resolve()
     this.status = { mode: 'auto', sampleRate: context.sampleRate }
-    this.exclusive = false
+    this.playing = false
+    this.preferences = { precision: 'auto' }
   }
   report(status) {
     this.status = status
     this.publish(status)
   }
   configure(preferences) {
+    this.preferences = { ...preferences, exclusive: false }
     // Serialize opening/closing the device; rapid UI changes cannot leave two
     // live outputs or let an old result replace a newer route.
-    this.requestedExclusive = preferences.precision !== 'auto' && preferences.exclusive === true
-    this.chain = this.chain.catch(() => {}).then(() => this.apply(preferences))
+    return this.schedule()
+  }
+  setPlaying(playing) {
+    if (this.playing === playing) return this.chain
+    this.playing = playing
+    return this.schedule()
+  }
+  schedule() {
+    const revision = this.revision = (this.revision || 0) + 1
+    this.chain = this.chain.catch(() => {}).then(async () => {
+      if (revision !== this.revision) return this.status
+      this.transitioning = true
+      try { return await this.apply(this.preferences) }
+      finally { this.transitioning = false }
+    })
     return this.chain
   }
-  async apply({ precision, deviceName = '', exclusive = false }) {
-    await this.fallback()
-    if (precision === 'auto') return this.status
+  async apply({ precision, deviceName = '' }) {
+    await this.fallback(undefined, precision === 'auto' && this.playing)
+    if (!this.playing || precision === 'auto') return this.status
     try {
       if (!this.node) {
         await this.context.audioWorklet.addModule(new URL('./pcm-worklet.js', import.meta.url))
@@ -42,37 +57,39 @@ export class NativeAudioBridge {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit',
         })
         this.node.port.onmessage = event => this.send(event.data)
+        if (this.api.directTransport) {
+          const { port1, port2 } = new MessageChannel()
+          window.postMessage({ type: 'lokal:audio-output-port' }, '*', [port1])
+          this.node.port.postMessage({ type: 'transport', port: port2 }, [port2])
+        }
       }
-      if (exclusive) {
-        // Release Chromium's own shared device before trying to claim WASAPI.
-        // A silent sink still clocks the worklet, without holding a speaker open.
-        if (typeof this.context.setSinkId !== 'function') throw new Error('This build cannot release browser output for exclusive mode.')
-        this.previousSink = this.browserDeviceId ?? this.context.sinkId ?? ''
-        await this.context.setSinkId({ type: 'none' })
-        this.silentSink = true
-      }
-      const result = await this.api.open({ precision, deviceName, exclusive, sampleRate: this.context.sampleRate })
+      if (!this.playing) { await this.fallback(); return this.status }
+      const result = await this.api.open({ precision, deviceName, exclusive: false, sampleRate: this.context.sampleRate })
       if (!result?.ok) throw new Error(result?.error || 'Native output could not be started.')
+      if (!this.playing) { await this.fallback(); return this.status }
       this.session = result.session
       this.frameSize = result.frameSize
       this.source.disconnect(this.context.destination)
       this.source.connect(this.node)
       this.node.connect(this.context.destination)
-      this.exclusive = result.exclusive === true
       this.resetWorklet(true)
+      await this.context.resume()
       this.report({ ...result, mode: 'native' })
     } catch (error) { await this.fallback(`${error.message} Using Auto output.`) }
     return this.status
   }
   resetWorklet(active) {
     this.epoch++
-    const credits = this.exclusive && active ? 48 : 12
-    this.node?.port.postMessage({ type: 'configure', active, epoch: this.epoch, frameSize: this.frameSize || 1024, credits })
+    // Keep the shared-mode transport window below the native PCM ring.
+    const credits = 24
+    const pendingBlocks = 8
+    this.node?.port.postMessage({ type: 'configure', active, session: this.session, epoch: this.epoch, frameSize: this.frameSize || 1024, credits, pendingBlocks })
   }
-  async send({ epoch, samples }) {
+  async send({ epoch, samples, error }) {
     if (!this.session || epoch !== this.epoch) return
     const session = this.session
     try {
+      if (error) throw new Error(error)
       const result = await this.api.write(session, samples)
       if (session !== this.session || epoch !== this.epoch) return
       if (!result?.ok) throw new Error(result?.error || 'Native output stopped.')
@@ -81,34 +98,33 @@ export class NativeAudioBridge {
       // The same serialized route handles device removal and write failures.
       if (session === this.session) {
         this.session = null
-        this.chain = this.chain.catch(() => {}).then(() => this.fallback(`${error.message} Using Auto output.`))
+        this.chain = this.chain.catch(() => {}).then(async () => {
+          this.transitioning = true
+          try { return await this.fallback(`${error.message} Using Auto output.`) }
+          finally { this.transitioning = false }
+        })
       }
     }
   }
   flush() {
     if (!this.session) return
     this.resetWorklet(true)
-    this.api.flush(this.session).catch(() => {})
+    // The direct port orders the reset with PCM blocks across seeks.
+    if (!this.api.directTransport) this.api.flush(this.session).catch(() => {})
   }
-  async fallback(warning) {
+  async fallback(warning, resume = this.playing) {
     this.session = null
-    this.exclusive = false
     this.resetWorklet(false)
+    // Suspending releases Chromium's shared device too, including Auto while idle.
+    await this.context.suspend()
     // Silence the native route before reconnecting Chromium to avoid doubled audio.
     try { await this.api.close() } catch {}
-    if (this.silentSink) {
-      try { await this.context.setSinkId(this.browserDeviceId ?? this.previousSink ?? '') }
-      catch {
-        try { await this.context.setSinkId('') }
-        catch { warning = 'Could not restore browser audio output. Select an available output device.' }
-      }
-      this.silentSink = false
-    }
     if (this.node) {
       try { this.source.disconnect(this.node) } catch {}
       this.node.disconnect()
     }
     this.source.connect(this.context.destination)
-    this.report({ mode: 'auto', sampleRate: this.context.sampleRate, ...(warning ? { warning } : {}) })
+    if (resume && this.playing) await this.context.resume()
+    this.report({ mode: !this.playing ? 'idle' : resume ? 'auto' : 'switching', sampleRate: this.context.sampleRate, ...(warning ? { warning } : {}) })
   }
 }

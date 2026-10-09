@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Image as ImageIcon } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Clapperboard, Image as ImageIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -9,6 +9,7 @@ import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
+import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
 import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
@@ -257,6 +258,8 @@ export default function FullscreenPlayer() {
     return () => { current = false }
   }, [currentTrack?.id, showFullscreen, showLyricsFullscreen])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
+  const { video: musicVideo } = useMusicVideo(currentTrack, showFullscreen || showLyricsFullscreen)
+  const showMusicVideo = useMusicVideoView(s => s.show)
   const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
   const [settings, setSettings] = useState({})
   const [showSearch, setShowSearch] = useState(false)
@@ -738,6 +741,12 @@ export default function FullscreenPlayer() {
                         <RepeatIcon size={22} className={repeat !== 'none' ? 'text-accent' : ''} />
                       </CoverIcon>
                     </div>
+                    {/* The music video, mid left edge (opposite the volume). */}
+                    {musicVideo && (
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                        <CoverButton onClick={showMusicVideo} label="Play the music video"><Clapperboard size={19} /></CoverButton>
+                      </div>
+                    )}
                     {/* Volume, up the right edge. */}
                     <div className="absolute right-4 top-1/2 -translate-y-1/2">
                       <VolumePill volume={volume} onChange={setVolume} />

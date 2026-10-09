@@ -19,6 +19,9 @@ class NativeOutput {
     this.audio = null
     this.session = null
     this.queued = 0
+    this.discardPending = false
+    this.queueTrimCount = 0
+    this.underrunBaseline = null
   }
 
   instance() {
@@ -61,6 +64,9 @@ class NativeOutput {
             this.precision = format
             this.frameSize = frameSize
             this.queued = 0
+            this.discardPending = false
+            this.queueTrimCount = 0
+            this.underrunBaseline = null
             const actualExclusive = audio.isExclusive()
             if (share && !actualExclusive) throw new Error('The device did not accept exclusive mode.')
             const warnings = []
@@ -98,12 +104,32 @@ class NativeOutput {
       if (Date.now() - this.lastProgressAt > 2000) throw new Error('Audio output is no longer responding.')
       this.queued = Math.max(0, this.queued - Math.max(0, time - this.lastStreamTime) * this.status.sampleRate / this.frameSize)
       this.lastStreamTime = time
+      if (this.discardPending && this.audio.isOutputQueueDiscardComplete()) {
+        this.queued = Math.max(0, this.queued - this.audio.getDiscardedFrames() / this.frameSize)
+        this.discardPending = false
+      }
       // Bound latency and memory if the renderer and hardware clocks drift or
       // the main thread stalls. Never replay a long queue of stale audio.
-      const clearThreshold = this.status?.exclusive ? 96 : 24
-      if (this.queued >= clearThreshold) { this.audio.clearOutputQueue(); this.queued = 0 }
+      const clearThreshold = this.status?.exclusive ? 120 : 28
+      if (this.queued >= clearThreshold && !this.discardPending) {
+        this.queueTrimCount++
+        // Do not stop/restart WASAPI to trim stale audio; that creates a
+        // periodic audible dropout when the device clock falls behind.
+        if (typeof this.audio.discardOutputQueue === 'function' &&
+            typeof this.audio.isOutputQueueDiscardComplete === 'function' &&
+            typeof this.audio.getDiscardedFrames === 'function') {
+          this.discardPending = true
+          this.audio.discardOutputQueue()
+        } else {
+          this.audio.clearOutputQueue()
+          this.queued = 0
+        }
+      }
       this.audio.write(encodePCM(samples, this.precision))
       this.queued++
+      if (!this.underrunBaseline && typeof this.audio.getDiagnostics === 'function') {
+        this.underrunBaseline = this.audio.getDiagnostics()
+      }
       return { ok: true }
     } catch (error) {
       this.close()
@@ -112,15 +138,42 @@ class NativeOutput {
   }
 
   flush(session) {
-    if (session !== this.session) return
+    if (!this.session || session !== this.session) return
     this.audio?.clearOutputQueue()
     this.queued = 0
+    this.discardPending = false
     this.lastStreamTime = this.audio.streamTime
+  }
+
+  diagnostics() {
+    const nativeStats = this.session && typeof this.audio?.getDiagnostics === 'function'
+      ? this.audio.getDiagnostics()
+      : null
+    const baseline = this.underrunBaseline
+    const native = nativeStats && {
+      ...nativeStats,
+      underrunFrames: Math.max(0, nativeStats.underrunFrames - (baseline?.underrunFrames || 0)),
+      underrunEvents: Math.max(0, nativeStats.underrunEvents - (baseline?.underrunEvents || 0)),
+    }
+    return {
+      active: !!this.session,
+      precision: this.status?.precision || null,
+      exclusive: this.status?.exclusive === true,
+      sampleRate: this.status?.sampleRate || null,
+      frameSize: this.status?.frameSize || null,
+      deviceName: this.status?.deviceName || null,
+      backend: this.status?.backend || null,
+      queuedBlocks: this.queued,
+      discardPending: this.discardPending,
+      queueTrimCount: this.queueTrimCount,
+      native,
+    }
   }
 
   close() {
     this.session = null
     this.queued = 0
+    this.discardPending = false
     this.status = null
     if (this.audio?.isStreamOpen()) {
       try { this.audio.closeStream() } catch {}
@@ -132,11 +185,36 @@ class NativeOutput {
 const output = new NativeOutput()
 function registerNativeOutput(ipcMain, getWindow) {
   const allowed = event => event.sender === getWindow()?.webContents && event.senderFrame === event.sender.mainFrame
+  let transport
+  ipcMain.on('audio-output:connect', event => {
+    if (!allowed(event) || event.ports?.length !== 1) {
+      for (const port of event.ports || []) port.close()
+      return
+    }
+    transport?.close()
+    const port = event.ports[0]
+    transport = port
+    port.on('message', ({ data }) => {
+      const { session, epoch, samples } = data || {}
+      if (data?.type === 'reset') {
+        try { output.flush(session) }
+        catch (error) { output.close(); port.postMessage({ ok: false, epoch, error: error.message }) }
+        return
+      }
+      const result = output.write(session, samples)
+      port.postMessage({ ...result, epoch })
+    })
+    port.on('close', () => {
+      if (transport === port) { transport = null; output.close() }
+    })
+    port.start()
+  })
   const handle = (channel, fn) => ipcMain.handle(`audio-output:${channel}`, (event, ...args) => {
     if (!allowed(event)) return { ok: false, error: 'Audio output is only available to the player.' }
     return fn(...args)
   })
   handle('devices', () => output.devices())
+  handle('diagnostics', () => output.diagnostics())
   handle('open', options => output.open(options || {}))
   handle('write', (session, samples) => output.write(session, samples))
   handle('flush', session => { output.flush(session); return { ok: true } })

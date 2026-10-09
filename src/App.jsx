@@ -1,4 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
+import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -8,6 +9,7 @@ import TitleBar from './components/TitleBar'
 import { usePageWidth } from './pageWidth'
 import RightSidebar from './components/RightSidebar'
 import FullscreenPlayer from './components/FullscreenPlayer'
+import MusicVideoPlayer from './components/MusicVideoPlayer'
 import QueuePanel from './components/QueuePanel'
 import LyricsSidePanel from './components/LyricsSidePanel'
 import AuthModal from './components/AuthModal'
@@ -305,6 +307,7 @@ export default function App() {
           if (!isCurrent()) return
         }
         usePlayerStore.getState().setIsPlaying(false)
+        usePlayerStore.getState().setIsBuffering(false)
         const message = 'No full-length stream was found in your playback sources.'
         setStreamError({ title: failedTrack.title, message })
         toast.close(message)
@@ -361,6 +364,8 @@ export default function App() {
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
+  // Crossfades ramp these, after the volume gains, so volume changes never cut a fade short.
+  const fadeGainRef = useRef({ primary: null, cf: null })
   const audioCtxRef = useRef(null)
   const nativeAudioRef = useRef(null)
   const analyserRef = useRef(null)
@@ -441,7 +446,7 @@ export default function App() {
   const {
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -449,7 +454,7 @@ export default function App() {
   } = usePlayerStore(useShallow(({
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -457,7 +462,7 @@ export default function App() {
   }) => ({
     currentTrack, isPlaying, duration, volume, repeat,
     outputDeviceId,
-    autoNext, setProgress, setDuration, setIsPlaying,
+    autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
     setActiveAudioElement,
     shuffle, playNext, addToQueue, skipAhead,
@@ -477,8 +482,8 @@ export default function App() {
     const context = audioCtxRef.current
     if (nativeAudioRef.current) {
       nativeAudioRef.current.browserDeviceId = id
-      // Keep Chromium's speaker released while exclusive output owns it.
-      if (nativeAudioRef.current.requestedExclusive || nativeAudioRef.current.silentSink) return { ok: true }
+      // Defer device changes while idle; apply them on resume.
+      if (!nativeAudioRef.current.playing) return { ok: true }
     }
     if (context && typeof context.setSinkId === 'function') {
       try {
@@ -740,8 +745,10 @@ export default function App() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     audioCtxRef.current = ctx
+    if (!usePlayerStore.getState().isPlaying) ctx.suspend().catch(() => {})
     const keepAudioRunning = () => {
-      if (usePlayerStore.getState().isPlaying && ctx.state === 'suspended') {
+      // Route changes deliberately suspend the context to release its device.
+      if (!nativeAudioRef.current?.transitioning && usePlayerStore.getState().isPlaying && ctx.state === 'suspended') {
         ctx.resume().catch(() => {})
       }
     }
@@ -777,6 +784,9 @@ export default function App() {
 
     primaryGain.gain.value = volumeRef.current
     cfGain.gain.value = 0
+    const primaryFade = ctx.createGain()
+    const cfFade = ctx.createGain()
+    fadeGainRef.current = { primary: primaryFade, cf: cfFade }
 
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 256
@@ -792,13 +802,15 @@ export default function App() {
       let prev = primarySource
       for (const n of nodes) { prev.connect(n); prev = n }
       prev.connect(primaryGain)
-      primaryGain.connect(analyser)
+      primaryGain.connect(primaryFade)
+      primaryFade.connect(analyser)
       analyser.connect(ctx.destination)
 
       let cfPrev = cfSource
       for (const n of cfNodes) { cfPrev.connect(n); cfPrev = n }
       cfPrev.connect(cfGain)
-      cfGain.connect(analyser)
+      cfGain.connect(cfFade)
+      cfFade.connect(analyser)
     }
 
     try {
@@ -823,8 +835,22 @@ export default function App() {
       nativeAudioRef.current = new NativeAudioBridge(ctx, analyser, window.electron.nativeAudio, status => {
         window.__lokalOutputStatus = status
         window.dispatchEvent(new CustomEvent('lokal:output-status', { detail: status }))
+        api.log('info', `[audio-output] ${JSON.stringify({
+          mode: status.mode,
+          precision: status.precision || 'auto',
+          sampleRate: status.sampleRate || ctx.sampleRate,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          warning: status.warning || null,
+        })}`)
+        // Native output is clocked by the speaker, so the SMTC silence element
+        // is redundant while that route is active.
+        const keepAlive = smtcKeepAliveRef.current
+        if (status.mode !== 'auto' || !usePlayerStore.getState().isPlaying) keepAlive?.pause()
+        else keepAlive?.play().catch(() => {})
       })
       nativeAudioRef.current.configure(readOutputPreferences())
+      nativeAudioRef.current.setPlaying(usePlayerStore.getState().isPlaying)
       // Discard buffered audio on seeks and explicit pauses, including either
       // side of a crossfade. Both media elements still feed the same EQ graph.
       for (const element of [audioRef.current, cfAudioRef.current]) {
@@ -841,6 +867,47 @@ export default function App() {
 }, [])
 
   useEffect(() => {
+    if (!api.isElectron || !window.electron?.onWindowVisibility) return
+    let previousHidden = null
+    let previous = null
+    let chain = Promise.resolve()
+    const unsubscribe = window.electron.onWindowVisibility(hidden => {
+      if (previousHidden === hidden) return
+      previousHidden = hidden
+      chain = chain.catch(() => {}).then(async () => {
+        const player = usePlayerStore.getState()
+        const active = player.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
+        const native = await window.electron.nativeAudio?.diagnostics?.()
+        const status = window.__lokalOutputStatus || {}
+        const nativeUnderruns = native?.native?.underrunEvents ?? null
+        const underrunDelta = previous?.mode === status.mode && previous?.events !== null &&
+          nativeUnderruns !== null && nativeUnderruns >= previous.events
+          ? nativeUnderruns - previous.events
+          : null
+        const sample = {
+          event: hidden ? 'minimized' : 'restored',
+          isPlaying: player.isPlaying,
+          audioContextState: audioCtxRef.current?.state || null,
+          mode: status.mode || 'auto',
+          precision: status.precision || readOutputPreferences().precision,
+          sampleRate: status.sampleRate || audioCtxRef.current?.sampleRate || null,
+          deviceName: status.deviceName || null,
+          exclusive: status.exclusive === true,
+          mediaCurrentTime: Number.isFinite(active?.currentTime) ? Number(active.currentTime.toFixed(3)) : null,
+          nativeDiagnosticsAvailable: !!native?.native,
+          native,
+          underrunEventsSincePreviousVisibility: underrunDelta,
+        }
+        api.log('info', `[audio-visibility] ${JSON.stringify(sample)}`)
+        previous = { events: nativeUnderruns, mode: status.mode }
+      }).catch(error => {
+        api.log('warn', `[audio-visibility] diagnostics failed: ${error.message}`)
+      })
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
     window.__lokalSetOutputPrecision = async preferences => {
       saveOutputPreferences(preferences)
       initAudioCtx()
@@ -849,9 +916,17 @@ export default function App() {
     }
     return () => {
       delete window.__lokalSetOutputPrecision
-      nativeAudioRef.current?.configure({ precision: 'auto' })
+      nativeAudioRef.current?.setPlaying(false)
     }
   }, [initAudioCtx])
+
+  useEffect(() => {
+    const bridge = nativeAudioRef.current
+    if (bridge) bridge.setPlaying(isPlaying).catch(error => api.log('warn', `[audio-output] ${error.message}`))
+    else if (audioCtxRef.current) {
+      audioCtxRef.current[isPlaying ? 'resume' : 'suspend']().catch(() => {})
+    }
+  }, [isPlaying, audioOutputReady])
 
   useEffect(() => {
     window.__lokalInitAudio = initAudioCtx
@@ -900,7 +975,7 @@ export default function App() {
 
   useEffect(() => {
     const resumeAudio = () => {
-      if (usePlayerStore.getState().isPlaying && audioCtxRef.current?.state === 'suspended') {
+      if (!nativeAudioRef.current?.transitioning && usePlayerStore.getState().isPlaying && audioCtxRef.current?.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {})
       }
     }
@@ -968,7 +1043,7 @@ export default function App() {
     //safety net for pesky SMTC.
     const el = smtcKeepAliveRef.current
     if (!el) return
-    if (isPlaying) {
+    if (isPlaying && window.__lokalOutputStatus?.mode !== 'native') {
       el.play().catch((e) => api.log('warn', `[smtc-keepalive] play() failed: ${e.message}`))
     } else {
       el.pause()
@@ -1219,7 +1294,7 @@ export default function App() {
     setAudioRef(audioRef)
     setCfAudioRef(cfAudioRef)
     api.getSettings().then(s => {
-      if (s?.crossfade_seconds) setCrossfade(parseFloat(s.crossfade_seconds) || 0)
+      if (s) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings(s))
       // Sync the backend-persisted Side Panels mode at boot -- previously
       // this only happened once the Settings page itself mounted, so a
       // user who never opened Settings stayed on whatever
@@ -1528,24 +1603,33 @@ export default function App() {
       if (ctx && now !== undefined) inactiveGain.gain.setValueAtTime(0, now)
       else inactiveGain.gain.value = 0
     }
+    for (const fade of [fadeGainRef.current.primary, fadeGainRef.current.cf]) {
+      if (!fade?.gain) continue
+      fade.gain.cancelScheduledValues(now || 0)
+      if (ctx && now !== undefined) fade.gain.setValueAtTime(1, now)
+      else fade.gain.value = 1
+    }
   }, [])
 
   const triggerCrossfade = useCallback((nextTrack) => {
     if (isCrossfadingRef.current) return
     if (!cfAudioRef.current || !audioRef.current || !nextTrack || !audioCtxRef.current) return
     if (!gainNodeRef.current || !cfGainNodeRef.current) return
+    if (!fadeGainRef.current.primary || !fadeGainRef.current.cf) return
 
     isCrossfadingRef.current = true
     const token = ++crossfadeTokenRef.current
     expectedCrossfadeTrackIdRef.current = nextTrack.id
     const ctx = audioCtxRef.current
-    const cfDuration = usePlayerStore.getState().crossfadeSeconds || 3
+    const options = usePlayerStore.getState().crossfade
 
     const isPrimaryActive = usePlayerStore.getState().activeAudioElement === 'primary'
     const fadeOutEl = isPrimaryActive ? audioRef.current : cfAudioRef.current
     const fadeInEl = isPrimaryActive ? cfAudioRef.current : audioRef.current
     const fadeOutGain = isPrimaryActive ? gainNodeRef.current : cfGainNodeRef.current
     const fadeInGain = isPrimaryActive ? cfGainNodeRef.current : gainNodeRef.current
+    const fadeOutNode = isPrimaryActive ? fadeGainRef.current.primary : fadeGainRef.current.cf
+    const fadeInNode = isPrimaryActive ? fadeGainRef.current.cf : fadeGainRef.current.primary
 
     const encodedSrc = audioSrcFor(nextTrack)
     if (!encodedSrc) { isCrossfadingRef.current = false; expectedCrossfadeTrackIdRef.current = null; return }
@@ -1642,13 +1726,18 @@ export default function App() {
 
       fadeInEl.play().catch(() => {})
 
+      // The old song fades out over what it has left at most; the new one
+      // fades in on its own (usually shorter) schedule.
+      const { fadeIn, fadeOut } = crossfadeDurations(options, fadeOutEl.duration - fadeOutEl.currentTime)
       const rampNow = ctx.currentTime
-      fadeOutGain.gain.cancelScheduledValues(rampNow)
-      fadeOutGain.gain.setValueAtTime(fadeOutGain.gain.value, rampNow)
-      fadeOutGain.gain.linearRampToValueAtTime(0, rampNow + cfDuration)
-      fadeInGain.gain.cancelScheduledValues(rampNow)
-      fadeInGain.gain.setValueAtTime(0, rampNow)
-      fadeInGain.gain.linearRampToValueAtTime(volumeRef.current, rampNow + cfDuration)
+      for (const gain of [fadeOutGain.gain, fadeInGain.gain]) {
+        gain.cancelScheduledValues(rampNow)
+        gain.setValueAtTime(volumeRef.current, rampNow)
+      }
+      fadeOutNode.gain.cancelScheduledValues(rampNow)
+      fadeOutNode.gain.setValueCurveAtTime(fadeCurve(Math.min(1, fadeOutNode.gain.value), 0, options.curve), rampNow, fadeOut)
+      fadeInNode.gain.cancelScheduledValues(rampNow)
+      fadeInNode.gain.setValueCurveAtTime(fadeCurve(0, 1, options.curve), rampNow, fadeIn)
 
       crossfadeTimeoutRef.current = setTimeout(() => {
         if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
@@ -1656,6 +1745,10 @@ export default function App() {
         const endNow = ctx.currentTime
         fadeInGain.gain.cancelScheduledValues(endNow)
         fadeOutGain.gain.cancelScheduledValues(endNow)
+        for (const fade of [fadeInNode.gain, fadeOutNode.gain]) {
+          fade.cancelScheduledValues(endNow)
+          fade.setValueAtTime(1, endNow)
+        }
         
         if (fadeInGain === gainNodeRef.current) {
           gainNodeRef.current.gain.setValueAtTime(volumeRef.current, endNow)
@@ -1676,7 +1769,7 @@ export default function App() {
         fadeOutEl.dataset.lokalTrackPending = ''
         fadeOutEl.dataset.lokalTrackId = ''
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
-      }, cfDuration * 1000)
+      }, Math.max(fadeIn, fadeOut) * 1000)
     })
   }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
@@ -1686,6 +1779,7 @@ export default function App() {
       cancelCrossfade()
     }
 
+    setIsBuffering(!!streamRef(currentTrack))
     if (!audioRef.current || !currentTrack) return
     if (streamRecoveryRef.current.track !== currentTrack) streamRecoveryRef.current = { track: currentTrack, pending: false, failed: [] }
 
@@ -1719,6 +1813,7 @@ export default function App() {
       audioRef.current.dataset.lokalTrackPending = ''
       audioRef.current.dataset.lokalTrackId = ''
       setIsPlaying(false)
+      setIsBuffering(false)
       return
     }
     setStreamError(null)
@@ -1750,7 +1845,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback])
+  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -1790,13 +1885,11 @@ export default function App() {
     try {
       const now = ctx.currentTime
       if (isCrossfadingRef.current) {
-        const maxCurrent = Math.max(primary.value, secondary.value, 0.0001)
-        const nextPrimary = (primary.value / maxCurrent) * volume
-        const nextSecondary = (secondary.value / maxCurrent) * volume
+        // The fade runs on the fade gains: both sides just take the new volume.
         primary.cancelScheduledValues(now)
         secondary.cancelScheduledValues(now)
-        primary.setValueAtTime(nextPrimary, now)
-        secondary.setValueAtTime(nextSecondary, now)
+        primary.setValueAtTime(volume, now)
+        secondary.setValueAtTime(volume, now)
         return
       }
       const activeSide = usePlayerStore.getState().activeAudioElement
@@ -1821,10 +1914,10 @@ export default function App() {
     if (!dur || isNaN(dur) || isCrossfadingRef.current) return
 
     const state = usePlayerStore.getState()
-    const cf = state.crossfadeSeconds || 0
+    const cf = state.crossfade?.beforeEnd || 0
     const remaining = dur - cur
 
-    if (cf > 0.5 && remaining <= cf && remaining > 0.3) {
+    if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
       const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = state
       let nextTrack = null
       
@@ -2233,6 +2326,7 @@ export default function App() {
             <PlayerBar />
             {/* Also full-screen lyrics: one overlay, two layouts. */}
             <FullscreenPlayer />
+            <MusicVideoPlayer />
             <AuthModal />
             <ProfileModal />
             <AddToPlaylistModal />
@@ -2286,6 +2380,8 @@ export default function App() {
           onCanPlay={handleAudioCanPlay}
           onEnded={handlePrimaryEnded}
           onError={handleAudioError}
+          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
@@ -2298,6 +2394,8 @@ export default function App() {
           onCanPlay={handleAudioCanPlay}
           onEnded={handleCfEnded}
           onError={handleAudioError}
+          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onPlaying={(e) => { if (isEventFromActive(e)) setIsBuffering(false) }}
           onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
