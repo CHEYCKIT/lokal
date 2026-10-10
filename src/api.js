@@ -333,6 +333,7 @@ export const api = {
     const version = youtubeAccountStatusRevision()
     return Promise.resolve(isE() ? el().youtubeAccount(force) : apiFetch(`/online/account?force=${force ? '1' : '0'}`)).then(result => { updateYoutubeAccountStatus(result, version); return result })
   },
+  fetchReleaseFeed: names => isE() ? el().fetchReleaseFeed(names) : Promise.resolve([]),
   youtubeSignIn: async options => {
     if (!isE()) return { error: 'YouTube Music sign-in is available in the desktop app.' }
     const result = await el().youtubeSignIn(options)

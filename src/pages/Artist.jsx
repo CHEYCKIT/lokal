@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe, Bell, BellOff } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -19,6 +19,7 @@ import RefreshButton from '../components/RefreshButton'
 import { isConnected, releaseTitleKey, setConnected } from '../onlineBrowse'
 import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
+import { releaseKey as feedKey, useReleaseFeedPrefs } from '../releaseFeed'
 
 export default function Artist() {
   const { id } = useParams()
@@ -172,6 +173,9 @@ export default function Artist() {
   // Releases in sections (Albums, EPs, Singles...), the types shown chosen per
   // artist; "More releases online" follows the same choice.
   const [shownTypes, toggleType] = useReleaseTypes(artist?.name || id)
+  const feedHidden = useReleaseFeedPrefs(s => s.hidden.includes(feedKey(artist?.name)))
+  const hideFeedArtist = useReleaseFeedPrefs(s => s.hideArtist)
+  const showFeedArtist = useReleaseFeedPrefs(s => s.showArtist)
   const releaseGroups = useMemo(() => groupReleases(releaseList, shownTypes), [releaseList, shownTypes])
   // Song counts of the releases online (when the source gives them), to mark
   // the library's partial ones.
@@ -260,6 +264,9 @@ export default function Artist() {
         <div className="flex items-center gap-3">
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
+          </button>
+          <button onClick={() => feedHidden ? showFeedArtist(artist.name) : hideFeedArtist(artist.name)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
+            {feedHidden ? <Bell size={14} /> : <BellOff size={14} />} {feedHidden ? 'Show new releases' : 'Hide new releases'}
           </button>
           <button onClick={() => openRadio(nav, { artist: artist.name, type: 'artist' }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Radio size={14} /> Radio

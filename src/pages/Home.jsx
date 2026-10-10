@@ -16,6 +16,7 @@ import { showToast, showLoadingToast } from '../components/Toaster'
 import { addToPlaylistMany, addToQueueMany, playNextMany, saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
+import NewReleases from '../components/NewReleases'
 import { libraryDownloadMessage, saveTracksToLibrary, trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
 import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
@@ -29,7 +30,7 @@ const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
 function homeRoute(pathname) {
   const parts = String(pathname || '').split('/').filter(Boolean)
   if (parts[0] !== 'home') return { tab: 'home', section: null }
-  return { tab: ['discovery', 'mixlab', 'history'].includes(parts[1]) ? parts[1] : 'home', section: parts[2] || null }
+  return { tab: ['discovery', 'mixlab', 'history', 'releases'].includes(parts[1]) ? parts[1] : 'home', section: parts[2] || null }
 }
 
 function secureImage(value) {
@@ -515,13 +516,14 @@ function HomeContent({ user }) {
 
   return <div className="p-6 space-y-7 w-full max-w-6xl mx-auto pb-10">
     <div><h1 className="text-2xl font-display text-white">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}</h1><p className="text-sm text-muted mt-1">Your music, listening history, and recommendations</p></div>
-    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Local'], ['discovery', 'Discovery'], ['mixlab', 'Mix'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
+    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Local'], ['discovery', 'Discovery'], ['mixlab', 'Mix'], ['history', 'History'], ['releases', 'Releases']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
     <SectionSwap id={tab} className="space-y-10">
       {tab === 'history' ? <section>
         <SectionHeader icon={History} eyebrow="History" title="Listen History" count={localHistory.length} />
         {localHistory.length ? <TrackList tracks={localHistory} reduceMotion context={{ type: 'history', name: 'Listen History' }} /> : <p className="py-10 text-center text-sm text-muted">No listen history yet.</p>}
       </section>
         : tab === 'mixlab' ? <MixPanel tracks={mixLab?.tracks || []} source={mixLab.source || recommendationSource} size={Number(mixLab?.size) || 32} error={mixError} generating={mixGenerating} saving={!!saving} onSize={session.setSize} onGenerate={session.generate} onPlay={tracks => playQueue(tracks, 0, { type: 'mix', name: `${sourceName(mixLab.source || recommendationSource)} Mix` })} onSave={() => saveList('mixlab', `Mix - ${today()}`, mixLab?.tracks || [], `${sourceName(mixLab.source || recommendationSource)} recommendation Mix`)} />
+        : tab === 'releases' ? <NewReleases />
         : tab === 'discovery' ? <RecommendationSections {...sectionProps} />
         : localHome
       }
