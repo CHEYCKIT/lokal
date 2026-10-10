@@ -1,2 +1,6 @@
 overrides:
   register-scheme: 0.0.2
+allowBuilds:
+  better-sqlite3: true
+  electron-winstaller: true
+  register-scheme: true
