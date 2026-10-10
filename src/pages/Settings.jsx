@@ -36,7 +36,7 @@ const SETTINGS_CATEGORIES = [
   { key: 'library', label: 'Library', icon: Music2 },
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'integrations', label: 'Integrations', icon: Zap },
-  { key: 'addons', label: 'Addons & Plugins', icon: Blocks },
+  { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
   { key: 'about', label: 'About', icon: Info },
@@ -466,10 +466,6 @@ export default function Settings() {
   const [manualGenreTrack, setManualGenreTrack] = useState('')
   const [manualGenreAlbum, setManualGenreAlbum] = useState('')
   const [manualGenreValue, setManualGenreValue] = useState('')
-  const [plugins, setPlugins] = useState(() => peekCache('settings:plugins') || [])
-  const [pluginsLoading, setPluginsLoading] = useState(false)
-  const [pluginStatus, setPluginStatus] = useState('')
-  const [pluginInstallFolder, setPluginInstallFolder] = useState('')
   const [activeCategory, setActiveCategory] = useState(() => {
     const requested = MOVED_CATEGORIES[location.state?.category] || location.state?.category
     return SETTINGS_CATEGORIES.some(category => category.key === requested) ? requested : 'library'
@@ -582,24 +578,6 @@ export default function Settings() {
 
   }, []) 
 
-  const loadPlugins = async () => {
-    setPluginsLoading(true)
-    try {
-      const result = await api.pluginsList()
-      if (Array.isArray(result)) {
-        writeCache('settings:plugins', result)
-        setPlugins(result)
-        setPluginStatus('')
-      } else {
-        setPluginStatus(result?.error || 'Failed to load plugins')
-      }
-    } catch (e) {
-      setPluginStatus(e?.message || 'Failed to load plugins')
-    } finally {
-      setPluginsLoading(false)
-    }
-  }
-
   const loadUsers = async () => {
     setUsersLoading(true)
     try {
@@ -615,12 +593,6 @@ export default function Settings() {
       setUsersTried(true)
     }
   }
-
-  useEffect(() => {
-    if (activeCategory === 'addons') {
-      loadPlugins()
-    }
-  }, [activeCategory])
 
   useEffect(() => {
     if (activeCategory === 'data') {
@@ -1110,60 +1082,6 @@ export default function Settings() {
   const handleBlurChange = async (e) => {
     const val = e.target.value
     await saveOverride('--bg-blur', `${val}px`)
-  }
-
-  const handlePluginReload = async () => {
-    setPluginsLoading(true)
-    const result = await api.pluginsReload()
-    if (result?.error) {
-      setPluginStatus(result.error)
-    } else {
-      const list = Array.isArray(result?.plugins) ? result.plugins : await api.pluginsList()
-      setPlugins(Array.isArray(list) ? list : [])
-      setPluginStatus('Plugins reloaded')
-      setTimeout(() => setPluginStatus(''), 2500)
-    }
-    setPluginsLoading(false)
-  }
-
-  const handlePluginEnableToggle = async (plugin) => {
-    const action = plugin.enabled ? api.pluginsDisable : api.pluginsEnable
-    const result = await action(plugin.id)
-    if (result?.error) {
-      setPluginStatus(result.error)
-      return
-    }
-    await loadPlugins()
-  }
-
-  const handlePluginRemove = async (pluginId) => {
-    const result = await api.pluginsRemove(pluginId)
-    if (result?.error) {
-      setPluginStatus(result.error)
-      return
-    }
-    setPluginStatus('Plugin removed')
-    await loadPlugins()
-  }
-
-  const choosePluginFolder = async () => {
-    const selected = await api.openFolder()
-    if (selected) setPluginInstallFolder(selected)
-  }
-
-  const handlePluginInstall = async () => {
-    if (!pluginInstallFolder.trim()) {
-      setPluginStatus('Enter a plugin folder path')
-      return
-    }
-    const result = await api.pluginsInstallFromFolder(pluginInstallFolder.trim())
-    if (result?.error) {
-      setPluginStatus(result.error)
-      return
-    }
-    setPluginStatus('Plugin installed')
-    setPluginInstallFolder('')
-    await loadPlugins()
   }
 
   const exportMenuItems = [
@@ -1809,108 +1727,6 @@ activeCategory === 'data' ? usersTried
       {inCategory('addons') && (
       <Section title="Addons">
         <AddonsSettings />
-      </Section>
-      )}
-
-      {inCategory('addons') && (
-      <Section title="Plugins">
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <input
-              value={pluginInstallFolder}
-              onChange={e => setPluginInstallFolder(e.target.value)}
-              placeholder="Your plugin's folder"
-              className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-accent/50"
-            />
-            {api.isElectron && (
-              <button
-                onClick={choosePluginFolder}
-                className="px-3 py-2 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-              >
-                Browse
-              </button>
-            )}
-            <button
-              onClick={handlePluginInstall}
-              className="px-3 py-2 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors"
-            >
-              Install
-            </button>
-            <button
-              onClick={handlePluginReload}
-              disabled={pluginsLoading}
-              className="px-3 py-2 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40 transition-colors"
-            >
-              {pluginsLoading ? 'Loading...' : 'Reload'}
-            </button>
-          </div>
-          {pluginStatus && <p className="text-xs text-muted">{pluginStatus}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm text-white font-medium">Installed Plugins</p>
-          {pluginsLoading && !plugins.length && <p className="text-xs text-muted">Loading plugins...</p>}
-          {!pluginsLoading && peekCache('settings:plugins') !== undefined && plugins.length === 0 && (
-            <p className="text-xs text-muted">No plugins installed yet.</p>
-          )}
-          {plugins.length > 0 && (
-            <div className="space-y-2">
-              {plugins.map((plugin) => (
-                <div key={plugin.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card/40">
-                  <div className="min-w-0">
-                    <p className="text-sm text-white truncate">{plugin.name} <span className="text-xs text-muted">v{plugin.version}</span></p>
-                    <p className="text-xs text-muted truncate">{plugin.id}</p>
-                    {plugin.description && <p className="text-xs text-muted/80 truncate">{plugin.description}</p>}
-                    {plugin.loadError && <p className="text-xs text-red-400 truncate">{plugin.loadError}</p>}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handlePluginEnableToggle(plugin)}
-                      className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${plugin.enabled ? 'bg-accent/20 border-accent/50 text-accent' : 'bg-card border-border text-muted hover:text-white'}`}
-                    >
-                      {plugin.enabled ? 'Disable' : 'Enable'}
-                    </button>
-                    <button
-                      onClick={() => handlePluginRemove(plugin.id)}
-                      className="px-3 py-1.5 rounded-lg text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2 pt-2 border-t border-border">
-          <p className="text-sm text-white font-medium">Developer Setup</p>
-          <div className="text-xs text-muted space-y-1">
-            <p>1. Create a folder with plugin.json and index.js.</p>
-            <p>2. Use Install with that folder path.</p>
-            <p>3. Reload plugins after edits.</p>
-          </div>
-          <pre className="bg-card border border-border rounded-lg p-3 text-[11px] text-muted overflow-x-auto">
-{`plugin.json
-{
-  "id": "my-plugin",
-  "name": "My Plugin",
-  "version": "0.1.0",
-  "entry": "index.js",
-  "hooks": ["onTrackIndexed"]
-}
-
-index.js
-module.exports = {
-  async onTrackIndexed(track, sdk) {
-    const state = sdk.storage.get()
-    sdk.storage.set({ ...state, lastTrack: track.id })
-    sdk.log("Indexed", track.title)
-  }
-}`}
-          </pre>
-          <p className="text-xs text-muted">Hook payload includes id, title, artist, album, genre, duration, and filePath.</p>
-        </div>
       </Section>
       )}
 

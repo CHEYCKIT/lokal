@@ -68,6 +68,7 @@ export function sourceRefKey(ref) {
 // Where a downloaded song came from (tracks.download_source).
 const DOWNLOAD_SOURCE_LABELS = { yt: 'YouTube', sc: 'SoundCloud', soulseek: 'Soulseek', web: 'Web' }
 let addonNames = null
+if (typeof window !== 'undefined') window.addEventListener('lokal:addons-changed', () => { addonNames = null })
 
 /** The installed addons' names ({ 'a-<key>': name }), loaded once. */
 export function loadAddonNames() {

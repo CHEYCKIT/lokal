@@ -204,7 +204,10 @@ export function playbackFallbackMessage({ candidate, source, nextSource, reason,
 export async function playbackAvailability(match, provider, client = api, timeoutMs = 35000, onError = () => {}) {
   if (match.preview) return 'preview'
   if (typeof client.onlinePrepare !== 'function') return null
-  const prepared = await timed(() => client.onlinePrepare(provider, String(match.id)), timeoutMs, 'Audio preparation timed out. Try again.')
+  const controller = new AbortController()
+  let prepared
+  try { prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.') }
+  finally { controller.abort() }
   if (prepared?.preview) return 'preview'
   if (prepared?.error) onError(prepared.error)
   return prepared?.ok && !prepared.error ? null : 'unavailable'

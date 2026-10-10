@@ -67,7 +67,7 @@ async function search(provider, query, { db, ytdlp, fetchImpl, fallbackSearch, l
 function resolveStream(provider, id, opts = {}) {
   if (!validId(provider, id)) return Promise.reject(new Error('Unknown online song'))
   const key = addons.keyOfProvider(provider)
-  if (key) return addons.resolveStream(opts.db, key, id, { force: opts.force, fetchImpl: opts.addonFetch })
+  if (key) return addons.resolveStream(opts.db, key, id, { force: opts.force, fetchImpl: opts.addonFetch, signal: opts.signal })
   return provider === 'sc' ? sc.resolveStream(id, opts) : yt.resolveStream(id, opts)
 }
 
@@ -103,7 +103,8 @@ async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
  */
 async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
   const attempt = async (force) => {
-    const stream = await resolveStream(provider, id, { ...opts, force })
+    const stream = await resolveStream(provider, id, { ...opts, force, signal })
+    if (stream.type === 'file') return { stream, res: await require('../spotiflac/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
     const headers = { ...stream.headers }
     if (range) headers.Range = range
     // An addon's media URL is the addon's to choose: follow its redirects one

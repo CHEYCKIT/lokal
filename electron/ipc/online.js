@@ -60,7 +60,7 @@ function providers() {
   return [
     { id: 'yt', label: 'YouTube Music' },
     { id: 'sc', label: 'SoundCloud' },
-    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, package: a.kind === 'spotiflac', filters: a.searchFilters, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
   ]
 }
 
@@ -98,6 +98,8 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('online:setAccountLiked', (_, videoId, liked) => accountRequest(({ cookies, fetchImpl }) => youtube.setAccountLiked(videoId, liked, cookies, fetchImpl)).catch(e => ({ error: e.message })))
   // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
+    const key = sources.addons.keyOfProvider(provider)
+    if (key && sources.addons.packageService(getDB()).find(key)) return { package: true, url: `spotiflac://${key}/${encodeURIComponent(id)}` }
     try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }
   })
   // Addons' manifests are read again now and then (new resources, settings).
@@ -117,9 +119,14 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:install', async (_, url) => {
     try { return await sources.addons.install(getDB(), url) } catch (e) { return { error: e.message } }
   })
-  ipcMain.handle('addons:remove', (_, key) => sources.addons.remove(getDB(), key))
-  ipcMain.handle('addons:setEnabled', (_, key, enabled) => sources.addons.setEnabled(getDB(), key, enabled))
-  ipcMain.handle('addons:setSettings', (_, key, values) => sources.addons.setSettings(getDB(), key, values))
+  const addonRequest = async work => { try { return await work() } catch (e) { return { error: e.message } } }
+  ipcMain.handle('addons:remove', (_, key) => addonRequest(() => sources.addons.remove(getDB(), key)))
+  ipcMain.handle('addons:setEnabled', (_, key, enabled) => addonRequest(() => sources.addons.setEnabled(getDB(), key, enabled)))
+  ipcMain.handle('addons:setSettings', (_, key, values) => addonRequest(() => sources.addons.setSettings(getDB(), key, values)))
+  ipcMain.handle('addons:packages', (event, request) => {
+    if (event.senderFrame !== event.sender.mainFrame) return { error: 'Addon management requires the main application frame' }
+    return addonRequest(() => require('../spotiflac/api').dispatch(getDB(), request))
+  })
   const musicVideoProgress = (event, trackId) => update => {
     try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:progress', { trackId, ...update }) } catch {}
   }
@@ -164,6 +171,8 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('musicVideo:cancelIndex', () => { if (videoIndexJob) videoIndexJob.cancelled = true })
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
+      const key = sources.addons.keyOfProvider(provider)
+      if (key && sources.addons.packageService(getDB()).find(key)) return require('../spotiflac/media').prepare(getDB(), key, id, { force: !!force })
       if (provider === 'yt') await accountSession.credentials()
       const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
       return { ok: true, preview: !!stream.preview }
@@ -181,7 +190,7 @@ async function youtubeAudio(videoId, attempt = 0) {
 function resolvedSourceAudio(provider, id, { resolve = sources.resolveStream, options = streamOptions() } = {}) {
   return async attempt => {
     const stream = await resolve(provider, id, { ...options, force: attempt > 0 })
-    return { input: stream.url, headers: stream.headers }
+    return { input: stream.file || stream.url, headers: stream.headers }
   }
 }
 
