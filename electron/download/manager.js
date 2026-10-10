@@ -488,9 +488,10 @@ class DownloadManager {
   enqueue(kind, url, opts = {}) {
     this.init()
     if (!url || typeof url !== 'string') return { error: 'URL is required' }
-    if (kind !== 'soulseek' && !isHttpUrl(url)) return { error: 'Only http(s) links can be downloaded.' }
+    const packageSource = kind === 'single' && this.isPackageSource(opts.addonSource)
+    if (kind !== 'soulseek' && !packageSource && !isHttpUrl(url)) return { error: 'Only http(s) links can be downloaded.' }
     // Soulseek downloads go through slskd, not yt-dlp.
-    const check = kind === 'soulseek' || kind === 'music-video'
+    const check = kind === 'soulseek' || kind === 'music-video' || packageSource
       ? { tools: this.deps.findTools?.() || {} }
       : this.checkTools()
     if (check.error) return check
@@ -552,7 +553,7 @@ class DownloadManager {
     this.persist(job)
     this.emit(job, true)
     // Named after its link ("YouTube Track"): ask the source for the real name.
-    if ((kind === 'playlist' || kind === 'single') && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
+    if (!packageSource && (kind === 'playlist' || kind === 'single') && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
     this.pump()
     return { downloadId: job.id, playlistId: job.playlistId, queued: true }
   }
@@ -603,6 +604,7 @@ class DownloadManager {
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
     if (job.status !== 'downloading') return Promise.resolve({ success: true, status: job.status })
+    if (job.packageAbort) { job.stop = 'cancelled'; job.packageAbort.abort(); this.update(job, { message: 'Stopping…' }, { force: true }); return Promise.resolve({ success: true, status: 'cancelled' }) }
     if (job.kind === 'music-video') {
       job.stop = 'cancelled'
       job.videoAbort?.abort()
@@ -691,7 +693,7 @@ class DownloadManager {
     if (ACTIVE.has(job.status)) return { downloadId: job.id }
     if (job.kind === 'music-video') {
       if (!this.deps.findTools?.()?.ytdlp) return { error: 'yt-dlp not found. Go to Settings → External Tools to download it.' }
-    } else if (job.kind !== 'soulseek') {
+    } else if (job.kind !== 'soulseek' && !this.isPackageSource(job.opts?.addonSource)) {
       const check = this.checkTools()
       if (check.error) return check
     }
@@ -724,6 +726,7 @@ class DownloadManager {
 
   start(job) {
     if (job.kind === 'music-video') return this.startMusicVideo(job)
+    if (this.isPackageSource(job.opts?.addonSource)) return this.startPackage(job)
     // An addon download: its link expires, so ask the addon for a fresh one
     // right before yt-dlp starts (first run, restart or retry alike). The job
     // holds its slot meanwhile.
@@ -831,6 +834,47 @@ class DownloadManager {
     }
     proc.on('close', code => onClose(code))
     proc.on('error', err => onClose(null, err))
+  }
+
+  isPackageSource(source) {
+    if (!source || !/^a-[0-9a-f]{10}$/.test(source.provider) || typeof source.id !== 'string' || !source.id || source.id.length > 300 || /[\r\n]/.test(source.id)) return false
+    try { return !!require('../spotiflac/packages').service(this.db()).find(source.provider.slice(2)) } catch { return false }
+  }
+
+  startPackage(job) {
+    const controller = new AbortController(), runId = Symbol('package-run')
+    job.packageAbort = controller; job.packageRunId = runId; job.startedAt = Date.now(); job.stop = null; job.exited = false
+    job.settings = this.settings(); job.post = Promise.resolve(); this.running++
+    this.update(job, { status: 'downloading', message: 'Resolving addon audio…', error: null, seen: false }, { persist: true })
+    let artifact
+    Promise.resolve().then(async () => {
+      const { provider, id } = job.opts.addonSource
+      artifact = await require('../spotiflac/packages').service(this.db()).download(provider.slice(2), id, {
+        signal: controller.signal, quality: job.opts.addonQuality,
+        onProgress: update => { if (job.packageRunId === runId && !job.stop) this.update(job, { progress: update.percent ?? job.progress, message: update.message || 'Downloading addon audio…' }) },
+      })
+      controller.signal.throwIfAborted()
+      const outputDir = job.opts.outputDir || job.settings.music_folder || path.join(os.homedir(), 'Music')
+      fs.ensureDirSync(outputDir)
+      const title = String(job.title || 'Addon Track').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '').slice(0,180)
+      const ext = path.extname(artifact.file)
+      let target = path.join(outputDir, `${title}${ext}`)
+      for (let suffix = 1; fs.existsSync(target); suffix++) target = path.join(outputDir, `${title} (${suffix})${ext}`)
+      await fs.copy(artifact.file, target, { overwrite: false, errorOnExist: true })
+      if (controller.signal.aborted) { await fs.remove(target); controller.signal.throwIfAborted() }
+      const meta = artifact.metadata
+      job.opts.tags = { title: meta.title || meta.name, artist: meta.artist || (Array.isArray(meta.artists) ? meta.artists.join(', ') : meta.artists), album: meta.album || meta.album_name, cover: meta.cover_url, year: Number(String(meta.release_date || '').slice(0,4)) || undefined, track: meta.track_number, disc: meta.disc_number, isrc: meta.isrc, genre: meta.genre, ...job.opts.tags }
+      job.filepaths.push(target); job.exited = true; job.exitCode = 0
+      this.afterFile(job, target)
+      await this.onExit(job, 0)
+    }).catch(error => {
+      if (job.stop) this.update(job, { status: job.stop === 'suspend' ? 'queued' : 'cancelled', message: job.stop === 'suspend' ? 'Resuming…' : 'Cancelled', finishedAt: job.stop === 'suspend' ? null : Date.now() }, { persist: true })
+      else this.fail(job, error.message)
+    }).finally(async () => {
+      await artifact?.cleanup()
+      if (job.packageRunId === runId) job.packageAbort = null
+      this.running--; this.pump()
+    })
   }
 
   startMusicVideo(job) {
@@ -1481,7 +1525,7 @@ class DownloadManager {
   async suspend() {
     this.suspended = true
     const running = [...this.jobs.values()].filter(j => j.status === 'downloading' && !j.exited && j.kind !== 'soulseek')
-    for (const job of running) { job.stop = 'suspend'; job.videoAbort?.abort() }
+    for (const job of running) { job.stop = 'suspend'; job.videoAbort?.abort(); job.packageAbort?.abort() }
     await Promise.all(running.map(j => terminate(j.proc)))
     await Promise.all([...this.looseProcs].map(p => terminate(p)))
     return { success: true, count: running.length, ids: running.map(j => j.id) }
@@ -1516,6 +1560,7 @@ class DownloadManager {
         job.message = 'Resuming after restart'
         this.persist(job)
         job.videoAbort?.abort()
+        job.packageAbort?.abort()
         terminate(job.proc)
       }
     }

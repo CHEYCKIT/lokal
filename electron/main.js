@@ -754,6 +754,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   closeNativeOutput()
   try { shutdownActiveDownloads() } catch {}
+  try { require('./spotiflac/packages').shutdown(require('./ipc/db').getDB()) } catch {}
   unregisterMediaShortcuts()
   try { stopSmtcBridge() } catch {}
 })

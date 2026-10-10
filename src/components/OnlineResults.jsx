@@ -19,6 +19,7 @@ import SoulseekSearch from './SoulseekSearch'
 import OnlineCollections from './OnlineCollections'
 import DownloadNotices from './DownloadNotices'
 import SourceIcon from './SourceIcon'
+import AddonCollections from './AddonCollections'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -225,6 +226,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
           })}
         </div>
         {provider === 'yt' && <OnlineCollections query={q} />}
+        {providers.find(source => source.id === provider)?.package && <AddonCollections key={provider} query={q} source={providers.find(source => source.id === provider)} />}
         </>
       )}
     </section>

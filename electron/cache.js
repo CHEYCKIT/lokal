@@ -16,7 +16,7 @@ const db = require('./ipc/db')
 const MB = 1024 * 1024
 const DEFAULT_LIMIT_MB = 4096
 const LIMITS_MB = [512, 1024, 2048, 4096, 8192, 16384]
-const DIRS = { motion: 'motion-covers', playback: 'playback-cache', musicVideo: 'music-video-cache' }
+const DIRS = { motion: 'motion-covers', playback: 'playback-cache', musicVideo: 'music-video-cache', addonAudio: 'spotiflac/audio-cache' }
 
 function cacheDir(name) {
   const root = db.getStorageDir()

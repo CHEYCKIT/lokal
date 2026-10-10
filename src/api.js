@@ -319,7 +319,23 @@ export const api = {
   // Online results (YouTube Music 'yt', SoundCloud 'sc'), streamed with the user's yt-dlp.
   onlineSearch: (q, provider = 'yt') => isE() ? el().onlineSearch(q, provider) : apiFetch(`/online/search?${new URLSearchParams({ q, provider })}`),
   onlineSave: (items) => isE() ? el().onlineSave(items) : apiFetch('/online/save', { method:'POST', body:{ items } }),
-  onlinePrepare: (provider, id, force = false) => isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }),
+  onlinePrepare: async (provider, id, force = false, options = {}) => {
+    const started = await (isE() ? el().onlinePrepare(provider, id, force) : apiFetch(`/online/prepare/${encodeURIComponent(provider)}/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method:'POST' }))
+    if (!started?.pending) return started
+    const operation = cancel => api.addonsPackages({ action: 'operation', id: started.operationId, cancel })
+    const abort = () => { operation(true).catch(() => {}) }
+    options.signal?.addEventListener('abort', abort, { once: true })
+    const deadline = Date.now() + 15 * 60 * 1000
+    try {
+      for (;;) {
+        if (options.signal?.aborted || Date.now() > deadline) { abort(); return { error: 'Audio preparation cancelled or timed out' } }
+        const status = await operation(false)
+        options.onProgress?.(status)
+        if (status?.ok || status?.error || status?.status === 'cancelled') return status
+        await new Promise(resolve => setTimeout(resolve, 300))
+      }
+    } finally { options.signal?.removeEventListener('abort', abort) }
+  },
   onlineProviders: () => isE() ? el().onlineProviders() : apiFetch('/online/providers'),
   // A streamed song's genre (looked up when it has none), or null.
   onlineGenre: (trackId) => isE() ? el().onlineGenre(trackId) : apiFetch(`/online/genre/${encodeURIComponent(trackId)}`).then(r => r?.genre || null),
@@ -366,6 +382,7 @@ export const api = {
   addonsRemove: (key) => isE() ? el().addonsRemove(key) : apiFetch(`/online/addons/${encodeURIComponent(key)}`, { method:'DELETE' }),
   addonsSetEnabled: (key, enabled) => isE() ? el().addonsSetEnabled(key, enabled) : apiFetch(`/online/addons/${encodeURIComponent(key)}/enabled`, { method:'PUT', body:{ enabled } }),
   addonsSetSettings: (key, values) => isE() ? el().addonsSetSettings(key, values) : apiFetch(`/online/addons/${encodeURIComponent(key)}/settings`, { method:'PUT', body:{ values } }),
+  addonsPackages: request => isE() ? el().addonsPackages(request) : apiFetch('/online/addons/packages', { method:'POST', body:request }),
   onlineStreamURL: (provider, id) => isE() ? `lokal-stream://${provider}/${encodeURIComponent(id)}` : `${BASE}/online/stream/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`,
   downloadPlaylist: (url, o) => isE() ? el().downloadPlaylist(url, o) : apiFetch('/download/playlist', { method:'POST', body:{url,...o} }),
   getDownloadedPlaylists: () => isE() ? el().getDownloadedPlaylists() : apiFetch('/download/playlists'),

@@ -172,6 +172,7 @@ contextBridge.exposeInMainWorld('electron', {
   addonsRemove: (key) => invoke('addons:remove', key),
   addonsSetEnabled: (key, enabled) => invoke('addons:setEnabled', key, enabled),
   addonsSetSettings: (key, values) => invoke('addons:setSettings', key, values),
+  addonsPackages: request => invoke('addons:packages', request),
   downloadPlaylist: (url, opts) => invoke('downloader:downloadPlaylist', url, opts),
   searchYT: (q, page) => invoke('downloader:search', q, page),
   searchYTArtist: (q, page) => invoke('downloader:searchArtist', q, page),

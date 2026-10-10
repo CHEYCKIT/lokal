@@ -1,20 +1,18 @@
-// Settings → Addons: install online sources by pasting a manifest URL
-// (Eclipse Music–compatible addons), turn them on/off, edit the settings
-// they declare, remove them. Installed addons show up as sources next to
-// YouTube Music and SoundCloud above the online results in search.
+// Settings → Addons: SpotiFLAC repositories/packages and HTTP sources.
 
 import React, { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Blocks, Loader2, Trash2 } from 'lucide-react'
+import { AlertTriangle, Blocks, Loader2, Trash2, RefreshCw, Upload } from 'lucide-react'
 import { api } from '../api'
 import { peekCache, usePageReady, writeCache } from '../pageCache'
 
 const changed = () => window.dispatchEvent(new Event('lokal:addons-changed'))
 
 /** One field from an addon's manifest "settings". */
-function SettingField({ field, value, onChange }) {
+function SettingField({ field, value, onChange, onAction }) {
   const id = `addon-setting-${field.key}`
   const label = <label htmlFor={id} className="text-xs font-medium text-text">{field.label || field.key}</label>
   const help = field.help ? <p className="text-[11px] leading-relaxed text-muted">{field.help}</p> : null
+  if (field.type === 'button') return <div><button className="rounded-lg border border-border px-3 py-2 text-xs text-accent" onClick={() => onAction?.(field.action)}>{field.label || field.key}</button>{help}</div>
   if (field.type === 'toggle') {
     const on = value === true || value === 'true'
     return (
@@ -42,7 +40,7 @@ function SettingField({ field, value, onChange }) {
   return (
     <div className="space-y-1">
       {label}
-      <input id={id} type={field.type === 'number' ? 'number' : 'text'} value={String(value ?? '')} placeholder={field.placeholder || ''}
+      <input id={id} type={field.secret || field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'} autoComplete="off" value={String(value ?? '')} placeholder={field.placeholder || ''}
         onChange={e => onChange(field.type === 'number' ? e.target.value : e.target.value)}
         className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-text outline-none focus:border-accent/50" />
       {help}
@@ -56,25 +54,37 @@ function AddonCard({ addon, onChanged }) {
   const [values, setValues] = useState(addon.settings || {})
   const [busy, setBusy] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [message, setMessage] = useState('')
+  const [auth, setAuth] = useState(null)
+  const [callbackUrl, setCallbackUrl] = useState('')
+  const [form, setForm] = useState(null)
+  const [formInput, setFormInput] = useState({})
   useEffect(() => { setValues(addon.settings || {}) }, [addon.settings])
 
-  const update = async (key, value) => {
-    const next = { ...values, [key]: value }
-    setValues(next)
-    await api.addonsSetSettings(addon.key, next)
+  const update = (key, value) => setValues(current => ({ ...current, [key]: value }))
+  const run = async work => {
+    setBusy(true); setMessage('')
+    try { const result = await work(); if (result?.error || result?.success === false) throw new Error(result?.error || result?.error_message || 'Addon action failed'); return result }
+    catch (error) { setMessage(error.message); return null }
+    finally { setBusy(false) }
   }
+  const save = () => run(async () => { const result = await api.addonsSetSettings(addon.key, values); if (!result?.error) { setMessage('Settings saved'); onChanged() } return result })
   const toggle = async () => {
-    setBusy(true)
-    await api.addonsSetEnabled(addon.key, !addon.enabled)
-    setBusy(false)
-    onChanged()
+    if (await run(() => api.addonsSetEnabled(addon.key, !addon.enabled))) onChanged()
   }
   const remove = async () => {
-    setBusy(true)
-    await api.addonsRemove(addon.key)
-    setBusy(false)
-    onChanged()
+    if (await run(() => api.addonsRemove(addon.key))) onChanged()
   }
+  const action = (id, input, token) => run(async () => {
+    const result = await api.addonsPackages({ action: 'package.action', key: addon.key, id, input, token })
+    const schema = result?.action_form || result?.byoa_form
+    setForm(schema ? { ...schema, token: result.formToken } : null); setFormInput({})
+    if (result?.open_auth_url && /^https:\/\//i.test(result.open_auth_url)) setAuth({ open_auth_url: result.open_auth_url })
+    if (result?.message) setMessage(result.message)
+    return result
+  })
+  const verify = () => run(async () => { const result = await api.addonsPackages({ action: 'package.verify', key: addon.key }); setAuth(result); return result })
+  const complete = () => run(async () => { const result = await api.addonsPackages({ action: 'package.callback', key: addon.key, url: callbackUrl }); if (!result?.error) { setCallbackUrl(''); setAuth(await api.addonsPackages({ action: 'package.auth', key: addon.key })); changed() } return result })
 
   return (
     <div className={`rounded-xl border border-border bg-card/60 p-4 ${addon.enabled ? '' : 'opacity-70'}`}>
@@ -99,20 +109,80 @@ function AddonCard({ addon, onChanged }) {
           )}
         </div>
       </div>
-      {addon.settingsSchema.length > 0 && (
+      {(addon.settingsSchema.length > 0 || addon.kind === 'spotiflac') && (
         <div className="mt-3">
-          <button onClick={() => setOpen(v => !v)} className="text-xs text-accent hover:underline">{open ? 'Hide settings' : `Settings (${addon.settingsSchema.length})`}</button>
+          <button onClick={() => setOpen(v => !v)} className="text-xs text-accent hover:underline">{open ? 'Hide settings' : 'Settings & access'}</button>
           {open && (
             <div className="mt-3 space-y-3 border-t border-border pt-3">
               {addon.settingsSchema.filter(f => f?.key).map(field => (
-                <SettingField key={field.key} field={field} value={values[field.key] ?? field.default} onChange={v => update(field.key, v)} />
+                <SettingField key={field.key} field={field.secret ? { ...field, placeholder: addon.configuredSecrets?.includes(field.key) ? 'Configured — enter a replacement' : field.placeholder } : field} value={values[field.key] ?? field.default} onChange={v => update(field.key, v)} onAction={action} />
               ))}
+              {addon.qualityOptions?.length > 0 && <SettingField field={{ key: 'downloadQuality', label: 'Download quality', type: 'select', options: addon.qualityOptions.map(q => ({ value: q.id, label: q.label })) }} value={values.downloadQuality || addon.qualityOptions.find(q => q.kind === 'lossless')?.id || addon.qualityOptions[0].id} onChange={v => update('downloadQuality', v)} />}
+              {(addon.qualityOptions || []).map(quality => (quality.settings || []).map(field => <SettingField key={`${quality.id}:${field.key}`} field={{ ...field, label: `${quality.label}: ${field.label}`, help: field.description, type: field.type === 'boolean' ? 'toggle' : field.type, options: field.options?.map(o => typeof o === 'object' ? o : { value: o, label: o }) }} value={values.qualitySettings?.[quality.id]?.[field.key] ?? field.default} onChange={v => update('qualitySettings', { ...values.qualitySettings, [quality.id]: { ...values.qualitySettings?.[quality.id], [field.key]: v } })} />))}
+              <button disabled={busy} onClick={save} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Save settings</button>
+              {(addon.actions || []).map(item => <button key={item.action} disabled={busy} onClick={() => action(item.action)} className="ml-2 rounded-lg border border-border px-3 py-2 text-xs text-text">{item.label || item.action}</button>)}
+              {addon.signedSession && <div className="space-y-2 border-t border-border pt-3">
+                <p className="text-xs text-muted">{auth?.authenticated ? 'Verified access is active.' : 'This source may require browser verification before downloads.'}</p>
+                <button disabled={busy || !addon.enabled} onClick={verify} className="rounded-lg border border-border px-3 py-2 text-xs text-accent">Verify access</button>
+                {auth?.authenticated && <button disabled={busy} onClick={() => run(async () => { const result = await api.addonsPackages({ action: 'package.logout', key: addon.key }); setAuth(null); return result })} className="ml-2 text-xs text-muted">Disconnect</button>}
+              </div>}
+              {auth?.open_auth_url && /^https:\/\//i.test(auth.open_auth_url) && <div className="space-y-2">
+                <button onClick={() => api.isElectron ? run(() => api.addonsPackages({ action: 'package.openAuth', key: addon.key })) : api.openExternal(auth.open_auth_url)} className="text-xs text-accent underline">Open verification / login page</button>
+                <p className="text-[11px] text-muted">After completing it, copy the callback link into this field.</p>
+                <div className="flex gap-2"><input aria-label="Authentication callback URL" value={callbackUrl} onChange={e => setCallbackUrl(e.target.value)} placeholder="spotiflac://session-grant?…" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !callbackUrl} onClick={complete} className="text-xs text-accent">Complete</button></div>
+              </div>}
+              {form && <form onSubmit={e => { e.preventDefault(); action(form.submit_action, formInput, form.token) }} className="space-y-3 rounded-lg border border-border p-3">
+                <p className="text-sm text-text">{form.title || 'Account details'}</p>{form.description && <p className="text-xs text-muted">{form.description}</p>}
+                {form.fields.map(field => <SettingField key={field.key} field={{ ...field, secret: ['password', 'otp'].includes(field.type), options: field.options?.map(o => ({ value: o, label: o })) }} value={formInput[field.key] ?? field.default} onChange={v => setFormInput(current => ({ ...current, [field.key]: v }))} />)}
+                <button disabled={busy} type="submit" className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent">Continue</button><button type="button" onClick={() => { setForm(null); setFormInput({}) }} className="ml-3 text-xs text-muted">Cancel</button>
+              </form>}
             </div>
           )}
         </div>
       )}
+      {message && <p role="status" className="mt-2 text-xs text-muted">{message}</p>}
     </div>
   )
+}
+
+const DEFAULT_REGISTRY = 'https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/main/registry.json'
+function RepositoryBrowser({ onChanged }) {
+  const [url, setUrl] = useState(DEFAULT_REGISTRY)
+  const [repos, setRepos] = useState([])
+  const [entries, setEntries] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const request = action => api.addonsPackages(action)
+  const load = async () => {
+    const [repositories, catalogue] = await Promise.all([request({ action: 'repositories' }), request({ action: 'catalogue' })])
+    if (Array.isArray(repositories)) setRepos(repositories)
+    if (Array.isArray(catalogue)) setEntries(catalogue)
+  }
+  useEffect(() => { load().catch(e => setMessage(e.message)) }, [])
+  const run = async action => {
+    setBusy(true); setMessage('')
+    try { const result = await action(); if (result?.error) throw new Error(result.error); await load(); onChanged() }
+    catch (error) { setMessage(error.message) }
+    finally { setBusy(false) }
+  }
+  const upload = event => {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file) return
+    run(async () => {
+      if (file.size > 32 * 1024 * 1024) throw new Error('Addon packages must be smaller than 32 MB')
+      const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = () => reject(new Error('Could not read the package')); reader.readAsDataURL(file) })
+      return request({ action: 'package.upload', data })
+    })
+  }
+  return <div className="space-y-3">
+    <p className="text-sm font-medium text-text">SpotiFLAC repositories</p>
+    <p className="text-xs leading-relaxed text-muted">Add a repository to browse its downloadable sources, or install a .sflx / .spotiflac-ext package. Installed sources appear in search and can play or save songs to your library.</p>
+    <div className="flex gap-2"><input aria-label="Repository registry URL" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…/registry.json" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !url.trim()} onClick={() => run(() => request({ action: 'repository.add', url: url.trim() }))} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Add repository</button></div>
+    <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted ${busy ? 'pointer-events-none opacity-40' : ''}`}><Upload size={13} />Install package file<input type="file" accept=".sflx,.spotiflac-ext" disabled={busy} onChange={upload} className="hidden" /></label>
+    {repos.map(repo => <div key={repo.id} className="flex items-start gap-3 rounded-lg border border-border p-3"><div className="min-w-0 flex-1"><p className="break-all text-xs text-text">{repo.url}</p><p className="mt-1 text-[11px] text-muted">{repo.error || (repo.refreshed_at ? `Refreshed ${new Date(repo.refreshed_at).toLocaleString()}` : 'Not refreshed')}</p></div><button disabled={busy} title="Refresh repository" aria-label="Refresh repository" onClick={() => run(() => request({ action: 'repository.refresh', id: repo.id }))} className="text-muted hover:text-accent"><RefreshCw size={14} /></button><button disabled={busy} title="Remove repository" aria-label="Remove repository" onClick={() => run(() => request({ action: 'repository.remove', id: repo.id }))} className="text-muted hover:text-red"><Trash2 size={14} /></button></div>)}
+    {entries.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{entries.map(entry => <div key={`${entry.repositoryId}:${entry.id}`} className="rounded-xl border border-border bg-card/60 p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm text-text">{entry.display_name || entry.id}<span className="ml-2 text-[11px] text-muted">v{entry.version}</span></p><button disabled={busy || !entry.compatible || entry.installed && !entry.updateAvailable} onClick={() => run(() => request({ action: 'package.install', repositoryId: entry.repositoryId, id: entry.id }))} className="rounded-lg bg-accent/20 px-3 py-1 text-xs text-accent disabled:opacity-40">{entry.updateAvailable ? 'Update' : entry.installed ? 'Installed' : 'Install'}</button></div><p className="mt-2 text-[11px] leading-relaxed text-muted">{entry.description}</p>{!entry.compatible && <p className="mt-1 text-xs text-muted">Requires SpotiFLAC compatibility {entry.min_app_version}</p>}</div>)}</div>}
+    {busy && <p className="flex items-center gap-2 text-xs text-muted"><Loader2 size={13} className="animate-spin" />Working…</p>}{message && <p role="alert" className="text-xs text-red">{message}</p>}
+  </div>
 }
 
 /** The Addons section. */
@@ -154,6 +224,8 @@ export default function AddonsSettings() {
 
   return (
     <div className="space-y-4">
+      <RepositoryBrowser onChanged={onChanged} />
+      <div className="border-t border-border pt-4"><p className="mb-2 text-sm font-medium text-text">HTTP addons</p>
       <p className="text-xs leading-relaxed text-muted">
         Add online sources by pasting an addon's manifest URL (addons made for Eclipse Music work). An addon's results show up as a source next to YouTube Music and SoundCloud in search, and its songs can be played, added to playlists and saved to your library.
       </p>
@@ -173,6 +245,7 @@ export default function AddonsSettings() {
         </button>
       </div>
       {message && <p className={`text-xs ${message.error ? 'text-red' : 'text-accent'}`}>{message.text}</p>}
+      </div>
       {addons === null ? null : addons.length === 0 ? (
         <p className="text-xs text-muted">No addons installed.</p>
       ) : (

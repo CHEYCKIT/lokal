@@ -63,7 +63,7 @@ router.get('/providers', (req, res) => {
   res.json([
     { id: 'yt', label: 'YouTube Music' },
     { id: 'sc', label: 'SoundCloud' },
-    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, package: a.kind === 'spotiflac', filters: a.searchFilters, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
   ])
 })
 
@@ -76,6 +76,8 @@ router.post('/account-liked', async (req, res) => res.json(await youtube.setAcco
 
 // Direct audio link of an addon track, for "Save to library".
 router.post('/download-url/:provider/:id', async (req, res) => {
+  const key = sources.addons.keyOfProvider(req.params.provider)
+  if (key && sources.addons.packageService(getDB()).find(key)) return res.json({ package: true, url: `spotiflac://${key}/${encodeURIComponent(req.params.id)}` })
   try { res.json({ url: (await sources.resolveStream(req.params.provider, req.params.id, { ...streamOptions(), force: true })).url }) } catch (e) { res.json({ error: e.message }) }
 })
 
@@ -94,9 +96,11 @@ for (const [path, read] of [['addon-album', 'album'], ['addon-artist', 'artist']
 router.post('/addons', async (req, res) => {
   try { res.json(await sources.addons.install(getDB(), req.body?.url)) } catch (e) { res.status(400).json({ error: e.message }) }
 })
-router.delete('/addons/:key', (req, res) => res.json(sources.addons.remove(getDB(), req.params.key)))
-router.put('/addons/:key/enabled', (req, res) => res.json(sources.addons.setEnabled(getDB(), req.params.key, !!req.body?.enabled)))
-router.put('/addons/:key/settings', (req, res) => res.json(sources.addons.setSettings(getDB(), req.params.key, req.body?.values || {})))
+const addonRequest = work => async (req, res) => { try { res.json(await work(req)) } catch (e) { res.status(400).json({ error: e.message }) } }
+router.post('/addons/packages', addonRequest(req => require('../../electron/spotiflac/api').dispatch(getDB(), req.body)))
+router.delete('/addons/:key', addonRequest(req => sources.addons.remove(getDB(), req.params.key)))
+router.put('/addons/:key/enabled', addonRequest(req => sources.addons.setEnabled(getDB(), req.params.key, !!req.body?.enabled)))
+router.put('/addons/:key/settings', addonRequest(req => sources.addons.setSettings(getDB(), req.params.key, req.body?.values || {})))
 
 router.post('/save', (req, res) => {
   try {
@@ -112,6 +116,8 @@ setTimeout(() => { try { genres.backfillOnlineGenres(getDB()) } catch {} }, 2000
 
 router.post('/prepare/:provider/:id', async (req, res) => {
   try {
+    const key = sources.addons.keyOfProvider(req.params.provider)
+    if (key && sources.addons.packageService(getDB()).find(key)) return res.json(require('../../electron/spotiflac/media').prepare(getDB(), key, req.params.id, { force: req.query.force === '1' }))
     const stream = await sources.resolveStream(req.params.provider, req.params.id, { ...streamOptions(), force: req.query.force === '1' })
     res.json({ ok: true, preview: !!stream.preview })
   } catch (e) { res.json({ error: e.message }) }
