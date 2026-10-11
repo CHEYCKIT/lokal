@@ -54,11 +54,22 @@ export default function MusicVideoPlayer({ compact = false }) {
   const idleTimer = useRef(null)
   const recoverRef = useRef(0)
 
+  // A new video (or the player reopened): start over. Not when the player
+  // only comes back from being hidden behind the mini player (its effects
+  // run again then, with the same video still loaded).
+  const shownKey = useRef(null)
   useEffect(() => {
+    const key = `${video?.videoId}\u0000${video?.src}\u0000${open}`
+    if (shownKey.current === key) return
+    shownKey.current = key
     setReady(false); setEverPlayed(false); setFailed(false); setErrorText(null)
     setStalled(false); setOutside(false)
     recoverRef.current = 0
   }, [video?.videoId, video?.src, open])
+  // Hidden behind the mini player (or closed): the muted picture stops; the
+  // sync below starts it again where the song is.
+  const lastVideo = useRef(null)
+  useEffect(() => () => { try { lastVideo.current?.pause() } catch {} }, [])
   useEffect(() => {
     setSlowLoad(false)
     if (!open || !loading) return undefined
@@ -193,7 +204,7 @@ export default function MusicVideoPlayer({ compact = false }) {
   if (compact) return open && currentTrack ? (
     <div className="relative aspect-video w-full overflow-hidden bg-black" aria-label={`Music video: ${currentTrack.title}`}>
       {!showVideo && (art ? <img src={art} alt="Artwork" className="absolute inset-0 h-full w-full object-contain" /> : <span className="absolute inset-0 flex items-center justify-center text-muted">♪</span>)}
-      {video?.src && !video.error && !failed && <video key={video.videoId} ref={videoRef} src={video.src} muted playsInline preload="auto" disablePictureInPicture
+      {video?.src && !video.error && !failed && <video key={video.videoId} ref={el => { videoRef.current = el; if (el) lastVideo.current = el }} src={video.src} muted playsInline preload="auto" disablePictureInPicture
         onPlaying={() => { setReady(true); setEverPlayed(true); recoverRef.current = 0 }} onCanPlay={sync} onLoadedMetadata={sync} onLoadedData={() => { setReady(true); sync() }} onSeeked={sync} onError={onVideoError}
         className={`absolute inset-0 h-full w-full object-contain ${showVideo ? '' : 'opacity-0'}`} />}
       {!showVideo && message && <p role="status" className="absolute inset-x-0 bottom-0 bg-black/65 px-3 py-1 text-center text-[10px] text-white/80">{message}</p>}
@@ -214,7 +225,7 @@ export default function MusicVideoPlayer({ compact = false }) {
           transition={{ duration: reduceMotion ? 0 : 0.42, ease: EASE }}
           onMouseMove={wake}
           onClick={wake}
-          className={`fixed inset-0 z-[60] bg-black overflow-hidden select-none ${chromeHidden ? 'cursor-none' : ''}`}
+          className={`fixed inset-0 z-[70] bg-black overflow-hidden select-none ${chromeHidden ? 'cursor-none' : ''}`}
         >
           {/* The cover, blurred behind and sharp in the middle, until the video plays. */}
           {art && <img src={art} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover scale-125 blur-3xl opacity-50" />}
@@ -254,7 +265,7 @@ export default function MusicVideoPlayer({ compact = false }) {
           {video?.src && !video.error && !failed && (
             <motion.video
               key={video.videoId}
-              ref={videoRef}
+              ref={el => { videoRef.current = el; if (el) lastVideo.current = el }}
               src={video.src}
               muted
               playsInline

@@ -1,6 +1,6 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
-import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
+import React, { Activity, useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import Sidebar from './components/Sidebar'
@@ -493,6 +493,7 @@ export default function App() {
     shuffle, playNext, addToQueue, skipAhead,
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   })))
+  const miniSwitching = usePlayerStore(s => s.miniSwitching)
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
   const { user } = useAppStore()
@@ -2371,9 +2372,14 @@ export default function App() {
     <Router>
       <NativeHistoryNavigation />
       <div className="relative flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx} style={showMiniPlayer || !glassPlayerBar ? undefined : { '--player-space': '104px' }}>
-        {showMiniPlayer ? (
-          <MiniPlayer windowed />
-        ) : (
+        {/* Covers the window (overlays included) while it switches to or from
+            the mini player: the window is resized behind it, so neither view
+            is ever seen at the other's size. */}
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-[400] bg-bg transition-opacity duration-100 ease-out" style={{ opacity: miniSwitching ? 1 : 0 }} />
+        {showMiniPlayer && <MiniPlayer windowed />}
+        {/* Kept mounted (hidden) while the mini player shows: leaving it
+            brings the page back as it was instead of rebuilding the app. */}
+        <Activity mode={showMiniPlayer ? 'hidden' : 'visible'}>
           <>
             <div 
               className="fixed inset-0 bg-no-repeat -z-10"
@@ -2444,7 +2450,7 @@ export default function App() {
               )}
             </AnimatePresence>
           </>
-        )}
+        </Activity>
 
         {/* crossOrigin: both players feed the Web Audio graph (EQ, analyser).
             Without it, Chromium treats lokal-stream:// media as cross-origin

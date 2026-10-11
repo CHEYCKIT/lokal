@@ -266,8 +266,8 @@ export default function AddonsSettings() {
   return (
     <div className="space-y-4">
       <RepositoryBrowser onChanged={onChanged} />
-      <div className="border-t border-border pt-4"><p className="mb-2 text-sm font-medium text-text">HTTP addons</p>
-      <p className="text-xs leading-relaxed text-muted">
+      <div className="space-y-3 border-t border-border pt-4"><p className="text-sm font-medium text-text">HTTP addons</p>
+      <p className="!mt-1.5 text-xs leading-relaxed text-muted">
         Add online sources by pasting an addon's manifest URL (addons made for Eclipse Music work). An addon's results show up as a source next to YouTube Music and SoundCloud in search, and its songs can be played, added to playlists and saved to your library.
       </p>
       <div className="flex items-start gap-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
