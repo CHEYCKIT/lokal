@@ -23,10 +23,11 @@ const PARTITION = 'lokal-spotify-canvas' // no "persist:" -- nothing is written 
 const KNOWN_HASHES = {
   canvas: '575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f', // Jan 2026
   searchTracks: 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428',
+  libraryV3: '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455', // Oct 2026
 }
 let liveHashes = {}
 const hashFor = (op) => liveHashes[op] || KNOWN_HASHES[op]
-const HASH_PATTERN = /["'](canvas|searchTracks)["']\s*,\s*["']query["']\s*,\s*["']([0-9a-f]{64})["']/g
+const HASH_PATTERN = /["'](canvas|searchTracks|libraryV3)["']\s*,\s*["']query["']\s*,\s*["']([0-9a-f]{64})["']/g
 
 const TOKEN_TIMEOUT = 25000   // waiting for the page's token requests
 const MINT_DEADLINE = 40000   // the whole sign-in step, whatever gets stuck
@@ -482,24 +483,39 @@ async function checkSpotify(rawCookie) {
 /**
  * The artists the signed-in account follows (Home → Releases → Followed
  * artists → Spotify), with the same cookie and web-player token as Canvas.
- * `fetchPage(url, token)` is for tests.
+ * Asked the way the web player lists "Your Library → Artists" (Pathfinder
+ * libraryV3): Spotify answers web-player tokens on the public Web API
+ * (/v1/me/following) with 429s. `fetchPage(url, token)` is for tests.
  */
-async function followedArtists(rawCookie, { fetchPage, limit = 2000 } = {}) {
+async function followedArtists(rawCookie, { fetchPage, limit = 2000, pageSize = 50 } = {}) {
   if (!cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) first.')
   const t = fetchPage ? { accessToken: 'test' } : await getTokens(rawCookie)
   if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
-  const get = fetchPage || (async (url, token) => {
-    const res = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': UA } })
+  const get = fetchPage || (async url => {
+    const headers = { Authorization: `Bearer ${t.accessToken}`, Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
+    if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
+    const res = await request(url, { headers })
     if (res.status === 401) tokens = null
-    if (!res.ok) throw new Error(res.status === 401 ? 'Spotify did not accept the cookie. Copy a fresh sp_dc value.' : `Spotify answered HTTP ${res.status}.`)
+    if (res.status === 401) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
+    if (res.status === 429) throw new Error('Spotify is limiting requests right now. Try again in a few minutes.')
+    if (!res.ok) throw new Error(`Spotify answered HTTP ${res.status}.`)
     return res.json()
   })
   const names = []
-  let url = 'https://api.spotify.com/v1/me/following?type=artist&limit=50'
-  while (url && names.length < limit) {
-    const page = (await get(url, t.accessToken))?.artists
-    for (const artist of page?.items || []) if (artist?.name) names.push(artist.name)
-    url = page?.next || null
+  for (let offset = 0; offset < limit; offset += pageSize) {
+    const variables = { filters: ['Artists'], order: null, textFilter: null, features: ['LIKED_SONGS', 'YOUR_EPISODES_V2', 'PRERELEASES', 'EVENTS'], limit: pageSize, offset, flatten: false, folderUri: null, includeFoldersWhenFlattening: true }
+    const extensions = { persistedQuery: { version: 1, sha256Hash: hashFor('libraryV3') } }
+    const url = `https://api-partner.spotify.com/pathfinder/v1/query?operationName=libraryV3&variables=${encodeURIComponent(JSON.stringify(variables))}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`
+    const json = await get(url, t.accessToken)
+    if (json?.errors?.length && !json?.data) throw new Error(`Spotify: ${json.errors[0]?.message || 'the library query failed'}`)
+    const library = json?.data?.me?.libraryV3
+    const items = library?.items || []
+    for (const entry of items) {
+      const data = entry?.item?.data
+      if (data?.__typename === 'Artist' && data.profile?.name) names.push(data.profile.name)
+    }
+    const total = Number(library?.totalCount)
+    if (!items.length || (Number.isFinite(total) && offset + pageSize >= total)) break
   }
   return names
 }

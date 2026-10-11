@@ -42,14 +42,21 @@ test('follow and unfollow move an artist between the lists, in bulk too', async 
   delete globalThis.followTestApi
 })
 
-test('Spotify: every page of followed artists', async () => {
+test('Spotify: every page of the library\'s artists, the way the web player asks', async () => {
   const { followedArtists } = require('../electron/artwork/spotify.js')
-  const pages = {
-    'https://api.spotify.com/v1/me/following?type=artist&limit=50': { artists: { items: [{ name: 'Daft Punk' }, { name: 'Kroi' }], next: 'page-2' } },
-    'page-2': { artists: { items: [{ name: 'Westend' }], next: null } },
+  const artist = name => ({ item: { __typename: 'ArtistResponseWrapper', data: { __typename: 'Artist', profile: { name } } } })
+  const asked = []
+  const fetchPage = async url => {
+    const parsed = new URL(url)
+    const variables = JSON.parse(parsed.searchParams.get('variables'))
+    asked.push([parsed.host, parsed.searchParams.get('operationName'), variables.filters, variables.offset])
+    const all = [artist('Daft Punk'), { item: { __typename: 'PlaylistResponseWrapper', data: { __typename: 'Playlist', name: 'Not an artist' } } }, artist('Kroi')]
+    return { data: { me: { libraryV3: { totalCount: all.length, items: all.slice(variables.offset, variables.offset + variables.limit) } } } }
   }
-  assert.deepEqual(await followedArtists('sp_dc=abc;', { fetchPage: async url => pages[url] }), ['Daft Punk', 'Kroi', 'Westend'])
-  await assert.rejects(followedArtists('', { fetchPage: async () => ({}) }), /sp_dc/)
+  assert.deepEqual(await followedArtists('sp_dc=abc;', { fetchPage, pageSize: 2 }), ['Daft Punk', 'Kroi'])
+  assert.deepEqual(asked, [['api-partner.spotify.com', 'libraryV3', ['Artists'], 0], ['api-partner.spotify.com', 'libraryV3', ['Artists'], 2]])
+  await assert.rejects(followedArtists('sp_dc=abc', { fetchPage: async () => ({ errors: [{ message: 'PersistedQueryNotFound' }] }) }), /PersistedQueryNotFound/)
+  await assert.rejects(followedArtists('', { fetchPage }), /sp_dc/)
 })
 
 test('Apple Music: the web player developer token, then every page of library artists', async () => {
