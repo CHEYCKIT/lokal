@@ -186,3 +186,35 @@ test('a GitHub limit or a newer release without a checked file says so', async (
   }
   fs.rmSync(base, { recursive: true, force: true })
 })
+
+test('signing out while the client is still downloading stops it from starting afterwards', async () => {
+  const { client, spawned, base } = fakeClient()
+  let finish
+  client.install = () => new Promise(resolve => { finish = resolve })
+  const starting = client.ensureRunning({ username: 'me', password: 'pw' })
+  await new Promise(resolve => setImmediate(resolve))
+  await client.stop()
+  finish()
+  await assert.rejects(starting, /cancelled/)
+  assert.equal(spawned.length, 0)
+  assert.equal(client.status().running, false)
+  assert.notEqual(client.status().phase, 'error')
+  // Signing in again afterwards works.
+  client.install = async () => {}
+  await client.ensureRunning({ username: 'me', password: 'pw' })
+  assert.equal(spawned.length, 1)
+  await client.stop()
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('a client that cannot be launched is an error for Settings, not a crash', async () => {
+  const { client, base } = fakeClient({ ready: false })
+  client.spawn = () => {
+    const proc = new EventEmitter(); proc.exitCode = null; proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter(); proc.kill = () => {}
+    setImmediate(() => proc.emit('error', Object.assign(new Error('spawn EACCES'), { code: 'EACCES' })))
+    return proc
+  }
+  await assert.rejects(client.ensureRunning({ username: 'me', password: 'pw' }), /couldn't start: spawn EACCES/)
+  assert.equal(client.status().phase, 'error')
+  fs.rmSync(base, { recursive: true, force: true })
+})

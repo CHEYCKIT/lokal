@@ -3,7 +3,7 @@
 // player bar) instead of being inserted above the list, so nothing moves
 // when it comes and goes; it glides in and out.
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { X } from 'lucide-react'
@@ -11,19 +11,36 @@ import { X } from 'lucide-react'
 const GAP = 16
 
 // While a bar is up the page gets room at its bottom, so the last rows can
-// still scroll out from under it (room below the content moves nothing).
+// still scroll out from under it (room below the content moves nothing): the
+// bar's height and its gap, a stacked bar's extra rows included.
 let raised = 0
-function useRoomBelow(open) {
+function useRoomBelow(open, room) {
   useEffect(() => {
     const main = open && document.querySelector('main')
     if (!main) return undefined
     raised += 1
-    main.style.paddingBottom = '88px'
+    main.style.paddingBottom = `${room}px`
     return () => {
       raised -= 1
       if (!raised) main.style.paddingBottom = ''
     }
-  }, [open])
+  }, [open, room])
+}
+
+/** The bar's rendered height, kept up to date as its layout changes. */
+function useHeight(open) {
+  const [height, setHeight] = useState(0)
+  const observer = useRef(null)
+  const ref = useCallback(node => {
+    observer.current?.disconnect()
+    observer.current = null
+    if (!node || typeof ResizeObserver === 'undefined') return
+    observer.current = new ResizeObserver(() => setHeight(node.offsetHeight))
+    observer.current.observe(node)
+    setHeight(node.offsetHeight)
+  }, [])
+  useEffect(() => { if (!open) setHeight(0) }, [open])
+  return [ref, height]
 }
 
 /** Where the page content is on screen (the bar is centred over it). */
@@ -53,7 +70,8 @@ function usePageBox(open) {
 export default function SelectionBar({ open = true, label, actions = [], onClear }) {
   const reduceMotion = useReducedMotion()
   const box = usePageBox(open)
-  useRoomBelow(open)
+  const [barRef, barHeight] = useHeight(open)
+  useRoomBelow(open, Math.max(88, Math.ceil(barHeight) + GAP * 2))
   // While it glides out, it keeps showing what it last showed (not "0 selected").
   const shown = useRef({ label, actions })
   if (open) shown.current = { label, actions }
@@ -82,6 +100,7 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
         <div className="pointer-events-none fixed z-[60] flex justify-center px-4"
           style={{ left: box.left, width: box.width, bottom: box.bottom + GAP }}>
           <motion.div
+            ref={barRef}
             role="toolbar"
             aria-label={shown.current.label}
             onClick={(event) => event.stopPropagation()}

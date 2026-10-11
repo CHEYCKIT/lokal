@@ -241,7 +241,15 @@ export default function Artists() {
     if (followedOnly) loadArtists(query.trim(), 0, false, sort)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followed])
+  // The other list at once: its last page when seen before, else nothing until
+  // it loads (never this list's artists under the other filter's name).
   const changeFollowedOnly = (next) => {
+    if (next === followedOnly) return
+    const seen = peekCache(`artists:${sort}${next ? ':followed' : ''}`)
+    setArtists(seen?.items || [])
+    setTotal(seen?.total || 0)
+    setHasMore(!!seen?.hasMore)
+    setLoading(!seen)
     setFollowedOnly(next)
     try { localStorage.setItem('lokal-artists-followed', next ? '1' : '0') } catch {}
   }

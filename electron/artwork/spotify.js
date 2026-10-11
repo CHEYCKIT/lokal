@@ -509,12 +509,14 @@ async function followedArtists(rawCookie, { fetchPage, limit = 2000, pageSize = 
     const json = await get(url, t.accessToken)
     if (json?.errors?.length && !json?.data) throw new Error(`Spotify: ${json.errors[0]?.message || 'the library query failed'}`)
     const library = json?.data?.me?.libraryV3
-    const items = library?.items || []
+    // data and errors can come together (data: { me: null }): no library isn't an empty one.
+    if (!library) throw new Error(`Spotify: ${json?.errors?.[0]?.message || "your library couldn't be read"}`)
+    const items = library.items || []
     for (const entry of items) {
       const data = entry?.item?.data
       if (data?.__typename === 'Artist' && data.profile?.name) names.push(data.profile.name)
     }
-    const total = Number(library?.totalCount)
+    const total = Number(library.totalCount)
     if (!items.length || (Number.isFinite(total) && offset + pageSize >= total)) break
   }
   return names
