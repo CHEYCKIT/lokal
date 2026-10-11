@@ -50,6 +50,8 @@ import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './online
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
+import { handleLiveSeek } from './liveSeek'
+import { useMusicVideoView } from './musicVideo'
 import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
@@ -347,7 +349,7 @@ export default function App() {
     // A failed stream advances through the configured playback providers.
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
-    if (failedRef && el?.getAttribute('src') === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+    if (failedRef && String(el?.getAttribute('src') || '').startsWith(api.onlineStreamURL(failedRef.provider, failedRef.id))) {
       await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }
@@ -1361,6 +1363,24 @@ export default function App() {
     if (!durationSeconds) return true
     return playedSeconds >= Math.min(durationSeconds / 2, 240)
   }, [getLastfmTrackDuration])
+
+  // A SpotiFLAC song playing while it downloads: a seek finishes once the
+  // song is complete (src/liveSeek.js).
+  const onAudioSeeking = useCallback((event) => handleLiveSeek(event.currentTarget, {
+    currentTrack: () => usePlayerStore.getState().currentTrack,
+    streamRef, isAddonProvider,
+    prepare: (provider, id) => api.onlinePrepare(provider, id),
+    streamURL: api.onlineStreamURL,
+    isPlaying: () => usePlayerStore.getState().isPlaying,
+  }), [])
+
+  // The mini player opened from the video player: closing it goes back to
+  // the video, not to the rest of the app.
+  useEffect(() => usePlayerStore.subscribe((state, previous) => {
+    if (!previous.showMiniPlayer || state.showMiniPlayer) return
+    const view = useMusicVideoView.getState()
+    if (view.fromVideo) useMusicVideoView.setState({ open: !!state.currentTrack, fromVideo: false })
+  }), [])
 
   // Settings → Sync Linked Playlists at Launch: once, a little after start.
   useEffect(() => {
@@ -2431,6 +2451,7 @@ export default function App() {
             and the graph outputs silence. */}
         <audio
           ref={audioRef}
+          onSeeking={onAudioSeeking}
           preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
@@ -2445,6 +2466,7 @@ export default function App() {
         />
         <audio
           ref={cfAudioRef}
+          onSeeking={onAudioSeeking}
           preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}

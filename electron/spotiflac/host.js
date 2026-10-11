@@ -48,8 +48,8 @@ async function mediaInfo(file, tools, signal) {
 }
 
 class ExtensionHost {
-  constructor({ addon, storage, network, session, root, grants = [], tools = {}, db, onProgress, signal }) {
-    Object.assign(this, { addon, storage, network, session, root, grants, tools, db, onProgress })
+  constructor({ addon, storage, network, session, root, grants = [], tools = {}, db, onProgress, onTransfer, signal }) {
+    Object.assign(this, { addon, storage, network, session, root, grants, tools, db, onProgress, onTransfer })
     this.controller = new AbortController()
     this.signal = signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal
     this.startedAt = Date.now(); this.auth = network.auth ||= {}
@@ -57,8 +57,11 @@ class ExtensionHost {
   }
   abort() { this.controller.abort() }
   file(raw) { if (!this.addon.manifest.permissions.file) throw new Error('File permission denied'); return safePath(this.root, raw, this.grants) }
-  async transfer(url, destination, options = {}, onProgress = async () => {}) {
+  async transfer(url, destination, options = {}, onProgress = async () => {}, { segment = false } = {}) {
     options = { ...this.addon.manifest.capabilities?.downloadTransfer, ...options }
+    // A whole-file download can be listened to while it arrives (playback);
+    // the pieces of a segmented one can't.
+    const live = segment ? null : this.onTransfer
     const file = this.file(destination)
     await fsp.mkdir(path.dirname(file), { recursive: true })
     const part = this.file(`${file}.part`), checkpoint = this.file(`${file}.checkpoint`)
@@ -91,17 +94,20 @@ class ExtensionHost {
         if (options.persistentCheckpoint) await fsp.writeFile(checkpoint, JSON.stringify({ urlHash: crypto.createHash('sha256').update(url).digest('hex'), validator }), { mode: 0o600 })
         output = await fsp.open(part, offset ? 'a' : 'w', 0o600)
         written = offset
+        live?.({ part, file, total, written })
         for await (const chunk of response) {
           this.signal.throwIfAborted()
           let done = 0; while (done < chunk.length) done += (await output.write(chunk, done, chunk.length - done)).bytesWritten
           written += chunk.length
           if (written > 4 * 1024 ** 3) throw new Error('Addon audio exceeds the file size limit')
+          live?.({ part, file, total, written })
           await onProgress(written, total)
         }
         if (!written || total && written !== total) throw new Error('Incomplete addon audio download')
         await output.close(); output = null
         this.signal.throwIfAborted()
         await fsp.rename(part, file); await fsp.rm(checkpoint, { force: true })
+        live?.({ part, file, total, written, done: true })
         return { success: true, path: destination, size: written, attempts: attempt, ...(offset ? { resumed: true } : {}) }
       } catch (error) {
         if (this.signal.aborted) throw error
@@ -128,7 +134,7 @@ class ExtensionHost {
           const indices = Array.from({ length: Math.min(width, segments.length - start) }, (_, i) => start + i)
           const settled = await Promise.allSettled(indices.map(async index => {
             const segment = segments[index], url = typeof segment === 'string' ? segment : segment?.url
-            await this.transfer(url, path.join(dir, String(index)), { ...options, headers: { ...options.headers, ...segment?.headers } }, async written => { progress.set(index, written); await report() })
+            await this.transfer(url, path.join(dir, String(index)), { ...options, headers: { ...options.headers, ...segment?.headers } }, async written => { progress.set(index, written); await report() }, { segment: true })
             completed++; await report()
           }))
           const failure = settled.find(result => result.status === 'rejected')

@@ -28,7 +28,8 @@ function prepare(db,key,id,{force=false}={}){
   const existing=[...map.values()].find(job=>job.hash===hash&&job.status==='running')
   if(existing)return {pending:true,operationId:existing.id}
   const job={id:crypto.randomUUID(),hash,key,itemId:id,status:'running',progress:0,controller:new AbortController()};map.set(job.id,job)
-  const fetchAudio=()=>service(db).download(key,id,{purpose:'playback',signal:job.controller.signal,onProgress:update=>{job.progress=update.percent ?? job.progress;job.message=update.message || 'Preparing audio…'}})
+  job.liveReady=new Promise(resolve=>{job.markLive=resolve})
+  const fetchAudio=()=>service(db).download(key,id,{purpose:'playback',signal:job.controller.signal,onLive:info=>liveUpdate(job,info),onProgress:update=>{job.progress=update.percent ?? job.progress;job.message=job.live?.ready?'Playing while it downloads…':update.message || 'Preparing audio…'}})
   // A worker that ran out of memory is retried once, in a fresh worker.
   job.promise=fetchAudio().catch(error=>{if(job.controller.signal.aborted||!/memory limit|out of memory/i.test(error?.message))throw error;logFailure(db,key,id,error);job.message='Retrying…';return fetchAudio()}).then(async result=>{
     try{
@@ -51,18 +52,86 @@ function prepare(db,key,id,{force=false}={}){
   })
   return {pending:true,operationId:job.id}
 }
+// ---------------------------------------------------------------- playing while it downloads
+//
+// A song an addon downloads as one plain FLAC file can be listened to as it
+// arrives: the player gets the growing file (its full size is known up
+// front), and a seek past what's arrived waits for it. Anything else
+// (encrypted, in pieces, or a file the addon post-processes) is played once
+// it's complete, as before. After the download, the cached copy holds the
+// same bytes, so seeking carries on from it.
+const LIVE_MIN_BYTES=64*1024
+function liveUpdate(job,{part,file,total,written,done}){
+  if(!job.live||job.live.part!==part)job.live={part,file,total:Number(total)||0,written:0,done:false,ready:false,checked:false}
+  const live=job.live
+  live.written=Math.max(live.written,Number(written)||0);if(done)live.done=true
+  if(live.ready||live.checked||!live.total||live.written<LIVE_MIN_BYTES)return
+  live.checked=true
+  try{
+    const fd=fs.openSync(done?file:part,'r'),head=Buffer.alloc(4)
+    try{fs.readSync(fd,head,0,4,0)}finally{fs.closeSync(fd)}
+    if(head.toString('latin1')==='fLaC'&&/\.flac$/i.test(file)){live.ready=true;job.message='Playing while it downloads…';job.markLive()}
+  }catch{}
+}
+async function liveResponse(job,{range,signal,mime='audio/flac'}={}){
+  const live=job.live,size=live.total,slice=rangeOf(range,size)
+  const headers={'content-type':mime,'accept-ranges':'bytes'}
+  if(!slice)return new Response(null,{status:416,headers:{...headers,'content-range':`bytes */${size}`}})
+  let handle=null
+  for(const file of [live.part,live.file]){try{handle=await fsp.open(file,'r');break}catch{}}
+  if(!handle){
+    // Finished (and moved) before the player asked: the complete copy answers.
+    await job.promise
+    if(job.status!=='done')throw new Error(job.error || 'Audio preparation cancelled')
+    return fileResponse(job.result.file,{range,signal,mime:job.result.mime})
+  }
+  headers['content-length']=String(slice.end-slice.start+1)
+  if(slice.status===206)headers['content-range']=`bytes ${slice.start}-${slice.end}/${size}`
+  let position=slice.start,closed=false
+  const close=async()=>{if(!closed){closed=true;await handle.close().catch(()=>{})}}
+  const body=new ReadableStream({
+    async pull(controller){
+      for(;;){
+        if(signal?.aborted){await close();controller.close();return}
+        if(position<live.written){
+          const length=Math.min(256*1024,slice.end+1-position,live.written-position),buffer=Buffer.alloc(length)
+          const {bytesRead}=await handle.read(buffer,0,length,position)
+          if(bytesRead>0){
+            position+=bytesRead;controller.enqueue(new Uint8Array(buffer.buffer,buffer.byteOffset,bytesRead))
+            if(position>slice.end){await close();controller.close()}
+            return
+          }
+        }
+        // The download stopped (failed, cancelled, or restarted elsewhere).
+        if(job.live!==live||job.status==='error'||job.status==='cancelled'){await close();controller.error(new Error(job.error || 'The addon stopped downloading this song'));return}
+        await new Promise(resolve=>setTimeout(resolve,120))
+      }
+    },
+    async cancel(){await close()},
+  })
+  return new Response(body,{status:slice.status,headers})
+}
+
 function operation(db,id,cancel=false){
   const job=state(db).get(id)
   if(!job)return {error:'Audio preparation operation not found'}
   if(cancel)job.controller.abort()
-  return {id:job.id,status:job.status,progress:job.progress,message:job.message,error:job.error,ok:job.status==='done'}
+  const live=job.status==='running'&&!!job.live?.ready
+  return {id:job.id,status:job.status,progress:job.progress,message:job.message,error:job.error,ok:job.status==='done'||live,...(live?{live:true}:{})}
 }
 async function resolve(db,key,id,{signal,force=false}={}){
   const hit=!force&&cached(db,key,id);if(hit)return hit
   const started=prepare(db,key,id,{force});if(started.ok)return cached(db,key,id)
   const job=state(db).get(started.operationId)
   const abort=()=>job.controller.abort();signal?.addEventListener('abort',abort,{once:true})
-  try{await job.promise;if(job.status!=='done')throw new Error(job.error || 'Audio preparation cancelled');return job.result}finally{signal?.removeEventListener('abort',abort)}
+  try{
+    // Whichever comes first: the complete file, or a download that can be played as it arrives.
+    await Promise.race([job.promise,job.liveReady])
+    if(job.status==='running'&&job.live?.ready)return {type:'live',job,mime:'audio/flac',headers:{},format:'flac'}
+    await job.promise
+    if(job.status!=='done')throw new Error(job.error || 'Audio preparation cancelled')
+    return job.result
+  }finally{signal?.removeEventListener('abort',abort)}
 }
 function rangeOf(value,size){
   if(!value)return {start:0,end:size-1,status:200}
@@ -80,4 +149,4 @@ async function fileResponse(file,{range,signal,mime='audio/*'}={}){
   const body=handle.createReadStream({start:slice.start,end:slice.end,autoClose:true,signal})
   return new Response(Readable.toWeb(body),{status:slice.status,headers})
 }
-module.exports={prepare,operation,resolve,cached,fileResponse,rangeOf}
+module.exports={prepare,operation,resolve,cached,fileResponse,liveResponse,liveUpdate,rangeOf}

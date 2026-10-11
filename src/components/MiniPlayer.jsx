@@ -9,6 +9,7 @@ import { useAppearanceFlag } from '../appearanceFlags'
 import { trackArtURL } from '../onlineTracks'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import MusicVideoPlayer from './MusicVideoPlayer'
+import VideoOffsetControl from './VideoOffsetControl'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -278,6 +279,7 @@ export default function MiniPlayer({ windowed = false }) {
         // controls show over it on hover (and while paused).
         <div className="group/video relative">
           <MusicVideoPlayer compact />
+          {musicVideo?.videoId && <VideoOffsetControl compact videoId={musicVideo.videoId} className={`absolute left-2 top-2 transition-opacity duration-200 group-hover/video:opacity-100 focus-within:opacity-100 ${isPlaying ? 'opacity-0' : 'opacity-100'}`} />}
           {lyricLine && <p className={`pointer-events-none absolute inset-x-3 bottom-2.5 text-center text-[13px] font-medium leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] transition-transform duration-200 group-hover/video:-translate-y-[4.25rem] group-focus-within/video:-translate-y-[4.25rem] ${isPlaying ? '' : '-translate-y-[4.25rem]'}`}>{lyricLine}</p>}
           <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-2 pt-6 transition-opacity duration-200 group-hover/video:opacity-100 focus-within:opacity-100 ${isPlaying ? 'opacity-0' : 'opacity-100'}`}>
             <div className="h-1 cursor-pointer rounded-full bg-white/25 outline-none focus-visible:ring-2 focus-visible:ring-accent/70" onClick={handleScrub} role="slider" tabIndex={0} aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)} aria-valuetext={`${fmt(progress)} of ${fmt(duration)}`}
