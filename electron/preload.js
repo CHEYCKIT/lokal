@@ -207,6 +207,7 @@ contextBridge.exposeInMainWorld('electron', {
   onMusicVideoProgress: (fn) => on('musicVideo:progress', fn),
   indexAllMusicVideos: () => invoke('musicVideo:indexAll'),
   cancelMusicVideoIndex: () => invoke('musicVideo:cancelIndex'),
+  musicVideoIndexStatus: () => invoke('musicVideo:indexStatus'),
   onMusicVideoIndexProgress: (fn) => on('musicVideo:indexProgress', fn),
   indexAllLyrics: () => invoke('lyrics:indexAll'),
   cancelLyricsIndex: () => invoke('lyrics:cancelIndex'),

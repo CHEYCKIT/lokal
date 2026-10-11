@@ -10,7 +10,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
@@ -18,6 +18,8 @@ import { api } from '../api'
 import { peekCache, writeCache } from '../pageCache'
 import { displayTitle } from '../downloadLinks'
 import { plural } from '../plural'
+import { ago, useReleaseCheck } from './ReleasesPanel'
+import { cancelVideoIndex, useVideoIndex } from '../videoIndex'
 
 // ------------------------------------------------------------------ ring
 
@@ -278,9 +280,100 @@ function DownloadedPlaylists() {
   )
 }
 
+/** A job running outside the download queue: its progress, or how it last ended. */
+function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onStop, onOpen }) {
+  const percent = total ? Math.min(100, (done / total) * 100) : 0
+  return (
+    <div className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/[0.04]">
+      <div className={`flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-lg border bg-black/25 ${running ? 'border-accent/40' : 'border-white/10'}`}>
+        <Icon size={16} className={running ? 'text-accent' : 'text-muted'} />
+      </div>
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+        <p className="truncate text-[13px] font-semibold text-white">{label}</p>
+        {running ? (
+          <>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+              <div className={`h-full bg-accent transition-[width] duration-300 ${total ? '' : 'w-1/3 animate-pulse'}`} style={total ? { width: `${percent}%` } : undefined} />
+            </div>
+            <p className="mt-1 truncate text-[11px] tabular-nums text-muted" title={detail}>{total ? `${done}/${total}` : 'Starting…'}{detail ? ` · ${detail}` : ''}</p>
+          </>
+        ) : <p className="mt-0.5 truncate text-[11px] text-muted" title={detail}>{detail || 'Not running'}</p>}
+      </button>
+      {running && onStop && (
+        <button onClick={onStop} title="Stop" aria-label={`Stop ${label.toLowerCase()}`}
+          className="flex-shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white">
+          <Square size={12} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Artists > Refresh artist info runs in the main process (or the server):
+// followed while this tab is open, every second while it runs.
+function useArtistRefreshStatus() {
+  const [status, setStatus] = useState(null)
+  useEffect(() => {
+    let timer = null
+    let cancelled = false
+    const tick = async () => {
+      const next = await Promise.resolve(api.artistsRefreshAllStatus()).catch(() => null)
+      if (cancelled) return
+      if (next && !next.error) setStatus(next)
+      timer = setTimeout(tick, next?.running ? 1000 : 4000)
+    }
+    tick()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [])
+  const cancel = async () => {
+    const next = await Promise.resolve(api.artistsRefreshAllCancel()).catch(() => null)
+    if (next && !next.error) setStatus(next)
+  }
+  return [status, cancel]
+}
+
+/** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
+function OthersTab({ onNavigate }) {
+  const releases = useReleaseCheck(s => s.checking)
+  const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
+  const stopReleases = useReleaseCheck(s => s.stop)
+  const [artists, cancelArtists] = useArtistRefreshStatus()
+  const videos = useVideoIndex(s => s.progress)
+
+  const artistsDetail = artists?.running
+    ? `${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')}${artists.failed ? ` · ${artists.failed} failed` : ''}`
+    : artists?.finishedAt ? `${artists.done < artists.total ? 'Stopped' : 'Done'} ${ago(artists.finishedAt)} · ${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')} updated` : ''
+  const videosDetail = videos?.running
+    ? `${plural(videos.found || 0, 'video')} found${videos.title ? ` · ${videos.title}` : ''}`
+    : videos ? `${videos.cancelled ? 'Stopped' : 'Done'} · ${plural(videos.found || 0, 'video')} found for ${plural(videos.total || 0, 'song')}` : ''
+
+  return (
+    <div className="space-y-3">
+      <section>
+        <p className="px-2 pb-1 pt-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">Library jobs</p>
+        <div className="space-y-0.5">
+          <TaskRow icon={CalendarDays} label="Artist releases" running={!!releases} done={releases?.done} total={releases?.total}
+            detail={releases ? 'Checking for new releases' : releasesCheckedAt ? `Checked ${ago(releasesCheckedAt)}` : 'Not checked yet'}
+            onStop={stopReleases} onOpen={() => onNavigate('/home/releases')} />
+          <TaskRow icon={UserRound} label="Artist info" running={!!artists?.running} done={artists?.done} total={artists?.total}
+            detail={artistsDetail} onStop={cancelArtists} onOpen={() => onNavigate('/artists')} />
+          {api.isElectron && (
+            <TaskRow icon={ScanSearch} label="Music videos" running={!!videos?.running} done={videos?.done} total={videos?.total}
+              detail={videosDetail} onStop={cancelVideoIndex} onOpen={() => onNavigate('/videos')} />
+          )}
+        </div>
+      </section>
+      <section>
+        <p className="px-2 pb-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">Downloaded playlists</p>
+        <DownloadedPlaylists />
+      </section>
+    </div>
+  )
+}
+
 // What opens the panel: the header's Downloads button.
 const OPENERS = '[data-downloads-toggle]'
-const PANEL_WIDTH = 340
+const PANEL_WIDTH = 380
 
 export function DownloadManagerPanel() {
   const panelOpen = useDownloads(s => s.panelOpen)
@@ -290,6 +383,8 @@ export function DownloadManagerPanel() {
   const nav = useNavigate()
   const [anchor, setAnchor] = useState({ top: 44, left: 12, width: PANEL_WIDTH, origin: 'top left' })
   const [tab, setTab] = useState('queue')
+  const releaseCheck = useReleaseCheck(s => !!s.checking)
+  const videoIndex = useVideoIndex(s => !!s.progress?.running)
   const panelRef = useRef(null)
 
   // Under the button, growing inwards: from a button on the left of the
@@ -326,6 +421,8 @@ export function DownloadManagerPanel() {
   }, [panelOpen, closePanel])
 
   const active = jobs.filter(isActive)
+  // The tab's count; artist info is only followed while that tab is open.
+  const othersRunning = (releaseCheck ? 1 : 0) + (videoIndex ? 1 : 0)
   const finished = jobs.filter(j => !isActive(j))
 
   const findMore = () => {
@@ -349,25 +446,28 @@ export function DownloadManagerPanel() {
           className="fixed z-[80] flex flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         >
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-            <div role="tablist" aria-label="Downloads" className="flex flex-1 items-center gap-1">
-              {[['queue', 'Queue'], ['playlists', 'Playlists']].map(([id, label]) => (
+            <div role="tablist" aria-label="Downloads" className="flex min-w-0 flex-1 items-center gap-1">
+              {[['queue', 'Queue'], ['others', 'Others']].map(([id, label]) => (
                 <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
-                  {label}{id === 'queue' && active.length ? ` · ${active.length}` : ''}
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
+                  {label}
+                  {(id === 'queue' ? active.length : othersRunning) > 0 && (
+                    <span className="rounded-full bg-accent/20 px-1.5 text-[10px] tracking-normal tabular-nums text-accent">{id === 'queue' ? active.length : othersRunning}</span>
+                  )}
                 </button>
               ))}
             </div>
             {tab === 'queue' && active.length > 0 && (
-              <button onClick={cancelAll} className="text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">Cancel all</button>
+              <button onClick={cancelAll} className="whitespace-nowrap text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">Cancel all</button>
             )}
             {tab === 'queue' && finished.length > 0 && (
-              <button onClick={clearFinished} className="flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />Clear</button>
+              <button onClick={clearFinished} className="flex flex-shrink-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />Clear</button>
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {tab === 'queue'
               ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
-              : <DownloadedPlaylists />}
+              : <OthersTab onNavigate={path => { closePanel(); nav(path) }} />}
           </div>
           <button
             onClick={findMore}

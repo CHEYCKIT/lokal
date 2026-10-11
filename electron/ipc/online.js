@@ -177,11 +177,14 @@ function registerOnlineHandlers(ipcMain) {
   // Settings -> Library -> Maintenance: find every library song's music video
   // now, so they open at once later. One song at a time; cancellable.
   let videoIndexJob = null
+  // The latest progress, for a window that wasn't listening when it was sent
+  // (the Downloads panel after a reload).
+  let videoIndexStatus = null
   ipcMain.handle('musicVideo:indexAll', async (event) => {
     if (videoIndexJob) return { running: true }
     const job = { cancelled: false }
     videoIndexJob = job
-    const send = (payload) => { try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:indexProgress', payload) } catch {} }
+    const send = (payload) => { videoIndexStatus = payload; try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:indexProgress', payload) } catch {} }
     try {
       const rows = getDB().prepare("SELECT id, title, artist, duration FROM tracks WHERE title IS NOT NULL AND artist IS NOT NULL AND duration > 30 AND file_path NOT LIKE 'ghost://%' ORDER BY artist, title").all()
       let done = 0
@@ -198,6 +201,7 @@ function registerOnlineHandlers(ipcMain) {
     } finally { videoIndexJob = null }
   })
   ipcMain.handle('musicVideo:cancelIndex', () => { if (videoIndexJob) videoIndexJob.cancelled = true })
+  ipcMain.handle('musicVideo:indexStatus', () => videoIndexStatus)
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
       const key = sources.addons.keyOfProvider(provider)
