@@ -1934,7 +1934,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded }
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS }
 
 
 function registerExtraHandlers(ipcMain) {

@@ -58,7 +58,7 @@ export function losslessCandidates(tracks) {
 /**
  * The one replacement to suggest from every source's ranked matches: the
  * same length first, then marked lossless, then rank, then the sources'
- * order. Ticked from the start only when its length matches the song.
+ * order. Ticked from the start only when its length is known to match.
  */
 export function bestReplacement(track, groups) {
   const options = []
@@ -66,9 +66,12 @@ export function bestReplacement(track, groups) {
     ;(group.items || []).forEach((item, rank) => options.push({ item, source: group.source, sourceIndex, rank }))
   })
   if (!options.length) return null
-  const sameLength = option => !differentDuration(track, option.item)
+  // 2: both lengths known and close; 1: one isn't known; 0: they differ.
+  const known = value => Number.isFinite(Number(value)) && Number(value) > 0
+  const length = option => !known(track?.duration) || !known(option.item.duration) ? 1 : differentDuration(track, option.item) ? 0 : 2
   const lossless = option => LOSSLESS_HINT.test(String(option.item.quality || ''))
-  options.sort((a, b) => (sameLength(b) - sameLength(a)) || (lossless(b) - lossless(a)) || (a.rank - b.rank) || (a.sourceIndex - b.sourceIndex))
+  options.sort((a, b) => (length(b) - length(a)) || (lossless(b) - lossless(a)) || (a.rank - b.rank) || (a.sourceIndex - b.sourceIndex))
   const best = options[0]
-  return { item: best.item, source: best.source, lengthDiffers: !sameLength(best), checked: sameLength(best) }
+  // Ticked only when its length is known to match: an unknown one is checked by you.
+  return { item: best.item, source: best.source, lengthDiffers: length(best) === 0, lengthUnknown: length(best) === 1, checked: length(best) === 2 }
 }

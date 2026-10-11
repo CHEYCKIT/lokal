@@ -112,8 +112,9 @@ export default function Videos() {
   const play = (item, shuffled = false, pool = visible) => {
     if (!item) return
     const state = usePlayerStore.getState()
-    // Opening the current video's card must not restart the song.
-    if (state.currentTrack?.id !== item.track.id) {
+    // Opening the current video's card must not restart the song; playing a
+    // selection (its own list) always makes it the queue.
+    if (pool !== visible || state.currentTrack?.id !== item.track.id) {
       const rows = shuffled ? pool.slice().sort(() => Math.random() - 0.5) : pool
       const tracks = rows.map(row => row.track)
       state.playQueue(tracks, Math.max(0, tracks.findIndex(t => t.id === item.track.id)), { type: 'videos', name: 'Videos' })

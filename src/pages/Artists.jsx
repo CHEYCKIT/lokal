@@ -186,19 +186,24 @@ export default function Artists() {
     const setBusy = append ? setLoadingMore : setLoading
     // A refresh of what's already on screen happens quietly (no spinner), and
     // a sort seen before shows its last page at once, not the previous sort's.
-    const seen = !append && !search ? peekCache(listKey(sortMode)) : null
+    // The list this request is for, fixed now: the All / Followed switch can
+    // change before it answers.
+    const followed = followedRef.current
+    const cacheKey = listKey(sortMode)
+    const seen = !append && !search ? peekCache(cacheKey) : null
     if (seen) {
       setArtists(seen.items)
       setTotal(seen.total)
       setHasMore(seen.hasMore)
       setBusy(false)
     } else setBusy(true)
-    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode, followed: followedRef.current }).then((result) => {
+    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode, followed }).then((result) => {
       if (stale()) return
+      if (followed !== followedRef.current) { setBusy(false); return }
       // A failed request keeps what's shown (and the cache) as it was.
       if (!Array.isArray(result?.items)) { setBusy(false); return }
       const items = result.items
-      if (!append && !search) writeCache(listKey(sortMode), { items, total: result?.total || 0, hasMore: !!result?.hasMore })
+      if (!append && !search) writeCache(cacheKey, { items, total: result?.total || 0, hasMore: !!result?.hasMore })
       setArtists((current) => (append ? [...current, ...items] : items))
       setTotal(result?.total || 0)
       setHasMore(!!result?.hasMore)
