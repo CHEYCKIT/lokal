@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { CalendarDays, ChevronDown, ChevronUp, Clock, Disc3, Download, History, ListEnd, ListPlus, Music, Play, Plus, Radio, RefreshCw, Sparkles, User, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronUp, Clock, Disc3, Download, History, ListEnd, ListPlus, Music, Play, Plus, Radio, RefreshCw, Sparkles, User, UserMinus, UserPlus } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
@@ -22,10 +22,10 @@ import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessa
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { loadDiscoveryCatalogue } from '../discoveryCatalogue'
-import { discoveryArtistKey, loadDiscoveryArtists, setDiscoveryArtistHidden, useDiscoveryArtists } from '../discoveryArtists'
+import { discoveryArtistKey, initFollowedArtists, loadDiscoveryArtists, setArtistFollowed, useDiscoveryArtists } from '../discoveryArtists'
 import ReleasesPanel from '../components/ReleasesPanel'
 import { onlineAlbumPath } from '../onlineBrowse'
-import HiddenDiscoveryArtists from '../components/HiddenDiscoveryArtists'
+import UnfollowedArtists from '../components/UnfollowedArtists'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
@@ -171,7 +171,7 @@ function RecommendationSections({ data, localArtists, allArtists, source: select
     {selectedSource === 'youtube' && data && <section><SectionHeader icon={Radio} eyebrow="Made for you" title="Mixed for you" count={providerMixes.length || null} onExpand={providerMixes.length ? () => toggle('mixes') : undefined} expanded={activeSection === 'mixes'} />{providerMixes.length ? <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'mixes' ? providerMixes : providerMixes.slice(0, 6)).map((mix, index) => <div key={mix.id} className={activeSection === 'mixes' || index < 2 ? '' : index < 3 ? 'hidden @md:block' : 'hidden @lg:block'}><AlbumRecommendation album={{ ...mix, artist: mix.author || 'YouTube Music' }} onClick={() => onProviderMixPlay(mix)} onContextMenu={event => onProviderMixMenu(event, mix)} /></div>)}</div> : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{loading ? 'Loading your YouTube Music mixes…' : data.mixError ? `Could not load your YouTube Music mixes. ${data.mixError}` : 'YouTube Music did not return your personalized mixes. Refresh to try again.'}</p>}</section>}
     {selectedSource !== 'youtube' && albums.length > 0 && <section><SectionHeader icon={Disc3} eyebrow="Rotation" title="Albums For You" count={albums.length} onExpand={() => toggle('albums')} expanded={activeSection === 'albums'} /><div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'albums' ? albums : albums.slice(0, 6)).map(album => <AlbumRecommendation key={`${album.artist}-${album.title}`} album={album} onClick={onAlbumPlay} onContextMenu={onAlbumMenu} />)}</div></section>}
     {artists.length > 0 && <section><SectionHeader icon={User} eyebrow="For You" title="Artists For You" count={artists.length} onExpand={() => toggle('artists')} expanded={activeSection === 'artists'} /><div className="grid grid-cols-3 gap-4 @sm:grid-cols-4 @md:grid-cols-6 @lg:grid-cols-8">{(activeSection === 'artists' ? artists : artists.slice(0, 8)).map(artist => <ArtistRecommendation key={artist.name} artist={artist} onClick={onArtistPlay} onContextMenu={onArtistMenu} />)}</div></section>}
-    <HiddenDiscoveryArtists artists={allArtists} />
+    <UnfollowedArtists artists={allArtists} />
   </div>
 }
 
@@ -223,7 +223,19 @@ function HomeContent({ user }) {
   const menu = useContextMenu()
   const [saving, setSaving] = useState(null)
   const [localArtists, setLocalArtists] = useState([])
+  const [artistsLoaded, setArtistsLoaded] = useState(false)
   const hiddenArtists = useDiscoveryArtists(s => s.hidden)
+  const followedArtists = useDiscoveryArtists(s => s.followed)
+  // Follow / Unfollow for an artist's menu: an artist neither followed nor
+  // unfollowed (one Discovery suggests) gets both.
+  const followMenu = name => {
+    if (!name) return []
+    const key = discoveryArtistKey(name)
+    const change = follow => () => setArtistFollowed(name, follow).then(() => showToast(follow ? `Following ${name}` : `Unfollowed ${name}`)).catch(error => showToast(error.message))
+    const follow = { label: 'Follow artist', icon: UserPlus, onSelect: change(true) }
+    const unfollow = { label: 'Unfollow artist', icon: UserMinus, onSelect: change(false) }
+    return followedArtists.has(key) ? [unfollow] : hiddenArtists.has(key) ? [follow] : [follow, unfollow]
+  }
   const playRequestRef = useRef(0)
   const pendingPlayRef = useRef(null)
   const accountRef = useRef(sessionState.account)
@@ -368,6 +380,7 @@ function HomeContent({ user }) {
       if (Array.isArray(suggested)) setSuggestions(nonGhost(suggested))
       if (Array.isArray(history)) setLocalHistory(history.map(entry => ({ ...entry, scrobbledAt: entry.played_at })))
       if (Array.isArray(userMixes)) setMixes(userMixes.map(mix => ({ ...mix, tracks: nonGhost(mix.tracks) })).filter(mix => mix.tracks.length > 0))
+      if (Array.isArray(artists)) setArtistsLoaded(true)
       if (Array.isArray(artists)) setLocalArtists(artists.map(artist => ({ ...artist, image: artist.image || (artist.image_path ? (api.isElectron ? `file://${artist.image_path}` : `/api/artist-image/${encodeURIComponent(artist.id)}`) : ''), source: 'library' })))
       if ([tracks, suggested, history, userMixes, artists].every(Array.isArray)) setLoaded(true)
     })
@@ -375,6 +388,8 @@ function HomeContent({ user }) {
 
   useEffect(() => { load() }, [user?.id])
   useEffect(() => { loadDiscoveryArtists().catch(() => {}) }, [])
+  // Once, with the library loaded: follow everyone already in it (not hidden).
+  useEffect(() => { if (artistsLoaded) initFollowedArtists(localArtists).catch(() => {}) }, [artistsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { session.ensure() }, [session])
   useEffect(() => {
     const refresh = () => load()
@@ -399,7 +414,7 @@ function HomeContent({ user }) {
     { label: 'Start artist radio', icon: Radio, onSelect: () => startRadio({ artist: artist.name, type: 'artist' }) },
     { label: 'Go to artist', icon: User, onSelect: () => navigate(artist.source === 'library' ? `/artist/${encodeURIComponent(artist.id)}` : artistPath(artist.name), { state: { name: artist.name } }) },
     { separator: true },
-    { label: 'Hide from discovery', icon: X, onSelect: () => setDiscoveryArtistHidden(artist.name, true).catch(error => showToast(error.message)) },
+    ...followMenu(artist.name),
   ])
   const resolveDownloadTrack = async track => {
     const account = accountRef.current
@@ -473,7 +488,7 @@ function HomeContent({ user }) {
       { label: 'Download song', icon: Download, onSelect: () => withRecommendation(track, downloadRecommendations) },
       { label: 'Start radio', icon: Radio, onSelect: () => startRadio(track) },
       { separator: true },
-      { label: 'Hide artist from discovery', icon: X, onSelect: () => setDiscoveryArtistHidden(track.artist, true).catch(error => showToast(error.message)) },
+      ...followMenu(track.artist),
     ])
   }
   const saveRecommendations = (key, title, tracks, description) => {
@@ -514,7 +529,7 @@ function HomeContent({ user }) {
       { label: 'Download album', icon: Download, onSelect: () => downloadRecommendedAlbum(album) },
       { separator: true },
       { label: 'Start album radio', icon: Radio, onSelect: () => startRadio({ title: album.title, artist: album.artist, type: 'album' }) },
-      { label: 'Hide artist from discovery', icon: X, onSelect: () => setDiscoveryArtistHidden(album.artist, true).catch(error => showToast(error.message)) },
+      ...followMenu(album.artist),
     ]),
     onSaveFresh: () => saveRecommendations('fresh-finds', 'Fresh Finds', recommendationTracks, `Fresh Finds from ${sourceName(recommendationSource)}`),
     onSaveQuick: () => recommendationSource === 'youtube'
@@ -539,7 +554,7 @@ function HomeContent({ user }) {
         {localHistory.length ? <TrackList tracks={localHistory} reduceMotion context={{ type: 'history', name: 'Listen History' }} /> : <p className="py-10 text-center text-sm text-muted">No listen history yet.</p>}
       </section>
         : tab === 'mixlab' ? <MixPanel tracks={mixLab?.tracks || []} source={mixLab.source || recommendationSource} size={Number(mixLab?.size) || 32} error={mixError} generating={mixGenerating} saving={!!saving} onSize={session.setSize} onGenerate={session.generate} onPlay={tracks => playQueue(tracks, 0, { type: 'mix', name: `${sourceName(mixLab.source || recommendationSource)} Mix` })} onSave={() => saveList('mixlab', `Mix - ${today()}`, mixLab?.tracks || [], `${sourceName(mixLab.source || recommendationSource)} recommendation Mix`)} />
-        : tab === 'releases' ? <ReleasesPanel artists={visibleArtists(localArtists)}
+        : tab === 'releases' ? <ReleasesPanel artists={[...followedArtists.values()].map(name => ({ name }))} libraryArtists={localArtists}
             onPlay={album => playCatalogue('album', album)}
             onOpen={album => navigate(onlineAlbumPath({ artist: album.artist, album: album.title, albumId: album.albumId }), { state: { artwork: album.artwork_url || '' } })}
             onMenu={sectionProps.onAlbumMenu}

@@ -418,6 +418,8 @@ export const api = {
   artworkMesh: (trackId) => isE() ? el().artworkMesh(trackId) : apiFetch(`/artwork-fx/mesh/${encodeURIComponent(trackId)}`).then(r => (Array.isArray(r) ? r : null)),
   // { src, source } -- src is something a <video> can play in this mode.
   spotifyCanvasCheck: () => isE() ? el().spotifyCanvasCheck() : apiFetch('/artwork-fx/spotify-check', { method: 'POST' }),
+  // Home → Releases → Followed artists: those followed on Spotify or in the Apple Music library (desktop app).
+  linkedFollowedArtists: (service) => isE() && el().linkedFollowedArtists ? el().linkedFollowedArtists(service) : Promise.resolve({ error: 'Linking accounts needs the desktop app.' }),
   motionCover: (trackId) => isE()
     ? el().motionCover(trackId).then(r => (r?.file ? { ...r, src: `file://${r.file.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')}` } : null))
     : apiFetch(`/artwork-fx/motion/${encodeURIComponent(trackId)}`).then(r => (r?.src ? r : null)),

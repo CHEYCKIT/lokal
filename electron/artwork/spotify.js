@@ -477,4 +477,31 @@ async function checkSpotify(rawCookie) {
   }
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, TransientError }
+// ---------------------------------------------------------------- follows
+
+/**
+ * The artists the signed-in account follows (Home → Releases → Followed
+ * artists → Spotify), with the same cookie and web-player token as Canvas.
+ * `fetchPage(url, token)` is for tests.
+ */
+async function followedArtists(rawCookie, { fetchPage, limit = 2000 } = {}) {
+  if (!cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) first.')
+  const t = fetchPage ? { accessToken: 'test' } : await getTokens(rawCookie)
+  if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
+  const get = fetchPage || (async (url, token) => {
+    const res = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': UA } })
+    if (res.status === 401) tokens = null
+    if (!res.ok) throw new Error(res.status === 401 ? 'Spotify did not accept the cookie. Copy a fresh sp_dc value.' : `Spotify answered HTTP ${res.status}.`)
+    return res.json()
+  })
+  const names = []
+  let url = 'https://api.spotify.com/v1/me/following?type=artist&limit=50'
+  while (url && names.length < limit) {
+    const page = (await get(url, t.accessToken))?.artists
+    for (const artist of page?.items || []) if (artist?.name) names.push(artist.name)
+    url = page?.next || null
+  }
+  return names
+}
+
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, TransientError }

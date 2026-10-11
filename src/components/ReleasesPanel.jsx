@@ -2,12 +2,13 @@
 // first, as a list of albums with their details. Checked when you refresh
 // (every artist's catalogue); the last check is kept for the next visit.
 
-import React from 'react'
+import React, { useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
-import { CalendarDays, Disc3, Loader2, MoreHorizontal, Play, RefreshCw, X } from 'lucide-react'
+import { CalendarDays, Disc3, Loader2, MoreHorizontal, Play, RefreshCw, Users, X } from 'lucide-react'
 import DiscoveryImage from './DiscoveryImage'
-import { checkReleases, loadArtistReleases, savedReleases } from '../newReleases'
+import FollowedArtistsModal from './FollowedArtistsModal'
+import { checkReleases, isNewRelease, loadArtistReleases, savedReleases } from '../newReleases'
 import { api } from '../api'
 import { plural } from '../plural'
 import { discoveryArtistKey, useDiscoveryArtists } from '../discoveryArtists'
@@ -45,7 +46,7 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={() => onOpen(release)} className="truncate text-left text-sm font-semibold text-white hover:underline">{release.title}</button>
-          {release.isNew && <span className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">New</span>}
+          {isNewRelease(release) && <span title="Out less than a week ago" className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">New</span>}
         </div>
         <button type="button" onClick={() => onArtist(release)} className="block max-w-full truncate text-left text-xs text-white/75 hover:text-white hover:underline">{release.artist}</button>
         <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
@@ -65,17 +66,17 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
 // it or lose what it found, and coming back shows its progress.
 export const useReleaseCheck = create((set, get) => ({
   saved: savedReleases(),
-  checking: null, // { done, total }
+  checking: null, // { done, total, added }
   run: 0,
   start: async artists => {
     if (get().checking) return
     const id = get().run + 1
     const isCurrent = () => get().run === id
-    set({ run: id, checking: { done: 0, total: artists.length } })
+    set({ run: id, checking: { done: 0, total: artists.length, added: 0 } })
     try {
       const result = await checkReleases(artists, name => loadArtistReleases(name, api), {
         isCurrent,
-        onProgress: ({ done, total, items }) => { if (isCurrent()) set(state => ({ checking: { done, total }, saved: { ...state.saved, items } })) },
+        onProgress: ({ done, total, items, added }) => { if (isCurrent()) set(state => ({ checking: { done, total, added }, saved: { ...state.saved, items } })) },
       })
       if (isCurrent()) set({ saved: result })
     } finally { if (isCurrent()) set({ checking: null }) }
@@ -83,15 +84,16 @@ export const useReleaseCheck = create((set, get) => ({
   stop: () => set(state => ({ run: state.run + 1, checking: null, saved: savedReleases() })),
 }))
 
-export default function ReleasesPanel({ artists, onPlay, onOpen, onMenu, onArtist }) {
+/** `artists`: the followed ones (checked); `libraryArtists`: the checklist's. */
+export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, onOpen, onMenu, onArtist }) {
   const { saved, checking, start, stop } = useReleaseCheck(useShallow(state => ({ saved: state.saved, checking: state.checking, start: state.start, stop: state.stop })))
   const refresh = () => start(artists)
+  const [choosing, setChoosing] = useState(false)
 
-  // Hiding an artist from Discovery takes their releases out at once,
-  // without a new check.
-  const hidden = useDiscoveryArtists(state => state.hidden)
-  const items = (saved?.items || []).filter(release => !hidden.has(discoveryArtistKey(release.seedArtist || release.artist)) && !hidden.has(discoveryArtistKey(release.artist)))
-  const newCount = items.filter(release => release.isNew).length
+  // Unfollowing an artist takes their releases out at once, without a new check.
+  const followed = useDiscoveryArtists(state => state.followed)
+  const items = (saved?.items || []).filter(release => followed.has(discoveryArtistKey(release.seedArtist || release.artist)))
+  const newCount = items.filter(release => isNewRelease(release)).length
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -99,15 +101,20 @@ export default function ReleasesPanel({ artists, onPlay, onOpen, onMenu, onArtis
           <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">Releases</p>
           <h2 className="mt-1 text-xl font-medium text-white">New from your artists</h2>
           <p className="mt-1 text-xs text-muted">
-            {checking ? `Checking ${checking.done}/${checking.total} artists…`
-              : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(saved.artists || artists.length, 'library artist')}, newest first · checked ${ago(saved.checkedAt)}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
-              : `The latest ${100} releases by the artists in your library, newest first.`}
+            {checking ? `Checking ${checking.done}/${checking.total} artists for new releases…${checking.added ? ` · ${checking.added} added` : ''}`
+              : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(artists.length, 'followed artist')}, newest first · checked ${ago(saved.checkedAt)}${saved.added ? ` (${saved.added} added)` : ''}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
+              : `The latest ${100} releases by the artists you follow, newest first.`}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setChoosing(true)} title="Choose the artists whose releases show here"
+          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Users size={13} />Followed artists<span className="tabular-nums text-muted">{artists.length}</span></button>
         {checking
           ? <button type="button" onClick={stop} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Loader2 size={13} className="animate-spin text-accent" />Stop<X size={12} className="text-muted" /></button>
           : <button type="button" onClick={refresh} disabled={!artists.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))] disabled:opacity-40"><RefreshCw size={13} />{saved?.checkedAt ? 'Refresh' : 'Check for releases'}</button>}
+        </div>
       </div>
+      <FollowedArtistsModal open={choosing} onClose={() => setChoosing(false)} libraryArtists={libraryArtists} />
       {checking && <div className="h-1 overflow-hidden rounded-full bg-elevated"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${checking.total ? (checking.done / checking.total) * 100 : 0}%` }} /></div>}
       {items.length ? (
         <div role="list" aria-label="New releases" className="space-y-0.5">
@@ -116,8 +123,10 @@ export default function ReleasesPanel({ artists, onPlay, onOpen, onMenu, onArtis
       ) : !checking && (
         <div className="rounded-xl border border-border bg-elevated px-4 py-12 text-center">
           <CalendarDays size={30} className="mx-auto mb-3 text-muted/60" />
-          <p className="text-sm text-text">{artists.length ? (saved?.checkedAt ? 'No dated releases were found.' : 'See what your artists released lately.') : 'Add music to your library to follow its artists’ releases.'}</p>
-          {artists.length > 0 && <p className="mt-1 text-xs text-muted">Refresh checks each artist’s catalogue on YouTube Music.</p>}
+          <p className="text-sm text-text">{artists.length ? (saved?.checkedAt ? 'No dated releases were found.' : 'See what your artists released lately.') : 'Follow artists to see their new releases here.'}</p>
+          {artists.length > 0
+            ? <p className="mt-1 text-xs text-muted">Refresh checks each followed artist’s catalogue on YouTube Music.</p>
+            : <button type="button" onClick={() => setChoosing(true)} className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))]"><Users size={13} />Choose artists to follow</button>}
         </div>
       )}
     </section>
