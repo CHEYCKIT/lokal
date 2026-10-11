@@ -213,6 +213,7 @@ contextBridge.exposeInMainWorld('electron', {
   cancelLyricsIndex: () => invoke('lyrics:cancelIndex'),
   onLyricsIndexProgress: (fn) => on('lyrics:indexProgress', fn),
   spotifyCanvasCheck: () => invoke('artwork:spotifyCheck'),
+  linkedFollowedArtists: (service) => invoke('artists:linkedFollows', service),
   soulseekStatus: () => invoke('soulseek:status'),
   soulseekSearch: (text) => invoke('soulseek:search', text),
   soulseekResults: (id) => invoke('soulseek:results', id),
