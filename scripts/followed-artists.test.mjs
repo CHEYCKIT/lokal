@@ -57,6 +57,11 @@ test('Spotify: every page of the library\'s artists, the way the web player asks
   assert.deepEqual(asked, [['api-partner.spotify.com', 'libraryV3', ['Artists'], 0], ['api-partner.spotify.com', 'libraryV3', ['Artists'], 2]])
   await assert.rejects(followedArtists('sp_dc=abc', { fetchPage: async () => ({ errors: [{ message: 'PersistedQueryNotFound' }] }) }), /PersistedQueryNotFound/)
   await assert.rejects(followedArtists('', { fetchPage }), /sp_dc/)
+  // data and errors together, no library: an error, not "you follow nobody".
+  await assert.rejects(followedArtists('sp_dc=abc', { fetchPage: async () => ({ data: { me: null }, errors: [{ message: 'Unauthorized' }] }) }), /Unauthorized/)
+  await assert.rejects(followedArtists('sp_dc=abc', { fetchPage: async () => ({ data: { me: { libraryV3: null } } }) }), /library couldn't be read/)
+  // An empty library is still an empty list.
+  assert.deepEqual(await followedArtists('sp_dc=abc', { fetchPage: async () => ({ data: { me: { libraryV3: { totalCount: 0, items: [] } } } }) }), [])
 })
 
 test('Apple Music: the web player developer token, then every page of library artists', async () => {

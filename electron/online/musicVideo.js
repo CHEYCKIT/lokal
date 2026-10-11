@@ -97,8 +97,10 @@ function artistNames(artist) {
 
 function sameArtist(a, b) {
   if (a === b) return true
-  const withoutArticle = value => value.replace(/^the\s+/, '')
-  return withoutArticle(a) === withoutArticle(b)
+  // "The Black Eyed Peas" is Black Eyed Peas; a channel name runs the words
+  // together ("BlackEyedPeasVEVO", its "vevo" already gone).
+  const key = value => value.replace(/^the\s+/, '').replace(/\s+/g, '')
+  return key(a) === key(b) || key(a) === `the${key(b)}` || key(b) === `the${key(a)}`
 }
 
 /** Whether a search result is the song's own official music video. */
@@ -118,7 +120,10 @@ function isMusicVideoFor(track, item, { requireOfficial = true, requireDuration 
   if (!requireDuration) return true
   const duration = Number(item.duration)
   const length = Number(track.duration)
-  if (!(duration > 0) || !(length > 0)) return false
+  if (!(length > 0)) return false
+  // YouTube Music's top result names no length: an official video from the
+  // artist is still a candidate, and listening to it decides (findMusicVideo).
+  if (!(duration > 0)) return !!item.official
   return duration >= length - LEAD_S && duration <= length + MAX_EXTRA_S
 }
 

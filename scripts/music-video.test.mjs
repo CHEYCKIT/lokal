@@ -37,6 +37,17 @@ test('only the official video of the same song by the same artist is a match', (
   assert.ok(isMusicVideoFor({ ...track, title: 'Blinding Lights - Live' }, video({ title: 'Blinding Lights (Live)' })), 'the song is the live one')
 })
 
+test('"Pump It": the official video YouTube Music lists without a length, from the artist channel however it is written', () => {
+  const pumpIt = { title: 'Pump It', artist: 'Black Eyed Peas', duration: 213 }
+  // YouTube Music's top result: official, the artist's, no length. Listening to it decides.
+  assert.ok(isMusicVideoFor(pumpIt, { videoId: 'yPQ4jjQyP8M', kind: 'video', title: 'Pump It', artist: 'The Black Eyed Peas', artists: ['The Black Eyed Peas'], duration: null, official: true }))
+  assert.ok(isMusicVideoFor(pumpIt, { videoId: 'yPQ4jjQyP8M', kind: 'video', title: 'The Black Eyed Peas - Pump It (Official Music Video)', artist: 'BlackEyedPeasVEVO', artists: ['BlackEyedPeasVEVO'], duration: 215, official: true }), 'VEVO channel name')
+  // Still not: no length and not official, someone else's upload, or the making-of.
+  assert.ok(!isMusicVideoFor(pumpIt, { videoId: 'aGj-tt1FeHQ', kind: 'video', title: 'Black Eyed Peas - Pump It (Lyrics)', artist: 'Blissful Mind', artists: ['Blissful Mind'], duration: null, official: false }))
+  assert.ok(!isMusicVideoFor(pumpIt, { videoId: 'LM2qWWELZZg', kind: 'video', title: "The Making of 'Pump It' | Vevo Footnotes", artist: 'The Black Eyed Peas', artists: ['The Black Eyed Peas'], duration: 226, official: true }))
+  assert.ok(!isMusicVideoFor(pumpIt, { videoId: 'x', kind: 'video', title: 'Pump It (Official Video)', artist: 'Black Eyed Pea Fans', artists: ['Black Eyed Pea Fans'], duration: null, official: true }), 'another channel')
+})
+
 // A deterministic "song": noise bursts at irregular onsets.
 function song(seconds, seed = 1) {
   const rate = 8000

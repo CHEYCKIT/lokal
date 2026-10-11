@@ -84,14 +84,18 @@ export default function BulkLosslessModal() {
   const replace = async () => {
     const token = run.current
     setReplacing(true)
-    for (const track of ticked) {
-      if (run.current !== token) return
-      const { match } = rows[track.id]
-      const result = await downloadGhostResult({ ...track, missing: true }, match.item, { confirmDuration: () => true }).catch(error => ({ error: error.message }))
-      if (run.current !== token) return
-      setRows(state => ({ ...state, [track.id]: { ...state[track.id], checked: false, result: result?.error ? 'failed' : result?.cancelled ? undefined : 'queued', error: result?.error || '' } }))
+    try {
+      for (const track of ticked) {
+        if (run.current !== token) return
+        const { match } = rows[track.id]
+        // Closing the dialog stops the one being started too, not only the ones after it.
+        const result = await downloadGhostResult({ ...track, missing: true }, match.item, { confirmDuration: () => true, isCurrent: () => run.current === token }).catch(error => ({ error: error.message }))
+        if (run.current !== token) return
+        setRows(state => ({ ...state, [track.id]: { ...state[track.id], checked: false, result: result?.error ? 'failed' : result?.cancelled ? undefined : 'queued', error: result?.error || '' } }))
+      }
+    } finally {
+      setReplacing(false)
     }
-    setReplacing(false)
   }
 
   return (

@@ -113,6 +113,7 @@ class ManagedSlskd {
     this.starting = null
     this.account = null // the last one it started with, to start again after an update
     this.update = null // what checkUpdate() found: { version, url, sha256, notes } | null
+    this.generation = 0 // bumped by stop(): a start it interrupts gives up instead of carrying on
   }
 
   set(next) { this.state = { ...this.state, ...next }; try { this.onChange(this.status()) } catch {} }
@@ -207,13 +208,19 @@ class ManagedSlskd {
     const key = `${username}\u0000${crypto.createHash('sha256').update(password).digest('hex')}\u0000${(account.shared || []).join(';')}`
     if (this.connection && this.connection.account === key) return Promise.resolve(this.connection)
     if (this.starting?.key === key) return this.starting.promise
+    let generation
+    // Signed out (stop()) while this was downloading or starting: don't carry on.
+    const stillWanted = () => { if (generation !== this.generation) throw Object.assign(new Error('Signing in to Soulseek was cancelled.'), { cancelled: true }) }
     const promise = (async () => {
       await this.stop()
+      generation = this.generation
       this.account = account
       await this.install()
+      stillWanted()
       this.set({ phase: 'starting', error: '' })
       for (const dir of [this.dirs.app, this.dirs.downloads, this.dirs.incomplete]) fs.mkdirSync(dir, { recursive: true })
       const port = await freePort()
+      stillWanted()
       const apiKey = crypto.randomBytes(24).toString('hex')
       const env = { ...process.env, ...environment({ username, password, apiKey, dirs: this.dirs, shared: account.shared || [] }) }
       const proc = this.spawn(this.dirs.exe, args({ port, dirs: this.dirs }), { env, cwd: this.dirs.bin, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -221,6 +228,13 @@ class ManagedSlskd {
       let output = ''
       const keep = chunk => { output = (output + chunk).slice(-4000) }
       proc.stdout?.on('data', keep); proc.stderr?.on('data', keep)
+      // It couldn't be started at all (missing, not allowed to run): an error for Settings, not a crash.
+      proc.on('error', error => {
+        proc.startError = `The Soulseek client couldn't start: ${error.message}`
+        if (this.proc !== proc) return
+        this.proc = null; this.connection = null
+        this.set({ phase: 'error', error: proc.startError })
+      })
       proc.on('exit', code => {
         if (this.proc !== proc) return
         this.proc = null; this.connection = null
@@ -228,11 +242,12 @@ class ManagedSlskd {
       })
       const url = `http://127.0.0.1:${port}`
       await this.waitReady(url, apiKey, proc)
+      stillWanted()
       this.connection = { url, apiKey, downloadsDir: this.dirs.downloads, account: key }
       this.set({ phase: 'running', error: '' })
       return this.connection
     })().catch(error => {
-      this.set({ phase: 'error', error: error.message })
+      if (!error.cancelled) this.set({ phase: 'error', error: error.message })
       throw error
     }).finally(() => { if (this.starting?.promise === promise) this.starting = null })
     this.starting = { key, promise }
@@ -242,7 +257,7 @@ class ManagedSlskd {
   async waitReady(url, apiKey, proc) {
     const deadline = Date.now() + READY_TIMEOUT_MS
     while (Date.now() < deadline) {
-      if (this.proc !== proc) throw new Error('The Soulseek client stopped while starting.')
+      if (this.proc !== proc) throw new Error(proc.startError || 'The Soulseek client stopped while starting.')
       const res = await this.fetch(`${url}/api/v0/application`, { headers: { 'X-API-Key': apiKey } }).catch(() => null)
       if (res?.ok) return
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -251,6 +266,8 @@ class ManagedSlskd {
   }
 
   stop() {
+    this.generation++
+    this.starting = null
     const proc = this.proc
     this.proc = null; this.connection = null
     if (!proc || proc.exitCode !== null) { this.set({ phase: 'stopped' }); return Promise.resolve() }

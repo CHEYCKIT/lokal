@@ -63,12 +63,18 @@ export default function SoulseekSignIn({ settings, set }) {
     }
   }
 
+  // Busy until the client has stopped and the password is cleared, so a quick
+  // sign-in can't be stopped by this or lose the password it just saved.
   const signOut = async () => {
     run.current++
-    setBusy(false); setError(''); setAccount(null)
-    await api.soulseekDisconnect().catch(() => {})
-    await save({ soulseek_password: '' }).catch(() => {})
-    set('soulseek_password', '')
+    setBusy(true); setError(''); setAccount(null)
+    try {
+      await api.soulseekDisconnect().catch(() => {})
+      await save({ soulseek_password: '' }).catch(() => {})
+      set('soulseek_password', '')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const checkUpdate = async () => {
