@@ -41,6 +41,10 @@ export function useMusicVideo(track, enabled = true, prepare = false) {
   const [state, setState] = useState({ id: null, video: null, pending: false })
   const [revision, setRevision] = useState(0)
   const request = useRef(0)
+  // What's loaded now: an effect that only runs again (the player shown again
+  // after being hidden behind the mini player) keeps it instead of starting
+  // over, which would drop the playing video back to the artwork.
+  const loaded = useRef(null)
   const downloadId = state.id === id ? state.video?.downloadId : null
   const job = useDownloads(s => downloadId ? s.jobs.find(j => j.id === downloadId) : null)
   useEffect(() => {
@@ -48,6 +52,7 @@ export function useMusicVideo(track, enabled = true, prepare = false) {
     const changing = event => {
       if (event.detail?.trackId !== id && (!event.detail?.videoId || event.detail.videoId !== state.video?.videoId)) return
       request.current++
+      loaded.current = null
       setState(current => ({ ...current, pending: false, video: current.video ? { ...current.video, file: null, src: null, downloadId: null, needsDownload: true } : null }))
     }
     const refresh = () => setRevision(value => value + 1)
@@ -58,15 +63,19 @@ export function useMusicVideo(track, enabled = true, prepare = false) {
   useEffect(() => {
     if (!id) return undefined
     bindProgress()
+    const key = `${id}\u0000${prepare}\u0000${revision}`
+    if (loaded.current === key) return undefined
+    loaded.current = null
     let current = true
     const token = ++request.current
     setState({ id, video: null, pending: true })
     loadMusicVideo(id).then(async video => {
       if (!current || token !== request.current) return
-      if (!video || !prepare) { setState({ id, video, pending: false }); return }
+      if (!video || !prepare) { setState({ id, video, pending: false }); loaded.current = key; return }
       const prepared = await api.musicVideoPrepare(id).catch(e => ({ error: e.message }))
       if (!current || token !== request.current) return
       setState({ id, video: prepared?.error ? { ...video, error: prepared.error } : prepared, pending: !!prepared?.downloadId })
+      loaded.current = key
       if (prepared?.downloadId) useDownloads.getState().load()
     })
     return () => { current = false }
@@ -112,8 +121,10 @@ export const useMusicVideoView = create(set => ({
   hide: () => set({ open: false }),
   toggleMini: () => set(s => ({ mini: !s.mini })),
   // From the full video to the mini player, still showing the video.
-  // `fromVideo`: closing the mini player goes back to the video (App).
-  enterMini: () => set({ open: false, mini: true, fromVideo: true }),
+  // `fromVideo`: closing the mini player goes back to the video (App). The
+  // full player stays open, hidden with the rest of the app, so it comes
+  // back with its video already loaded.
+  enterMini: () => set({ mini: true, fromVideo: true }),
 }))
 
 // A person's own sync correction per video, in seconds (positive: the video

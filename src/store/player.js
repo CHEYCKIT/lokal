@@ -17,6 +17,50 @@ let miniModeFallbackPrevSize = null
 // before either one's IPC round-trip resolves -- each call now only reads
 // `next` after any prior toggle has actually finished.
 let miniModeToggleChain = Promise.resolve()
+// A cover fades over the window before the native resize and away after the
+// swap, so neither layout is ever seen at the other's size (App.jsx).
+const MINI_FADE_MS = 110
+const nextFrame = () => new Promise(resolve => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => resolve()) : setTimeout(resolve, 16)))
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// Resizes (and awaits) the native window, then commits showMiniPlayer. A
+// failed resize leaves the store as it was: the window never changed size,
+// so swapping the UI would desync it from the window.
+async function applyMiniMode(next, electron, set) {
+  if (electron) {
+    try {
+      if (electron.setMiniMode) {
+        // The main-process handler resolves false (rather than
+        // rejecting) when there's no window to apply it to -- the
+        // native mode didn't change, so don't commit it to the store.
+        const applied = await electron.setMiniMode(next)
+        if (applied === false) {
+          console.error('Failed to toggle mini player: setMiniMode returned false')
+          return
+        }
+      } else if (next) {
+        if (electron.getWindowSize) {
+          miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
+        }
+        if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
+        // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
+        // setMiniMode handler; MiniPlayer will report the final content
+        // height after it mounts.
+        if (electron.setWindowSize) await electron.setWindowSize(420, 246)
+      } else {
+        if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
+        if (miniModeFallbackPrevSize && electron.setWindowSize) {
+          await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
+        }
+        miniModeFallbackPrevSize = null
+      }
+    } catch (err) {
+      console.error('Failed to toggle mini player', err)
+      return
+    }
+  }
+  set({ showMiniPlayer: next })
+}
 
 // Shared by setExclusiveSidePanels (the user's Settings toggle) and
 // hydrateExclusiveSidePanels (the backend value at boot): the panel
@@ -856,6 +900,9 @@ export const usePlayerStore = create((set, get) => ({
   sleepTimerEndTime: null,
   sleepTimerInterval: null,
   showMiniPlayer: false,
+  // True while the window switches to or from the mini player: App covers
+  // the window, it's resized, the views swap, and the cover fades away.
+  miniSwitching: false,
   // Resizes (and awaits) the native window BEFORE flipping showMiniPlayer,
   // rather than after -- App.jsx swaps between MiniPlayer and the full app
   // UI the instant showMiniPlayer changes, so if that flip happens first,
@@ -872,43 +919,17 @@ export const usePlayerStore = create((set, get) => ({
       const next = !get().showMiniPlayer
       const electron = typeof window !== 'undefined' ? window.electron : null
       if (electron) {
-        try {
-          if (electron.setMiniMode) {
-            // The main-process handler resolves false (rather than
-            // rejecting) when there's no window to apply it to -- the
-            // native mode didn't change, so don't commit it to the store.
-            const applied = await electron.setMiniMode(next)
-            if (applied === false) {
-              console.error('Failed to toggle mini player: setMiniMode returned false')
-              return
-            }
-          } else if (next) {
-            if (electron.getWindowSize) {
-              miniModeFallbackPrevSize = await electron.getWindowSize().catch(() => null)
-            }
-            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(true)
-            // Matches MINI_DEFAULT_WIDTH/HEIGHT in electron/main.js's
-            // setMiniMode handler; MiniPlayer will report the final content
-            // height after it mounts.
-            if (electron.setWindowSize) await electron.setWindowSize(420, 246)
-          } else {
-            if (electron.setAlwaysOnTop) await electron.setAlwaysOnTop(false)
-            if (miniModeFallbackPrevSize && electron.setWindowSize) {
-              await electron.setWindowSize(miniModeFallbackPrevSize[0], miniModeFallbackPrevSize[1])
-            }
-            miniModeFallbackPrevSize = null
-          }
-        } catch (err) {
-          // The native resize/IPC call failed, so the OS window never
-          // actually changed size -- committing showMiniPlayer here would
-          // desync the UI (MiniPlayer vs. the full app layout) from the
-          // window's real size. Leave the store as it was; the swallowed
-          // catch here previously committed on failure too, silently.
-          console.error('Failed to toggle mini player', err)
-          return
-        }
+        set({ miniSwitching: true })
+        await wait(MINI_FADE_MS)
       }
-      set({ showMiniPlayer: next })
+      try {
+        await applyMiniMode(next, electron, set)
+      } finally {
+        // Two frames: the swapped view has laid out (and the window has its
+        // new size) before it fades back in.
+        await nextFrame(); await nextFrame()
+        set({ miniSwitching: false })
+      }
     })
     return miniModeToggleChain
   },
