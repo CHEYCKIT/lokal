@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { downloadVideo, peekDurableVideoFile, durablePath, migrationStatus, migrateOldVideos, rememberVideoFile, recordedVideoFile, deleteVideoFiles, safePart, updateVideoReferences } = require('../electron/online/musicVideoDownloads.js')
+const { downloadVideo, peekDurableVideoFile, durablePath, rememberVideoFile, recordedVideoFile, deleteVideoFiles, safePart } = require('../electron/online/musicVideoDownloads.js')
 const Database = require('better-sqlite3')
 
 test('music videos download once into artist folders and never trim durable files', async () => {
@@ -40,22 +40,13 @@ test('music videos download once into artist folders and never trim durable file
   }
 })
 
-test('durable downloads use artist folders and migration is safe to repeat', async () => {
+test('durable downloads use artist folders and are found again', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-video-durable-'))
-  const old = path.join(root, 'old')
-  fs.mkdirSync(old)
-  fs.writeFileSync(path.join(old, '4NRXx6U8ABQ-1080.mp4'), Buffer.from([1, 2, 3]))
   const target = durablePath(root, 'A/B', 'Song: title', '4NRXx6U8ABQ', 1080, 'mp4')
   try {
-    const status = migrationStatus({ cacheDir: old })
-    assert.deepEqual(status, { count: 1, bytes: 3 })
-    const first = migrateOldVideos({ cacheDir: old, videosDir: root, resolve: () => ({ artist: 'A/B', title: 'Song: title' }) })
-    assert.equal(first.migrated, 1, first.errors.join(' · '))
-    assert.equal(fs.existsSync(target), true)
-    assert.equal(fs.existsSync(path.join(old, '4NRXx6U8ABQ-1080.mp4')), false)
-    const second = migrateOldVideos({ cacheDir: old, videosDir: root, resolve: () => ({ artist: 'A/B', title: 'Song: title' }) })
-    assert.equal(second.migrated, 0)
-    assert.equal(second.count, 0)
+    assert.equal(path.relative(root, target).split(path.sep).length, 2)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, Buffer.from([1, 2, 3]))
     assert.equal(peekDurableVideoFile('4NRXx6U8ABQ', { videosDir: root, artist: 'A/B', videoHeight: 1080 }), target)
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
@@ -68,31 +59,6 @@ test('portable path parts cannot traverse folders or use Windows devices', () =>
   assert.equal(path.relative('/videos', file).split(path.sep).length, 2)
   assert.ok(!path.basename(file).includes('?'))
   assert.throws(() => durablePath('/videos', 'artist', 'song', '../escape', 720, 'mp4'))
-})
-
-test('migration retains source on reference failure, retries idempotently and never overwrites', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-migration-'))
-  const old = path.join(root, 'old')
-  fs.mkdirSync(old)
-  const source = path.join(old, '4NRXx6U8ABQ-1080.mp4')
-  fs.writeFileSync(source, 'video')
-  const options = { cacheDir: old, videosDir: root, resolve: () => ({ artist: 'Artist', title: 'Song' }) }
-  const occupied = durablePath(root, 'Artist', 'Song', '4NRXx6U8ABQ', 1080, 'mp4')
-  fs.mkdirSync(path.dirname(occupied))
-  fs.writeFileSync(occupied, 'existing video')
-  try {
-    const failure = migrateOldVideos({ ...options, onMove: () => { throw new Error('DB unavailable') } })
-    assert.equal(failure.migrated, 0)
-    assert.equal(fs.existsSync(source), true)
-    assert.equal(fs.readFileSync(occupied, 'utf8'), 'existing video')
-    let updated
-    const success = migrateOldVideos({ ...options, onMove: (from, to) => { assert.equal(fs.existsSync(from), true); updated = to } })
-    assert.equal(success.migrated, 1, success.errors.join(' · '))
-    assert.equal(fs.existsSync(source), false)
-    assert.equal(fs.readFileSync(updated, 'utf8'), 'video')
-    assert.equal(fs.readdirSync(path.dirname(occupied)).length, 2)
-    assert.equal(migrateOldVideos(options).migrated, 0)
-  } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
 test('downloaded file paths survive a DB reopen and deletion removes only the downloaded video', () => {
@@ -128,40 +94,7 @@ test('cancelled and incomplete downloads leave no finished or partial files', as
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('migration updates DB, settings and queue references before deleting the source', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-video-refs-'))
-  const old = path.join(root, 'old')
-  fs.mkdirSync(old)
-  const file = path.join(old, '4NRXx6U8ABQ-1080.mp4')
-  fs.writeFileSync(file, 'video')
-  const db = new Database(':memory:')
-  db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE saved_music_videos (track_id TEXT PRIMARY KEY, video_json TEXT); CREATE TABLE download_jobs (id TEXT PRIMARY KEY, data TEXT, updated_at INTEGER)')
-  db.prepare('INSERT INTO settings VALUES (?, ?)').run('last_video', file)
-  db.prepare('INSERT INTO saved_music_videos VALUES (?, ?)').run('song', JSON.stringify({ file }))
-  db.prepare('INSERT INTO download_jobs VALUES (?, ?, ?)').run('mv', JSON.stringify({ kind: 'music-video', song: file, filepaths: [file], opts: { cacheDir: old, videoId: '4NRXx6U8ABQ' } }), 0)
-  db.prepare('INSERT INTO download_jobs VALUES (?, ?, ?)').run('other', JSON.stringify({ kind: 'music-video', opts: { videoId: 'IKqV7DB8Iwg', artist: 'Other artist' } }), 0)
-  try {
-    let target
-    const result = migrateOldVideos({ cacheDir: old, videosDir: root, resolve: () => ({ artist: 'Artist', title: 'Song', trackId: 'song' }), onMove: (from, to, video) => {
-      assert.equal(fs.existsSync(from), true)
-      updateVideoReferences(db, from, to, video, root)
-      target = to
-    } })
-    assert.equal(result.migrated, 1, result.errors.join(' · '))
-    assert.equal(fs.existsSync(file), false)
-    assert.equal(recordedVideoFile(db, '4NRXx6U8ABQ', 1080), target)
-    assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'last_video'").get().value, target)
-    assert.equal(JSON.parse(db.prepare("SELECT video_json FROM saved_music_videos WHERE track_id = 'song'").get().video_json).file, target)
-    const job = JSON.parse(db.prepare("SELECT data FROM download_jobs WHERE id = 'mv'").get().data)
-    assert.equal(job.song, target)
-    assert.deepEqual(job.filepaths, [target])
-    assert.equal(job.opts.videosDir, root)
-    assert.equal(job.opts.cacheDir, undefined)
-    assert.equal(JSON.parse(db.prepare("SELECT data FROM download_jobs WHERE id = 'other'").get().data).opts.artist, 'Other artist')
-  } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }) }
-})
-
-test('cache maintenance preserves durable downloads and legacy videos awaiting migration', () => {
+test('cache maintenance preserves durable downloads and older video downloads', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-video-maintenance-'))
   const db = require('../electron/ipc/db.js')
   const storageDir = db.getStorageDir

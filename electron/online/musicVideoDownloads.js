@@ -97,35 +97,6 @@ function recordedVideoFile(db, videoId, height) {
   return rows.map(row => row.file_path).find(file => { try { return fs.statSync(file).isFile() && fs.statSync(file).size > 0 } catch { return false } }) || null
 }
 
-function replacePath(value, from, to) {
-  if (typeof value === 'string') return value === from ? to : value
-  if (Array.isArray(value)) return value.map(entry => replacePath(entry, from, to))
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, replacePath(entry, from, to)]))
-  return value
-}
-
-function updateVideoReferences(db, from, to, video, dir) {
-  ensureDownloadsTable(db)
-  db.transaction(() => {
-    rememberVideoFile(db, video, to, video.videoHeight)
-    for (const row of db.prepare('SELECT id, data FROM download_jobs').all()) {
-      const data = replacePath(JSON.parse(row.data || '{}'), from, to)
-      if (data.opts?.videoId === video.videoId) {
-        data.opts = { ...data.opts, durable: true, videosDir: dir, artist: data.opts?.artist || video.artist }
-        delete data.opts.cacheDir
-      }
-      db.prepare('UPDATE download_jobs SET data = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), Date.now(), row.id)
-    }
-    for (const row of db.prepare('SELECT track_id, video_json FROM saved_music_videos').all()) db.prepare('UPDATE saved_music_videos SET video_json = ? WHERE track_id = ?').run(JSON.stringify(replacePath(JSON.parse(row.video_json), from, to)), row.track_id)
-    for (const row of db.prepare('SELECT key, value FROM settings').all()) {
-      let value = row.value === from ? to : row.value
-      try { value = JSON.stringify(replacePath(JSON.parse(value), from, to)) } catch {}
-      if (value !== row.value) db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, row.key)
-    }
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('video_download_folder', dir)
-  })()
-}
-
 function assertVideoFiles(db, files) {
   const normalize = file => {
     let result = path.resolve(file)
@@ -291,62 +262,4 @@ async function downloadVideo(videoId, options = {}) {
   return job
 }
 
-function migrationEntries(options = {}) {
-  const oldDir = options.cacheDir || cache.cacheDir('musicVideo')
-  if (!oldDir) return []
-  try {
-    return fs.readdirSync(oldDir).map(name => {
-      const match = name.match(/^([\w-]{11})-(1080|720|480)\.(mp4|webm)$/i)
-      if (!match) return null
-      const file = path.join(oldDir, name)
-      const stat = fs.lstatSync(file)
-      return stat.isFile() && stat.size > 0 ? { file, videoId: match[1], height: Number(match[2]), ext: match[3].toLowerCase(), size: stat.size } : null
-    }).filter(Boolean)
-  } catch (error) { if (error.code === 'ENOENT') return []; throw error }
-}
-
-function migrationStatus(options = {}) {
-  try {
-    const entries = migrationEntries(options)
-    return { count: entries.length, bytes: entries.reduce((n, item) => n + item.size, 0) }
-  } catch (error) { return { count: 0, bytes: 0, error: `Could not read older video downloads: ${error.message}` } }
-}
-
-function migrateOldVideos({ resolve, onProgress, onMove, ...options } = {}) {
-  const entries = migrationEntries(options)
-  let migrated = 0
-  let skipped = 0
-  let bytes = 0
-  const errors = []
-  for (const entry of entries) {
-    const info = resolve?.(entry.videoId) || {}
-    const destination = durablePath(videosDir(options), info.artist, info.title, entry.videoId, entry.height, entry.ext)
-    let temp
-    try {
-      fs.mkdirSync(path.dirname(destination), { recursive: true })
-      temp = `${destination}.${crypto.randomUUID()}.part`
-      fs.copyFileSync(entry.file, temp, fs.constants.COPYFILE_EXCL)
-      const sourceSize = fs.statSync(entry.file).size
-      const hash = digest(entry.file)
-      if (fs.statSync(temp).size !== sourceSize || digest(temp) !== hash) throw new Error('Migrated file did not match')
-      const saved = exclusiveDestination(destination, temp, true)
-      const fd = fs.openSync(saved, 'r+')
-      try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
-      if (digest(saved) !== hash) throw new Error('Migrated destination did not match')
-      onMove?.(entry.file, saved, { ...info, videoId: entry.videoId, videoHeight: entry.height })
-      if (digest(entry.file) !== hash) throw new Error('Source changed during migration')
-      fs.unlinkSync(entry.file)
-      migrated++
-      bytes += sourceSize
-      onProgress?.({ migrated, skipped, total: entries.length })
-    } catch (error) {
-      skipped++
-      errors.push(`${path.basename(entry.file)}: ${error.message}`)
-    } finally {
-      try { if (temp) fs.unlinkSync(temp) } catch {}
-    }
-  }
-  return { migrated, skipped, total: entries.length, migratedBytes: bytes, errors, ...migrationStatus(options) }
-}
-
-module.exports = { peekCachedVideoFile, downloadVideo, writeResponse, cachePath, heightOf, videosDir, durablePath, peekDurableVideoFile, migrationEntries, migrationStatus, migrateOldVideos, ensureDownloadsTable, rememberVideoFile, recordedVideoFile, deleteVideoFiles, safePart, replacePath, updateVideoReferences, assertVideoFiles }
+module.exports = { peekCachedVideoFile, downloadVideo, writeResponse, cachePath, heightOf, videosDir, durablePath, peekDurableVideoFile, ensureDownloadsTable, rememberVideoFile, recordedVideoFile, deleteVideoFiles, safePart, assertVideoFiles }
