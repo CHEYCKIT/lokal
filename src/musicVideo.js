@@ -107,12 +107,40 @@ export function useMusicVideo(track, enabled = true, prepare = false) {
 export const useMusicVideoView = create(set => ({
   open: false,
   mini: false,
+  fromVideo: false,
   show: () => set({ open: true }),
   hide: () => set({ open: false }),
   toggleMini: () => set(s => ({ mini: !s.mini })),
   // From the full video to the mini player, still showing the video.
-  enterMini: () => set({ open: false, mini: true }),
+  // `fromVideo`: closing the mini player goes back to the video (App).
+  enterMini: () => set({ open: false, mini: true, fromVideo: true }),
 }))
+
+// A person's own sync correction per video, in seconds (positive: the video
+// runs ahead, skipping more of an intro). Kept per video, on this device.
+const OFFSETS_KEY = 'lokal:video-offsets'
+function readOffsets() {
+  try { const saved = JSON.parse(localStorage.getItem(OFFSETS_KEY) || '{}'); return saved && typeof saved === 'object' ? saved : {} } catch { return {} }
+}
+export const VIDEO_OFFSET_STEP = 0.25
+export const useVideoOffsets = create((set, get) => ({
+  offsets: readOffsets(),
+  setOffset: (videoId, seconds) => {
+    if (!videoId) return
+    const value = Math.round(Math.max(-60, Math.min(60, Number(seconds) || 0)) * 100) / 100
+    const offsets = { ...get().offsets }
+    if (value) offsets[videoId] = value
+    else delete offsets[videoId]
+    set({ offsets })
+    try { localStorage.setItem(OFFSETS_KEY, JSON.stringify(offsets)) } catch {}
+  },
+}))
+
+/** `segments` moved by a person's correction (seconds). */
+export function withOffset(segments, extra) {
+  if (!extra || !Array.isArray(segments)) return segments
+  return segments.map(segment => ({ ...segment, offset: segment.offset + extra }))
+}
 
 /** Video time for a song time (seconds); null where the video doesn't have the song. */
 export function videoTimeFor(segments, time) {

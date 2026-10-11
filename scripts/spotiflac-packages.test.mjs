@@ -108,3 +108,27 @@ test('an addon login (tokens and verification cookies) survives a restart, and D
   const fresh=new PackageService(db,{root,tools:()=>({})});t.after(()=>{for(const r of fresh.runtimes.values())r.close()})
   assert.equal(fresh.list()[0].access.ready,false)
 })
+
+test('a plain FLAC download can be played while it arrives, and a range past what arrived waits for it',async t=>{
+  const {liveUpdate,liveResponse}=require('../electron/spotiflac/media')
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-live-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}))
+  const file=path.join(dir,'audio.flac'),part=`${file}.part`,total=200000
+  const bytes=Buffer.alloc(total,7);bytes.write('fLaC',0,'latin1')
+  await fs.writeFile(part,bytes.subarray(0,100000))
+  let ready=false;const job={status:'running',markLive:()=>{ready=true},promise:new Promise(()=>{})}
+  liveUpdate(job,{part,file,total,written:100000})
+  assert.equal(ready,true);assert.equal(job.live.ready,true)
+  const pending=liveResponse(job,{range:'bytes=150000-150099'}).then(res=>res.arrayBuffer().then(body=>({status:res.status,range:res.headers.get('content-range'),length:body.byteLength})))
+  await new Promise(resolve=>setTimeout(resolve,300))
+  await fs.appendFile(part,bytes.subarray(100000));liveUpdate(job,{part,file,total,written:total})
+  assert.deepEqual(await pending,{status:206,range:'bytes 150000-150099/200000',length:100})
+  // A retry that starts the file over replaces the live state, so a reader of the old one stops.
+  const before=job.live
+  liveUpdate(job,{part,file,total,written:5000})
+  assert.notEqual(job.live,before);assert.equal(job.live.ready,false)
+  // Anything that isn't a FLAC from the first bytes waits for the complete file.
+  const other={status:'running',markLive:()=>{throw new Error('must not go live')}}
+  await fs.writeFile(path.join(dir,'b.flac.part'),Buffer.alloc(100000,1))
+  liveUpdate(other,{part:path.join(dir,'b.flac.part'),file:path.join(dir,'b.flac'),total,written:100000})
+  assert.equal(other.live.ready,false)
+})

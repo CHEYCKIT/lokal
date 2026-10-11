@@ -97,7 +97,10 @@ jobs:
         # Linux stays on a fixed, older Ubuntu: native modules compiled here
         # only run on systems at least this new, so a newer image would
         # lock older distros out of the AppImage/deb.
-        os: [windows-latest, macos-latest, ubuntu-24.04]
+        # ubuntu-24.04-arm: the Linux AppImage/deb for ARM64 (Raspberry Pi 5,
+        # ARM laptops), built natively there; its files carry "arm64" and the
+        # updater reads latest-linux-arm64.yml, so nothing clashes with x64.
+        os: [windows-latest, macos-latest, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
 
     steps:

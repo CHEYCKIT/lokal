@@ -104,6 +104,7 @@ async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
 async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
   const attempt = async (force) => {
     const stream = await resolveStream(provider, id, { ...opts, force, signal })
+    if (stream.type === 'live') return { stream, res: await require('../spotiflac/media').liveResponse(stream.job, { range, signal, mime: stream.mime }) }
     if (stream.type === 'file') return { stream, res: await require('../spotiflac/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
     const headers = { ...stream.headers }
     if (range) headers.Range = range
