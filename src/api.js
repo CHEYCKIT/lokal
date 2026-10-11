@@ -214,6 +214,7 @@ export const api = {
         limit: String(opts.limit || 60),
         offset: String(opts.offset || 0),
         sort: opts.sort || 'name',
+        ...(opts.followed ? { followed: '1' } : {}),
       })}`),
   getArtist: (id) => isE() ? el().getArtist(id) : apiFetch(`/artists/${id}`),
   getAlbumTracks: (a) => isE() ? el().getAlbumTracks(a) : apiFetch(`/tracks?${albumTrackParams(a)}`),

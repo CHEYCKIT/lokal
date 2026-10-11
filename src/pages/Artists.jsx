@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Radio, RefreshCw, Search, Sparkles, Users } from 'lucide-react'
+import { Clock, Grid2x2, Grid3x3, List, Loader2, Music, Play, Radio, RefreshCw, Search, Sparkles, UserMinus, UserPlus, Users } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { api } from '../api'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
@@ -10,6 +10,8 @@ import { PlayGlyph } from '../components/CoverPlay'
 import ArtistRefreshAllModal from '../components/ArtistRefreshAllModal'
 import ContextMenu, { useContextMenu } from '../components/ContextMenu'
 import { openRadio } from '../radioActions'
+import { showToast } from '../components/Toaster'
+import { discoveryArtistKey, loadDiscoveryArtists, setArtistFollowed, useDiscoveryArtists } from '../discoveryArtists'
 
 const PAGE_SIZE = 60
 const TOP_ARTISTS_LIMIT = 8
@@ -144,9 +146,14 @@ const VIEWS = [
 
 export default function Artists() {
   const [sort, setSort] = useState(() => localStorage.getItem('lokal-artists-sort') || 'name')
+  // All artists, or only the ones you follow (their releases fill Home → Releases).
+  const [followedOnly, setFollowedOnly] = useState(() => { try { return localStorage.getItem('lokal-artists-followed') === '1' } catch { return false } })
+  const followedRef = useRef(followedOnly)
+  followedRef.current = followedOnly
+  const listKey = sortMode => `artists:${sortMode}${followedRef.current ? ':followed' : ''}`
   // The unfiltered first page from last time, shown at once on the way back
   // (count included) while it refreshes, instead of "Loading artists...".
-  const cached = peekCache(`artists:${sort}`)
+  const cached = peekCache(`artists:${sort}${followedOnly ? ':followed' : ''}`)
   const [artists, setArtists] = useState(() => cached?.items || [])
   const [topArtists, setTopArtists] = useState(() => peekCache('artists:top') || [])
   const [total, setTotal] = useState(() => cached?.total || 0)
@@ -179,19 +186,19 @@ export default function Artists() {
     const setBusy = append ? setLoadingMore : setLoading
     // A refresh of what's already on screen happens quietly (no spinner), and
     // a sort seen before shows its last page at once, not the previous sort's.
-    const seen = !append && !search ? peekCache(`artists:${sortMode}`) : null
+    const seen = !append && !search ? peekCache(listKey(sortMode)) : null
     if (seen) {
       setArtists(seen.items)
       setTotal(seen.total)
       setHasMore(seen.hasMore)
       setBusy(false)
     } else setBusy(true)
-    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode }).then((result) => {
+    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode, followed: followedRef.current }).then((result) => {
       if (stale()) return
       // A failed request keeps what's shown (and the cache) as it was.
       if (!Array.isArray(result?.items)) { setBusy(false); return }
       const items = result.items
-      if (!append && !search) writeCache(`artists:${sortMode}`, { items, total: result?.total || 0, hasMore: !!result?.hasMore })
+      if (!append && !search) writeCache(listKey(sortMode), { items, total: result?.total || 0, hasMore: !!result?.hasMore })
       setArtists((current) => (append ? [...current, ...items] : items))
       setTotal(result?.total || 0)
       setHasMore(!!result?.hasMore)
@@ -218,7 +225,21 @@ export default function Artists() {
     }, query ? 200 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sort])
+  }, [query, sort, followedOnly])
+  // Following or unfollowing someone changes the Followed list.
+  const followed = useDiscoveryArtists(state => state.followed)
+  useEffect(() => { loadDiscoveryArtists().catch(() => {}) }, [])
+  const followedSeen = useRef(followed)
+  useEffect(() => {
+    if (followedSeen.current === followed) return
+    followedSeen.current = followed
+    if (followedOnly) loadArtists(query.trim(), 0, false, sort)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followed])
+  const changeFollowedOnly = (next) => {
+    setFollowedOnly(next)
+    try { localStorage.setItem('lokal-artists-followed', next ? '1' : '0') } catch {}
+  }
 
   useEffect(() => { loadTopArtists() }, [])
 
@@ -230,7 +251,7 @@ export default function Artists() {
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sort])
+  }, [query, sort, followedOnly])
 
   useEffect(() => {
     const node = loadMoreRef.current
@@ -243,7 +264,7 @@ export default function Artists() {
     observer.observe(node)
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loadingMore, loading, artists.length, query, sort])
+  }, [hasMore, loadingMore, loading, artists.length, query, sort, followedOnly])
 
   const changeSort = (value) => {
     setSort(value)
@@ -275,15 +296,21 @@ export default function Artists() {
     if (tracks.length) playQueue(tracks, 0)
   }
 
-  const openArtistMenu = (event, artist) => menu.open(event, [
-    { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(navigate, { artist: artist.name, type: 'artist' }, user?.id) },
-    { label: 'Open artist', icon: Users, onSelect: () => navigate(`/artist/${artist.id}`) },
-  ])
+  const openArtistMenu = (event, artist) => {
+    const isFollowed = followed.has(discoveryArtistKey(artist.name))
+    menu.open(event, [
+      { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(navigate, { artist: artist.name, type: 'artist' }, user?.id) },
+      { label: 'Open artist', icon: Users, onSelect: () => navigate(`/artist/${artist.id}`) },
+      { separator: true },
+      { label: isFollowed ? 'Unfollow artist' : 'Follow artist', icon: isFollowed ? UserMinus : UserPlus, onSelect: () => setArtistFollowed(artist.name, !isFollowed).then(() => showToast(isFollowed ? `Unfollowed ${artist.name}` : `Following ${artist.name}`)).catch(error => showToast(error.message)) },
+    ])
+  }
 
   const emptyMessage = useMemo(() => {
-    if (query.trim()) return 'No artists matched that search.'
+    if (query.trim()) return followedOnly ? 'No followed artist matched that search.' : 'No artists matched that search.'
+    if (followedOnly) return "You don't follow any of your library's artists yet. Right-click one to follow it, or choose them in Home → Releases → Followed artists."
     return 'No artists in your library yet.'
-  }, [query])
+  }, [query, followedOnly])
 
   const gridClass = density === 'compact'
     ? 'grid grid-cols-4 gap-3 @sm:grid-cols-6 @md:grid-cols-8 @lg:grid-cols-10'
@@ -314,11 +341,20 @@ export default function Artists() {
               </button>
             </div>
             <p className="mt-3 text-sm text-muted">
-              {loading ? '\u00a0' : `${total.toLocaleString()} artist${total === 1 ? '' : 's'}`}
+              {loading ? '\u00a0' : `${total.toLocaleString()} ${followedOnly ? 'followed ' : ''}artist${total === 1 ? '' : 's'}`}
             </p>
           </div>
 
           <div className="flex w-full flex-col gap-3 @sm:flex-row @sm:flex-wrap @sm:items-center @sm:justify-end @md:w-auto">
+            <div role="radiogroup" aria-label="Which artists" className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+              {[[false, 'All'], [true, 'Followed']].map(([value, label]) => (
+                <button key={label} role="radio" aria-checked={followedOnly === value} onClick={() => changeFollowedOnly(value)}
+                  title={value ? 'Only the artists you follow' : 'Every artist in your library'}
+                  className={`h-8 rounded-lg px-3 text-sm transition-colors ${followedOnly === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <select
               value={sort}
               onChange={(event) => changeSort(event.target.value)}
@@ -354,7 +390,7 @@ export default function Artists() {
           </div>
         </div>
 
-        {!query.trim() && topArtists.length > 0 && density !== 'list' && (
+        {!query.trim() && !followedOnly && topArtists.length > 0 && density !== 'list' && (
           <section className="space-y-4">
             <div className="flex items-center gap-2">
               <Sparkles size={14} className="text-accent" />
@@ -377,7 +413,7 @@ export default function Artists() {
         )}
 
         <section className="space-y-4">
-          {!query.trim() && topArtists.length > 0 && density !== 'list' && (
+          {!query.trim() && !followedOnly && topArtists.length > 0 && density !== 'list' && (
             <h2 className="text-xs font-display text-muted uppercase tracking-widest">All Artists</h2>
           )}
           {loading ? (

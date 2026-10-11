@@ -51,19 +51,28 @@ async function saveArtistImageFromData(artistId, imageData) {
 router.get('/', (req, res) => {
   const db = getDB()
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
-  const hasPaging = !!search || req.query.limit !== undefined || req.query.offset !== undefined
+  const followedOnly = req.query.followed === '1'
+  const hasPaging = !!search || followedOnly || req.query.limit !== undefined || req.query.offset !== undefined
   const limit = hasPaging ? Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 60)) : null
   const offset = hasPaging ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0
   const sort = req.query.sort === 'tracks' ? 'tracks' : 'name'
   const orderBy = sort === 'tracks' ? 'ORDER BY track_count DESC, a.name ASC' : 'ORDER BY a.name ASC'
   const params = []
-  const where = search ? 'WHERE a.name LIKE ?' : ''
+  const conditions = []
   const groupBy = 'GROUP BY a.id'
   const having = 'HAVING COUNT(DISTINCT t.id) > 0'
 
   if (search) {
+    conditions.push('a.name LIKE ?')
     params.push(`%${search}%`)
   }
+  // Artists → Followed: only the artists you follow.
+  if (followedOnly) {
+    const followed = require('../../electron/followedArtistIds').followedCondition(db)
+    conditions.push(followed.sql)
+    params.push(followed.param)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
   // Songs in the library only (not streamed ones), as on the artist's page.
   const baseSql = `
