@@ -459,6 +459,11 @@ export const api = {
   soulseekFinishSearch: (id) => isE() ? el().soulseekFinishSearch(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`, { method:'PUT' }),
   soulseekStopSearch: (id) => isE() ? el().soulseekStopSearch(id) : apiFetch(`/download/soulseek/search/${encodeURIComponent(id)}`, { method:'DELETE' }),
   soulseekDownload: (file, opts = {}) => isE() ? el().soulseekDownload(file, opts) : apiFetch('/download/soulseek/download', { method:'POST', body:{ file, ...opts } }),
+  // Settings → Soulseek, built in (desktop app): Lokal runs the Soulseek client itself.
+  soulseekClient: () => isE() && el().soulseekClient ? el().soulseekClient() : Promise.resolve(null),
+  soulseekConnect: () => isE() && el().soulseekConnect ? el().soulseekConnect() : Promise.resolve({ error: 'Soulseek built in needs the desktop app.' }),
+  soulseekDisconnect: () => isE() && el().soulseekDisconnect ? el().soulseekDisconnect() : Promise.resolve(null),
+  onSoulseekClient: (fn) => isE() && el().onSoulseekClient ? el().onSoulseekClient((_, status) => fn(status)) : () => {},
   // Audio quality (codec / lossless / spectrum check) and "Get it in lossless".
   qualitySummary: () => isE() ? el().qualitySummary() : apiFetch('/quality/summary'),
   qualityList: (opts = {}) => isE() ? el().qualityList(opts) : apiFetch(`/quality/list?${new URLSearchParams(Object.entries(opts).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => [k, String(v)]))}`),

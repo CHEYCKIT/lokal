@@ -169,8 +169,8 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-yellow-300" />
           <div className="min-w-0 flex-1 text-sm">
-            <p className="text-yellow-100">{status.error || 'slskd is running but not logged in to Soulseek.'}</p>
-            <p className="mt-1 text-xs text-muted">Lokal downloads from Soulseek through slskd. Set its address and API key in Settings → Soulseek.</p>
+            <p className="text-yellow-100">{status.error || 'Not signed in to Soulseek yet.'}</p>
+            <p className="mt-1 text-xs text-muted">Sign in with a Soulseek account in Settings → Integrations → Soulseek (or connect your own slskd there).</p>
           </div>
           <button onClick={() => nav('/settings')} className="flex-shrink-0 rounded-xl bg-yellow-500/20 px-3 py-1.5 text-xs font-semibold text-yellow-100 hover:bg-yellow-500/30">Settings</button>
         </div>

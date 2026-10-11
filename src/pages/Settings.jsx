@@ -20,6 +20,7 @@ import { ARTIST_SOURCES } from '../artistSources'
 import { repairMissingTracks } from '../ghostDownloads'
 import { plural } from '../plural'
 import { readCrossfadeSettings, CROSSFADE_MIN_S } from '../audio/crossfade'
+import SoulseekSignIn from '../components/SoulseekSignIn'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -301,9 +302,12 @@ export default function Settings() {
   const setToolsStatus = (status) => { writeCache('settings:tools', status); setToolsStatusState(status) }
   const [toolsLoading, setToolsLoading] = useState(false)
   const [soulseekCheck, setSoulseekCheck] = useState(null)
+  // Built in unless you set up your own slskd before this option existed.
+  const soulseekMode = settings.soulseek_mode || (settings.soulseek_api_key ? 'external' : 'builtin')
   const testSoulseek = async () => {
     setSoulseekCheck({ loading: true })
     await api.saveSettings({
+      soulseek_mode: 'external',
       soulseek_url: settings.soulseek_url || 'http://localhost:5030',
       soulseek_api_key: settings.soulseek_api_key || '',
       soulseek_downloads_dir: settings.soulseek_downloads_dir || '',
@@ -1615,9 +1619,33 @@ activeCategory === 'data' ? usersTried
       {inCategory('integrations') && (
         <Section title="Soulseek">
           <p className="text-xs text-muted leading-relaxed">
-            Search and download from Soulseek, where lossless (FLAC) copies are common. Lokal talks to{' '}
-            <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
-            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). Soulseek is a sharing network: slskd shares folders back by default, and most of what's on it is copyrighted, so only download what you're allowed to.
+            Search and download from Soulseek, a peer-to-peer network where lossless (FLAC) copies are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you're allowed to.
+          </p>
+          {/* Built in: sign in and Lokal runs the Soulseek client (slskd) itself.
+              Your own slskd: the address and API key of one you run. */}
+          <div role="radiogroup" aria-label="Soulseek client" className="flex w-fit items-center gap-1 rounded-xl border border-border bg-card/60 p-1">
+            {[['builtin', 'Built in'], ['external', 'My own slskd']].map(([id, label]) => (
+              <button key={id} role="radio" aria-checked={soulseekMode === id}
+                onClick={async () => {
+                  set('soulseek_mode', id)
+                  await api.saveSettings({ soulseek_mode: id }).catch(() => {})
+                  if (id === 'external') api.soulseekDisconnect().catch(() => {})
+                  setSoulseekCheck(null)
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${soulseekMode === id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}>{label}</button>
+            ))}
+          </div>
+          {soulseekMode === 'builtin' ? (
+            api.isElectron
+              ? <>
+                  <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">slskd</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
+                  <SoulseekSignIn settings={settings} set={set} />
+                </>
+              : <p className="text-xs text-muted">The built-in Soulseek client runs with the desktop app. Here, use your own slskd.</p>
+          ) : (<>
+          <p className="text-xs text-muted leading-relaxed">
+            Lokal talks to <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
+            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). slskd shares folders back by default.
           </p>
           <Row label="slskd Address" desc="The address of your slskd app.">
             <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
@@ -1657,6 +1685,7 @@ activeCategory === 'data' ? usersTried
                   </p>
             )}
           </div>
+          </>)}
         </Section>
       )}
 

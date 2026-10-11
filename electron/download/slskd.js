@@ -8,6 +8,10 @@
 // (an API key from slskd.yml, web.authentication.api_keys), and optionally
 // soulseek_downloads_dir when slskd sees its folder under another path than
 // this machine does (Docker, a NAS share).
+//
+// Or soulseek_mode 'builtin': Lokal runs slskd itself (slskdManaged.js) with
+// the soulseek_username / soulseek_password from Settings, and every call
+// here goes to that one.
 
 const fs = require('fs')
 const path = require('path')
@@ -15,7 +19,17 @@ const path = require('path')
 const AUDIO_EXT = new Set(['flac', 'mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wav', 'aif', 'aiff', 'alac', 'ape', 'wv', 'dsf'])
 const LOSSLESS_EXT = new Set(['flac', 'wav', 'aif', 'aiff', 'alac', 'ape', 'wv', 'dsf'])
 
+let managed = null
+/** The desktop app's built-in slskd: { connect(settings), current(), downloadsDir }. */
+function useManaged(provider) { managed = provider }
+// Unset (settings from before this option): built in once there's an account and no slskd key.
+const isBuiltin = settings => settings?.soulseek_mode === 'builtin' || (!settings?.soulseek_mode && !settings?.soulseek_api_key && !!settings?.soulseek_username)
+
 function config(settings = {}) {
+  if (isBuiltin(settings)) {
+    const current = managed?.current?.() || null
+    return { url: current?.url || 'the built-in Soulseek client', apiKey: current?.apiKey || '', downloadsDir: managed?.downloadsDir || null, builtin: true }
+  }
   const url = String(settings.soulseek_url || 'http://localhost:5030').trim().replace(/\/+$/, '')
   return {
     url,
@@ -29,8 +43,12 @@ class SlskdError extends Error {
 }
 
 async function request(settings, method, route, body, { timeoutMs = 15000 } = {}) {
-  const { url, apiKey } = config(settings)
-  if (!apiKey) throw new SlskdError('Add your slskd API key in Settings → Soulseek.', 401)
+  if (isBuiltin(settings)) {
+    if (!managed) throw new SlskdError('Soulseek built in needs the desktop app. Use your own slskd in Settings → Soulseek.', 0)
+    await managed.connect(settings)
+  }
+  const { url, apiKey, builtin } = config(settings)
+  if (!apiKey) throw new SlskdError(builtin ? 'The built-in Soulseek client isn\'t running.' : 'Add your slskd API key in Settings → Soulseek.', 401)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res
@@ -42,7 +60,9 @@ async function request(settings, method, route, body, { timeoutMs = 15000 } = {}
       signal: controller.signal,
     })
   } catch (e) {
-    throw new SlskdError(e.name === 'AbortError' ? `slskd at ${url} didn't answer.` : `Can't reach slskd at ${url}. Is it running?`, 0)
+    throw new SlskdError(builtin
+      ? (e.name === 'AbortError' ? "The built-in Soulseek client didn't answer." : "Can't reach the built-in Soulseek client.")
+      : (e.name === 'AbortError' ? `slskd at ${url} didn't answer.` : `Can't reach slskd at ${url}. Is it running?`), 0)
   } finally {
     clearTimeout(timer)
   }
@@ -290,6 +310,6 @@ function locateDownload(downloadsDir, filename, size, since = 0) {
 }
 
 module.exports = {
-  config, status, startSearch, searchResults, finishSearch, stopSearch, enqueue, findTransfer, cancelTransfer,
+  config, useManaged, isBuiltin, status, startSearch, searchResults, finishSearch, stopSearch, enqueue, findTransfer, cancelTransfer,
   describeState, locateDownload, splitRemote, flatten, cleanQuery, SlskdError, AUDIO_EXT, LOSSLESS_EXT,
 }

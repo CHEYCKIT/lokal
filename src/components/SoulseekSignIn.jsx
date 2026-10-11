@@ -1,0 +1,120 @@
+// Settings → Soulseek, built in: a Soulseek account is all it takes. Lokal
+// downloads the Soulseek client (slskd) the first time, runs it in the
+// background and signs in; the progress and the result show here.
+
+import React, { useEffect, useRef, useState } from 'react'
+import { Check, Loader2, LogOut } from 'lucide-react'
+import { api } from '../api'
+
+const LOGIN_WAIT_MS = 25000
+
+/** Why the client isn't signed in, from its connection state. */
+export function signInProblem(serverState = '') {
+  const state = String(serverState || '')
+  if (/connecting|disconnected/i.test(state) && !/connected,/i.test(state)) return `Can't reach the Soulseek network yet (${state}). Check your internet connection or firewall, or try again in a minute.`
+  if (/logging ?in/i.test(state)) return 'Soulseek is still signing you in. Try again in a moment.'
+  return `Soulseek didn't accept the sign-in${state ? ` (${state})` : ''}. Check the username and password; if the username is taken by someone else, pick another.`
+}
+
+export default function SoulseekSignIn({ settings, set }) {
+  const [client, setClient] = useState(null) // the client's phase: installing (progress) / starting / running / stopped / error
+  const [account, setAccount] = useState(null) // slskd.status(): { loggedIn, username, serverState } | { error }
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const run = useRef(0)
+
+  useEffect(() => {
+    Promise.resolve(api.soulseekClient()).then(status => { if (status) setClient(status) }).catch(() => {})
+    const off = api.onSoulseekClient(status => setClient(status))
+    // Already running (searched or downloaded since Lokal opened): its account.
+    Promise.resolve(api.soulseekClient()).then(status => {
+      if (status?.running) Promise.resolve(api.soulseekStatus()).then(found => { if (found && !found.error) setAccount(found) }).catch(() => {})
+    }).catch(() => {})
+    return () => { off?.(); run.current++ }
+  }, [])
+
+  const save = values => Promise.resolve(api.saveSettings(values)).then(result => { if (result?.error) throw new Error(result.error) })
+
+  const signIn = async () => {
+    const id = ++run.current
+    setBusy(true); setError(''); setAccount(null)
+    try {
+      await save({ soulseek_mode: 'builtin', soulseek_username: String(settings.soulseek_username || '').trim(), soulseek_password: settings.soulseek_password || '', soulseek_share_library: settings.soulseek_share_library === '1' ? '1' : '0' })
+      const started = await api.soulseekConnect()
+      if (started?.error) throw new Error(started.error)
+      // The client is up; signing in to the Soulseek network takes a few seconds more.
+      const deadline = Date.now() + LOGIN_WAIT_MS
+      let status = started
+      while (id === run.current && !status?.loggedIn && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        status = await api.soulseekStatus().catch(e => ({ error: e.message }))
+        if (status?.error) throw new Error(status.error)
+      }
+      if (id !== run.current) return
+      setAccount(status)
+      if (!status?.loggedIn) setError(signInProblem(status?.serverState))
+    } catch (e) {
+      if (id === run.current) setError(e.message)
+    } finally {
+      if (id === run.current) setBusy(false)
+    }
+  }
+
+  const signOut = async () => {
+    run.current++
+    setBusy(false); setError(''); setAccount(null)
+    await api.soulseekDisconnect().catch(() => {})
+    await save({ soulseek_password: '' }).catch(() => {})
+    set('soulseek_password', '')
+  }
+
+  const phase = client?.phase
+  const working = busy && (phase === 'installing' || phase === 'starting' || !account)
+  const progressText = phase === 'installing'
+    ? `Downloading the Soulseek client (slskd ${client.version}, once)… ${client.progress || 0}%`
+    : phase === 'starting' ? 'Starting the Soulseek client…' : 'Signing in to Soulseek…'
+  const signedIn = !!account?.loggedIn
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 @md:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-xs text-muted">Username</span>
+          <input value={settings.soulseek_username || ''} onChange={e => set('soulseek_username', e.target.value)} disabled={busy}
+            spellCheck={false} autoComplete="username" placeholder="Your Soulseek username"
+            className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs text-muted">Password</span>
+          <input type="password" value={settings.soulseek_password || ''} onChange={e => set('soulseek_password', e.target.value)} disabled={busy}
+            onKeyDown={e => { if (e.key === 'Enter' && !busy) signIn() }}
+            autoComplete="current-password" placeholder="Its password"
+            className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
+        </label>
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted">New to Soulseek? Make up a username and password: the account is created the first time you sign in. Use one that isn't signed in anywhere else (Nicotine+, another slskd) at the same time.</p>
+      <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
+        <input type="checkbox" checked={settings.soulseek_share_library === '1'} disabled={busy || !settings.music_folder}
+          onChange={e => set('soulseek_share_library', e.target.checked ? '1' : '0')} className="mt-0.5 accent-[rgb(var(--accent-rgb))]" />
+        <span>Share my music folder{settings.music_folder ? ` (${settings.music_folder})` : ''} with the Soulseek network. Many Soulseek users only send files to people who share; takes effect at the next sign-in.</span>
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={signIn} disabled={busy || !String(settings.soulseek_username || '').trim() || !settings.soulseek_password} aria-label="Sign in to Soulseek"
+          className="inline-flex items-center gap-2 rounded-lg border border-accent/50 bg-accent/20 px-4 py-1.5 text-xs font-display uppercase tracking-wider text-accent disabled:opacity-50">
+          {busy && <Loader2 size={12} className="animate-spin" />}{signedIn ? 'Sign in again' : 'Sign in'}
+        </button>
+        {(signedIn || client?.running) && (
+          <button onClick={signOut} aria-label="Sign out of Soulseek" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
+            <LogOut size={12} /> Sign out
+          </button>
+        )}
+        {working && <p role="status" className="text-xs text-muted">{progressText}</p>}
+        {!busy && signedIn && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-green-400"><Check size={12} />Signed in as {account.username || settings.soulseek_username} · slskd {account.version || client?.version}</p>}
+        {!busy && (error || (phase === 'error' && client?.error)) && <p role="alert" className="text-xs text-red-400">{error || client.error}</p>}
+      </div>
+      {phase === 'installing' && (
+        <div className="h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${client.progress || 0}%` }} /></div>
+      )}
+    </div>
+  )
+}
