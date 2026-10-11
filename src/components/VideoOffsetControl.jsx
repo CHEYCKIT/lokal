@@ -23,16 +23,20 @@ export default function VideoOffsetControl({ videoId, compact = false, className
         title="Video ahead of the song? Move it back (Shift: 1 s)" aria-label="Move the video back">
         <Minus size={compact ? 11 : 14} />
       </button>
+      {/* Fixed widths, and the reset button always there (greyed at 0): the
+          buttons stay put while the value changes. */}
       <span className={`select-none whitespace-nowrap px-1 tabular-nums ${offset ? 'text-white' : 'text-white/65'}`} title="Video sync: how far the video is moved against the song">
-        {compact ? (offset ? label(offset) : 'Sync') : `Video sync ${offset ? label(offset) : '0 s'}`}
+        {!compact && 'Video sync '}
+        <span className={`inline-block text-center ${compact ? 'w-[4.6em]' : 'w-[4.8em]'}`}>{offset ? label(offset) : compact ? 'Sync' : '0 s'}</span>
       </span>
       <button type="button" onClick={event => nudge(event, 1)} className={button}
         title="Video behind the song (an intro, say)? Move it forward (Shift: 1 s)" aria-label="Move the video forward">
         <Plus size={compact ? 11 : 14} />
       </button>
-      {offset !== 0 && <button type="button" onClick={event => { event.stopPropagation(); setOffset(videoId, 0) }} className={button} title="Back to the automatic sync" aria-label="Reset the video sync">
+      <button type="button" onClick={event => { event.stopPropagation(); setOffset(videoId, 0) }} disabled={offset === 0}
+        className={`${button} disabled:pointer-events-none disabled:opacity-30`} title="Back to the automatic sync" aria-label="Reset the video sync">
         <RotateCcw size={compact ? 10 : 13} />
-      </button>}
+      </button>
     </div>
   )
 }
