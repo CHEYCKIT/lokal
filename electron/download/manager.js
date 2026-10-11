@@ -439,6 +439,8 @@ class DownloadManager {
       seen: !!job.seen,
       removed: !!job.removed,
       sourceRef: job.sourceRef || null,
+      // The playlist's ghost songs this download replaces (Ghost Songs shows its progress).
+      replaces: [...new Set([...(job.opts?.replaceImported || []), ...(job.opts?.upgradeTrackId ? [job.opts.upgradeTrackId] : [])])],
     }
   }
 
