@@ -79,3 +79,34 @@ test('Deezer gives releases their exact dates; an unknown artist falls back', as
   const fallback = await releaseCatalogue({ artist: 'Nobody' }, async () => ({ albums: ['yt'] }), async () => ({ ok: true, json: async () => ({ data: [] }) }))
   assert.deepEqual(fallback, { albums: ['yt'] })
 })
+
+test('a check adds to the last one instead of starting over', async () => {
+  const storage = memory()
+  const artists = [{ name: 'One' }, { name: 'Two' }]
+  const catalogue = { One: [{ title: 'Alpha', release_date: '2026-09-01' }], Two: [{ title: 'Beta', release_date: '2026-08-01' }] }
+  const first = await checkReleases(artists, async name => catalogue[name], { storage, now: new Date('2026-10-01') })
+  assert.equal(first.added, 2)
+  catalogue.One.unshift({ title: 'Gamma', release_date: '2026-10-09' })
+  const progress = []
+  const second = await checkReleases(artists, async name => catalogue[name], {
+    storage, now: new Date('2026-10-11'), concurrency: 1,
+    onProgress: ({ done, items, added }) => progress.push([done, items.map(item => item.title), added]),
+  })
+  // The last check's releases show from the start; the new one joins them.
+  assert.deepEqual(progress, [[1, ['Gamma', 'Alpha', 'Beta'], 1], [2, ['Gamma', 'Alpha', 'Beta'], 1]])
+  assert.deepEqual(second.items.map(item => item.title), ['Gamma', 'Alpha', 'Beta'])
+  assert.equal(second.added, 1)
+  // An artist gone from the library takes its releases along.
+  const third = await checkReleases([{ name: 'One' }], async name => catalogue[name], { storage, now: new Date('2026-10-12') })
+  assert.deepEqual(third.items.map(item => item.title), ['Gamma', 'Alpha'])
+  assert.equal(third.added, 0)
+})
+
+test('a release found again is updated in place, not added twice', async () => {
+  const storage = memory()
+  await checkReleases([{ name: 'One' }], async () => [{ title: 'Alpha', release_date: '2026-09-01', artwork: 'old.jpg' }], { storage, now: new Date('2026-10-01') })
+  const again = await checkReleases([{ name: 'One' }], async () => [{ title: 'Alpha', release_date: '2026-09-01', artwork: 'new.jpg' }], { storage, now: new Date('2026-10-02') })
+  assert.equal(again.items.length, 1)
+  assert.equal(again.items[0].artwork, 'new.jpg')
+  assert.equal(again.added, 0)
+})

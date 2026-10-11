@@ -65,17 +65,17 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
 // it or lose what it found, and coming back shows its progress.
 export const useReleaseCheck = create((set, get) => ({
   saved: savedReleases(),
-  checking: null, // { done, total }
+  checking: null, // { done, total, added }
   run: 0,
   start: async artists => {
     if (get().checking) return
     const id = get().run + 1
     const isCurrent = () => get().run === id
-    set({ run: id, checking: { done: 0, total: artists.length } })
+    set({ run: id, checking: { done: 0, total: artists.length, added: 0 } })
     try {
       const result = await checkReleases(artists, name => loadArtistReleases(name, api), {
         isCurrent,
-        onProgress: ({ done, total, items }) => { if (isCurrent()) set(state => ({ checking: { done, total }, saved: { ...state.saved, items } })) },
+        onProgress: ({ done, total, items, added }) => { if (isCurrent()) set(state => ({ checking: { done, total, added }, saved: { ...state.saved, items } })) },
       })
       if (isCurrent()) set({ saved: result })
     } finally { if (isCurrent()) set({ checking: null }) }
@@ -99,8 +99,8 @@ export default function ReleasesPanel({ artists, onPlay, onOpen, onMenu, onArtis
           <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">Releases</p>
           <h2 className="mt-1 text-xl font-medium text-white">New from your artists</h2>
           <p className="mt-1 text-xs text-muted">
-            {checking ? `Checking ${checking.done}/${checking.total} artists…`
-              : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(saved.artists || artists.length, 'library artist')}, newest first · checked ${ago(saved.checkedAt)}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
+            {checking ? `Checking ${checking.done}/${checking.total} artists for new releases…${checking.added ? ` · ${checking.added} added` : ''}`
+              : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(saved.artists || artists.length, 'library artist')}, newest first · checked ${ago(saved.checkedAt)}${saved.added ? ` (${saved.added} added)` : ''}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
               : `The latest ${100} releases by the artists in your library, newest first.`}
           </p>
         </div>
