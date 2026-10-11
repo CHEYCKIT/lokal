@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Film, Clapperboard, Gem } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -246,8 +246,6 @@ export default function RightSidebar() {
   // already a blurred image, and blur filters nested in this panel made
   // Chromium flash dark bands over them whenever anything repainted (hovering
   // a list in the page, a playing canvas).
-  const btnFx = 'flex-1 py-2 bg-white/[0.12] border border-white/10 rounded-xl text-xs text-white/75 hover:text-white hover:bg-white/20 transition-colors font-display uppercase tracking-wider flex items-center justify-center gap-1.5'
-  const btnClassic = 'flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5'
 
   const contextBlock = currentTrack && playbackContext?.name ? (
     <div className="min-w-0">
@@ -385,23 +383,28 @@ export default function RightSidebar() {
 
                   {fx && contextBlock}
 
-                  {/* Full screen and Lyrics always; Music Video and the canvas
-                      switch only when this song has one. An odd one out spans the row. */}
+                  {/* One bar of icons: Full Screen and Lyrics always; Music Video
+                      and the canvas switch only when this song has one. */}
                   {currentTrack && (() => {
-                    const btn = `${fx ? btnFx : btnClassic} min-w-0 px-2 whitespace-nowrap`
+                    const btn = `flex flex-1 items-center justify-center py-2.5 transition-colors ${fx ? 'text-white/75 hover:bg-white/10 hover:text-white' : 'text-muted hover:bg-white/[0.04] hover:text-white'}`
                     const actions = [
-                      <button key="full" onClick={toggleFullscreen} className={btn}><Disc3 size={11} className="flex-shrink-0" /> <span className="truncate">Full Screen</span></button>,
-                      <button key="lyrics" onClick={toggleLyricsFullscreen} className={btn}><Mic2 size={11} className="flex-shrink-0" /> <span className="truncate">Lyrics</span></button>,
-                      musicVideo && <button key="video" onClick={showMusicVideo} title="Play the official music video, in time with the song" className={btn}><Clapperboard size={11} className="flex-shrink-0" /> <span className="truncate">Music Video</span></button>,
-                      clipNow && (
-                        <button key="clip" onClick={() => setCoverOff(!coverOff)} aria-pressed={coverOff}
-                          title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
-                          className={btn}><Film size={11} className="flex-shrink-0" /> <span className="truncate">{coverOff ? `Show ${clipName}` : `Hide ${clipName}`}</span></button>
-                      ),
+                      { key: 'full', label: 'Full screen', icon: Disc3, onClick: toggleFullscreen },
+                      { key: 'lyrics', label: 'Lyrics, full screen', icon: Mic2, onClick: toggleLyricsFullscreen },
+                      musicVideo && { key: 'video', label: 'Music video', title: 'Play the official music video, in time with the song', icon: Clapperboard, onClick: showMusicVideo },
+                      clipNow && {
+                        key: 'clip', pressed: coverOff, icon: coverOff ? ImageOff : ImagePlay, onClick: () => setCoverOff(!coverOff),
+                        label: coverOff ? `Show ${clipName}` : `Hide ${clipName}`,
+                        title: coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Hide the ${clipName.toLowerCase()}: the still cover for this song, here and in full screen`,
+                      },
                     ].filter(Boolean)
                     return (
-                      <div className="grid grid-cols-2 gap-2" aria-label="Song actions">
-                        {actions.map((action, i) => i === actions.length - 1 && actions.length % 2 ? <div key={action.key} className="col-span-2 flex">{action}</div> : <div key={action.key} className="flex min-w-0">{action}</div>)}
+                      <div role="toolbar" aria-label="Song actions" className={`flex overflow-hidden rounded-xl border ${fx ? 'divide-x divide-white/10 border-white/10 bg-white/[0.12]' : 'divide-x divide-border border-border bg-card'}`}>
+                        {actions.map(({ key, label, title, icon: Icon, onClick, pressed }) => (
+                          <button key={key} type="button" onClick={onClick} title={title || label} aria-label={label} aria-pressed={pressed}
+                            className={`${btn} ${pressed ? (fx ? 'text-white/45' : 'text-muted/60') : ''}`}>
+                            <Icon size={15} />
+                          </button>
+                        ))}
                       </div>
                     )
                   })()}
