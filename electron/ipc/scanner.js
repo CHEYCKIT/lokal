@@ -604,14 +604,22 @@ function getArtistsPage(db, opts = {}) {
   const rawSearch = typeof opts.search === 'string' ? opts.search.trim() : ''
   const sort = opts.sort === 'tracks' ? 'tracks' : 'name'
   const params = []
-  const where = rawSearch ? 'WHERE a.name LIKE ?' : ''
+  const conditions = []
   const groupBy = 'GROUP BY a.id'
   const having = 'HAVING COUNT(DISTINCT t.id) > 0'
   const orderBy = sort === 'tracks' ? 'ORDER BY track_count DESC, a.name ASC' : 'ORDER BY a.name ASC'
 
   if (rawSearch) {
+    conditions.push('a.name LIKE ?')
     params.push(`%${rawSearch}%`)
   }
+  // Artists → Followed: only the artists you follow.
+  if (opts.followed === true || opts.followed === '1') {
+    const followed = require('../followedArtistIds').followedCondition(db)
+    conditions.push(followed.sql)
+    params.push(followed.param)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
   // Songs in the library only (not streamed ones), as on the artist's page.
   const baseSql = `
