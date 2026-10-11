@@ -444,6 +444,7 @@ export const api = {
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},
   indexAllMusicVideos: () => isE() && el().indexAllMusicVideos ? el().indexAllMusicVideos() : Promise.resolve(null),
   cancelMusicVideoIndex: () => isE() && el().cancelMusicVideoIndex ? el().cancelMusicVideoIndex() : Promise.resolve(null),
+  musicVideoIndexStatus: () => isE() && el().musicVideoIndexStatus ? el().musicVideoIndexStatus() : Promise.resolve(null),
   onMusicVideoIndexProgress: (fn) => isE() && el().onMusicVideoIndexProgress ? el().onMusicVideoIndexProgress((_, p) => fn(p)) : () => {},
   indexAllLyrics: () => isE() && el().indexAllLyrics ? el().indexAllLyrics() : Promise.resolve(null),
   cancelLyricsIndex: () => isE() && el().cancelLyricsIndex ? el().cancelLyricsIndex() : Promise.resolve(null),

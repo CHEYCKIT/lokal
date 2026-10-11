@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
@@ -12,7 +12,7 @@ import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
-import { TIERS, formatLabel, isSuspect, tierOf } from '../quality'
+import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../quality'
 import AudioOutputPicker from './AudioOutputPicker'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
@@ -144,6 +144,7 @@ export default function PlayerBar() {
     menu.open(event, [
       { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
       currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
+      losslessMenuItem(currentTrack, Gem),
     ].filter(Boolean))
   }
 

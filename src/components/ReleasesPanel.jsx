@@ -14,7 +14,7 @@ import { discoveryArtistKey, useDiscoveryArtists } from '../discoveryArtists'
 
 const TYPE_LABEL = { album: 'Album', single: 'Single', ep: 'EP' }
 
-function ago(time) {
+export function ago(time) {
   if (!time) return ''
   const minutes = Math.round((Date.now() - time) / 60000)
   if (minutes < 1) return 'just now'

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clapperboard, Play, Shuffle, Search, Plus, Check, MoreHorizontal, Clock, ListEnd, ListPlus, Download, Trash2, ScanSearch, X, Loader2 } from 'lucide-react'
+import { Clapperboard, Play, Shuffle, Search, Plus, Check, MoreHorizontal, Clock, ListEnd, ListPlus, Download, Trash2, ScanSearch, X, Loader2, Gem } from 'lucide-react'
 import { api } from '../api'
 import { usePageReady } from '../pageCache'
 import { usePlayerStore } from '../store/player'
@@ -10,10 +10,12 @@ import { isStreamed } from '../onlineTracks'
 import SaveToLibraryButton from '../components/SaveToLibraryButton'
 import ContextMenu, { useContextMenu } from '../components/ContextMenu'
 import { showToast } from '../components/Toaster'
+import { cancelVideoIndex, startVideoIndex, useVideoIndex, videoIndexRunning } from '../videoIndex'
 import { useSelection } from '../selection'
 import SelectionBar from '../components/SelectionBar'
 import { startVideoPreview } from '../videoPreview'
 import { deleteVideoDownloads, downloadVideos, updateVideoLibrary } from '../videoActions'
+import { losslessMenuItem } from '../quality'
 
 function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, preview }) {
   const [hover, setHover] = React.useState(false)
@@ -68,7 +70,7 @@ export default function Videos() {
   const currentId = usePlayerStore(s => s.currentTrack?.id)
   // Finding the music videos of every library song (it only looks them up:
   // nothing is downloaded). They join this page as they're found.
-  const [indexing, setIndexing] = useState(null)
+  const indexing = useVideoIndex(videoIndexRunning)
   const indexFound = useRef(0)
   const menu = useContextMenu()
   usePageReady(loaded)
@@ -88,19 +90,13 @@ export default function Videos() {
   }, [load])
   useEffect(() => api.onMusicVideoIndexProgress(progress => {
     if (!progress) return
-    setIndexing(progress.running ? progress : null)
     if (progress.found !== indexFound.current || !progress.running) { indexFound.current = progress.found; load() }
     if (!progress.running && !progress.cancelled) showToast(`Found ${progress.found} music video${progress.found === 1 ? '' : 's'} for ${progress.total} song${progress.total === 1 ? '' : 's'}.`)
   }), [load])
   const startIndex = async () => {
     indexFound.current = 0
-    setIndexing({ running: true, done: 0, total: 0, found: 0 })
-    const result = await api.indexAllMusicVideos().catch(error => ({ error: error.message }))
-    if (result?.error) { setIndexing(null); showToast(result.error) }
-    // Already running (started before this page opened): its progress events
-    // take over the button; until then it says it's finding videos.
-    else if (result?.running) setIndexing(current => current?.total ? current : { running: true, done: 0, total: 0, found: indexFound.current })
-    else if (!result) setIndexing(null)
+    const result = await startVideoIndex()
+    if (result?.error) showToast(result.error)
   }
   const completedVideos = jobs.filter(j => j.kind === 'music-video' && j.status === 'done').length
   useEffect(() => { load() }, [completedVideos, load])
@@ -160,6 +156,7 @@ export default function Videos() {
     { label: 'Play next', icon: Clock, onSelect: () => playNextMany(tracks) },
     { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(tracks) },
     { label: 'Add to playlist…', icon: ListPlus, onSelect: () => addToPlaylistMany(tracks) },
+    tracks.length === 1 && losslessMenuItem(tracks[0], Gem),
     ])
   }
 
@@ -168,7 +165,7 @@ export default function Videos() {
       <div><p className="text-xs uppercase tracking-[0.2em] text-muted mb-2">Your music, in motion</p><h1 className="text-3xl font-display text-white">Videos</h1><p className="text-sm text-muted mt-2">{items.length} music videos · Save your favorites and play them from your Videos folder.</p></div>
       <div className="flex flex-wrap gap-2">
         {api.isElectron && (indexing
-          ? <button onClick={() => api.cancelMusicVideoIndex()} title="Stop finding videos" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><Loader2 size={15} className="animate-spin text-accent" /><span className="tabular-nums">{indexing.total ? `Finding videos ${indexing.done}/${indexing.total} · ${indexing.found} found` : 'Finding videos…'}</span><X size={14} className="text-muted" /></button>
+          ? <button onClick={cancelVideoIndex} title="Stop finding videos" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><Loader2 size={15} className="animate-spin text-accent" /><span className="tabular-nums">{indexing.total ? `Finding videos ${indexing.done}/${indexing.total} · ${indexing.found} found` : 'Finding videos…'}</span><X size={14} className="text-muted" /></button>
           : <button onClick={startIndex} title="Look up the music video of every song in your library. Videos are only found, not downloaded." className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><ScanSearch size={15} />Find videos for my library</button>)}
         <button disabled={!visible.length} onClick={() => play(visible[0])} className="inline-flex items-center gap-2 rounded-full px-4 py-2 bg-accent text-base disabled:opacity-40"><Play size={15} fill="currentColor" />Play</button>
         <button disabled={!visible.length} onClick={() => play(visible[Math.floor(Math.random() * visible.length)], true)} className="inline-flex items-center gap-2 rounded-full px-4 py-2 border border-border text-text disabled:opacity-40"><Shuffle size={15} />Shuffle</button>

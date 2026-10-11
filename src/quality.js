@@ -34,11 +34,6 @@ export function isSuspect(track) {
   return Number(track?.lossless) === 1 && track?.spectral_verdict === 'lossy'
 }
 
-/** Worth getting again in lossless: lossy, or a suspect lossless file. */
-export function isUpgradable(track) {
-  return Number(track?.lossless) === 0 || isSuspect(track)
-}
-
 export const TIERS = {
   hires: { label: 'Hi-res', desc: 'Above CD quality', hint: 'Lossless, more than 16-bit or 48 kHz', className: 'bg-violet-500/15 text-violet-300 border-violet-400/25' },
   lossless: { label: 'Lossless', desc: 'CD quality', hint: 'Lossless, 16-bit up to 48 kHz', className: 'bg-green-500/15 text-green-300 border-green-400/25' },
@@ -112,6 +107,22 @@ export function storeSearches({ artist, title }) {
     { store: 'Discogs', kind: 'info', format: 'Releases, pressings, credits · CDs and vinyl for sale', url: `https://www.discogs.com/search/?q=${e}&type=all` },
     { store: 'AllMusic', kind: 'info', format: 'Reviews, credits, discography', url: `https://www.allmusic.com/search/all/${e}` },
   ]
+}
+
+/**
+ * Whether a song's menu offers "Get it in lossless": a library song with a
+ * file that isn't already a good lossless one. A song whose quality hasn't
+ * been read yet is offered too (the dialog says it's not read).
+ */
+export function canGetLossless(track) {
+  const path = String(track?.file_path || '')
+  if (!track?.id || !path || path.startsWith('ghost://') || track.missing) return false
+  return Number(track.lossless) !== 1 || isSuspect(track)
+}
+
+/** The "Get it in lossless…" menu item for a song, or null when it doesn't apply. */
+export function losslessMenuItem(track, icon) {
+  return canGetLossless(track) ? { label: 'Get it in lossless…', icon, onSelect: () => openLossless(track) } : null
 }
 
 /** Open "Get it in lossless" for a track (the dialog lives in App). */

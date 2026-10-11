@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast, showLoadingToast } from './Toaster'
-import { isUpgradable, openLossless, formatLabel, isSuspect, tierOf, TIERS } from '../quality'
+import { canGetLossless, openLossless, formatLabel, isSuspect, tierOf, TIERS, losslessMenuItem } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings } from '../api'
@@ -574,7 +574,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       one && (!oneGhost || needsResolution(one)) && { label: liked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(one, { stopPropagation() {} }) },
        list.some(item => isStreamed(item) || needsResolution(item)) && { label: resolveTracks || !one ? `Download${one ? ' song' : count}` : 'Save to library', icon: Download, onSelect: () => downloadSongs(list) },
        one?.missing && { label: missingTrackCanRedownload(one) ? 'Redownload missing file' : 'Find replacement for missing file', icon: Download, onSelect: () => setGhostTrack(one) },
-      one && !oneGhost && isUpgradable(one) && { label: 'Get it in lossless…', icon: Gem, onSelect: () => openLossless(one) },
+      one && !oneGhost && losslessMenuItem(one, Gem),
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(navigate, one) },
       !resolveTracks && (one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) }),
@@ -959,10 +959,11 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 )}
                 {(() => {
                   // On every row, so the columns line up; greyed out where it can't be used.
-                  const upgradable = !isGhost && isUpgradable(track)
-                  const why = upgradable ? `Get it in lossless${formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
-                    : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
-                      : track.lossless === null || track.lossless === undefined ? 'Get it in lossless: quality not read yet (Audio Quality → Read details)'
+                  const upgradable = !isGhost && canGetLossless(track)
+                  const unread = track.lossless === null || track.lossless === undefined
+                  const why = upgradable ? `Get it in lossless${unread ? ' (quality not read yet)' : formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
+                    : track.missing ? 'Get it in lossless: the file is missing'
+                      : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
                         : `Already lossless${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`
                   return (
                     <button onClick={e => { e.stopPropagation(); if (upgradable) openLossless(track) }}

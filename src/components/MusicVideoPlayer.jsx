@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, Play, Pause, SkipBack, SkipForward, Mic2, Clapperboard, Expand, Minimize, Download, PictureInPicture2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
@@ -6,7 +6,8 @@ import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
 import { api, wordSyncEnabled } from '../api'
 import { trackArtURL } from '../onlineTracks'
-import { useMusicVideo, useMusicVideoView, videoTimeFor, songTime } from '../musicVideo'
+import { useMusicVideo, useMusicVideoView, videoTimeFor, songTime, useVideoOffsets, withOffset } from '../musicVideo'
+import VideoOffsetControl from './VideoOffsetControl'
 import { syncVideo, seekVideo } from '../musicVideoPlayback'
 
 // Further apart than this and the video jumps to the song; closer, it catches
@@ -112,13 +113,16 @@ export default function MusicVideoPlayer({ compact = false }) {
     return () => { window.removeEventListener('keydown', onKey, true); clearTimeout(idleTimer.current) }
   }, [open, compact, hide, wake])
 
+  // The automatic sync, moved by the person's correction for this video.
+  const videoOffset = useVideoOffsets(state => state.offsets[video?.videoId] || 0)
+  const segments = useMemo(() => withOffset(video?.segments, videoOffset), [video?.segments, videoOffset])
   const sync = useCallback(() => {
     const result = syncVideo(videoRef.current, {
-      time: songTime(), segments: video?.segments, duration: video?.duration,
+      time: songTime(), segments, duration: video?.duration,
       isPlaying: usePlayerStore.getState().isPlaying, hidden: document.hidden,
     })
     if (result) setOutside(result.outside)
-  }, [video])
+  }, [video, segments])
 
   // Sync immediately on media readiness and play-state changes, with a small
   // periodic drift correction. Buffering the muted picture never pauses music.
@@ -138,7 +142,7 @@ export default function MusicVideoPlayer({ compact = false }) {
       try {
         el.load()
         el.addEventListener('loadeddata', () => {
-          const target = videoTimeFor(video?.segments, songTime())
+          const target = videoTimeFor(segments, songTime())
           if (target != null && target >= 0) el.currentTime = target
           if (usePlayerStore.getState().isPlaying && !document.hidden) el.play().catch(() => {})
         }, { once: true })
@@ -148,7 +152,7 @@ export default function MusicVideoPlayer({ compact = false }) {
     setFailed(true)
     setStalled(false)
     setErrorText(el?.error?.message || 'Could not open the downloaded video')
-  }, [video])
+  }, [video, segments])
 
   const art = trackArtURL(currentTrack)
   const showVideo = !!video?.src && !video.error && !failed && (ready || everPlayed) && !outside
@@ -182,7 +186,7 @@ export default function MusicVideoPlayer({ compact = false }) {
   const seek = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
     if (duration > 0) seekVideo(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration, {
-      state: usePlayerStore.getState(), element: videoRef.current, segments: video?.segments,
+      state: usePlayerStore.getState(), element: videoRef.current, segments,
     })
   }
 
@@ -331,7 +335,8 @@ export default function MusicVideoPlayer({ compact = false }) {
                   </button>
                   <button onClick={() => next(false)} title="Next" aria-label="Next" className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipForward size={26} fill="currentColor" /></button>
                 </div>
-                <div className="flex-1 flex justify-end min-w-0">
+                <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
+                  {video?.videoId && <VideoOffsetControl videoId={video.videoId} />}
                   <button onClick={() => setShowLyrics(v => !v)} title={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-label={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-pressed={showLyrics}
                     className={`w-10 h-10 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors ${showLyrics ? 'border-white/30 bg-white/20 text-white' : 'border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16]'}`}>
                     <Mic2 size={17} />
