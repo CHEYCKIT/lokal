@@ -310,10 +310,11 @@ function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onSt
 }
 
 // Artists > Refresh artist info runs in the main process (or the server):
-// followed while this tab is open, every second while it runs.
-function useArtistRefreshStatus() {
+// followed while the panel is open, every second while it runs.
+function useArtistRefreshStatus(enabled) {
   const [status, setStatus] = useState(null)
   useEffect(() => {
+    if (!enabled) return undefined
     let timer = null
     let cancelled = false
     const tick = async () => {
@@ -324,7 +325,7 @@ function useArtistRefreshStatus() {
     }
     tick()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [])
+  }, [enabled])
   const cancel = async () => {
     const next = await Promise.resolve(api.artistsRefreshAllCancel()).catch(() => null)
     if (next && !next.error) setStatus(next)
@@ -333,11 +334,10 @@ function useArtistRefreshStatus() {
 }
 
 /** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
-function OthersTab({ onNavigate }) {
+function OthersTab({ artists, cancelArtists, onNavigate }) {
   const releases = useReleaseCheck(s => s.checking)
   const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
   const stopReleases = useReleaseCheck(s => s.stop)
-  const [artists, cancelArtists] = useArtistRefreshStatus()
   const videos = useVideoIndex(s => s.progress)
 
   const artistsDetail = artists?.running
@@ -385,6 +385,7 @@ export function DownloadManagerPanel() {
   const [tab, setTab] = useState('queue')
   const releaseCheck = useReleaseCheck(s => !!s.checking)
   const videoIndex = useVideoIndex(s => !!s.progress?.running)
+  const [artistRefresh, cancelArtistRefresh] = useArtistRefreshStatus(panelOpen)
   const panelRef = useRef(null)
 
   // Under the button, growing inwards: from a button on the left of the
@@ -421,8 +422,7 @@ export function DownloadManagerPanel() {
   }, [panelOpen, closePanel])
 
   const active = jobs.filter(isActive)
-  // The tab's count; artist info is only followed while that tab is open.
-  const othersRunning = (releaseCheck ? 1 : 0) + (videoIndex ? 1 : 0)
+  const othersRunning = (releaseCheck ? 1 : 0) + (videoIndex ? 1 : 0) + (artistRefresh?.running ? 1 : 0)
   const finished = jobs.filter(j => !isActive(j))
 
   const findMore = () => {
@@ -467,7 +467,7 @@ export function DownloadManagerPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {tab === 'queue'
               ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
-              : <OthersTab onNavigate={path => { closePanel(); nav(path) }} />}
+              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} onNavigate={path => { closePanel(); nav(path) }} />}
           </div>
           <button
             onClick={findMore}

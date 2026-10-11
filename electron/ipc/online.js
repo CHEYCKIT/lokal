@@ -180,11 +180,18 @@ function registerOnlineHandlers(ipcMain) {
   // The latest progress, for a window that wasn't listening when it was sent
   // (the Downloads panel after a reload).
   let videoIndexStatus = null
-  ipcMain.handle('musicVideo:indexAll', async (event) => {
+  ipcMain.handle('musicVideo:indexAll', async () => {
     if (videoIndexJob) return { running: true }
     const job = { cancelled: false }
     videoIndexJob = job
-    const send = (payload) => { videoIndexStatus = payload; try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:indexProgress', payload) } catch {} }
+    // Every window, so one opened after the job started (the original closed
+    // and the app reopened its window) keeps following it.
+    const send = (payload) => {
+      videoIndexStatus = payload
+      for (const win of require('electron').BrowserWindow.getAllWindows()) {
+        try { if (!win.webContents.isDestroyed()) win.webContents.send('musicVideo:indexProgress', payload) } catch {}
+      }
+    }
     try {
       const rows = getDB().prepare("SELECT id, title, artist, duration FROM tracks WHERE title IS NOT NULL AND artist IS NOT NULL AND duration > 30 AND file_path NOT LIKE 'ghost://%' ORDER BY artist, title").all()
       let done = 0
