@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clapperboard, Play, Shuffle, Search, Plus, Check, MoreHorizontal, Clock, ListEnd, ListPlus, Download, Trash2, ScanSearch, X, Loader2 } from 'lucide-react'
+import { Clapperboard, Play, Shuffle, Search, Plus, Check, MoreHorizontal, Clock, ListEnd, ListPlus, Download, Trash2, ScanSearch, X, Loader2, Gem } from 'lucide-react'
 import { api } from '../api'
 import { usePageReady } from '../pageCache'
 import { usePlayerStore } from '../store/player'
@@ -15,6 +15,7 @@ import { useSelection } from '../selection'
 import SelectionBar from '../components/SelectionBar'
 import { startVideoPreview } from '../videoPreview'
 import { deleteVideoDownloads, downloadVideos, updateVideoLibrary } from '../videoActions'
+import { losslessMenuItem } from '../quality'
 
 function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, preview }) {
   const [hover, setHover] = React.useState(false)
@@ -155,6 +156,7 @@ export default function Videos() {
     { label: 'Play next', icon: Clock, onSelect: () => playNextMany(tracks) },
     { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(tracks) },
     { label: 'Add to playlist…', icon: ListPlus, onSelect: () => addToPlaylistMany(tracks) },
+    tracks.length === 1 && losslessMenuItem(tracks[0], Gem),
     ])
   }
 
