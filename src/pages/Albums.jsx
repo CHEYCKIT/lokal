@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Clock, Disc3, Download, Globe, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Disc3, Download, Globe, ListEnd, Loader2, Play, Plus, Search, Trash2, Radio, Gem } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings } from '../api'
@@ -24,6 +24,7 @@ import { applyCachedReleaseTypes } from '../albumReleaseTypes'
 import { startReleaseRefresh, useReleaseRefresh } from '../store/releaseRefresh'
 import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
+import { losslessMenuItem } from '../quality'
 
 function getAlbumArtwork(album) {
   return api.albumArtURL(album)
@@ -446,6 +447,7 @@ export default function Albums() {
       { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(list) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => addToPlaylistMany(list) },
       list.length === 1 && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(navigate, list[0], useAppStore.getState().user?.id) },
+      list.length === 1 && losslessMenuItem(list[0], Gem),
       { separator: true },
       { label: list.length > 1 ? `Delete${count} from library` : 'Delete from library', icon: Trash2, danger: true, onSelect: () => askDeleteTracks(list) },
     ])

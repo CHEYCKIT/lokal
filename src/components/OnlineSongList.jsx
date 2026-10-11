@@ -7,7 +7,7 @@
 
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, Clock, Disc3, Download, ListEnd, Play, Plus, Radio, User } from 'lucide-react'
+import { CheckCircle2, Clock, Disc3, Download, ListEnd, Play, Plus, Radio, User, Gem } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
@@ -19,6 +19,7 @@ import { artistPath } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { useAppStore } from '../store/player'
+import { losslessMenuItem } from '../quality'
 
 /** A song to tell its album or artist by (an addon's own result, when it's from one). */
 const anchorOf = track => {
@@ -56,6 +57,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
       { label: 'Add to queue', icon: ListEnd, onSelect: () => withResolved(track, addToQueueMany) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
       !own && { label: 'Download song', icon: Download, onSelect: () => downloadOnline([track]) },
+      own && losslessMenuItem(track, Gem),
       { separator: true },
       track.album && { label: 'Go to album', icon: Disc3, onSelect: () => (own ? navigateToTrackAlbum(nav, track) : nav(trackAlbumPath(track), { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: anchorOf(track) } })) },
       track.artist && { label: 'Go to artist', icon: User, onSelect: () => (own ? nav(artistPath(track.artist)) : nav(artistPath(track.artists?.[0] || track.artist), { state: { name: track.artists?.[0] || track.artist, anchor: anchorOf(track) } })) },
