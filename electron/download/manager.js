@@ -1107,7 +1107,7 @@ class DownloadManager {
     if (job.runId !== runId || job.stop || this.jobs.get(job.id) !== job) return
     const found = slskd.locateDownload(downloadsDir, job.opts.filename, transfer.size || job.opts.size, job.startedAt)
     if (!found) {
-      this.fail(job, `slskd finished the download, but Lokal can't find it in ${downloadsDir || "slskd's downloads folder"}. If slskd runs in Docker or on another machine, set the folder as this computer sees it in Settings → Soulseek.`)
+      this.fail(job, `slskd finished the download, but Lokal can't find it in ${downloadsDir || "slskd's downloads folder"}. It may have been moved or deleted.`)
       return
     }
     const clean = (s) => String(s || '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 120)

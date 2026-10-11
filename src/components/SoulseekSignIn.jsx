@@ -1,9 +1,10 @@
-// Settings → Soulseek, built in: a Soulseek account is all it takes. Lokal
-// downloads the Soulseek client (slskd) the first time, runs it in the
-// background and signs in; the progress and the result show here.
+// Settings → Soulseek: a Soulseek account is all it takes. Lokal downloads
+// the Soulseek client (slskd) the first time, runs it in the background and
+// signs in; the progress and the result show here, with a check for a newer
+// slskd and the update to it.
 
 import React, { useEffect, useRef, useState } from 'react'
-import { Check, Loader2, LogOut } from 'lucide-react'
+import { ArrowUpCircle, Check, Loader2, LogOut, RefreshCw } from 'lucide-react'
 import { api } from '../api'
 
 const LOGIN_WAIT_MS = 25000
@@ -21,6 +22,8 @@ export default function SoulseekSignIn({ settings, set }) {
   const [account, setAccount] = useState(null) // slskd.status(): { loggedIn, username, serverState } | { error }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [updateCheck, setUpdateCheck] = useState(null) // null | { busy } | { upToDate } | { error }
+  const [updating, setUpdating] = useState(false)
   const run = useRef(0)
 
   useEffect(() => {
@@ -68,9 +71,30 @@ export default function SoulseekSignIn({ settings, set }) {
     set('soulseek_password', '')
   }
 
+  const checkUpdate = async () => {
+    setUpdateCheck({ busy: true })
+    const result = await Promise.resolve(api.soulseekCheckUpdate()).catch(e => ({ error: e.message }))
+    if (result?.error) setUpdateCheck({ error: result.error })
+    else setUpdateCheck(result?.update ? null : { upToDate: true })
+    Promise.resolve(api.soulseekClient()).then(status => { if (status) setClient(status) }).catch(() => {})
+  }
+
+  const update = async () => {
+    // Signed in again by the new version once it's in (or the old one, if the update fails).
+    setUpdating(true); setUpdateCheck(null); setError(''); setAccount(null)
+    const result = await Promise.resolve(api.soulseekUpdate()).catch(e => ({ error: e.message }))
+    if (result?.error) setUpdateCheck({ error: result.error })
+    else if (result) setClient(result)
+    const now = await Promise.resolve(api.soulseekClient()).catch(() => null)
+    if (now?.running) await Promise.resolve(api.soulseekStatus()).then(found => { if (found && !found.error) setAccount(found) }).catch(() => {})
+    setUpdating(false)
+  }
+
   const phase = client?.phase
   const working = busy && (phase === 'installing' || phase === 'starting' || !account)
-  const progressText = phase === 'installing'
+  const progressText = phase === 'updating'
+    ? `Updating the Soulseek client to slskd ${client.update?.version || ''}… ${client.progress || 0}%`
+    : phase === 'installing'
     ? `Downloading the Soulseek client (slskd ${client.version}, once)… ${client.progress || 0}%`
     : phase === 'starting' ? 'Starting the Soulseek client…' : 'Signing in to Soulseek…'
   const signedIn = !!account?.loggedIn
@@ -99,20 +123,41 @@ export default function SoulseekSignIn({ settings, set }) {
         <span>Share my music folder{settings.music_folder ? ` (${settings.music_folder})` : ''} with the Soulseek network. Many Soulseek users only send files to people who share; takes effect at the next sign-in.</span>
       </label>
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={signIn} disabled={busy || !String(settings.soulseek_username || '').trim() || !settings.soulseek_password} aria-label="Sign in to Soulseek"
+        <button onClick={signIn} disabled={busy || updating || !String(settings.soulseek_username || '').trim() || !settings.soulseek_password} aria-label="Sign in to Soulseek"
           className="inline-flex items-center gap-2 rounded-lg border border-accent/50 bg-accent/20 px-4 py-1.5 text-xs font-display uppercase tracking-wider text-accent disabled:opacity-50">
           {busy && <Loader2 size={12} className="animate-spin" />}{signedIn ? 'Sign in again' : 'Sign in'}
         </button>
-        {(signedIn || client?.running) && (
+        {(signedIn || client?.running) && !updating && (
           <button onClick={signOut} aria-label="Sign out of Soulseek" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
             <LogOut size={12} /> Sign out
           </button>
         )}
-        {working && <p role="status" className="text-xs text-muted">{progressText}</p>}
+        {(working || updating) && <p role="status" className="text-xs text-muted">{progressText}</p>}
         {!busy && signedIn && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-green-400"><Check size={12} />Signed in as {account.username || settings.soulseek_username} · slskd {account.version || client?.version}</p>}
-        {!busy && (error || (phase === 'error' && client?.error)) && <p role="alert" className="text-xs text-red-400">{error || client.error}</p>}
+        {!busy && !updating && (error || (phase === 'error' && client?.error)) && <p role="alert" className="text-xs text-red-400">{error || client.error}</p>}
       </div>
-      {phase === 'installing' && (
+      {client?.installed && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+          <span>Soulseek client: slskd {client.version}</span>
+          {client.update ? (
+            <>
+              <button onClick={update} disabled={busy || updating} aria-label={`Update slskd to ${client.update.version}`}
+                className="inline-flex items-center gap-1 rounded-md border border-accent/50 bg-accent/15 px-2 py-0.5 text-accent hover:bg-accent/25 disabled:opacity-50">
+                {updating ? <Loader2 size={11} className="animate-spin" /> : <ArrowUpCircle size={11} />}Update to {client.update.version}
+              </button>
+              <button onClick={() => api.openExternal(client.update.notes)} className="hover:text-white hover:underline">What's new</button>
+            </>
+          ) : (
+            <button onClick={checkUpdate} disabled={busy || updating || updateCheck?.busy} className="inline-flex items-center gap-1 hover:text-white disabled:opacity-50">
+              <RefreshCw size={11} className={updateCheck?.busy ? 'animate-spin' : ''} />{updateCheck?.busy ? 'Checking…' : 'Check for updates'}
+            </button>
+          )}
+          {updateCheck?.upToDate && <span role="status" className="inline-flex items-center gap-1 text-green-400"><Check size={11} />Up to date</span>}
+          {updateCheck?.error && <span role="alert" className="text-red-400">{updateCheck.error}</span>}
+          {client.update && client.running && !updating && <span>Updating restarts Soulseek; Soulseek downloads in progress are interrupted.</span>}
+        </div>
+      )}
+      {(phase === 'installing' || phase === 'updating') && (
         <div className="h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${client.progress || 0}%` }} /></div>
       )}
     </div>

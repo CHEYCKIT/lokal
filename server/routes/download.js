@@ -132,8 +132,8 @@ router.post('/clear-finished', (req, res) => res.json(manager().clearFinished())
 router.post('/seen', (req, res) => res.json(manager().markSeen()))
 router.get('/queue', (req, res) => res.json(manager().list()))
 
-// Soulseek, through slskd. These act with the slskd API key saved in
-// Settings, and the web API has no accounts, so they only answer this machine
+// Soulseek, through the slskd the desktop app runs (signed in from
+// Settings). The web API has no accounts, so these only answer this machine
 // and the local network, never a request coming in from the internet.
 const slskd = require('../../electron/download/slskd')
 

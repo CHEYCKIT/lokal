@@ -8,7 +8,9 @@ import path from 'node:path'
 import http from 'node:http'
 
 const require = createRequire(import.meta.url)
-const { ManagedSlskd, assetFor, environment, args, lastError } = require('../electron/download/slskdManaged.js')
+const { ManagedSlskd, assetFor, latestAsset, compareVersions, environment, args, lastError, VERSION, LATEST_URL } = require('../electron/download/slskdManaged.js')
+const AdmZip = require('adm-zip')
+const crypto = require('crypto')
 const slskd = require('../electron/download/slskd.js')
 
 test('every platform Lokal ships has a pinned slskd build', () => {
@@ -73,7 +75,7 @@ test('signing in starts one client, reuses it, and restarts it for another accou
   fs.rmSync(base, { recursive: true, force: true })
 })
 
-test('slskd calls in built-in mode go to the client Lokal runs', async () => {
+test('slskd calls go to the client Lokal runs', async () => {
   const server = http.createServer((req, res) => {
     if (req.headers['x-api-key'] !== 'test-key') { res.writeHead(401); res.end(); return }
     res.setHeader('Content-Type', 'application/json')
@@ -83,15 +85,104 @@ test('slskd calls in built-in mode go to the client Lokal runs', async () => {
   const url = `http://127.0.0.1:${server.address().port}`
   let connects = 0
   slskd.useManaged({ connect: async () => { connects++ }, current: () => ({ url, apiKey: 'test-key' }), downloadsDir: '/tmp' })
-  const status = await slskd.status({ soulseek_mode: 'builtin' })
+  const status = await slskd.status({ soulseek_username: 'me' })
   assert.equal(status.loggedIn, true)
   assert.equal(status.username, 'me')
   assert.ok(connects >= 1)
-  // An account and no slskd key, from before the switch existed: built in too.
-  assert.equal(slskd.isBuiltin({ soulseek_username: 'me' }), true)
-  assert.equal(slskd.isBuiltin({ soulseek_username: 'me', soulseek_api_key: 'k' }), false)
-  assert.equal(slskd.isBuiltin({ soulseek_mode: 'external', soulseek_username: 'me' }), false)
+  // Settings from the old "my own slskd" option are ignored: always this client.
+  assert.equal((await slskd.status({ soulseek_mode: 'external', soulseek_url: 'http://elsewhere:5030', soulseek_api_key: 'old' })).username, 'me')
   slskd.useManaged(null)
-  await assert.rejects(slskd.status({ soulseek_mode: 'builtin' }), /desktop app/)
+  await assert.rejects(slskd.status({}), /desktop app/)
   server.close()
+})
+
+const PLATFORM_ASSET = assetFor()?.asset
+const release = (version, digest, extra = {}) => ({
+  tag_name: version, draft: false, prerelease: false,
+  assets: [{ name: `slskd-${version}-${PLATFORM_ASSET}.zip`, digest }, { name: `slskd-${version}-other.zip`, digest: `sha256:${'0'.repeat(64)}` }],
+  ...extra,
+})
+
+test('versions compare by number; the latest release gives this computer\'s file and its GitHub sha256', () => {
+  assert.equal(compareVersions('0.27.0', '0.26.1'), 1)
+  assert.equal(compareVersions('0.26.10', '0.26.9'), 1)
+  assert.equal(compareVersions('v0.26.1', '0.26.1'), 0)
+  assert.equal(compareVersions('0.26.1', '1.0.0'), -1)
+  if (!PLATFORM_ASSET) return
+  const sha = 'a'.repeat(64)
+  const found = latestAsset(release('0.27.0', `sha256:${sha}`))
+  assert.equal(found.version, '0.27.0')
+  assert.equal(found.sha256, sha)
+  assert.equal(found.url, `https://github.com/slskd/slskd/releases/download/0.27.0/slskd-0.27.0-${PLATFORM_ASSET}.zip`)
+  // Nothing to check the file against, a pre-release, or an odd tag: no update offered.
+  assert.equal(latestAsset(release('0.27.0', null)), null)
+  assert.equal(latestAsset(release('0.27.0', `sha256:${sha}`, { prerelease: true })), null)
+  assert.equal(latestAsset(release('nightly', `sha256:${sha}`)), null)
+})
+
+function zipWithSlskd(content) {
+  const zip = new AdmZip()
+  zip.addFile(process.platform === 'win32' ? 'slskd.exe' : 'slskd', Buffer.from(content))
+  return zip.toBuffer()
+}
+
+test('updating installs the newer slskd, checked, starts it signed in again, and drops the old one', { skip: !PLATFORM_ASSET }, async () => {
+  const { client, spawned, base } = fakeClient()
+  const newer = '99.0.0'
+  const zip = zipWithSlskd('new build')
+  let digest = `sha256:${crypto.createHash('sha256').update(zip).digest('hex')}`
+  const fetched = []
+  client.fetch = async (url) => {
+    if (url === LATEST_URL) return { ok: true, json: async () => release(newer, digest) }
+    return { ok: true }
+  }
+  client.download = async (url, dest) => { fetched.push(url); fs.writeFileSync(dest, zip) }
+  await client.ensureRunning({ username: 'me', password: 'pw' })
+  const oldBin = client.dirs.bin
+
+  // A download that doesn't match GitHub's sha256 isn't used; the old one keeps running.
+  digest = `sha256:${'b'.repeat(64)}`
+  await assert.rejects(client.updateClient(), /checksum/)
+  assert.equal(client.status().version, VERSION)
+  assert.equal(client.status().running, true)
+  assert.ok(fs.existsSync(oldBin))
+
+  digest = `sha256:${crypto.createHash('sha256').update(zip).digest('hex')}`
+  const checked = await client.checkUpdate()
+  assert.equal(checked.update.version, newer)
+  assert.equal(client.status().update.version, newer)
+  const after = await client.updateClient()
+  assert.equal(after.version, newer)
+  assert.equal(after.update, null)
+  assert.equal(after.running, true)
+  assert.equal(fs.readFileSync(client.dirs.exe, 'utf8'), 'new build')
+  assert.equal(spawned.at(-1).exe, client.dirs.exe)
+  assert.equal(spawned.at(-1).env.SLSKD_SLSK_USERNAME, 'me')
+  assert.ok(!fs.existsSync(oldBin), 'old version removed')
+  assert.ok(fetched.every(url => url.endsWith(`slskd-${newer}-${PLATFORM_ASSET}.zip`)))
+
+  // Remembered: the next start (Lokal reopened) uses the updated version.
+  const reopened = new ManagedSlskd({ baseDir: base, download: async () => {} })
+  assert.equal(reopened.status().version, newer)
+  assert.equal(reopened.installed(), true)
+  // Nothing newer: up to date, nothing downloaded.
+  const count = fetched.length
+  assert.equal((await client.checkUpdate()).update, null)
+  assert.equal((await client.updateClient()).version, newer)
+  assert.equal(fetched.length, count)
+  await client.stop()
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('a GitHub limit or a newer release without a checked file says so', async () => {
+  const { client, base } = fakeClient()
+  client.fetch = async () => ({ ok: false, status: 403 })
+  await assert.rejects(client.checkUpdate(), /limiting/)
+  client.fetch = async () => { throw new Error('offline') }
+  await assert.rejects(client.checkUpdate(), /Couldn't reach GitHub/)
+  if (PLATFORM_ASSET) {
+    client.fetch = async () => ({ ok: true, json: async () => release('99.0.0', null) })
+    await assert.rejects(client.checkUpdate(), /no checked download/)
+  }
+  fs.rmSync(base, { recursive: true, force: true })
 })
