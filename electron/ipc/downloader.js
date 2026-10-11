@@ -199,8 +199,13 @@ function registerDownloaderHandlers(ipcMain) {
     return playableCopy(known.file_path, { ffmpeg: findFfmpeg(), cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
   })
 
-  // Soulseek, through slskd.
+  // Soulseek, through slskd: the user's own, or the one Lokal runs (built in).
   const slskdSettings = () => manager().settings()
+  slskd.useManaged({
+    connect: settings => soulseekClient().ensureRunning(soulseekAccount(settings)),
+    current: () => managedSoulseek?.connection || null,
+    get downloadsDir() { return soulseekClient().dirs.downloads },
+  })
   const wrap = (fn) => async (...args) => { try { return await fn(...args) } catch (e) { return { error: e.message } } }
   ipcMain.handle('soulseek:status', wrap(() => slskd.status(slskdSettings())))
   ipcMain.handle('soulseek:search', wrap((_, text) => slskd.startSearch(slskdSettings(), text)))
@@ -208,6 +213,38 @@ function registerDownloaderHandlers(ipcMain) {
   ipcMain.handle('soulseek:finishSearch', wrap((_, id) => slskd.finishSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:stopSearch', wrap((_, id) => slskd.stopSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:download', (_, file = {}, opts = {}) => enqueueSoulseek(file, opts))
+  // Settings → Soulseek, built in: sign in (download and start the client), sign out.
+  ipcMain.handle('soulseek:client', () => soulseekClient().status())
+  ipcMain.handle('soulseek:connect', wrap(async () => {
+    const settings = { ...slskdSettings(), soulseek_mode: 'builtin' }
+    await soulseekClient().ensureRunning(soulseekAccount(settings))
+    return slskd.status(settings)
+  }))
+  ipcMain.handle('soulseek:disconnect', wrap(async () => { await managedSoulseek?.stop(); return { ok: true } }))
+}
+
+// The built-in Soulseek client (slskdManaged.js), made on first use.
+let managedSoulseek = null
+function soulseekClient() {
+  if (!managedSoulseek) {
+    const { app, BrowserWindow } = require('electron')
+    const { ManagedSlskd } = require('../download/slskdManaged')
+    managedSoulseek = new ManagedSlskd({
+      baseDir: require('path').join(app.getPath('userData'), 'soulseek'),
+      download: (url, dest, onProgress) => require('./tools').downloadFileWithRetry(url, dest, onProgress, 2, 'Downloading the Soulseek client'),
+      onChange: status => BrowserWindow.getAllWindows().forEach(win => { try { win.webContents.send('soulseek:clientStatus', status) } catch {} }),
+    })
+  }
+  return managedSoulseek
+}
+
+/** The account the built-in client signs in with, and what it shares back. */
+function soulseekAccount(settings = {}) {
+  return {
+    username: settings.soulseek_username,
+    password: settings.soulseek_password,
+    shared: settings.soulseek_share_library === '1' && settings.music_folder ? [settings.music_folder] : [],
+  }
 }
 
 /** One job per file; the url only identifies it (and stops double clicks). */
@@ -320,6 +357,7 @@ module.exports = {
   waitForDownload,
   shutdownActiveDownloads: () => {
     manager().shutdown()
+    managedSoulseek?.stop().catch(() => {})
     for (const proc of searchProcesses) terminateProcessTree(proc)
     searchProcesses.clear()
   },

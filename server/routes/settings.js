@@ -1,14 +1,14 @@
 const router = require('express').Router()
 const { getDB, importAppData, resetAppData } = require('../../electron/ipc/db')
-const { scanFolder, DEFAULT_MUSIC_PATH } = require('../../electron/ipc/scanner')
+const { scanFolder, DEFAULT_MUSIC_PATH, SECRET_SETTING_KEYS } = require('../../electron/ipc/scanner')
 const { syncPastedCookie } = require('../../electron/ipc/ytCookies')
 const fs = require('fs-extra')
 const path = require('path')
 
 // Secrets never leave the server: the web settings page gets a placeholder,
 // saving the placeholder back leaves the stored value alone, and web exports
-// leave them out.
-const SECRET_KEYS = new Set(['soulseek_api_key', 'spicylyrics_api_key', 'spotify_sp_dc', 'listenbrainz_token', 'lastfm_api_secret', 'lastfm_session_key', 'yt_cookie_header'])
+// leave them out. The same list as the app's (electron/ipc/scanner.js).
+const SECRET_KEYS = SECRET_SETTING_KEYS
 const SECRET_PLACEHOLDER = '••••••••'
 
 function toDataUrl(filePath) {

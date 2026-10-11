@@ -59,3 +59,14 @@ test('searchReplacements asks each source and keeps its error', async () => {
   assert.equal(groups[0].items[0].provider, 'good')
   assert.equal(groups[1].error, 'offline')
 })
+
+test('bestReplacement leaves a match of unknown length unticked, after one known to match', () => {
+  const noLength = { id: 'n', title: 'Around the World', artist: 'Daft Punk', quality: 'FLAC' }
+  const unknown = bestReplacement(song(), [{ source: source('one'), items: [noLength] }])
+  assert.equal(unknown.checked, false)
+  assert.equal(unknown.lengthUnknown, true)
+  assert.equal(unknown.lengthDiffers, false)
+  assert.equal(bestReplacement(song({ duration: 0 }), [{ source: source('one'), items: [{ ...noLength, duration: 429 }] }]).checked, false)
+  const known = { id: 'k', title: 'Around the World', artist: 'Daft Punk', duration: 430 }
+  assert.equal(bestReplacement(song(), [{ source: source('one'), items: [noLength, known] }]).item.id, 'k')
+})

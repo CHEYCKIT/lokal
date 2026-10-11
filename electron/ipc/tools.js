@@ -908,5 +908,6 @@ module.exports = {
   downloadFfmpeg,
   getYtDlpVersionStatus,
   getUserDataBin,
-  getBundledBin
+  getBundledBin,
+  downloadFileWithRetry,
 }

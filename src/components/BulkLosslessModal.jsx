@@ -138,6 +138,7 @@ export default function BulkLosslessModal() {
                       : match ? <span className="inline-flex min-w-0 items-center gap-1 truncate">
                           {match.source.icon ? <img src={match.source.icon} alt="" className="h-3 w-3 flex-shrink-0 rounded-sm object-cover" referrerPolicy="no-referrer" /> : <Blocks size={10} className="flex-shrink-0 text-accent" />}
                           <span className="truncate">{[match.source.label, match.item.quality, match.item.duration ? fmtTime(match.item.duration) : ''].filter(Boolean).join(' · ')}</span>
+                          {match.lengthUnknown && <span className="flex-shrink-0 text-muted" title="This copy's length (or yours) isn't known: check it before ticking">· length unknown</span>}
                           {match.lengthDiffers && <span className="inline-flex flex-shrink-0 items-center gap-0.5 text-yellow-200" title={`This copy is ${fmtTime(match.item.duration)} long; yours is ${fmtTime(track.duration)}`}><AlertTriangle size={10} />length differs</span>}
                         </span>
                       : row.status === 'none' ? <span className="truncate">{row.error || 'No close match on your addon sources'}</span>

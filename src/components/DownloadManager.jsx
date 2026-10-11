@@ -10,7 +10,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
@@ -18,6 +18,7 @@ import { api } from '../api'
 import { peekCache, writeCache } from '../pageCache'
 import { displayTitle } from '../downloadLinks'
 import { plural } from '../plural'
+import { explainDownloadError } from '../downloadErrors'
 import { ago, useReleaseCheck } from './ReleasesPanel'
 import { cancelVideoIndex, useVideoIndex } from '../videoIndex'
 
@@ -87,7 +88,7 @@ function statusText(job) {
     case 'queued': return job.retryAt ? job.message || 'Retrying soon' : job.message && job.message !== 'Queued' ? job.message : 'Queued'
     case 'downloading': return job.message || 'Downloading...'
     case 'done': return job.message || 'Saved'
-    case 'error': return job.error || 'Failed'
+    case 'error': return explainDownloadError(job.error).summary
     case 'cancelled': return 'Cancelled'
     case 'incomplete': return 'Stopped before finishing'
     default: return job.status
@@ -118,6 +119,9 @@ export function DownloadRow({ job, detailed = false }) {
   const active = isActive(job)
   const canRetry = job.status === 'error' || job.status === 'cancelled' || job.status === 'incomplete'
   const files = (job.downloadedTracks || []).filter(t => !/\.webm$/i.test(t))
+  // A failed download: its cause in plain words, the whole message on demand.
+  const failure = job.status === 'error' ? explainDownloadError(job.error) : null
+  const [why, setWhy] = useState(false)
   const tone = job.status === 'error' ? 'text-red-400' : job.status === 'done' ? 'text-green-400' : job.status === 'cancelled' || job.status === 'incomplete' ? 'text-yellow-300' : 'text-muted'
 
   return (
@@ -129,7 +133,7 @@ export function DownloadRow({ job, detailed = false }) {
           <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]">
             {job.status === 'done' && <Check size={11} className="flex-shrink-0 text-green-400" />}
             {job.status === 'error' && <AlertCircle size={11} className="flex-shrink-0 text-red-400" />}
-            <span className={`truncate ${tone}`}>{statusText(job)}</span>
+            <span className={`truncate ${tone}`} title={failure?.detail || undefined}>{statusText(job)}</span>
             {job.status === 'downloading' && job.speed ? <span className="flex-shrink-0 text-subtle">· {job.speed}</span> : null}
           </p>
           {job.from ? <p className="mt-0.5 truncate text-[10.5px] uppercase tracking-[0.14em] text-subtle">from {job.from}</p> : null}
@@ -138,6 +142,10 @@ export function DownloadRow({ job, detailed = false }) {
           {job.status === 'downloading' && <span className="w-9 text-right text-[11px] tabular-nums text-muted">{Math.round(job.progress || 0)}%</span>}
           {job.lyricsCount > 0 && !active && (
             <span title={`Lyrics added to ${job.lyricsCount} file${job.lyricsCount === 1 ? '' : 's'}`} className="text-accent/80"><Mic2 size={12} /></span>
+          )}
+          {failure?.detail && (
+            <button onClick={() => setWhy(o => !o)} title={why ? 'Hide the details' : 'What went wrong'} aria-expanded={why}
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Info size={13} /></button>
           )}
           {canRetry && (
             <button onClick={() => retry(job.id)} title="Retry" className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><RotateCcw size={13} /></button>
@@ -154,6 +162,10 @@ export function DownloadRow({ job, detailed = false }) {
           )}
         </div>
       </div>
+
+      {why && failure?.detail && (
+        <p className="mt-2 max-h-32 select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-500/5 p-2 text-[11px] leading-relaxed text-muted">{failure.detail.split(/\s+\|\s+|;\s+/).join('\n')}</p>
+      )}
 
       {active && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">

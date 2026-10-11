@@ -168,6 +168,10 @@ function jobSourceLabel(job) {
   return 'web'
 }
 
+// At most this many downloads at once from one addon, started this far apart.
+const ADDON_AT_ONCE = 2
+const ADDON_START_GAP_MS = 1500
+
 class DownloadManager {
   constructor() {
     this.jobs = new Map()
@@ -178,6 +182,8 @@ class DownloadManager {
     this.initialized = false
     this.looseProcs = new Set()
     this.cancellingAll = false
+    this.addonStarted = new Map() // addon provider -> when its last download started
+    this.addonWake = null
   }
 
   /** Later callers with a higher priority win per dependency (desktop over web server). */
@@ -594,13 +600,32 @@ class DownloadManager {
     const waiting = [...this.jobs.values()]
       .filter(j => j.status === 'queued' && !j.retryTimer && !j.waitingForTools)
       .sort((a, b) => a.createdAt - b.createdAt)
+    // Gentle on addons: their servers limit how much one user asks for, so a
+    // big batch (Download all, a playlist) goes to each addon a couple at a
+    // time and a moment apart, instead of in a burst that gets refused.
+    const addonRunning = new Map()
+    for (const job of this.jobs.values()) {
+      const addon = job.status === 'downloading' && job.opts?.addonSource?.provider
+      if (addon) addonRunning.set(addon, (addonRunning.get(addon) || 0) + 1)
+    }
+    let wake = 0
     for (const job of waiting) {
       // slskd queues Soulseek transfers itself (often in the uploader's queue
       // for a while), so they don't take one of yt-dlp's slots.
       if (job.kind === 'soulseek') { this.startSoulseek(job); continue }
       if (this.running >= limit) continue
+      const addon = job.opts?.addonSource?.provider
+      if (addon) {
+        if ((addonRunning.get(addon) || 0) >= ADDON_AT_ONCE) continue
+        const since = Date.now() - (this.addonStarted.get(addon) || 0)
+        if (since < ADDON_START_GAP_MS) { wake = Math.max(wake, ADDON_START_GAP_MS - since); continue }
+        addonRunning.set(addon, (addonRunning.get(addon) || 0) + 1)
+        this.addonStarted.set(addon, Date.now())
+      }
       this.start(job)
     }
+    // An addon download held back for its gap: look again when it's over.
+    if (wake && !this.addonWake) this.addonWake = setTimeout(() => { this.addonWake = null; this.pump() }, wake + 20)
   }
 
   cancel(id) {
