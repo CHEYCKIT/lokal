@@ -164,8 +164,10 @@ jobs:
             # Ad-hoc signature over the whole bundle. Without it the app kept
             # Electron's stale signature ("code has no resources but signature
             # indicates they must be present"), which macOS reports as a
-            # damaged app on Apple silicon.
-            SIGN_ARGS=(-c.mac.identity=- -c.mac.notarize=false)
+            # damaged app on Apple silicon. The hardened runtime only matters
+            # for notarization, and with an ad-hoc signature it makes macOS
+            # refuse to load the app's own native modules.
+            SIGN_ARGS=(-c.mac.identity=- -c.mac.notarize=false -c.mac.hardenedRuntime=false)
             echo "No signing certificate configured; signing ad-hoc."
           fi
           for attempt in 1 2; do
@@ -192,12 +194,13 @@ jobs:
           for f in "${dmgs[@]}"; do hdiutil verify "$f"; done
           # The native modules must be built for the app's architecture.
           while IFS= read -r -d '' module; do
-            # Prebuilt binaries for other systems ride along in some packages.
+            # Prebuilt binaries for other systems ride along in some packages
+            # (prebuilds/, skipped); the ones loaded must be arm64.
             file -b "$module" | grep -q Mach-O || continue
             archs=$(lipo -archs "$module" 2>/dev/null || echo unknown)
             echo "$module: $archs"
             case " $archs " in *" arm64 "*) ;; *) echo "::error::$module isn't built for arm64."; exit 1 ;; esac
-          done < <(find "$app" -name '*.node' -print0)
+          done < <(find "$app" -name '*.node' -not -path '*/prebuilds/*' -print0)
 
       - name: Rename release files for this runner
         shell: bash
