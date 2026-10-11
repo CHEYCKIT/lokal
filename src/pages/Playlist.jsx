@@ -23,6 +23,9 @@ import { usePlaylistSortStore, playlistSortPreference } from '../store/playlistS
 import { sortPlaylistTracks } from '../playlistSorting'
 import { filterPlaylistTracks } from '../playlistSearch'
 
+// The playlist's actions, as plain icons beside the Play button.
+const ICON_BUTTON = 'flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
+
 export default function Playlist() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -419,12 +422,12 @@ export default function Playlist() {
 
   return (
     <div className="p-6 pb-10">
-      <div className="flex items-end gap-5 mb-8">
-        <div className="relative w-36 h-36 flex-shrink-0 group">
-          <div className="w-36 h-36 rounded-2xl overflow-hidden bg-elevated border border-border flex items-center justify-center shadow-xl">
+      <div className="flex items-end gap-4 mb-4">
+        <div className="relative w-28 h-28 flex-shrink-0 group">
+          <div className="w-28 h-28 rounded-2xl overflow-hidden bg-elevated border border-border flex items-center justify-center shadow-xl">
             {isLiked
-              ? <Heart size={52} className="text-accent" fill="currentColor" />
-              : <PlaylistCover playlistId={id} coverPath={playlist?.cover_path} size={144} className="w-full h-full object-cover" />
+              ? <Heart size={44} className="text-accent" fill="currentColor" />
+              : <PlaylistCover playlistId={id} coverPath={playlist?.cover_path} size={112} className="w-full h-full object-cover" />
             }
           </div>
           {!isLiked && (
@@ -452,7 +455,7 @@ export default function Playlist() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-display text-muted uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <p className="text-xs font-display text-muted uppercase tracking-widest mb-1 flex items-center gap-1.5">
             {smart && <Sparkles size={11} className="text-accent" />}{smart ? 'Smart playlist' : 'Playlist'}
           </p>
           {!isLiked && editingName ? (
@@ -471,8 +474,8 @@ export default function Playlist() {
               <button onClick={() => setEditingName(false)} className="text-muted hover:text-white transition-colors"><X size={18} /></button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 mb-2">
-              <h1 className="text-3xl font-display text-white truncate">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-display text-white truncate">
                 {isLiked ? 'Liked Songs' : (playlist?.name || 'Playlist')}
               </h1>
               {!isLiked && (
@@ -487,68 +490,22 @@ export default function Playlist() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-4 overflow-x-auto pb-2 whitespace-nowrap [&>button]:shrink-0">
-        <button
-          onClick={() => playQueue(playableTracks, 0, playbackContext)}
-          disabled={!playableTracks.length}
-          className="flex items-center gap-2 px-6 py-2.5 bg-accent text-base rounded-full font-medium text-sm hover:bg-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Play size={16} fill="currentColor" className="translate-x-px" /> Play All
-        </button>
-
-        <button
-          onClick={shuffleTracks}
-          disabled={!playableTracks.length}
-          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Shuffle size={15} /> Shuffle
-        </button>
-
-        <button
-          onClick={sharePlaylist}
-          disabled={!tracks.length}
-          title="Share as a picture"
-          className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Share2 size={15} /> Share
-        </button>
-
-        {!isLiked && (
-          <>
-            {!!ghostTracks.length && (
-              <button
-                onClick={() => setShowResolveGhosts(true)}
-                className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400/10 border border-yellow-400/20 text-yellow-100 rounded-full font-medium text-sm hover:bg-yellow-400/15 transition-colors"
-              >
-                <AlertCircle size={15} /> Ghost Songs ({ghostTracks.length})
-              </button>
-            )}
-            {!smart && playlist?.id && <PlaylistSyncButton playlistId={playlist.id} userId={user?.id} />}
-            {smart && (
-              <button
-                onClick={() => openSmartPlaylistEditor(playlist)}
-                className="flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors"
-              >
-                <SlidersHorizontal size={15} /> Edit Rules
-              </button>
-            )}
-
-            <button
-              onClick={deletePlaylist}
-              className="flex items-center gap-2 px-4 py-2.5 text-red-400 border border-red-400/30 rounded-full text-sm hover:bg-red-400/10 transition-colors"
-            >
-              <Trash2 size={14} /> Delete Playlist
-            </button>
-          </>
-        )}
-      </div>
-
       {/* No per-row entrance: the page fades in as a whole (see Library). */}
       <TrackList
-        toolbarStart={!!tracks.length && (
-          <div className="min-w-0 flex-1">
-            {playlistSearchOpen ? (
-              <div className="flex w-full max-w-xs items-center gap-2 rounded-full border border-accent/40 bg-elevated px-4 py-2.5 text-sm text-white focus-within:border-accent">
+        toolbarStart={(
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap py-1 [&>*]:shrink-0">
+            <button
+              type="button"
+              onClick={() => playQueue(playableTracks, 0, playbackContext)}
+              disabled={!playableTracks.length}
+              aria-label="Play all"
+              title="Play all"
+              className="mr-1 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Play size={17} fill="currentColor" className="translate-x-px" />
+            </button>
+            {!!tracks.length && (playlistSearchOpen ? (
+              <div className="mx-1 flex w-64 items-center gap-2 rounded-full border border-accent/40 bg-elevated px-3.5 py-2 text-sm text-white focus-within:border-accent">
                 <Search size={15} className="flex-shrink-0 text-muted" />
                 <input
                   ref={playlistSearchRef}
@@ -569,15 +526,40 @@ export default function Playlist() {
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setPlaylistSearchOpen(true)}
-                aria-label="Search this playlist"
-                title="Search this playlist"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-elevated text-muted transition-colors hover:border-accent/30 hover:text-white"
-              >
-                <Search size={15} />
+              <button type="button" onClick={() => setPlaylistSearchOpen(true)} aria-label="Search this playlist" title="Search this playlist" className={ICON_BUTTON}>
+                <Search size={17} />
               </button>
+            ))}
+            <button type="button" onClick={shuffleTracks} disabled={!playableTracks.length} aria-label="Shuffle" title="Shuffle" className={ICON_BUTTON}>
+              <Shuffle size={17} />
+            </button>
+            <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label="Share as a picture" title="Share as a picture" className={ICON_BUTTON}>
+              <Share2 size={17} />
+            </button>
+            {!isLiked && (
+              <>
+                {!!ghostTracks.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShowResolveGhosts(true)}
+                    aria-label={`Ghost songs (${ghostTracks.length})`}
+                    title={`Ghost songs (${ghostTracks.length}): songs not in your library yet`}
+                    className={`${ICON_BUTTON} relative !text-yellow-200 hover:!text-yellow-100`}
+                  >
+                    <AlertCircle size={17} />
+                    <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-yellow-400 px-1 text-center text-[9px] font-semibold leading-4 text-black tabular-nums">{ghostTracks.length > 99 ? '99+' : ghostTracks.length}</span>
+                  </button>
+                )}
+                {!smart && playlist?.id && <PlaylistSyncButton playlistId={playlist.id} userId={user?.id} buttonClassName={ICON_BUTTON} />}
+                {smart && (
+                  <button type="button" onClick={() => openSmartPlaylistEditor(playlist)} aria-label="Edit rules" title="Edit rules" className={ICON_BUTTON}>
+                    <SlidersHorizontal size={17} />
+                  </button>
+                )}
+                <button type="button" onClick={deletePlaylist} aria-label="Delete playlist" title="Delete playlist" className={`${ICON_BUTTON} hover:!bg-red-400/10 hover:!text-red-400`}>
+                  <Trash2 size={16} />
+                </button>
+              </>
             )}
           </div>
         )}
