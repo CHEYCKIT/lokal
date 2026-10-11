@@ -182,15 +182,17 @@ export default function Videos() {
       {visible.map(item => <VideoCard key={item.track.id} item={item} selected={selection.has(item.track.id)} playing={currentId === item.track.id} onSelect={event => selection.click(item.track.id, event) || play(item)} onSave={() => save(item)} saving={!!saving} onMenu={event => openMenu(event, item)} preview={item.downloaded && item.video.file ? api.fileURL(item.video.file) : null} />)}
     </div>
     {loaded && !visible.length && <div className="text-center py-16 text-muted"><Clapperboard size={40} className="mx-auto mb-4 opacity-40" /><p>{items.length ? 'No videos match this view.' : 'Your discovered music videos will appear here.'}</p><p className="text-xs mt-2">Play songs to discover videos, or use “Find videos for my library” above.</p></div>}
+    {/* Like the Library's bar: short labels, and only what applies to the
+        selection (not greyed-out actions widening it). */}
     <SelectionBar open={selection.count > 0} label={`${selection.count} selected`} onClear={selection.clear} actions={[
-      { label: 'Play videos', icon: Play, onClick: () => play(selectedItems[0], false, selectedItems) },
+      { label: 'Play', icon: Play, onClick: () => play(selectedItems[0], false, selectedItems) },
       { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedItems.map(row => row.track)) },
       { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedItems.map(row => row.track)) },
       { label: 'Add to playlist', icon: ListPlus, onClick: () => addToPlaylistMany(selectedItems.map(row => row.track)) },
-      { label: 'Save videos', icon: Plus, disabled: !!saving || selectedItems.every(row => row.saved), onClick: () => saveMany(selectedItems.filter(row => !row.saved), true) },
-      { label: 'Remove videos', icon: Trash2, disabled: !!saving || selectedItems.every(row => !row.saved), onClick: () => saveMany(selectedItems.filter(row => row.saved), false) },
-      { label: 'Download videos', icon: Download, disabled: !!saving, onClick: () => downloadMany(selectedItems) },
-      { label: 'Delete downloads', icon: Trash2, disabled: !!saving || selectedItems.every(row => !row.downloaded), onClick: () => deleteMany(selectedItems) },
+      { label: 'Save', icon: Plus, hidden: selectedItems.every(row => row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => !row.saved), true) },
+      { label: 'Remove', icon: X, hidden: selectedItems.every(row => !row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => row.saved), false) },
+      { label: 'Download', icon: Download, hidden: selectedItems.every(row => row.downloaded), disabled: !!saving, onClick: () => downloadMany(selectedItems) },
+      { label: 'Delete download', icon: Trash2, danger: true, hidden: selectedItems.every(row => !row.downloaded), disabled: !!saving, onClick: () => deleteMany(selectedItems) },
     ]} />
     <ContextMenu menu={menu} />
   </div>
