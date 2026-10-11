@@ -288,3 +288,39 @@ test('the lookup reports its progress', async () => {
   assert.ok(stages.includes('searching'))
   assert.equal(stages[stages.length - 1], 'done')
 })
+
+test('a "no video" remembered by an older matcher is looked up again; a found video stays; each lookup says why', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-music-video-'))
+  const cacheFile = path.join(directory, 'music-videos.json')
+  const track = { id: 't1', title: 'SPIN', artist: 'Kroi', duration: 305 }
+  const found = { id: 't2', title: 'Blinding Lights', artist: 'The Weeknd', duration: 200 }
+  const video = { videoId: 'abcdefghijk', title: 'Blinding Lights', segments: [{ start: 0, end: null, offset: 0 }], check: 'audio' }
+  const day = 24 * 60 * 60 * 1000
+  fs.writeFileSync(cacheFile, JSON.stringify({
+    'v3|t1|spin|kroi|305': { at: Date.now() - day, video: null }, // an older matcher's miss
+    'v3|t2|blinding lights|the weeknd|200': { at: Date.now() - day, video }, // found: kept as is
+  }))
+  let searches = 0
+  const lines = []
+  const options = {
+    fetchImpl: async url => String(url).endsWith('/') ? { ok: true, text: async () => '' } : { ok: true, json: async () => { searches++; return {} } },
+    audioDbSearch: async () => [],
+    cacheFile,
+    log: line => lines.push(line),
+  }
+  try {
+    assert.deepEqual(await findMusicVideo(found, options), video)
+    assert.equal(searches, 0)
+    assert.equal(await findMusicVideo(track, options), null)
+    assert.ok(searches > 0, 'looked up again')
+    assert.match(lines.join('\n'), /Kroi - SPIN \(305s\): no official video by this artist/)
+    assert.match(lines.at(-1), /: none$/)
+    // Now remembered by this matcher: not looked up again for a while.
+    const before = searches
+    assert.equal(await findMusicVideo(track, options), null)
+    assert.equal(searches, before)
+    assert.match(lines.at(-1), /none, remembered from \d{4}-\d\d-\d\d/)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})

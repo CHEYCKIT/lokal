@@ -44,6 +44,9 @@ const SAME_LENGTH_S = 3
 const DECODE_TIMEOUT_MS = 120000
 const FOUND_TTL_MS = 60 * 24 * 60 * 60 * 1000
 const MISSING_TTL_MS = 3 * 24 * 60 * 60 * 1000
+// Bumped when matching changes: a "no video" remembered by an older matcher
+// is looked up again (found videos stay).
+const MATCHER = 4
 
 // Words in a video's title that mean it isn't the recording itself, unless the
 // song's own title has them too.
@@ -589,19 +592,25 @@ const pending = new Map()
  * `onProgress({ stage, index, total })` hears about each step: 'searching',
  * 'checking' (with index/total), 'fallback' (the vanity-free title's turn).
  */
-async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now, audioDbSearch = audioDb.searchTracks, youtubeSearch, onProgress, visualMotion } = {}) {
+async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl = fetch, cacheFile, now = Date.now, audioDbSearch = audioDb.searchTracks, youtubeSearch, onProgress, visualMotion, log = () => {} } = {}) {
   if (!track?.title || !track?.artist || !(Number(track.duration) > 30)) return null
   const progress = (update) => { try { onProgress?.(update) } catch {} }
+  const name = `${track.artist} - ${track.title} (${Math.round(Number(track.duration))}s)`
+  const note = message => { try { log(`Music video, ${name}: ${message}`) } catch {} }
   const key = cacheKey(track)
   const cache = cacheFile ? readCache(cacheFile) : {}
   const hit = cache[key]
-  if (hit && now() - hit.at < (hit.video ? FOUND_TTL_MS : MISSING_TTL_MS)) return hit.video
+  if (hit && (hit.video ? now() - hit.at < FOUND_TTL_MS : hit.matcher === MATCHER && now() - hit.at < MISSING_TTL_MS)) {
+    if (!hit.video) note(`none, remembered from ${new Date(hit.at).toISOString().slice(0, 10)} (looked up again after ${MISSING_TTL_MS / 86400000} days)`)
+    return hit.video
+  }
   if (pending.has(key)) return pending.get(key)
   const job = (async () => {
     const tryTrack = async (wanted, { acceptByTitle = false, stage = 'searching' } = {}) => {
       progress({ stage })
       const discovered = await discoveredVideos(wanted, { fetchImpl, audioDbSearch, youtubeSearch, lenient: acceptByTitle })
       const candidates = discovered.candidates
+      note(`${stage === 'fallback' ? `as "${wanted.title}": ` : ''}${candidates.length ? `checking ${candidates.map(item => `${item.videoId} "${item.title}" by ${item.artist}`).join(', ')}` : 'no official video by this artist with this title and a fitting length'}${discovered.inconclusive ? ' (a search failed)' : ''}`)
       let songEnv = null
       let video = null
       let inconclusive = discovered.inconclusive
@@ -612,8 +621,8 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
         const plausible = !Number.isFinite(Number(item.duration)) || (item.duration >= 60 && item.duration <= Number(wanted.duration) * 2 + 300)
         const byTitle = acceptByTitle && plausible
         const motion = await visualMotionOf(item, visualMotion)
-        if (motion === false) continue
-        if (motion !== true) { inconclusive = true; progress({ stage: 'motion-unverified', message: 'Video motion could not be verified. Continuing with the song and artwork.' }); continue }
+        if (motion === false) { note(`${item.videoId} skipped: its picture doesn't move (a still image or slideshow)`); continue }
+        if (motion !== true) { note(`${item.videoId} skipped: couldn't check that its picture moves`); inconclusive = true; progress({ stage: 'motion-unverified', message: 'Video motion could not be verified. Continuing with the song and artwork.' }); continue }
         if (ffmpeg && songAudio && videoAudio) {
           try {
             songEnv ||= audioFeatures(await decodeFrom(ffmpeg, songAudio))
@@ -623,9 +632,11 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
             // Heard, and it isn't the song. A vanity-free fallback expects
             // that (the video is another version's): the title match is enough.
             if (byTitle) { video = describe(item, [{ start: 0, end: null, offset: 0 }], 'title', motion === true); break }
+            note(`${item.videoId} skipped: its audio doesn't line up with the song`)
             continue
-          } catch {
+          } catch (error) {
             // Couldn't listen (offline, no stream): fall back to the length.
+            note(`${item.videoId}: couldn't compare the audio (${String(error?.message || error).slice(0, 160)})`)
             inconclusive = true
           }
         }
@@ -644,9 +655,10 @@ async function findMusicVideo(track, { ffmpeg, songAudio, videoAudio, fetchImpl 
       video = fallback.video
       inconclusive = inconclusive || fallback.inconclusive
     }
+    note(video ? `found ${video.videoId} (matched by ${video.check})` : inconclusive ? 'none for now (a check couldn\'t finish; tried again next time)' : 'none')
     if (cacheFile && (video || !inconclusive)) {
       const fresh = readCache(cacheFile)
-      fresh[key] = { at: now(), video }
+      fresh[key] = { at: now(), video, matcher: MATCHER }
       writeCache(cacheFile, fresh)
     }
     progress({ stage: 'done', found: !!video, ...(inconclusive && !video ? { message: 'Video validation could not finish. Continuing with the song and artwork.' } : {}) })

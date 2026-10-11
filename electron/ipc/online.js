@@ -291,6 +291,7 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
       url: `https://www.youtube.com/watch?v=${entry.id}`,
     }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
     cacheFile,
+    log: message => require('electron-log').info(message),
   })
   return video
 }

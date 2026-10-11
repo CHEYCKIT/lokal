@@ -175,7 +175,8 @@ function publicView(addon) {
     name: m.name,
     version: m.version,
     description: m.description || '',
-    icon: /^https:\/\//.test(String(m.icon || '')) ? m.icon : null,
+    // An addon without an icon gets its service's (or its initial): addonBrand.js.
+    icon: /^https:\/\//.test(String(m.icon || '')) ? m.icon : require('./addonBrand').addonIcon({ name: m.name, id: m.id, host: (() => { try { return new URL(addon.baseUrl).host } catch { return '' } })() }),
     resources: m.resources,
     settingsSchema: Array.isArray(m.settings) ? m.settings : [],
     settings: effectiveSettings(addon),
