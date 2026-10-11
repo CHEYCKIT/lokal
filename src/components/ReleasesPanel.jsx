@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { CalendarDays, Disc3, Loader2, MoreHorizontal, Play, RefreshCw, X } from 'lucide-react'
 import DiscoveryImage from './DiscoveryImage'
-import { checkReleases, loadArtistReleases, savedReleases } from '../newReleases'
+import { checkReleases, isNewRelease, loadArtistReleases, savedReleases } from '../newReleases'
 import { api } from '../api'
 import { plural } from '../plural'
 import { discoveryArtistKey, useDiscoveryArtists } from '../discoveryArtists'
@@ -45,7 +45,7 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={() => onOpen(release)} className="truncate text-left text-sm font-semibold text-white hover:underline">{release.title}</button>
-          {release.isNew && <span className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">New</span>}
+          {isNewRelease(release) && <span title="Out less than a week ago" className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">New</span>}
         </div>
         <button type="button" onClick={() => onArtist(release)} className="block max-w-full truncate text-left text-xs text-white/75 hover:text-white hover:underline">{release.artist}</button>
         <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
@@ -91,7 +91,7 @@ export default function ReleasesPanel({ artists, onPlay, onOpen, onMenu, onArtis
   // without a new check.
   const hidden = useDiscoveryArtists(state => state.hidden)
   const items = (saved?.items || []).filter(release => !hidden.has(discoveryArtistKey(release.seedArtist || release.artist)) && !hidden.has(discoveryArtistKey(release.artist)))
-  const newCount = items.filter(release => release.isNew).length
+  const newCount = items.filter(release => isNewRelease(release)).length
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">

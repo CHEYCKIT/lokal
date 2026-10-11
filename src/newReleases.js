@@ -33,6 +33,22 @@ function saveReleases(value, storage = globalThis.localStorage) {
 
 export const releaseKey = release => `${artistKey(release.artist)}\0${artistKey(release.title)}`
 
+const DAY = 24 * 60 * 60 * 1000
+export const NEW_RELEASE_DAYS = 7
+
+/**
+ * Out less than a week ago. Only a release with its full date can be: one
+ * dated by its year alone can't be told apart from the rest of that year.
+ * A plain date ("2026-10-08") is that day in UTC, as it's shown.
+ */
+export function isNewRelease(release, now = Date.now()) {
+  const date = releaseDate(release)
+  if (!/^\d{4}-\d{2}-\d{2}/.test(date)) return false
+  const released = Date.parse(date.length === 10 ? `${date}T00:00:00Z` : date)
+  const age = (now instanceof Date ? now.getTime() : now) - released
+  return Number.isFinite(age) && age >= 0 && age < NEW_RELEASE_DAYS * DAY
+}
+
 /**
  * The newest releases first, at most `limit`: no year cut-off, only nothing
  * dated in the future. A catalogue lists each artist's releases newest first,
@@ -59,19 +75,17 @@ export function latestReleases(releases, { now = new Date(), limit = RELEASE_LIM
 
 /**
  * Check every library artist's catalogue (a few at a time) and keep the
- * newest `limit` releases. Releases not in the previous check are marked
- * `isNew`. Saved for the next visit; `onProgress({ done, total, items })`.
+ * newest `limit` releases. Saved for the next visit; `onProgress({ done,
+ * total, items })`. Which are new is worked out when they're shown
+ * (isNewRelease), so a release stops being new a week after it came out.
  */
 export async function checkReleases(artists, loadAlbums, { isCurrent = () => true, onProgress = () => {}, concurrency = 4, now = new Date(), storage = globalThis.localStorage, previous = savedReleases(storage) } = {}) {
   const names = [...new Map(artists.filter(artist => artist?.name).map(artist => [artistKey(artist.name), artist.name])).values()]
-  const known = new Set((previous?.items || []).map(releaseKey))
-  // A saved check, even one that found nothing, is what "new" is measured against.
-  const firstCheck = !previous || !Array.isArray(previous.items)
   const found = []
   let done = 0
   let failures = 0
   let next = 0
-  const current = () => latestReleases(found, { now }).map(release => ({ ...release, isNew: !firstCheck && !known.has(releaseKey(release)) }))
+  const current = () => latestReleases(found, { now })
   await Promise.all(Array.from({ length: Math.min(concurrency, names.length) }, async () => {
     while (isCurrent() && next < names.length) {
       const name = names[next++]
