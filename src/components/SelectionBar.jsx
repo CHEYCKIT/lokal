@@ -75,21 +75,25 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: rise * 0.6, scale: reduceMotion ? 1 : 0.98, transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } }}
             transition={{ type: 'spring', stiffness: 380, damping: 32, mass: 0.8 }}
-            className="pointer-events-auto flex max-w-full flex-wrap items-center gap-2 rounded-2xl border border-accent/30 bg-elevated/95 px-4 py-2.5 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-2xl border border-accent/30 bg-elevated/95 px-4 py-2.5 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-xl"
           >
-            <span className="text-sm font-medium tabular-nums text-accent">{shown.current.label}</span>
-            <span className="hidden text-[11px] text-muted xl:inline">Ctrl+click to add · Shift+click for a range · right-click for more</span>
-            <div className="ml-auto flex flex-wrap items-center gap-2 pl-2">
-              {shown.current.actions.filter(action => !action.hidden).map(({ label: text, icon: Icon, onClick, danger, disabled }) => (
-                <button key={text} onClick={onClick} disabled={disabled}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${danger ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25' : 'border border-border bg-card text-white/80 hover:border-accent/40 hover:text-white'}`}>
-                  {Icon && <Icon size={12} />} {text}
-                </button>
-              ))}
-              <button onClick={onClear} title="Clear selection (Esc)" aria-label="Clear selection" className="p-1.5 text-muted transition-colors hover:text-white">
-                <X size={14} />
-              </button>
+            {/* The actions wrap as they need; the clear button keeps its own
+                column on the right instead of wrapping onto a line of its own. */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <span className="text-sm font-medium tabular-nums text-accent">{shown.current.label}</span>
+              <span className="hidden text-[11px] text-muted xl:inline">Ctrl+click to add · Shift+click for a range · right-click for more</span>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2 pl-2">
+                {shown.current.actions.filter(action => !action.hidden).map(({ label: text, icon: Icon, onClick, danger, disabled }) => (
+                  <button key={text} onClick={onClick} disabled={disabled}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${danger ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25' : 'border border-border bg-card text-white/80 hover:border-accent/40 hover:text-white'}`}>
+                    {Icon && <Icon size={12} />} {text}
+                  </button>
+                ))}
+              </div>
             </div>
+            <button onClick={onClear} title="Clear selection (Esc)" aria-label="Clear selection" className="flex-shrink-0 p-1.5 text-muted transition-colors hover:text-white">
+              <X size={14} />
+            </button>
           </motion.div>
         </div>
       )}
