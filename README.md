@@ -3,7 +3,7 @@
 ![convient photo of toro](https://i.imgur.com/KgjwTvk.png)
 
 
-**Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, listening recaps, recommendations from Last.fm or YouTube Music, smart playlists, an audio-quality checker, and one search bar that finds, streams and downloads.
+**Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, official music videos synced to your files, new releases from the artists you follow, listening recaps, recommendations from Last.fm or YouTube Music, smart playlists, an audio-quality checker, and one search bar that finds, streams and downloads.
 
 ![Lokal Music](https://img.shields.io/badge/version-6.6.0-blue) ![Electron](https://img.shields.io/badge/Electron-latest-47848F) ![React](https://img.shields.io/badge/React-19-61DAFB) ![License](https://img.shields.io/badge/license-MIT-green) [![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/Wv3zfpG6UT)
 
@@ -28,13 +28,17 @@
 ## Highlights
 
 - **Synced lyrics from 9 sources**, word by word, with translation, romanization and duets
+- **Music videos**: the official video of the song playing, found for you and kept in time with *your* file
+- **New releases** from the artists you follow, with your follows imported from Spotify or Apple Music
 - **One search bar** for your library, YouTube Music, SoundCloud, Soulseek and addons: stream, save or paste a link to download
+- **Built-in Soulseek**: sign in with a username and password, nothing else to install
 - **Listening recaps** for every week, month and year, with a story you can tap through
-- **Audio quality checker** that sorts your files into Hi-res, Lossless, High and Low, and spots fake FLACs
+- **Audio quality checker** that sorts your files into Hi-res, Lossless, High and Low, spots fake FLACs, and upgrades a whole selection to lossless at once
 - **Discovery, Mix and Radio** from your Last.fm or YouTube Music account, played from your library first, then from YouTube Music, SoundCloud or your addons
 - **Smart playlists** that fill themselves from rules, and **share cards** for playlists, artists and recaps
 - **Mixes, playlists and stats** built from your own listening history
 - **Full-screen player** with moving canvas covers, a colour backdrop, a glass player bar, a mini player and crossfade
+- **Playlists that keep up**: import from a link, a file or a pasted list, and link one to Spotify, Tidal, Apple Music or Qobuz to pull in what's added there
 - **Account connections** for Last.fm, ListenBrainz, YouTube Music and Discord, plus a phone remote
 
 ---
@@ -62,6 +66,25 @@ Lyrics light up **word by word** (or syllable by syllable) like Apple Music, in 
 
 ---
 
+## Music Videos
+
+![The official music video of the playing song, full screen, with the player controls and the video sync control](docs/screenshots/music-video.webp)
+
+Press the 🎬 button in the side panel (or in full screen) and the song's **official music video** plays, **in time with your own file**: Lokal listens to the video and to your song and lines them up, intros, skits and longer edits included. Your audio keeps playing; the video only adds the picture.
+
+- **Only the real one:** the video must come from the artist and be the same song: no lyric videos, live cuts, covers, "visualizers" or still-image uploads (it checks that the picture actually moves).
+- **Versions:** a remix or radio edit with no video of its own gets the original's video.
+- **Video sync:** nudge the timing with − / + if it's ever off; Lokal remembers it for that video.
+- **Around the picture:** when the video doesn't fill the screen, the bars continue its own colours instead of black.
+- **Mini player:** keep the video playing in a small window while you use the rest of the app.
+- **Music Video Quality** (Settings → Playback) caps the resolution, to save data or start faster.
+
+| Your music videos | |
+|---|---|
+| ![The Videos page: a grid of music videos from the library, some saved and downloaded](docs/screenshots/videos.webp) | **Videos** (sidebar) lists every music video found for your library. Play them back to back, **save** the ones you like, or **download** them to your Videos folder to watch offline. *Find videos for my library* looks up the video of every song in one go. |
+
+---
+
 ## Search, Stream and Download in One Place
 
 | Search everything | Paste a link |
@@ -74,13 +97,29 @@ The search bar at the top covers your own library, then songs that aren't in it 
 - **Playlists and channels** from YouTube Music, downloadable whole.
 - **Paste a link** (YouTube, SoundCloud, Bandcamp and anything else yt-dlp supports) and press Enter to download a song, an album or a whole playlist.
 - **Downloads land in your library as they finish**, tagged, with a square cover and lyrics. No rescan needed. Choose the format (Original, MP3, M4A or Opus) in Settings → Library.
-- **The Downloads button** (top left, next to Settings) shows the queue and the playlists you've downloaded.
+- **The Downloads button** (top left, next to Settings) shows the queue, the playlists you've downloaded, and library jobs (artist info, music videos) under **Others**. A download that fails says why in plain words ("TIDAL is limiting requests for now"), with the full message one click away (ⓘ). Downloads from addons are paced gently, two at a time per source, so you hit fewer rate limits.
+
+<img src="docs/screenshots/downloads.webp" alt="The Downloads panel: a music video and a FLAC from Soulseek downloading, a failed addon download explained in plain words with the full error below, and a finished song" width="400">
 
 (*yt-dlp is not included on install; see [Downloader Setup](#downloader-setup)*)
 
-**Addons:** paste an addon's manifest URL in Settings → Addons. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`), so those addons work as another source in search. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add. (*[Ultramax](https://ultramax.vip/eclipse.html) and [LastWave](https://lastwaveaddons.clashprojects.qd.je/) have been tested and work; Tido requires whitelisting, so it isn't compatible.*)
+**Addons:** paste an addon's manifest URL in Settings → Addons. Lokal speaks the same addon protocol as Eclipse Music (manifest, `/search`, `/stream`, and `/album` / `/artist` pages when an addon has them), so those addons work as another source in search. It also runs **SpotiFLAC extensions**: add a repository to browse its sources, or install a `.sflx` package. Lokal ships no addons and doesn't host or vouch for any; you're responsible for the ones you add. (*[Ultramax](https://ultramax.vip/eclipse.html) and [LastWave](https://lastwaveaddons.clashprojects.qd.je/) have been tested and work; Tido requires whitelisting, so it isn't compatible.*)
 
-**Soulseek:** sign in with a Soulseek account in Settings → Integrations and search and download from Soulseek, where lossless FLAC files are common. Lokal downloads and runs the Soulseek client ([slskd](https://github.com/slskd/slskd)) for you, and updates it from the same place. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
+**Soulseek:** search and download from Soulseek, where lossless FLAC files are common. Sign in with a Soulseek username and password in **Settings → Integrations → Soulseek** (a new name creates the account) and that's it: Lokal downloads the Soulseek client ([slskd](https://github.com/slskd/slskd)) once, checks it, runs it in the background on this computer only while Lokal is open, and **updates it** from the same place. Optionally share your music folder back. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you own.
+
+<img src="docs/screenshots/soulseek.webp" alt="Settings → Soulseek: username and password, share my music folder, signed in, the Soulseek client's version and Check for updates" width="720">
+
+---
+
+## New Releases
+
+![Home → Releases: the newest releases from followed artists, the two from this week marked New, with their type and date](docs/screenshots/releases.webp)
+
+**Home → Releases** lists the newest albums, EPs and singles of the artists you follow, newest first, marked **New** for their first week. Play one, open it, or go to the artist. **Refresh** checks again and only adds what's new.
+
+| Followed artists | |
+|---|---|
+| <img src="docs/screenshots/followed.webp" alt="The Followed artists dialog: every library artist with a checkbox, a search, Unfollow all, and Import from Spotify or Apple Music" width="420"> | **You choose who to follow.** *Followed artists* lists every artist in your library with a checkbox and a search; tick them one by one, or all at once. **Import** the artists you follow on **Spotify**, or the ones in your **Apple Music** library. Artist pages have a **Follow** button, and **Artists** can show only the ones you follow. Your library artists are followed on the first run, so nothing changes until you do. |
 
 ---
 
@@ -88,7 +127,7 @@ The search bar at the top covers your own library, then songs that aren't in it 
 
 ![Discovery on Home: Fresh Finds and Quick Picks from Last.fm, each song ready to play from the library](docs/screenshots/discovery.webp)
 
-Home has four tabs: **Local** (mixes from your own library), **Discovery**, **Mix** and **History** (everything you've played in Lokal).
+Home has five tabs: **Local** (mixes from your own library), **Discovery**, **Mix**, **Releases** (above) and **History** (everything you've played in Lokal).
 
 **Discovery** shows recommendations from the account you pick at the top, **Last.fm** or **YouTube Music**:
 
@@ -143,6 +182,10 @@ Know what you're actually listening to:
 
   ![Get it in lossless: Qobuz, Bandcamp, 7digital, Discogs, AllMusic and Soulseek for one song](docs/screenshots/lossless.webp)
 
+- **Many songs at once:** select songs (a whole album, a playlist), right-click → **Get N songs in lossless…**. Each one is looked up on your addon sources and the closest lossless copy is suggested, ticked when its length matches yours. **Replace** downloads the ticked ones, and each replaces its song's file **in place**, keeping its playlists, likes and plays.
+
+  <img src="docs/screenshots/lossless-many.webp" alt="Get 7 songs in lossless: lossless matches for each song of an album, four ticked, one with a different length and one with an unknown length left for you to check" width="700">
+
 - **Pill in the player bar:** the playing song's tier shows under the artist, and hovering says what it means.
 
 ---
@@ -151,7 +194,7 @@ Know what you're actually listening to:
 
 | Library, filtered by genre | Albums |
 |---|---|
-| ![The Library filtered to Synthwave](docs/screenshots/library.webp) | ![An album page with its tracklist](docs/screenshots/album.webp) |
+| ![The Library filtered to Synthwave](docs/screenshots/library.webp) | ![An album page: compact header with Play, Shuffle and Full album online, the tracklist, and the playing song in the side panel](docs/screenshots/album.webp) |
 
 | Artists | Playlists |
 |---|---|
@@ -161,11 +204,15 @@ Know what you're actually listening to:
 
 - **Library:** your music folder indexed from the files' own tags. Drum kits, sample packs and loops are filtered out, and you can opt out if something gets flagged by mistake (*via the minimum duration*). Filter by **source** (music folder, YouTube, SoundCloud, Soulseek, addons), **genre** and **quality**, and sort by date, title, artist, plays or length.
 - **Track lists you can adjust:** pick the columns (track number, artwork, artist, source, quality, date added, duration, quick actions, drag handle) from **Columns**; the layout tightens on its own when the window gets narrow. An icon shows where a downloaded or streamed song came from (YouTube, SoundCloud, Soulseek, an addon), and playlists show each song's quality.
-- **Albums:** albums, EPs and singles are kept apart; hover a cover to play the whole release.
-- **Artists:** each artist gets a page with a **photo and bio**, fetched automatically from **Wikidata**, Deezer, TheAudioDB, MusicBrainz or Wikipedia, or set by hand. *Auto* takes bios from Wikidata first (the artist's own Wikipedia article) and photos from Deezer first. Top songs and releases are on the same page. Names like "Tyler, the Creator" stay one artist.
-- **Playlists:** create, reorder, download, and get recommendations. Import them from Spotify (Exportify), Apple Music, YouTube Music, Last.fm or a CSV/JSON/M3U file.
-- **Select several songs** with Ctrl/Cmd+click (Shift for a range) to queue, add to a playlist or delete them all at once.
-- **Duplicate detection:** a smart merge scores each copy by bitrate, artwork and metadata completeness, then keeps the best one.
+- **Albums:** albums, EPs and singles are kept apart; hover a cover to play the whole release. An album page shows its tracklist under a compact header, and **Full album online** fills in the songs you don't have (streamable, or downloadable one by one).
+- **Online album and artist pages:** a streamed song, or an artist you only have a few songs of, still opens a real album or artist page (from YouTube Music or your addons), marking what's already in your library.
+- **Artists:** each artist gets a page with a **photo and bio**, fetched automatically from **Wikidata**, Deezer, TheAudioDB, MusicBrainz or Wikipedia, or set by hand. *Auto* takes bios from Wikidata first (the artist's own Wikipedia article) and photos from Deezer first. Top songs and releases are on the same page, in sections, with a per-artist choice of release types. Names like "Tyler, the Creator" stay one artist. Switch the Artists page between **All** and **Followed**.
+- **Playlists:** create, reorder, sort by any column, search, download, and get recommendations. **Import** one from a link (YouTube, YouTube Music, SoundCloud or Bandcamp playlists and albums), a file (Exportify CSV, JSON, M3U) or a pasted list of songs; songs you don't own come in as streamable ghost songs. **Link** a playlist to one on Spotify, Tidal, Apple Music or Qobuz and **Sync** adds the songs added there since (or at every launch).
+- **Ghost songs:** songs of an imported playlist that aren't in your library yet stay in it as ghosts. They play from your sources, and the **Ghost songs** dialog finds each one and downloads them all, or the ones you pick.
+- **Repair missing downloads** (Settings → Library → Maintenance): songs whose file went missing are downloaded again from where they came from and reattached, likes and plays included.
+- **Select several songs** (or videos) with Ctrl/Cmd+click (Shift for a range) to queue, add to a playlist, upgrade to lossless or delete them all at once; the selection bar floats over the page and folds itself to fit.
+- **Duplicate detection:** a smart merge scores each copy by bitrate, artwork and metadata completeness, then keeps the best one; duplicates are removed for good (a rescan doesn't bring them back), and **Remove Duplicate Songs** cleans one playlist.
+- **Search by words:** the library matches title, artist and album together, and online results correct typos ("micheal jackson" finds Michael Jackson).
 
 ---
 
@@ -192,14 +239,17 @@ Know what you're actually listening to:
 
 ## Now Playing
 
-- **Full-screen player** with the cover, or full-screen lyrics; switch between them with one click.
+![The full-screen player: the cover with its controls on hover, the seek bar, title, artist and album over a colour backdrop](docs/screenshots/fullscreen.webp)
+
+- **Full-screen player** in the style of Apple Music: the cover with its controls, which hide when you stop moving the mouse, or full-screen lyrics; switch with one click. **Double-click the cover to like** the song. The computer doesn't go to sleep while it's open.
+- **Side panel:** the song's details, lyrics and queue, with one row of buttons for full screen, lyrics, its music video and its canvas.
 - **Canvas covers:** looping video covers from Apple Music, Tidal, community lists or Spotify Canvas (*Spotify needs your own account cookie*).
 - **Colour backdrop** taken from the cover.
 - **Glass player bar:** the player floats over the pages, which scroll on underneath it, frosted. Switch it off (or the waveform next to the volume) in Settings → Appearance → Player Bar.
 - **Audio output picker** in the player bar, to send the music to another device (headphones, speakers, an interface).
 - **Mini player** to keep the music in a corner.
 - **Sleep timer.**
-- **Crossfade** between tracks.
+- **Crossfade** between tracks, with separate fade-in and fade-out times and a logarithmic or linear curve.
 - **Queue:** play next and add to queue, with shuffle you can fully step back through.
 - **Collapsible sidebar**, down to icons only.
 
@@ -214,7 +264,7 @@ Everything is connected from **Settings → Integrations → Account Connections
 - **Last.fm:** *Sign in*, then follow the numbered steps: create an API account, paste its key and secret, your username, and *Authorize* in the browser. Lokal sends "now playing" and scrobbles (after half the track or 4 minutes); scrobbles made offline are kept and sent later. Your account also powers Discovery, Mix and Radio.
 - **ListenBrainz:** *Sign in* with your user token, for the open alternative by MetaBrainz. Same scrobbling rules, offline listens kept.
 - **YouTube Music** (desktop app): *Sign in* opens YouTube Music in its own Lokal window; use the site's Sign in button. Lokal keeps the session (restored at every start) and uses it for Discovery, your mixes and likes, and to stream songs that need an account. *Verify* checks it's still valid.
-- **Discord Rich Presence:** *Connect* to show what you're listening to. Use the built-in app, or your own from Discord's developer portal (Settings → Integrations → Discord Rich Presence).
+- **Discord Rich Presence:** *Connect* to show what you're listening to ("Listening to…", with the album cover). Use the built-in app, or your own from Discord's developer portal (Settings → Integrations → Discord Rich Presence).
 - **Scrobbling** has one switch per service (Settings → Integrations → Scrobbling), to pause it without signing out.
 - **Phone remote:** open `http://<your computer>:3421/remote` on your phone to control playback. It installs as a web app.
 - **Web mode:** run Lokal as a server and listen to your library from another device (see [Web Mode Setup](#web-mode-setup)).
@@ -326,7 +376,7 @@ src/              React frontend
 - [Framer Motion](https://www.framer.com/motion/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [slskd](https://github.com/slskd/slskd)
+- [slskd](https://github.com/slskd/slskd), run by Lokal for Soulseek
 - Lyrics: [LRCLIB](https://lrclib.net/), BiniLyrics, BetterLyrics, LyricsPlus, Unison, KuGou and lyrics.ovh
 - Artist info: [Wikidata](https://www.wikidata.org/), [MusicBrainz](https://musicbrainz.org/), [TheAudioDB](https://www.theaudiodb.com/), [Deezer](https://www.deezer.com/) and [Wikipedia](https://www.wikipedia.org/)
 - Recommendations: [Last.fm](https://www.last.fm/) and [YouTube Music](https://music.youtube.com/)
@@ -351,7 +401,7 @@ Everyone with these roles signs in to GitHub with two-factor authentication.
 Lokal has no accounts, analytics or telemetry. Your library, listening history and settings stay on your computer. It only connects to other services for the features that need them:
 
 - checking GitHub Releases for a new version (stable builds only);
-- looking up lyrics, artwork and artist information (the services listed above under *Built With*);
+- looking up lyrics, artwork, artist information, new releases and music videos (the services listed above under *Built With*);
 - Last.fm, ListenBrainz, YouTube Music and Discord, if you connect them;
 - searching, streaming and downloading, if you use those features.
 
