@@ -122,6 +122,10 @@ test('a plain FLAC download can be played while it arrives, and a range past wha
   await new Promise(resolve=>setTimeout(resolve,300))
   await fs.appendFile(part,bytes.subarray(100000));liveUpdate(job,{part,file,total,written:total})
   assert.deepEqual(await pending,{status:206,range:'bytes 150000-150099/200000',length:100})
+  // A retry that starts the file over replaces the live state, so a reader of the old one stops.
+  const before=job.live
+  liveUpdate(job,{part,file,total,written:5000})
+  assert.notEqual(job.live,before);assert.equal(job.live.ready,false)
   // Anything that isn't a FLAC from the first bytes waits for the complete file.
   const other={status:'running',markLive:()=>{throw new Error('must not go live')}}
   await fs.writeFile(path.join(dir,'b.flac.part'),Buffer.alloc(100000,1))

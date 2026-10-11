@@ -18,7 +18,7 @@ export function handleLiveSeek(element, { currentTrack, streamRef, isAddonProvid
   const mine = token() + 1
   tokens.set(element, mine)
   const src = element.getAttribute('src') || ''
-  if (!src.startsWith(streamURL(ref.provider, ref.id))) return
+  if (src.split('?')[0] !== streamURL(ref.provider, ref.id)) return
   ;(async () => {
     await new Promise(resolve => setTimeout(resolve, STUCK_MS))
     if (mine !== token() || !element.seeking) return
@@ -26,8 +26,11 @@ export function handleLiveSeek(element, { currentTrack, streamRef, isAddonProvid
     for (;;) {
       const state = await Promise.resolve(prepare(ref.provider, ref.id)).catch(() => null)
       if (mine !== token() || (element.getAttribute('src') || '') !== src) return
-      if (state?.error) return
-      if (state?.ok && !state.live) break
+      if (!state || state.error || !element.seeking) return
+      // Only a SpotiFLAC preparation waits like this; another source's slow
+      // seek is left alone.
+      if (!state.package) return
+      if (state.ok && !state.live) break
       await new Promise(resolve => setTimeout(resolve, POLL_MS))
     }
     if (!element.seeking) return

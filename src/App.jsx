@@ -349,7 +349,7 @@ export default function App() {
     // A failed stream advances through the configured playback providers.
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
-    if (failedRef && String(el?.getAttribute('src') || '').startsWith(api.onlineStreamURL(failedRef.provider, failedRef.id))) {
+    if (failedRef && String(el?.getAttribute('src') || '').split('?')[0] === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
       await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }

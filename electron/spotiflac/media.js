@@ -23,7 +23,7 @@ function cached(db,key,id){
   return null
 }
 function prepare(db,key,id,{force=false}={}){
-  if(!force){const hit=cached(db,key,id);if(hit)return {ok:true}}
+  if(!force){const hit=cached(db,key,id);if(hit)return {ok:true,package:true}}
   const map=state(db),hash=cacheKey(db,key,id)
   const existing=[...map.values()].find(job=>job.hash===hash&&job.status==='running')
   if(existing)return {pending:true,operationId:existing.id}
@@ -34,11 +34,14 @@ function prepare(db,key,id,{force=false}={}){
   job.promise=fetchAudio().catch(error=>{if(job.controller.signal.aborted||!/memory limit|out of memory/i.test(error?.message))throw error;logFailure(db,key,id,error);job.message='Retrying…';return fetchAudio()}).then(async result=>{
     try{
       const dir=path.join(service(db).root,'audio-cache');await fsp.mkdir(dir,{recursive:true})
-      const ext=path.extname(result.file).slice(1).toLowerCase()
+      // Played as it arrived: the cache keeps those very bytes (a rewritten
+      // copy would put a later seek at different offsets than the stream had).
+      const source=job.live?.ready&&job.live.done&&fs.existsSync(job.live.file)?job.live.file:result.file
+      const ext=path.extname(source).slice(1).toLowerCase()
       if(!MIME[ext])throw new Error('Unsupported cached audio container')
       const file=path.join(dir,`${hash}.${ext}`)
       job.controller.signal.throwIfAborted()
-      await fsp.copyFile(result.file,`${file}.tmp`);job.controller.signal.throwIfAborted();await fsp.rename(`${file}.tmp`,file)
+      await fsp.copyFile(source,`${file}.tmp`);job.controller.signal.throwIfAborted();await fsp.rename(`${file}.tmp`,file)
       job.status='done';job.progress=100;job.result={type:'file',file,mime:MIME[ext],headers:{},format:ext}
       // The cache joins Lokal's shared limit; installed code and credentials do not.
       require('../cache').trim({keep:[file]})
@@ -62,7 +65,9 @@ function prepare(db,key,id,{force=false}={}){
 // same bytes, so seeking carries on from it.
 const LIVE_MIN_BYTES=64*1024
 function liveUpdate(job,{part,file,total,written,done}){
-  if(!job.live||job.live.part!==part)job.live={part,file,total:Number(total)||0,written:0,done:false,ready:false,checked:false}
+  // A new file, or a retry that started over (fewer bytes than before): a
+  // new live state, so a reader of the old one stops rather than mixing them.
+  if(!job.live||job.live.part!==part||!done&&(Number(written)||0)<job.live.written)job.live={part,file,total:Number(total)||0,written:0,done:false,ready:false,checked:false}
   const live=job.live
   live.written=Math.max(live.written,Number(written)||0);if(done)live.done=true
   if(live.ready||live.checked||!live.total||live.written<LIVE_MIN_BYTES)return
@@ -117,7 +122,7 @@ function operation(db,id,cancel=false){
   if(!job)return {error:'Audio preparation operation not found'}
   if(cancel)job.controller.abort()
   const live=job.status==='running'&&!!job.live?.ready
-  return {id:job.id,status:job.status,progress:job.progress,message:job.message,error:job.error,ok:job.status==='done'||live,...(live?{live:true}:{})}
+  return {id:job.id,status:job.status,progress:job.progress,message:job.message,error:job.error,ok:job.status==='done'||live,package:true,...(live?{live:true}:{})}
 }
 async function resolve(db,key,id,{signal,force=false}={}){
   const hit=!force&&cached(db,key,id);if(hit)return hit

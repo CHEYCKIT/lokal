@@ -152,7 +152,7 @@ export default function MusicVideoPlayer({ compact = false }) {
     setFailed(true)
     setStalled(false)
     setErrorText(el?.error?.message || 'Could not open the downloaded video')
-  }, [video])
+  }, [video, segments])
 
   const art = trackArtURL(currentTrack)
   const showVideo = !!video?.src && !video.error && !failed && (ready || everPlayed) && !outside
