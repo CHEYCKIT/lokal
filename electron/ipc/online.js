@@ -163,48 +163,6 @@ function registerOnlineHandlers(ipcMain) {
       return { success: true }
     } catch (error) { return { error: error.message } }
   })
-  ipcMain.handle('musicVideo:migrationStatus', () => require('../online/musicVideoDownloads').migrationStatus({ cacheDir: require('../cache').cacheDir('musicVideo') }))
-  ipcMain.handle('musicVideo:migrate', () => {
-    const rows = listMusicVideos()
-    const byId = new Map(rows.map(row => [row.video.videoId, { ...row.video, artist: row.track.artist || row.video.artist, trackId: row.track.id }]))
-    try {
-      const metadata = JSON.parse(require('fs').readFileSync(musicVideoMetadataFile(), 'utf8'))
-      for (const [key, entry] of Object.entries(metadata)) {
-        if (!entry?.video?.videoId || byId.has(entry.video.videoId)) continue
-        const track = getDB().prepare('SELECT id, artist FROM tracks WHERE id = ?').get(key.split('|')[1])
-        byId.set(entry.video.videoId, { ...entry.video, ...(track ? { artist: track.artist, trackId: track.id } : {}) })
-      }
-    } catch {}
-    const manager = require('./downloader').manager()
-    if ([...manager.jobs.values()].some(job => job.kind === 'music-video' && ['queued', 'downloading'].includes(job.status))) return { error: 'Wait for video downloads to finish before moving older files.' }
-    const storage = require('../online/musicVideoDownloads')
-    storage.ensureDownloadsTable(getDB())
-    return require('../online/musicVideoDownloads').migrateOldVideos({
-      cacheDir: require('../cache').cacheDir('musicVideo'),
-      videosDir: storage.videosDir(),
-      resolve: id => byId.get(id) || [...manager.jobs.values()].find(job => job.kind === 'music-video' && job.opts.videoId === id)?.opts || {},
-      onMove: (from, to, video) => {
-        const db = getDB()
-        storage.updateVideoReferences(db, from, to, video, storage.videosDir())
-        const fs = require('fs')
-        const metadata = musicVideoMetadataFile()
-        if (fs.existsSync(metadata)) {
-          const data = JSON.stringify(storage.replacePath(JSON.parse(fs.readFileSync(metadata, 'utf8')), from, to))
-          fs.writeFileSync(`${metadata}.tmp`, data)
-          fs.renameSync(`${metadata}.tmp`, metadata)
-        }
-        for (const job of manager.jobs.values()) {
-          if (job.kind !== 'music-video' || job.opts.videoId !== video.videoId) continue
-          job.opts = { ...job.opts, durable: true, videosDir: storage.videosDir(), artist: job.opts.artist || video.artist }
-          delete job.opts.cacheDir
-          if (job.song === from) job.song = to
-          job.filepaths = (job.filepaths || []).map(file => file === from ? to : file)
-          manager.persist(job)
-          manager.emit(job, true)
-        }
-      },
-    })
-  })
   ipcMain.handle('musicVideo:list', () => listMusicVideos())
   ipcMain.handle('musicVideo:save', async (_, trackId, saved = true) => {
     try {

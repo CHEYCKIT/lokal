@@ -62,26 +62,6 @@ test('v2 local downloads survive v3 invalidation and expose offline playable hov
   } finally { state.cleanup() }
 })
 
-test('explicit migration retains old track and artist identity and remains offline playable', async () => {
-  const state = fixture()
-  try {
-    const handlers = new Map()
-    state.online.registerOnlineHandlers({ handle: (name, fn) => handlers.set(name, fn) })
-    const result = handlers.get('musicVideo:migrate')()
-    assert.equal(result.migrated, 1, result.errors.join(' · '))
-    const file = storage.recordedVideoFile(state.db, state.video.videoId, 1080)
-    assert.equal(path.dirname(file), path.join(state.videos, 'Artist'))
-    const record = JSON.parse(state.db.prepare('SELECT video_json FROM downloaded_music_videos').get().video_json)
-    assert.equal(record.trackId, 'track-id')
-    assert.equal(record.artist, 'Artist')
-    assert.equal(fs.existsSync(state.file), false)
-    assert.equal((await state.online.prepareMusicVideoFor('track-id')).file, file)
-    assert.equal(state.online.listMusicVideos()[0].video.file, file)
-    assert.equal(handlers.get('musicVideo:migrate')().migrated, 0)
-    assert.equal(state.queued(), 0)
-  } finally { state.cleanup() }
-})
-
 test('renamed local tracks retain downloaded v2 metadata without a network rescan', async () => {
   const state = fixture()
   try {
