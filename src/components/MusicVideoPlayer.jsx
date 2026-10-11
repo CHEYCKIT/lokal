@@ -231,7 +231,7 @@ export default function MusicVideoPlayer({ compact = false }) {
               then the video's own colours fill the bars around it. */}
           {art && <img src={art} alt="" aria-hidden className={`absolute inset-0 w-full h-full object-cover scale-125 blur-3xl transition-opacity duration-700 ${showVideo ? 'opacity-0' : 'opacity-50'}`} />}
           <VideoGlow videoRef={videoRef} active={showVideo} />
-          <div className={`absolute inset-0 transition-colors duration-700 ${showVideo ? 'bg-black/20' : 'bg-black/40'}`} />
+          <div className={`absolute inset-0 transition-colors duration-700 ${showVideo ? 'bg-transparent' : 'bg-black/40'}`} />
           <AnimatePresence>
             {showCoverCard && (
               <motion.div key={`cover-${currentTrack.id}`} className="absolute inset-0 flex flex-col items-center justify-center gap-7"
@@ -374,60 +374,72 @@ export default function MusicVideoPlayer({ compact = false }) {
 }
 
 /**
- * The bars around a video that doesn't fill the screen, in the video's own
- * colours: a few times a second the frame is drawn into a tiny canvas
- * (32 px wide) laid out like the screen, the video where it sits and each
- * bar continuing the strip of the video next to it, then stretched behind
- * the video, smooth by scaling alone. No second video, no blur filter, no
- * pixels read back (so a video from another origin works too); it only
- * draws while the video is shown and the window is visible.
+ * YouTube's "ambient mode": a soft, blurred glow of the picture around the
+ * video, fading into black. About ten times a second the whole frame is
+ * blended into a 64×36 canvas (blurred there, at that size, which costs next
+ * to nothing), so the colours drift from scene to scene instead of jumping.
+ * The canvas is stretched a little larger than the video and centred behind
+ * it, its edges faded out. No second video, no full-screen blur filter, no
+ * pixels read back (a video from another origin works too), and nothing is
+ * drawn while the window is hidden or the video is paused.
  */
-const GLOW_WIDTH = 32
-const GLOW_EVERY_MS = 250
-const EDGE = 0.08 // the share of the video next to a bar that the bar continues
+const AMBIENT_SIZE = [64, 36]
+const AMBIENT_EVERY_MS = 100
+const AMBIENT_BLEND = 0.18 // how much of each new frame goes in: the glow's fade between scenes
+const AMBIENT_SPREAD = 1.6 // the glow's size, from the video's: it reaches 30% of the video past each edge
+// Brightest at the video's edge, fading out to nothing at the glow's own edge.
+const EDGE_AT = ((AMBIENT_SPREAD - 1) / (2 * AMBIENT_SPREAD)) * 100
+const fade = direction => `linear-gradient(${direction}, transparent 0%, rgba(0,0,0,0.3) ${EDGE_AT * 0.45}%, #000 ${EDGE_AT}%, #000 ${100 - EDGE_AT}%, rgba(0,0,0,0.3) ${100 - EDGE_AT * 0.45}%, transparent 100%)`
+const AMBIENT_FADE = `${fade('to right')}, ${fade('to bottom')}`
 
 export function VideoGlow({ videoRef, active }) {
   const canvasRef = useRef(null)
   const [drawn, setDrawn] = useState(false)
+  const [box, setBox] = useState(null) // the video's picture on screen: { width, height }
   useEffect(() => {
     if (!active) { setDrawn(false); return undefined }
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d', { alpha: false })
     if (!context) return undefined
     let last = null
+    let first = true
+    // Where the picture is: object-contain inside the full-screen element.
+    const measure = () => {
+      const video = videoRef.current
+      if (!video?.videoWidth) return
+      const scale = Math.min(window.innerWidth / video.videoWidth, window.innerHeight / video.videoHeight)
+      setBox(current => {
+        const next = { width: Math.round(video.videoWidth * scale), height: Math.round(video.videoHeight * scale) }
+        return current && current.width === next.width && current.height === next.height ? current : next
+      })
+    }
     const draw = () => {
       const video = videoRef.current
       if (document.hidden || !video || video.readyState < 2 || !video.videoWidth) return
-      // Paused: the frame doesn't change, nothing to redraw.
       if (video.paused && last === video.currentTime) return
-      const box = canvas.getBoundingClientRect()
-      if (!box.width || !box.height) return
-      const W = GLOW_WIDTH
-      const H = Math.max(2, Math.round(W * box.height / box.width))
-      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H }
-      const vw = video.videoWidth, vh = video.videoHeight
-      const scale = Math.min(W / vw, H / vh)
-      const dw = vw * scale, dh = vh * scale, dx = (W - dw) / 2, dy = (H - dh) / 2
       try {
-        context.drawImage(video, dx, dy, dw, dh)
-        if (dy > 0.01) { // bars above and below: the top and bottom strips, stretched
-          context.drawImage(video, 0, 0, vw, vh * EDGE, dx, 0, dw, dy)
-          context.drawImage(video, 0, vh * (1 - EDGE), vw, vh * EDGE, dx, dy + dh, dw, H - dy - dh)
-        }
-        if (dx > 0.01) { // bars at the sides: the left and right strips
-          context.drawImage(video, 0, 0, vw * EDGE, vh, 0, dy, dx, dh)
-          context.drawImage(video, vw * (1 - EDGE), 0, vw * EDGE, vh, dx + dw, dy, W - dx - dw, dh)
-        }
+        context.filter = 'blur(4px) saturate(1.4)'
+        context.globalAlpha = first ? 1 : AMBIENT_BLEND
+        context.drawImage(video, -4, -4, canvas.width + 8, canvas.height + 8)
+        first = false
         last = video.currentTime
+        measure()
         setDrawn(true)
       } catch {}
     }
     draw()
-    const timer = setInterval(draw, GLOW_EVERY_MS)
-    return () => clearInterval(timer)
+    const timer = setInterval(draw, AMBIENT_EVERY_MS)
+    window.addEventListener('resize', measure)
+    return () => { clearInterval(timer); window.removeEventListener('resize', measure) }
   }, [active, videoRef])
   return (
-    <canvas ref={canvasRef} width={GLOW_WIDTH} height={18} aria-hidden
-      className={`absolute inset-0 h-full w-full transition-opacity duration-700 ${active && drawn ? 'opacity-100' : 'opacity-0'}`} />
+    <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+      <canvas ref={canvasRef} width={AMBIENT_SIZE[0]} height={AMBIENT_SIZE[1]}
+        style={box ? {
+          width: box.width * AMBIENT_SPREAD, height: box.height * AMBIENT_SPREAD,
+          WebkitMaskImage: AMBIENT_FADE, maskImage: AMBIENT_FADE, WebkitMaskComposite: 'source-in', maskComposite: 'intersect',
+        } : { width: '100%', height: '100%' }}
+        className={`flex-shrink-0 transition-opacity duration-1000 ${active && drawn && box ? 'opacity-75' : 'opacity-0'}`} />
+    </div>
   )
 }
