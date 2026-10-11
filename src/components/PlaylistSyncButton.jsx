@@ -17,7 +17,7 @@ function ago(time) {
   return hours < 24 ? `synced ${hours} h ago` : `synced ${new Date(time).toLocaleDateString()}`
 }
 
-export default function PlaylistSyncButton({ playlistId, userId, className = '' }) {
+export default function PlaylistSyncButton({ playlistId, userId, className = '', buttonClassName = '' }) {
   const [status, setStatus] = useState(null)
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
@@ -57,14 +57,24 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '' 
     setOpen(false); refresh()
   }
 
+  // With `buttonClassName`: icon buttons (the playlist toolbar), the details in their tooltips.
   const pill = 'flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40'
+  const syncTitle = `Sync with ${status.platformLabel}${status.title ? ` · ${status.title}` : ''} · ${ago(status.syncedAt)}. Adds songs added there since the last sync; nothing is removed.`
+  const linkTitle = 'Link to a playlist on Spotify, Tidal, Apple Music or Qobuz'
   return <>
-    {status.linked
-      ? <button onClick={sync} disabled={busy} title={`${status.platformLabel}${status.title ? ` · ${status.title}` : ''} · ${ago(status.syncedAt)}. Adds songs added there since the last sync; nothing is removed.`} className={`${pill} ${className}`}>
-          <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />Sync<span className="text-xs font-normal text-muted">{status.platformLabel} · {ago(status.syncedAt).replace('synced ', '')}</span>
-        </button>
-      : <button onClick={() => setOpen(true)} title="Link to a playlist on Spotify, Tidal, Apple Music or Qobuz" className={`${pill} ${className}`}><Link2 size={15} />Link playlist</button>}
-    {status.linked && <button onClick={() => setOpen(true)} title="Linked playlist settings" aria-label="Linked playlist settings" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-elevated text-muted hover:text-white"><Link2 size={15} /></button>}
+    {buttonClassName
+      ? <>
+          {status.linked && <button type="button" onClick={sync} disabled={busy} title={syncTitle} aria-label={`Sync with ${status.platformLabel}`} className={buttonClassName}><RefreshCw size={17} className={busy ? 'animate-spin' : ''} /></button>}
+          <button type="button" onClick={() => setOpen(true)} title={status.linked ? 'Linked playlist settings' : linkTitle} aria-label={status.linked ? 'Linked playlist settings' : 'Link playlist'} className={buttonClassName}><Link2 size={17} /></button>
+        </>
+      : <>
+          {status.linked
+            ? <button onClick={sync} disabled={busy} title={syncTitle} className={`${pill} ${className}`}>
+                <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />Sync<span className="text-xs font-normal text-muted">{status.platformLabel} · {ago(status.syncedAt).replace('synced ', '')}</span>
+              </button>
+            : <button onClick={() => setOpen(true)} title={linkTitle} className={`${pill} ${className}`}><Link2 size={15} />Link playlist</button>}
+          {status.linked && <button onClick={() => setOpen(true)} title="Linked playlist settings" aria-label="Linked playlist settings" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-elevated text-muted hover:text-white"><Link2 size={15} /></button>}
+        </>}
     <Modal open={open} onClose={() => setOpen(false)} title={status.linked ? 'Linked playlist' : 'Link a streaming playlist'}>
       <div className="space-y-4 px-5 pb-5 pt-4 sm:px-6">
         {status.linked ? <>
