@@ -962,8 +962,8 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   const upgradable = !isGhost && canGetLossless(track)
                   const unread = track.lossless === null || track.lossless === undefined
                   const why = upgradable ? `Get it in lossless${unread ? ' (quality not read yet)' : formatLabel(track) ? ` (now ${formatLabel(track)})` : ''}`
-                    : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
-                      : track.missing ? 'Get it in lossless: the file is missing'
+                    : track.missing ? 'Get it in lossless: the file is missing'
+                      : isStreamed(track) || isGhost ? 'Get it in lossless: save it to your library first'
                         : `Already lossless${formatLabel(track) ? ` (${formatLabel(track)})` : ''}`
                   return (
                     <button onClick={e => { e.stopPropagation(); if (upgradable) openLossless(track) }}
