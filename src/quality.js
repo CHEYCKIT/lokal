@@ -125,6 +125,17 @@ export function losslessMenuItem(track, icon) {
   return canGetLossless(track) ? { label: 'Get it in lossless…', icon, onSelect: () => openLossless(track) } : null
 }
 
+/** "Get N songs in lossless…" for a selection, or null when none of it can be upgraded. */
+export function losslessManyMenuItem(tracks, icon) {
+  const count = (tracks || []).filter(canGetLossless).length
+  return count ? { label: `Get ${count} song${count === 1 ? '' : 's'} in lossless…`, icon, onSelect: () => openLosslessMany(tracks) } : null
+}
+
+/** Open "Get it in lossless" for several songs at once (BulkLosslessModal, in App). */
+export function openLosslessMany(tracks) {
+  window.dispatchEvent(new CustomEvent('lokal:lossless-many', { detail: tracks }))
+}
+
 /** Open "Get it in lossless" for a track (the dialog lives in App). */
 export function openLossless(track) {
   window.dispatchEvent(new CustomEvent('lokal:lossless', { detail: track }))

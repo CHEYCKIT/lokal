@@ -34,6 +34,7 @@ import Recap from './pages/Recap'
 import Quality from './pages/Quality'
 import Radio from './pages/Radio'
 import LosslessModal from './components/LosslessModal'
+import BulkLosslessModal from './components/BulkLosslessModal'
 import SmartPlaylistModal from './components/SmartPlaylistModal'
 import ImportPlaylistModal from './components/ImportPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
@@ -2414,6 +2415,7 @@ export default function App() {
             <AuthModal />
             <ProfileModal />
             <AddToPlaylistModal />
+            <BulkLosslessModal />
             <LosslessModal />
             <SmartPlaylistModal />
             <ImportPlaylistModal />

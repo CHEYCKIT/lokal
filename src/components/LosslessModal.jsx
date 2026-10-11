@@ -11,25 +11,11 @@ import { ExternalLink, Search, Activity, ShoppingBag, Gift, Loader2, BookOpen, B
 import Modal from './Modal'
 import { api } from '../api'
 import { TIERS, tierOf, isSuspect, formatLabel, verdictText, storeSearches } from '../quality'
-import { downloadGhostResult, differentDuration } from '../ghostDownloads'
+import { downloadGhostResult } from '../ghostDownloads'
+import { replacementSources, searchReplacements } from '../losslessReplacements'
 import AddonSetupNotice from './AddonSetupNotice'
 
-const LOSSLESS_HINT = /lossless|flac|hi-?res|24[ -]?bit|alac|wav|cd quality|16[ -]?bit/i
-// A result an addon labels lossy is no upgrade, however well it matches.
-const LOSSY_HINT = /\b(mp3|aac|ogg|opus|vorbis|m4a|\d{2,3}\s?k(?:bps)?|low|normal|high quality)\b/i
 const fmtTime = s => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`
-const plainText = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-
-/** Closest to the song first: same title and artist, near its length, marked lossless. */
-export function rankReplacements(track, items) {
-  const title = plainText(track.title), artist = plainText(String(track.artist || '').split(/\s*,\s*/)[0])
-  const score = item => (plainText(item.title) === title ? 4 : plainText(item.title).includes(title) ? 2 : 0)
-    + (plainText(item.artist).includes(artist) ? 3 : 0)
-    + (!differentDuration(track, item) ? 2 : 0)
-    + (LOSSLESS_HINT.test(String(item.quality || '')) ? 1 : 0)
-  const lossy = item => { const quality = String(item.quality || ''); return !!quality && LOSSY_HINT.test(quality) && !LOSSLESS_HINT.test(quality) }
-  return items.filter(item => !item.preview && !lossy(item) && score(item) >= 5).sort((a, b) => score(b) - score(a))
-}
 
 function LinkRow({ link }) {
   const Icon = link.kind === 'free' ? Gift : link.kind === 'search' ? Search : link.kind === 'info' ? BookOpen : ShoppingBag
@@ -84,19 +70,9 @@ export default function LosslessModal() {
     let alive = true
     setOnline(null); setSetup([]); setReplaced(''); setReplacing('')
     ;(async () => {
-      const providers = await Promise.resolve(api.onlineProviders?.()).catch(() => null)
-      const addons = (Array.isArray(providers) ? providers : []).filter(p => p.addon)
-      if (alive) setSetup(addons.filter(p => p.needsSetup))
-      const usable = addons.filter(p => !p.needsSetup)
-      const query = [String(track.artist || '').split(/\s*,\s*/)[0], track.title].filter(Boolean).join(' ')
-      const groups = await Promise.all(usable.map(async source => {
-        try {
-          const response = await api.onlineSearch(query, source.id)
-          if (response?.error) throw new Error(response.error)
-          const rows = Array.isArray(response) ? response : response?.results || []
-          return { source, items: rankReplacements(track, rows.map(item => ({ ...item, provider: item.provider || source.id }))).slice(0, 3) }
-        } catch (error) { return { source, items: [], error: error.message } }
-      }))
+      const { usable, setup: needsSetup } = await replacementSources(api)
+      if (alive) setSetup(needsSetup)
+      const groups = await searchReplacements(track, usable, api)
       if (alive) setOnline(groups)
     })()
     return () => { alive = false }
