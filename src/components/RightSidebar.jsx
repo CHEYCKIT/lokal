@@ -385,16 +385,26 @@ export default function RightSidebar() {
 
                   {fx && contextBlock}
 
-                  {currentTrack && (
-                    <div className="flex gap-2">
-                      <button onClick={toggleFullscreen} className={fx ? btnFx : btnClassic}>
-                        <Disc3 size={11} /> Full Screen
-                      </button>
-                      <button onClick={toggleLyricsFullscreen} className={fx ? btnFx : btnClassic}>
-                        <Mic2 size={11} /> Lyrics
-                      </button>
-                    </div>
-                  )}
+                  {/* Full screen and Lyrics always; Music Video and the canvas
+                      switch only when this song has one. An odd one out spans the row. */}
+                  {currentTrack && (() => {
+                    const btn = `${fx ? btnFx : btnClassic} min-w-0 px-2 whitespace-nowrap`
+                    const actions = [
+                      <button key="full" onClick={toggleFullscreen} className={btn}><Disc3 size={11} className="flex-shrink-0" /> <span className="truncate">Full Screen</span></button>,
+                      <button key="lyrics" onClick={toggleLyricsFullscreen} className={btn}><Mic2 size={11} className="flex-shrink-0" /> <span className="truncate">Lyrics</span></button>,
+                      musicVideo && <button key="video" onClick={showMusicVideo} title="Play the official music video, in time with the song" className={btn}><Clapperboard size={11} className="flex-shrink-0" /> <span className="truncate">Music Video</span></button>,
+                      clipNow && (
+                        <button key="clip" onClick={() => setCoverOff(!coverOff)} aria-pressed={coverOff}
+                          title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
+                          className={btn}><Film size={11} className="flex-shrink-0" /> <span className="truncate">{coverOff ? `Show ${clipName}` : `Hide ${clipName}`}</span></button>
+                      ),
+                    ].filter(Boolean)
+                    return (
+                      <div className="grid grid-cols-2 gap-2" aria-label="Song actions">
+                        {actions.map((action, i) => i === actions.length - 1 && actions.length % 2 ? <div key={action.key} className="col-span-2 flex">{action}</div> : <div key={action.key} className="flex min-w-0">{action}</div>)}
+                      </div>
+                    )
+                  })()}
 
                   {currentTrack && (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
@@ -413,27 +423,6 @@ export default function RightSidebar() {
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
                       {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
                       <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
-                    </div>
-                  )}
-                  <AnimatePresence initial={false}>
-                    {currentTrack && musicVideo && (
-                      <motion.div key="music-video" className="flex"
-                        initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                        <button onClick={showMusicVideo} title="Play the official music video, in time with the song" className={fx ? btnFx : btnClassic}>
-                          <Clapperboard size={11} /> Music Video
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  {currentTrack && clipNow && (
-                    <div className="flex">
-                      <button
-                        onClick={() => setCoverOff(!coverOff)}
-                        aria-pressed={coverOff}
-                        title={coverOff ? `Show the ${clipName.toLowerCase()} for this song again` : `Show the still cover for this song, here and in full screen`}
-                        className={fx ? btnFx : btnClassic}>
-                        <Film size={11} /> {coverOff ? `Show ${clipName}` : `Hide ${clipName}`}
-                      </button>
                     </div>
                   )}
                 </div>
