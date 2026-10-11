@@ -32,6 +32,13 @@ const MAX_BYTES = 2 * 1024 * 1024
 const SEARCH_TTL_MS = 5 * 60 * 1000
 const STREAM_TTL_MS = 20 * 60 * 1000
 const ADAPTIVE = /\.(mpd|m3u8)(?:$|[?#])/i
+// "manifest": a DASH/HLS manifest (inline or a link) the stream needs. Some
+// addons always send the field, with "none" (or false / "") when the link is
+// a plain file.
+const NO_MANIFEST = new Set(['', 'none', 'null', 'false', '0'])
+const needsManifest = manifest => manifest != null && manifest !== false && !NO_MANIFEST.has(String(manifest).trim().toLowerCase())
+// Without a "format": what the quality says (a lossless Qobuz/TIDAL file is FLAC).
+const FORMAT_BY_QUALITY = { lossless: 'flac', hi_res: 'flac', hi_res_lossless: 'flac', hires: 'flac' }
 
 // Lokal says who it is (like BitChord's "BitChord"), so an addon's author can
 // allow it; it never pretends to be another app.
@@ -415,8 +422,9 @@ async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
     .then(json => {
       let url
       try { url = checkUrl(json.url).toString() } catch { throw new Error('The addon gave no playable link for this track.') }
-      if (ADAPTIVE.test(url) || json.manifest) throw new Error('This addon streams in a format Lokal cannot play yet (DASH/HLS).')
-      const format = String(json.format || '').toLowerCase()
+      if (ADAPTIVE.test(url) || needsManifest(json.manifest)) throw new Error('This addon streams in a format Lokal cannot play yet (DASH/HLS).')
+      if (json.encrypted === true) throw new Error('This addon only gave an encrypted stream for this track, which Lokal cannot play.')
+      const format = String(json.format || FORMAT_BY_QUALITY[String(json.quality || '').toLowerCase()] || '').toLowerCase()
       const expires = Number(json.expiresAt) > 0 ? Number(json.expiresAt) * (Number(json.expiresAt) < 1e12 ? 1000 : 1) - 60000 : Date.now() + STREAM_TTL_MS
       const stream = { url, headers: {}, mime: MIME[format] || 'audio/*', expiresAt: Math.max(Date.now() + 30000, expires), format: format || null, quality: json.quality || null }
       if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)
