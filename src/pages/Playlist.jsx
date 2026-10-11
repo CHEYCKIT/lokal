@@ -1,24 +1,19 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Image as ImageIcon, AlertCircle, Search, Download, Sparkles, SlidersHorizontal, Share2 } from 'lucide-react'
+import { Heart, Music, Play, Shuffle, Trash2, Edit2, Check, X, RefreshCw, Image as ImageIcon, AlertCircle, Search, Sparkles, SlidersHorizontal, Share2 } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import PlaylistCover from '../components/PlaylistCover'
-import Modal from '../components/Modal'
 import { api } from '../api'
 import { describeRules, openSmartPlaylistEditor } from '../smartPlaylists'
 import { openShareCard, coversOf } from '../shareCard'
 import { makePlaylistContext } from '../playbackContext'
 import { isPlayable } from '../onlineTracks'
 import { plural } from '../plural'
-import { downloadGhostSongs, ghostDownloadMessage, downloadGhostResult as queueGhostResult, ghostDownloadSuggestions } from '../ghostDownloads'
-import { showLoadingToast } from '../components/Toaster'
 import { useCachedState, usePageReady } from '../pageCache'
-import HoverScrollTitle from '../components/HoverScrollTitle'
 import PlaylistSyncButton from '../components/PlaylistSyncButton'
-import { useGhostDownloadSources } from '../components/useGhostDownloadSources'
-import { useGhostDurationConfirmation } from '../components/useGhostDurationConfirmation'
+import GhostSongsModal from '../components/GhostSongsModal'
 import { usePlaylistSortStore, playlistSortPreference } from '../store/playlistSort'
 import { sortPlaylistTracks } from '../playlistSorting'
 import { filterPlaylistTracks } from '../playlistSearch'
@@ -58,15 +53,6 @@ export default function Playlist() {
   const playlistSearchRef = useRef(null)
   const visibleTracks = useMemo(() => filterPlaylistTracks(sortedTracks, playlistSearch), [sortedTracks, playlistSearch])
   const [showResolveGhosts, setShowResolveGhosts] = useState(false)
-  const { confirmDuration, durationChoice, isCurrent: ghostResolverOpen } = useGhostDurationConfirmation(showResolveGhosts)
-  const { source: ghostSource, sourceChoice } = useGhostDownloadSources(showResolveGhosts)
-  const ghostSearchSequence = useRef(0)
-  const [selectedGhostKey, setSelectedGhostKey] = useState(null)
-  const [ghostQuery, setGhostQuery] = useState('')
-  const [ghostLocalResults, setGhostLocalResults] = useState([])
-  const [ghostDownloadResults, setGhostDownloadResults] = useState([])
-  const [ghostSearchLoading, setGhostSearchLoading] = useState(false)
-  const [ghostActionStatus, setGhostActionStatus] = useState('')
   const playQueue = usePlayerStore(s => s.playQueue)
   const location = useLocation()
   // load() below re-fetches on every id change but doesn't clear `playlist`
@@ -106,8 +92,6 @@ export default function Playlist() {
   // file). Streamed songs (a saved YouTube Music mix...) are ghost rows too,
   // but they play, so they aren't missing anything.
   const ghostTracks = useMemo(() => tracks.filter(track => String(track.file_path || '').startsWith('ghost://') && !isPlayable(track)), [tracks])
-  const getGhostKey = useCallback((track) => String(track?.playlist_track_id || track?.added_at || track?.id || ''), [])
-  const selectedGhost = ghostTracks.find(track => getGhostKey(track) === selectedGhostKey) || ghostTracks[0] || null
 
   // A smart playlist fills itself from its rules: no adding, removing or reordering by hand.
   const smart = !isLiked && !!playlist?.smart_rules
@@ -176,16 +160,8 @@ export default function Playlist() {
     }
   }, [id, load, nav])
 
-  useEffect(() => {
-    if (!ghostTracks.length) {
-      setSelectedGhostKey(null)
-      setShowResolveGhosts(false)
-      return
-    }
-    if (!selectedGhostKey || !ghostTracks.some(track => getGhostKey(track) === selectedGhostKey)) {
-      setSelectedGhostKey(getGhostKey(ghostTracks[0]))
-    }
-  }, [ghostTracks, selectedGhostKey, getGhostKey])
+  // Every ghost song resolved: nothing left to show.
+  useEffect(() => { if (!ghostTracks.length) setShowResolveGhosts(false) }, [ghostTracks.length])
 
   const removeTrack = async (track) => {
     await api.removeFromPlaylist(id, track.playlist_track_id)
@@ -303,121 +279,6 @@ export default function Playlist() {
     const updated = await api.updatePlaylist(id, { clearCover: true })
     if (updated?.id) setPlaylist(updated)
     window.dispatchEvent(new CustomEvent('lokal:playlist-updated', { detail: { playlistId: id } }))
-  }
-
-  const searchGhostMatches = useCallback(async (ghostTrack, queryOverride = '') => {
-    const title = String(ghostTrack?.title || '').trim()
-    // Online, the artist goes with the title: "Thinking of You" alone finds
-    // every song called that (Katy Perry, Sister Sledge...) before Salasa's.
-    const fallbackQuery = [ghostTrack?.artist, title].map(part => String(part || '').trim()).filter(Boolean).join(' ')
-    const query = String(queryOverride || fallbackQuery).trim()
-    const sequence = ++ghostSearchSequence.current
-    if (!ghostTrack || !query || !ghostSource) {
-      setGhostLocalResults([])
-      setGhostDownloadResults([])
-      return
-    }
-    setGhostQuery(query)
-    setGhostSearchLoading(true)
-    setGhostDownloadResults([])
-    setGhostActionStatus('')
-    try {
-      const [localResult, downloadResults] = await Promise.all([
-        // Local copies may be tagged differently: the title finds them.
-        api.searchTracks(queryOverride ? query : title || query),
-        ghostDownloadSuggestions(query, ghostSource),
-      ])
-      if (sequence !== ghostSearchSequence.current) return
-      const localTracks = Array.isArray(localResult?.tracks)
-        ? localResult.tracks
-        : Array.isArray(localResult)
-          ? localResult
-          : []
-      const downloadTracks = Array.isArray(downloadResults?.results)
-        ? downloadResults.results
-        : Array.isArray(downloadResults)
-          ? downloadResults
-          : []
-      setGhostLocalResults(localTracks.filter(track => !String(track.file_path || '').startsWith('ghost://')).slice(0, 8))
-      setGhostDownloadResults(downloadTracks.slice(0, 8))
-    } catch (e) {
-      if (sequence !== ghostSearchSequence.current) return
-      setGhostLocalResults([])
-      setGhostDownloadResults([])
-      setGhostActionStatus('Search failed: ' + e.message)
-    } finally {
-      if (sequence === ghostSearchSequence.current) setGhostSearchLoading(false)
-    }
-  }, [ghostSource])
-
-  useEffect(() => {
-    if (!showResolveGhosts || !selectedGhost) {
-      setGhostQuery('')
-      setGhostLocalResults([])
-      setGhostDownloadResults([])
-      setGhostSearchLoading(false)
-      setGhostActionStatus('')
-      return
-    }
-    searchGhostMatches(selectedGhost)
-    return () => { ghostSearchSequence.current++ }
-  }, [showResolveGhosts, selectedGhost, searchGhostMatches])
-
-  const assignGhostTrack = async (ghostTrackId, targetTrackId) => {
-    setGhostActionStatus('Assigning track...')
-    try {
-      const result = await api.resolveGhostTrack(ghostTrackId, targetTrackId)
-      if (result?.error) {
-        setGhostActionStatus('Assign failed: ' + result.error)
-        return
-      }
-      setGhostActionStatus('Assigned successfully.')
-      const remainingGhosts = ghostTracks.filter(track => track.id !== ghostTrackId)
-      setSelectedGhostKey(remainingGhosts[0] ? getGhostKey(remainingGhosts[0]) : null)
-      setGhostLocalResults([])
-      setGhostDownloadResults([])
-      setGhostQuery('')
-      load()
-      window.dispatchEvent(new Event('lokal:refresh'))
-      window.dispatchEvent(new CustomEvent('lokal:playlist-updated', { detail: { playlistId: id } }))
-    } catch (e) {
-      setGhostActionStatus('Assign failed: ' + e.message)
-    }
-  }
-
-  // Every ghost song, found on the playback sources and downloaded (or swapped
-  // for the library copy at once when there is one).
-  const [downloadingGhosts, setDownloadingGhosts] = useState(false)
-  const downloadAllGhosts = async () => {
-    if (downloadingGhosts || !ghostTracks.length) return
-    setDownloadingGhosts(true)
-    const toast = showLoadingToast('Finding the songs not in your library…')
-    try {
-      const result = await downloadGhostSongs(ghostTracks, { confirmDuration, isCurrent: ghostResolverOpen, onProgress: message => toast.update(message) })
-      toast.close(ghostDownloadMessage(result))
-      if (result.existing) load()
-    } catch {
-      toast.close("Couldn't download the playlist's songs.")
-    } finally {
-      setDownloadingGhosts(false)
-    }
-  }
-
-  const downloadGhostResult = async (item) => {
-    if (!item) return
-    setGhostActionStatus('Starting download...')
-    try {
-      const result = await queueGhostResult(selectedGhost, item, { confirmDuration, isCurrent: ghostResolverOpen })
-      if (result?.cancelled) { setGhostActionStatus('Skipped.'); return }
-      if (result?.error) {
-        setGhostActionStatus('Download failed: ' + result.error)
-        return
-      }
-      setGhostActionStatus(result?.alreadyInLibrary ? 'Replaced with your library copy.' : 'Download started. This playlist entry will be replaced when it finishes.')
-      if (result?.alreadyInLibrary) load()
-    } catch (e) {
-      setGhostActionStatus('Download failed: ' + e.message)
-    }
   }
 
   return (
@@ -614,146 +475,7 @@ export default function Playlist() {
       )}
 
       {!isLiked && (
-        <Modal
-          open={showResolveGhosts}
-          onClose={() => setShowResolveGhosts(false)}
-          title="Ghost Songs"
-          width="max-w-5xl"
-        >
-          <div className="grid md:grid-cols-[260px_1fr] gap-4">
-            <div className="rounded-2xl border border-border bg-card/40 overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
-                <p className="text-xs font-display uppercase tracking-[0.24em] text-muted">Unresolved Tracks</p>
-                <button
-                  type="button"
-                  onClick={downloadAllGhosts}
-                  disabled={downloadingGhosts || !ghostTracks.length}
-                  title="Find and download every unresolved song"
-                  aria-label="Download all unresolved songs"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/15 px-2.5 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50"
-                >
-                  <Download size={12} /> {downloadingGhosts ? 'Finding…' : 'Download all'}
-                </button>
-              </div>
-              <div className="max-h-[28rem] overflow-y-auto divide-y divide-border">
-                {ghostTracks.map(track => {
-                  const trackKey = getGhostKey(track)
-                  const active = trackKey === (selectedGhost ? getGhostKey(selectedGhost) : '')
-                  return (
-                    <button
-                      key={trackKey}
-                      onClick={() => setSelectedGhostKey(trackKey)}
-                      className={`w-full text-left px-4 py-3 transition-colors ${active ? 'bg-accent/10' : 'hover:bg-elevated'}`}
-                    >
-                      <HoverScrollTitle title={track.title} className={`text-sm ${active ? 'text-accent' : 'text-white'}`} />
-                      <p className="text-xs text-muted truncate mt-1">{track.artist}</p>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-4 min-w-0">
-              {durationChoice}
-              {selectedGhost ? (
-                <>
-                  <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/5 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center flex-shrink-0">
-                        <AlertCircle size={18} className="text-yellow-200" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-white font-medium">{selectedGhost.title}</p>
-                        <p className="text-xs text-muted mt-1">{selectedGhost.artist}{selectedGhost.album ? ` · ${selectedGhost.album}` : ''}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      value={ghostQuery}
-                      onChange={e => setGhostQuery(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') searchGhostMatches(selectedGhost, e.currentTarget.value) }}
-                      placeholder="Search manually for a better match"
-                      className="flex-1 bg-card border border-border rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent/50"
-                    />
-                    <button
-                      onClick={() => searchGhostMatches(selectedGhost, ghostQuery)}
-                      className="px-3 py-2.5 rounded-xl bg-accent/15 border border-accent/25 text-accent text-sm hover:bg-accent/25 transition-colors flex items-center gap-2"
-                    >
-                      <Search size={14} /> Search
-                    </button>
-                  </div>
-
-                  <div className="grid lg:grid-cols-2 gap-4">
-                    <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-border">
-                        <p className="text-xs font-display uppercase tracking-[0.22em] text-muted">Nearest Local Matches</p>
-                      </div>
-                      <div className="divide-y divide-border">
-                        {ghostSearchLoading && (
-                          <div className="px-4 py-8 text-sm text-muted">Searching your library…</div>
-                        )}
-                        {!ghostSearchLoading && ghostLocalResults.map(item => (
-                          <div key={item.id} className="px-4 py-3 flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <HoverScrollTitle title={item.title} className="text-sm text-white" />
-                              <p className="text-xs text-muted truncate">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
-                            </div>
-                            <button
-                              onClick={() => assignGhostTrack(selectedGhost.id, item.id)}
-                              className="px-3 py-1.5 rounded-lg bg-accent/15 border border-accent/25 text-accent text-xs hover:bg-accent/25 transition-colors"
-                            >
-                              Assign
-                            </button>
-                          </div>
-                        ))}
-                        {!ghostSearchLoading && !ghostLocalResults.length && (
-                          <div className="px-4 py-8 text-sm text-muted">No close local matches yet.</div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-border">
-                        <p className="text-xs font-display uppercase tracking-[0.22em] text-muted mb-2">Download Suggestions</p>
-                        {sourceChoice}
-                      </div>
-                      <div className="divide-y divide-border">
-                        {ghostSearchLoading && (
-                          <div className="px-4 py-8 text-sm text-muted">Searching selected source…</div>
-                        )}
-                        {!ghostSearchLoading && ghostDownloadResults.map(item => (
-                          <div key={item.id || item.url} className="px-4 py-3 flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <HoverScrollTitle title={item.title} className="text-sm text-white" />
-                              <p className="text-xs text-muted truncate">{item.channel || item.artist || item.url}</p>
-                            </div>
-                            <button
-                              onClick={() => downloadGhostResult(item)}
-                              className="px-3 py-1.5 rounded-lg bg-accent/15 border border-accent/25 text-accent text-xs hover:bg-accent/25 transition-colors flex items-center gap-1.5"
-                            >
-                              <Download size={12} /> Download & replace
-                            </button>
-                          </div>
-                        ))}
-                        {!ghostSearchLoading && !ghostDownloadResults.length && (
-                          <div className="px-4 py-8 text-sm text-muted">No download suggestions yet.</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {ghostActionStatus && <p className="text-xs text-muted">{ghostActionStatus}</p>}
-                </>
-              ) : (
-                <div className="rounded-2xl border border-border bg-card/30 px-4 py-8 text-sm text-muted">
-                  This playlist has no ghost songs left to resolve.
-                </div>
-              )}
-            </div>
-          </div>
-        </Modal>
+        <GhostSongsModal open={showResolveGhosts} onClose={() => setShowResolveGhosts(false)} ghostTracks={ghostTracks} playlistId={id} onChanged={load} />
       )}
     </div>
   )
