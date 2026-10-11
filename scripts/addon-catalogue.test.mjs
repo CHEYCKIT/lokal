@@ -144,3 +144,17 @@ test("a CDN's old copy of the manifest is skipped; the saved address stays clean
   await addons.search(db, addons.list(db)[0].key, 'x y', { fetchImpl: async url => { urls.push(String(url)); return json({ tracks: [] }) } })
   assert.ok(urls[0].startsWith(`${BASE}/search?`) && !urls[0].includes('lokal_fresh'))
 })
+
+test('a plain stream link is played when the addon says "manifest": "none"; a real manifest or encryption is refused', async () => {
+  const db = memoryDb()
+  const { key } = await addons.install(db, `${BASE}/manifest.json`, { fetchImpl: async () => json(manifest('1.0.0', ['search', 'stream'])) })
+  const file = 'https://streaming.example/file?eid=1&fmt=6'
+  const stream = await addons.resolveStream(db, key, 'a', { fetchImpl: async () => json({ url: file, manifest: 'none', encrypted: false, quality: 'LOSSLESS' }) })
+  assert.equal(stream.url, file)
+  assert.equal(stream.format, 'flac')
+  assert.equal(stream.mime, 'audio/flac')
+  for (const none of [false, '', null]) await addons.resolveStream(db, key, `n${String(none)}`, { fetchImpl: async () => json({ url: file, manifest: none }) })
+  await assert.rejects(() => addons.resolveStream(db, key, 'b', { fetchImpl: async () => json({ url: file, manifest: 'PE1QRD4uLi48L01QRD4=' }) }), /DASH\/HLS/)
+  await assert.rejects(() => addons.resolveStream(db, key, 'c', { fetchImpl: async () => json({ url: 'https://streaming.example/x.m3u8', manifest: 'none' }) }), /DASH\/HLS/)
+  await assert.rejects(() => addons.resolveStream(db, key, 'd', { fetchImpl: async () => json({ url: file, manifest: 'none', encrypted: true }) }), /encrypted/)
+})
