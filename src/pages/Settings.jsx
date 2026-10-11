@@ -301,20 +301,6 @@ export default function Settings() {
   const [toolsStatus, setToolsStatusState] = useState(() => peekCache('settings:tools') || null)
   const setToolsStatus = (status) => { writeCache('settings:tools', status); setToolsStatusState(status) }
   const [toolsLoading, setToolsLoading] = useState(false)
-  const [soulseekCheck, setSoulseekCheck] = useState(null)
-  // Built in unless you set up your own slskd before this option existed.
-  const soulseekMode = settings.soulseek_mode || (settings.soulseek_api_key ? 'external' : 'builtin')
-  const testSoulseek = async () => {
-    setSoulseekCheck({ loading: true })
-    await api.saveSettings({
-      soulseek_mode: 'external',
-      soulseek_url: settings.soulseek_url || 'http://localhost:5030',
-      soulseek_api_key: settings.soulseek_api_key || '',
-      soulseek_downloads_dir: settings.soulseek_downloads_dir || '',
-    })
-    const status = await api.soulseekStatus().catch(e => ({ error: e.message }))
-    setSoulseekCheck(status || { error: 'No answer' })
-  }
   // ListenBrainz: its token is saved only once ListenBrainz confirms it.
   const [lbStatus, setLbStatus] = useState(null)
   const [cacheInfo, setCacheInfo] = useState(null) // { motion, playback, musicVideo, web, limit, limits } | { busy }
@@ -1621,71 +1607,12 @@ activeCategory === 'data' ? usersTried
           <p className="text-xs text-muted leading-relaxed">
             Search and download from Soulseek, a peer-to-peer network where lossless (FLAC) copies are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you're allowed to.
           </p>
-          {/* Built in: sign in and Lokal runs the Soulseek client (slskd) itself.
-              Your own slskd: the address and API key of one you run. */}
-          <div role="radiogroup" aria-label="Soulseek client" className="flex w-fit items-center gap-1 rounded-xl border border-border bg-card/60 p-1">
-            {[['builtin', 'Built in'], ['external', 'My own slskd']].map(([id, label]) => (
-              <button key={id} role="radio" aria-checked={soulseekMode === id}
-                onClick={async () => {
-                  set('soulseek_mode', id)
-                  await api.saveSettings({ soulseek_mode: id }).catch(() => {})
-                  if (id === 'external') api.soulseekDisconnect().catch(() => {})
-                  setSoulseekCheck(null)
-                }}
-                className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${soulseekMode === id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}>{label}</button>
-            ))}
-          </div>
-          {soulseekMode === 'builtin' ? (
-            api.isElectron
-              ? <>
-                  <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">slskd</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
-                  <SoulseekSignIn settings={settings} set={set} />
-                </>
-              : <p className="text-xs text-muted">The built-in Soulseek client runs with the desktop app. Here, use your own slskd.</p>
-          ) : (<>
-          <p className="text-xs text-muted leading-relaxed">
-            Lokal talks to <span className="text-white">slskd</span>, a Soulseek client you run alongside it (github.com/slskd/slskd), using an API key from its config
-            (<span className="font-mono text-[11px]">web.authentication.api_keys</span>). slskd shares folders back by default.
-          </p>
-          <Row label="slskd Address" desc="The address of your slskd app.">
-            <input value={settings.soulseek_url || ''} onChange={e => set('soulseek_url', e.target.value)}
-              placeholder="http://localhost:5030" spellCheck={false}
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-          <Row label="API Key">
-            <input type="password" value={settings.soulseek_api_key || ''} onChange={e => set('soulseek_api_key', e.target.value)}
-              placeholder="From slskd.yml" spellCheck={false} autoComplete="off"
-              className="w-56 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-          </Row>
-          <Row label="slskd Downloads Folder" desc="Where slskd saves files, as this computer sees it. Only needed when slskd runs in Docker or on another machine.">
-            <div className="flex items-center gap-2">
-              <input value={settings.soulseek_downloads_dir || ''} onChange={e => set('soulseek_downloads_dir', e.target.value)}
-                placeholder="Automatic" spellCheck={false}
-                className="w-48 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-              {api.isElectron && (
-                <button onClick={async () => { const f = await api.openFolder(); if (f) set('soulseek_downloads_dir', f) }}
-                  className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
-                  <FolderOpen size={14} />
-                </button>
-              )}
-            </div>
-          </Row>
-          <div className="flex items-center gap-3">
-            <button onClick={testSoulseek} disabled={soulseekCheck?.loading}
-              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-              {soulseekCheck?.loading ? 'Checking...' : 'Save & Test'}
-            </button>
-            {soulseekCheck && !soulseekCheck.loading && (
-              soulseekCheck.error
-                ? <p className="text-xs text-red-400">{soulseekCheck.error}</p>
-                : <p className={`text-xs ${soulseekCheck.loggedIn ? 'text-green-400' : 'text-yellow-300'}`}>
-                    {soulseekCheck.loggedIn ? `Connected${soulseekCheck.username ? ` as ${soulseekCheck.username}` : ''}` : `The API key works, but slskd isn't logged in to Soulseek${soulseekCheck.serverState ? ` (${soulseekCheck.serverState})` : ''}. Check the soulseek: username and password in slskd.yml, and slskd's own page.`}
-                    {soulseekCheck.version ? ` · slskd ${soulseekCheck.version}` : ''}
-                    {soulseekCheck.downloadsDir && !soulseekCheck.downloadsDirReachable ? ` · Lokal can't see ${soulseekCheck.downloadsDir}; set the folder above` : ''}
-                  </p>
-            )}
-          </div>
-          </>)}
+          {api.isElectron
+            ? <>
+                <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">slskd</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
+                <SoulseekSignIn settings={settings} set={set} />
+              </>
+            : <p className="text-xs text-muted">Soulseek runs with the Lokal desktop app.</p>}
         </Section>
       )}
 

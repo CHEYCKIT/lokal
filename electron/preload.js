@@ -223,6 +223,8 @@ contextBridge.exposeInMainWorld('electron', {
   soulseekClient: () => invoke('soulseek:client'),
   soulseekConnect: () => invoke('soulseek:connect'),
   soulseekDisconnect: () => invoke('soulseek:disconnect'),
+  soulseekCheckUpdate: () => invoke('soulseek:checkUpdate'),
+  soulseekUpdate: () => invoke('soulseek:update'),
   onSoulseekClient: (fn) => on('soulseek:clientStatus', fn),
   qualitySummary: () => invoke('quality:summary'),
   qualityList: (opts) => invoke('quality:list', opts),

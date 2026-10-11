@@ -199,7 +199,7 @@ function registerDownloaderHandlers(ipcMain) {
     return playableCopy(known.file_path, { ffmpeg: findFfmpeg(), cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
   })
 
-  // Soulseek, through slskd: the user's own, or the one Lokal runs (built in).
+  // Soulseek, through the slskd Lokal runs (slskdManaged.js).
   const slskdSettings = () => manager().settings()
   slskd.useManaged({
     connect: settings => soulseekClient().ensureRunning(soulseekAccount(settings)),
@@ -213,14 +213,17 @@ function registerDownloaderHandlers(ipcMain) {
   ipcMain.handle('soulseek:finishSearch', wrap((_, id) => slskd.finishSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:stopSearch', wrap((_, id) => slskd.stopSearch(slskdSettings(), id)))
   ipcMain.handle('soulseek:download', (_, file = {}, opts = {}) => enqueueSoulseek(file, opts))
-  // Settings → Soulseek, built in: sign in (download and start the client), sign out.
+  // Settings → Soulseek: sign in (download and start the client), sign out,
+  // and update the client to slskd's latest release.
   ipcMain.handle('soulseek:client', () => soulseekClient().status())
   ipcMain.handle('soulseek:connect', wrap(async () => {
-    const settings = { ...slskdSettings(), soulseek_mode: 'builtin' }
+    const settings = slskdSettings()
     await soulseekClient().ensureRunning(soulseekAccount(settings))
     return slskd.status(settings)
   }))
   ipcMain.handle('soulseek:disconnect', wrap(async () => { await managedSoulseek?.stop(); return { ok: true } }))
+  ipcMain.handle('soulseek:checkUpdate', wrap(() => soulseekClient().checkUpdate()))
+  ipcMain.handle('soulseek:update', wrap(() => soulseekClient().updateClient()))
 }
 
 // The built-in Soulseek client (slskdManaged.js), made on first use.
