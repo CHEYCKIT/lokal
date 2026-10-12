@@ -27,6 +27,7 @@ import ReleasesPanel from '../components/ReleasesPanel'
 import { onlineAlbumPath } from '../onlineBrowse'
 import UnfollowedArtists from '../components/UnfollowedArtists'
 import MadeForYou from '../components/MadeForYou'
+import FlowPanel from '../components/FlowPanel'
 import { madeForYou } from '../madeForYou'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -35,7 +36,9 @@ const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
 function homeRoute(pathname) {
   const parts = String(pathname || '').split('/').filter(Boolean)
   if (parts[0] !== 'home') return { tab: 'home', section: null }
-  return { tab: ['discovery', 'mixlab', 'releases', 'history'].includes(parts[1]) ? parts[1] : 'home', section: parts[2] || null }
+  // Mix became Flow: an old /home/mixlab (a remembered Home tab) opens Flow.
+  const tab = parts[1] === 'mixlab' ? 'flow' : parts[1]
+  return { tab: ['discovery', 'flow', 'releases', 'history'].includes(tab) ? tab : 'home', section: parts[2] || null }
 }
 
 function secureImage(value) {
@@ -178,29 +181,6 @@ function RecommendationSections({ data, localArtists, allArtists, source: select
   </div>
 }
 
-function MixPanel({ tracks, source, size, generating, error, saving, onSize, onGenerate, onPlay, onSave }) {
-  return <div className="space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><h2 className="flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><Radio size={14} className="text-accent" />Mix</h2><p className="mt-1 text-sm text-muted">A fresh {sourceName(source)} mix from your account recommendations.</p></div>
-      <div className="flex items-center gap-2">
-        <div className="flex gap-1 rounded-lg bg-card p-1">{[24, 32, 40].map(value => <button key={value} type="button" onClick={() => onSize(value)} disabled={generating} className={`rounded-md px-3 py-1.5 text-sm disabled:opacity-50 ${size === value ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{value}</button>)}</div>
-        <button onClick={() => onGenerate(size)} disabled={generating} className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-base disabled:opacity-50"><RefreshCw size={14} className={generating ? 'animate-spin' : ''} />{generating ? 'Refreshing…' : 'Regenerate'}</button>
-      </div>
-    </div>
-    {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
-    {tracks.length > 0 ? <section className="rounded-xl border border-border bg-elevated p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><p className="text-sm font-medium text-white">Your {tracks.length}-track mix</p><p className="mt-0.5 text-xs text-muted">Sampled from a fresh {sourceName(source)} recommendation pool.</p></div>
-        <div className="flex gap-2">
-          <button onClick={() => onPlay(tracks)} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs text-black"><Play size={13} fill="currentColor" />Play mix</button>
-          <button onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted hover:text-white disabled:opacity-50"><ListPlus size={13} />Save</button>
-        </div>
-      </div>
-      <TrackList tracks={tracks} reduceMotion context={{ type: 'mix', name: `${sourceName(source)} Mix` }} />
-    </section> : <p className="rounded-xl border border-border bg-elevated px-4 py-10 text-center text-sm text-muted">Choose a size and regenerate to build a {sourceName(source)} mix.</p>}
-  </div>
-}
-
 export default function Home() {
   const { user } = useAppStore()
   return <HomeContent key={user?.id || 'guest'} user={user} />
@@ -214,7 +194,7 @@ function HomeContent({ user }) {
   const [mixes, setMixes] = useCachedState(`home:mixes:${uidKey}`, [])
   const session = recommendationSession(uidKey)
   const sessionState = useSyncExternalStore(session.subscribe, session.getSnapshot)
-  const { data: discovery, mix: mixLab, source: recommendationSource, loading: discoveryLoading, error: discoveryError, generating: mixGenerating, mixError } = sessionState
+  const { data: discovery, source: recommendationSource, loading: discoveryLoading, error: discoveryError } = sessionState
   const [loaded, setLoaded, wasCached] = useCachedState(`home:loaded:${uidKey}`, false)
   usePageReady(loaded || wasCached)
   const location = useLocation()
@@ -564,13 +544,13 @@ function HomeContent({ user }) {
 
   return <div className="p-6 space-y-7 w-full max-w-6xl mx-auto pb-10">
     <div><h1 className="text-2xl font-display text-white">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}</h1><p className="text-sm text-muted mt-1">Your music, listening history, and recommendations</p></div>
-    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Local'], ['discovery', 'Discovery'], ['mixlab', 'Mix'], ['releases', 'Releases'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
+    <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Local'], ['discovery', 'Discovery'], ['flow', 'Flow'], ['releases', 'Releases'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
     <SectionSwap id={tab} className="space-y-10">
       {tab === 'history' ? <section>
         <SectionHeader icon={History} eyebrow="History" title="Listen History" count={localHistory.length} />
         {localHistory.length ? <TrackList tracks={localHistory} reduceMotion context={{ type: 'history', name: 'Listen History' }} /> : <p className="py-10 text-center text-sm text-muted">No listen history yet.</p>}
       </section>
-        : tab === 'mixlab' ? <MixPanel tracks={mixLab?.tracks || []} source={mixLab.source || recommendationSource} size={Number(mixLab?.size) || 32} error={mixError} generating={mixGenerating} saving={!!saving} onSize={session.setSize} onGenerate={session.generate} onPlay={tracks => playQueue(tracks, 0, { type: 'mix', name: `${sourceName(mixLab.source || recommendationSource)} Mix` })} onSave={() => saveList('mixlab', `Mix - ${today()}`, mixLab?.tracks || [], `${sourceName(mixLab.source || recommendationSource)} recommendation Mix`)} />
+        : tab === 'flow' ? <FlowPanel userId={uidKey} />
         : tab === 'releases' ? <ReleasesPanel artists={[...followedArtists.values()].map(name => ({ name }))} libraryArtists={localArtists}
             onPlay={album => playCatalogue('album', album)}
             onOpen={album => navigate(onlineAlbumPath({ artist: album.artist, album: album.title, albumId: album.albumId }), { state: { artwork: album.artwork_url || '' } })}

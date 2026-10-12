@@ -9,6 +9,8 @@ import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
+import { useCoverFlip } from './CoverFlip'
+import MixingMark from './MixingMark'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { startCoverFlight } from '../coverFlight'
 import { QueueContent } from './QueuePanel'
@@ -258,6 +260,10 @@ export default function FullscreenPlayer() {
     return () => { current = false }
   }, [currentTrack?.id, showFullscreen, showLyricsFullscreen])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
+  // AutoMix turns the cover over into the next song's (when it's a still one):
+  // the card stays (it isn't swapped for a new one per song) and turns.
+  const coverFlip = useCoverFlip(!clipNow || coverOff)
+  const flipping = usePlayerStore(s => !!s.crossfade?.automix) && (!clipNow || coverOff)
   const { video: musicVideo } = useMusicVideo(currentTrack, showFullscreen || showLyricsFullscreen)
   const showMusicVideo = useMusicVideoView(s => s.show)
   const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
@@ -674,12 +680,12 @@ export default function FullscreenPlayer() {
           <div className={`relative z-10 flex flex-col items-center justify-center flex-1 min-w-0 px-12 pt-24 pb-12 ${showFullscreen ? 'transition-all duration-500' : ''}`}>
             <AnimatePresence mode="wait">
               <motion.div
-                key={currentTrack?.id || 'none'}
+                key={flipping ? 'cover' : currentTrack?.id || 'none'}
                 ref={coverRef}
                 initial={{ opacity: 0, scale: 0.92, y: 16 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
+                animate={{ opacity: 1, scale: 1, y: 0, ...coverFlip.animate }}
                 exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 26 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 26, ...coverFlip.transition }}
                 onMouseEnter={() => setCoverHover(true)}
                 onMouseLeave={() => setCoverHover(false)}
                 onDoubleClick={doubleClickLike}
@@ -690,10 +696,15 @@ export default function FullscreenPlayer() {
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
                   ? { height: 'min(38rem, 62vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: COVER_SIZE, height: COVER_SIZE }}
+                  : { width: COVER_SIZE, height: COVER_SIZE, ...coverFlip.style }}
               >
                 {artSrc
-                  ? <img src={artSrc} className="w-full h-full object-cover" alt="" />
+                  ? (flipping
+                    // The card stays: the artwork dissolves into the next song's as it turns.
+                    ? <AnimatePresence initial={false}>
+                        <motion.img key={artSrc} src={artSrc} alt="" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.9, ease: [0.4, 0, 0.2, 1] }} className="absolute inset-0 w-full h-full object-cover" />
+                      </AnimatePresence>
+                    : <img src={artSrc} className="w-full h-full object-cover" alt="" />)
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
                 {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
@@ -756,7 +767,8 @@ export default function FullscreenPlayer() {
               </motion.div>
             </AnimatePresence>
 
-            <div className="mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
+            <div className="relative mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
+              <MixingMark className="absolute -top-4 left-1/2 -translate-x-1/2 pointer-events-none !text-white/80" />
               <span className="w-11 text-right text-sm tabular-nums text-white/75">{fmt(progress)}</span>
               <div ref={barRef} className="group/bar relative h-3.5 flex-1 cursor-pointer overflow-hidden rounded-full bg-white/20 backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
                 onPointerDown={startScrub} role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)}>

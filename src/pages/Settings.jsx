@@ -615,7 +615,7 @@ export default function Settings() {
     touchedSettingsRef.current.add(k)
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
-    if (k.startsWith('crossfade_')) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
+    if (k.startsWith('crossfade_') || k === 'song_transitions' || k === 'automix_same_album') usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
   }
   const crossfade = readCrossfadeSettings(settings)
 
@@ -1427,14 +1427,37 @@ activeCategory === 'data' ? usersTried
       {inCategory('playback') && (
       <Section title="Playback">
         <OutputPrecisionSettings />
-        <Row label="Crossfade" desc="Start the next song this many seconds before the current one ends. Skipping doesn't fade.">
-          <div className="flex items-center gap-2">
-            <input type="range" min={0} max={20} step={0.5} value={settings.crossfade_seconds || 0}
-              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
-            <span className="text-xs text-muted w-10">{settings.crossfade_seconds || 0}s</span>
+        <Row label="Song Transitions" desc={crossfade.mode === 'automix'
+          ? 'AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.'
+          : crossfade.mode === 'crossfade' ? 'The next song starts before the current one ends, by the amounts below.' : 'Each song plays to its end, then the next starts.'}>
+          <div role="radiogroup" aria-label="Song transitions" className="flex rounded-lg bg-card border border-border p-0.5">
+            {[['off', 'Off'], ['crossfade', 'Crossfade'], ['automix', 'AutoMix']].map(([value, label]) => (
+              <button key={value} type="button" role="radio" aria-checked={crossfade.mode === value} onClick={() => set('song_transitions', value)}
+                className={`px-3 py-1 rounded-md text-xs transition-colors ${crossfade.mode === value ? 'bg-accent text-base font-medium' : 'text-muted hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
           </div>
         </Row>
-        {crossfade.beforeEnd > CROSSFADE_MIN_S && (<>
+        {crossfade.mode === 'automix' && (
+          <Row label="Mix Songs on the Same Album" desc="Off: an album's songs, played in order, go one into the next as made (live albums, continuous mixes).">
+            <button
+              onClick={() => set('automix_same_album', settings.automix_same_album === '1' ? '0' : '1')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.automix_same_album === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+              {settings.automix_same_album === '1' ? 'On' : 'Off'}
+            </button>
+          </Row>
+        )}
+        {crossfade.mode === 'crossfade' && (
+        <Row label="Crossfade" desc="Start the next song this many seconds before the current one ends. Skipping doesn't fade.">
+          <div className="flex items-center gap-2">
+            <input type="range" min={1} max={20} step={0.5} value={crossfade.beforeEnd}
+              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
+            <span className="text-xs text-muted w-10">{crossfade.beforeEnd}s</span>
+          </div>
+        </Row>
+        )}
+        {crossfade.mode === 'crossfade' && crossfade.beforeEnd > CROSSFADE_MIN_S && (<>
           <Row label="Fade in" desc="How long the next song takes to reach full volume.">
             <div className="flex items-center gap-2">
               <input type="range" min={0} max={10} step={0.1} value={crossfade.fadeIn}
@@ -1578,6 +1601,28 @@ activeCategory === 'data' ? usersTried
             {!!(lbStatus?.connected && lbStatus.enabled) ? 'On' : 'Off'}
           </button>
         </Row>
+      </Section>
+      )}
+
+      {api.isElectron && inCategory('integrations') && (
+      <Section title="Spotify">
+        <Row stacked label="Spotify Cookie" desc={"Your Spotify sign-in, for Liked Songs here and Spotify Canvas covers: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
+              placeholder="sp_dc value" spellCheck={false} autoComplete="off" aria-label="Spotify cookie (sp_dc)"
+              className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+            <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading || !settings.spotify_sp_dc}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+              {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+            </button>
+            {spotifyCheck && !spotifyCheck.loading && (
+              spotifyCheck.error
+                ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                : <p className="text-xs text-green-400">Signed in to Spotify.</p>
+            )}
+          </div>
+        </Row>
+        <SpotifyLikesRow hasCookie={!!settings.spotify_sp_dc} userId={user?.id || 'guest'} />
       </Section>
       )}
 
@@ -2786,6 +2831,42 @@ Earth, Wind & Fire"
       </Modal>
 
     </div>
+  )
+}
+
+// Settings → Integrations → Spotify → Sync Likes (electron/ipc/spotifyLikes.js).
+function SpotifyLikesRow({ hasCookie, userId }) {
+  const [status, setStatus] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const unknown = { enabled: false, unknown: true, error: 'Could not read whether sync is on. Reopen Settings to try again.' }
+    Promise.resolve(api.spotifyLikesStatus()).then(next => setStatus(next || unknown)).catch(() => setStatus(unknown))
+  }, [])
+  const on = !!status?.enabled
+  // Until its state is known, the switch waits: turning "on" an already-on
+  // sync would move its starting point past likes not yet brought in.
+  const loading = status === null || !!status.unknown
+  const toggle = async () => {
+    if (loading || busy) return
+    setBusy(true)
+    try {
+      const next = on ? await api.spotifyLikesDisable() : await api.spotifyLikesEnable(userId)
+      setStatus(next)
+      window.dispatchEvent(new Event('lokal:spotify-likes-changed'))
+    } finally { setBusy(false) }
+  }
+  const since = status?.since ? new Date(status.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+  const desc = !hasCookie ? 'Add your Spotify cookie above first.'
+    : status?.error ? status.error
+      : on ? `Songs you like here are liked on Spotify, and songs you like on Spotify are liked here, since ${since}. Likes from before stay where they are.`
+        : 'Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.'
+  return (
+    <Row label="Sync Likes" desc={desc}>
+      <button disabled={!hasCookie || busy || loading} aria-pressed={on} onClick={toggle}
+        className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${on ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+        {busy || loading ? '…' : on ? 'On' : 'Off'}
+      </button>
+    </Row>
   )
 }
 

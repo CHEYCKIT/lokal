@@ -179,6 +179,9 @@ export function useCastPlayback(helpers) {
 
     const onSongChanged = track => {
       if (!live || !track) return
+      // A seek still settling was for the song before: it mustn't move this one.
+      clearTimeout(live.seekTimer)
+      live.seekTimer = null
       live.anchor = { position: 0, at: Date.now(), playing: false }
       live.finishedFor = null
       live.startedFor = null

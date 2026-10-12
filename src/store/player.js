@@ -247,6 +247,10 @@ export const usePlayerStore = create((set, get) => ({
   exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, crossfade: { ...CROSSFADE_DEFAULTS }, _fetchingRelated: false,
   activeAudioElement: 'primary',
+  // A song transition (crossfade or AutoMix) under way: { kind, until } for the
+  // "Mixing" mark; mixFlip counts them, so the cover flips on each (CoverFlip).
+  mixing: null,
+  mixFlip: 0,
   // Casting (src/cast): true while a TV plays instead of this computer.
   castActive: false,
   outputDeviceId: readOutputDevice(),
@@ -276,9 +280,12 @@ export const usePlayerStore = create((set, get) => ({
     const ids = new Set(queue.map(t => t.id))
     const fresh = sanitizeTrackList(tracks).filter(t => !ids.has(t.id))
     if (!fresh.length) return
-    // Shuffled: they're played after the songs still to come in the shuffle order.
-    const { shuffle, shuffleQueue } = get()
-    set(shuffle && shuffleQueue.length ? { queue: [...queue, ...fresh], shuffleQueue: [...shuffleQueue, ...shuffleArray(fresh)] } : { queue: [...queue, ...fresh] })
+    // Shuffled: they're played after the songs still to come in the shuffle
+    // order, and kept in the unshuffled order too, for when shuffle goes off.
+    const { shuffle, shuffleQueue, originalQueue } = get()
+    set(shuffle && shuffleQueue.length
+      ? { queue: [...queue, ...fresh], shuffleQueue: [...shuffleQueue, ...shuffleArray(fresh)], originalQueue: [...originalQueue, ...fresh] }
+      : { queue: [...queue, ...fresh] })
   },
 
   initShuffleQueue: (tracks, currentIndex) => {
@@ -696,6 +703,45 @@ export const usePlayerStore = create((set, get) => ({
     if (shuffle) get().initShuffleQueue(list, 0)
     set({ queue: list, queueIndex: 0, playbackContext: context, futureHistory: [] })
     return true
+  },
+
+  // The songs still to come replaced (a Flow retuned): what has played, and
+  // the song playing, stay as they are, history included.
+  replaceUpcoming: (tracks, context = null) => {
+    const state = get()
+    if (!state.currentTrack) return false
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const kept = shuffled ? state.shuffleQueue.slice(0, state.shuffleIndex + 1) : state.queue.slice(0, state.queueIndex + 1)
+    const keptIds = new Set(kept.map(track => track.id))
+    const next = sanitizeTrackList(tracks).filter(track => !keptIds.has(track.id))
+    if (shuffled) {
+      const queue = [...state.queue.filter(track => keptIds.has(track.id)), ...next]
+      set({
+        shuffleQueue: [...kept, ...next], queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack.id),
+        originalQueue: queue, playbackContext: context, futureHistory: [],
+      })
+    } else {
+      set({ queue: [...kept, ...next], playbackContext: context, futureHistory: [] })
+    }
+    return true
+  },
+
+  // Songs played long ago let go of (all but the last `keep` before the one
+  // playing), so they can be queued again: a queue holds each song once.
+  dropPlayed: (keep) => {
+    const state = get()
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const index = shuffled ? state.shuffleIndex : state.queueIndex
+    const drop = Math.max(0, index - Math.max(0, keep))
+    if (!drop) return
+    const order = shuffled ? state.shuffleQueue : state.queue
+    const gone = new Set(order.slice(0, drop).map(track => track.id))
+    const queue = state.queue.filter(track => !gone.has(track.id))
+    set({
+      queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack?.id),
+      ...(shuffled ? { shuffleQueue: state.shuffleQueue.slice(drop), shuffleIndex: state.shuffleIndex - drop } : {}),
+      ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(track => !gone.has(track.id)) } : {}),
+    })
   },
 
   // More songs at the end of the queue that's playing (a radio still being

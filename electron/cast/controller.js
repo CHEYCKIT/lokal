@@ -26,6 +26,8 @@ const STATUS_POLL_MS = 5000 // the TV only reports changes: its clock is asked n
 const RECONNECT_TRIES = 3
 const RECONNECT_DELAY_MS = 2000
 const PREPARE_AHEAD_MS = 20000 // a next song that takes longer (an online one that won't resolve) isn't waited for
+const RECONCILE_RETRIES = 3 // the TV's queue failed to update: tried again this many times
+const RECONCILE_RETRY_MS = 1500
 const SUPERSEDED = Symbol('superseded')
 
 class CastController extends EventEmitter {
@@ -341,11 +343,14 @@ class CastController extends EventEmitter {
     if (this.syncing) return this.syncing
     this.syncing = (async () => {
       try {
+        let retry = null // { generation, attempts }: the window's song plays, its queue still to update
         while (this.desired && this.applied !== this.generation && this.app) {
           const generation = this.generation
           const want = this.desired
+          let queued = true
           try {
-            await this.apply(want, generation)
+            // Retrying: only the queue after the playing song, which isn't loaded again.
+            queued = retry?.generation === generation ? await this.updateQueue(want, generation) : await this.apply(want, generation)
           } catch (error) {
             this.loading = false
             // A newer window replaced it meanwhile: that one is what matters.
@@ -355,7 +360,21 @@ class CastController extends EventEmitter {
             this.publish()
             if (want.current) this.emit('trackError', { trackId: want.current.id, message: error.message })
           }
-          if (generation === this.generation) this.applied = generation
+          if (generation !== this.generation) continue
+          if (queued === false) {
+            const attempts = retry?.generation === generation ? retry.attempts + 1 : 1
+            if (attempts <= RECONCILE_RETRIES) {
+              // Left pending: tried again shortly, unless a newer window comes first.
+              retry = { generation, attempts }
+              let timer
+              await Promise.race([new Promise(resolve => { timer = setTimeout(resolve, RECONCILE_RETRY_MS) }), this.whenSuperseded(generation)])
+              clearTimeout(timer)
+              continue
+            }
+            this.log(`cast: gave up updating the queue on the TV after ${RECONCILE_RETRIES} tries`)
+          }
+          retry = null
+          this.applied = generation
         }
       } finally {
         this.syncing = null
@@ -398,6 +417,13 @@ class CastController extends EventEmitter {
     return this.connection.request(NS.media, { ...data, ...(this.mediaSessionId != null ? { mediaSessionId: this.mediaSessionId } : {}) }, this.app.transportId, { timeoutMs: 20000 })
   }
 
+  /** A change to the TV's queue: refused (an error reply) is a failure, like no answer. */
+  async queueRequest(data) {
+    const reply = await this.mediaRequest(data)
+    if (!reply || /^(INVALID_REQUEST|ERROR|LOAD_FAILED|LOAD_CANCELLED)$/.test(reply.type)) throw new Error(`the TV refused ${data.type}${reply?.reason ? ` (${reply.reason})` : ''}`)
+    return reply
+  }
+
   repeatMode(repeat) { return repeat === 'one' ? 'REPEAT_SINGLE' : 'REPEAT_OFF' } // repeat-all is Lokal's: the TV only holds a window
 
   async apply(want, generation) {
@@ -436,7 +462,18 @@ class CastController extends EventEmitter {
     }
     // The playing song is on the TV: a next song that can't be queued is
     // reported in the log, never as a failure of the one playing.
-    try { await this.reconcile(want, generation) } catch (error) { this.log(`cast: couldn't update the queue on the TV: ${error.message}`) }
+    return this.updateQueue(want, generation)
+  }
+
+  /** reconcile, its failure logged: false when the TV's queue couldn't be updated (sync tries again). */
+  async updateQueue(want, generation) {
+    try {
+      await this.reconcile(want, generation)
+      return true
+    } catch (error) {
+      this.log(`cast: couldn't update the queue on the TV: ${error.message}`)
+      return false
+    }
   }
 
   /** Makes what the TV holds after the playing song match the window's next songs. */
@@ -448,7 +485,7 @@ class CastController extends EventEmitter {
     let kept = 0
     while (kept < ahead.length && kept < wanted.length && ahead[kept].trackId === wanted[kept]) kept++
     if (kept < ahead.length) {
-      const reply = await this.mediaRequest({ type: 'QUEUE_REMOVE', itemIds: ahead.slice(kept).map(item => item.itemId) })
+      const reply = await this.queueRequest({ type: 'QUEUE_REMOVE', itemIds: ahead.slice(kept).map(item => item.itemId) })
       this.onMediaStatus(reply.status)
     }
     for (const track of want.upcoming.slice(kept)) {
@@ -457,7 +494,7 @@ class CastController extends EventEmitter {
       try { prepared = await this.prepareFor(track, {}, generation, PREPARE_AHEAD_MS) } catch (error) { this.log(`cast: can't queue ${track.id}: ${error.message}`); break }
       if (prepared === SUPERSEDED || generation !== this.generation) return
       const before = this.items.map(item => item.itemId)
-      const reply = await this.mediaRequest({ type: 'QUEUE_INSERT', items: [this.queueItem(prepared)] })
+      const reply = await this.queueRequest({ type: 'QUEUE_INSERT', items: [this.queueItem(prepared)] })
       this.onMediaStatus(reply.status)
       const added = this.items.find(item => !before.includes(item.itemId))
       if (added && !added.trackId) added.trackId = String(track.id)
