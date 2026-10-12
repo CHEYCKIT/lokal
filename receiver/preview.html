@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lokal receiver preview</title>
+  <!-- Working on the receiver without a TV: the page at 1280×720 (a TV's
+       usual size), fed made-up songs. Open it from Lokal's dev server:
+       http://localhost:5173/receiver/preview.html -->
+  <style>
+    body { margin: 0; background: #222; font: 13px system-ui, sans-serif; color: #ddd; }
+    .bar { display: flex; gap: 6px; padding: 8px; flex-wrap: wrap; }
+    button { background: #333; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+    iframe { display: block; width: 1280px; height: 720px; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button data-do="now">Now playing</button>
+    <button data-do="lyrics">Lyrics</button>
+    <button data-do="plain">Plain lyrics</button>
+    <button data-do="nolyrics">No lyrics</button>
+    <button data-do="upnext">Up Next</button>
+    <button data-do="next">Next song</button>
+    <button data-do="pause">Play / pause</button>
+    <button data-do="buffer">Buffering</button>
+    <button data-do="video">Video</button>
+    <button data-do="idle">Idle</button>
+  </div>
+  <iframe id="tv" src="index.html?preview"></iframe>
+  <script>
+    // Made-up covers: a gradient each.
+    function cover(a, b) {
+      var c = document.createElement('canvas'); c.width = c.height = 400
+      var g = c.getContext('2d'); var grad = g.createLinearGradient(0, 0, 400, 400)
+      grad.addColorStop(0, a); grad.addColorStop(1, b); g.fillStyle = grad; g.fillRect(0, 0, 400, 400)
+      for (var i = 0; i < 5; i++) {
+        g.fillStyle = 'rgba(255,255,255,' + (0.05 + i * 0.03) + ')'
+        g.beginPath(); g.arc(300 - i * 30, 120 + i * 25, 160 - i * 28, 0, Math.PI * 2); g.fill()
+      }
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 300, 400, 100)
+      return c.toDataURL('image/jpeg', 0.85)
+    }
+    var songs = [
+      { id: '1', title: 'Midnight City Lights', artist: 'Aurora Lane', album: 'Neon Rivers', image: cover('#ff5f6d', '#3a1c71') },
+      { id: '2', title: 'Paper Planes Over Lisbon', artist: 'The Saltwater Kids', album: 'Tidal', image: cover('#11998e', '#38ef7d') },
+      { id: '3', title: 'Gravity', artist: 'Mono Bloom', album: 'Orbit', image: cover('#fc4a1a', '#f7b733') },
+      { id: '4', title: 'Slow Motion Summer', artist: 'Velvet Static', album: 'Heatwave', image: cover('#4568dc', '#b06ab3') },
+      { id: '5', title: 'Hollow Bones', artist: 'Cedar & Smoke', album: 'Fireside', image: cover('#373b44', '#4286f4') },
+      { id: '6', title: 'Golden Hour', artist: 'Juniper', album: 'Sunlit', image: cover('#f12711', '#f5af19') },
+      { id: '7', title: 'Static Hearts', artist: 'Polar Youth', album: 'Frost', image: cover('#00c6ff', '#0072ff') },
+    ]
+    var lines = ['City lights are calling out my name', 'Every street a river made of flame', '', 'And I keep running, running through the night',
+      'Chasing echoes of a fading light', 'Hold me closer till the morning comes', 'We are the midnight, we are the drums', '',
+      'Oh, oh, the city never sleeps', 'Oh, oh, it\'s the promise that it keeps', 'Midnight city lights', 'Midnight city lights']
+    var index = 0, playing = true, startedAt = performance.now() - 31000, pausedAt = 0
+    var tv = function () { return document.getElementById('tv').contentWindow.lokalReceiver }
+    var clock = function () { return ((playing ? performance.now() : pausedAt) - startedAt) / 1000 }
+    function load(i, lyrics) {
+      index = i % songs.length
+      var r = tv(), song = songs[index]
+      r.setTrack(song); r.setDuration(214); r.setClock(clock); r.setPlayback(playing ? 'playing' : 'paused')
+      r.message({ type: 'upnext', items: songs.slice(index + 1).concat(songs.slice(0, index)) })
+      if (lyrics !== false) r.message({ type: 'lyrics', trackId: song.id, synced: true, lines: lines.map(function (text, n) { return { t: 4 + n * 4.5, text: text } }) })
+    }
+    document.getElementById('tv').addEventListener('load', function () { load(0) })
+
+    // A made-up music video: 20 seconds of a moving picture, recorded here.
+    var made = null
+    function makeVideo() {
+      if (made) return made
+      made = new Promise(function (resolve) {
+        var c = document.createElement('canvas'); c.width = 640; c.height = 360
+        var g = c.getContext('2d'), start = performance.now()
+        var recorder = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm' })
+        var chunks = []
+        recorder.ondataavailable = function (e) { chunks.push(e.data) }
+        recorder.onstop = function () { resolve(URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }))) }
+        ;(function draw() {
+          var t = (performance.now() - start) / 1000
+          var grad = g.createLinearGradient(0, 0, 640, 360)
+          grad.addColorStop(0, 'hsl(' + (t * 40 % 360) + ',70%,45%)'); grad.addColorStop(1, 'hsl(' + ((t * 40 + 120) % 360) + ',70%,25%)')
+          g.fillStyle = grad; g.fillRect(0, 0, 640, 360)
+          g.fillStyle = 'rgba(255,255,255,0.9)'; g.font = 'bold 64px sans-serif'; g.fillText(t.toFixed(1) + 's', 40 + (t * 30 % 300), 200)
+          if (t < 20) requestAnimationFrame(draw); else recorder.stop()
+        })()
+        recorder.start()
+      })
+      return made
+    }
+    document.querySelector('.bar').addEventListener('click', function (event) {
+      var what = event.target.getAttribute('data-do'); var r = tv()
+      if (!what) return
+      if (what === 'now' || what === 'lyrics') r.message({ type: 'view', view: what === 'lyrics' ? 'lyrics' : 'nowplaying' })
+      if (what === 'plain') { r.message({ type: 'lyrics', trackId: songs[index].id, synced: false, lines: lines.map(function (text) { return { t: null, text: text } }) }); r.message({ type: 'view', view: 'lyrics' }) }
+      if (what === 'nolyrics') { r.message({ type: 'lyrics', trackId: songs[index].id, synced: false, lines: [] }); r.message({ type: 'view', view: 'lyrics' }) }
+      if (what === 'next') { startedAt = performance.now(); load(index + 1) }
+      if (what === 'pause') { if (playing) pausedAt = performance.now(); else startedAt += performance.now() - pausedAt; playing = !playing; r.setPlayback(playing ? 'playing' : 'paused') }
+      if (what === 'buffer') r.setPlayback('buffering')
+      if (what === 'idle') r.setTrack(null)
+      if (what === 'upnext') r.showUpNext()
+      if (what === 'video') makeVideo().then(function (url) {
+        // Lined up so the video's 0 s is the song's now.
+        r.message({ type: 'video', trackId: songs[index].id, url: url, segments: [{ start: 0, end: null, offset: -clock() }] })
+        r.message({ type: 'view', view: 'video' })
+      })
+    })
+  </script>
+</body>
+</html>

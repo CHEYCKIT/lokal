@@ -1,6 +1,7 @@
 // Spotify-style search in the window header: a Home button, then the search
-// box with a Flow button (shuffle icon) where Spotify has Browse: it starts
-// Flow with the mood and tuner last set on Home → Flow.
+// box with a Flow button (shuffle icon) where Spotify has Browse, then the
+// Cast button (CastButton.jsx). The Flow button starts Flow with the mood and
+// tuner last set on Home → Flow.
 //
 // - Focusing the box opens the Search page; its results follow the text live.
 // - While the box is focused, past searches drop down under it: all of them
@@ -22,6 +23,7 @@ import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
 } from '../searchHistory'
 import { asLink } from '../downloadLinks'
+import CastButton from './CastButton'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 
@@ -299,6 +301,8 @@ export default function HeaderSearch() {
           )}
         </AnimatePresence>
       </div>
+
+      <CastButton />
     </div>
   )
 }

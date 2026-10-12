@@ -255,6 +255,17 @@ Know what you're actually listening to:
 
 ---
 
+## Casting
+
+- **Cast to Google TV, Android TV, Chromecast and Nest speakers** with the Cast button next to the search box. Lokal finds them on your network (or add one by its IP address) and keeps the queue: shuffle, repeat, autoplay and the media keys all work as usual, and the TV moves to the next song with no gap.
+- **Lossless on the TV:** FLAC up to 24-bit / 96 kHz goes as it is; Apple Lossless, AIFF, WMA and hi-res beyond the TV are converted once. Songs from YouTube, SoundCloud and addons play too.
+- **Lokal on the TV:** now playing over the cover's colours, an Up Next row, synced lyrics and the music video. Choose in the Cast menu → On the TV.
+- **Back to this computer** from the same menu: the song carries on here from the same moment.
+
+How it works, and how to publish the TV app: [docs/CASTING.md](docs/CASTING.md).
+
+---
+
 ## Integrations
 
 ![Account connections in Settings: Last.fm and ListenBrainz connected; YouTube Music and Discord connect from the desktop app](docs/screenshots/accounts.webp)

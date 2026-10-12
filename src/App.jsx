@@ -59,6 +59,7 @@ import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
+import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
 
 // A bass-swap filter at rest: open (below anything audible).
 const MIX_FILTER_OPEN_HZ = 10
@@ -513,6 +514,8 @@ export default function App() {
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   })))
   const miniSwitching = usePlayerStore(s => s.miniSwitching)
+  // Casting: the TV plays, and this computer's audio is parked (src/cast).
+  const castActive = usePlayerStore(s => s.castActive)
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
   const { user } = useAppStore()
@@ -1149,10 +1152,12 @@ export default function App() {
       } catch {}
     }
     navigator.mediaSession.setActionHandler('play', () => { 
+      if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(true); return }
       const activeEl = getActiveAudio()
       activeEl?.play() 
     })
     navigator.mediaSession.setActionHandler('pause', () => { 
+      if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(false); return }
       const activeEl = getActiveAudio()
       activeEl?.pause() 
       // An explicit pause: record it in the store directly, since the element's
@@ -1161,6 +1166,7 @@ export default function App() {
       usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (usePlayerStore.getState().castActive) { if (typeof details.seekTime === 'number') usePlayerStore.getState().setProgressWithAudioUpdate(details.seekTime); return }
       const activeEl = getActiveAudio()
       if (activeEl && typeof details.seekTime === 'number') activeEl.currentTime = details.seekTime
     })
@@ -1656,6 +1662,26 @@ export default function App() {
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
   }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
+  // Fewer than 3 songs left (and not a discovery mix): related songs are added.
+  // Flow never ends: more of its own songs instead (src/flow/session.js).
+  const topUpRelated = useCallback(() => {
+    const state = usePlayerStore.getState()
+    if (state.playbackContext?.type === 'flow') {
+      if (flowNeedsMore(state)) continueFlow().catch(() => {})
+      return
+    }
+    const { queue, queueIndex, _fetchingRelated } = state
+    if (state.playbackContext?.type === 'discovery' || state.playbackContext?.type === 'mix' || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
+    const generation = state.playbackGeneration
+    state.setFetchingRelated(true)
+    api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
+      if (usePlayerStore.getState().playbackGeneration === generation && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
+      usePlayerStore.getState().setFetchingRelated(false)
+    }).catch(() => usePlayerStore.getState().setFetchingRelated(false))
+  }, [])
+
+  useCastPlayback({ startTimer, stopTimer, beginLastfmPlayback, sendListenBrainzNowPlaying, flushTime, topUpRelated })
+
   useEffect(() => {
     const previousTrack = currentTrackRef.current
     const previousTrackId = previousTrack?.id || null
@@ -1959,8 +1985,22 @@ export default function App() {
 
   useEffect(() => {
     if (isCrossfadingRef.current) {
-      if (currentTrack?.id && currentTrack.id === expectedCrossfadeTrackIdRef.current) return
-      cancelCrossfade()
+      if (castActive || !(currentTrack?.id && currentTrack.id === expectedCrossfadeTrackIdRef.current)) cancelCrossfade()
+      else return
+    }
+
+    if (castActive) {
+      // Casting: the TV plays. Both players are parked, so nothing here makes
+      // a sound (a stray play() has no source to play).
+      for (const el of [audioRef.current, cfAudioRef.current]) {
+        if (!el) continue
+        el.dataset.lokalTrackPending = ''
+        el.dataset.lokalTrackId = ''
+        el.dataset.fallbackPending = ''
+        try { el.pause(); el.removeAttribute('src'); el.load() } catch {}
+      }
+      if (usePlayerStore.getState().activeAudioElement !== 'primary') setActiveAudioElement('primary')
+      return
     }
 
     setIsBuffering(!!streamRef(currentTrack))
@@ -2014,6 +2054,8 @@ export default function App() {
     el.removeAttribute('src')
     try { el.currentTime = 0 } catch {}
     el.load()
+    // Back from casting: on from where the TV was.
+    const resumeFrom = takeResumePosition(currentTrack.id)
     let cancelled = false
     const start = async () => {
       const generation = usePlayerStore.getState().playbackGeneration
@@ -2035,12 +2077,13 @@ export default function App() {
       if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable, detail); return }
       el.dataset.fallbackPending = ''
       replaceAudioSource(el, src)
-      beginLastfmPlayback(live.currentTrack)
+      if (resumeFrom > 0) { try { el.currentTime = resumeFrom } catch {} }
+      else beginLastfmPlayback(live.currentTrack)
       if (usePlayerStore.getState().isPlaying) el.play().catch(() => {})
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
+  }, [currentTrack?.id, currentTrack?.file_path, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -2058,6 +2101,7 @@ export default function App() {
   useEffect(() => {
     if (isCrossfadingRef.current) return
     if (!audioRef.current || !cfAudioRef.current) return
+    if (usePlayerStore.getState().castActive) return // the TV plays (src/cast/useCastPlayback.js)
     
     const activeSide = usePlayerStore.getState().activeAudioElement
     const activeEl = activeSide === 'primary' ? audioRef.current : cfAudioRef.current
@@ -2138,19 +2182,8 @@ export default function App() {
       if (nextTrack) triggerCrossfade(nextTrack)
     }
 
-    const { queue, queueIndex, _fetchingRelated } = state
-    if (state.playbackContext?.type === 'flow') {
-      // Flow never ends: more of its songs as these run out (src/flow/session.js).
-      if (flowNeedsMore(state)) continueFlow().catch(() => {})
-    } else if (state.playbackContext?.type !== 'discovery' && state.playbackContext?.type !== 'mix' && queue.length - queueIndex - 1 < 3 && currentTrackRef.current && !_fetchingRelated) {
-      const generation = state.playbackGeneration
-      usePlayerStore.getState().setFetchingRelated(true)
-      api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
-        if (usePlayerStore.getState().playbackGeneration === generation && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
-        usePlayerStore.getState().setFetchingRelated(false)
-      }).catch(() => usePlayerStore.getState().setFetchingRelated(false))
-    }
-  }, [triggerCrossfade, isEventFromActive, automixAnalysis])
+    topUpRelated()
+  }, [triggerCrossfade, isEventFromActive, topUpRelated, automixAnalysis])
 
   const handlePrimaryDurationChange = useCallback((e) => {
     if (isEventFromActive(e)) setDuration(e.target.duration)
@@ -2600,8 +2633,8 @@ export default function App() {
           onError={handleAudioError}
           onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
           onPlaying={(e) => { if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPause={(e) => { if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
           ref={cfAudioRef}
@@ -2615,8 +2648,8 @@ export default function App() {
           onError={handleAudioError}
           onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
           onPlaying={(e) => { if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
-          onPlay={(e) => { if (!isEventFromActive(e)) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
-          onPause={(e) => { if (pauseSuppressRef.current) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
+          onPlay={(e) => { if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPause={(e) => { if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
             it exists purely to keep a native, audible HTMLMediaElement "playing"

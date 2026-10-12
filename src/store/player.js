@@ -209,6 +209,14 @@ function announceTrackUpdates(tracks) {
   try { window.dispatchEvent(new CustomEvent('lokal:track-updated', { detail: { ids } })) } catch {}
 }
 
+// Where playback goes instead of this computer's speakers while casting
+// (src/cast/useCastPlayback.js): { seek(seconds), setVolume(level) }. Play
+// and pause need nothing here: the cast side follows `isPlaying` itself, so
+// every way it changes (buttons, media keys, the sleep timer) reaches the TV.
+let outputRoute = null
+export function setOutputRoute(route) { outputRoute = route || null }
+export function getOutputRoute() { return outputRoute }
+
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
   playbackContext: null,
@@ -243,6 +251,8 @@ export const usePlayerStore = create((set, get) => ({
   // "Mixing" mark; mixFlip counts them, so the cover flips on each (CoverFlip).
   mixing: null,
   mixFlip: 0,
+  // Casting (src/cast): true while a TV plays instead of this computer.
+  castActive: false,
   outputDeviceId: readOutputDevice(),
 
   originalQueue: [], 
@@ -269,7 +279,13 @@ export const usePlayerStore = create((set, get) => ({
     if (playbackContext?.type === 'discovery' || playbackContext?.type === 'mix') return
     const ids = new Set(queue.map(t => t.id))
     const fresh = sanitizeTrackList(tracks).filter(t => !ids.has(t.id))
-    if (fresh.length) set({ queue: [...queue, ...fresh] })
+    if (!fresh.length) return
+    // Shuffled: they're played after the songs still to come in the shuffle
+    // order, and kept in the unshuffled order too, for when shuffle goes off.
+    const { shuffle, shuffleQueue, originalQueue } = get()
+    set(shuffle && shuffleQueue.length
+      ? { queue: [...queue, ...fresh], shuffleQueue: [...shuffleQueue, ...shuffleArray(fresh)], originalQueue: [...originalQueue, ...fresh] }
+      : { queue: [...queue, ...fresh] })
   },
 
   initShuffleQueue: (tracks, currentIndex) => {
@@ -424,6 +440,7 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   togglePlay: () => {
+    if (outputRoute) { set(s => ({ isPlaying: !s.isPlaying })); return }
     const { audioRef, cfAudioRef, activeAudioElement, isPlaying } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
     if (!activeRef?.current) return
@@ -545,6 +562,7 @@ export const usePlayerStore = create((set, get) => ({
     } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
     
+    if (progress > 3 && outputRoute) { outputRoute.seek(0); set({ progress: 0 }); return }
     if (progress > 3 && activeRef?.current) {
       activeRef.current.currentTime = 0
       return
@@ -756,6 +774,7 @@ export const usePlayerStore = create((set, get) => ({
   setProgress: (v) => set({ progress: v }),
   setIsBuffering: (v) => set({ isBuffering: !!v }),
   setProgressWithAudioUpdate: (v) => {
+    if (outputRoute) { outputRoute.seek(v); set({ progress: v }); return }
     const { audioRef, cfAudioRef, activeAudioElement } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
     if (activeRef?.current) {
@@ -764,7 +783,12 @@ export const usePlayerStore = create((set, get) => ({
     set({ progress: v })
   },
   setDuration: (v) => set({ duration: v }),
-  setVolume: (v) => { localStorage.setItem('lokal-volume', String(v)); set({ volume: v }) },
+  // While casting the slider is the TV's volume, and this computer's own is
+  // left as it was (put back when casting ends).
+  setVolume: (v) => {
+    if (outputRoute) { outputRoute.setVolume(v); set({ volume: v }); return }
+    localStorage.setItem('lokal-volume', String(v)); set({ volume: v })
+  },
   toggleRepeat: () => set(s => ({ repeat: s.repeat === 'none' ? 'all' : s.repeat === 'all' ? 'one' : 'none' })),
   // Direct setter, unlike toggleRepeat above: needed for the Windows SMTC
   // bridge (electron/ipc/smtc.js), which reports the OS flyout's repeat

@@ -167,3 +167,15 @@ test('new explicit playback cancels a pending unavailable-song advance', async (
   assert.equal(await skipping, false)
   assert.equal(store.getState().currentTrack, other)
 })
+
+test('related songs added while shuffled stay in the queue when shuffle goes off', () => {
+  const songs = ['A', 'B', 'C'].map(title => playable({ title, artist: 'Band' }))
+  store.setState({ shuffle: false, playbackContext: null })
+  store.getState().playQueue(songs, 0)
+  store.getState().enableShuffle()
+  store.getState().appendRelated([playable({ title: 'Related', artist: 'Other' })])
+  assert.ok(store.getState().shuffleQueue.some(track => track.title === 'Related'))
+  store.getState().disableShuffle()
+  assert.deepEqual(store.getState().queue.map(track => track.title), ['A', 'B', 'C', 'Related'])
+  assert.equal(store.getState().currentTrack.title, 'A')
+})
