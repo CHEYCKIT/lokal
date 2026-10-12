@@ -535,13 +535,12 @@ export default function FullscreenPlayer() {
   const barRef = useRef(null)
   const seekTo = (clientX) => {
     const bar = barRef.current
-    const { duration: length, audioRef: primary, cfAudioRef: crossfade, activeAudioElement: active } = usePlayerStore.getState()
+    const { duration: length } = usePlayerStore.getState()
     if (!bar || !length) return
     const r = bar.getBoundingClientRect()
     const t = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * length
-    const el = active === 'primary' ? primary?.current : crossfade?.current
-    if (el) el.currentTime = t
-    setProgress(t)
+    // Through the store: it seeks the playing element, or the TV while casting.
+    usePlayerStore.getState().setProgressWithAudioUpdate(t)
   }
   const startScrub = (event) => {
     event.preventDefault()

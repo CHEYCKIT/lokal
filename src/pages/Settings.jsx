@@ -6,6 +6,7 @@ import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCi
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
+import { useLibraryJobs, startLyricsIndex, cancelLyricsIndex, startGenres, readGenresStatus } from '../libraryJobs'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
 import ProviderConnections from '../components/ProviderConnections'
@@ -373,39 +374,17 @@ export default function Settings() {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
-  // Fill In Genres runs in the background; its progress, read every few seconds while it runs.
-  const [genreJob, setGenreJob] = useState(null)
+  // Fill In Genres and Index Lyrics run in the background (src/libraryJobs.js,
+  // shared with the Downloads panel, which can start them too).
+  const genreJob = useLibraryJobs(s => s.genres)
   const [missingRepairJob, setMissingRepairJob] = useState(null)
-  const [lyricsIndexJob, setLyricsIndexJob] = useState(null)
-  useEffect(() => {
-    const offLyrics = api.onLyricsIndexProgress?.(p => setLyricsIndexJob(p))
-    return () => { offLyrics?.() }
-  }, [])
-  const indexAllLyrics = () => {
-    if (lyricsIndexJob?.running) { api.cancelLyricsIndex?.(); return }
-    setLyricsIndexJob({ running: true, done: 0, total: 0, found: 0 })
-    Promise.resolve(api.indexAllLyrics?.()).catch(() => setLyricsIndexJob(null))
-  }
+  const lyricsIndexJob = useLibraryJobs(s => s.lyrics)
+  const indexAllLyrics = () => (lyricsIndexJob?.running ? cancelLyricsIndex() : startLyricsIndex())
   const indexText = (job, what) => job?.running
     ? `${job.done || 0} of ${job.total || '…'} songs · ${job.found || 0} ${what} found${job.title ? ` · ${job.title}` : ''}`
     : job ? `Done: ${job.found || 0} ${what} found for ${job.done || 0} songs${job.cancelled ? ' (stopped)' : ''}` : ''
-  useEffect(() => {
-    let timer = null
-    let active = true
-    const poll = async () => {
-      const status = await Promise.resolve(api.genresStatus?.()).catch(() => null)
-      if (!active || !status) return
-      setGenreJob(current => ({ ...status, started: current?.started }))
-      if (status.running) timer = setTimeout(poll, 2500)
-    }
-    if (genreJob?.running) timer = setTimeout(poll, 2500)
-    else if (genreJob === null) poll()
-    return () => { active = false; clearTimeout(timer) }
-  }, [genreJob?.running]) // eslint-disable-line react-hooks/exhaustive-deps
-  const fillGenres = async () => {
-    const status = await Promise.resolve(api.fetchMissingGenres()).catch(e => ({ error: e?.message || 'Could not start' }))
-    setGenreJob(status?.error ? { error: status.error } : { ...status, started: true })
-  }
+  useEffect(() => { readGenresStatus() }, [])
+  const fillGenres = startGenres
   const genreText = genreJob?.error ? genreJob.error
     : genreJob?.running ? `Looking up… ${genreJob.done} of ${genreJob.total} albums and songs · ${genreJob.updated} songs filled in`
       : genreJob?.total ? `Done: ${genreJob.updated} of ${genreJob.songs} songs filled in. Songs iTunes doesn't know stay empty.`
@@ -1519,6 +1498,21 @@ activeCategory === 'data' ? usersTried
       </Section>
       )}
 
+      {inCategory('playback') && api.isElectron && (
+      <Section title="Casting">
+        <Row label="Cast Quality" desc="Best sends lossless songs to the TV as they are, up to 24-bit / 96 kHz (higher is brought down to that). Standard sends at most CD quality (16-bit / 48 kHz), for a weak Wi-Fi.">
+          <select
+            value={settings.cast_quality === 'standard' ? 'standard' : 'max'}
+            onChange={e => set('cast_quality', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="max">Best</option>
+            <option value="standard">Standard</option>
+          </select>
+        </Row>
+        <CastAppIdRow value={settings.cast_app_id || ''} onSave={value => set('cast_app_id', value)} />
+      </Section>
+      )}
+
       {inCategory('playback') && (
       <Section title="Lyrics">
         <Row label="Auto-Translate" desc="Show the translation under each line when a song is in another language.">
@@ -2212,7 +2206,7 @@ activeCategory === 'data' ? usersTried
 
       {api.isElectron && inCategory('data') && (
       <Section title="Cache">
-         <Row label="Cache Size Limit" desc="Moving covers and converted copies of songs (Apple Lossless, WMA…) are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.">
+         <Row label="Cache Size Limit" desc="Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.">
           <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
@@ -2220,7 +2214,7 @@ activeCategory === 'data' ? usersTried
         </Row>
          <Row label="In Use" desc={cacheInfo ? `Older video downloads ${fmtBytes(cacheInfo.musicVideo)} · Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
             <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
               {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}
@@ -2792,5 +2786,28 @@ Earth, Wind & Fire"
       </Modal>
 
     </div>
+  )
+}
+
+// For trying a Lokal receiver on your own TV before it's published (docs/CASTING.md).
+function CastAppIdRow({ value, onSave }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+  const clean = draft.trim().toUpperCase()
+  const valid = !clean || /^[0-9A-F]{8}$/.test(clean)
+  return (
+    <Row label="Receiver App ID" desc="Advanced. The TV app Lokal starts when casting; blank uses Lokal's own (or Google's, until Lokal's is published). Applies the next time you connect.">
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => { if (valid && clean !== value) onSave(clean) }}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        placeholder="Default"
+        spellCheck={false}
+        maxLength={8}
+        aria-invalid={!valid}
+        className={`w-28 bg-card border rounded-lg px-2 py-1.5 text-xs font-mono text-white outline-none ${valid ? 'border-border focus:border-accent/50' : 'border-red-400/70'}`}
+      />
+    </Row>
   )
 }
