@@ -918,6 +918,9 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best', videoHe
 const FAST_QUALITIES = new Set(['best', 'saver', 'analysis', 'video'])
 const FAST_RETRY_MS = 10 * 60 * 1000
 const fastFailed = new Map() // videoId -> until
+const fastReasons = new Map() // videoId -> why the fast engine last failed it
+/** Why the fast engine last couldn't do `videoId` (for `quality`), or null. */
+function fastFailure(videoId, quality) { return fastReasons.get(fastKey(videoId, quality)) || null }
 const fastKey = (videoId, quality) => quality === 'video' ? `${videoId}:video` : videoId
 function fastBlocked(videoId, quality) {
   const key = fastKey(videoId, quality)
@@ -929,6 +932,8 @@ function fastBlocked(videoId, quality) {
 function blockFast(videoId, quality, error) {
   if (fastFailed.size > 500) fastFailed.delete(fastFailed.keys().next().value)
   fastFailed.set(fastKey(videoId, quality), Date.now() + FAST_RETRY_MS)
+  if (fastReasons.size > 500) fastReasons.delete(fastReasons.keys().next().value)
+  fastReasons.set(fastKey(videoId, quality), String(error?.message || error).slice(0, 300))
   const what = quality === 'video' ? 'YouTube fast engine (video)' : 'YouTube fast engine'
   try { require('electron-log').info(`${what}: ${videoId} goes through yt-dlp for now (${String(error?.message || error).slice(0, 200)})`) } catch {}
 }
@@ -937,7 +942,7 @@ function blockFast(videoId, quality, error) {
  * The audio URL for a video, from cache, the fast engine (`fast`, when on) or
  * yt-dlp (one lookup at a time per video).
  */
-async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null, fast = null } = {}) {
+async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null, fast = null, keepFast = false } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
   const q = QUALITY_ARGS[quality] ? quality : 'best'
   const useFast = !!fast && FAST_QUALITIES.has(q)
@@ -947,8 +952,9 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
   // A caller with the fast engine off (or a fast link refused before) doesn't take a fast link.
   const usable = cached && (useFast || cached.engine !== 'youtubei')
   if (!force && usable && cached.expiresAt > Date.now()) return cached
-  // Looked up again because its link was refused: a fast link goes to yt-dlp now.
-  if (force && cached?.engine === 'youtubei') blockFast(videoId, q, new Error('its stream link was refused'))
+  // Looked up again because its link was refused: a fast link goes to yt-dlp
+  // now (unless the caller wants a fresh fast link: `keepFast`, the same file).
+  if (force && !keepFast && cached?.engine === 'youtubei') blockFast(videoId, q, new Error('its stream link was refused'))
   if (!force && resolving.has(key)) return resolving.get(key)
   const job = (async () => {
     if (useFast && !fastBlocked(videoId, q) && (q !== 'video' || fast.resolveVideo)) {
@@ -1005,5 +1011,5 @@ module.exports = {
   searchSongs, innertubeSearch, spellCheck, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
-  resolveStream, fetchStream, streamError, videoIdFromUrl,
+  resolveStream, fetchStream, streamError, videoIdFromUrl, fastFailure,
 }

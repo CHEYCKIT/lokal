@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld('electron', {
   musicVideo: (trackId) => invoke('musicVideo:find', trackId),
   musicVideoDownload: (trackId) => invoke('musicVideo:download', trackId),
   musicVideoPrepare: (trackId) => invoke('musicVideo:prepare', trackId),
+  musicVideoStreamBase: () => invoke('musicVideo:streamBase'),
   musicVideoDeleteDownload: (trackId) => invoke('musicVideo:deleteDownload', trackId),
   musicVideoList: () => invoke('musicVideo:list'),
   musicVideoSave: (trackId, saved) => invoke('musicVideo:save', trackId, saved),

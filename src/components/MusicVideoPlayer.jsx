@@ -168,9 +168,9 @@ export default function MusicVideoPlayer({ compact = false }) {
     // A streamed video: why YouTube stopped giving it (the player itself only
     // sees "data source error"); Lokal remembers the reason.
     if (video?.streamed && video.src) {
-      fetch(video.src, { headers: { 'x-lokal-why': '1' } })
+      fetch(video.src, { headers: { 'x-lokal-why': String(el?.error?.message || `error ${el?.error?.code ?? '?'}`).replace(/[^\x20-\x7e]/g, '').slice(0, 300) || '1' } })
         .then(res => res.ok ? res.text() : null)
-        .then(reason => { if (reason?.trim()) setErrorText(reason.trim().slice(0, 200)) })
+        .then(reason => { if (reason?.trim()) setErrorText(reason.trim().slice(0, 600)) })
         .catch(() => {})
     }
   }, [video, segments])
@@ -255,7 +255,8 @@ export default function MusicVideoPlayer({ compact = false }) {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.08 }} transition={fade}>
                 <div className="relative w-[min(40vh,22rem)] aspect-square rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7)] border border-white/10 bg-white/5">
                   {art ? <img src={art} alt="" className="w-full h-full object-cover" /> : <span className="absolute inset-0 flex items-center justify-center text-white/10 text-7xl">♪</span>}
-                  {status === 'loading' && slowLoad && (
+                  {/* Waiting (finding the video, or a found one starting): the light sweeps the cover. */}
+                  {status === 'loading' && (
                     <div className="absolute inset-0 overflow-hidden" aria-hidden>
                       <div className="absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-[mv-shimmer_1.6s_ease-in-out_infinite]" />
                     </div>
@@ -409,17 +410,19 @@ export default function MusicVideoPlayer({ compact = false }) {
 // The bars around the video carry on its picture to the screen's edges, the
 // way YouTube's ambient mode does: each side's outermost strip stretched out
 // to the edge, blurred, fading a little toward the screen's edge. Drawn small
-// (AMBIENT_WIDTH px across) and scaled up, ten times a second.
+// (AMBIENT_WIDTH px across) and scaled up, fifteen times a second.
 const AMBIENT_WIDTH = 96
-const AMBIENT_EVERY_MS = 100
+const AMBIENT_EVERY_MS = 66
 const AMBIENT_STRIP = 0.03 // the edge strip carried on, from the video's width or height
 // How much of each new frame goes in (the glow's fade between scenes); a
 // little more without the look-ahead, so it doesn't trail the picture.
 const AMBIENT_BLEND = 0.3
-const AMBIENT_BLEND_LIVE = 0.45
-// A downloaded video's glow comes from a second, muted copy running this far
-// ahead, so it changes just before the picture does (YouTube's feel). Not for
-// a streamed video: that would fetch it twice.
+const AMBIENT_BLEND_LIVE = 0.6
+// The glow comes from a second, muted copy running this far ahead, so it
+// changes just before the picture does (YouTube's feel). A streamed video's
+// copy reads the same pieces the video reads next (kept in the main process,
+// see videoPiece), so it isn't fetched twice; until the copy is ready (a
+// seek), the playing video, blended faster.
 const AMBIENT_LEAD_S = 0.4
 const AMBIENT_SHADE = 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)'
 
@@ -500,7 +503,7 @@ export function VideoGlow({ videoRef, active }) {
       const video = videoRef.current
       if (document.hidden || !video || video.readyState < 2 || !video.videoWidth) return
       const src = video.currentSrc || video.src || ''
-      if (!lead && !src.startsWith('lokal-stream:')) lead = leadCopy(video)
+      if (!lead && src) lead = leadCopy(video)
       if (video.paused && last === video.currentTime) return
       const width = AMBIENT_WIDTH
       const height = Math.max(1, Math.round(AMBIENT_WIDTH * window.innerHeight / Math.max(1, window.innerWidth)))

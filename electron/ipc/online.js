@@ -75,6 +75,11 @@ function registerOnlineHandlers(ipcMain) {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
   } })
+  // The fast engine asks as the account for a video YouTube won't give signed out.
+  require('../online/youtubeFast').setAccount(async () => {
+    const credentials = await accountSession.credentials()
+    return credentials?.cookies ? credentials : null
+  })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
@@ -144,6 +149,8 @@ function registerOnlineHandlers(ipcMain) {
   }).catch(() => null))
   ipcMain.handle('musicVideo:download', (_, trackId) => prepareMusicVideoFor(trackId, { download: true }).catch(e => ({ error: e.message })))
   ipcMain.handle('musicVideo:prepare', (_, trackId) => prepareMusicVideoFor(trackId).catch(e => ({ error: e.message })))
+  // Where a video that isn't downloaded is streamed from (see videoStreamBase).
+  ipcMain.handle('musicVideo:streamBase', () => videoStreamBase().catch(() => null))
   ipcMain.handle('musicVideo:deleteDownload', async (_, trackId) => {
     try {
       const video = await musicVideoFor(trackId)
@@ -416,117 +423,285 @@ function registerStreamScheme(protocol) {
 }
 
 const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges']
-const VIDEO_CHUNK = 2 * 1024 * 1024
+const VIDEO_CHUNK = 1024 * 1024 // a piece: what YouTube's own player asks for at a time
+const VIDEO_CACHE_PIECES = 64 // pieces kept in memory (64 MB), shared by every stream of a video
 const VIDEO_CHUNK_TIMEOUT_MS = 30000
 
 // Why a video's stream last failed (shown to the player, which only sees a read error).
 const videoErrors = new Map() // videoId -> message
+function videoLog(id, message) {
+  try { require('electron-log').info(`Music video stream: ${id}: ${message}`) } catch {}
+}
 function videoFailed(id, message) {
   if (videoErrors.size > 50) videoErrors.delete(videoErrors.keys().next().value)
   videoErrors.set(id, message)
   try { require('electron-log').info(`Music video stream: ${id}: ${message}`) } catch {}
 }
 
-/** One piece of a music video, read whole: { body, from, to, total, mime, engine }. */
-async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
+/** At most `want` bytes of a response, then the connection let go. */
+async function readUpTo(res, want) {
+  const reader = res.body.getReader()
+  const parts = []
+  let size = 0
+  while (size < want) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+    size += value.length
+  }
+  if (size >= want) reader.cancel().catch(() => {})
+  return Buffer.concat(parts.map(part => Buffer.from(part))).subarray(0, want)
+}
+
+/**
+ * One piece of a music video, read whole: { body, from, to, total, mime, engine }.
+ * YouTube is asked for the range as such, then (refused) open-ended, reading
+ * only what's needed; still refused, with a fresh link the same two ways.
+ * The error says what each try got.
+ */
+// The size of the file each video is being played from: every piece must
+// come from that same file (a fresh link to another format, yt-dlp's after
+// the fast engine's, would hand the player two files: "data source error").
+const videoFiles = new Map() // videoId -> total bytes
+// A video at one quality is one file: `${videoId}@${height}`.
+const videoFileKey = (id, height) => `${id}@${height}`
+
+function videoFile(file, total) {
+  const before = videoFiles.get(file)
+  if (before === total) return
+  // Another file for the video: the pieces kept from the old one are no use.
+  if (before) for (const key of [...videoPieces.keys()]) if (key.startsWith(`${file}:`)) videoPieces.delete(key)
+  if (videoFiles.size > 50 && !videoFiles.has(file)) videoFiles.delete(videoFiles.keys().next().value)
+  videoFiles.set(file, total)
+}
+
+// Pieces fetched, aligned to VIDEO_CHUNK and kept (least recently used out):
+// the player jumps back and forth while it opens a video (its index, the
+// frame at the song's time, back) and each jump is a new request; served
+// from here, a jump to somewhere already fetched answers at once, and two
+// streams wanting the same piece fetch it once. Keyed by video and quality
+// (another quality is another file). A piece still being fetched counts the
+// streams waiting for it; when none does any more (they were dropped: a
+// seek, the video closed), its fetch is stopped rather than left running.
+const videoPieces = new Map() // `${file}:${index}` -> { job, waiters, stop, done }
+
+function videoPiece(id, height, index, fetchImpl) {
+  const key = `${videoFileKey(id, height)}:${index}`
+  const kept = videoPieces.get(key)
+  if (kept) { videoPieces.delete(key); videoPieces.set(key, kept); return { key, entry: kept } }
+  const from = index * VIDEO_CHUNK
+  const to = from + VIDEO_CHUNK - 1
+  const stop = new AbortController()
+  const entry = { waiters: 0, stop, done: false }
+  entry.job = videoChunk(id, from, to, fetchImpl, false, stop.signal, height).catch(error => {
+    if (stop.signal.aborted) throw error
+    try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
+    return videoChunk(id, from, to, fetchImpl, true, stop.signal, height)
+  })
+  entry.job.then(() => { entry.done = true }, () => { if (videoPieces.get(key) === entry) videoPieces.delete(key) })
+  videoPieces.set(key, entry)
+  while (videoPieces.size > VIDEO_CACHE_PIECES) videoPieces.delete(videoPieces.keys().next().value)
+  return { key, entry }
+}
+
+/** The piece holding byte `at` of the video; `signal`: the stream asking was dropped. */
+async function videoBytesAt(id, height, at, fetchImpl, signal = null) {
+  const { key, entry } = videoPiece(id, height, Math.floor(at / VIDEO_CHUNK), fetchImpl)
+  let piece
+  if (entry.done) piece = await entry.job
+  else {
+    entry.waiters++
+    let left = false
+    const leave = () => {
+      left = true
+      entry.waiters--
+      if (!entry.done && entry.waiters <= 0) {
+        entry.stop.abort()
+        if (videoPieces.get(key) === entry) videoPieces.delete(key)
+      }
+    }
+    signal?.addEventListener('abort', leave, { once: true })
+    try { piece = await entry.job } finally {
+      signal?.removeEventListener('abort', leave)
+      if (!left) entry.waiters--
+    }
+  }
+  if (at >= piece.from && at <= piece.to) return piece
+  // A short piece (YouTube sent less than asked): the rest of it, on its own.
+  return videoChunk(id, at, Math.floor(at / VIDEO_CHUNK) * VIDEO_CHUNK + VIDEO_CHUNK - 1, fetchImpl, false, signal, height)
+}
+
+async function videoChunk(id, from, to, fetchImpl, force = false, stop = null, height = streamOptions().videoHeight) {
+  const file = videoFileKey(id, height)
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
   const abort = () => upstream.abort()
   stop?.addEventListener('abort', abort, { once: true })
   const at = `${(from / 1048576).toFixed(1)} MB in`
+  const tried = []
   try {
-    let answer
-    try {
-      answer = await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range: `bytes=${from}-${to}`, signal: upstream.signal, fetchImpl, force })
-    } catch (error) {
-      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : String(error?.message || error))
+    // The link in hand, then a fresh one from the same engine (the same
+    // format, so the same file); another engine's only before the video has
+    // started (from 0), when changing file is still possible.
+    const links = [...(force ? [] : [{}]), { force: true, keepFast: true }, ...(from === 0 ? [{ force: true }] : [])]
+    let previous = null
+    for (const link of links) {
+      const stream = await youtube.resolveStream(id, { ...streamOptions(), videoHeight: height, quality: 'video', ...link })
+      if (previous === stream.url) continue
+      previous = stream.url
+      const engine = stream.engine || 'yt-dlp'
+      // Why this isn't the fast engine's link (said with what YouTube refused).
+      const fastWhy = engine !== 'youtubei' && youtube.fastFailure(id, 'video')
+      if (fastWhy && !tried.some(entry => entry.startsWith('fast engine:'))) tried.push(`fast engine: ${fastWhy}`)
+      // Through Electron (as songs stream), open-ended if a range is refused,
+      // then through Node (as downloads fetch).
+      for (const { open, via } of [{ open: false, via: 'app' }, { open: true, via: 'app' }, { open: false, via: 'node' }]) {
+        let res
+        try {
+          const get = via === 'node' ? (...args) => fetch(...args) : fetchImpl
+          res = await get(stream.url, { headers: { ...stream.headers, Range: `bytes=${from}-${open ? '' : to}` }, signal: upstream.signal })
+        } catch (error) {
+          throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : `Couldn't reach YouTube ${at} (${error.message})`)
+        }
+        const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
+        const whole = res.status === 200 && from === 0 // a server that ignored the range
+        if ((res.status === 206 && span) || whole) {
+          let body
+          try { body = await readUpTo(res, to - from + 1) } catch {
+            throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at} (${engine} link)` : `YouTube cut the video off ${at} (${engine} link)`)
+          }
+          if (!body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
+          const total = span ? Number(span[3]) : Number(res.headers.get('content-length')) || body.length
+          const begin = span ? Number(span[1]) : 0
+          const playing = videoFiles.get(file)
+          if (from > 0 && playing && playing !== total) {
+            tried.push(`another file (${total} bytes, not ${playing}), ${engine} link`)
+            break
+          }
+          if (from === 0 || !playing) videoFile(file, total)
+          if (tried.length || via === 'node') videoLog(id, `${at}: got it ${open ? 'open-ended' : 'as a range'}${via === 'node' ? ' through Node' : ''} (${engine} link) after: ${tried.join('; ') || 'nothing'}`)
+          return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
+        }
+        try { await res.body?.cancel?.() } catch {}
+        tried.push(`HTTP ${res.status} ${open ? 'open range' : 'range'}${via === 'node' ? ' via Node' : ''}, ${engine} link`)
+        if (![400, 403, 416].includes(res.status)) break
+      }
     }
-    const { res, mime, engine } = answer
-    if (res.status !== 206) {
-      try { await res.body?.cancel?.() } catch {}
-      throw new Error(`YouTube refused the video ${at} (HTTP ${res.status}, ${engine} link)`)
-    }
-    const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
-    let body
-    try { body = Buffer.from(await res.arrayBuffer()) } catch {
-      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at} (${engine} link)` : `YouTube cut the video off ${at} (${engine} link)`)
-    }
-    if (!span || !body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
-    return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime, engine }
+    throw new Error(`YouTube refused the video ${at} (${tried.join('; ')})`)
   } finally { clearTimeout(timer); stop?.removeEventListener('abort', abort) }
 }
 
-// Each video's current stream: a new one (a seek, the player reopened) ends
-// the one before, so dropped streams never queue up behind it.
-const videoStreams = new Map() // videoId -> AbortController
-
 /**
  * A music video's picture (lokal-stream://ytv/<id>). The player sees one
- * ordinary stream of what it asked for; behind it, YouTube is asked for
- * pieces of at most 2 MB (what its own player asks for: an open-ended range
- * is refused or slowed), the next one only as the player reads. Each piece
- * is read whole, so a stream the player drops or stops reading (the video
- * closed, paused, a seek) never holds a connection: those used to pile up
- * on the video's server (Chromium allows six per server) until it stopped
- * loading. A dropped stream's piece in progress is stopped; a newer stream
- * of the same video (a seek) ends the one before. A piece that fails is asked for once more with a fresh link; a
- * fresh link to another file (another format) ends the stream rather than
- * mixing two files.
+ * ordinary stream of what it asked for; behind it, YouTube is asked for 1 MB
+ * pieces (what its own player asks for: an open-ended range is refused or
+ * slowed), the next one only as the player reads, kept a while for the next
+ * request (videoPiece). Each piece is read whole, so a stream the player
+ * drops or stops reading (the video closed, paused, a seek) never holds a
+ * connection: those used to pile up on the video's server (Chromium allows
+ * six per server) until it stopped loading.
  */
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
-  videoStreams.get(id)?.abort()
-  const stop = new AbortController()
-  videoStreams.set(id, stop)
+  // One quality for the whole stream (a change in Settings applies from the next one).
+  const height = streamOptions().videoHeight
+  // Set when the player drops this stream: a piece it was waiting for stops
+  // unless another stream wants it too.
+  const dropped = new AbortController()
   let first
-  try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl, false, stop.signal) } catch (error) {
-    if (!stop.signal.aborted) videoFailed(id, error.message)
-    throw error
-  }
+  try { first = await videoBytesAt(id, height, start, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
   videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
-  let next = first.to + 1
+  videoLog(id, `asked ${range || 'the whole file'}; serving ${start}-${last} of ${first.total} bytes (${first.mime}, ${first.engine} link)`)
+  let next = start
   let cancelled = false
-  const piece = async (from, to) => {
-    try { return await videoChunk(id, from, to, fetchImpl, false, stop.signal) } catch (error) {
-      if (cancelled || stop.signal.aborted) throw error
-      try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
-      const again = await videoChunk(id, from, to, fetchImpl, true, stop.signal)
-      if (again.total !== first.total) throw new Error(`YouTube gave another file for this video mid-way (${again.engine} link)`)
-      return again
-    }
+  const send = (controller, piece) => {
+    const part = piece.body.subarray(next - piece.from, Math.min(piece.to, last) - piece.from + 1)
+    // A copy: the kept piece is served again to the next request for it,
+    // and what's handed to the player may be taken over (transferred) or
+    // read from its whole buffer rather than this slice of it.
+    controller.enqueue(new Uint8Array(part))
+    next += part.length
+    if (next > last) controller.close()
   }
   const body = new ReadableStream({
-    start(controller) {
-      controller.enqueue(first.body.subarray(0, last - start + 1))
-      if (first.to >= last) controller.close()
-    },
+    start(controller) { send(controller, first) },
     async pull(controller) {
       if (cancelled || next > last) return
       try {
-        const got = await piece(next, Math.min(last, next + VIDEO_CHUNK - 1))
-        if (cancelled) return
-        controller.enqueue(got.body.subarray(0, last - got.from + 1))
-        next = got.to + 1
-        if (next > last) controller.close()
+        const piece = await videoBytesAt(id, height, next, fetchImpl, dropped.signal)
+        if (!cancelled) send(controller, piece)
       } catch (error) {
         if (cancelled) return
-        if (stop.signal.aborted) { controller.error(new Error('Replaced by a newer request')); return }
         videoFailed(id, error.message)
         controller.error(error)
       }
     },
     cancel() {
       cancelled = true
-      stop.abort()
-      if (videoStreams.get(id) === stop) videoStreams.delete(id)
+      dropped.abort()
+      // How far the player got before dropping it (0, or a piece's worth, says what it didn't take).
+      videoLog(id, `stream from ${start} dropped after ${next - start} bytes`)
     },
   }, { highWaterMark: 0 })
   return new Response(body, {
     status: 206,
     headers: { 'content-type': first.mime, 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${last}/${first.total}`, 'content-length': String(last - start + 1) },
   })
+}
+
+// Music videos over plain HTTP, from a server of their own on this machine
+// only (127.0.0.1, a random port, a random token in every address). The
+// player's loader trusts HTTP for jumping around a file: from the custom
+// lokal-stream:// scheme it took the first piece of every stream after a
+// jump and dropped it, asked for the same bytes again, and gave up ("data
+// source error"). Same streams behind it (videoStream); lokal-stream://ytv/
+// stays for when this server can't start.
+let videoServer = null // Promise<base address, e.g. http://127.0.0.1:PORT/TOKEN>
+const VIDEO_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'range, x-lokal-why', 'access-control-expose-headers': 'content-range, content-length, accept-ranges' }
+
+function videoStreamBase() {
+  if (videoServer) return videoServer
+  const token = require('crypto').randomBytes(16).toString('hex')
+  const fetchImpl = (u, init) => require('electron').net.fetch(u, init)
+  const server = require('http').createServer(async (req, res) => {
+    const found = String(req.url || '').match(/^\/([0-9a-f]{32})\/ytv\/([\w-]{11})(?:\?.*)?$/)
+    if (!found || found[1] !== token) { res.writeHead(404); res.end(); return }
+    if (req.method === 'OPTIONS') { res.writeHead(204, VIDEO_CORS); res.end(); return }
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, VIDEO_CORS); res.end(); return }
+    const id = found[2]
+    const why = req.headers['x-lokal-why']
+    if (why) {
+      videoLog(id, `the player stopped: ${String(why).slice(0, 300)}${videoErrors.get(id) ? '' : ' (no request failed)'}`)
+      res.writeHead(200, { ...VIDEO_CORS, 'content-type': 'text/plain' })
+      res.end(videoErrors.get(id) || '')
+      return
+    }
+    let reader = null
+    res.on('close', () => { if (!res.writableEnded) reader?.cancel().catch(() => {}) })
+    try {
+      const answer = await videoStream(id, req.headers.range, fetchImpl)
+      res.writeHead(answer.status, { ...VIDEO_CORS, ...Object.fromEntries(answer.headers) })
+      if (req.method === 'HEAD' || res.destroyed) { answer.body?.cancel().catch(() => {}); res.end(); return }
+      reader = answer.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done || res.destroyed) break
+        if (!res.write(value)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve) })
+      }
+      res.end()
+    } catch (error) {
+      if (!res.headersSent) res.writeHead(502, { ...VIDEO_CORS, 'content-type': 'text/plain' })
+      res.end(String(error?.message || error))
+    }
+  })
+  videoServer = new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}/${token}`))
+  })
+  videoServer.catch(() => { videoServer = null })
+  return videoServer
 }
 
 /** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking; ytv: a music video's picture. */
@@ -543,7 +718,12 @@ function registerStreamProtocol(protocol, net) {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
       if (provider === 'ytv') {
         // The player asking why the video's stream failed.
-        if (request.headers.get('x-lokal-why')) return new Response(videoErrors.get(id) || '', { status: 200, headers: { 'content-type': 'text/plain' } })
+        const why = request.headers.get('x-lokal-why')
+        if (why) {
+          // The player's own error, for the log next to the requests above it.
+          videoLog(id, `the player stopped: ${why.slice(0, 300)}${videoErrors.get(id) ? '' : ' (no request failed)'}`)
+          return new Response(videoErrors.get(id) || '', { status: 200, headers: { 'content-type': 'text/plain' } })
+        }
         return await videoStream(id, request.headers.get('Range'), (u, init) => net.fetch(u, init))
       }
       // Electron doesn't fire request.signal when the player drops a stream
