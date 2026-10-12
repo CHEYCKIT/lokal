@@ -307,13 +307,16 @@ export function useCastPlayback(helpers) {
     }
 
     const activate = ({ joined }) => {
-      if (live) return
       const status = cast().status || {}
       const state = player()
+      // Moving to another device while casting: the new one takes over from
+      // where the last one was (this computer's own volume stays the one to go back to).
+      const switching = live
+      if (switching) { clearTimeout(switching.syncTimer); clearTimeout(switching.volumeTimer) }
       live = fresh()
       live.device = status.device || null
-      live.localVolume = state.volume
-      let position = state.progress || 0
+      live.localVolume = switching ? switching.localVolume : state.volume
+      let position = switching ? castPosition(switching.anchor, Date.now(), Number(state.duration) || 0) : state.progress || 0
       let play = !!state.isPlaying
       // This computer goes quiet (App.jsx parks its audio) before anything else moves.
       usePlayerStore.setState({ castActive: true })

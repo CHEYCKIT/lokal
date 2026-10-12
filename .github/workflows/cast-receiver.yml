@@ -30,6 +30,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}receiver/
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Put the receiver together
         run: |
           mkdir -p _site/receiver

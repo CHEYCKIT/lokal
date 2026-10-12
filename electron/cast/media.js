@@ -51,6 +51,8 @@ function createCastMedia({
   log = () => {},
 } = {}) {
   const converting = new Map() // destination -> Promise<path>
+  const inUse = new Map() // converted file the TV may fetch -> how many prepared songs use it
+  const use = file => inUse.set(file, (inUse.get(file) || 0) + 1)
 
   async function convertOnce(dest, args) {
     if (fs.existsSync(dest)) {
@@ -64,7 +66,8 @@ function createCastMedia({
         args[args.length - 1] = temp
         await convert(ffmpeg(), args)
         fs.renameSync(temp, dest)
-        try { trimCache(dest) } catch {}
+        // Kept: this file, and every converted file the TV holds or plays now.
+        try { trimCache([dest, ...inUse.keys()]) } catch {}
         return dest
       } catch (error) {
         try { fs.unlinkSync(temp) } catch {}
@@ -102,6 +105,7 @@ function createCastMedia({
     const row = { ...(trackRow(track?.id) || {}), ...track }
     if (!row?.id) throw new Error('Nothing to play')
     const keys = []
+    const files = [] // converted files it plays from (kept by the cache while in use)
     let url = null
     let mime = null
     let converted = false
@@ -115,6 +119,8 @@ function createCastMedia({
         const dest = cachePath(`${ref.provider}:${ref.id}`, plan)
         const source = stream.file || stream.url
         await convertOnce(dest, convertArgs(source, dest, plan, { headers: stream.file ? null : stream.headers }))
+        use(dest)
+        files.push(dest)
         const added = server.add({ kind: 'file', path: dest, mime: plan.mime }, 'song' + plan.ext)
         keys.push(added.key)
         url = server.urlFor(added.path, deviceHost)
@@ -148,6 +154,8 @@ function createCastMedia({
         try { stat = fs.statSync(file) } catch {}
         const dest = cachePath(`${file}\u0000${stat?.size}\u0000${stat?.mtimeMs}`, plan)
         await convertOnce(dest, convertArgs(file, dest, plan))
+        use(dest)
+        files.push(dest)
         const added = server.add({ kind: 'file', path: dest, mime: plan.mime }, 'song' + plan.ext)
         keys.push(added.key)
         url = server.urlFor(added.path, deviceHost)
@@ -171,12 +179,18 @@ function createCastMedia({
         ...(art.url ? { images: [{ url: art.url }] } : {}),
       },
       keys,
+      files,
     }
   }
 
   /** Takes a prepared song's addresses down. */
   function release(prepared) {
     for (const key of prepared?.keys || []) server.remove(key)
+    for (const file of prepared?.files || []) {
+      const left = (inUse.get(file) || 0) - 1
+      if (left > 0) inUse.set(file, left)
+      else inUse.delete(file)
+    }
   }
 
   /** A song's cover for Lokal's receiver (its Up Next row): { url, key } (key: to take it down). */

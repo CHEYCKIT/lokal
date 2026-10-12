@@ -340,6 +340,8 @@ function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onSt
 // followed while the panel is open, every second while it runs.
 function useArtistRefreshStatus(enabled) {
   const [status, setStatus] = useState(null)
+  // Bumped when the job is started here: the status is read again at once.
+  const [kick, setKick] = useState(0)
   useEffect(() => {
     if (!enabled) return undefined
     let timer = null
@@ -352,7 +354,7 @@ function useArtistRefreshStatus(enabled) {
     }
     tick()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [enabled])
+  }, [enabled, kick])
   const cancel = async () => {
     const next = await Promise.resolve(api.artistsRefreshAllCancel()).catch(() => null)
     if (next && !next.error) setStatus(next)
@@ -361,14 +363,7 @@ function useArtistRefreshStatus(enabled) {
   const start = async () => {
     const next = await Promise.resolve(api.artistsRefreshAllMetadata({ source: peekSettings()?.artist_metadata_source || 'either' })).catch(() => null)
     if (next && !next.error) setStatus(next)
-    // Followed every second from here (the timer above may be waiting longer).
-    const follow = async () => {
-      const now = await Promise.resolve(api.artistsRefreshAllStatus()).catch(() => null)
-      if (!now || now.error) return
-      setStatus(now)
-      if (now.running) setTimeout(follow, 1000)
-    }
-    setTimeout(follow, 1000)
+    setKick(value => value + 1)
   }
   return [status, cancel, start]
 }

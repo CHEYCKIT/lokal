@@ -116,3 +116,27 @@ test('a file the TV can\'t play is converted once (the second time comes from th
   const res = await fetch(second.url.replace(/^http:\/\/[^/]+/, `http://127.0.0.1:${server.port}`))
   assert.equal(await res.text(), 'flac-bytes')
 })
+
+test('converted songs the TV still holds are kept when the cache is trimmed', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-cast-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const songs = ['a', 'b'].map(name => { const file = path.join(dir, `${name}.m4a`); fs.writeFileSync(file, name); return file })
+  const server = createCastMediaServer()
+  await server.start()
+  t.after(() => server.stop())
+  const trims = []
+  const media = createCastMedia({
+    server,
+    cacheDir: () => path.join(dir, 'cache'),
+    trackRow: id => ({ id, file_path: songs[id === 'a' ? 0 : 1], codec: 'ALAC', sample_rate: 44100, bit_depth: 16, lossless: 1 }),
+    convert: async (ffmpeg, args) => { fs.writeFileSync(args.at(-1), 'flac') },
+    trimCache: keep => trims.push(keep),
+  })
+  const first = await media.prepare({ id: 'a' }, { deviceHost: '127.0.0.1' })
+  await media.prepare({ id: 'b' }, { deviceHost: '127.0.0.1' })
+  assert.ok(trims[1].includes(first.files[0]), 'the first song, still held, is kept')
+  media.release(first)
+  fs.rmSync(path.join(dir, 'cache'), { recursive: true, force: true })
+  await media.prepare({ id: 'b' }, { deviceHost: '127.0.0.1' })
+  assert.ok(!trims.at(-1).includes(first.files[0]), 'released: no longer kept')
+})

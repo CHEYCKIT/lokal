@@ -34,6 +34,8 @@ let genresTimer = null
 export async function readGenresStatus() {
   clearTimeout(genresTimer)
   const status = await Promise.resolve(api.genresStatus?.()).catch(() => null)
+  // Two reads at once (the panel opening as the job starts): one poll, not two.
+  clearTimeout(genresTimer)
   if (!status || status.error) return
   useLibraryJobs.setState(state => ({ genres: { ...status, started: state.genres?.started } }))
   if (status.running) genresTimer = setTimeout(readGenresStatus, 2500)

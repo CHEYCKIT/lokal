@@ -60,6 +60,7 @@ class CastController extends EventEmitter {
     this.duration = null
     this.volume = { level: 1, muted: false }
     this.prepared = new Map() // trackId -> prepared (addresses on the media server)
+    this.session = (this.session || 0) + 1 // a song got ready for an earlier session is let go of
     this.desired = null
     this.generation = 0
     this.applied = 0
@@ -193,7 +194,12 @@ class CastController extends EventEmitter {
         await this.open(device)
         if (await this.join()) { this.log('cast: rejoined'); this.emit('rejoined'); this.publish(); return }
         break
-      } catch {}
+      } catch {
+        // That try's connection goes before the next one is opened.
+        const failed = this.connection
+        this.connection = null
+        try { failed?.close() } catch {}
+      }
     }
     if (this.device !== device) return
     this.end('lost')
@@ -361,7 +367,10 @@ class CastController extends EventEmitter {
   async prepare(track, { convert = false } = {}) {
     const key = String(track.id)
     if (!convert && this.prepared.has(key)) return this.prepared.get(key)
+    const session = this.session
     const prepared = await this.media.prepare(track, { deviceHost: this.device?.host, convert })
+    // The session ended (or another started) meanwhile: its addresses aren't this one's.
+    if (session !== this.session) { this.media.release(prepared); throw new Error('The casting session changed') }
     const previous = this.prepared.get(key)
     if (previous) this.media.release(previous)
     this.prepared.set(key, prepared)
@@ -425,7 +434,9 @@ class CastController extends EventEmitter {
       }
       if (stale()) return
     }
-    await this.reconcile(want, generation)
+    // The playing song is on the TV: a next song that can't be queued is
+    // reported in the log, never as a failure of the one playing.
+    try { await this.reconcile(want, generation) } catch (error) { this.log(`cast: couldn't update the queue on the TV: ${error.message}`) }
   }
 
   /** Makes what the TV holds after the playing song match the window's next songs. */
