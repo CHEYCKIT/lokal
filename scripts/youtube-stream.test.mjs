@@ -176,12 +176,47 @@ test('a fast link YouTube refuses sends that song to yt-dlp', async t => {
   assert.equal(fast.calls, 1, 'the refused fast link was not asked for again')
 })
 
-test('music videos stay with yt-dlp', async t => {
+test('an engine without video support leaves music videos to yt-dlp', async t => {
   const { child, spawn, youtube } = extractorFixture(t)
   const fast = fastEngine(async () => { throw new Error('should not be asked') })
   setImmediate(() => { child.stdout.write(JSON.stringify({ url: 'https://v.example/video?expire=4102444800', ext: 'mp4', vcodec: 'avc1', height: 1080 }) + '\n'); child.emit('close', 0) })
   const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp', quality: 'video' })
   assert.equal(stream.mime, 'video/mp4')
   assert.equal(fast.calls, 0)
+  assert.equal(spawn.mock.callCount(), 1)
+})
+
+const videoEngine = (audio, video) => ({ audioCalls: 0, videoCalls: [], resolveAudio(videoId, options) { this.audioCalls++; return audio(videoId, options) }, resolveVideo(videoId, options) { this.videoCalls.push(options); return video(videoId, options) } })
+const FAST_VIDEO = { url: 'https://rr1.googlevideo.example/videoplayback?expire=4102444800&itag=137', headers: {}, mime: 'video/mp4', format: 'avc1 720p', expiresAt: Date.now() + 3600e3, engine: 'youtubei' }
+
+test('a music video\'s picture comes from the fast engine, at the quality setting\'s height', async t => {
+  const { spawn, youtube } = extractorFixture(t)
+  const fast = videoEngine(async () => { throw new Error('not audio') }, async () => FAST_VIDEO)
+  const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast, quality: 'video', videoHeight: 720 })
+  assert.equal(stream.url, FAST_VIDEO.url)
+  assert.deepEqual(fast.videoCalls, [{ height: 720 }])
+  assert.equal(fast.audioCalls, 0)
+  assert.equal(spawn.mock.callCount(), 0)
+})
+
+test('a video the fast engine can\'t do goes to yt-dlp without sending its song there too', async t => {
+  const { child, spawn, youtube } = extractorFixture(t)
+  const fast = videoEngine(async () => ({ url: FAST_URL, headers: {}, mime: 'audio/webm', expiresAt: Date.now() + 3600e3, engine: 'youtubei' }), async () => { throw new Error('YouTube offered no picture for this video.') })
+  setImmediate(() => { child.stdout.write(JSON.stringify({ url: 'https://v.example/ytdlp-video?expire=4102444800', ext: 'mp4', vcodec: 'avc1', height: 1080 }) + '\n'); child.emit('close', 0) })
+  const video = await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp', quality: 'video' })
+  assert.match(video.url, /ytdlp-video/)
+  assert.equal(spawn.mock.callCount(), 1)
+  const audio = await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp' })
+  assert.equal(audio.url, FAST_URL, 'the song still plays through the fast engine')
+  assert.equal(spawn.mock.callCount(), 1)
+})
+
+test('a caller with the fast engine off (downloads) doesn\'t get a cached fast link', async t => {
+  const { child, spawn, youtube } = extractorFixture(t)
+  const fast = videoEngine(async () => { throw new Error('not audio') }, async () => FAST_VIDEO)
+  await youtube.resolveStream('j_UhEi3GZOU', { fast, quality: 'video', videoHeight: 1080 })
+  setImmediate(() => { child.stdout.write(JSON.stringify({ url: 'https://v.example/ytdlp-video?expire=4102444800', ext: 'mp4', vcodec: 'avc1', height: 1080 }) + '\n'); child.emit('close', 0) })
+  const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast: null, ytdlp: '/fixture/yt-dlp', quality: 'video', videoHeight: 1080 })
+  assert.match(stream.url, /ytdlp-video/)
   assert.equal(spawn.mock.callCount(), 1)
 })

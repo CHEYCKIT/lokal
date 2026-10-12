@@ -274,7 +274,40 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
   if (accountSession) await accountSession.credentials().catch(() => {})
   const { findFfmpeg } = require('./tools')
   const options = streamOptions()
-  const canStream = !!options.ytdlp
+  // The fast engine plays YouTube without yt-dlp (and falls back to it when there).
+  const canStream = !!options.ytdlp || !!options.fast
+  const ytdlpSearch = query => runJsonSearch(options.ytdlp, query, entry => ({
+    ...entry,
+    id: entry.id,
+    videoId: entry.id,
+    artist: entry.channel || entry.uploader || '',
+    artists: [entry.channel || entry.uploader || ''].filter(Boolean),
+    kind: 'video',
+    official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
+    url: `https://www.youtube.com/watch?v=${entry.id}`,
+  }), 1, 10, undefined, { timeoutMs: 15000 })
+  // youtube.com's own search first (a request, under a second); yt-dlp's when
+  // that fails or finds nothing (a page YouTube laid out differently).
+  const fastSearch = async query => {
+    let found
+    try {
+      found = (await require('../online/videoPreview').searchVideos(query)).slice(0, 10).map(entry => ({
+        ...entry,
+        videoId: entry.id,
+        artist: entry.channel,
+        artists: [entry.channel].filter(Boolean),
+        kind: 'video',
+        official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title} ${entry.channel}`),
+      }))
+    } catch (error) {
+      require('electron-log').info(`YouTube fast engine (video): search through yt-dlp (${String(error?.message || error).slice(0, 200)})`)
+      if (!options.ytdlp) throw error
+      return ytdlpSearch(query)
+    }
+    if (found.length || !options.ytdlp) return found
+    require('electron-log').info('YouTube fast engine (video): search through yt-dlp (youtube.com found nothing)')
+    return ytdlpSearch(query)
+  }
   const video = await matcher.findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
     onProgress,
@@ -288,16 +321,7 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
       const media = await youtube.resolveStream(item.videoId, { ...options, quality: 'video' })
       return { input: media.url, headers: media.headers }
     }, item.duration || track.duration),
-    youtubeSearch: canStream ? query => runJsonSearch(options.ytdlp, query, entry => ({
-      ...entry,
-      id: entry.id,
-      videoId: entry.id,
-      artist: entry.channel || entry.uploader || '',
-      artists: [entry.channel || entry.uploader || ''].filter(Boolean),
-      kind: 'video',
-      official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
-      url: `https://www.youtube.com/watch?v=${entry.id}`,
-    }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
+    youtubeSearch: options.fast ? fastSearch : options.ytdlp ? ytdlpSearch : null,
     cacheFile,
     log: message => require('electron-log').info(message),
   })
@@ -392,8 +416,67 @@ function registerStreamScheme(protocol) {
 }
 
 const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges']
+const VIDEO_CHUNK = 2 * 1024 * 1024
+const VIDEO_CHUNK_TIMEOUT_MS = 30000
 
-/** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking. */
+/** One piece of a music video, read whole: { body, from, to, total, mime }. */
+async function videoChunk(id, from, to, fetchImpl) {
+  const upstream = new AbortController()
+  const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
+  try {
+    const { res, mime } = await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range: `bytes=${from}-${to}`, signal: upstream.signal, fetchImpl })
+    if (res.status !== 206) {
+      try { await res.body?.cancel?.() } catch {}
+      throw new Error(`YouTube refused the video (HTTP ${res.status})`)
+    }
+    const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
+    const body = Buffer.from(await res.arrayBuffer())
+    if (!span || !body.length) throw new Error('YouTube sent an empty piece of the video')
+    return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime }
+  } finally { clearTimeout(timer) }
+}
+
+/**
+ * A music video's picture (lokal-stream://ytv/<id>). The player sees one
+ * ordinary stream of what it asked for; behind it, YouTube is asked for
+ * pieces of at most 2 MB (what its own player asks for: an open-ended range
+ * is refused or slowed), the next one only as the player reads. Each piece
+ * is read whole, so a stream the player drops or stops reading (the video
+ * closed, paused, a seek) never holds a connection: those used to pile up
+ * on the video's server (Chromium allows six per server) until it stopped
+ * loading.
+ */
+async function videoStream(id, range, fetchImpl) {
+  const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
+  const start = asked ? Number(asked[1]) : 0
+  const first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl)
+  const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
+  let next = first.to + 1
+  let cancelled = false
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(first.body.subarray(0, last - start + 1))
+      if (first.to >= last) controller.close()
+    },
+    async pull(controller) {
+      if (cancelled || next > last) return
+      try {
+        const piece = await videoChunk(id, next, Math.min(last, next + VIDEO_CHUNK - 1), fetchImpl)
+        if (cancelled) return
+        controller.enqueue(piece.body.subarray(0, last - piece.from + 1))
+        next = piece.to + 1
+        if (next > last) controller.close()
+      } catch (error) { if (!cancelled) controller.error(error) }
+    },
+    cancel() { cancelled = true },
+  }, { highWaterMark: 0 })
+  return new Response(body, {
+    status: 206,
+    headers: { 'content-type': first.mime, 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${last}/${first.total}`, 'content-length': String(last - start + 1) },
+  })
+}
+
+/** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking; ytv: a music video's picture. */
 function registerStreamProtocol(protocol, net) {
   protocol.handle(SCHEME, async (request) => {
     let provider = ''
@@ -405,6 +488,7 @@ function registerStreamProtocol(protocol, net) {
     } catch {}
     try {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
+      if (provider === 'ytv') return await videoStream(id, request.headers.get('Range'), (u, init) => net.fetch(u, init))
       // Electron doesn't fire request.signal when the player drops a stream
       // (next song, seek); it cancels the response body. The request to the
       // media server must be aborted then, or its connection stays open: after
@@ -414,10 +498,7 @@ function registerStreamProtocol(protocol, net) {
       request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
       const fetchImpl = (u, init) => net.fetch(u, init)
       const range = request.headers.get('Range')
-      // ytv: a music video's picture (musicVideo.js).
-      const { res, mime } = provider === 'ytv'
-        ? await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range, signal: upstream.signal, fetchImpl })
-        : await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
+      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       if (!headers.has('content-type')) headers.set('content-type', mime)

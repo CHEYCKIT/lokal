@@ -229,8 +229,10 @@ async function downloadVideo(videoId, options = {}) {
       let temp = null
       try {
         reportProgress(0, 0)
+        // yt-dlp's link: a whole video in one request isn't something the
+        // fast engine's links are known to stand (they're for streaming in ranges).
         const { res, mime } = await fetchStream(videoId, {
-          ...options, quality: 'video', videoHeight: height, force: attempt > 0,
+          ...options, fast: null, quality: 'video', videoHeight: height, force: attempt > 0,
           signal: controller.signal, fetchImpl,
         })
         const dest = durablePath(videosDir(options), options.artist, options.title, videoId, height, extensionOf(mime))

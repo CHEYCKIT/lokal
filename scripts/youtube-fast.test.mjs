@@ -59,3 +59,26 @@ test('a song YouTube won\'t play this way throws (yt-dlp takes it); no token sti
   assert.equal(stream.poToken, false)
   assert.equal(tokenless.calls[0].token, undefined)
 })
+
+test('a music video\'s picture: the tallest within the cap, H.264 before VP9; sound-carrying or taller only as fallbacks', () => {
+  const v = (codec, height, bitrate = height * 1000) => format(`video/${codec === 'vp9' ? 'webm' : 'mp4'}; codecs="${codec}"`, bitrate, { height })
+  const adaptive = [v('vp9', 1080), v('avc1.640028', 1080), v('avc1.4d401f', 720), v('vp9', 2160), v('av01.0.08M.08', 1080, 9e6), format('audio/webm; codecs="opus"', 150000)]
+  assert.equal(fast.pickVideoFormat(adaptive, [], 1080).mime_type, 'video/mp4; codecs="avc1.640028"')
+  assert.equal(fast.pickVideoFormat(adaptive, [], 720).height, 720)
+  assert.equal(fast.pickVideoFormat([v('vp9', 1080)], [v('avc1', 360)], 480).height, 360, 'a muxed format within the cap before a taller picture')
+  assert.equal(fast.pickVideoFormat([v('vp9', 1440), v('vp9', 2160)], [], 480).height, 1440, 'nothing within the cap: the smallest over it')
+  assert.equal(fast.pickVideoFormat([format('audio/mp4', 1)], [], 1080), null)
+})
+
+test('resolveVideo: the picture\'s link, mime and a readable format', async () => {
+  const yt = {
+    session: { context: { client: { clientVersion: '1.20261008.01.00' } }, player: {} },
+    async getBasicInfo() { return { playability_status: { status: 'OK' }, streaming_data: { adaptive_formats: [format('video/webm; codecs="vp9"', 2e6, { height: 1080 }), format('audio/webm; codecs="opus"', 150000)], formats: [] } } },
+  }
+  const stream = await fast.resolveVideo('ccccccccccc', { height: 1080, clientFor: async () => yt, mint: async () => 'token' })
+  assert.equal(stream.mime, 'video/webm')
+  assert.equal(stream.format, 'vp9 1080p')
+  assert.equal(stream.engine, 'youtubei')
+  assert.match(stream.url, /cver=1\.20261008\.01\.00/)
+  await assert.rejects(fast.resolveVideo('ddddddddddd', { clientFor: async () => ({ ...yt, async getBasicInfo() { return { playability_status: { status: 'OK' }, streaming_data: { adaptive_formats: [format('audio/mp4', 1)] } } } }), mint: async () => null }), /no picture/)
+})
