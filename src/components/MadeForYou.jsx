@@ -3,11 +3,11 @@
 // middle is the biggest and highest, the others shrink and sink toward the
 // edges, and the row loops. Drag it, scroll it sideways or use the arrow
 // keys; it settles on a card. A click plays (the card the press started on,
-// unless it was a drag). "Surprise me" plays them all shuffled.
+// unless it was a drag). Hovering a card lifts it and zooms its cover a little.
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion'
-import { Play, Shuffle, Sparkles } from 'lucide-react'
+import { Play, Sparkles } from 'lucide-react'
 import FadeImg from './FadeImg'
 import { trackArtURL } from '../onlineTracks'
 
@@ -19,7 +19,7 @@ const ARC = 0.27 // how far the edge cards sink, from the card height
 const GAP = 0.08 // space between cards, from the card width
 const DRAG_THRESHOLD = 6 // px: past this, a press is a drag, not a click
 const SPRING = { type: 'spring', stiffness: 170, damping: 26, mass: 1 }
-const TOP = 8 // px above the middle card
+const TOP = 14 // px above the middle card (room for a hovered card to rise 8px)
 
 // Size at `u` cards from the middle: full in the middle, MIN_SCALE from halfway out.
 const half = VISIBLE / 2
@@ -49,7 +49,7 @@ function Card({ index, count, scroll, width, height, children, onPress }) {
   )
 }
 
-export default function MadeForYou({ picks, onPlay, onShuffle, onContextMenu }) {
+export default function MadeForYou({ picks, onPlay, onContextMenu }) {
   const reduceMotion = useReducedMotion()
   const scroll = useMotionValue(0)
   const stage = useRef(null)
@@ -58,11 +58,9 @@ export default function MadeForYou({ picks, onPlay, onShuffle, onContextMenu }) 
   const dragged = useRef(false)
   const moving = useRef(null)
   const wheelTimer = useRef(null)
-  // The deck: "Surprise me" then the picks.
-  const deck = useMemo(() => [{ surprise: true }, ...picks.map((pick, index) => ({ ...pick, index }))], [picks])
-  const count = deck.length
+  const count = picks.length
   // The middle card at rest on the first pick.
-  useEffect(() => { scroll.set(1) }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { scroll.set(0) }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const element = stage.current
@@ -142,28 +140,20 @@ export default function MadeForYou({ picks, onPlay, onShuffle, onContextMenu }) 
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         className="relative -mx-2 cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40 rounded-2xl"
         style={{ height: stageHeight }}>
-        {size.width > 0 && deck.map((item, index) => (
-          <Card key={item.surprise ? 'surprise' : item.track.id} index={index} count={count} scroll={scroll} width={size.width} height={size.height}
-            onPress={() => { if (dragged.current) { dragged.current = false; return } item.surprise ? onShuffle() : onPlay(item.index) }}>
-            {item.surprise ? (
-              <button type="button" aria-label="Surprise me: play these shuffled" className="group relative flex h-full w-full flex-col justify-end overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-accent/35 via-card to-black p-4 text-left shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-                <span className="absolute left-1/2 top-[42%] flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] shadow-lg transition-transform group-hover:scale-110"><Shuffle size={22} /></span>
-                <span className="text-sm font-semibold text-white">Surprise me</span>
-                <span className="text-xs text-white/70">Play these shuffled</span>
-              </button>
-            ) : (
-              <button type="button" aria-label={`Play ${item.track.title} by ${item.track.artist}`} onContextMenu={event => onContextMenu?.(event, item.track)}
-                className="group relative block h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-card text-left shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-                {trackArtURL(item.track) ? <FadeImg src={trackArtURL(item.track)} className="pointer-events-none absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-black" />}
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
-                <span className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] opacity-0 shadow-lg transition-opacity group-hover:opacity-100"><Play size={20} fill="currentColor" /></span>
-                <span className="absolute inset-x-0 bottom-0 p-3.5">
-                  <span className="block truncate text-sm font-semibold text-white">{item.track.title}</span>
-                  <span className="block truncate text-xs text-white/70">{item.track.artist}</span>
-                  <span className="mt-1.5 inline-block max-w-full truncate rounded-full bg-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/80 backdrop-blur-sm">{item.mix.name}</span>
-                </span>
-              </button>
-            )}
+        {size.width > 0 && picks.map((pick, index) => (
+          <Card key={pick.track.id} index={index} count={count} scroll={scroll} width={size.width} height={size.height}
+            onPress={() => { if (dragged.current) { dragged.current = false; return } onPlay(index) }}>
+            <button type="button" aria-label={`Play ${pick.track.title} by ${pick.track.artist}`} onContextMenu={event => onContextMenu?.(event, pick.track)}
+              className="group relative block h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-card text-left shadow-[0_18px_40px_rgba(0,0,0,0.45)] transition-[translate,box-shadow] duration-300 ease-out hover:shadow-[0_26px_50px_rgba(0,0,0,0.55)] motion-safe:hover:-translate-y-2">
+              {trackArtURL(pick.track) ? <FadeImg src={trackArtURL(pick.track)} className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-105" /> : <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-black" />}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+              <span className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] opacity-0 shadow-lg transition-opacity group-hover:opacity-100"><Play size={20} fill="currentColor" /></span>
+              <span className="absolute inset-x-0 bottom-0 p-3.5">
+                <span className="block truncate text-sm font-semibold text-white">{pick.track.title}</span>
+                <span className="block truncate text-xs text-white/70">{pick.track.artist}</span>
+                <span className="mt-1.5 inline-block max-w-full truncate rounded-full bg-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/80 backdrop-blur-sm">{pick.mix.name}</span>
+              </span>
+            </button>
           </Card>
         ))}
       </div>

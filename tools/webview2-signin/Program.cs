@@ -115,15 +115,34 @@ namespace LokalSignIn
             this.profile = profile;
             startUrl = url;
             Text = "Sign in to YouTube Music";
+            // Sizes below are at 96 DPI; WinForms scales them to the screen's
+            // DPI (without AutoScaleDimensions it doesn't, and the window comes
+            // out tiny on a 150% or 200% display).
+            SuspendLayout();
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(480, 760);
+            ClientSize = new Size(430, 880); // a large phone
+            MinimumSize = new Size(360, 560);
             StartPosition = FormStartPosition.CenterScreen;
+            ResumeLayout(false);
+            Load += (s, e) => FitScreen();
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             Controls.Add(web);
             Load += async (s, e) => await StartAsync();
             FormClosed += (s, e) => Program.Send(Program.Message("closed"));
             cookiePoll.Tick += async (s, e) => await PollCookiesAsync();
             new Thread(ReadCommands) { IsBackground = true, Name = "commands" }.Start();
+        }
+
+        // Never taller or wider than the screen it opens on.
+        private void FitScreen()
+        {
+            var area = Screen.FromControl(this).WorkingArea;
+            var height = Math.Min(Height, (int)(area.Height * 0.94));
+            var width = Math.Min(Width, area.Width);
+            if (height == Height && width == Width) return;
+            Size = new Size(width, height);
+            CenterToScreen();
         }
 
         private async Task StartAsync()
