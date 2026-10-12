@@ -258,11 +258,11 @@ export default function MiniPlayer({ windowed = false }) {
             }}
           />
           <div className="absolute inset-0 bg-bg -z-10" style={{ opacity: Math.min(0.55, parseFloat(bgVars.overlay || '0.55')) }} />
-          <div className="absolute inset-0 bg-black/20 -z-10" />
+          <div className="mini-dim absolute inset-0 bg-black/20 -z-10" />
         </>
       )}
 
-      <div className="flex items-center justify-between px-3 py-2 bg-black/25 backdrop-blur-sm border-b border-white/10" style={windowed && api.isElectron ? { WebkitAppRegion: 'drag' } : undefined}>
+      <div className="flex items-center justify-between px-3 py-2 bg-surface/50 backdrop-blur-sm border-b border-white/10" style={windowed && api.isElectron ? { WebkitAppRegion: 'drag' } : undefined}>
         <span className="min-w-0 flex-1 truncate pr-2 text-xs text-muted font-medium">{videoMode && currentTrack ? <><span className="text-white/90">{currentTrack.title}</span>{currentTrack.artist ? ` · ${currentTrack.artist}` : ''}</> : 'Mini Player'}</span>
         {(musicVideo?.videoId || videoMode) && <button onClick={toggleVideo} aria-pressed={videoMode} aria-label={videoMode ? 'Show artwork' : 'Show music video'} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="inline-flex items-center gap-1 text-[10px] text-muted hover:text-white transition-colors" title={videoMode ? 'Show artwork' : 'Show music video'}><Clapperboard size={13} />{videoMode ? 'Artwork' : 'Video'}</button>}
         <button
@@ -278,7 +278,7 @@ export default function MiniPlayer({ windowed = false }) {
         // Video mode: just the video and its lyrics. The seek bar and the
         // controls show over it while the mouse is on it (or keyboard focus
         // is in them); a click doesn't keep them up.
-        <div className="group/video relative">
+        <div className="on-media group/video relative">
           <MusicVideoPlayer compact />
           {musicVideo?.videoId && <VideoOffsetControl compact videoId={musicVideo.videoId} className="absolute left-2 top-2 opacity-0 transition-opacity duration-200 group-hover/video:opacity-100 has-[:focus-visible]:opacity-100" />}
           {lyricLine && <p className={`pointer-events-none absolute inset-x-3 bottom-2.5 text-center text-[13px] font-medium leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] transition-transform duration-200 group-hover/video:-translate-y-[4.25rem] group-has-[:focus-visible]/video:-translate-y-[4.25rem]`}>{lyricLine}</p>}

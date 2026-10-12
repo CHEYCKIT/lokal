@@ -73,6 +73,32 @@ html[data-theme="light"] [class*="bg-black"] .text-white\/10 {
   color: #fff !important;
 }
 
+/* A themed card on a dark overlay (onboarding, dialogs): light on Light, so
+   its white text is the theme's text again, while anything dark inside it
+   keeps white text. */
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white { color: var(--text) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/90 { color: rgb(var(--text-rgb) / 0.9) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/80 { color: rgb(var(--text-rgb) / 0.8) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/70 { color: rgb(var(--text-rgb) / 0.7) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/60 { color: rgb(var(--text-rgb) / 0.6) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/50 { color: rgb(var(--text-rgb) / 0.5) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/40 { color: rgb(var(--text-rgb) / 0.4) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/30 { color: rgb(var(--text-rgb) / 0.3) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/20 { color: rgb(var(--text-rgb) / 0.2) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) .text-white\/10 { color: rgb(var(--text-rgb) / 0.1) !important; }
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/90,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/80,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/70,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/60,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/50,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/40,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/30,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/20,
+html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elevated, .bg-card) [class*="bg-black"] .text-white\/10 {
+  color: #fff !important;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -268,3 +294,17 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
 .flow-slider:active::-webkit-slider-thumb { transform: scale(1.12); }
 .flow-slider:focus-visible { outline: none; }
 .flow-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.45), 0 2px 8px rgb(0 0 0 / 0.45); }
+
+/* Mini player: its window's dimming is for the dark themes; a light one stays light. */
+html[data-theme="light"] .mini-dim { display: none; }
+/* Over a video or picture (.on-media), white text stays white in a light theme. */
+html[data-theme="light"] .on-media .text-white, html[data-theme="light"] .on-media .hover\:text-white:hover { color: #fff !important; }
+html[data-theme="light"] .on-media .text-white\/90 { color: rgb(255 255 255 / 0.9) !important; }
+html[data-theme="light"] .on-media .text-white\/80 { color: rgb(255 255 255 / 0.8) !important; }
+html[data-theme="light"] .on-media .text-white\/70 { color: rgb(255 255 255 / 0.7) !important; }
+html[data-theme="light"] .on-media .text-white\/60 { color: rgb(255 255 255 / 0.6) !important; }
+html[data-theme="light"] .on-media .text-white\/50 { color: rgb(255 255 255 / 0.5) !important; }
+html[data-theme="light"] .on-media .text-white\/40 { color: rgb(255 255 255 / 0.4) !important; }
+html[data-theme="light"] .on-media .text-white\/30 { color: rgb(255 255 255 / 0.3) !important; }
+html[data-theme="light"] .on-media .text-white\/20 { color: rgb(255 255 255 / 0.2) !important; }
+html[data-theme="light"] .on-media .text-white\/10 { color: rgb(255 255 255 / 0.1) !important; }
