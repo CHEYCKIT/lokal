@@ -49,10 +49,10 @@ function setError(state, error) {
   for (const listener of listeners) listener()
 }
 
-/** Forget what was read: a settings change may be another account (and for the tests). */
 // Bumped by each reset: a find started before it is for what was forgotten.
 let generation = 0
 
+/** Forget what was read: a settings change may be another account (and for the tests). */
 export function resetOnline() {
   generation++
   sources.clear()
@@ -134,6 +134,7 @@ export function onlineShare(tuner, count) {
 
 const SEEDS_PER_ASK = 3
 const SEED_POOL = 24 // seeds are drawn from the library's best fits for the mood
+const MAX_MOOD_QUEUE = 30 // songs like the seeds kept to try, per source and mood
 const usedSeeds = new Map() // mood -> Set of seed song keys, so seeds take turns
 const seeded = new Map() // source:mood -> [{ song, seed }] still to try
 
@@ -182,36 +183,44 @@ async function similarTo(source, seed, client) {
  */
 export async function moodFinds(source, { mood, seeds, count, exclude = new Set(), isCurrent = () => true, client = api, analyze = track => client.automixAnalyze(track), fits = null, resolve = (rows, options) => resolveRecommendationTracks(rows, client, options), random = Math.random, log = () => {} } = {}) {
   if (!source || source === 'library' || !(count > 0) || !seeds?.length) return []
+  const started = generation
+  const live = () => started === generation && isCurrent()
   const { fitsMood } = fits ? { fitsMood: fits } : await import('./moodFit.js')
   const state = stateOf(source)
-  const key = `${source}:${mood}`
-  const queue = seeded.get(key) || []
   // Songs like each seed, interleaved (one of each in turn), new ones only.
-  const lists = await Promise.all(seeds.map(seed => similarTo(source, seed, client).then(songs => songs.map(song => ({ song, seed }))).catch(error => { setError(state, String(error.message || error)); return [] })))
+  const lists = await Promise.all(seeds.map(seed => similarTo(source, seed, client).then(songs => songs.map(song => ({ song, seed }))).catch(error => { setError(state, errorText(error)); return [] })))
+  if (!live()) return []
+  const key = `${source}:${mood}`
+  const queue = (seeded.get(key) || []).filter(({ song }) => !state.tried.has(songKey(song)))
+  const queued = new Set(queue.map(({ song }) => songKey(song)))
   for (let i = 0; lists.some(list => i < list.length); i++) {
     for (const list of lists) {
-      const entry = list[i]
-      if (entry && !queue.some(other => songKey(other.song) === songKey(entry.song))) queue.push(entry)
+      const id = list[i] && songKey(list[i].song)
+      if (id && !state.tried.has(id) && !queued.has(id)) { queue.push(list[i]); queued.add(id) }
     }
   }
+  // Kept to a few refills' worth: the rest are found again from other seeds.
+  if (queue.length > MAX_MOOD_QUEUE) queue.length = MAX_MOOD_QUEUE
   seeded.set(key, queue)
   const found = []
   let tries = 0
-  while (found.length < count && tries < count * 4 && queue.length && isCurrent()) {
+  while (found.length < count && tries < count * 4 && queue.length && live()) {
     const at = Math.floor(random() * Math.min(queue.length, 10))
     const [{ song, seed }] = queue.splice(at, 1)
     const songId = songKey(song)
     if (state.tried.has(songId) || exclude.has(songId)) continue
     state.tried.add(songId)
     tries++
-    const [track] = await Promise.resolve(resolve([{ ...song, source }], { isCurrent })).catch(() => [])
-    if (!track || !isCurrent() || exclude.has(songKey(track))) continue
+    const [track] = await Promise.resolve(resolve([{ ...song, source }], { isCurrent: live })).catch(() => [])
+    if (!track || !live() || exclude.has(songKey(track))) continue
     // Heard before it's offered: its pace and loudness against its seed's.
     const [mine, theirs] = await Promise.all([Promise.resolve(analyze(track)).catch(() => null), Promise.resolve(analyze(seed)).catch(() => null)])
+    if (!live()) break
     const verdict = fitsMood({ mood, candidate: mine, seed: theirs })
     if (!verdict.fit) { log(`flow ${mood}: left out "${track.title}" (${verdict.reason})`); continue }
     exclude.add(songKey(track))
     found.push({ ...track, flowFind: source, flowSeed: seed.id })
   }
-  return found
+  // Reset meanwhile: even what was found is the old account's.
+  return started === generation ? found : []
 }

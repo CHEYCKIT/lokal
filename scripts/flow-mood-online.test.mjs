@@ -60,3 +60,18 @@ test('library only, or no seeds: nothing online', async () => {
   assert.deepEqual(await moodFinds('library', { mood: 'chill', seeds: [{}], count: 2 }), [])
   assert.deepEqual(await moodFinds('lastfm', { mood: 'chill', seeds: [], count: 2 }), [])
 })
+
+test('mood finds: a reset while one is being heard returns nothing', async () => {
+  resetOnline()
+  const seeds = [1, 2, 3].map(n => ({ id: `s${n}`, title: `Seed ${n}`, artist: 'Seed' }))
+  const client = { lastfmSimilar: async (artist, title) => ({ tracks: Array.from({ length: 30 }, (_, i) => ({ title: `${title} like ${i}`, artist: 'X' })) }) }
+  const resolve = async rows => rows.map(row => ({ ...row, id: `yt:${row.title}`, file_path: `ghost://youtube/online/${row.title}` }))
+  let analysed = 0
+  const analyze = async () => { analysed++; return a(90, -12) }
+  const found = await moodFinds('lastfm', { mood: 'chill', seeds, count: 1, client, resolve, analyze, random: () => 0 })
+  assert.equal(found.length, 1)
+  // Reset while the next one is being heard: nothing comes back.
+  const stale = await moodFinds('lastfm', { mood: 'chill', seeds, count: 2, client, resolve, random: () => 0, analyze: async () => { resetOnline(); return a(90, -12) } })
+  assert.deepEqual(stale, [])
+  assert.ok(analysed >= 1)
+})
