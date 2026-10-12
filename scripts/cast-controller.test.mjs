@@ -204,3 +204,43 @@ test('a song that can\'t be got ready is reported once, and doesn\'t hold up the
   assert.equal(controller.status().trackId, 'd')
   assert.equal(errors.length, 1)
 })
+
+test('Lokal\'s receiver gets the Up Next row (covers it can load) and the music video; addresses are taken down when replaced', async t => {
+  const device = await startFakeReceiver({ apps: ['ABCDEF12', DEFAULT_MEDIA_RECEIVER] })
+  t.after(() => device.close())
+  const { controller } = setup(t, { device, appId: 'ABCDEF12' })
+  const published = new Set()
+  let next = 0
+  controller.server.add = (item, name) => { const key = `k${++next}`; published.add(key); return { key, path: `/token/${key}/${name}` } }
+  controller.server.urlFor = path => `http://pc${path}`
+  controller.media.artwork = track => (track.id === 'b' ? { url: 'http://pc/cover-b', key: 'cover-b' } : { url: null, key: null })
+  const unpublished = []
+  controller.media.unpublish = key => { unpublished.push(key); published.delete(key) }
+  await controller.connect(tv(device))
+  assert.equal(controller.status().receiver, 'lokal')
+  const custom = () => device.log.filter(entry => entry.namespace === 'urn:x-cast:app.lokal.cast').map(entry => entry.data)
+
+  controller.sendUpNext([track('b'), track('c')])
+  await until(() => custom().length === 1)
+  assert.deepEqual(custom()[0], { type: 'upnext', items: [{ id: 'b', title: 'Song b', artist: 'Artist', image: 'http://pc/cover-b' }, { id: 'c', title: 'Song c', artist: 'Artist', image: null }] })
+  controller.sendUpNext([track('c')])
+  assert.deepEqual(unpublished, ['cover-b'], 'the last row\'s covers are taken down')
+
+  controller.sendVideo({ trackId: 'a', item: { kind: 'relay', mime: null }, name: 'video', segments: [{ start: 0, end: null, offset: 2 }] })
+  await until(() => custom().length === 3)
+  assert.deepEqual(custom()[2], { type: 'video', trackId: 'a', url: 'http://pc/token/k1/video', segments: [{ start: 0, end: null, offset: 2 }] })
+  controller.sendVideo({ trackId: 'b' })
+  await until(() => custom().length === 4)
+  assert.deepEqual(custom()[3], { type: 'video', trackId: 'b' })
+  assert.ok(unpublished.includes('k1'), 'the last video is taken down')
+})
+
+test('Google\'s receiver gets none of Lokal\'s own messages', async t => {
+  const device = await startFakeReceiver()
+  t.after(() => device.close())
+  const { controller } = setup(t, { device, appId: 'ABCDEF12' })
+  await controller.connect(tv(device))
+  assert.equal(controller.status().receiver, 'default')
+  assert.equal(controller.sendUpNext([track('b')]), false)
+  assert.equal(controller.sendVideo(null), false)
+})

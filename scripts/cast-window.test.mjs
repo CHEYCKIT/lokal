@@ -35,3 +35,12 @@ test('the TV\'s clock runs on between its reports, and songs it moved to are fou
   assert.deepEqual(locate({ queue, shuffle: true, shuffleQueue: [queue[3], queue[1]] }, 't1'), { shuffleIndex: 1, queueIndex: 1, track: queue[1] })
   assert.equal(locate({ queue }, 'gone'), null)
 })
+
+test('lyrics for Lokal\'s receiver: timed when synced, one break kept after a line', async () => {
+  const { receiverLyrics } = await import('../src/cast/castWindow.js')
+  const synced = receiverLyrics({ type: 'synced', lines: [{ time: 1.5, text: ' One ' }, { time: 4, text: '' }, { time: 5, text: '' }, { time: 6, text: 'Two' }] })
+  assert.deepEqual(synced, { synced: true, lines: [{ t: 1.5, text: 'One' }, { t: 4, text: '' }, { t: 6, text: 'Two' }] })
+  const plain = receiverLyrics({ type: 'plain', lines: [{ text: 'One' }, { text: '' }, { text: 'Two' }] })
+  assert.deepEqual(plain, { synced: false, lines: [{ t: null, text: 'One' }, { t: null, text: 'Two' }] })
+  assert.deepEqual(receiverLyrics(null), { synced: false, lines: [] })
+})

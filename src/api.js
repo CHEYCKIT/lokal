@@ -424,6 +424,8 @@ export const api = {
   castSetWindow: (window) => Promise.resolve(el()?.castSetWindow?.(window)),
   castCommand: (command) => Promise.resolve(el()?.castCommand?.(command)),
   castCustom: (data) => isE() && el()?.castCustom ? el()?.castCustom(data) : Promise.resolve(false),
+  castUpNext: (tracks) => isE() && el()?.castUpNext ? el()?.castUpNext(tracks) : Promise.resolve(false),
+  castVideo: (request) => isE() && el()?.castVideo ? el()?.castVideo(request) : Promise.resolve({ found: false }),
   onCastDevices: fn => isE() && el()?.onCastDevices ? el()?.onCastDevices(fn) : () => {},
   onCastStatus: fn => isE() && el()?.onCastStatus ? el()?.onCastStatus(fn) : () => {},
   onCastEnded: fn => isE() && el()?.onCastEnded ? el()?.onCastEnded(fn) : () => {},

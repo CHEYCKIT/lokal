@@ -134,6 +134,26 @@ function registerCastHandlers(ipcMain, { getWindow, powerSaveBlocker }) {
     return { ok: true }
   }))
   ipcMain.handle('cast:custom', (_, data) => (controller ? controller.sendCustom(data) : false))
+  ipcMain.handle('cast:upNext', (_, tracks) => (controller ? controller.sendUpNext(tracks) : false))
+  // The song's music video for Lokal's receiver (On the TV → Video), or none.
+  ipcMain.handle('cast:video', guard(async (_, request) => {
+    if (!controller) return { found: false }
+    const trackId = request?.trackId
+    if (!trackId) { controller.sendVideo(null); return { found: false } }
+    const online = require('./online')
+    const video = await online.prepareMusicVideoFor(trackId).catch(() => null)
+    if (!video?.videoId || !/^[\w-]{11}$/.test(String(video.videoId))) { controller.sendVideo({ trackId }); return { found: false } }
+    const extra = Number(request.offset) || 0
+    const segments = (Array.isArray(video.segments) ? video.segments : [{ start: 0, end: null, offset: 0 }])
+      .map(segment => ({ start: Number(segment.start) || 0, end: segment.end == null ? null : Number(segment.end), offset: (Number(segment.offset) || 0) + extra }))
+    const fs = require('fs')
+    const file = video.file && fs.existsSync(video.file) ? video.file : null
+    const item = file
+      ? { kind: 'file', path: file, mime: /\.webm$/i.test(file) ? 'video/webm' : 'video/mp4' }
+      : { kind: 'relay', mime: null, label: `video ${video.videoId}`, fetchRange: range => online.musicVideoStream(video.videoId, range) }
+    controller.sendVideo({ trackId, item, name: file ? 'video' + (/\.webm$/i.test(file) ? '.webm' : '.mp4') : 'video', segments })
+    return { found: true, downloaded: !!file }
+  }))
 }
 
 /** Lokal quitting: the TV is let go of (its app closed), and nothing is left listening. */

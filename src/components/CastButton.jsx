@@ -160,6 +160,7 @@ export default function CastButton() {
             )}
 
             {castActive && <TvVolume />}
+            {castActive && status?.receiver === 'lokal' && <TvView />}
 
             {error && <p role="alert" className="px-2.5 pt-2 text-xs text-red-400">{error}</p>}
 
@@ -231,5 +232,25 @@ function AddByAddress({ onDone }) {
       </div>
       <p className="text-[11px] leading-relaxed text-muted">{problem || 'On Google TV: Settings → Network & Internet → your Wi-Fi network.'}</p>
     </form>
+  )
+}
+
+// What Lokal's receiver shows on the TV.
+function TvView() {
+  const view = useCastStore(s => s.tvView)
+  const setTvView = useCastStore(s => s.setTvView)
+  return (
+    <div className="px-2.5 pb-2">
+      <p className="mb-1.5 text-[11px] text-muted">On the TV</p>
+      <div role="radiogroup" aria-label="On the TV" className="flex rounded-full bg-card p-0.5">
+        {[['nowplaying', 'Now playing'], ['lyrics', 'Lyrics'], ['video', 'Video']].map(([value, label]) => (
+          <button key={value} type="button" role="radio" aria-checked={view === value} onClick={() => setTvView(value)}
+            title={value === 'video' ? 'The music video, when the song has one' : undefined}
+            className={`flex-1 whitespace-nowrap rounded-full px-2 py-1 text-[11px] transition-colors ${view === value ? 'bg-accent text-base font-medium' : 'text-muted hover:text-text'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }

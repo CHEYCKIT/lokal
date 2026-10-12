@@ -16,6 +16,16 @@ export const useCastStore = create((set, get) => ({
   session: null,
   // A session that just ended: { reason: 'local'|'stopped'|'lost', last, at }.
   ended: null,
+  // What Lokal's receiver shows: 'nowplaying' (with Up Next), 'lyrics' or
+  // 'video' (the music video, when the song has one; else Now playing).
+  tvView: readTvView(),
+
+  setTvView: view => {
+    const tvView = view === 'lyrics' || view === 'video' ? view : 'nowplaying'
+    if (tvView === get().tvView) return
+    try { localStorage.setItem('lokal-cast-view', tvView) } catch {}
+    set({ tvView })
+  },
 
   setDevices: devices => set({ devices: Array.isArray(devices) ? devices : [] }),
   setStatus: status => set({ status: status || { state: 'idle' } }),
@@ -60,6 +70,10 @@ export const useCastStore = create((set, get) => ({
     await get().refresh()
   },
 }))
+
+function readTvView() {
+  try { const view = localStorage.getItem('lokal-cast-view'); return view === 'lyrics' || view === 'video' ? view : 'nowplaying' } catch { return 'nowplaying' }
+}
 
 function friendly(error) {
   const message = String(error?.message || error?.error || error || '')

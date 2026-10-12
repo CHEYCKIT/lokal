@@ -11,8 +11,9 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { api } from '../api'
 import { usePlayerStore, setOutputRoute } from '../store/player'
 import { useCastStore } from './castStore'
-import { castWindow, windowKey, castPosition, locate } from './castWindow'
+import { castWindow, windowKey, castPosition, locate, receiverLyrics, UP_NEXT } from './castWindow'
 import { showToast } from '../components/Toaster'
+import { loadMusicVideo, useVideoOffsets } from '../musicVideo'
 
 const SYNC_DELAY_MS = 120 // a burst of queue changes (a drag, an album added) is one update
 const TICK_MS = 250
@@ -57,6 +58,9 @@ export function useCastPlayback(helpers) {
       startedFor: null, // the song whose listen was started (Last.fm, ListenBrainz)
       lastPosition: 0,
       device: null,
+      upNextKey: null,
+      lyricsFor: null,
+      videoFor: null, // the song whose music video the receiver was sent (or told it has none)
     })
 
     const duration = () => Number(player().duration) || Number(player().currentTrack?.duration) || 0
@@ -94,6 +98,65 @@ export function useCastPlayback(helpers) {
           reload,
         })
       } catch {} finally { session.syncs-- }
+      sendUpNext()
+    }
+
+    // ------------------------------------------------------------ Lokal's receiver
+
+    // Only Lokal's own receiver (not Google's) has the Up Next row, lyrics and views.
+    const lokalReceiver = () => cast().status?.receiver === 'lokal'
+
+    const sendUpNext = (force = false) => {
+      if (!live || !lokalReceiver()) return
+      const window = castWindow(player(), UP_NEXT)
+      const key = window ? windowKey(window) : ''
+      if (!force && key === live.upNextKey) return
+      live.upNextKey = key
+      api.castUpNext(window ? window.upcoming : []).catch(() => {})
+    }
+
+    const sendLyrics = (force = false) => {
+      if (!live || !lokalReceiver()) return
+      const track = player().currentTrack
+      if (!track?.id || (!force && live.lyricsFor === String(track.id))) return
+      live.lyricsFor = String(track.id)
+      const session = live
+      Promise.resolve(api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path))
+        .catch(() => null)
+        .then(result => {
+          if (live !== session || String(player().currentTrack?.id) !== String(track.id)) return
+          api.castCustom({ type: 'lyrics', trackId: String(track.id), ...receiverLyrics(result) }).catch(() => {})
+        })
+    }
+
+    const sendLook = () => {
+      if (!live || !lokalReceiver()) return
+      let accent = ''
+      try { accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() } catch {}
+      api.castCustom({ type: 'view', view: cast().tvView, ...(accent ? { accent } : {}) }).catch(() => {})
+    }
+
+    // On the TV → Video: the song's music video, found as Lokal finds it here.
+    const sendVideo = (force = false) => {
+      if (!live || !lokalReceiver()) return
+      const track = player().currentTrack
+      const wanted = cast().tvView === 'video' && track?.id ? String(track.id) : null
+      if (!force && live.videoFor === wanted) return
+      live.videoFor = wanted
+      if (!wanted) { api.castVideo({ trackId: null }).catch(() => {}); return }
+      const session = live
+      loadMusicVideo(track.id).then(video => {
+        if (live !== session || live.videoFor !== wanted) return
+        const offset = video?.videoId ? useVideoOffsets.getState().offsets[video.videoId] || 0 : 0
+        api.castVideo({ trackId: video ? track.id : null, offset }).catch(() => {})
+      })
+    }
+
+    /** Everything the receiver shows besides the song: sent again when it (re)starts and says hello. */
+    const sendExtras = () => {
+      if (!live || !lokalReceiver()) return
+      live.extrasSent = true
+      sendLook(); sendUpNext(true); sendLyrics(true); sendVideo(true)
     }
 
     // ------------------------------------------------------------ the player moving on
@@ -121,6 +184,8 @@ export function useCastPlayback(helpers) {
       live.lastPosition = 0
       usePlayerStore.setState({ progress: 0, duration: Number(track.duration) || 0 })
       call('topUpRelated')
+      sendLyrics()
+      sendVideo()
     }
 
     const onIntent = playing => {
@@ -272,6 +337,7 @@ export function useCastPlayback(helpers) {
         ...(status.volume ? { volume: Number(status.volume.level) } : {}),
       })
       sendWindow({ position, play, force: true })
+      sendExtras()
     }
 
     const deactivate = ({ reason, last }) => {
@@ -319,6 +385,9 @@ export function useCastPlayback(helpers) {
     const offCast = useCastStore.subscribe((state, prev) => {
       if (state.session && state.session !== prev.session) activate(state.session)
       if (state.ended && state.ended !== prev.ended) deactivate(state.ended)
+      if (state.tvView !== prev.tvView) { sendLook(); sendVideo() }
+      // Lokal's receiver known only after the session started: what it shows goes now.
+      if (live && !live.extrasSent && state.status?.receiver === 'lokal') sendExtras()
     })
 
     const offs = [
@@ -327,6 +396,11 @@ export function useCastPlayback(helpers) {
       api.onCastEnded(info => cast().endedRemotely(info)),
       api.onCastFinished(() => onFinished()),
       api.onCastTrackError(info => onTrackError(info)),
+      api.onCastCustom(data => {
+        if (data?.type === 'hello') sendExtras()
+        // The view changed with the TV's remote.
+        else if (data?.type === 'view' && data.view) cast().setTvView(data.view)
+      }),
     ]
 
     const tick = setInterval(() => {

@@ -1,0 +1,99 @@
+# Casting
+
+Lokal casts to Google TV, Android TV, Chromecast, Nest speakers and speaker
+groups: the Cast button next to the search box's random button.
+
+## How it works
+
+- **Finding devices**: Lokal asks the network for Cast devices (mDNS,
+  `_googlecast._tcp`) when the Cast menu first opens, not at start, so
+  Windows doesn't ask about the firewall until casting is used. A device
+  that isn't found (guest Wi-Fi, a VPN, a firewall in the way) can be added
+  by its IP address from the menu; it's remembered.
+- **Talking to the TV**: Lokal speaks the Cast protocol itself
+  (`electron/cast/castv2.js`): TLS to port 8009, the receiver and media
+  channels, plus Lokal's own channel `urn:x-cast:app.lokal.cast`.
+- **The songs**: the TV fetches them from a small HTTP server on this
+  computer (`electron/cast/mediaServer.js`), on a random port, at addresses
+  with a random token and a random key per song. Files the TV can't play
+  are converted once with ffmpeg into the cache (Settings → Data → Cache):
+  lossless to FLAC (up to 24-bit / 96 kHz, or 16 / 48 with Settings →
+  Playback → Casting → Cast Quality → Standard), the rest to AAC 256k. MP3,
+  AAC, Opus, Vorbis, FLAC and WAV go as they are. Online songs (YouTube,
+  SoundCloud, addons) are relayed, since their links only work for this
+  computer.
+- **Who owns what**: Lokal keeps the queue (order, shuffle, repeat,
+  autoplay); the TV keeps the clock. The TV holds the playing song and the
+  next three, so it moves on by itself with no gap; Lokal follows it and
+  keeps that window filled (`electron/cast/controller.js`,
+  `src/cast/useCastPlayback.js`). Repeat-one runs on the TV.
+- **While casting** this computer's audio is parked; play, pause, seek,
+  next, the volume slider and the media keys control the TV; listening time,
+  Last.fm and ListenBrainz count as usual; the computer is kept awake.
+- **Ending**: "This computer" in the Cast menu closes the app on the TV and
+  carries on here from the same moment. If the TV is switched off, its app is
+  closed, or the network drops for good (three reconnects), Lokal pauses here
+  at the TV's position. Lokal restarted while the TV plays: picking the TV
+  again joins what it's playing.
+
+## The receiver (what the TV shows)
+
+Two receivers:
+
+1. **Lokal's** (`receiver/`): Now playing over the cover's colours, an
+   Up Next row that slides up (a moment after a song starts, in its last
+   20 seconds, while paused, or with the remote's ↓), synced lyrics, and the
+   music video (Cast menu → On the TV). The remote's ← → switch views.
+2. **Google's Default Media Receiver**: cover, title and progress. Used
+   until Lokal's is registered, and whenever Lokal's can't start.
+
+Working on the receiver: open `http://localhost:5173/receiver/preview.html`
+from Lokal's dev server (`npm run dev`). It shows the page at a TV's size
+with made-up songs and buttons for each state.
+
+## Publishing Lokal's receiver (one time)
+
+1. **Host it.** In the GitHub repository: Settings → Pages → Source:
+   **GitHub Actions**. Then Actions → **Cast receiver** → Run workflow (it
+   also runs on every change to `receiver/` on `main`). The receiver is then
+   at `https://<owner>.github.io/<repo>/receiver/` (for this fork:
+   `https://cheyckit.github.io/lokal/receiver/`). Open it in a browser
+   once: a blank dark page is right (it only comes alive on a Cast device).
+2. **Register it.** At the [Google Cast SDK Developer
+   Console](https://cast.google.com/publish), sign in, pay the one-time
+   US$5 fee, then **Add New Application → Custom Receiver**: name `Lokal`,
+   Receiver Application URL: the address above. Save. The console shows the
+   **Application ID** (8 characters, like `1A2B3C4D`).
+3. **Try it on your TV** (an unpublished app only runs on registered
+   devices). In the console: **Add New Device**, with the TV's serial number
+   (Google TV: Settings → System → About → Serial number; Chromecast: on its
+   box or in the Google Home app → device → Settings → Device information).
+   Wait about 15 minutes, then restart the TV. In Lokal: Settings → Playback
+   → Casting → **Receiver App ID**: the Application ID. Cast to the TV:
+   Lokal's receiver opens, and the Cast menu shows "Lokal on the TV".
+4. **Publish it.** In the console, **Publish** the application (it reaches
+   every device within about 15 minutes). Then set the ID in
+   `electron/cast/appId.js` (`LOKAL_CAST_APP_ID = '1A2B3C4D'`), so every
+   Lokal uses it with nothing to set; the Settings field can go back to
+   blank.
+
+Changes to `receiver/` go live when the workflow publishes them; no need to
+register again (the URL stays the same).
+
+## When something doesn't work
+
+- **No devices in the menu**: the TV must be on the same network as this
+  computer. Some routers keep devices apart ("AP isolation", "client
+  isolation", guest networks); a VPN can too. Add the TV by its IP address
+  (Google TV: Settings → Network & Internet → your Wi-Fi network).
+- **The TV connects but nothing plays**: the TV fetches songs from this
+  computer. On Windows, allow Lokal on **private networks** when the
+  firewall asks (or in Windows Security → Firewall → Allow an app). The
+  network must be set as private, not public.
+- **A song is skipped with "Couldn't play"**: the TV refused it even after
+  converting it, or an online song couldn't be fetched (e.g. one that is
+  DRM-protected on SoundCloud).
+- **Lyrics, Up Next and video are missing on the TV**: those come with
+  Lokal's receiver; with Google's, the TV shows the cover and title only.
+- Lokal's log (Settings → About → Debug Logs) has a `cast:` line for each
+  step.

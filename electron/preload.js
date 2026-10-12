@@ -212,6 +212,8 @@ contextBridge.exposeInMainWorld('electron', {
   castSetWindow: (window) => invoke('cast:setWindow', window),
   castCommand: (command) => invoke('cast:command', command),
   castCustom: (data) => invoke('cast:custom', data),
+  castUpNext: (tracks) => invoke('cast:upNext', tracks),
+  castVideo: (request) => invoke('cast:video', request),
   onCastDevices: fn => on('cast:devices', (_, list) => fn(list)),
   onCastStatus: fn => on('cast:status', (_, status) => fn(status)),
   onCastEnded: fn => on('cast:ended', (_, info) => fn(info)),

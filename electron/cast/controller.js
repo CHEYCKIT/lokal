@@ -20,6 +20,7 @@ const { CastConnection, NS, RECEIVER } = require('./castv2')
 const DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
 const CUSTOM_NAMESPACE = 'urn:x-cast:app.lokal.cast'
 const AHEAD = 3
+const UP_NEXT = 12 // the receiver's Up Next row
 const PRELOAD_S = 15
 const STATUS_POLL_MS = 5000 // the TV only reports changes: its clock is asked now and then
 const RECONNECT_TRIES = 3
@@ -66,6 +67,8 @@ class CastController extends EventEmitter {
     this.wakeSuperseded()
     this.loading = false
     this.retried = new Set() // track ids converted after the TV refused them
+    this.upNextKeys = [] // the Up Next row's covers on the media server
+    this.videoKey = null // the music video on the media server
     this.state = 'idle'
     this.error = null
     clearInterval(this.poll)
@@ -215,6 +218,10 @@ class CastController extends EventEmitter {
 
   teardown() {
     clearInterval(this.poll)
+    for (const key of this.upNextKeys || []) this.media.unpublish?.(key)
+    this.upNextKeys = []
+    if (this.videoKey) this.media.unpublish?.(this.videoKey)
+    this.videoKey = null
     try { this.connection?.close() } catch {}
     this.connection = null
     for (const prepared of this.prepared.values()) this.media.release(prepared)
@@ -480,6 +487,40 @@ class CastController extends EventEmitter {
   sendCustom(data) {
     if (!this.connection || !this.app?.custom) return false
     return this.connection.send(CUSTOM_NAMESPACE, data, this.app.transportId)
+  }
+
+  /**
+   * The playing song's music video for Lokal's receiver, which plays it muted
+   * and kept to the song: { trackId, item (a media server item: the
+   * downloaded file, or the stream relayed), name, segments }, or null for none.
+   */
+  sendVideo(video) {
+    if (!this.connection || !this.app?.custom) return false
+    if (this.videoKey) this.media.unpublish?.(this.videoKey)
+    this.videoKey = null
+    if (!video?.item) return this.sendCustom({ type: 'video', trackId: video?.trackId || null })
+    const added = this.server.add(video.item, video.name || 'video')
+    this.videoKey = added.key
+    const url = this.server.urlFor(added.path, this.device?.host)
+    return this.sendCustom({ type: 'video', trackId: String(video.trackId), url, segments: video.segments || [] })
+  }
+
+  /** The songs after the playing one, for the receiver's Up Next row (with covers it can load). */
+  sendUpNext(tracks) {
+    if (!this.connection || !this.app?.custom) return false
+    const keys = []
+    const items = (tracks || []).slice(0, UP_NEXT).map(track => {
+      let image = null
+      try {
+        const art = this.media.artwork?.(track, { deviceHost: this.device?.host })
+        if (art?.key) keys.push(art.key)
+        image = art?.url || null
+      } catch {}
+      return { id: String(track.id), title: track.title || '', artist: track.artist || '', image }
+    })
+    for (const key of this.upNextKeys) this.media.unpublish?.(key)
+    this.upNextKeys = keys
+    return this.sendCustom({ type: 'upnext', items })
   }
 }
 

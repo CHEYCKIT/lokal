@@ -94,7 +94,7 @@ function createCastMediaServer({ log = () => {} } = {}) {
       res.end(String(error?.message || error))
       return
     }
-    const headers = { ...CORS, 'content-type': item.mime, 'cache-control': 'no-store' }
+    const headers = { ...CORS, 'content-type': item.mime || answer.headers?.get?.('content-type') || 'application/octet-stream', 'cache-control': 'no-store' }
     for (const name of ['content-length', 'content-range', 'accept-ranges']) {
       const value = answer.headers?.get?.(name)
       if (value) headers[name] = value

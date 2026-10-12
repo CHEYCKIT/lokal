@@ -179,7 +179,13 @@ function createCastMedia({
     for (const key of prepared?.keys || []) server.remove(key)
   }
 
-  return { prepare, release }
+  /** A song's cover for Lokal's receiver (its Up Next row): { url, key } (key: to take it down). */
+  function artwork(track, { deviceHost } = {}) {
+    const row = { ...(trackRow(track?.id) || {}), ...track }
+    return artworkFor(row, deviceHost)
+  }
+
+  return { prepare, release, artwork, unpublish: key => { if (key) server.remove(key) } }
 }
 
 module.exports = { createCastMedia, runFfmpeg }
