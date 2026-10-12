@@ -744,16 +744,18 @@ export const usePlayerStore = create((set, get) => ({
       })
       return out
     }
+    // The unshuffled lists (what turning shuffle off goes back to) get them
+    // woven in after the song playing too, not at the end.
+    const weaveAfterCurrent = list => {
+      const at = list.findIndex(track => track.id === state.currentTrack?.id)
+      return at < 0 ? [...list, ...extra] : weave(list, at + 2)
+    }
+    const originalQueue = state.originalQueue.length ? { originalQueue: weaveAfterCurrent(state.originalQueue) } : {}
     const shuffled = state.shuffle && state.shuffleQueue.length > 0
     if (shuffled) {
-      set({
-        shuffleQueue: weave(state.shuffleQueue, state.shuffleIndex + 2),
-        queue: [...state.queue, ...extra],
-        ...(state.originalQueue.length ? { originalQueue: [...state.originalQueue, ...extra] } : {}),
-      })
+      set({ shuffleQueue: weave(state.shuffleQueue, state.shuffleIndex + 2), queue: weaveAfterCurrent(state.queue), ...originalQueue })
     } else {
-      const queue = weave(state.queue, state.queueIndex + 2)
-      set({ queue, ...(state.originalQueue.length ? { originalQueue: [...state.originalQueue, ...extra] } : {}) })
+      set({ queue: weave(state.queue, state.queueIndex + 2), ...originalQueue })
     }
   },
 

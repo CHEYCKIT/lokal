@@ -65,12 +65,23 @@ export function upcoming(state) {
   return state.queue.slice(state.queueIndex + 1)
 }
 
-/** Start a Flow. Resolves to the number of songs it started with (0: none to play). */
+/** Start a Flow. Resolves to the number of songs it started with (0: none to play; null: something else played meanwhile). */
+let starts = 0
 export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER }) {
+  const start = ++starts
+  const before = usePlayerStore.getState()
+  // Something else played (or another Flow was started) while this one was
+  // being picked: that stays, this one doesn't start.
+  const stale = () => {
+    const now = usePlayerStore.getState()
+    return start !== starts || now.playbackContext !== before.playbackContext || now.currentTrack?.id !== before.currentTrack?.id
+  }
   const pool = await flowPool(userId, { force: true })
   const tracks = pickFlow(pool, { count: START_COUNT, mood, tuner })
   if (!tracks.length) return 0
-  const context = flowContext(userId, mood, tuner, await sourceFor(tuner))
+  const source = await sourceFor(tuner)
+  if (stale()) return null
+  const context = flowContext(userId, mood, tuner, source)
   usePlayerStore.getState().playQueue(tracks, 0, context)
   weaveOnline(context, pool, START_COUNT).catch(() => {})
   return tracks.length

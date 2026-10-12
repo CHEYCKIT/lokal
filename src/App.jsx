@@ -1456,7 +1456,7 @@ export default function App() {
   }, [streamError])
 
   /** Look up the streams of the songs coming up ahead of time, so each starts without the wait (src/queuePrefetch.js). */
-  const prepareNextStream = useCallback(() => { prefetchUpcoming(usePlayerStore.getState()) }, [])
+  const prepareNextStream = useCallback(() => { prefetchUpcoming(usePlayerStore.getState(), { getState: usePlayerStore.getState }) }, [])
 
   // What's coming up changes with the song (a crossfade or AutoMix included:
   // looked up at once) and with the queue (songs added, moved, shuffled:
@@ -1464,10 +1464,10 @@ export default function App() {
   useEffect(() => {
     let timer = null
     const unsubscribe = usePlayerStore.subscribe((state, before) => {
-      if (state.currentTrack?.id !== before.currentTrack?.id) { clearTimeout(timer); prefetchUpcoming(state); return }
+      if (state.currentTrack?.id !== before.currentTrack?.id) { clearTimeout(timer); prefetchUpcoming(state, { getState: usePlayerStore.getState }); return }
       if (state.queue === before.queue && state.shuffleQueue === before.shuffleQueue && state.shuffle === before.shuffle && state.repeat === before.repeat) return
       clearTimeout(timer)
-      timer = setTimeout(() => prefetchUpcoming(usePlayerStore.getState()), 600)
+      timer = setTimeout(() => prefetchUpcoming(usePlayerStore.getState(), { getState: usePlayerStore.getState }), 600)
     })
     return () => { clearTimeout(timer); unsubscribe() }
   }, [])
