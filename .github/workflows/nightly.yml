@@ -129,6 +129,14 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Setup .NET (for the Windows sign-in helper)
+        # npm install builds tools/webview2-signin (the YouTube Music
+        # sign-in window in Microsoft Edge WebView2) through native:prepare.
+        if: matrix.os == 'windows-latest'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Install Dependencies
         run: npm install
 

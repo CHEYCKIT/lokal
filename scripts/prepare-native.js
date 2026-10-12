@@ -24,3 +24,6 @@ if (!fs.existsSync(target)) throw new Error('Windows SMTC bridge was not produce
 fs.mkdirSync(outputDir, { recursive: true })
 fs.copyFileSync(target, output)
 console.log('Prepared ' + output)
+
+// The YouTube Music sign-in helper (Microsoft Edge WebView2).
+require('./build-webview2-signin')
