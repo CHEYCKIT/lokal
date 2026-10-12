@@ -144,18 +144,23 @@ function describe(format) {
 // ------------------------------------------------------------ resolving
 
 /** `videoId`'s player response with a token, its link chosen by `pick`. One at a time. */
-function resolveWith(videoId, pick, { fetchImpl = (...args) => fetch(...args), mint = id => require('./poToken').mint(id), clientFor = client } = {}) {
+function resolveWith(videoId, pick, { fetchImpl = (...args) => fetch(...args), mint = id => require('./poToken').mint(id), clientFor = client, as = null } = {}) {
   // One at a time: the token lives on the shared session while a link is made.
   const job = queue.then(async () => {
     const yt = await clientFor(fetchImpl)
     const poToken = await mint(videoId)
     yt.session.po_token = poToken
     if (yt.session.player) yt.session.player.po_token = poToken
-    const info = await yt.getBasicInfo(videoId, poToken ? { po_token: poToken } : undefined)
+    // `as`: another of YouTube's clients than the session's own (YouTube Music).
+    const options = { ...(poToken ? { po_token: poToken } : {}), ...(as ? { client: as } : {}) }
+    const info = await yt.getBasicInfo(videoId, Object.keys(options).length ? options : undefined)
     const status = info?.playability_status?.status
     if (status && status !== 'OK') throw new Error(`YouTube: ${info.playability_status.reason || status}`)
     const { format, stream } = pick(info?.streaming_data || {})
-    const url = withClientVersion(await format.decipher(yt.session.player), yt.session.context.client.clientVersion)
+    // The session's own client runs at today's version (createClient); another
+    // client keeps the version youtubei.js asked with, which the link already names.
+    const deciphered = await format.decipher(yt.session.player)
+    const url = as ? deciphered : withClientVersion(deciphered, yt.session.context.client.clientVersion)
     if (!/^https:\/\//.test(url)) throw new Error('YouTube gave no stream link.')
     return { url, headers: {}, ...stream, expiresAt: expiryOf(url), engine: 'youtubei', poToken: !!poToken }
   })
@@ -179,14 +184,24 @@ function resolveAudio(videoId, { quality = 'best', ...options } = {}) {
  * A music video's picture, at most `height` tall: { url, headers, mime,
  * format ("avc1 1080p"), expiresAt, engine }. Throws like resolveAudio.
  */
-function resolveVideo(videoId, { height = 1080, ...options } = {}) {
-  return resolveWith(videoId, data => {
+async function resolveVideo(videoId, { height = 1080, clients = VIDEO_CLIENTS, ...options } = {}) {
+  const pick = data => {
     const format = pickVideoFormat(data.adaptive_formats, data.formats, height)
-    if (!format) throw new Error('YouTube offered no picture for this video.')
+    if (!format) throw new Error('no picture')
     const codec = codecOf(format).split('.')[0] || null
     return { format, stream: { mime: /webm/.test(format.mime_type) ? 'video/webm' : 'video/mp4', format: [codec, `${format.height}p`].filter(Boolean).join(' ') } }
-  }, options)
+  }
+  // YouTube Music's client first; a video it gives no picture for (one it
+  // doesn't count as a music video) is asked for as YouTube's other clients.
+  const tried = []
+  for (const as of clients) {
+    try { return await resolveWith(videoId, pick, { ...options, as }) } catch (error) {
+      tried.push(`${as || 'YouTube Music'}: ${String(error?.message || error).replace(/^YouTube: /, '').slice(0, 120)}`)
+    }
+  }
+  throw new Error(`YouTube offered no picture for this video (${tried.join('; ')})`)
 }
+const VIDEO_CLIENTS = [null, 'MWEB', 'TV']
 
 /** Set up the client and the attestation ahead of the first song. */
 function warm({ fetchImpl = (...args) => fetch(...args) } = {}) {

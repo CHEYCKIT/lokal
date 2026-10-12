@@ -992,7 +992,7 @@ async function fetchStream(videoId, { range, ytdlp, cookieArgs, cookieBrowser, q
     try { await res.body?.cancel?.() } catch {}
     ;({ stream, res } = await attempt(true))
   }
-  return { res, mime: stream.mime }
+  return { res, mime: stream.mime, engine: stream.engine || 'yt-dlp' }
 }
 
 /** A YouTube video id from a youtube.com / music.youtube.com / youtu.be link, or null. */
