@@ -3,7 +3,8 @@
 // with YouTube's player script, and a proof-of-origin token (poToken.js) so
 // YouTube serves the whole song. About a tenth of a second, against the few
 // seconds it takes to start yt-dlp. Anything it can't do (a song that needs
-// the account, a refused link) falls back to yt-dlp (youtube.js).
+// the account, a refused link) falls back to yt-dlp (youtube.js). Music
+// videos' pictures (resolveVideo) come the same way.
 //
 // YouTube's player script runs in a sandboxed hidden window, never in this
 // (Node) process.
@@ -92,6 +93,32 @@ function pickAudioFormat(formats, quality = 'best') {
   return quality === 'saver' ? byBitrate[byBitrate.length - 1] : byBitrate[0]
 }
 
+const VIDEO_CODECS = [/^avc1/, /^vp0?9/] // H.264 first (hardware decoding), then VP9
+
+function codecOf(format) {
+  return String(format?.mime_type || '').match(/codecs="([^"]+)"/)?.[1] || ''
+}
+
+/**
+ * A music video's picture, capped at `height` (Settings -> Playback -> Music
+ * Video Quality), the same order as yt-dlp's (youtube.js videoFormatArgs):
+ * the tallest picture-only format within the cap, H.264 before VP9 before
+ * the rest at a height; then a format with sound within the cap; then the
+ * smallest picture over it. It plays muted under the song's own audio.
+ */
+function pickVideoFormat(adaptive, muxed, height = 1080) {
+  const cap = [1080, 720, 480].includes(Number(height)) ? Number(height) : 1080
+  const isVideo = format => String(format?.mime_type || '').startsWith('video/') && format.height > 0
+  const rank = format => { const i = VIDEO_CODECS.findIndex(codec => codec.test(codecOf(format))); return i < 0 ? VIDEO_CODECS.length : i }
+  const best = list => [...list].sort((a, b) => (b.height - a.height) || (rank(a) - rank(b)) || ((b.bitrate || 0) - (a.bitrate || 0)))[0] || null
+  const pictures = (adaptive || []).filter(isVideo)
+  const withSound = (muxed || []).filter(isVideo)
+  return best(pictures.filter(format => format.height <= cap))
+    || best(withSound.filter(format => format.height <= cap))
+    || [...pictures, ...withSound].sort((a, b) => a.height - b.height)[0]
+    || null
+}
+
 /**
  * The link's `cver` set to the session's client version: youtubei.js stamps
  * its own built-in one when it decodes, and a link claiming another client
@@ -116,11 +143,8 @@ function describe(format) {
 
 // ------------------------------------------------------------ resolving
 
-/**
- * `videoId`'s audio stream: { url, headers, mime, format, expiresAt, engine }.
- * Throws when YouTube won't play it this way (yt-dlp is tried then).
- */
-function resolveAudio(videoId, { quality = 'best', fetchImpl = (...args) => fetch(...args), mint = id => require('./poToken').mint(id), clientFor = client } = {}) {
+/** `videoId`'s player response with a token, its link chosen by `pick`. One at a time. */
+function resolveWith(videoId, pick, { fetchImpl = (...args) => fetch(...args), mint = id => require('./poToken').mint(id), clientFor = client } = {}) {
   // One at a time: the token lives on the shared session while a link is made.
   const job = queue.then(async () => {
     const yt = await clientFor(fetchImpl)
@@ -130,15 +154,38 @@ function resolveAudio(videoId, { quality = 'best', fetchImpl = (...args) => fetc
     const info = await yt.getBasicInfo(videoId, poToken ? { po_token: poToken } : undefined)
     const status = info?.playability_status?.status
     if (status && status !== 'OK') throw new Error(`YouTube: ${info.playability_status.reason || status}`)
-    const format = pickAudioFormat(info?.streaming_data?.adaptive_formats, quality)
-    if (!format) throw new Error('YouTube offered no audio for this song.')
+    const { format, stream } = pick(info?.streaming_data || {})
     const url = withClientVersion(await format.decipher(yt.session.player), yt.session.context.client.clientVersion)
     if (!/^https:\/\//.test(url)) throw new Error('YouTube gave no stream link.')
-    const mime = String(format.mime_type).split(';')[0].trim() || 'audio/*'
-    return { url, headers: {}, mime, format: describe(format), expiresAt: expiryOf(url), engine: 'youtubei', poToken: !!poToken }
+    return { url, headers: {}, ...stream, expiresAt: expiryOf(url), engine: 'youtubei', poToken: !!poToken }
   })
   queue = job.catch(() => {})
   return job
+}
+
+/**
+ * `videoId`'s audio stream: { url, headers, mime, format, expiresAt, engine }.
+ * Throws when YouTube won't play it this way (yt-dlp is tried then).
+ */
+function resolveAudio(videoId, { quality = 'best', ...options } = {}) {
+  return resolveWith(videoId, data => {
+    const format = pickAudioFormat(data.adaptive_formats, quality)
+    if (!format) throw new Error('YouTube offered no audio for this song.')
+    return { format, stream: { mime: String(format.mime_type).split(';')[0].trim() || 'audio/*', format: describe(format) } }
+  }, options)
+}
+
+/**
+ * A music video's picture, at most `height` tall: { url, headers, mime,
+ * format ("avc1 1080p"), expiresAt, engine }. Throws like resolveAudio.
+ */
+function resolveVideo(videoId, { height = 1080, ...options } = {}) {
+  return resolveWith(videoId, data => {
+    const format = pickVideoFormat(data.adaptive_formats, data.formats, height)
+    if (!format) throw new Error('YouTube offered no picture for this video.')
+    const codec = codecOf(format).split('.')[0] || null
+    return { format, stream: { mime: /webm/.test(format.mime_type) ? 'video/webm' : 'video/mp4', format: [codec, `${format.height}p`].filter(Boolean).join(' ') } }
+  }, options)
 }
 
 /** Set up the client and the attestation ahead of the first song. */
@@ -154,4 +201,4 @@ function forget() {
   evalWindow = null
 }
 
-module.exports = { resolveAudio, warm, forget, pickAudioFormat, withClientVersion, expiryOf, evaluate }
+module.exports = { resolveAudio, resolveVideo, warm, forget, pickAudioFormat, pickVideoFormat, withClientVersion, expiryOf, evaluate }

@@ -38,8 +38,11 @@ function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
 function musicVideoResult(r) {
   if (r?.error) return r
   if (!r?.videoId) return null
-  const src = r.file ? electronFileURL(r.file) : null
-  return { ...r, src }
+  // Not downloaded: streamed from YouTube (lokal-stream://ytv/, the picture
+  // only; the song plays its own audio). Downloading it stays an option.
+  const streamed = !r.file && !!r.needsDownload && /^[\w-]{11}$/.test(r.videoId)
+  const src = r.file ? electronFileURL(r.file) : streamed ? `lokal-stream://ytv/${encodeURIComponent(r.videoId)}` : null
+  return { ...r, src, streamed }
 }
 
 function buildLastfmAuthUrl(apiKey) {
