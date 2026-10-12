@@ -35,9 +35,9 @@ const EQ_PRESETS = {
 const DEFAULT_EQ_PRESET = 'flat'
 const LASTFM_STATUS_KEY = 'lokal-lastfm-status-feed'
 const SETTINGS_CATEGORIES = [
-  { key: 'library', label: 'Library', icon: Music2 },
-  { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'integrations', label: 'Integrations', icon: Zap },
+  { key: 'playback', label: 'Playback', icon: Disc3 },
+  { key: 'library', label: 'Library', icon: Music2 },
   { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
@@ -428,7 +428,7 @@ export default function Settings() {
   const [manualGenreValue, setManualGenreValue] = useState('')
   const [activeCategory, setActiveCategory] = useState(() => {
     const requested = MOVED_CATEGORIES[location.state?.category] || location.state?.category
-    return SETTINGS_CATEGORIES.some(category => category.key === requested) ? requested : 'library'
+    return SETTINGS_CATEGORIES.some(category => category.key === requested) ? requested : SETTINGS_CATEGORIES[0].key
   })
   useEffect(() => {
     const requested = MOVED_CATEGORIES[location.state?.category] || location.state?.category
