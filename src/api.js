@@ -36,10 +36,16 @@ function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
 }
 
 // Where a video that isn't downloaded streams from: Lokal's own local
-// address for it (plain HTTP, which the video player handles best), asked
-// once; lokal-stream:// when there's none.
+// address for it (plain HTTP, which the video player handles best), kept
+// once known; lokal-stream:// while there's none, asked again next time
+// (the server may start later).
 let videoStreamBase = null
-const streamBase = () => (videoStreamBase ||= Promise.resolve(el()?.musicVideoStreamBase?.()).catch(() => null))
+const streamBase = async () => {
+  if (videoStreamBase) return videoStreamBase
+  const base = await Promise.resolve(el()?.musicVideoStreamBase?.()).catch(() => null)
+  if (base) videoStreamBase = base
+  return base || null
+}
 
 async function musicVideoResult(r) {
   if (r?.error) return r
