@@ -918,6 +918,9 @@ function runResolve(videoId, { ytdlp, cookieArgs = [], quality = 'best', videoHe
 const FAST_QUALITIES = new Set(['best', 'saver', 'analysis', 'video'])
 const FAST_RETRY_MS = 10 * 60 * 1000
 const fastFailed = new Map() // videoId -> until
+const fastReasons = new Map() // videoId -> why the fast engine last failed it
+/** Why the fast engine last couldn't do `videoId` (for `quality`), or null. */
+function fastFailure(videoId, quality) { return fastReasons.get(fastKey(videoId, quality)) || null }
 const fastKey = (videoId, quality) => quality === 'video' ? `${videoId}:video` : videoId
 function fastBlocked(videoId, quality) {
   const key = fastKey(videoId, quality)
@@ -929,6 +932,8 @@ function fastBlocked(videoId, quality) {
 function blockFast(videoId, quality, error) {
   if (fastFailed.size > 500) fastFailed.delete(fastFailed.keys().next().value)
   fastFailed.set(fastKey(videoId, quality), Date.now() + FAST_RETRY_MS)
+  if (fastReasons.size > 500) fastReasons.delete(fastReasons.keys().next().value)
+  fastReasons.set(fastKey(videoId, quality), String(error?.message || error).slice(0, 300))
   const what = quality === 'video' ? 'YouTube fast engine (video)' : 'YouTube fast engine'
   try { require('electron-log').info(`${what}: ${videoId} goes through yt-dlp for now (${String(error?.message || error).slice(0, 200)})`) } catch {}
 }
@@ -1006,5 +1011,5 @@ module.exports = {
   searchSongs, innertubeSearch, spellCheck, parseSearch, parseItem, parseDuration,
   fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
-  resolveStream, fetchStream, streamError, videoIdFromUrl,
+  resolveStream, fetchStream, streamError, videoIdFromUrl, fastFailure,
 }

@@ -70,6 +70,43 @@ async function createClient(fetchImpl) {
   return yt
 }
 
+// The YouTube Music account signed in to Lokal (youtubeSession.js), for a
+// video YouTube won't give a signed-out client ("Sign in to confirm you're
+// not a bot"): async () => { fetchImpl } (music.youtube.com requests only),
+// or null when not signed in.
+let account = null
+let signedJob = null // Promise<{ yt, at }>
+function setAccount(provider) { account = provider; signedJob = null }
+
+/** A fetch whose YouTube Music API requests go out as the account. */
+function accountFetch(credentials) {
+  return async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input?.url || String(input)
+    if (!/^https:\/\/music\.youtube\.com\/youtubei\//.test(url)) return fetch(input, init)
+    if (typeof input !== 'string' && input?.url) {
+      init = { method: input.method, headers: Object.fromEntries(input.headers.entries()), body: input.method === 'POST' ? await input.text() : undefined, ...init }
+    }
+    const headers = init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : { ...(init.headers || {}) }
+    return credentials.fetchImpl(url, { ...init, headers })
+  }
+}
+
+async function signedClient() {
+  const credentials = account ? await account().catch(() => null) : null
+  if (!credentials?.fetchImpl) return null
+  if (!signedJob) {
+    const { Innertube, ClientType } = library()
+    const job = Innertube.create({ fetch: accountFetch(credentials), retrieve_player: true, generate_session_locally: true, retrieve_innertube_config: false, client_type: ClientType.MUSIC })
+      .then(yt => ({ yt, at: Date.now() }))
+    job.catch(() => { if (signedJob === job) signedJob = null })
+    signedJob = job
+  }
+  const entry = await signedJob
+  if (Date.now() - entry.at < CLIENT_TTL_MS) return entry.yt
+  signedJob = null
+  return signedClient()
+}
+
 function client(fetchImpl) {
   if (!clientJob) {
     const job = createClient(fetchImpl).then(yt => ({ yt, at: Date.now() }))
@@ -130,6 +167,15 @@ function withClientVersion(url, version) {
   return String(url).replace(/([?&]cver=)[^&]*/, `$1${encodeURIComponent(version)}`)
 }
 
+/** The `cver` YouTube put in a format's link, before youtubei.js decodes it. */
+function serverClientVersion(format) {
+  const raw = String(format?.url || format?.signature_cipher || format?.cipher || '')
+  let text = raw
+  try { text = decodeURIComponent(raw) } catch {}
+  const found = text.match(/[?&]cver=([^&]+)/)?.[1]
+  try { return found ? decodeURIComponent(found) : null } catch { return found || null }
+}
+
 function expiryOf(url) {
   const seconds = Number(String(url).match(/[?&]expire=(\d+)/)?.[1])
   return seconds > 0 ? seconds * 1000 - 60000 : Date.now() + 5 * 60 * 60 * 1000
@@ -157,10 +203,12 @@ function resolveWith(videoId, pick, { fetchImpl = (...args) => fetch(...args), m
     const status = info?.playability_status?.status
     if (status && status !== 'OK') throw new Error(`YouTube: ${info.playability_status.reason || status}`)
     const { format, stream } = pick(info?.streaming_data || {})
-    // The session's own client runs at today's version (createClient); another
-    // client keeps the version youtubei.js asked with, which the link already names.
+    // The link names the client version that asked for it: the one YouTube
+    // put in it (youtubei.js stamps its own while decoding); without one, the
+    // session's (today's, createClient) for its own client.
+    const asked = serverClientVersion(format)
     const deciphered = await format.decipher(yt.session.player)
-    const url = as ? deciphered : withClientVersion(deciphered, yt.session.context.client.clientVersion)
+    const url = asked ? withClientVersion(deciphered, asked) : as ? deciphered : withClientVersion(deciphered, yt.session.context.client.clientVersion)
     if (!/^https:\/\//.test(url)) throw new Error('YouTube gave no stream link.')
     return { url, headers: {}, ...stream, expiresAt: expiryOf(url), engine: 'youtubei', poToken: !!poToken }
   })
@@ -191,17 +239,27 @@ async function resolveVideo(videoId, { height = 1080, clients = VIDEO_CLIENTS, .
     const codec = codecOf(format).split('.')[0] || null
     return { format, stream: { mime: /webm/.test(format.mime_type) ? 'video/webm' : 'video/mp4', format: [codec, `${format.height}p`].filter(Boolean).join(' ') } }
   }
-  // YouTube Music's client first; a video it gives no picture for (one it
-  // doesn't count as a music video) is asked for as YouTube's other clients.
+  // YouTube Music's client first, signed out then as the account (a video
+  // YouTube puts behind "confirm you're not a bot"); then YouTube's mobile
+  // web client the same two ways, for one it gives no picture for.
+  const signed = options.signedClient || signedClient
   const tried = []
   for (const as of clients) {
-    try { return await resolveWith(videoId, pick, { ...options, as }) } catch (error) {
-      tried.push(`${as || 'YouTube Music'}: ${String(error?.message || error).replace(/^YouTube: /, '').slice(0, 120)}`)
+    for (const asAccount of [false, true]) {
+      let clientFor = options.clientFor
+      if (asAccount) {
+        const yt = await signed().catch(() => null)
+        if (!yt) continue
+        clientFor = async () => yt
+      }
+      try { return await resolveWith(videoId, pick, { ...options, ...(clientFor ? { clientFor } : {}), as }) } catch (error) {
+        tried.push(`${as || 'YouTube Music'}${asAccount ? ' signed in' : ''}: ${String(error?.message || error).replace(/^YouTube: /, '').slice(0, 120)}`)
+      }
     }
   }
   throw new Error(`YouTube offered no picture for this video (${tried.join('; ')})`)
 }
-const VIDEO_CLIENTS = [null, 'MWEB', 'TV']
+const VIDEO_CLIENTS = [null, 'MWEB']
 
 /** Set up the client and the attestation ahead of the first song. */
 function warm({ fetchImpl = (...args) => fetch(...args) } = {}) {
@@ -211,9 +269,10 @@ function warm({ fetchImpl = (...args) => fetch(...args) } = {}) {
 
 function forget() {
   clientJob = null
+  signedJob = null
   queue = Promise.resolve()
   if (evalWindow && !evalWindow.isDestroyed()) evalWindow.destroy()
   evalWindow = null
 }
 
-module.exports = { resolveAudio, resolveVideo, warm, forget, pickAudioFormat, pickVideoFormat, withClientVersion, expiryOf, evaluate }
+module.exports = { resolveAudio, resolveVideo, setAccount, warm, forget, pickAudioFormat, pickVideoFormat, withClientVersion, expiryOf, evaluate }

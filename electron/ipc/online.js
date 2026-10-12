@@ -75,6 +75,11 @@ function registerOnlineHandlers(ipcMain) {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
   } })
+  // The fast engine asks as the account for a video YouTube won't give signed out.
+  require('../online/youtubeFast').setAccount(async () => {
+    const credentials = await accountSession.credentials()
+    return credentials?.cookies ? credentials : null
+  })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
@@ -421,6 +426,9 @@ const VIDEO_CHUNK_TIMEOUT_MS = 30000
 
 // Why a video's stream last failed (shown to the player, which only sees a read error).
 const videoErrors = new Map() // videoId -> message
+function videoLog(id, message) {
+  try { require('electron-log').info(`Music video stream: ${id}: ${message}`) } catch {}
+}
 function videoFailed(id, message) {
   if (videoErrors.size > 50) videoErrors.delete(videoErrors.keys().next().value)
   videoErrors.set(id, message)
@@ -475,10 +483,16 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
       if (previous === stream.url) continue
       previous = stream.url
       const engine = stream.engine || 'yt-dlp'
-      for (const open of [false, true]) {
+      // Why this isn't the fast engine's link (said with what YouTube refused).
+      const fastWhy = engine !== 'youtubei' && youtube.fastFailure(id, 'video')
+      if (fastWhy && !tried.some(entry => entry.startsWith('fast engine:'))) tried.push(`fast engine: ${fastWhy}`)
+      // Through Electron (as songs stream), open-ended if a range is refused,
+      // then through Node (as downloads fetch).
+      for (const { open, via } of [{ open: false, via: 'app' }, { open: true, via: 'app' }, { open: false, via: 'node' }]) {
         let res
         try {
-          res = await fetchImpl(stream.url, { headers: { ...stream.headers, Range: `bytes=${from}-${open ? '' : to}` }, signal: upstream.signal })
+          const get = via === 'node' ? (...args) => fetch(...args) : fetchImpl
+          res = await get(stream.url, { headers: { ...stream.headers, Range: `bytes=${from}-${open ? '' : to}` }, signal: upstream.signal })
         } catch (error) {
           throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : `Couldn't reach YouTube ${at} (${error.message})`)
         }
@@ -498,10 +512,11 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
             break
           }
           if (from === 0) videoFile(id, total)
+          if (tried.length || via === 'node') videoLog(id, `${at}: got it ${open ? 'open-ended' : 'as a range'}${via === 'node' ? ' through Node' : ''} (${engine} link) after: ${tried.join('; ') || 'nothing'}`)
           return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
         }
         try { await res.body?.cancel?.() } catch {}
-        tried.push(`HTTP ${res.status} ${open ? 'open range' : 'range'}, ${engine} link`)
+        tried.push(`HTTP ${res.status} ${open ? 'open range' : 'range'}${via === 'node' ? ' via Node' : ''}, ${engine} link`)
         if (![400, 403, 416].includes(res.status)) break
       }
     }
@@ -534,6 +549,7 @@ async function videoStream(id, range, fetchImpl) {
   }
   videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
+  videoLog(id, `asked ${range || 'the whole file'}; serving ${start}-${last} of ${first.total} bytes (${first.mime}, ${first.engine} link)`)
   let next = first.to + 1
   let cancelled = false
   const piece = async (from, to) => {
@@ -589,7 +605,12 @@ function registerStreamProtocol(protocol, net) {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
       if (provider === 'ytv') {
         // The player asking why the video's stream failed.
-        if (request.headers.get('x-lokal-why')) return new Response(videoErrors.get(id) || '', { status: 200, headers: { 'content-type': 'text/plain' } })
+        const why = request.headers.get('x-lokal-why')
+        if (why) {
+          // The player's own error, for the log next to the requests above it.
+          videoLog(id, `the player stopped: ${why.slice(0, 300)}${videoErrors.get(id) ? '' : ' (no request failed)'}`)
+          return new Response(videoErrors.get(id) || '', { status: 200, headers: { 'content-type': 'text/plain' } })
+        }
         return await videoStream(id, request.headers.get('Range'), (u, init) => net.fetch(u, init))
       }
       // Electron doesn't fire request.signal when the player drops a stream
