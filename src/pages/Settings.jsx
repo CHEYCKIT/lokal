@@ -6,6 +6,7 @@ import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCi
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
+import { useLibraryJobs, startLyricsIndex, cancelLyricsIndex, startGenres, readGenresStatus } from '../libraryJobs'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import AddonsSettings from '../components/AddonsSettings'
 import ProviderConnections from '../components/ProviderConnections'
@@ -373,39 +374,17 @@ export default function Settings() {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
-  // Fill In Genres runs in the background; its progress, read every few seconds while it runs.
-  const [genreJob, setGenreJob] = useState(null)
+  // Fill In Genres and Index Lyrics run in the background (src/libraryJobs.js,
+  // shared with the Downloads panel, which can start them too).
+  const genreJob = useLibraryJobs(s => s.genres)
   const [missingRepairJob, setMissingRepairJob] = useState(null)
-  const [lyricsIndexJob, setLyricsIndexJob] = useState(null)
-  useEffect(() => {
-    const offLyrics = api.onLyricsIndexProgress?.(p => setLyricsIndexJob(p))
-    return () => { offLyrics?.() }
-  }, [])
-  const indexAllLyrics = () => {
-    if (lyricsIndexJob?.running) { api.cancelLyricsIndex?.(); return }
-    setLyricsIndexJob({ running: true, done: 0, total: 0, found: 0 })
-    Promise.resolve(api.indexAllLyrics?.()).catch(() => setLyricsIndexJob(null))
-  }
+  const lyricsIndexJob = useLibraryJobs(s => s.lyrics)
+  const indexAllLyrics = () => (lyricsIndexJob?.running ? cancelLyricsIndex() : startLyricsIndex())
   const indexText = (job, what) => job?.running
     ? `${job.done || 0} of ${job.total || '…'} songs · ${job.found || 0} ${what} found${job.title ? ` · ${job.title}` : ''}`
     : job ? `Done: ${job.found || 0} ${what} found for ${job.done || 0} songs${job.cancelled ? ' (stopped)' : ''}` : ''
-  useEffect(() => {
-    let timer = null
-    let active = true
-    const poll = async () => {
-      const status = await Promise.resolve(api.genresStatus?.()).catch(() => null)
-      if (!active || !status) return
-      setGenreJob(current => ({ ...status, started: current?.started }))
-      if (status.running) timer = setTimeout(poll, 2500)
-    }
-    if (genreJob?.running) timer = setTimeout(poll, 2500)
-    else if (genreJob === null) poll()
-    return () => { active = false; clearTimeout(timer) }
-  }, [genreJob?.running]) // eslint-disable-line react-hooks/exhaustive-deps
-  const fillGenres = async () => {
-    const status = await Promise.resolve(api.fetchMissingGenres()).catch(e => ({ error: e?.message || 'Could not start' }))
-    setGenreJob(status?.error ? { error: status.error } : { ...status, started: true })
-  }
+  useEffect(() => { readGenresStatus() }, [])
+  const fillGenres = startGenres
   const genreText = genreJob?.error ? genreJob.error
     : genreJob?.running ? `Looking up… ${genreJob.done} of ${genreJob.total} albums and songs · ${genreJob.updated} songs filled in`
       : genreJob?.total ? `Done: ${genreJob.updated} of ${genreJob.songs} songs filled in. Songs iTunes doesn't know stay empty.`

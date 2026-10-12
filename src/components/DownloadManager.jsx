@@ -10,17 +10,19 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch, Play, Tags } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
 import { peekCache, writeCache } from '../pageCache'
 import { displayTitle } from '../downloadLinks'
 import { plural } from '../plural'
 import { explainDownloadError } from '../downloadErrors'
 import { ago, useReleaseCheck } from './ReleasesPanel'
-import { cancelVideoIndex, useVideoIndex } from '../videoIndex'
+import { cancelVideoIndex, startVideoIndex, useVideoIndex } from '../videoIndex'
+import { useLibraryJobs, startLyricsIndex, cancelLyricsIndex, startGenres, readGenresStatus } from '../libraryJobs'
+import { useDiscoveryArtists, loadDiscoveryArtists } from '../discoveryArtists'
 
 // ------------------------------------------------------------------ ring
 
@@ -292,8 +294,14 @@ function DownloadedPlaylists() {
   )
 }
 
-/** A job running outside the download queue: its progress, or how it last ended. */
-function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onStop, onOpen }) {
+/** A job running outside the download queue: its progress, or how it last ended, and a button to run it. */
+function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onStop, onOpen, onRun, runLabel = 'Run', runDisabled = false, runTitle }) {
+  const [starting, setStarting] = useState(false)
+  const run = async () => {
+    if (starting) return
+    setStarting(true)
+    try { await onRun() } finally { setStarting(false) }
+  }
   const percent = total ? Math.min(100, (done / total) * 100) : 0
   return (
     <div className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/[0.04]">
@@ -315,6 +323,13 @@ function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onSt
         <button onClick={onStop} title="Stop" aria-label={`Stop ${label.toLowerCase()}`}
           className="flex-shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white">
           <Square size={12} />
+        </button>
+      )}
+      {!running && onRun && (
+        <button onClick={run} disabled={runDisabled || starting} title={runTitle || `${runLabel}: ${label}`} aria-label={`${runLabel} ${label.toLowerCase()}`}
+          className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:text-muted">
+          {starting ? <span className="h-2.5 w-2.5 animate-spin rounded-full border border-accent/30 border-t-accent" /> : <Play size={10} fill="currentColor" />}
+          {runLabel}
         </button>
       )}
     </div>
@@ -342,15 +357,45 @@ function useArtistRefreshStatus(enabled) {
     const next = await Promise.resolve(api.artistsRefreshAllCancel()).catch(() => null)
     if (next && !next.error) setStatus(next)
   }
-  return [status, cancel]
+  // With the source chosen in Settings (Artists → Refresh artist info uses the same).
+  const start = async () => {
+    const next = await Promise.resolve(api.artistsRefreshAllMetadata({ source: peekSettings()?.artist_metadata_source || 'either' })).catch(() => null)
+    if (next && !next.error) setStatus(next)
+    // Followed every second from here (the timer above may be waiting longer).
+    const follow = async () => {
+      const now = await Promise.resolve(api.artistsRefreshAllStatus()).catch(() => null)
+      if (!now || now.error) return
+      setStatus(now)
+      if (now.running) setTimeout(follow, 1000)
+    }
+    setTimeout(follow, 1000)
+  }
+  return [status, cancel, start]
 }
 
 /** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
-function OthersTab({ artists, cancelArtists, onNavigate }) {
+function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
   const releases = useReleaseCheck(s => s.checking)
   const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
   const stopReleases = useReleaseCheck(s => s.stop)
   const videos = useVideoIndex(s => s.progress)
+  const lyrics = useLibraryJobs(s => s.lyrics)
+  const genres = useLibraryJobs(s => s.genres)
+  const followed = useDiscoveryArtists(s => s.followed)
+  const followedLoaded = useDiscoveryArtists(s => s.loaded)
+  useEffect(() => {
+    if (!followedLoaded) loadDiscoveryArtists().catch(() => {})
+    readGenresStatus()
+  }, [followedLoaded])
+  const checkReleases = () => useReleaseCheck.getState().start([...followed.values()].map(name => ({ name })))
+
+  const lyricsDetail = lyrics?.running
+    ? `${plural(lyrics.found || 0, 'lyric')} found${lyrics.title ? ` · ${lyrics.title}` : ''}`
+    : lyrics ? `${lyrics.cancelled ? 'Stopped' : 'Done'} · lyrics for ${lyrics.found || 0} of ${plural(lyrics.done || 0, 'song')}` : 'Keeps every song\'s lyrics, so they open at once'
+  const genresDetail = genres?.error ? genres.error
+    : genres?.running ? `${plural(genres.updated || 0, 'song')} filled in`
+      : genres?.total ? `Done · ${genres.updated || 0} of ${plural(genres.songs || 0, 'song')} filled in`
+        : genres?.started ? 'Every song already has a genre' : 'Looks up a genre for songs with none'
 
   const artistsDetail = artists?.running
     ? `${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')}${artists.failed ? ` · ${artists.failed} failed` : ''}`
@@ -366,13 +411,24 @@ function OthersTab({ artists, cancelArtists, onNavigate }) {
         <div className="space-y-0.5">
           <TaskRow icon={CalendarDays} label="Artist releases" running={!!releases} done={releases?.done} total={releases?.total}
             detail={releases ? 'Checking for new releases' : releasesCheckedAt ? `Checked ${ago(releasesCheckedAt)}` : 'Not checked yet'}
-            onStop={stopReleases} onOpen={() => onNavigate('/home/releases')} />
+            onStop={stopReleases} onOpen={() => onNavigate('/home/releases')}
+            onRun={checkReleases} runLabel="Check" runDisabled={!followed.size} runTitle={followed.size ? `Check ${plural(followed.size, 'followed artist')} for new releases` : 'Follow artists first (Home → Releases)'} />
           <TaskRow icon={UserRound} label="Artist info" running={!!artists?.running} done={artists?.done} total={artists?.total}
-            detail={artistsDetail} onStop={cancelArtists} onOpen={() => onNavigate('/artists')} />
+            detail={artistsDetail} onStop={cancelArtists} onOpen={() => onNavigate('/artists')}
+            onRun={startArtists} runLabel="Refresh" runTitle="Refresh every artist's bio and picture" />
           {api.isElectron && (
             <TaskRow icon={ScanSearch} label="Music videos" running={!!videos?.running} done={videos?.done} total={videos?.total}
-              detail={videosDetail} onStop={cancelVideoIndex} onOpen={() => onNavigate('/videos')} />
+              detail={videosDetail} onStop={cancelVideoIndex} onOpen={() => onNavigate('/videos')}
+              onRun={startVideoIndex} runLabel="Find" runTitle="Find the music video of every library song" />
           )}
+          {api.isElectron && (
+            <TaskRow icon={Mic2} label="Lyrics" running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
+              detail={lyricsDetail} onStop={cancelLyricsIndex} onOpen={() => onNavigate('/settings')}
+              onRun={startLyricsIndex} runLabel="Index" runTitle="Fetch and keep the lyrics of every library song" />
+          )}
+          <TaskRow icon={Tags} label="Genres" running={!!genres?.running} done={genres?.done} total={genres?.total}
+            detail={genresDetail} onOpen={() => onNavigate('/settings')}
+            onRun={startGenres} runLabel="Fill in" runTitle="Look up a genre for every song that has none" />
         </div>
       </section>
       <section>
@@ -397,7 +453,9 @@ export function DownloadManagerPanel() {
   const [tab, setTab] = useState('queue')
   const releaseCheck = useReleaseCheck(s => !!s.checking)
   const videoIndex = useVideoIndex(s => !!s.progress?.running)
-  const [artistRefresh, cancelArtistRefresh] = useArtistRefreshStatus(panelOpen)
+  const [artistRefresh, cancelArtistRefresh, startArtistRefresh] = useArtistRefreshStatus(panelOpen)
+  const lyricsIndex = useLibraryJobs(s => !!s.lyrics?.running)
+  const genresJob = useLibraryJobs(s => !!s.genres?.running)
   const panelRef = useRef(null)
 
   // Under the button, growing inwards: from a button on the left of the
@@ -434,7 +492,7 @@ export function DownloadManagerPanel() {
   }, [panelOpen, closePanel])
 
   const active = jobs.filter(isActive)
-  const othersRunning = (releaseCheck ? 1 : 0) + (videoIndex ? 1 : 0) + (artistRefresh?.running ? 1 : 0)
+  const othersRunning = (releaseCheck ? 1 : 0) + (videoIndex ? 1 : 0) + (artistRefresh?.running ? 1 : 0) + (lyricsIndex ? 1 : 0) + (genresJob ? 1 : 0)
   const finished = jobs.filter(j => !isActive(j))
 
   const findMore = () => {
@@ -479,7 +537,7 @@ export function DownloadManagerPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {tab === 'queue'
               ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
-              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} onNavigate={path => { closePanel(); nav(path) }} />}
+              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={path => { closePanel(); nav(path) }} />}
           </div>
           <button
             onClick={findMore}

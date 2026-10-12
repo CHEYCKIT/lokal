@@ -53,11 +53,15 @@ with made-up songs and buttons for each state.
 
 ## Publishing Lokal's receiver (one time)
 
+Done once by the owner of the main repository (sipbuu/lokal), with their
+GitHub and Google accounts: the receiver's address and the Cast developer
+account both belong to the project, and every copy of Lokal then uses them.
+
 1. **Host it.** In the GitHub repository: Settings → Pages → Source:
    **GitHub Actions**. Then Actions → **Cast receiver** → Run workflow (it
    also runs on every change to `receiver/` on `main`). The receiver is then
-   at `https://<owner>.github.io/<repo>/receiver/` (for this fork:
-   `https://cheyckit.github.io/lokal/receiver/`). Open it in a browser
+   at `https://<owner>.github.io/<repo>/receiver/`, so for Lokal:
+   `https://sipbuu.github.io/lokal/receiver/`. Open it in a browser
    once: a blank dark page is right (it only comes alive on a Cast device).
 2. **Register it.** At the [Google Cast SDK Developer
    Console](https://cast.google.com/publish), sign in, pay the one-time
