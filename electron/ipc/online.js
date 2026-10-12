@@ -427,38 +427,65 @@ function videoFailed(id, message) {
   try { require('electron-log').info(`Music video stream: ${id}: ${message}`) } catch {}
 }
 
-/** One piece of a music video, read whole: { body, from, to, total, mime, engine }. */
+/** At most `want` bytes of a response, then the connection let go. */
+async function readUpTo(res, want) {
+  const reader = res.body.getReader()
+  const parts = []
+  let size = 0
+  while (size < want) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+    size += value.length
+  }
+  if (size >= want) reader.cancel().catch(() => {})
+  return Buffer.concat(parts.map(part => Buffer.from(part))).subarray(0, want)
+}
+
+/**
+ * One piece of a music video, read whole: { body, from, to, total, mime, engine }.
+ * YouTube is asked for the range as such, then (refused) open-ended, reading
+ * only what's needed; still refused, with a fresh link the same two ways.
+ * The error says what each try got.
+ */
 async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
   const abort = () => upstream.abort()
   stop?.addEventListener('abort', abort, { once: true })
   const at = `${(from / 1048576).toFixed(1)} MB in`
+  const tried = []
   try {
-    let answer
-    try {
-      answer = await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range: `bytes=${from}-${to}`, signal: upstream.signal, fetchImpl, force })
-    } catch (error) {
-      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : String(error?.message || error))
+    for (const fresh of force ? [true] : [false, true]) {
+      const stream = await youtube.resolveStream(id, { ...streamOptions(), quality: 'video', force: fresh })
+      const engine = stream.engine || 'yt-dlp'
+      for (const open of [false, true]) {
+        let res
+        try {
+          res = await fetchImpl(stream.url, { headers: { ...stream.headers, Range: `bytes=${from}-${open ? '' : to}` }, signal: upstream.signal })
+        } catch (error) {
+          throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : `Couldn't reach YouTube ${at} (${error.message})`)
+        }
+        const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
+        const whole = res.status === 200 && from === 0 // a server that ignored the range
+        if ((res.status === 206 && span) || whole) {
+          let body
+          try { body = await readUpTo(res, to - from + 1) } catch {
+            throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at} (${engine} link)` : `YouTube cut the video off ${at} (${engine} link)`)
+          }
+          if (!body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
+          const total = span ? Number(span[3]) : Number(res.headers.get('content-length')) || body.length
+          const begin = span ? Number(span[1]) : 0
+          return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
+        }
+        try { await res.body?.cancel?.() } catch {}
+        tried.push(`HTTP ${res.status} ${open ? 'open range' : 'range'}, ${engine} link`)
+        if (![400, 403, 416].includes(res.status)) break
+      }
     }
-    const { res, mime, engine } = answer
-    if (res.status !== 206) {
-      try { await res.body?.cancel?.() } catch {}
-      throw new Error(`YouTube refused the video ${at} (HTTP ${res.status}, ${engine} link)`)
-    }
-    const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
-    let body
-    try { body = Buffer.from(await res.arrayBuffer()) } catch {
-      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at} (${engine} link)` : `YouTube cut the video off ${at} (${engine} link)`)
-    }
-    if (!span || !body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
-    return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime, engine }
+    throw new Error(`YouTube refused the video ${at} (${tried.join('; ')})`)
   } finally { clearTimeout(timer); stop?.removeEventListener('abort', abort) }
 }
-
-// Each video's current stream: a new one (a seek, the player reopened) ends
-// the one before, so dropped streams never queue up behind it.
-const videoStreams = new Map() // videoId -> AbortController
 
 /**
  * A music video's picture (lokal-stream://ytv/<id>). The player sees one
@@ -468,17 +495,16 @@ const videoStreams = new Map() // videoId -> AbortController
  * is read whole, so a stream the player drops or stops reading (the video
  * closed, paused, a seek) never holds a connection: those used to pile up
  * on the video's server (Chromium allows six per server) until it stopped
- * loading. A dropped stream's piece in progress is stopped; a newer stream
- * of the same video (a seek) ends the one before. A piece that fails is asked for once more with a fresh link; a
+ * loading. A dropped stream's piece in progress is stopped. A piece that fails is asked for once more with a fresh link; a
  * fresh link to another file (another format) ends the stream rather than
  * mixing two files.
  */
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
-  videoStreams.get(id)?.abort()
+  // Not shared with other streams of the video: the player can read two at
+  // once (the file's index from its end, say), and ending one breaks it.
   const stop = new AbortController()
-  videoStreams.set(id, stop)
   let first
   try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl, false, stop.signal) } catch (error) {
     if (!stop.signal.aborted) videoFailed(id, error.message)
@@ -512,7 +538,6 @@ async function videoStream(id, range, fetchImpl) {
         if (next > last) controller.close()
       } catch (error) {
         if (cancelled) return
-        if (stop.signal.aborted) { controller.error(new Error('Replaced by a newer request')); return }
         videoFailed(id, error.message)
         controller.error(error)
       }
@@ -520,7 +545,6 @@ async function videoStream(id, range, fetchImpl) {
     cancel() {
       cancelled = true
       stop.abort()
-      if (videoStreams.get(id) === stop) videoStreams.delete(id)
     },
   }, { highWaterMark: 0 })
   return new Response(body, {

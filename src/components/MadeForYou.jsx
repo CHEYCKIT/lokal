@@ -138,7 +138,8 @@ export default function MadeForYou({ picks, onPlay, onContextMenu }) {
       <div className="mb-3 flex items-center gap-2"><Sparkles size={14} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Made for you</h2></div>
       <div ref={stage} tabIndex={0} onKeyDown={onKeyDown} onWheel={onWheel}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        className="relative -mx-2 cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40 rounded-2xl"
+        className="relative isolate -mx-2 cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40 rounded-2xl"
+        // isolate: the cards' z-index (the middle one on top) stays inside the carousel, under the full screen player.
         style={{ height: stageHeight }}>
         {size.width > 0 && picks.map((pick, index) => (
           <Card key={pick.track.id} index={index} count={count} scroll={scroll} width={size.width} height={size.height}

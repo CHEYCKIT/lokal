@@ -82,3 +82,23 @@ test('resolveVideo: the picture\'s link, mime and a readable format', async () =
   assert.match(stream.url, /cver=1\.20261008\.01\.00/)
   await assert.rejects(fast.resolveVideo('ddddddddddd', { clientFor: async () => ({ ...yt, async getBasicInfo() { return { playability_status: { status: 'OK' }, streaming_data: { adaptive_formats: [format('audio/mp4', 1)] } } } }), mint: async () => null }), /no picture/)
 })
+
+test('a video YouTube Music gives no picture for is asked for as YouTube\'s other clients', async () => {
+  const asked = []
+  const picture = format('video/mp4; codecs="avc1.4d401f"', 2e6, { height: 720 })
+  const yt = {
+    session: { context: { client: { clientVersion: '1.20261008.01.00' } }, player: {} },
+    async getBasicInfo(id, options) {
+      asked.push(options?.client || 'session')
+      const adaptive = options?.client === 'MWEB' ? [picture] : [format('audio/webm; codecs="opus"', 150000)]
+      return { playability_status: { status: 'OK' }, streaming_data: { adaptive_formats: adaptive, formats: [] } }
+    },
+  }
+  const stream = await fast.resolveVideo('eeeeeeeeeee', { height: 1080, clientFor: async () => yt, mint: async () => 'token' })
+  assert.deepEqual(asked, ['session', 'MWEB'])
+  assert.equal(stream.format, 'avc1 720p')
+  assert.match(stream.url, /cver=1\.20250219\.01\.00/, 'another client\'s link keeps the version it was asked with')
+  // None of them: why, per client.
+  await assert.rejects(fast.resolveVideo('fffffffffff', { clientFor: async () => ({ ...yt, async getBasicInfo() { return { playability_status: { status: 'LOGIN_REQUIRED', reason: 'Sign in' } } } }), mint: async () => null }),
+    /YouTube offered no picture for this video \(YouTube Music: Sign in; MWEB: Sign in; TV: Sign in\)/)
+})

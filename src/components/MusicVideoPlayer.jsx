@@ -255,7 +255,8 @@ export default function MusicVideoPlayer({ compact = false }) {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.08 }} transition={fade}>
                 <div className="relative w-[min(40vh,22rem)] aspect-square rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7)] border border-white/10 bg-white/5">
                   {art ? <img src={art} alt="" className="w-full h-full object-cover" /> : <span className="absolute inset-0 flex items-center justify-center text-white/10 text-7xl">♪</span>}
-                  {status === 'loading' && slowLoad && (
+                  {/* Waiting (finding the video, or a found one starting): the light sweeps the cover. */}
+                  {status === 'loading' && (
                     <div className="absolute inset-0 overflow-hidden" aria-hidden>
                       <div className="absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-[mv-shimmer_1.6s_ease-in-out_infinite]" />
                     </div>
