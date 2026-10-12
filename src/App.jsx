@@ -1,6 +1,7 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
+import { prefetchUpcoming } from './queuePrefetch'
 import React, { Activity, useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -1454,16 +1455,21 @@ export default function App() {
     return () => clearTimeout(t)
   }, [streamError])
 
-  /** Look up the next song's stream ahead of time, so it starts without the yt-dlp wait. */
-  const prepareNextStream = useCallback(() => {
-    // The track that plays next, from the queue playback follows (the
-    // shuffled one while shuffle is on).
-    const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = usePlayerStore.getState()
-    const next = shuffle && Array.isArray(shuffleQueue) && shuffleQueue.length
-      ? shuffleQueue[(shuffleIndex ?? -1) + 1]
-      : Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
-    const ref = streamRef(next)
-    if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
+  /** Look up the streams of the songs coming up ahead of time, so each starts without the wait (src/queuePrefetch.js). */
+  const prepareNextStream = useCallback(() => { prefetchUpcoming(usePlayerStore.getState()) }, [])
+
+  // What's coming up changes with the song (a crossfade or AutoMix included:
+  // looked up at once) and with the queue (songs added, moved, shuffled:
+  // shortly, once it settles).
+  useEffect(() => {
+    let timer = null
+    const unsubscribe = usePlayerStore.subscribe((state, before) => {
+      if (state.currentTrack?.id !== before.currentTrack?.id) { clearTimeout(timer); prefetchUpcoming(state); return }
+      if (state.queue === before.queue && state.shuffleQueue === before.shuffleQueue && state.shuffle === before.shuffle && state.repeat === before.repeat) return
+      clearTimeout(timer)
+      timer = setTimeout(() => prefetchUpcoming(usePlayerStore.getState()), 600)
+    })
+    return () => { clearTimeout(timer); unsubscribe() }
   }, [])
 
   const beginLastfmPlayback = useCallback((track) => {
