@@ -262,7 +262,9 @@ export default function PlayerBar() {
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
-        <div className="flex items-center gap-4">
+        <div className="relative flex items-center gap-4">
+          {/* Beside the buttons (not over the seek bar), without moving them. */}
+          <MixingMark className="absolute left-full top-1/2 ml-4 -translate-y-1/2 whitespace-nowrap pointer-events-none" />
           <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={shuffle ? "Shuffle on" : "Shuffle off"}><Shuffle size={15} /></button>
           <button onClick={prev} className="text-text/90 hover:text-text transition-colors" title="Previous"><SkipBack size={18} fill="currentColor" /></button>
           <motion.button onClick={togglePlay} disabled={!currentTrack} whileTap={{ scale: 0.88 }}
@@ -273,7 +275,6 @@ export default function PlayerBar() {
           <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={`Repeat: ${repeat}`}><RepeatIcon size={15} /></button>
         </div>
         <div className="relative flex items-center gap-2 w-full max-w-md">
-          <MixingMark className="absolute -top-3.5 left-1/2 -translate-x-1/2 pointer-events-none" />
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
           <div className="flex-1 h-1 bg-elevated rounded-full cursor-pointer group relative overflow-hidden"
             onMouseMove={handleScrub}
