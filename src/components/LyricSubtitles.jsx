@@ -1,7 +1,8 @@
 // Synced lyrics as subtitles over a music video: the line being sung, centred
 // under the picture, painted syllable by syllable like the full screen
 // lyrics (the sweep, the lift, a held note's swell and glow, background
-// vocals under it), the dots through an instrumental break. One
+// vocals under it), the dots through an instrumental break. Lines hand over
+// cleanly: the old one fades out, then the new one fades in. One
 // requestAnimationFrame loop paints; React re-renders only when the line
 // changes.
 
@@ -49,13 +50,15 @@ export default function LyricSubtitles({ lines, progress, wordSync = true, botto
   const nextTime = lines[index + 1]?.time
   return (
     <div className="pointer-events-none absolute inset-x-0 flex justify-center px-10 transition-[bottom] duration-300" style={{ bottom }} aria-live="polite">
-      <AnimatePresence mode="popLayout" initial={false}>
+      {/* One line at a time: the old one fades out quickly, then the new one
+          fades in with a small rise. No blur and no overlap (two lines
+          crossing, blurred, read as a jump). */}
+      <AnimatePresence mode="wait" initial={false}>
         {line && (
           <motion.div key={index}
-            initial={{ opacity: 0, y: reduceMotion ? 0 : 14, filter: reduceMotion ? 'none' : 'blur(6px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: reduceMotion ? 0 : -10, filter: reduceMotion ? 'none' : 'blur(6px)' }}
-            transition={{ duration: reduceMotion ? 0 : 0.38, ease: EASE }}
+            initial={{ opacity: 0, y: reduceMotion ? 0 : 6 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.22, ease: EASE } }}
+            exit={{ opacity: 0, transition: { duration: reduceMotion ? 0 : 0.1, ease: 'easeOut' } }}
             className="relative max-w-[min(68rem,82vw)] px-8 py-3 text-center">
             {/* A soft shade behind the line, so the unsung part reads on a bright picture. */}
             <div aria-hidden className="absolute -inset-x-6 -inset-y-4 -z-10" style={{ background: 'radial-gradient(closest-side, rgba(0,0,0,0.5), rgba(0,0,0,0.25) 55%, transparent)' }} />
