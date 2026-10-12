@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Lokal's YouTube Music sign-in window on Windows: Google's sign-in page in
+    Microsoft Edge WebView2 (a real Edge, so Google accepts it and Windows
+    Hello passkeys work), not in Electron. Lokal starts it, reads the
+    YouTube Music cookies from it, and closes it (electron/online/youtubeWebView2Login.js).
+    .NET Framework 4.8 ships with Windows 10 and 11; the WebView2 runtime too.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>LokalSignIn</AssemblyName>
+    <RootNamespace>LokalSignIn</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>disable</Nullable>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\public\lokal-icon.ico</ApplicationIcon>
+    <Product>Lokal</Product>
+    <AssemblyTitle>Lokal sign-in</AssemblyTitle>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+</Project>

@@ -72,6 +72,16 @@
           "role": "Viewer",
           "icon": "public/lokal-icon.ico"
         }
+      ],
+      "extraResources": [
+        {
+          "from": "build/webview2-signin",
+          "to": "webview2-signin",
+          "filter": [
+            "**/*",
+            "!*.pdb"
+          ]
+        }
       ]
     },
     "mac": {
