@@ -168,9 +168,9 @@ export default function MusicVideoPlayer({ compact = false }) {
     // A streamed video: why YouTube stopped giving it (the player itself only
     // sees "data source error"); Lokal remembers the reason.
     if (video?.streamed && video.src) {
-      fetch(video.src, { headers: { 'x-lokal-why': '1' } })
+      fetch(video.src, { headers: { 'x-lokal-why': String(el?.error?.message || `error ${el?.error?.code ?? '?'}`).replace(/[^\x20-\x7e]/g, '').slice(0, 300) || '1' } })
         .then(res => res.ok ? res.text() : null)
-        .then(reason => { if (reason?.trim()) setErrorText(reason.trim().slice(0, 200)) })
+        .then(reason => { if (reason?.trim()) setErrorText(reason.trim().slice(0, 600)) })
         .catch(() => {})
     }
   }, [video, segments])
