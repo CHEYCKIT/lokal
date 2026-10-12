@@ -461,48 +461,76 @@ async function readUpTo(res, want) {
 // come from that same file (a fresh link to another format, yt-dlp's after
 // the fast engine's, would hand the player two files: "data source error").
 const videoFiles = new Map() // videoId -> total bytes
-function videoFile(id, total) {
-  const before = videoFiles.get(id)
+// A video at one quality is one file: `${videoId}@${height}`.
+const videoFileKey = (id, height) => `${id}@${height}`
+
+function videoFile(file, total) {
+  const before = videoFiles.get(file)
   if (before === total) return
   // Another file for the video: the pieces kept from the old one are no use.
-  if (before) for (const key of [...videoPieces.keys()]) if (key.startsWith(`${id}:`)) videoPieces.delete(key)
-  if (videoFiles.size > 50 && !videoFiles.has(id)) videoFiles.delete(videoFiles.keys().next().value)
-  videoFiles.set(id, total)
+  if (before) for (const key of [...videoPieces.keys()]) if (key.startsWith(`${file}:`)) videoPieces.delete(key)
+  if (videoFiles.size > 50 && !videoFiles.has(file)) videoFiles.delete(videoFiles.keys().next().value)
+  videoFiles.set(file, total)
 }
 
 // Pieces fetched, aligned to VIDEO_CHUNK and kept (least recently used out):
 // the player jumps back and forth while it opens a video (its index, the
 // frame at the song's time, back) and each jump is a new request; served
 // from here, a jump to somewhere already fetched answers at once, and two
-// streams wanting the same piece fetch it once.
-const videoPieces = new Map() // `${id}:${index}` -> Promise<piece>
+// streams wanting the same piece fetch it once. Keyed by video and quality
+// (another quality is another file). A piece still being fetched counts the
+// streams waiting for it; when none does any more (they were dropped: a
+// seek, the video closed), its fetch is stopped rather than left running.
+const videoPieces = new Map() // `${file}:${index}` -> { job, waiters, stop, done }
 
-function videoPiece(id, index, fetchImpl) {
-  const key = `${id}:${index}`
+function videoPiece(id, height, index, fetchImpl) {
+  const key = `${videoFileKey(id, height)}:${index}`
   const kept = videoPieces.get(key)
-  if (kept) { videoPieces.delete(key); videoPieces.set(key, kept); return kept }
+  if (kept) { videoPieces.delete(key); videoPieces.set(key, kept); return { key, entry: kept } }
   const from = index * VIDEO_CHUNK
   const to = from + VIDEO_CHUNK - 1
-  // Not tied to one stream: another may want it, and a piece is small.
-  const job = videoChunk(id, from, to, fetchImpl).catch(error => {
+  const stop = new AbortController()
+  const entry = { waiters: 0, stop, done: false }
+  entry.job = videoChunk(id, from, to, fetchImpl, false, stop.signal, height).catch(error => {
+    if (stop.signal.aborted) throw error
     try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
-    return videoChunk(id, from, to, fetchImpl, true)
+    return videoChunk(id, from, to, fetchImpl, true, stop.signal, height)
   })
-  job.catch(() => { if (videoPieces.get(key) === job) videoPieces.delete(key) })
-  videoPieces.set(key, job)
+  entry.job.then(() => { entry.done = true }, () => { if (videoPieces.get(key) === entry) videoPieces.delete(key) })
+  videoPieces.set(key, entry)
   while (videoPieces.size > VIDEO_CACHE_PIECES) videoPieces.delete(videoPieces.keys().next().value)
-  return job
+  return { key, entry }
 }
 
-/** The piece holding byte `at` of the video. */
-async function videoBytesAt(id, at, fetchImpl) {
-  const piece = await videoPiece(id, Math.floor(at / VIDEO_CHUNK), fetchImpl)
+/** The piece holding byte `at` of the video; `signal`: the stream asking was dropped. */
+async function videoBytesAt(id, height, at, fetchImpl, signal = null) {
+  const { key, entry } = videoPiece(id, height, Math.floor(at / VIDEO_CHUNK), fetchImpl)
+  let piece
+  if (entry.done) piece = await entry.job
+  else {
+    entry.waiters++
+    let left = false
+    const leave = () => {
+      left = true
+      entry.waiters--
+      if (!entry.done && entry.waiters <= 0) {
+        entry.stop.abort()
+        if (videoPieces.get(key) === entry) videoPieces.delete(key)
+      }
+    }
+    signal?.addEventListener('abort', leave, { once: true })
+    try { piece = await entry.job } finally {
+      signal?.removeEventListener('abort', leave)
+      if (!left) entry.waiters--
+    }
+  }
   if (at >= piece.from && at <= piece.to) return piece
   // A short piece (YouTube sent less than asked): the rest of it, on its own.
-  return videoChunk(id, at, Math.floor(at / VIDEO_CHUNK) * VIDEO_CHUNK + VIDEO_CHUNK - 1, fetchImpl)
+  return videoChunk(id, at, Math.floor(at / VIDEO_CHUNK) * VIDEO_CHUNK + VIDEO_CHUNK - 1, fetchImpl, false, signal, height)
 }
 
-async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
+async function videoChunk(id, from, to, fetchImpl, force = false, stop = null, height = streamOptions().videoHeight) {
+  const file = videoFileKey(id, height)
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
   const abort = () => upstream.abort()
@@ -516,7 +544,7 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
     const links = [...(force ? [] : [{}]), { force: true, keepFast: true }, ...(from === 0 ? [{ force: true }] : [])]
     let previous = null
     for (const link of links) {
-      const stream = await youtube.resolveStream(id, { ...streamOptions(), quality: 'video', ...link })
+      const stream = await youtube.resolveStream(id, { ...streamOptions(), videoHeight: height, quality: 'video', ...link })
       if (previous === stream.url) continue
       previous = stream.url
       const engine = stream.engine || 'yt-dlp'
@@ -543,12 +571,12 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
           if (!body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
           const total = span ? Number(span[3]) : Number(res.headers.get('content-length')) || body.length
           const begin = span ? Number(span[1]) : 0
-          const playing = videoFiles.get(id)
+          const playing = videoFiles.get(file)
           if (from > 0 && playing && playing !== total) {
             tried.push(`another file (${total} bytes, not ${playing}), ${engine} link`)
             break
           }
-          if (from === 0 || !playing) videoFile(id, total)
+          if (from === 0 || !playing) videoFile(file, total)
           if (tried.length || via === 'node') videoLog(id, `${at}: got it ${open ? 'open-ended' : 'as a range'}${via === 'node' ? ' through Node' : ''} (${engine} link) after: ${tried.join('; ') || 'nothing'}`)
           return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
         }
@@ -574,8 +602,13 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
+  // One quality for the whole stream (a change in Settings applies from the next one).
+  const height = streamOptions().videoHeight
+  // Set when the player drops this stream: a piece it was waiting for stops
+  // unless another stream wants it too.
+  const dropped = new AbortController()
   let first
-  try { first = await videoBytesAt(id, start, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
+  try { first = await videoBytesAt(id, height, start, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
   videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
   videoLog(id, `asked ${range || 'the whole file'}; serving ${start}-${last} of ${first.total} bytes (${first.mime}, ${first.engine} link)`)
@@ -592,7 +625,7 @@ async function videoStream(id, range, fetchImpl) {
     async pull(controller) {
       if (cancelled || next > last) return
       try {
-        const piece = await videoBytesAt(id, next, fetchImpl)
+        const piece = await videoBytesAt(id, height, next, fetchImpl, dropped.signal)
         if (!cancelled) send(controller, piece)
       } catch (error) {
         if (cancelled) return
@@ -600,7 +633,7 @@ async function videoStream(id, range, fetchImpl) {
         controller.error(error)
       }
     },
-    cancel() { cancelled = true },
+    cancel() { cancelled = true; dropped.abort() },
   }, { highWaterMark: 0 })
   return new Response(body, {
     status: 206,
