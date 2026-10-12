@@ -501,7 +501,7 @@ export function VideoGlow({ videoRef, active }) {
       const video = videoRef.current
       if (document.hidden || !video || video.readyState < 2 || !video.videoWidth) return
       const src = video.currentSrc || video.src || ''
-      if (!lead && !src.startsWith('lokal-stream:')) lead = leadCopy(video)
+      if (!lead && !src.startsWith('lokal-stream:') && !src.includes('/ytv/')) lead = leadCopy(video)
       if (video.paused && last === video.currentTime) return
       const width = AMBIENT_WIDTH
       const height = Math.max(1, Math.round(AMBIENT_WIDTH * window.innerHeight / Math.max(1, window.innerWidth)))

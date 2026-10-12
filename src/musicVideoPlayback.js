@@ -38,7 +38,8 @@ const SEEK_LEAD_S = 1
 
 // Streamed from YouTube (not a downloaded file): its data comes a piece at a time.
 function isStreamed(element) {
-  return String(element.currentSrc || element.src || '').startsWith('lokal-stream:')
+  const src = String(element.currentSrc || element.src || '')
+  return src.startsWith('lokal-stream:') || /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/ytv\//.test(src)
 }
 
 function isBuffered(element, time) {

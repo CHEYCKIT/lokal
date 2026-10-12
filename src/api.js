@@ -35,13 +35,22 @@ function rememberYoutubeUnlike(videoId, unlike, userId = 'guest') {
   try { localStorage.setItem(YOUTUBE_LOCAL_UNLIKES_KEY, JSON.stringify(stored)) } catch {}
 }
 
-function musicVideoResult(r) {
+// Where a video that isn't downloaded streams from: Lokal's own local
+// address for it (plain HTTP, which the video player handles best), asked
+// once; lokal-stream:// when there's none.
+let videoStreamBase = null
+const streamBase = () => (videoStreamBase ||= Promise.resolve(el()?.musicVideoStreamBase?.()).catch(() => null))
+
+async function musicVideoResult(r) {
   if (r?.error) return r
   if (!r?.videoId) return null
-  // Not downloaded: streamed from YouTube (lokal-stream://ytv/, the picture
-  // only; the song plays its own audio). Downloading it stays an option.
+  // Not downloaded: streamed from YouTube (the picture only; the song plays
+  // its own audio). Downloading it stays an option.
   const streamed = !r.file && !!r.needsDownload && /^[\w-]{11}$/.test(r.videoId)
-  const src = r.file ? electronFileURL(r.file) : streamed ? `lokal-stream://ytv/${encodeURIComponent(r.videoId)}` : null
+  const base = streamed ? await streamBase() : null
+  const src = r.file ? electronFileURL(r.file)
+    : streamed ? (base ? `${base}/ytv/${encodeURIComponent(r.videoId)}` : `lokal-stream://ytv/${encodeURIComponent(r.videoId)}`)
+      : null
   return { ...r, src, streamed }
 }
 
