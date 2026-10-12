@@ -177,3 +177,16 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
   0%, 100% { transform: scaleY(0.35); }
   50% { transform: scaleY(1); }
 }
+
+/* The "mixing" mark (MixingMark.jsx): two rings drifting into each other. */
+.mixing-ring {
+  position: absolute; top: 0; width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: mixing-drift 1.6s ease-in-out infinite alternate;
+}
+.mixing-ring-left { left: 0; }
+.mixing-ring-right { right: 0; animation-direction: alternate-reverse; opacity: 0.6; }
+@keyframes mixing-drift { from { transform: translateX(0); } to { transform: translateX(3px); } }
+.mixing-ring-right { animation-name: mixing-drift-back; }
+@keyframes mixing-drift-back { from { transform: translateX(0); } to { transform: translateX(-3px); } }
+@media (prefers-reduced-motion: reduce) { .mixing-ring { animation: none; } }

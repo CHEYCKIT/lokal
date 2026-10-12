@@ -208,6 +208,8 @@ contextBridge.exposeInMainWorld('electron', {
   spotifyLikesDisable: () => invoke('spotifyLikes:disable'),
   spotifyLikesPoll: () => invoke('spotifyLikes:poll'),
   spotifyLikesPush: (track) => invoke('spotifyLikes:push', track),
+  // AutoMix: a song's analysis (electron/automix)
+  automixAnalyze: (track) => invoke('automix:analyze', track),
   musicVideoDeleteDownload: (trackId) => invoke('musicVideo:deleteDownload', trackId),
   musicVideoList: () => invoke('musicVideo:list'),
   musicVideoSave: (trackId, saved) => invoke('musicVideo:save', trackId, saved),

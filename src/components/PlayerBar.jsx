@@ -14,6 +14,7 @@ import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../quality'
 import AudioOutputPicker from './AudioOutputPicker'
+import MixingMark from './MixingMark'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
 
@@ -260,7 +261,8 @@ export default function PlayerBar() {
           <button onClick={next} className="text-text/90 hover:text-text transition-colors" title="Next"><SkipForward size={18} fill="currentColor" /></button>
           <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={`Repeat: ${repeat}`}><RepeatIcon size={15} /></button>
         </div>
-        <div className="flex items-center gap-2 w-full max-w-md">
+        <div className="relative flex items-center gap-2 w-full max-w-md">
+          <MixingMark className="absolute -top-3.5 left-1/2 -translate-x-1/2 pointer-events-none" />
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
           <div className="flex-1 h-1 bg-elevated rounded-full cursor-pointer group relative overflow-hidden"
             onMouseMove={handleScrub}

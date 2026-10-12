@@ -636,7 +636,7 @@ export default function Settings() {
     touchedSettingsRef.current.add(k)
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
-    if (k.startsWith('crossfade_')) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
+    if (k.startsWith('crossfade_') || k === 'song_transitions' || k === 'automix_same_album') usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
   }
   const crossfade = readCrossfadeSettings(settings)
 
@@ -1448,14 +1448,37 @@ activeCategory === 'data' ? usersTried
       {inCategory('playback') && (
       <Section title="Playback">
         <OutputPrecisionSettings />
-        <Row label="Crossfade" desc="Start the next song this many seconds before the current one ends. Skipping doesn't fade.">
-          <div className="flex items-center gap-2">
-            <input type="range" min={0} max={20} step={0.5} value={settings.crossfade_seconds || 0}
-              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
-            <span className="text-xs text-muted w-10">{settings.crossfade_seconds || 0}s</span>
+        <Row label="Song Transitions" desc={crossfade.mode === 'automix'
+          ? 'AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.'
+          : crossfade.mode === 'crossfade' ? 'The next song starts before the current one ends, by the amounts below.' : 'Each song plays to its end, then the next starts.'}>
+          <div role="radiogroup" aria-label="Song transitions" className="flex rounded-lg bg-card border border-border p-0.5">
+            {[['off', 'Off'], ['crossfade', 'Crossfade'], ['automix', 'AutoMix']].map(([value, label]) => (
+              <button key={value} type="button" role="radio" aria-checked={crossfade.mode === value} onClick={() => set('song_transitions', value)}
+                className={`px-3 py-1 rounded-md text-xs transition-colors ${crossfade.mode === value ? 'bg-accent text-base font-medium' : 'text-muted hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
           </div>
         </Row>
-        {crossfade.beforeEnd > CROSSFADE_MIN_S && (<>
+        {crossfade.mode === 'automix' && (
+          <Row label="Mix Songs on the Same Album" desc="Off: an album's songs, played in order, go one into the next as made (live albums, continuous mixes).">
+            <button
+              onClick={() => set('automix_same_album', settings.automix_same_album === '1' ? '0' : '1')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.automix_same_album === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+              {settings.automix_same_album === '1' ? 'On' : 'Off'}
+            </button>
+          </Row>
+        )}
+        {crossfade.mode === 'crossfade' && (
+        <Row label="Crossfade" desc="Start the next song this many seconds before the current one ends. Skipping doesn't fade.">
+          <div className="flex items-center gap-2">
+            <input type="range" min={1} max={20} step={0.5} value={crossfade.beforeEnd}
+              onChange={e => set('crossfade_seconds', e.target.value)} className="w-24 accent-accent" />
+            <span className="text-xs text-muted w-10">{crossfade.beforeEnd}s</span>
+          </div>
+        </Row>
+        )}
+        {crossfade.mode === 'crossfade' && crossfade.beforeEnd > CROSSFADE_MIN_S && (<>
           <Row label="Fade in" desc="How long the next song takes to reach full volume.">
             <div className="flex items-center gap-2">
               <input type="range" min={0} max={10} step={0.1} value={crossfade.fadeIn}

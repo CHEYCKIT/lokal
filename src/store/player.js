@@ -239,6 +239,10 @@ export const usePlayerStore = create((set, get) => ({
   exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, crossfade: { ...CROSSFADE_DEFAULTS }, _fetchingRelated: false,
   activeAudioElement: 'primary',
+  // A song transition (crossfade or AutoMix) under way: { kind, until } for the
+  // "Mixing" mark; mixFlip counts them, so the cover flips on each (CoverFlip).
+  mixing: null,
+  mixFlip: 0,
   outputDeviceId: readOutputDevice(),
 
   originalQueue: [], 

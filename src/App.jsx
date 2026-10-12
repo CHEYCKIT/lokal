@@ -1,5 +1,6 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
+import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
 import React, { Activity, useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -57,6 +58,16 @@ import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
+
+// A bass-swap filter at rest: open (below anything audible).
+const MIX_FILTER_OPEN_HZ = 10
+
+/** The song that plays after the current one in `state`'s queue (shuffle order when shuffled), or null. */
+function upcomingTrack(state) {
+  const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = state
+  if (shuffle && shuffleQueue.length > 0) return shuffleIndex + 1 < shuffleQueue.length ? shuffleQueue[shuffleIndex + 1] : null
+  return queueIndex + 1 < queue.length ? queue[queueIndex + 1] : null
+}
 
 const EQ_AUDIO_BANDS = [
   { frequency: 31, type: 'lowshelf', q: 0.7 },
@@ -393,6 +404,11 @@ export default function App() {
   const cfGainNodeRef = useRef(null)
   // Crossfades ramp these, after the volume gains, so volume changes never cut a fade short.
   const fadeGainRef = useRef({ primary: null, cf: null })
+  // AutoMix's bass swap: a high-pass per side (10 Hz, open, outside a transition).
+  const mixFilterRef = useRef({ primary: null, cf: null })
+  // AutoMix: songs' analyses (id -> analysis, or null when it couldn't be), and the ones asked for.
+  const automixRef = useRef({ analyses: new Map(), asked: new Set() })
+  const rateGlideRef = useRef(null)
   const audioCtxRef = useRef(null)
   const nativeAudioRef = useRef(null)
   const analyserRef = useRef(null)
@@ -815,6 +831,16 @@ export default function App() {
     const primaryFade = ctx.createGain()
     const cfFade = ctx.createGain()
     fadeGainRef.current = { primary: primaryFade, cf: cfFade }
+    const mixFilter = () => {
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'highpass'
+      filter.frequency.value = MIX_FILTER_OPEN_HZ
+      filter.Q.value = 0.7
+      return filter
+    }
+    const primaryMix = mixFilter()
+    const cfMix = mixFilter()
+    mixFilterRef.current = { primary: primaryMix, cf: cfMix }
 
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 256
@@ -831,14 +857,16 @@ export default function App() {
       for (const n of nodes) { prev.connect(n); prev = n }
       prev.connect(primaryGain)
       primaryGain.connect(primaryFade)
-      primaryFade.connect(analyser)
+      primaryFade.connect(primaryMix)
+      primaryMix.connect(analyser)
       analyser.connect(ctx.destination)
 
       let cfPrev = cfSource
       for (const n of cfNodes) { cfPrev.connect(n); cfPrev = n }
       cfPrev.connect(cfGain)
       cfGain.connect(cfFade)
-      cfFade.connect(analyser)
+      cfFade.connect(cfMix)
+      cfMix.connect(analyser)
     }
 
     try {
@@ -1652,6 +1680,16 @@ export default function App() {
     currentTrackRef.current = currentTrack
   }, [currentTrack, flushTime])
 
+  // The bass-swap filters open again (an AutoMix transition over, or called off).
+  const openMixFilters = useCallback(() => {
+    const now = audioCtxRef.current?.currentTime || 0
+    for (const filter of [mixFilterRef.current.primary, mixFilterRef.current.cf]) {
+      if (!filter) continue
+      filter.frequency.cancelScheduledValues(now)
+      filter.frequency.setValueAtTime(MIX_FILTER_OPEN_HZ, now)
+    }
+  }, [])
+
   const cancelCrossfade = useCallback(() => {
     crossfadeTokenRef.current += 1
     isCrossfadingRef.current = false
@@ -1681,9 +1719,30 @@ export default function App() {
       if (ctx && now !== undefined) fade.gain.setValueAtTime(1, now)
       else fade.gain.value = 1
     }
+    // An AutoMix transition called off: filters open, both songs at their own speed.
+    openMixFilters()
+    clearInterval(rateGlideRef.current)
+    for (const el of [audioRef.current, cfAudioRef.current]) { try { if (el && el.playbackRate !== 1) el.playbackRate = 1 } catch {} }
+    if (usePlayerStore.getState().mixing) usePlayerStore.setState({ mixing: null })
+  }, [openMixFilters])
+
+  // AutoMix's song analyses, asked for once each (the playing song, the next).
+  const automixAnalysis = useCallback((track) => {
+    if (!track?.id) return undefined
+    const store = automixRef.current
+    const id = String(track.id)
+    if (store.analyses.has(id)) return store.analyses.get(id)
+    if (!store.asked.has(id)) {
+      store.asked.add(id)
+      Promise.resolve(api.automixAnalyze(track)).catch(() => null).then(result => {
+        store.analyses.set(id, result || null)
+        if (store.analyses.size > 400) store.analyses.delete(store.analyses.keys().next().value)
+      })
+    }
+    return undefined
   }, [])
 
-  const triggerCrossfade = useCallback((nextTrack) => {
+  const triggerCrossfade = useCallback((nextTrack, plan = null) => {
     if (isCrossfadingRef.current) return
     if (!cfAudioRef.current || !audioRef.current || !nextTrack || !audioCtxRef.current) return
     if (!gainNodeRef.current || !cfGainNodeRef.current) return
@@ -1769,6 +1828,25 @@ export default function App() {
         return
       }
 
+      if (plan) {
+        // AutoMix: the next song waits, ready, at its entry point, until the
+        // playing one reaches the transition (it was loaded ahead of it).
+        try { fadeInEl.currentTime = plan.inOffset || 0 } catch {}
+        try { fadeInEl.playbackRate = plan.rate || 1 } catch {}
+        const waitForStart = () => {
+          if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
+          const left = plan.start - fadeOutEl.currentTime
+          if (left <= 0.03 || fadeOutEl.ended) { beginCrossfade(); return }
+          crossfadeTimeoutRef.current = setTimeout(waitForStart, Math.min(250, Math.max(5, left * 1000 / (fadeOutEl.playbackRate || 1) - 8)))
+        }
+        waitForStart()
+        return
+      }
+      beginCrossfade()
+    })
+
+    const beginCrossfade = () => {
+      if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
       flushTime(currentTrackRef.current?.id)
 
       fadeInEl.dataset.lokalTrackId = String(nextTrack.id)
@@ -1800,9 +1878,28 @@ export default function App() {
       fadeInEl.play().catch(() => {})
 
       // The old song fades out over what it has left at most; the new one
-      // fades in on its own (usually shorter) schedule.
-      const { fadeIn, fadeOut } = crossfadeDurations(options, fadeOutEl.duration - fadeOutEl.currentTime)
+      // fades in on its own (usually shorter) schedule. AutoMix's plan says both.
+      const { fadeIn, fadeOut } = crossfadeDurations(plan ? { fadeIn: plan.fadeIn, fadeOut: plan.length } : options, fadeOutEl.duration - fadeOutEl.currentTime)
       const rampNow = ctx.currentTime
+      // The cover flips and the "mixing" mark shows for a transition worth seeing (2 s or more).
+      const transitionSeconds = Math.max(fadeIn, fadeOut)
+      if (transitionSeconds >= 2) usePlayerStore.setState(state => ({ mixFlip: (state.mixFlip || 0) + 1, mixing: { kind: plan ? plan.kind : 'crossfade', until: Date.now() + transitionSeconds * 1000 } }))
+      if (plan?.bassSwap) {
+        // A bass swap halfway: the next song comes in without its bass, then
+        // takes the low end over from the playing one (two basslines clash).
+        const inFilter = (isPrimaryActive ? mixFilterRef.current.cf : mixFilterRef.current.primary)?.frequency
+        const outFilter = (isPrimaryActive ? mixFilterRef.current.primary : mixFilterRef.current.cf)?.frequency
+        if (inFilter && outFilter) {
+          const swap = rampNow + plan.swapAt
+          inFilter.cancelScheduledValues(rampNow)
+          outFilter.cancelScheduledValues(rampNow)
+          inFilter.setValueAtTime(plan.highpass, rampNow)
+          inFilter.setValueAtTime(plan.highpass, swap)
+          inFilter.exponentialRampToValueAtTime(MIX_FILTER_OPEN_HZ, swap + 0.4)
+          outFilter.setValueAtTime(MIX_FILTER_OPEN_HZ, swap)
+          outFilter.exponentialRampToValueAtTime(plan.highpass, swap + 0.4)
+        }
+      }
       for (const gain of [fadeOutGain.gain, fadeInGain.gain]) {
         gain.cancelScheduledValues(rampNow)
         gain.setValueAtTime(volumeRef.current, rampNow)
@@ -1834,6 +1931,19 @@ export default function App() {
         isCrossfadingRef.current = false
         expectedCrossfadeTrackIdRef.current = null
         crossfadeTimeoutRef.current = null
+        openMixFilters()
+        usePlayerStore.setState({ mixing: null })
+        // A beat-matched song back to its own tempo, gently (8 s).
+        if (plan && fadeInEl.playbackRate !== 1) {
+          clearInterval(rateGlideRef.current)
+          const from = fadeInEl.playbackRate
+          const began = Date.now()
+          rateGlideRef.current = setInterval(() => {
+            const part = Math.min(1, (Date.now() - began) / 8000)
+            try { fadeInEl.playbackRate = from + (1 - from) * part } catch {}
+            if (part >= 1) clearInterval(rateGlideRef.current)
+          }, 100)
+        }
 
         pauseSuppressRef.current = true
         try { fadeOutEl.pause() } catch {}
@@ -1843,8 +1953,8 @@ export default function App() {
         fadeOutEl.dataset.lokalTrackId = ''
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, Math.max(fadeIn, fadeOut) * 1000)
-    })
-  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
+    }
+  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext, openMixFilters])
 
   useEffect(() => {
     if (isCrossfadingRef.current) {
@@ -2001,7 +2111,20 @@ export default function App() {
     const cf = state.crossfade?.beforeEnd || 0
     const remaining = dur - cur
 
-    if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
+    if (state.crossfade?.automix && state.repeat !== 'one') {
+      // AutoMix: the transition its plan says, loaded ahead and started on time.
+      const nextTrack = upcomingTrack(state)
+      const current = currentTrackRef.current
+      if (nextTrack && current && remaining > 0.3) {
+        const out = automixAnalysis(current)
+        // The next song is analysed a while ahead (an online one is downloaded to be).
+        const next = remaining < 150 ? automixAnalysis(nextTrack) : undefined
+        if (remaining < 90) {
+          const plan = planTransition({ out: out || null, outTrack: current, outDuration: dur, next: next || null, nextTrack, sameAlbum: !!state.crossfade.automixSameAlbum })
+          if (plan && cur >= plan.start - AUTOMIX_PRELOAD_S) triggerCrossfade(nextTrack, plan)
+        }
+      }
+    } else if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
       const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = state
       let nextTrack = null
       
@@ -2023,7 +2146,7 @@ export default function App() {
         usePlayerStore.getState().setFetchingRelated(false)
       }).catch(() => usePlayerStore.getState().setFetchingRelated(false))
     }
-  }, [triggerCrossfade, isEventFromActive])
+  }, [triggerCrossfade, isEventFromActive, automixAnalysis])
 
   const handlePrimaryDurationChange = useCallback((e) => {
     if (isEventFromActive(e)) setDuration(e.target.duration)

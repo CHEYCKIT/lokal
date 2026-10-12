@@ -220,6 +220,8 @@ export const api = {
   spotifyLikesEnable: (userId) => isE() && el()?.spotifyLikesEnable ? el().spotifyLikesEnable(userId) : Promise.resolve({ enabled: false, error: 'Only in the desktop app' }),
   spotifyLikesDisable: () => isE() && el()?.spotifyLikesDisable ? el().spotifyLikesDisable() : Promise.resolve({ enabled: false }),
   spotifyLikesPoll: () => isE() && el()?.spotifyLikesPoll ? el().spotifyLikesPoll() : Promise.resolve({ items: [] }),
+  // AutoMix: a song's analysis (desktop; electron/automix), null when it can't be.
+  automixAnalyze: (track) => isE() && el()?.automixAnalyze ? el().automixAnalyze(track) : Promise.resolve(null),
   spotifyLikesPush: (track) => isE() && el()?.spotifyLikesPush ? el().spotifyLikesPush(track) : Promise.resolve({ ok: false }),
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),
