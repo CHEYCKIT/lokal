@@ -101,20 +101,15 @@ export default function PlayerBar() {
     }).catch(() => {})
   }, [])
 
-  const getActiveEl = useCallback(() => {
-    return activeAudioElement === 'primary' ? audioRef?.current : cfAudioRef?.current
-  }, [activeAudioElement, audioRef, cfAudioRef])
 
   const handleScrub = useCallback((e) => {
     if (!duration) return
     const r = e.currentTarget.getBoundingClientRect()
     const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration
     setLocalProg(t)
-    if (scrubbing.current) { 
-      const activeEl = getActiveEl()
-      if (activeEl) { activeEl.currentTime = t; setProgress(t) }
-    }
-  }, [duration, getActiveEl, setProgress])
+    // Through the store: it seeks the playing element, or the TV while casting.
+    if (scrubbing.current) usePlayerStore.getState().setProgressWithAudioUpdate(t)
+  }, [duration])
 
   const toggleLike = async () => {
     if (!currentTrack) return

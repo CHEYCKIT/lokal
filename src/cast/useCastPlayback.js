@@ -19,6 +19,7 @@ const SYNC_DELAY_MS = 120 // a burst of queue changes (a drag, an album added) i
 const TICK_MS = 250
 const VOLUME_EVERY_MS = 120
 const VOLUME_SETTLE_MS = 1000 // the TV's reports lag a slider being dragged
+const SEEK_SETTLE_MS = 150
 
 // Where the song was when casting ended: this computer carries on from there.
 let resumeAt = null
@@ -285,8 +286,10 @@ export function useCastPlayback(helpers) {
         const at = Math.max(0, Number(position) || 0)
         live.anchor = { ...live.anchor, position: at, at: Date.now() }
         live.lastPosition = at
+        clearTimeout(live.seekTimer)
         if (cast().status?.playerState === 'IDLE') { sendWindow({ position: at, play: player().isPlaying, reload: true }); return }
-        api.castCommand({ type: 'seek', position: at }).catch(() => {})
+        // Dragging the seek bar seeks many times a second: the TV gets where it stopped.
+        live.seekTimer = setTimeout(() => api.castCommand({ type: 'seek', position: at }).catch(() => {}), SEEK_SETTLE_MS)
       },
       setVolume: level => {
         if (!live) return
@@ -312,7 +315,7 @@ export function useCastPlayback(helpers) {
       // Moving to another device while casting: the new one takes over from
       // where the last one was (this computer's own volume stays the one to go back to).
       const switching = live
-      if (switching) { clearTimeout(switching.syncTimer); clearTimeout(switching.volumeTimer) }
+      if (switching) { clearTimeout(switching.syncTimer); clearTimeout(switching.volumeTimer); clearTimeout(switching.seekTimer) }
       live = fresh()
       live.device = status.device || null
       live.localVolume = switching ? switching.localVolume : state.volume
@@ -349,6 +352,7 @@ export function useCastPlayback(helpers) {
       live = null
       clearTimeout(session.syncTimer)
       clearTimeout(session.volumeTimer)
+      clearTimeout(session.seekTimer)
       call('stopTimer')
       setOutputRoute(null)
       const state = player()
@@ -425,7 +429,7 @@ export function useCastPlayback(helpers) {
       offPlayer()
       offCast()
       for (const off of offs) { try { off?.() } catch {} }
-      if (live) { clearTimeout(live.syncTimer); clearTimeout(live.volumeTimer) }
+      if (live) { clearTimeout(live.syncTimer); clearTimeout(live.volumeTimer); clearTimeout(live.seekTimer) }
       setOutputRoute(null)
     }
   }, [])
