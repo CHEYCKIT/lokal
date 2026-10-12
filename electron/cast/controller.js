@@ -1,0 +1,455 @@
+// A casting session: one Cast device, the receiver app running on it, and
+// what it plays.
+//
+// Lokal stays the owner of the queue (what plays, in what order, shuffle,
+// history, autoplay) and the TV the owner of the clock (where in the song it
+// is, playing or paused). The window says what the TV should hold: the
+// playing song and the next few (AHEAD). It holds them so it moves on by
+// itself, with no gap, whatever this computer is doing; after each change
+// the TV's queue is made to match the window by track id: the matching part
+// is kept (it may already be preloading), the rest replaced. A song the TV
+// already holds is jumped to, not loaded again.
+//
+// The window comes from the player (src/cast/useCastPlayback.js), which also
+// moves Lokal's current song when the TV moves on by itself. Status goes back
+// to it on every change, with where in the song the TV was and when.
+
+const { EventEmitter } = require('events')
+const { CastConnection, NS, RECEIVER } = require('./castv2')
+
+const DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
+const CUSTOM_NAMESPACE = 'urn:x-cast:app.lokal.cast'
+const AHEAD = 3
+const PRELOAD_S = 15
+const STATUS_POLL_MS = 5000 // the TV only reports changes: its clock is asked now and then
+const RECONNECT_TRIES = 3
+const RECONNECT_DELAY_MS = 2000
+
+class CastController extends EventEmitter {
+  /**
+   * @param options.media the preparer (electron/cast/media.js)
+   * @param options.server the media server (start/stop)
+   * @param options.appId Lokal's own receiver app, when there is one; Google's otherwise
+   * @param options.connect for the tests: how a connection is opened
+   */
+  constructor({ media, server, appId = null, connect = null, log = () => {}, now = Date.now } = {}) {
+    super()
+    this.media = media
+    this.server = server
+    this.appId = appId
+    this.connectImpl = connect
+    this.log = log
+    this.now = now
+    this.reset()
+  }
+
+  reset() {
+    this.device = null
+    this.connection = null
+    this.app = null // { appId, sessionId, transportId, custom }
+    this.mediaSessionId = null
+    this.items = [] // what the TV holds, in order: { itemId, trackId }
+    this.currentItemId = null
+    this.playerState = 'IDLE'
+    this.idleReason = null
+    this.position = 0
+    this.positionAt = 0
+    this.duration = null
+    this.volume = { level: 1, muted: false }
+    this.prepared = new Map() // trackId -> prepared (addresses on the media server)
+    this.desired = null
+    this.generation = 0
+    this.applied = 0
+    this.syncing = null
+    this.loading = false
+    this.retried = new Set() // track ids converted after the TV refused them
+    this.state = 'idle'
+    this.error = null
+    clearInterval(this.poll)
+  }
+
+  // ---------------------------------------------------------------- status
+
+  status() {
+    return {
+      state: this.state, // idle | connecting | connected
+      device: this.device ? { id: this.device.id, name: this.device.name, kind: this.device.kind } : null,
+      receiver: this.app ? (this.app.custom ? 'lokal' : 'default') : null,
+      trackId: this.currentTrackId(),
+      playerState: this.loading ? 'LOADING' : this.playerState,
+      idleReason: this.idleReason,
+      position: this.position,
+      positionAt: this.positionAt,
+      duration: this.duration,
+      volume: this.volume,
+      error: this.error,
+    }
+  }
+
+  publish() { this.emit('status', this.status()) }
+
+  currentTrackId() {
+    return this.items.find(item => item.itemId === this.currentItemId)?.trackId || null
+  }
+
+  // ---------------------------------------------------------------- connecting
+
+  /** Connects to `device` and starts the receiver (Lokal's, else Google's). Joins one already playing Lokal's music. */
+  async connect(device) {
+    if (this.connection) await this.disconnect({ stopReceiver: false })
+    this.reset()
+    this.device = device
+    this.state = 'connecting'
+    this.publish()
+    try {
+      await this.server.start()
+      await this.open(device)
+      const joined = await this.join()
+      if (!joined) await this.launch()
+      this.state = 'connected'
+      this.startPolling()
+      this.publish()
+      return { joined }
+    } catch (error) {
+      this.log(`cast: couldn't connect to ${device.name}: ${error.message}`)
+      this.teardown()
+      this.error = `Couldn't connect to ${device.name}: ${error.message}`
+      this.state = 'idle'
+      this.publish()
+      throw error
+    }
+  }
+
+  async open(device) {
+    const connection = new CastConnection({ host: device.host, port: device.port || 8009, connect: this.connectImpl })
+    await connection.open()
+    this.connection = connection
+    connection.on('message', message => this.onMessage(message))
+    connection.on('close', reason => this.onClosed(connection, reason))
+  }
+
+  /** The receiver already playing Lokal's music (after a restart of Lokal, or a dropped connection): picked up, not restarted. */
+  async join() {
+    const reply = await this.connection.request(NS.receiver, { type: 'GET_STATUS' })
+    this.onReceiverStatus(reply.status)
+    const app = (reply.status?.applications || []).find(candidate => [this.appId, DEFAULT_MEDIA_RECEIVER].filter(Boolean).includes(candidate.appId))
+    if (!app) return false
+    this.adopt(app)
+    const status = await this.connection.request(NS.media, { type: 'GET_STATUS' }, app.transportId).catch(() => null)
+    const current = status?.status?.[0]
+    const ours = current?.media?.customData?.lokal || (current?.items || []).some(item => item.media?.customData?.lokal)
+    if (!ours) return false
+    this.onMediaStatus(status.status)
+    return true
+  }
+
+  adopt(app) {
+    this.app = { appId: app.appId, sessionId: app.sessionId, transportId: app.transportId, custom: app.appId !== DEFAULT_MEDIA_RECEIVER }
+    this.connection.connectTo(app.transportId)
+  }
+
+  async launch() {
+    const tryLaunch = async appId => {
+      const reply = await this.connection.request(NS.receiver, { type: 'LAUNCH', appId }, RECEIVER, { timeoutMs: 20000 })
+      if (reply.type === 'LAUNCH_ERROR') throw new Error(reply.reason || 'launch refused')
+      const app = (reply.status?.applications || []).find(candidate => candidate.appId === appId)
+      if (!app) throw new Error('the app did not start')
+      this.onReceiverStatus(reply.status)
+      return app
+    }
+    let app = null
+    if (this.appId) {
+      try { app = await tryLaunch(this.appId) } catch (error) { this.log(`cast: Lokal's receiver didn't start (${error.message}); using Google's`) }
+    }
+    if (!app) app = await tryLaunch(DEFAULT_MEDIA_RECEIVER)
+    this.adopt(app)
+  }
+
+  startPolling() {
+    clearInterval(this.poll)
+    this.poll = setInterval(() => {
+      if (!this.app || !this.connection || this.playerState === 'IDLE') return
+      this.connection.request(NS.media, { type: 'GET_STATUS' }, this.app.transportId).then(reply => this.onMediaStatus(reply.status)).catch(() => {})
+    }, STATUS_POLL_MS)
+    this.poll.unref?.()
+  }
+
+  /** The connection dropped: the TV likely plays on; reconnect and rejoin, a few times, before giving up. */
+  async onClosed(connection, reason) {
+    if (connection !== this.connection || this.closing) return
+    this.connection = null
+    this.log(`cast: connection to ${this.device?.name} lost (${reason})`)
+    const device = this.device
+    for (let attempt = 0; attempt < RECONNECT_TRIES && this.device === device; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY_MS))
+      if (this.device !== device || this.closing) return
+      try {
+        await this.open(device)
+        if (await this.join()) { this.log('cast: rejoined'); this.emit('rejoined'); this.publish(); return }
+        break
+      } catch {}
+    }
+    if (this.device !== device) return
+    this.end('lost')
+  }
+
+  /** Ends the session from Lokal's side; `stopReceiver` closes the app on the TV too. */
+  async disconnect({ stopReceiver = true } = {}) {
+    this.closing = true
+    const final = this.status()
+    try {
+      if (stopReceiver && this.connection && this.app) {
+        await this.connection.request(NS.receiver, { type: 'STOP', sessionId: this.app.sessionId }).catch(() => {})
+      }
+    } finally {
+      this.teardown()
+      this.closing = false
+      this.reset()
+      this.publish()
+    }
+    return final
+  }
+
+  teardown() {
+    clearInterval(this.poll)
+    try { this.connection?.close() } catch {}
+    this.connection = null
+    for (const prepared of this.prepared.values()) this.media.release(prepared)
+    this.prepared.clear()
+    try { this.server.stop() } catch {}
+  }
+
+  /** The TV let go (its app was closed, it was switched off, the network went): tell the player where it was. */
+  end(reason) {
+    const final = this.status()
+    this.teardown()
+    this.reset()
+    this.emit('ended', { reason, last: final })
+    this.publish()
+  }
+
+  // ---------------------------------------------------------------- what the TV reports
+
+  onMessage({ namespace, source, data }) {
+    if (!data || typeof data !== 'object') return
+    if (namespace === NS.receiver && data.type === 'RECEIVER_STATUS') {
+      this.onReceiverStatus(data.status)
+      // Our app no longer running: someone else took over the TV, or it was closed.
+      if (this.app && this.state === 'connected' && !(data.status?.applications || []).some(app => app.sessionId === this.app.sessionId)) this.end('stopped')
+      return
+    }
+    if (namespace === NS.media && data.type === 'MEDIA_STATUS') { this.onMediaStatus(data.status); return }
+    if (namespace === NS.connection && data.type === 'CLOSE' && this.app && source === this.app.transportId) { this.end('stopped'); return }
+    if (namespace === CUSTOM_NAMESPACE) this.emit('custom', data)
+  }
+
+  onReceiverStatus(status) {
+    if (status?.volume) {
+      const volume = { level: Number(status.volume.level ?? this.volume.level), muted: !!status.volume.muted }
+      if (volume.level !== this.volume.level || volume.muted !== this.volume.muted) { this.volume = volume; this.publish() }
+    }
+  }
+
+  onMediaStatus(list) {
+    const status = Array.isArray(list) ? list[0] : null
+    if (!status) return
+    if (status.mediaSessionId != null) this.mediaSessionId = status.mediaSessionId
+    if (Array.isArray(status.items)) {
+      this.items = status.items.map(item => ({
+        itemId: item.itemId,
+        trackId: item.media?.customData?.trackId || this.items.find(known => known.itemId === item.itemId)?.trackId || null,
+      }))
+    }
+    if (status.currentItemId != null) this.currentItemId = status.currentItemId
+    if (status.media?.customData?.trackId && this.currentItemId != null) {
+      const item = this.items.find(known => known.itemId === this.currentItemId)
+      if (item) item.trackId = String(status.media.customData.trackId)
+    }
+    if (status.media?.duration) this.duration = status.media.duration
+    if (status.playerState) this.playerState = status.playerState
+    this.idleReason = status.playerState === 'IDLE' ? status.idleReason || null : null
+    if (typeof status.currentTime === 'number') { this.position = status.currentTime; this.positionAt = this.now() }
+    if (this.playerState === 'IDLE' && this.idleReason === 'ERROR' && !this.loading) this.onTrackError()
+    else if (this.playerState === 'IDLE' && this.idleReason === 'FINISHED' && !this.loading) this.emit('finished')
+    this.publish()
+  }
+
+  /** The TV couldn't play a song: converted and loaded again once; after that, the player skips it. */
+  onTrackError() {
+    const trackId = this.desired?.current?.id
+    if (!trackId) return
+    if (this.retried.has(String(trackId))) { this.emit('trackError', { trackId, message: 'The TV couldn\'t play this song' }); return }
+    this.retried.add(String(trackId))
+    this.log(`cast: the TV refused ${trackId}; converting it and trying again`)
+    const stale = this.prepared.get(String(trackId))
+    if (stale) { this.media.release(stale); this.prepared.delete(String(trackId)) }
+    this.setWindow({ ...this.desired, position: this.position, convert: trackId, reload: true })
+  }
+
+  // ---------------------------------------------------------------- what the TV should play
+
+  /**
+   * @param window { current: track, upcoming: [track], position (s), play, repeat: 'none'|'one'|'all', reload }
+   */
+  setWindow(window) {
+    if (!window?.current) return Promise.resolve()
+    this.desired = { ...window, upcoming: (window.upcoming || []).slice(0, AHEAD) }
+    this.generation++
+    return this.sync()
+  }
+
+  sync() {
+    if (this.syncing) return this.syncing
+    this.syncing = (async () => {
+      try {
+        while (this.desired && this.applied !== this.generation && this.app) {
+          const generation = this.generation
+          await this.apply(this.desired, generation)
+          if (generation === this.generation) this.applied = generation
+        }
+      } catch (error) {
+        this.log(`cast: ${error.message}`)
+        this.error = error.message
+        this.loading = false
+        this.publish()
+        if (this.desired?.current) this.emit('trackError', { trackId: this.desired.current.id, message: error.message })
+      } finally {
+        this.syncing = null
+      }
+    })()
+    return this.syncing
+  }
+
+  async prepare(track, { convert = false } = {}) {
+    const key = String(track.id)
+    if (!convert && this.prepared.has(key)) return this.prepared.get(key)
+    const prepared = await this.media.prepare(track, { deviceHost: this.device?.host, convert })
+    const previous = this.prepared.get(key)
+    if (previous) this.media.release(previous)
+    this.prepared.set(key, prepared)
+    return prepared
+  }
+
+  queueItem(prepared, { autoplay = true } = {}) {
+    return {
+      media: {
+        contentId: prepared.url,
+        contentUrl: prepared.url,
+        streamType: 'BUFFERED',
+        contentType: prepared.mime,
+        metadata: prepared.metadata,
+        ...(prepared.duration ? { duration: prepared.duration } : {}),
+        customData: { lokal: 1, trackId: prepared.trackId },
+      },
+      autoplay,
+      preloadTime: PRELOAD_S,
+    }
+  }
+
+  mediaRequest(data) {
+    if (!this.connection || !this.app) return Promise.reject(new Error('Not casting'))
+    return this.connection.request(NS.media, { ...data, ...(this.mediaSessionId != null ? { mediaSessionId: this.mediaSessionId } : {}) }, this.app.transportId, { timeoutMs: 20000 })
+  }
+
+  repeatMode(repeat) { return repeat === 'one' ? 'REPEAT_SINGLE' : 'REPEAT_OFF' } // repeat-all is Lokal's: the TV only holds a window
+
+  async apply(want, generation) {
+    const currentId = String(want.current.id)
+    const onTv = this.currentTrackId()
+    const stale = () => generation !== this.generation
+    if (want.reload || onTv !== currentId) {
+      const held = this.items.find(item => item.trackId === currentId)
+      if (held && !want.reload && this.playerState !== 'IDLE') {
+        // Already on the TV (queued ahead): a jump, which is instant.
+        const reply = await this.mediaRequest({ type: 'QUEUE_UPDATE', currentItemId: held.itemId, ...(want.position ? { currentTime: want.position } : {}) })
+        this.onMediaStatus(reply.status)
+        if (want.play === false) await this.pause()
+      } else {
+        this.loading = true
+        this.publish()
+        const prepared = await this.prepare(want.current, { convert: want.convert === want.current.id })
+        if (stale()) { this.loading = false; return }
+        const item = this.queueItem(prepared)
+        const reply = await this.mediaRequest({
+          type: 'LOAD',
+          media: item.media,
+          autoplay: want.play !== false,
+          currentTime: want.position || 0,
+          queueData: { items: [item], startIndex: 0, repeatMode: this.repeatMode(want.repeat) },
+          customData: { lokal: 1 },
+        })
+        this.loading = false
+        if (reply.type === 'LOAD_FAILED' || reply.type === 'LOAD_CANCELLED' || reply.type === 'INVALID_REQUEST') throw new Error(`The TV couldn't load "${want.current.title || 'this song'}"`)
+        this.onMediaStatus(reply.status)
+        // The one just loaded, whatever id the TV gave it.
+        const loaded = this.items.find(entry => entry.itemId === this.currentItemId)
+        if (loaded && !loaded.trackId) loaded.trackId = currentId
+      }
+      if (stale()) return
+    }
+    await this.reconcile(want, generation)
+  }
+
+  /** Makes what the TV holds after the playing song match the window's next songs. */
+  async reconcile(want, generation) {
+    const here = this.items.findIndex(item => item.itemId === this.currentItemId)
+    if (here < 0) return
+    const ahead = this.items.slice(here + 1)
+    const wanted = want.upcoming.map(track => String(track.id))
+    let kept = 0
+    while (kept < ahead.length && kept < wanted.length && ahead[kept].trackId === wanted[kept]) kept++
+    if (kept < ahead.length) {
+      const reply = await this.mediaRequest({ type: 'QUEUE_REMOVE', itemIds: ahead.slice(kept).map(item => item.itemId) })
+      this.onMediaStatus(reply.status)
+    }
+    for (const track of want.upcoming.slice(kept)) {
+      if (generation !== this.generation) return
+      let prepared
+      try { prepared = await this.prepare(track) } catch (error) { this.log(`cast: can't queue ${track.id}: ${error.message}`); break }
+      if (generation !== this.generation) return
+      const before = this.items.map(item => item.itemId)
+      const reply = await this.mediaRequest({ type: 'QUEUE_INSERT', items: [this.queueItem(prepared)] })
+      this.onMediaStatus(reply.status)
+      const added = this.items.find(item => !before.includes(item.itemId))
+      if (added && !added.trackId) added.trackId = String(track.id)
+    }
+    const repeatMode = this.repeatMode(want.repeat)
+    if (this.lastRepeat !== repeatMode) {
+      this.lastRepeat = repeatMode
+      await this.mediaRequest({ type: 'QUEUE_UPDATE', repeatMode }).then(reply => this.onMediaStatus(reply.status)).catch(() => {})
+    }
+    // Addresses of songs the TV no longer holds are taken down.
+    const held = new Set(this.items.map(item => item.trackId))
+    for (const [trackId, prepared] of this.prepared) {
+      if (!held.has(trackId) && trackId !== String(want.current.id)) { this.media.release(prepared); this.prepared.delete(trackId) }
+    }
+  }
+
+  // ---------------------------------------------------------------- controls
+
+  async play() { const reply = await this.mediaRequest({ type: 'PLAY' }); this.onMediaStatus(reply.status) }
+  async pause() { const reply = await this.mediaRequest({ type: 'PAUSE' }); this.onMediaStatus(reply.status) }
+  async seek(seconds) {
+    this.position = Math.max(0, Number(seconds) || 0)
+    this.positionAt = this.now()
+    const reply = await this.mediaRequest({ type: 'SEEK', currentTime: this.position })
+    this.onMediaStatus(reply.status)
+  }
+
+  async setVolume({ level, muted } = {}) {
+    if (!this.connection) return
+    const volume = level != null ? { level: Math.max(0, Math.min(1, Number(level))) } : { muted: !!muted }
+    this.volume = { ...this.volume, ...volume }
+    this.publish()
+    const reply = await this.connection.request(NS.receiver, { type: 'SET_VOLUME', volume }).catch(() => null)
+    if (reply?.status) this.onReceiverStatus(reply.status)
+  }
+
+  /** A message for Lokal's own receiver (lyrics, up next, the view); Google's ignores it. */
+  sendCustom(data) {
+    if (!this.connection || !this.app?.custom) return false
+    return this.connection.send(CUSTOM_NAMESPACE, data, this.app.transportId)
+  }
+}
+
+module.exports = { CastController, DEFAULT_MEDIA_RECEIVER, CUSTOM_NAMESPACE, AHEAD }
