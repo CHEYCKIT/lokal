@@ -258,8 +258,8 @@ export default function FlowPanel({ userId }) {
         {tunerOpen && (
           <motion.section key="tuner" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
             className="overflow-hidden">
-            <div className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-start justify-between gap-3 px-1">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-medium text-white"><SlidersHorizontal size={15} className="text-accent" />Flow Tuner</h3>
                   <p className="mt-0.5 text-xs text-muted">{changed ? 'Edits stay here until you apply them' : 'Shape what Flow plays for you'}</p>
@@ -273,13 +273,16 @@ export default function FlowPanel({ userId }) {
                     className="rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-base transition-opacity disabled:opacity-40">Apply</button>
                 </div>
               </div>
-              <div className="mt-6 grid gap-7 @lg:grid-cols-2">
+              {/* Two cards: how Flow picks (Discovery, Era), and where from (online, genres). */}
+              <div className="mt-4 grid gap-4 @lg:grid-cols-2">
+              <div className="grid gap-7 rounded-2xl border border-border bg-elevated p-5 @md:p-6">
                 <TunerSlider label="Discovery" left="Personal" right="Adventurous" hint="Favourites vs fresh finds"
                   value={draft.adventurous} onChange={value => setDraft(d => ({ ...d, adventurous: value }))} />
                 <TunerSlider label="Era" left="All-time" right="Recent" hint="All-time likes vs what you've played lately"
                   value={draft.recent} onChange={value => setDraft(d => ({ ...d, recent: value }))} />
               </div>
-              <div className="mt-7">
+              <div className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">
+              <div>
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-sm font-medium text-white">Fresh finds from</p>
                   <p className="text-xs text-muted">{draftSource === 'library' ? 'Only songs in your library' : 'Your library, and songs recommended online'}</p>
@@ -301,6 +304,8 @@ export default function FlowPanel({ userId }) {
               <div className="mt-7">
                 {pool === null ? <p className="text-xs text-muted">Reading your library…</p>
                   : <GenreChips suggested={suggested} all={allGenres} genres={draft.genres} onChange={genres => setDraft(d => ({ ...d, genres }))} />}
+              </div>
+              </div>
               </div>
             </div>
           </motion.section>
