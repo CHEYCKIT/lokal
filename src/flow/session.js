@@ -6,14 +6,15 @@
 // Fresh finds also come from online (src/flow/online.js): songs Last.fm or
 // YouTube Music recommend (the tuner's choice, else Discovery's source), found
 // in the background and woven in among the library's; more of them the more
-// adventurous the tuner. Moods keep to the library (their songs are picked on
-// audio features online songs don't have).
+// adventurous the tuner. A mood's come from the mood itself: songs similar to
+// library songs that fit it, each heard first and left out when its pace or
+// loudness doesn't belong (src/flow/online.js moodFinds, src/flow/moodFit.js).
 
 import { api } from '../api.js'
 import { usePlayerStore } from '../store/player.js'
-import { DEFAULT_TUNER, FLOW_MOODS, flowEligible, flowSongKey, flowSource, isFresh, normalizeTuner, pickFlow } from './engine.js'
+import { DEFAULT_TUNER, FLOW_MOODS, familiarity, flowEligible, flowSongKey, flowSource, genreWeight, isFresh, moodScore, normalizeTuner, pickFlow } from './engine.js'
 import { songKey } from '../recommendations.js'
-import { onlineFinds, onlineShare } from './online.js'
+import { moodFinds, moodSeeds, onlineFinds, onlineShare } from './online.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
@@ -165,7 +166,6 @@ async function weaveOnline(context, pool, batch) {
 }
 
 async function weaveOnlineNow(context, pool, batch) {
-  if (context.mood && context.mood !== 'flow') return
   // A Flow from before this was kept (its context names no source): the tuner's, or Discovery's.
   const source = context.source || await sourceFor(context.tuner)
   const count = onlineShare({ ...context.tuner, source }, batch)
@@ -175,6 +175,20 @@ async function weaveOnlineNow(context, pool, batch) {
   const exclude = new Set(state.queue.map(songKey))
   for (const track of pool) if (!isFresh(track)) exclude.add(songKey(track))
   const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-  const found = await onlineFinds(source, { count, exclude, isCurrent })
+  const mood = context.mood || 'flow'
+  let found
+  if (mood === 'flow') {
+    found = await onlineFinds(source, { count, exclude, isCurrent })
+  } else {
+    // A mood: songs like the library's songs that fit it, each heard before it's offered.
+    const tuner = normalizeTuner(context.tuner)
+    const seeds = moodSeeds(pool, {
+      mood,
+      fits: track => (genreWeight(track, tuner.genres) ? Math.max(0, moodScore(track, mood) - 0.5) : 0),
+      favour: track => familiarity(track, { recent: tuner.recent }),
+    })
+    const log = message => { try { console.info(message) } catch {} }
+    found = await moodFinds(source, { mood, seeds, count, exclude, isCurrent, log })
+  }
   if (found.length && isCurrent()) usePlayerStore.getState().insertUpcoming(found, context)
 }
