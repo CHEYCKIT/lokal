@@ -204,6 +204,8 @@ export const api = {
         Promise.resolve(api.youtubeSetLiked(youtubeId, r.liked)).catch(() => {})
       }
       if (track.artist && track.title) Promise.resolve(api.lastfmSetLoved(track.artist, track.title, r.liked)).catch(() => {})
+      // New likes go to Spotify's Liked Songs too, when sync is on (it checks).
+      if (r.liked && track.artist && track.title) Promise.resolve(api.spotifyLikesPush({ title: track.title, artist: track.artist, album: track.album, userId: uid ?? 'guest' })).catch(() => {})
     }
     return r
   },
@@ -213,6 +215,12 @@ export const api = {
     return r
   },
   isYoutubeLocallyUnliked: (videoId, uid) => youtubeLocalUnlikes(uid || 'guest').has(String(videoId || '')),
+  // Likes kept in step with Spotify (desktop; electron/ipc/spotifyLikes.js).
+  spotifyLikesStatus: () => isE() && el()?.spotifyLikesStatus ? el().spotifyLikesStatus() : Promise.resolve({ enabled: false }),
+  spotifyLikesEnable: (userId) => isE() && el()?.spotifyLikesEnable ? el().spotifyLikesEnable(userId) : Promise.resolve({ enabled: false, error: 'Only in the desktop app' }),
+  spotifyLikesDisable: () => isE() && el()?.spotifyLikesDisable ? el().spotifyLikesDisable() : Promise.resolve({ enabled: false }),
+  spotifyLikesPoll: () => isE() && el()?.spotifyLikesPoll ? el().spotifyLikesPoll() : Promise.resolve({ items: [] }),
+  spotifyLikesPush: (track) => isE() && el()?.spotifyLikesPush ? el().spotifyLikesPush(track) : Promise.resolve({ ok: false }),
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),
   getHistory: (uid, l) => isE() ? el().getHistory(uid, l) : apiFetch(`/tracks/history?userId=${uid||'guest'}&limit=${l||30}`),

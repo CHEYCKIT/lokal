@@ -56,6 +56,7 @@ import { useMusicVideoView } from './musicVideo'
 import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
+import { startSpotifyLikesSync } from './spotifyLikes'
 
 const EQ_AUDIO_BANDS = [
   { frequency: 31, type: 'lowshelf', q: 0.7 },
@@ -1165,6 +1166,9 @@ export default function App() {
   }, [])
 
   useEffect(() => { userRef.current = user }, [user])
+
+  // Songs liked on Spotify since likes sync was turned on, liked here too (src/spotifyLikes.js).
+  useEffect(() => { startSpotifyLikesSync() }, [])
 
   useEffect(() => {
     if (!api.isElectron || !window.electron?.reportRemoteState) return

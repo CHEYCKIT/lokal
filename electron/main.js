@@ -38,6 +38,7 @@ const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
 const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
+const { registerSpotifyLikesHandlers } = require('./ipc/spotifyLikes')
 // Online songs stream from lokal-stream://; the scheme has to be declared before the app is ready.
 try { registerStreamScheme(protocol) } catch (e) { console.error('registerStreamScheme:', e.message) }
 let isUpdating = false;
@@ -469,6 +470,7 @@ app.whenReady().then(() => {
   try { registerFollowedArtistsHandlers(ipcMain) } catch (e) { console.error('registerFollowedArtistsHandlers:', e.message) }
   try { registerCacheHandlers(ipcMain) } catch (e) { console.error('registerCacheHandlers:', e.message) }
   try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
+  try { registerSpotifyLikesHandlers(ipcMain) } catch (e) { console.error('registerSpotifyLikesHandlers:', e.message) }
   try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
   // SpotiFLAC repositories are refreshed at every launch (in the background,
   // once the window has had time to open), so updates and new sources show

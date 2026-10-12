@@ -1587,6 +1587,28 @@ activeCategory === 'data' ? usersTried
       </Section>
       )}
 
+      {api.isElectron && inCategory('integrations') && (
+      <Section title="Spotify">
+        <Row stacked label="Spotify Cookie" desc={"Your Spotify sign-in, for Liked Songs here and Spotify Canvas covers: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
+              placeholder="sp_dc value" spellCheck={false} autoComplete="off" aria-label="Spotify cookie (sp_dc)"
+              className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+            <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading || !settings.spotify_sp_dc}
+              className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
+              {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+            </button>
+            {spotifyCheck && !spotifyCheck.loading && (
+              spotifyCheck.error
+                ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                : <p className="text-xs text-green-400">Signed in to Spotify.</p>
+            )}
+          </div>
+        </Row>
+        <SpotifyLikesRow hasCookie={!!settings.spotify_sp_dc} userId={user?.id || 'guest'} />
+      </Section>
+      )}
+
       {inCategory('integrations') && (
       <Section title="Discord Rich Presence">
         <Row label="Use Lokal's Discord App" desc="Show Lokal's name and icon on your Discord profile.">
@@ -2792,5 +2814,34 @@ Earth, Wind & Fire"
       </Modal>
 
     </div>
+  )
+}
+
+// Settings → Integrations → Spotify → Sync Likes (electron/ipc/spotifyLikes.js).
+function SpotifyLikesRow({ hasCookie, userId }) {
+  const [status, setStatus] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { Promise.resolve(api.spotifyLikesStatus()).then(setStatus).catch(() => {}) }, [])
+  const on = !!status?.enabled
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      const next = on ? await api.spotifyLikesDisable() : await api.spotifyLikesEnable(userId)
+      setStatus(next)
+      window.dispatchEvent(new Event('lokal:spotify-likes-changed'))
+    } finally { setBusy(false) }
+  }
+  const since = status?.since ? new Date(status.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+  const desc = !hasCookie ? 'Add your Spotify cookie above first.'
+    : status?.error ? status.error
+      : on ? `Songs you like here are liked on Spotify, and songs you like on Spotify are liked here, since ${since}. Likes from before stay where they are.`
+        : 'Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.'
+  return (
+    <Row label="Sync Likes" desc={desc}>
+      <button disabled={!hasCookie || busy} aria-pressed={on} onClick={toggle}
+        className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${on ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+        {busy ? '…' : on ? 'On' : 'Off'}
+      </button>
+    </Row>
   )
 }

@@ -202,6 +202,12 @@ contextBridge.exposeInMainWorld('electron', {
   musicVideoDownload: (trackId) => invoke('musicVideo:download', trackId),
   musicVideoPrepare: (trackId) => invoke('musicVideo:prepare', trackId),
   musicVideoStreamBase: () => invoke('musicVideo:streamBase'),
+  // Likes kept in step with Spotify (electron/ipc/spotifyLikes.js)
+  spotifyLikesStatus: () => invoke('spotifyLikes:status'),
+  spotifyLikesEnable: (userId) => invoke('spotifyLikes:enable', userId),
+  spotifyLikesDisable: () => invoke('spotifyLikes:disable'),
+  spotifyLikesPoll: () => invoke('spotifyLikes:poll'),
+  spotifyLikesPush: (track) => invoke('spotifyLikes:push', track),
   musicVideoDeleteDownload: (trackId) => invoke('musicVideo:deleteDownload', trackId),
   musicVideoList: () => invoke('musicVideo:list'),
   musicVideoSave: (trackId, saved) => invoke('musicVideo:save', trackId, saved),
