@@ -210,6 +210,8 @@ contextBridge.exposeInMainWorld('electron', {
   spotifyLikesPush: (track) => invoke('spotifyLikes:push', track),
   // AutoMix: a song's analysis (electron/automix)
   automixAnalyze: (track) => invoke('automix:analyze', track),
+  // Flow's songs (electron/ipc/flow.js)
+  flowPool: (userId) => invoke('flow:pool', userId),
   musicVideoDeleteDownload: (trackId) => invoke('musicVideo:deleteDownload', trackId),
   musicVideoList: () => invoke('musicVideo:list'),
   musicVideoSave: (trackId, saved) => invoke('musicVideo:save', trackId, saved),

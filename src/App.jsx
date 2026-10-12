@@ -58,6 +58,7 @@ import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
+import { continueFlow, flowNeedsMore } from './flow/session'
 
 // A bass-swap filter at rest: open (below anything audible).
 const MIX_FILTER_OPEN_HZ = 10
@@ -334,7 +335,7 @@ export default function App() {
         setStreamError(null)
         usePlayerStore.getState().replaceCurrentTrack(failedTrack.id, replacement)
       } else {
-        if (['discovery', 'mix'].includes(usePlayerStore.getState().playbackContext?.type)) {
+        if (['discovery', 'mix', 'flow'].includes(usePlayerStore.getState().playbackContext?.type)) {
           toast.update(`“${failedTrack.title}” is unavailable. Trying the next song…`)
           if (await skipUnavailableRecommendation(failedTrack)) { setStreamError(null); return }
           if (!isCurrent()) return
@@ -2138,7 +2139,10 @@ export default function App() {
     }
 
     const { queue, queueIndex, _fetchingRelated } = state
-    if (state.playbackContext?.type !== 'discovery' && state.playbackContext?.type !== 'mix' && queue.length - queueIndex - 1 < 3 && currentTrackRef.current && !_fetchingRelated) {
+    if (state.playbackContext?.type === 'flow') {
+      // Flow never ends: more of its songs as these run out (src/flow/session.js).
+      if (flowNeedsMore(state)) continueFlow().catch(() => {})
+    } else if (state.playbackContext?.type !== 'discovery' && state.playbackContext?.type !== 'mix' && queue.length - queueIndex - 1 < 3 && currentTrackRef.current && !_fetchingRelated) {
       const generation = state.playbackGeneration
       usePlayerStore.getState().setFetchingRelated(true)
       api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {

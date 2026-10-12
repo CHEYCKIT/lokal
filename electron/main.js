@@ -40,6 +40,7 @@ const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc
 const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
 const { registerSpotifyLikesHandlers } = require('./ipc/spotifyLikes')
 const { registerAutomixHandlers } = require('./ipc/automix')
+const { registerFlowHandlers } = require('./ipc/flow')
 // Online songs stream from lokal-stream://; the scheme has to be declared before the app is ready.
 try { registerStreamScheme(protocol) } catch (e) { console.error('registerStreamScheme:', e.message) }
 let isUpdating = false;
@@ -473,6 +474,7 @@ app.whenReady().then(() => {
   try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
   try { registerSpotifyLikesHandlers(ipcMain) } catch (e) { console.error('registerSpotifyLikesHandlers:', e.message) }
   try { registerAutomixHandlers(ipcMain) } catch (e) { console.error('registerAutomixHandlers:', e.message) }
+  try { registerFlowHandlers(ipcMain) } catch (e) { console.error('registerFlowHandlers:', e.message) }
   try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
   // SpotiFLAC repositories are refreshed at every launch (in the background,
   // once the window has had time to open), so updates and new sources show

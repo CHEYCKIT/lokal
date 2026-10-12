@@ -57,7 +57,7 @@ const failedQueues = new WeakMap()
 /** After exhausting a song's providers, advance within the same recommendation queue. */
 export async function skipUnavailableRecommendation(failedTrack, store = usePlayerStore) {
   const initial = store.getState()
-  if (initial.currentTrack !== failedTrack || !['discovery', 'mix'].includes(initial.playbackContext?.type)) return false
+  if (initial.currentTrack !== failedTrack || !['discovery', 'mix', 'flow'].includes(initial.playbackContext?.type)) return false
   const generation = initial.playbackGeneration
   let failures = failedQueues.get(store)
   if (failures?.generation !== generation) {

@@ -222,6 +222,12 @@ export const api = {
   spotifyLikesPoll: () => isE() && el()?.spotifyLikesPoll ? el().spotifyLikesPoll() : Promise.resolve({ items: [] }),
   // AutoMix: a song's analysis (desktop; electron/automix), null when it can't be.
   automixAnalyze: (track) => isE() && el()?.automixAnalyze ? el().automixAnalyze(track) : Promise.resolve(null),
+  // Flow's songs: the library with likes and plays (electron/ipc/flow.js); on the web, liked songs and the library.
+  flowPool: (uid) => isE() && el()?.flowPool ? el().flowPool(uid || 'guest') : Promise.all([api.getLikedTracks(uid), api.getTracks()]).then(([liked, all]) => {
+    const likedIds = new Set((Array.isArray(liked) ? liked : []).map(t => t.id))
+    const rows = Array.isArray(all) ? all : all?.tracks || []
+    return [...(Array.isArray(liked) ? liked : []).map(t => ({ ...t, is_liked: 1 })), ...rows.filter(t => !likedIds.has(t.id))]
+  }),
   spotifyLikesPush: (track) => isE() && el()?.spotifyLikesPush ? el().spotifyLikesPush(track) : Promise.resolve({ ok: false }),
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),
