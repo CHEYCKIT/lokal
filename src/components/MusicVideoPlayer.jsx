@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Mic2, Clapperboard, Expand, Minimize, Download, PictureInPicture2 } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Mic2, Clapperboard, Expand, Minimize, Download, PictureInPicture2, Captions, PanelRight, Languages, Loader2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { usePlayerStore } from '../store/player'
 import LyricsPanel from './LyricsPanel'
@@ -10,6 +10,7 @@ import { useMusicVideo, useMusicVideoView, videoTimeFor, songTime, useVideoOffse
 import VideoOffsetControl from './VideoOffsetControl'
 import { syncVideo, seekVideo } from '../musicVideoPlayback'
 import { useLyricLines } from '../lyricLine'
+import { useLyricSubline } from '../lyrics/useLyricSubline'
 import LyricSubtitles from './LyricSubtitles'
 
 // Further apart than this and the video jumps to the song; closer, it catches
@@ -17,6 +18,23 @@ import LyricSubtitles from './LyricSubtitles'
 const IDLE_MS = 2600
 const EASE = [0.32, 0.72, 0, 1]
 const RECOVER_TRIES = 2
+
+const LYRICS_LAYOUT_KEY = 'lokal-video-lyrics-layout' // 'subtitles' | 'side'
+const NO_LINES = []
+
+function readLyricsLayout() {
+  try { return localStorage.getItem(LYRICS_LAYOUT_KEY) === 'side' ? 'side' : 'subtitles' } catch { return 'subtitles' }
+}
+
+/** A round button in the video's controls; `active` while what it turns on is on. */
+function ChromeButton({ active, onClick, label, children }) {
+  return (
+    <button onClick={onClick} title={label} aria-label={label} aria-pressed={!!active}
+      className={`w-10 h-10 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors ${active ? 'border-white/30 bg-white/20 text-white' : 'border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16]'}`}>
+      {children}
+    </button>
+  )
+}
 
 function fmt(s) {
   if (!Number.isFinite(s) || s < 0) return '0:00'
@@ -51,6 +69,14 @@ export default function MusicVideoPlayer({ compact = false }) {
   // The song is at a moment the video doesn't have (past its end).
   const [outside, setOutside] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
+  // Synced lyrics as subtitles under the picture, or the full lyrics at the
+  // side (with their source menu and search: another source, plain lyrics).
+  const [lyricsLayout, setLyricsLayout] = useState(readLyricsLayout)
+  const switchLyricsLayout = () => setLyricsLayout(layout => {
+    const next = layout === 'side' ? 'subtitles' : 'side'
+    try { localStorage.setItem(LYRICS_LAYOUT_KEY, next) } catch {}
+    return next
+  })
   const [autoSynced, setAutoSynced] = useState(false)
   const [idle, setIdle] = useState(false)
   const idleTimer = useRef(null)
@@ -206,8 +232,10 @@ export default function MusicVideoPlayer({ compact = false }) {
   // Synced lyrics show as subtitles under the picture (the mini player's
   // style); plain lyrics, which have no "now", keep the panel at the side.
   const lyric = useLyricLines(currentTrack, open && !compact && showLyrics)
-  const subtitles = showLyrics && lyric.synced
-  const lyricsPanel = showLyrics && lyric.loaded && !lyric.synced
+  const subtitles = showLyrics && lyric.synced && lyricsLayout !== 'side'
+  const lyricsPanel = showLyrics && lyric.loaded && !subtitles
+  // Translation or romanization under the subtitles: the lyrics panel's choice.
+  const sub = useLyricSubline({ trackId: subtitles ? currentTrack?.id : null, result: subtitles ? lyric.result : null, lines: subtitles ? lyric.lines : NO_LINES })
   const showCoverCard = !showVideo && !lyricsPanel
   const chromeHidden = idle && showVideo
   const fade = { duration: reduceMotion ? 0 : 0.5, ease: EASE }
@@ -319,7 +347,7 @@ export default function MusicVideoPlayer({ compact = false }) {
           </AnimatePresence>
 
           {/* Synced lyrics: subtitles under the picture, lower when the controls are away. */}
-          {subtitles && <LyricSubtitles lines={lyric.lines} progress={progress} wordSync={wordSyncEnabled()} bottom={chromeHidden ? '2.75rem' : '8.5rem'} />}
+          {subtitles && <LyricSubtitles lines={lyric.lines} subLines={sub.subLines} progress={progress} wordSync={wordSyncEnabled()} bottom={chromeHidden ? '2.75rem' : '8.5rem'} />}
 
           {/* Plain lyrics over the video's side, on a soft shade. */}
           <AnimatePresence>
@@ -374,6 +402,24 @@ export default function MusicVideoPlayer({ compact = false }) {
                 </div>
                 <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
                   {video?.videoId && <VideoOffsetControl videoId={video.videoId} />}
+                  {subtitles && (
+                    <>
+                      <ChromeButton active={sub.wantTranslation} onClick={() => sub.toggle('translation')} label={`Translate the lyrics (${sub.translateTarget})`}>
+                        {sub.translationBusy ? <Loader2 size={16} className="animate-spin" /> : <Languages size={16} />}
+                      </ChromeButton>
+                      {sub.canRomanize && (
+                        <ChromeButton active={sub.subline === 'romanization'} onClick={() => sub.toggle('romanization')} label="Show the pronunciation in Latin letters">
+                          {sub.romanizationBusy ? <Loader2 size={16} className="animate-spin" /> : <span className="text-[13px] font-semibold leading-none">Aa</span>}
+                        </ChromeButton>
+                      )}
+                    </>
+                  )}
+                  {showLyrics && lyric.synced && (
+                    <ChromeButton active={lyricsLayout === 'side'} onClick={switchLyricsLayout}
+                      label={lyricsLayout === 'side' ? 'Lyrics as subtitles under the video' : 'Full lyrics at the side (other sources, plain lyrics)'}>
+                      {lyricsLayout === 'side' ? <Captions size={17} /> : <PanelRight size={17} />}
+                    </ChromeButton>
+                  )}
                   <button onClick={() => setShowLyrics(v => !v)} title={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-label={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-pressed={showLyrics}
                     className={`w-10 h-10 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors ${showLyrics ? 'border-white/30 bg-white/20 text-white' : 'border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16]'}`}>
                     <Mic2 size={17} />
