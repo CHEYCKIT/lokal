@@ -419,20 +419,38 @@ const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept
 const VIDEO_CHUNK = 2 * 1024 * 1024
 const VIDEO_CHUNK_TIMEOUT_MS = 30000
 
-/** One piece of a music video, read whole: { body, from, to, total, mime }. */
-async function videoChunk(id, from, to, fetchImpl) {
+// Why a video's stream last failed (shown to the player, which only sees a read error).
+const videoErrors = new Map() // videoId -> message
+function videoFailed(id, message) {
+  if (videoErrors.size > 50) videoErrors.delete(videoErrors.keys().next().value)
+  videoErrors.set(id, message)
+  try { require('electron-log').info(`Music video stream: ${id}: ${message}`) } catch {}
+}
+
+/** One piece of a music video, read whole: { body, from, to, total, mime, engine }. */
+async function videoChunk(id, from, to, fetchImpl, force = false) {
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
+  const at = `${(from / 1048576).toFixed(1)} MB in`
   try {
-    const { res, mime } = await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range: `bytes=${from}-${to}`, signal: upstream.signal, fetchImpl })
+    let answer
+    try {
+      answer = await youtube.fetchStream(id, { ...streamOptions(), quality: 'video', range: `bytes=${from}-${to}`, signal: upstream.signal, fetchImpl, force })
+    } catch (error) {
+      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at}` : String(error?.message || error))
+    }
+    const { res, mime, engine } = answer
     if (res.status !== 206) {
       try { await res.body?.cancel?.() } catch {}
-      throw new Error(`YouTube refused the video (HTTP ${res.status})`)
+      throw new Error(`YouTube refused the video ${at} (HTTP ${res.status}, ${engine} link)`)
     }
     const span = String(res.headers.get('content-range') || '').match(/bytes (\d+)-(\d+)\/(\d+)/)
-    const body = Buffer.from(await res.arrayBuffer())
-    if (!span || !body.length) throw new Error('YouTube sent an empty piece of the video')
-    return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime }
+    let body
+    try { body = Buffer.from(await res.arrayBuffer()) } catch {
+      throw new Error(upstream.signal.aborted ? `YouTube took too long, ${at} (${engine} link)` : `YouTube cut the video off ${at} (${engine} link)`)
+    }
+    if (!span || !body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
+    return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime, engine }
   } finally { clearTimeout(timer) }
 }
 
@@ -444,15 +462,28 @@ async function videoChunk(id, from, to, fetchImpl) {
  * is read whole, so a stream the player drops or stops reading (the video
  * closed, paused, a seek) never holds a connection: those used to pile up
  * on the video's server (Chromium allows six per server) until it stopped
- * loading.
+ * loading. A piece that fails is asked for once more with a fresh link; a
+ * fresh link to another file (another format) ends the stream rather than
+ * mixing two files.
  */
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
-  const first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl)
+  let first
+  try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
+  videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
   let next = first.to + 1
   let cancelled = false
+  const piece = async (from, to) => {
+    try { return await videoChunk(id, from, to, fetchImpl) } catch (error) {
+      if (cancelled) throw error
+      try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
+      const again = await videoChunk(id, from, to, fetchImpl, true)
+      if (again.total !== first.total) throw new Error(`YouTube gave another file for this video mid-way (${again.engine} link)`)
+      return again
+    }
+  }
   const body = new ReadableStream({
     start(controller) {
       controller.enqueue(first.body.subarray(0, last - start + 1))
@@ -461,12 +492,16 @@ async function videoStream(id, range, fetchImpl) {
     async pull(controller) {
       if (cancelled || next > last) return
       try {
-        const piece = await videoChunk(id, next, Math.min(last, next + VIDEO_CHUNK - 1), fetchImpl)
+        const got = await piece(next, Math.min(last, next + VIDEO_CHUNK - 1))
         if (cancelled) return
-        controller.enqueue(piece.body.subarray(0, last - piece.from + 1))
-        next = piece.to + 1
+        controller.enqueue(got.body.subarray(0, last - got.from + 1))
+        next = got.to + 1
         if (next > last) controller.close()
-      } catch (error) { if (!cancelled) controller.error(error) }
+      } catch (error) {
+        if (cancelled) return
+        videoFailed(id, error.message)
+        controller.error(error)
+      }
     },
     cancel() { cancelled = true },
   }, { highWaterMark: 0 })
@@ -488,7 +523,11 @@ function registerStreamProtocol(protocol, net) {
     } catch {}
     try {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
-      if (provider === 'ytv') return await videoStream(id, request.headers.get('Range'), (u, init) => net.fetch(u, init))
+      if (provider === 'ytv') {
+        // The player asking why the video's stream failed.
+        if (request.headers.get('x-lokal-why')) return new Response(videoErrors.get(id) || '', { status: 200, headers: { 'content-type': 'text/plain' } })
+        return await videoStream(id, request.headers.get('Range'), (u, init) => net.fetch(u, init))
+      }
       // Electron doesn't fire request.signal when the player drops a stream
       // (next song, seek); it cancels the response body. The request to the
       // media server must be aborted then, or its connection stays open: after

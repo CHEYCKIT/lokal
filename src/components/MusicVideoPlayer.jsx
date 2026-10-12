@@ -163,11 +163,12 @@ export default function MusicVideoPlayer({ compact = false }) {
     setFailed(true)
     setStalled(false)
     setErrorText(el?.error?.message || 'Could not open the downloaded video')
-    // A streamed video: why YouTube wouldn't give it (the stream answers with the reason).
+    // A streamed video: why YouTube stopped giving it (the player itself only
+    // sees "data source error"); Lokal remembers the reason.
     if (video?.streamed && video.src) {
-      fetch(video.src, { headers: { Range: 'bytes=0-0' } })
-        .then(res => res.ok ? null : res.text())
-        .then(reason => { if (reason) setErrorText(reason.trim().slice(0, 200)) })
+      fetch(video.src, { headers: { 'x-lokal-why': '1' } })
+        .then(res => res.ok ? res.text() : null)
+        .then(reason => { if (reason?.trim()) setErrorText(reason.trim().slice(0, 200)) })
         .catch(() => {})
     }
   }, [video, segments])
@@ -182,14 +183,14 @@ export default function MusicVideoPlayer({ compact = false }) {
       : failed ? 'failed'
         : outside ? 'outside'
           : ready || everPlayed ? 'playing' : 'loading'
-  const lookupText = lookupProgress?.stage === 'checking' && lookupProgress.total
-    ? `Matching video ${lookupProgress.index} of ${lookupProgress.total}`
-    : lookupProgress?.stage === 'fallback' ? 'Trying the original version'
-      : lookupProgress?.stage === 'queued' ? 'Music video queued for download'
+  // Looking for the video (or starting it): only the light sweeping over the
+  // cover, no words under it (they pushed the cover up as they came and went).
+  // A download you asked for still says how far along it is.
+  const loadingText = !loading || !slowLoad ? null
+    : lookupProgress?.stage === 'queued' ? 'Music video queued for download'
       : lookupProgress?.stage === 'downloading'
         ? `Downloading music video${Number.isFinite(lookupProgress.percent) ? ` — ${lookupProgress.percent}%` : ''}`
-      : 'Looking for the music video'
-  const loadingText = loading && slowLoad ? lookupText : null
+        : null
   const message = {
     none: lookupProgress?.message || 'No verified music video for this song. Continuing with the song and artwork.',
     failed: video?.error ? `The music video couldn't be downloaded: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
@@ -243,7 +244,7 @@ export default function MusicVideoPlayer({ compact = false }) {
           <div className={`absolute inset-0 transition-colors duration-700 ${showVideo ? 'bg-transparent' : 'bg-black/40'}`} />
           <AnimatePresence>
             {showCoverCard && (
-              <motion.div key={`cover-${currentTrack.id}`} className="absolute inset-0 flex flex-col items-center justify-center gap-7"
+              <motion.div key={`cover-${currentTrack.id}`} className="absolute inset-0 flex items-center justify-center"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.08 }} transition={fade}>
                 <div className="relative w-[min(40vh,22rem)] aspect-square rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7)] border border-white/10 bg-white/5">
                   {art ? <img src={art} alt="" className="w-full h-full object-cover" /> : <span className="absolute inset-0 flex items-center justify-center text-white/10 text-7xl">♪</span>}
@@ -253,17 +254,20 @@ export default function MusicVideoPlayer({ compact = false }) {
                     </div>
                   )}
                 </div>
-                {message && (
-                  <div className="flex items-center gap-2.5 text-sm text-white/70" aria-live="polite">
-                    {status === 'loading' && (
-                      <span className="flex items-end gap-[3px] h-3.5" aria-hidden>
-                        {[0, 1, 2].map(i => <span key={i} className="w-[3px] h-full rounded-full bg-white/70 origin-bottom animate-[mv-bar_0.9s_ease-in-out_infinite]" style={{ animationDelay: `${i * 0.15}s` }} />)}
-                      </span>
-                    )}
-                    {message}
-                  </div>
-                )}
-                {canDownload && <button onClick={download} className="inline-flex items-center gap-2 rounded-full bg-white/90 px-5 py-2 text-sm text-black"><Download size={16} />Download to Videos</button>}
+                {/* Under the cover, out of the layout: a message coming or going never moves the cover. */}
+                <div className="absolute inset-x-6 flex flex-col items-center gap-5 text-center" style={{ top: 'calc(50% + min(20vh, 11rem) + 1.75rem)' }}>
+                  {message && (
+                    <div className="flex items-center gap-2.5 text-sm text-white/70" aria-live="polite">
+                      {status === 'loading' && (
+                        <span className="flex items-end gap-[3px] h-3.5" aria-hidden>
+                          {[0, 1, 2].map(i => <span key={i} className="w-[3px] h-full rounded-full bg-white/70 origin-bottom animate-[mv-bar_0.9s_ease-in-out_infinite]" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                        </span>
+                      )}
+                      {message}
+                    </div>
+                  )}
+                  {canDownload && <button onClick={download} className="inline-flex items-center gap-2 rounded-full bg-white/90 px-5 py-2 text-sm text-black"><Download size={16} />Download to Videos</button>}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
