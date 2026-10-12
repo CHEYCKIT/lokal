@@ -36,6 +36,7 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
     nextItemId: 1,
     nextMediaSession: 1,
     failNextLoad: false,
+    failQueueChanges: 0, // the next this many QUEUE_INSERT / QUEUE_REMOVE are refused
   }
   const send = (socket, namespace, data, source = 'receiver-0', destination = '*') => socket.write(frame({ source, destination, namespace, data }))
   const broadcast = (namespace, data, source) => { for (const socket of sockets) send(socket, namespace, data, source) }
@@ -108,6 +109,7 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
         }
         case 'QUEUE_INSERT': {
           if (!m) return
+          if (state.failQueueChanges > 0) { state.failQueueChanges--; send(socket, NS.media, { type: 'INVALID_REQUEST', reason: 'INVALID_COMMAND', requestId: data.requestId }, from, source); return }
           const items = newItems(data.items || [])
           fetchItems(items)
           const at = data.insertBefore != null ? m.items.findIndex(item => item.itemId === data.insertBefore) : -1
@@ -116,6 +118,7 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
         }
         case 'QUEUE_REMOVE': {
           if (!m) return
+          if (state.failQueueChanges > 0) { state.failQueueChanges--; send(socket, NS.media, { type: 'INVALID_REQUEST', reason: 'INVALID_COMMAND', requestId: data.requestId }, from, source); return }
           const currentId = m.items[m.current]?.itemId
           m.items = m.items.filter(item => !data.itemIds.includes(item.itemId))
           const index = m.items.findIndex(item => item.itemId === currentId)

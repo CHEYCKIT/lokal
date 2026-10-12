@@ -244,3 +244,30 @@ test('Google\'s receiver gets none of Lokal\'s own messages', async t => {
   assert.equal(controller.sendUpNext([track('b')]), false)
   assert.equal(controller.sendVideo(null), false)
 })
+
+test('a queue change the TV refuses is tried again, without loading the playing song again', async t => {
+  const device = await startFakeReceiver()
+  t.after(() => device.close())
+  const { controller } = setup(t, { device })
+  await controller.connect(tv(device))
+  device.state.failQueueChanges = 2 // b's insert, then its retry
+  await controller.setWindow({ current: track('a'), upcoming: [track('b'), track('c')], position: 0, play: true, repeat: 'none' })
+  assert.equal(sent(device, 'LOAD').length, 1, 'the playing song loaded once')
+  assert.deepEqual(device.state.media.items.map(item => item.media.customData.trackId), ['a', 'b', 'c'])
+  assert.equal(sent(device, 'QUEUE_INSERT').length, 4, 'two refused, then b and c')
+  assert.equal(controller.applied, controller.generation)
+})
+
+test('a queue the TV keeps refusing is given up on after a few tries; the song plays on', async t => {
+  const device = await startFakeReceiver()
+  t.after(() => device.close())
+  const { controller } = setup(t, { device })
+  await controller.connect(tv(device))
+  device.state.failQueueChanges = 99
+  await controller.setWindow({ current: track('a'), upcoming: [track('b')], position: 0, play: true, repeat: 'none' })
+  assert.equal(sent(device, 'LOAD').length, 1)
+  assert.equal(sent(device, 'QUEUE_INSERT').length, 4, 'the first try and three more')
+  assert.equal(device.state.media.items.length, 1)
+  assert.equal(controller.applied, controller.generation)
+  assert.equal(device.state.media.playerState, 'PLAYING')
+})

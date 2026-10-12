@@ -276,9 +276,12 @@ export const usePlayerStore = create((set, get) => ({
     const ids = new Set(queue.map(t => t.id))
     const fresh = sanitizeTrackList(tracks).filter(t => !ids.has(t.id))
     if (!fresh.length) return
-    // Shuffled: they're played after the songs still to come in the shuffle order.
-    const { shuffle, shuffleQueue } = get()
-    set(shuffle && shuffleQueue.length ? { queue: [...queue, ...fresh], shuffleQueue: [...shuffleQueue, ...shuffleArray(fresh)] } : { queue: [...queue, ...fresh] })
+    // Shuffled: they're played after the songs still to come in the shuffle
+    // order, and kept in the unshuffled order too, for when shuffle goes off.
+    const { shuffle, shuffleQueue, originalQueue } = get()
+    set(shuffle && shuffleQueue.length
+      ? { queue: [...queue, ...fresh], shuffleQueue: [...shuffleQueue, ...shuffleArray(fresh)], originalQueue: [...originalQueue, ...fresh] }
+      : { queue: [...queue, ...fresh] })
   },
 
   initShuffleQueue: (tracks, currentIndex) => {
