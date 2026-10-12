@@ -46,3 +46,37 @@ for (const playing of [true, false]) {
     assert.equal(state.isPlaying, playing)
   })
 }
+
+const streamed = () => Object.assign(video(), { currentSrc: 'lokal-stream://ytv/aaaaaaaaaaa', readyState: 4, paused: false, buffered: { length: 1, start: () => 0, end: () => 30 } })
+
+test('a streamed video sent somewhere not loaded aims a moment ahead, then its frame waits for the song', () => {
+  const element = streamed()
+  element.currentTime = 20
+  syncVideo(element, { time: 60, segments, isPlaying: true })
+  assert.equal(element.currentTime, 65, 'one second past the song (64)')
+  // Loaded there, the song not yet: held, not sent back into what isn't loaded.
+  element.buffered = { length: 1, start: () => 65, end: () => 80 }
+  syncVideo(element, { time: 60.3, segments, isPlaying: true })
+  assert.equal(element.currentTime, 65)
+  assert.equal(element.paused, true)
+  // The song catches up: it plays on.
+  syncVideo(element, { time: 60.8, segments, isPlaying: true })
+  assert.equal(element.paused, false)
+})
+
+test('a streamed video still loading where it was sent is not sent again (the request would be thrown away)', () => {
+  const element = streamed()
+  element.readyState = 2
+  element.currentTime = 65
+  syncVideo(element, { time: 63, segments, isPlaying: true })
+  assert.equal(element.currentTime, 65)
+  // Far off (the song itself was moved): sent there.
+  syncVideo(element, { time: 120, segments, isPlaying: true })
+  assert.equal(element.currentTime, 125)
+})
+
+test('a downloaded video in a part not buffered yet goes straight to the song (no lead)', () => {
+  const element = Object.assign(video(), { currentSrc: 'file:///videos/a.mp4', readyState: 4, buffered: { length: 0 } })
+  syncVideo(element, { time: 60, segments, isPlaying: true })
+  assert.equal(element.currentTime, 64)
+})
