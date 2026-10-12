@@ -74,7 +74,7 @@ test('how many come from online', () => {
   assert.equal(onlineShare({ source: 'library', adventurous: 1 }, 10), 0)
   assert.equal(onlineShare({ adventurous: 1 }, 10), 0)
   assert.equal(onlineShare({ source: 'lastfm', adventurous: 0 }, 10), 1)
-  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 5)
+  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 8)
 })
 
 test('finds are woven among the songs to come, never before the next one', () => {

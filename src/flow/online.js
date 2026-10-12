@@ -123,11 +123,14 @@ export async function onlineFinds(source, { count, exclude = new Set(), isCurren
   return started === generation ? found : []
 }
 
-/** How many of `count` songs come from online: more for an adventurous tuner, none for the library alone. */
+/**
+ * How many of `count` songs come from online: from 10% (a personal tuner) to
+ * 80% (all the way adventurous), none for the library alone.
+ */
 export function onlineShare(tuner, count) {
   if (!tuner?.source || tuner.source === 'library') return 0
   const adventurous = Math.min(1, Math.max(0, Number(tuner.adventurous) || 0))
-  return Math.max(1, Math.round(count * (0.1 + 0.4 * adventurous)))
+  return Math.max(1, Math.round(count * (0.1 + 0.7 * adventurous)))
 }
 
 // ---------------------------------------------------------------- moods
