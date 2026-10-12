@@ -286,10 +286,12 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
     official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
     url: `https://www.youtube.com/watch?v=${entry.id}`,
   }), 1, 10, undefined, { timeoutMs: 15000 })
-  // youtube.com's own search first (a request, under a second); yt-dlp's when that fails.
+  // youtube.com's own search first (a request, under a second); yt-dlp's when
+  // that fails or finds nothing (a page YouTube laid out differently).
   const fastSearch = async query => {
+    let found
     try {
-      return (await require('../online/videoPreview').searchVideos(query)).slice(0, 10).map(entry => ({
+      found = (await require('../online/videoPreview').searchVideos(query)).slice(0, 10).map(entry => ({
         ...entry,
         videoId: entry.id,
         artist: entry.channel,
@@ -302,6 +304,9 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
       if (!options.ytdlp) throw error
       return ytdlpSearch(query)
     }
+    if (found.length || !options.ytdlp) return found
+    require('electron-log').info('YouTube fast engine (video): search through yt-dlp (youtube.com found nothing)')
+    return ytdlpSearch(query)
   }
   const video = await matcher.findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
