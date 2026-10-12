@@ -51,7 +51,7 @@ async function searchAndSaveArtistSongs(artists, client, { sources: given, isCur
   return searches.flat()
 }
 
-async function youtubeRadioSeed(seed, mode, client) {
+export async function youtubeRadioSeed(seed, mode, client) {
   if (mode !== 'track') return null
   const stream = streamRef(seed)
   const source = String(seed.source_ref || '').match(/^yt:([\w-]{11})$/)?.[1]
