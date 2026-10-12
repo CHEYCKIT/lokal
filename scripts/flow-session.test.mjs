@@ -61,3 +61,40 @@ test('a Flow that has played its whole library goes round again', async () => {
   assert.equal(new Set(state.queue.map(track => track.id)).size, state.queue.length, 'each song once in the queue')
   assert.equal(state.queue[state.queueIndex].id, state.currentTrack.id)
 })
+
+const online = n => ({ id: `yt:${n}`, title: `Find ${n}`, artist: `Band ${n}`, file_path: `stream://${n}`, source: 'youtube' })
+const adventurous = { adventurous: 1, recent: 0.4, genres: {}, source: 'youtube' }
+
+test('a Flow opens with its first online finds among its first songs', async () => {
+  reset(Array.from({ length: 40 }, (_, i) => song(i)))
+  const asked = []
+  const find = async (context, pool, count, isCurrent, queued) => { asked.push({ count, queued: queued.length }); return [online(1), online(2)] }
+  const started = await startFlow({ userId: 'u', tuner: adventurous, find })
+  const { queue } = store.getState()
+  assert.equal(started, 12)
+  assert.deepEqual(asked, [{ count: 2, queued: 10 }], 'two waited for; the Flow\'s own songs not offered again')
+  assert.ok(!queue[0].id.startsWith('yt:'), 'a library song first, playing at once')
+  const at = ['yt:1', 'yt:2'].map(id => queue.findIndex(track => track.id === id))
+  assert.ok(at.every(i => i >= 1 && i <= 7), `finds among the first songs (${at})`)
+})
+
+test('finds too slow for the opening join when they come', async () => {
+  reset(Array.from({ length: 40 }, (_, i) => song(i)))
+  let deliver
+  const find = () => new Promise(resolve => { deliver = resolve })
+  const started = await startFlow({ userId: 'u', tuner: adventurous, find, openingWaitMs: 20 })
+  assert.equal(started, 10, 'started without them')
+  assert.ok(!store.getState().queue.some(track => track.id.startsWith('yt:')))
+  store.getState().next()
+  deliver([online(3)])
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.ok(store.getState().queue.some(track => track.id === 'yt:3'), 'woven in once found')
+})
+
+test('a library-only tuner starts at once, with no online search', async () => {
+  reset(Array.from({ length: 40 }, (_, i) => song(i)))
+  let searched = false
+  const started = await startFlow({ userId: 'u', tuner: { ...adventurous, source: 'library' }, find: async () => { searched = true; return [] } })
+  assert.equal(started, 10)
+  assert.equal(searched, false)
+})
