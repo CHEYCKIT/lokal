@@ -85,13 +85,15 @@ export async function retuneFlow({ userId, mood, tuner }) {
   const state = usePlayerStore.getState()
   if (state.playbackContext?.type !== 'flow' || !state.currentTrack) return false
   const pool = await flowPool(userId)
+  const source = await sourceFor(tuner)
+  // Both waits done: the Flow it was asked for must still be the one playing.
   const now = usePlayerStore.getState()
   if (now.playbackContext?.id !== state.playbackContext.id || !now.currentTrack) return false
   const order = playOrder(now)
   const played = order.slice(0, order.length - upcoming(now).length)
   const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
-  const context = flowContext(userId, mood, tuner, await sourceFor(tuner))
-  const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context)
+  const context = flowContext(userId, mood, tuner, source)
+  const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context, { expect: state.playbackContext.id })
   if (replaced) weaveOnline(context, pool, START_COUNT).catch(() => {})
   return replaced
 }
@@ -131,7 +133,9 @@ export function continueFlow() {
       tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
     }
     usePlayerStore.getState().extendQueue(tracks, context)
-    await weaveOnline(context, pool, MORE_COUNT).catch(() => {})
+    // Online finds join in the background: the library's songs are queued
+    // already, and the next refill doesn't wait for slow lookups.
+    weaveOnline(context, pool, MORE_COUNT).catch(() => {})
   })().finally(() => { adding = null })
   return adding
 }
@@ -141,7 +145,16 @@ export function continueFlow() {
  * the background (finding a song online takes a moment). None for moods, or
  * for a tuner set to the library.
  */
+const weaving = new Set() // Flow ids with online finds being looked for
+
 async function weaveOnline(context, pool, batch) {
+  // One search at a time per Flow: a refill while one runs leaves it to that.
+  if (weaving.has(context.id)) return
+  weaving.add(context.id)
+  try { await weaveOnlineNow(context, pool, batch) } finally { weaving.delete(context.id) }
+}
+
+async function weaveOnlineNow(context, pool, batch) {
   // A Flow from before this was kept (its context names no source): the tuner's, or Discovery's.
   const source = context.source || await sourceFor(context.tuner)
   const count = onlineShare({ ...context.tuner, source }, batch)

@@ -37,8 +37,27 @@ export function onlineError(source) {
   return source && source !== 'library' ? stateOf(source).error : ''
 }
 
-/** Forget what was read (another account, or for the tests). */
-export function resetOnline() { sources.clear(); usedSeeds.clear(); seeded.clear() }
+// Who shows the error (Flow Tuner) hears when it changes (useSyncExternalStore).
+const listeners = new Set()
+export function subscribeOnline(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+function setError(state, error) {
+  if (state.error === error) return
+  state.error = error
+  for (const listener of listeners) listener()
+}
+
+/** Forget what was read: a settings change may be another account (and for the tests). */
+export function resetOnline() {
+  sources.clear()
+  usedSeeds.clear()
+  seeded.clear()
+  for (const listener of listeners) listener()
+}
+// Settings saved (another Last.fm or YouTube Music account, say): what was read was another account's.
+if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved', () => resetOnline())
 
 async function readMore(source, loadPage) {
   const state = stateOf(source)
@@ -47,8 +66,8 @@ async function readMore(source, loadPage) {
     for (let n = 0; n < PAGES_PER_ASK && state.page < MAX_PAGES; n++) {
       const data = await Promise.resolve(loadPage(source, state.page)).catch(error => ({ error: error.message }))
       state.page++
-      if (data?.error) { state.error = String(data.error); break }
-      state.error = ''
+      if (data?.error) { setError(state, String(data.error)); break }
+      setError(state, '')
       // Unheard ones first (Last.fm's fresh finds), then the rest of the page.
       const songs = uniqueSongs([...(data?.freshFinds || []), ...(data?.candidates || [])]).filter(song => song?.title && song?.artist)
       const known = new Set(state.candidates.map(songKey))
@@ -153,7 +172,7 @@ export async function moodFinds(source, { mood, seeds, count, exclude = new Set(
   const key = `${source}:${mood}`
   const queue = seeded.get(key) || []
   // Songs like each seed, interleaved (one of each in turn), new ones only.
-  const lists = await Promise.all(seeds.map(seed => similarTo(source, seed, client).then(songs => songs.map(song => ({ song, seed }))).catch(error => { state.error = String(error.message || error); return [] })))
+  const lists = await Promise.all(seeds.map(seed => similarTo(source, seed, client).then(songs => songs.map(song => ({ song, seed }))).catch(error => { setError(state, String(error.message || error)); return [] })))
   for (let i = 0; lists.some(list => i < list.length); i++) {
     for (const list of lists) {
       const entry = list[i]

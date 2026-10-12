@@ -706,9 +706,11 @@ export const usePlayerStore = create((set, get) => ({
 
   // The songs still to come replaced (a Flow retuned): what has played, and
   // the song playing, stay as they are, history included.
-  replaceUpcoming: (tracks, context = null) => {
+  replaceUpcoming: (tracks, context = null, { expect } = {}) => {
     const state = get()
     if (!state.currentTrack) return false
+    // Asked for a queue that has since been replaced: left alone.
+    if (expect !== undefined && state.playbackContext?.id !== expect) return false
     const shuffled = state.shuffle && state.shuffleQueue.length > 0
     const kept = shuffled ? state.shuffleQueue.slice(0, state.shuffleIndex + 1) : state.queue.slice(0, state.queueIndex + 1)
     const keptIds = new Set(kept.map(track => track.id))
