@@ -72,6 +72,17 @@ export default function RightSidebar() {
     toggleFullscreen, toggleLyricsFullscreen, playbackContext,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   })))
+  // Back from the mini player: the Lyrics and Queue overlays start over.
+  // The app was hidden meanwhile (App's <Activity>), where no animation runs,
+  // so one that was sliding out (the view changed while hidden) would stay
+  // stuck over the view picked. Shown again as they are, without sliding in.
+  const showMiniPlayer = usePlayerStore(state => state.showMiniPlayer)
+  const [wasMini, setWasMini] = useState(showMiniPlayer)
+  const [reveal, setReveal] = useState(0)
+  if (wasMini !== showMiniPlayer) {
+    setWasMini(showMiniPlayer)
+    if (!showMiniPlayer) setReveal(n => n + 1)
+  }
   const nav = useNavigate()
   const menu = useContextMenu()
   const likeBusy = useRef(false)
@@ -441,7 +452,7 @@ export default function RightSidebar() {
                 switching to/from Lyrics from an already-open panel animates
                 identically, and opening fresh straight to Lyrics skips this
                 entrance the same way Queue does (see openedFreshToLyrics). */}
-            <AnimatePresence>
+            <AnimatePresence key={`lyrics-${reveal}`} initial={reveal === 0}>
               {sidePanelView === 'lyrics' && (
                 <motion.div
                   key="lyrics-overlay"
@@ -470,7 +481,7 @@ export default function RightSidebar() {
 
             {/* Queue: slides up over the base view above, slides back down
                 to reveal it -- never a second panel, never a width change. */}
-            <AnimatePresence>
+            <AnimatePresence key={`queue-${reveal}`} initial={reveal === 0}>
               {exclusiveSidePanels && sidePanelView === 'queue' && (
                 <motion.div
                   key="queue-overlay"
