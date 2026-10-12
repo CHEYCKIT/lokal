@@ -4,7 +4,7 @@
 // stay on the page until applied; applied while Flow plays, the songs coming
 // up are picked again.
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Brain, CloudRain, Dumbbell, Heart, Infinity as InfinityIcon, ListPlus, Pause, PartyPopper, Play, Plus, RotateCcw, SlidersHorizontal, Waves, X } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -13,7 +13,9 @@ import TrackList from './TrackList'
 import { showToast } from './Toaster'
 import { saveAsPlaylist } from '../trackActions'
 import { plural } from '../plural'
-import { FLOW_MOODS, normalizeTuner, sameTuner, topGenres, trackGenres, DEFAULT_TUNER } from '../flow/engine'
+import { FLOW_MOODS, flowSource, normalizeTuner, sameTuner, topGenres, trackGenres, DEFAULT_TUNER } from '../flow/engine'
+import { ONLINE_SOURCES, onlineError, subscribeOnline } from '../flow/online'
+import { api } from '../api'
 import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow, upcoming } from '../flow/session'
 
 const MOOD_ICONS = { flow: InfinityIcon, love: Heart, workout: Dumbbell, chill: Waves, party: PartyPopper, focus: Brain, melancholy: CloudRain }
@@ -146,6 +148,15 @@ export default function FlowPanel({ userId }) {
     for (const track of pool || []) for (const genre of trackGenres(track)) names.add(genre)
     return [...names].sort()
   }, [pool])
+  // Online finds: the tuner's source, else Discovery's (Home → Discovery's Last.fm / YouTube Music switch).
+  const [discoverySource, setDiscoverySource] = useState('lastfm')
+  useEffect(() => {
+    Promise.resolve(api.getSettings?.()).then(s => setDiscoverySource(s?.recommendation_source === 'youtube' ? 'youtube' : 'lastfm')).catch(() => {})
+  }, [])
+  const draftSource = flowSource(draft, discoverySource)
+  // Shown as soon as a read fails (not on the next unrelated re-render).
+  const errorSource = flowOn ? context.source || draftSource : draftSource
+  const sourceError = useSyncExternalStore(subscribeOnline, () => onlineError(errorSource))
   const changed = !sameTuner(draft, applied)
   const tuned = !sameTuner(applied, DEFAULT_TUNER)
 
@@ -154,7 +165,7 @@ export default function FlowPanel({ userId }) {
     setStarting(true)
     try {
       const count = await startFlow({ userId, mood: nextMood, tuner })
-      if (!count) showToast(nextMood === 'flow' ? 'Nothing to play yet. Add music to your library first.' : `No songs in your library fit ${flowName(nextMood)} with this tuner.`)
+      if (count === 0) showToast(nextMood === 'flow' ? 'Nothing to play yet. Add music to your library first.' : `No songs in your library fit ${flowName(nextMood)} with this tuner.`)
     } finally { setStarting(false) }
   }
 
@@ -267,6 +278,25 @@ export default function FlowPanel({ userId }) {
                   value={draft.adventurous} onChange={value => setDraft(d => ({ ...d, adventurous: value }))} />
                 <TunerSlider label="Era" left="All-time" right="Recent" hint="All-time likes vs what you've played lately"
                   value={draft.recent} onChange={value => setDraft(d => ({ ...d, recent: value }))} />
+              </div>
+              <div className="mt-7">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-medium text-white">Fresh finds from</p>
+                  <p className="text-xs text-muted">{draftSource === 'library' ? 'Only songs in your library' : 'Your library, and songs recommended online'}</p>
+                </div>
+                <div role="radiogroup" aria-label="Fresh finds from" className="mt-3 inline-flex rounded-full border border-border bg-card p-1">
+                  {ONLINE_SOURCES.map(item => (
+                    <button key={item.id} type="button" role="radio" aria-checked={draftSource === item.id}
+                      onClick={() => setDraft(d => ({ ...d, source: item.id }))}
+                      className={`rounded-full px-3.5 py-1.5 text-xs transition-colors ${draftSource === item.id ? 'bg-white text-black' : 'text-muted hover:text-white'}`}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                {sourceError && errorSource !== 'library' && (
+                  // The playing Flow's source may not be the one selected: the message says whose it is.
+                  <p role="status" className="mt-2 text-xs text-amber-300/90">{errorSource !== draftSource ? `${ONLINE_SOURCES.find(item => item.id === errorSource)?.label || errorSource}: ` : ''}{sourceError} Flow keeps to your library meanwhile.</p>
+                )}
               </div>
               <div className="mt-7">
                 {pool === null ? <p className="text-xs text-muted">Reading your library…</p>

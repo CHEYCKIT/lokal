@@ -247,10 +247,9 @@ export const usePlayerStore = create((set, get) => ({
   exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, crossfade: { ...CROSSFADE_DEFAULTS }, _fetchingRelated: false,
   activeAudioElement: 'primary',
-  // A song transition (crossfade or AutoMix) under way: { kind, until } for the
-  // "Mixing" mark; mixFlip counts them, so the cover flips on each (CoverFlip).
+  // A song transition (crossfade or AutoMix) under way: { kind, until }, for
+  // the "Mixing" mark and AutoMix's cover dissolve (MixCovers).
   mixing: null,
-  mixFlip: 0,
   // Casting (src/cast): true while a TV plays instead of this computer.
   castActive: false,
   outputDeviceId: readOutputDevice(),
@@ -707,9 +706,11 @@ export const usePlayerStore = create((set, get) => ({
 
   // The songs still to come replaced (a Flow retuned): what has played, and
   // the song playing, stay as they are, history included.
-  replaceUpcoming: (tracks, context = null) => {
+  replaceUpcoming: (tracks, context = null, { expect } = {}) => {
     const state = get()
     if (!state.currentTrack) return false
+    // Asked for a queue that has since been replaced: left alone.
+    if (expect !== undefined && state.playbackContext?.id !== expect) return false
     const shuffled = state.shuffle && state.shuffleQueue.length > 0
     const kept = shuffled ? state.shuffleQueue.slice(0, state.shuffleIndex + 1) : state.queue.slice(0, state.queueIndex + 1)
     const keptIds = new Set(kept.map(track => track.id))
@@ -724,6 +725,38 @@ export const usePlayerStore = create((set, get) => ({
       set({ queue: [...kept, ...next], playbackContext: context, futureHistory: [] })
     }
     return true
+  },
+
+  // Songs woven in among those coming up (a Flow's online finds), spread
+  // out, never before the very next one; only while `context` still plays.
+  insertUpcoming: (tracks, context) => {
+    const state = get()
+    if (!context?.id || state.playbackContext?.id !== context.id) return
+    const known = new Set(state.queue.map(track => track.id))
+    const extra = sanitizeTrackList(tracks).filter(track => !known.has(track.id))
+    if (!extra.length) return
+    const weave = (list, from) => {
+      const out = [...list]
+      const room = out.length - from // songs after the next one
+      extra.forEach((track, i) => {
+        const at = room > 0 ? from + Math.round(((i + 1) * room) / (extra.length + 1)) + i : out.length
+        out.splice(Math.min(at, out.length), 0, track)
+      })
+      return out
+    }
+    // The unshuffled lists (what turning shuffle off goes back to) get them
+    // woven in after the song playing too, not at the end.
+    const weaveAfterCurrent = list => {
+      const at = list.findIndex(track => track.id === state.currentTrack?.id)
+      return at < 0 ? [...list, ...extra] : weave(list, at + 2)
+    }
+    const originalQueue = state.originalQueue.length ? { originalQueue: weaveAfterCurrent(state.originalQueue) } : {}
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    if (shuffled) {
+      set({ shuffleQueue: weave(state.shuffleQueue, state.shuffleIndex + 2), queue: weaveAfterCurrent(state.queue), ...originalQueue })
+    } else {
+      set({ queue: weave(state.queue, state.queueIndex + 2), ...originalQueue })
+    }
   },
 
   // Songs played long ago let go of (all but the last `keep` before the one

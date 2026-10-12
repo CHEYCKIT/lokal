@@ -1,12 +1,21 @@
 // A song's lyrics for subtitle-style lyrics over a music video: whether
 // they're synced (plain lyrics have no "now" to show under the picture).
+// Read again when the lyrics panel picks another source for the song.
 
 import { useEffect, useState } from 'react'
 import { api } from './api'
 
 export function useLyricLines(track, enabled = true) {
-  const [lyrics, setLyrics] = useState({ id: null, lines: [], synced: false })
+  const [lyrics, setLyrics] = useState({ id: null, lines: [], synced: false, result: null })
+  // Another source or a search picked in the lyrics panel: read again.
+  const [version, setVersion] = useState(0)
   const id = enabled ? track?.id : null
+  useEffect(() => {
+    if (!id) return undefined
+    const onChanged = event => { if (String(event.detail?.trackId) === String(id)) setVersion(v => v + 1) }
+    window.addEventListener('lokal:lyrics-changed', onChanged)
+    return () => window.removeEventListener('lokal:lyrics-changed', onChanged)
+  }, [id])
   useEffect(() => {
     if (!id) return undefined
     let active = true
@@ -14,13 +23,19 @@ export function useLyricLines(track, enabled = true) {
       .then(result => {
         if (!active) return
         const lines = Array.isArray(result?.lines) ? result.lines : []
-        setLyrics({ id, lines, synced: result?.type === 'synced' && lines.length > 0 })
+        setLyrics({ id, lines, synced: result?.type === 'synced' && lines.length > 0, result: result || null })
       })
-      .catch(() => { if (active) setLyrics({ id, lines: [], synced: false }) })
+      .catch(() => { if (active) setLyrics({ id, lines: [], synced: false, result: null }) })
     return () => { active = false }
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, version]) // eslint-disable-line react-hooks/exhaustive-deps
   const mine = lyrics.id === id
-  return { loaded: mine, synced: mine && lyrics.synced, lines: mine ? lyrics.lines : [] }
+  return { loaded: mine, synced: mine && lyrics.synced, lines: mine ? lyrics.lines : [], result: mine ? lyrics.result : null }
+}
+
+/** The lyrics shown for a song changed (another source, a search): views showing it read them again. */
+export function announceLyricsChanged(trackId) {
+  if (trackId == null || typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('lokal:lyrics-changed', { detail: { trackId } }))
 }
 
 /**

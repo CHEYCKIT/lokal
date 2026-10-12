@@ -274,9 +274,20 @@ function hexToRgbNumbers(hex) {
   return `${r} ${g} ${b}`;
 }
 
+function isLightColor(hex) {
+  if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const [r, g, b] = hexToRgbNumbers(hex).split(' ').map(Number);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5;
+}
+
 export function applyTheme(vars, themeName = '') {
   const root = document.documentElement;
-  if (themeName) root.dataset.theme = themeName;
+  // The light-theme styles (index.css) key off data-theme="light": a theme
+  // with a light background is one, whoever applies it and with or without
+  // its name.
+  const light = isLightColor(vars['--bg']);
+  if (light != null) root.dataset.theme = light ? 'light' : (themeName && themeName !== 'light' ? themeName : 'dark');
+  else if (themeName) root.dataset.theme = themeName;
   for (const [k, v] of Object.entries(vars)) {
     root.style.setProperty(k, v);
     

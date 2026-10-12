@@ -107,7 +107,14 @@ function createCastMediaServer({ log = () => {} } = {}) {
       for (;;) {
         const { done, value } = await reader.read()
         if (done || res.destroyed) break
-        if (!res.write(value)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve) })
+        // Whichever comes first, the other listener goes (they'd pile up on a long song).
+        if (!res.write(value)) {
+          await new Promise(resolve => {
+            const done = () => { res.off('drain', done); res.off('close', done); resolve() }
+            res.once('drain', done)
+            res.once('close', done)
+          })
+        }
       }
     } catch {} finally {
       try { await reader.cancel() } catch {}
