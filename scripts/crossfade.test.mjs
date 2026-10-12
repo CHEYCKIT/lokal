@@ -4,11 +4,23 @@ import { CROSSFADE_DEFAULTS, crossfadeDurations, fadeCurve, readCrossfadeSetting
 
 const increasing = values => values.every((v, i) => i === 0 || v >= values[i - 1])
 
+const timings = ({ beforeEnd, fadeIn, fadeOut, curve }) => ({ beforeEnd, fadeIn, fadeOut, curve })
+
 test('settings fall back to pear-desktop style defaults', () => {
-  assert.deepEqual(readCrossfadeSettings({}), CROSSFADE_DEFAULTS)
-  assert.deepEqual(readCrossfadeSettings({ crossfade_seconds: '8', crossfade_fade_in: '2.5', crossfade_fade_out: '6', crossfade_curve: 'linear' }),
+  assert.deepEqual(timings(readCrossfadeSettings({})), CROSSFADE_DEFAULTS)
+  assert.deepEqual(timings(readCrossfadeSettings({ crossfade_seconds: '8', crossfade_fade_in: '2.5', crossfade_fade_out: '6', crossfade_curve: 'linear' })),
     { beforeEnd: 8, fadeIn: 2.5, fadeOut: 6, curve: 'linear' })
-  assert.deepEqual(readCrossfadeSettings({ crossfade_seconds: 'x', crossfade_fade_in: '-1', crossfade_curve: 'cubic' }), CROSSFADE_DEFAULTS)
+  assert.deepEqual(timings(readCrossfadeSettings({ crossfade_seconds: 'x', crossfade_fade_in: '-1', crossfade_curve: 'cubic' })), CROSSFADE_DEFAULTS)
+})
+
+test('song transitions: off, crossfade or AutoMix (a crossfade length from before still means crossfade)', () => {
+  assert.equal(readCrossfadeSettings({}).mode, 'off')
+  assert.equal(readCrossfadeSettings({ crossfade_seconds: '8' }).mode, 'crossfade')
+  const automix = readCrossfadeSettings({ crossfade_seconds: '8', song_transitions: 'automix', automix_same_album: '1' })
+  assert.deepEqual([automix.mode, automix.automix, automix.automixSameAlbum, automix.beforeEnd], ['automix', true, true, 0])
+  assert.equal(readCrossfadeSettings({ crossfade_seconds: '8', song_transitions: 'off' }).beforeEnd, 0)
+  // Crossfade chosen before any length was set: 6 s.
+  assert.equal(readCrossfadeSettings({ song_transitions: 'crossfade' }).beforeEnd, 6)
 })
 
 test('fade-in and fade-out curves hit their endpoints and move one way', () => {

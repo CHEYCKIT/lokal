@@ -24,10 +24,12 @@ const KNOWN_HASHES = {
   canvas: '575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f', // Jan 2026
   searchTracks: 'bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428',
   libraryV3: '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455', // Oct 2026
+  fetchLibraryTracks: '087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240', // Oct 2026
+  addToLibrary: '896ebcb47815681340860d121cb5d494e157e2a78d3950385cd54e0393c67148', // Oct 2026
 }
 let liveHashes = {}
 const hashFor = (op) => liveHashes[op] || KNOWN_HASHES[op]
-const HASH_PATTERN = /["'](canvas|searchTracks|libraryV3)["']\s*,\s*["']query["']\s*,\s*["']([0-9a-f]{64})["']/g
+const HASH_PATTERN = /["'](canvas|searchTracks|libraryV3|fetchLibraryTracks|addToLibrary)["']\s*,\s*["'](?:query|mutation)["']\s*,\s*["']([0-9a-f]{64})["']/g
 
 const TOKEN_TIMEOUT = 25000   // waiting for the page's token requests
 const MINT_DEADLINE = 40000   // the whole sign-in step, whatever gets stuck
@@ -449,13 +451,19 @@ async function canvasFromCanvaz(t, uri) {
 
 // One lookup at a time: they share the tokens, and it keeps us polite.
 let queue = Promise.resolve()
+/** Runs `work` after every lookup already waiting (and before any asked for later). */
+function serial(work) {
+  const job = queue.then(work)
+  queue = job.catch(() => {})
+  return job
+}
 
 /**
  * Provider for motion.js. `helpers` are motion.js' matching functions.
  * Throws a TransientError (not cached as "no canvas") when Spotify itself failed.
  */
 function fromSpotify(track, settings, helpers) {
-  const job = queue.then(async () => {
+  return serial(async () => {
     const t = await getTokens(settings.spotify_sp_dc)
     if (!t) return null
     const uri = await findTrackUri(t, track, helpers)
@@ -463,8 +471,6 @@ function fromSpotify(track, settings, helpers) {
     const url = await canvasFor(t, uri)
     return url ? { url, kind: 'mp4', source: 'spotify', tall: true } : null
   })
-  queue = job.catch(() => {})
-  return job
 }
 
 /** Settings' "Save & Test": can this cookie get a signed-in token? */
@@ -522,4 +528,99 @@ async function followedArtists(rawCookie, { fetchPage, limit = 2000, pageSize = 
   return names
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, TransientError }
+// ---------------------------------------------------------------- liked songs
+
+const LIKES_PAGE = 50
+const LIKES_MAX_PAGES = 10 // 500 new likes between two looks at most; past that only the newest come
+
+function pathfinderHeaders(t) {
+  const headers = { Authorization: `Bearer ${t.accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json;charset=UTF-8', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
+  if (t.clientToken && t.clientExp > Date.now()) headers['client-token'] = t.clientToken
+  return headers
+}
+
+/** One Pathfinder operation (query or mutation) the way the web player sends it now (POST, v2). */
+async function pathfinder(t, operationName, variables) {
+  const body = JSON.stringify({ variables, operationName, extensions: { persistedQuery: { version: 1, sha256Hash: hashFor(operationName) } } })
+  const res = await request('https://api-partner.spotify.com/pathfinder/v2/query', { method: 'POST', headers: pathfinderHeaders(t), body })
+  if (res.status === 401) { tokens = null; throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.') }
+  if (res.status === 429) throw new TransientError('Spotify is limiting requests right now.')
+  if (!res.ok) throw new TransientError(`Spotify answered HTTP ${res.status}.`)
+  const json = await res.json().catch(() => null)
+  if (json?.errors?.length && !json?.data) throw new TransientError(`Spotify: ${json.errors[0]?.message || `${operationName} failed`}`)
+  return json?.data
+}
+
+/** A Liked Songs entry as Lokal uses it. */
+function likedEntry(entry) {
+  const track = entry?.track
+  const data = track?.data
+  const uri = track?._uri || data?.uri || ''
+  if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(uri) || data?.__typename !== 'Track') return null
+  return {
+    uri,
+    title: data.name || '',
+    artist: (data.artists?.items || []).map(a => a?.profile?.name).filter(Boolean).join(', '),
+    album: data.albumOfTrack?.name || '',
+    duration: Number(data.duration?.totalMilliseconds) > 0 ? Number(data.duration.totalMilliseconds) / 1000 : null,
+    artwork_url: (data.albumOfTrack?.coverArt?.sources || []).sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url || null,
+    addedAt: Date.parse(entry?.addedAt?.isoString || '') || 0,
+  }
+}
+
+/**
+ * Songs liked on Spotify after `since` (ms), newest first, read the way the
+ * web player lists Liked Songs (newest first): it stops at the first older
+ * one, so a library of 20,000 likes costs one request when nothing's new.
+ * `since` null: only the newest like, to start from (nothing is imported).
+ * `fetchPage(offset, limit)` is for the tests.
+ */
+async function likedSince(rawCookie, since, { fetchPage } = {}) {
+  if (!fetchPage && !cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) first.')
+  const page = fetchPage || (async (offset, limit) => {
+    const t = await getTokens(rawCookie)
+    if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
+    return pathfinder(t, 'fetchLibraryTracks', { offset, limit })
+  })
+  const fresh = []
+  let newest = 0
+  for (let index = 0; index < LIKES_MAX_PAGES; index++) {
+    const data = await page(index * LIKES_PAGE, since == null ? 1 : LIKES_PAGE)
+    const tracks = data?.me?.library?.tracks
+    if (!tracks) throw new TransientError('Spotify: your Liked Songs couldn\'t be read')
+    const items = (tracks.items || []).map(likedEntry)
+    for (const entry of (tracks.items || []).map(item => Date.parse(item?.addedAt?.isoString || '') || 0)) newest = Math.max(newest, entry)
+    if (since == null) return { items: [], newest }
+    let older = false
+    for (const item of items) {
+      if (!item) continue
+      if (item.addedAt <= since) { older = true; break }
+      fresh.push(item)
+    }
+    if (older || (tracks.items || []).length < LIKES_PAGE) break
+  }
+  return { items: fresh, newest: Math.max(newest, since || 0) }
+}
+
+/** Likes a song on Spotify (Lokal → Spotify): found by title and artist, then saved to Liked Songs. Answers its uri, or null when Spotify doesn't have it. */
+async function likeOnSpotify(rawCookie, track) {
+  if (!cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) first.')
+  // In turn: likes made together don't search and save on Spotify at once.
+  return serial(async () => {
+    const t = await getTokens(rawCookie)
+    if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
+    const norm = value => String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+    const cleanTitle = value => String(value || '').replace(/\s*\([^)]*\)|\s*\[[^\]]*\]/g, '').trim()
+    const firstArtist = value => String(value || '').split(/,|\s+(?:feat\.|ft\.|&|x)\s+/i)[0].trim()
+    const artistsMatch = (want, artists) => {
+      const target = norm(firstArtist(want))
+      return (artists || []).some(name => norm(name) === target || norm(name).includes(target) || target.includes(norm(name)))
+    }
+    const uri = await findTrackUri(t, track, { norm, cleanTitle, splitFirstArtist: firstArtist, artistsMatch })
+    if (!uri) return null
+    await pathfinder(t, 'addToLibrary', { libraryItemUris: [uri], interactionId: null })
+    return uri
+  })
+}
+
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }

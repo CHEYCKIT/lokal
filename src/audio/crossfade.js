@@ -9,6 +9,7 @@ export const CROSSFADE_CURVES = ['logarithmic', 'linear']
 /** The player only crossfades when `beforeEnd` is set above this. */
 export const CROSSFADE_MIN_S = 0.5
 const MIN_FADE_S = 0.05
+const DEFAULT_CROSSFADE_S = 6 // Crossfade chosen with no length set yet
 const DYNAMIC_RANGE = 3 // multiples of 10 dB: 60 dB of amplitude
 
 const seconds = (value, fallback, max) => {
@@ -16,10 +17,28 @@ const seconds = (value, fallback, max) => {
   return Number.isFinite(n) && n >= 0 ? Math.min(n, max) : fallback
 }
 
-/** Crossfade options from the stored settings (`crossfade_*` keys). */
+export const SONG_TRANSITIONS = ['off', 'crossfade', 'automix']
+
+/**
+ * Settings → Playback → Song Transitions: 'off', 'crossfade' (the timings
+ * below) or 'automix' (src/audio/automix.js). Before the setting existed, a
+ * crossfade length above zero meant crossfade.
+ */
+export function songTransitions(settings = {}) {
+  if (SONG_TRANSITIONS.includes(settings?.song_transitions)) return settings.song_transitions
+  return seconds(settings?.crossfade_seconds, 0, 30) > CROSSFADE_MIN_S ? 'crossfade' : 'off'
+}
+
+/** Crossfade options from the stored settings (`crossfade_*` keys, `song_transitions`, `automix_same_album`). */
 export function readCrossfadeSettings(settings = {}) {
+  const mode = songTransitions(settings)
+  const length = seconds(settings?.crossfade_seconds, CROSSFADE_DEFAULTS.beforeEnd, 30)
   return {
-    beforeEnd: seconds(settings?.crossfade_seconds, CROSSFADE_DEFAULTS.beforeEnd, 30),
+    mode,
+    automix: mode === 'automix',
+    automixSameAlbum: settings?.automix_same_album === '1',
+    // Crossfading only in its own mode (a length left set from before doesn't count otherwise).
+    beforeEnd: mode === 'crossfade' ? (length > CROSSFADE_MIN_S ? length : DEFAULT_CROSSFADE_S) : 0,
     fadeIn: seconds(settings?.crossfade_fade_in, CROSSFADE_DEFAULTS.fadeIn, 30),
     fadeOut: seconds(settings?.crossfade_fade_out, CROSSFADE_DEFAULTS.fadeOut, 30),
     curve: CROSSFADE_CURVES.includes(settings?.crossfade_curve) ? settings.crossfade_curve : CROSSFADE_DEFAULTS.curve,

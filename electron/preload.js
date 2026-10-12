@@ -202,6 +202,17 @@ contextBridge.exposeInMainWorld('electron', {
   musicVideoDownload: (trackId) => invoke('musicVideo:download', trackId),
   musicVideoPrepare: (trackId) => invoke('musicVideo:prepare', trackId),
   musicVideoStreamBase: () => invoke('musicVideo:streamBase'),
+  // Likes kept in step with Spotify (electron/ipc/spotifyLikes.js)
+  spotifyLikesStatus: () => invoke('spotifyLikes:status'),
+  spotifyLikesEnable: (userId) => invoke('spotifyLikes:enable', userId),
+  spotifyLikesDisable: () => invoke('spotifyLikes:disable'),
+  spotifyLikesPoll: () => invoke('spotifyLikes:poll'),
+  spotifyLikesAck: (progress) => invoke('spotifyLikes:ack', progress),
+  spotifyLikesPush: (track) => invoke('spotifyLikes:push', track),
+  // AutoMix: a song's analysis (electron/automix)
+  automixAnalyze: (track) => invoke('automix:analyze', track),
+  // Flow's songs (electron/ipc/flow.js)
+  flowPool: (userId) => invoke('flow:pool', userId),
   // Casting (electron/ipc/cast.js)
   castDevices: () => invoke('cast:devices'),
   castAddDevice: (address) => invoke('cast:addDevice', address),

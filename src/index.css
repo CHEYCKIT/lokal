@@ -177,3 +177,94 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
   0%, 100% { transform: scaleY(0.35); }
   50% { transform: scaleY(1); }
 }
+
+/* The "mixing" mark (MixingMark.jsx): two rings drifting into each other. */
+.mixing-ring {
+  position: absolute; top: 0; width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: mixing-drift 1.6s ease-in-out infinite alternate;
+}
+.mixing-ring-left { left: 0; }
+.mixing-ring-right { right: 0; animation-direction: alternate-reverse; opacity: 0.6; }
+@keyframes mixing-drift { from { transform: translateX(0); } to { transform: translateX(3px); } }
+.mixing-ring-right { animation-name: mixing-drift-back; }
+@keyframes mixing-drift-back { from { transform: translateX(0); } to { transform: translateX(-3px); } }
+@media (prefers-reduced-motion: reduce) { .mixing-ring { animation: none; } }
+
+/* Home → Flow (src/components/FlowPanel.jsx) */
+.flow-hero {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgb(var(--accent-rgb) / 0.16), transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgb(124 106 255 / 0.18), transparent 60%),
+    var(--surface2);
+}
+.flow-orb {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  --flow-speed: 3.9s;
+}
+.flow-orb.is-playing { --flow-speed: 2.2s; }
+.flow-orb-glow {
+  position: absolute;
+  inset: 8px;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, rgb(var(--accent-rgb)), #7c6aff, #ff6aa8, rgb(var(--accent-rgb)));
+  filter: blur(18px);
+  opacity: 0.55;
+  animation: flow-spin 9s linear infinite;
+}
+.flow-orb-ring {
+  position: absolute;
+  inset: 22px;
+  border-radius: 9999px;
+  border: 1.5px solid rgb(255 255 255 / 0.55);
+  animation: flow-breathe var(--flow-speed) cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+.flow-orb-core {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.35), transparent 55%), conic-gradient(from 210deg, rgb(var(--accent-rgb) / 0.95), #7c6aff, #ff6aa8, rgb(var(--accent-rgb) / 0.95));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25), 0 10px 30px -8px rgb(0 0 0 / 0.6);
+}
+.flow-orb.is-still .flow-orb-glow, .flow-orb.is-still .flow-orb-ring { animation: none; }
+.flow-orb.is-still .flow-orb-ring { opacity: 0; }
+@keyframes flow-breathe {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+@keyframes flow-spin { to { transform: rotate(360deg); } }
+
+.flow-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.flow-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, rgb(var(--accent-rgb)) 0 var(--flow-fill, 50%), rgb(255 255 255 / 0.12) var(--flow-fill, 50%) 100%);
+}
+.flow-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.45), 0 0 0 0.5px rgb(0 0 0 / 0.2);
+  transition: transform 0.15s ease;
+}
+.flow-slider:active::-webkit-slider-thumb { transform: scale(1.12); }
+.flow-slider:focus-visible { outline: none; }
+.flow-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.45), 0 2px 8px rgb(0 0 0 / 0.45); }

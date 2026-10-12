@@ -1,6 +1,7 @@
 // Spotify-style search in the window header: a Home button, then the search
-// box with a "play a random song" button where Spotify has Browse, then
-// the Cast button (CastButton.jsx).
+// box with a Flow button (shuffle icon) where Spotify has Browse, then the
+// Cast button (CastButton.jsx). The Flow button starts Flow with the mood and
+// tuner last set on Home → Flow.
 //
 // - Focusing the box opens the Search page; its results follow the text live.
 // - While the box is focused, past searches drop down under it: all of them
@@ -15,7 +16,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Home, Search as SearchIcon, Shuffle, X } from 'lucide-react'
 import { useSearchStore } from '../store/search'
-import { usePlayerStore } from '../store/player'
+import { usePlayerStore, useAppStore } from '../store/player'
+import { readFlowSettings, startFlow } from '../flow/session'
 import { api } from '../api'
 import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
@@ -53,7 +55,7 @@ function Highlighted({ text, typed }) {
   )
 }
 
-/** The header's Home button, search box, history dropdown and random-song button. */
+/** The header's Home button, search box, history dropdown and Flow button. */
 export default function HeaderSearch() {
   const nav = useNavigate()
   const loc = useLocation()
@@ -63,6 +65,7 @@ export default function HeaderSearch() {
   const requestFocus = useSearchStore(s => s.requestFocus)
   const submit = useSearchStore(s => s.submit)
   const playQueue = usePlayerStore(s => s.playQueue)
+  const userId = useAppStore(s => s.user?.id)
 
   const inputRef = useRef(null)
   const [focused, setFocused] = useState(false)
@@ -172,11 +175,13 @@ export default function HeaderSearch() {
     }
   }
 
-  /** Play one random song from the library. */
+  /** Start Flow with the listener's mood and tuner (a random song when Flow has nothing to play). */
   const playRandom = async () => {
     if (randomLoading) return
     setRandomLoading(true)
     try {
+      const uid = userId || 'guest'
+      if (await startFlow({ userId: uid, ...readFlowSettings(uid) })) return
       const track = await api.getRandomTrack()
       if (track && !track.error) playQueue([track], 0)
     } catch (error) {
@@ -236,8 +241,8 @@ export default function HeaderSearch() {
             onMouseDown={(e) => e.preventDefault()}
             onClick={playRandom}
             disabled={randomLoading}
-            title="Play a random song"
-            aria-label="Play a random song"
+            title="Play Flow"
+            aria-label="Play Flow"
             className="flex-shrink-0 w-7 h-7 mr-0.5 rounded-full flex items-center justify-center text-muted hover:text-text disabled:opacity-60 transition-colors"
           >
             {randomLoading
