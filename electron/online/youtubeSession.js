@@ -2,6 +2,18 @@ const crypto = require('crypto')
 const youtube = require('./youtube')
 const { openYouTubeBrowser, accountContext, youtubeCookie } = require('./youtubeBrowser')
 const { openEmbeddedYouTubeLogin } = require('./youtubeEmbeddedLogin')
+const { openWebView2Login, helperPath, HelperUnavailable } = require('./youtubeWebView2Login')
+
+/**
+ * The sign-in window: on Windows, Microsoft Edge WebView2 (Google accepts it,
+ * Windows Hello passkeys work), else, or when it can't open, Lokal's own.
+ */
+async function openSignInWindow(options) {
+  if (helperPath()) {
+    try { return await openWebView2Login(options) } catch (error) { if (!(error instanceof HelperUnavailable)) throw error }
+  }
+  return openEmbeddedYouTubeLogin(options)
+}
 
 const PARTITION = 'persist:lokal-ytmusic'
 const MUSIC = 'https://music.youtube.com'
@@ -183,7 +195,7 @@ function createYouTubeSession({ electron, getSettings, saveSettings, provider = 
     const changed = () => { check().catch(error => { if (current()) onProgress({ message: error.message || 'Could not verify YouTube Music account access.' }) }) }
     ;(async () => {
       try {
-        const opener = openBrowser || (mode === 'browser' ? openYouTubeBrowser : openEmbeddedYouTubeLogin)
+        const opener = openBrowser || (mode === 'browser' ? openYouTubeBrowser : openSignInWindow)
         job.browser = await opener({ electron: runtime(), session: job.session, signal: job.controller.signal, onChange: changed, onClosed: () => finish(job, { authenticated: false, cancelled: true }), onError: error => finish(job, { authenticated: false, error: error.message || 'The sign-in window failed.' }), onProgress })
         if (!current()) { await job.browser.close(); return }
         job.verifyTimer = setInterval(() => {

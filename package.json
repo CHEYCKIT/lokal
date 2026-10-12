@@ -72,6 +72,16 @@
           "role": "Viewer",
           "icon": "public/lokal-icon.ico"
         }
+      ],
+      "extraResources": [
+        {
+          "from": "build/webview2-signin",
+          "to": "webview2-signin",
+          "filter": [
+            "**/*",
+            "!*.pdb"
+          ]
+        }
       ]
     },
     "mac": {
@@ -97,6 +107,7 @@
     "adm-zip": "^0.6.1",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
+    "bgutils-js": "^4.0.3",
     "cors": "^2.8.5",
     "discord-rpc": "^4.0.1",
     "dotenv": "^16.4.5",
@@ -111,7 +122,8 @@
     "quickjs-emscripten": "0.32.0",
     "sharp": "^0.35.5",
     "tough-cookie": "6.0.0",
-    "yauzl": "^3.4.0"
+    "yauzl": "^3.4.0",
+    "youtubei.js": "^17.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
