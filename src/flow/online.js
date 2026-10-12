@@ -44,10 +44,10 @@ function setError(state, error) {
   for (const listener of listeners) listener()
 }
 
-/** Forget what was read: a settings change may be another account (and for the tests). */
 // Bumped by each reset: a find started before it is for what was forgotten.
 let generation = 0
 
+/** Forget what was read: a settings change may be another account (and for the tests). */
 export function resetOnline() {
   generation++
   sources.clear()
