@@ -148,6 +148,8 @@ export default function PlayerBar() {
   // The playing song's audio quality, when it's been read (not for streams).
   // Casting: the device it plays on (the chip under the artist).
   const castActive = usePlayerStore(s => s.castActive)
+  // Playing a Flow: the play button takes the Flow orb's colours (Home → Flow).
+  const flowPlaying = usePlayerStore(s => s.playbackContext?.type === 'flow')
   const castStatusDevice = useCastStore(s => s.status?.device)
   const castDevice = castActive ? castStatusDevice : null
   const qualityTier = currentTrack && !streamed ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
@@ -268,7 +270,7 @@ export default function PlayerBar() {
           <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={shuffle ? "Shuffle on" : "Shuffle off"}><Shuffle size={15} /></button>
           <button onClick={prev} className="text-text/90 hover:text-text transition-colors" title="Previous"><SkipBack size={18} fill="currentColor" /></button>
           <motion.button onClick={togglePlay} disabled={!currentTrack} whileTap={{ scale: 0.88 }}
-            className="w-9 h-9 bg-accent text-base rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40">
+            className={`w-9 h-9 rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 ${flowPlaying ? 'flow-play' : 'bg-accent text-base'}`}>
             {isPlaying ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" className="translate-x-0.5" />}
           </motion.button>
           <button onClick={next} className="text-text/90 hover:text-text transition-colors" title="Next"><SkipForward size={18} fill="currentColor" /></button>

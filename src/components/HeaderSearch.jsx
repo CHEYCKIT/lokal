@@ -17,7 +17,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Home, Search as SearchIcon, Shuffle, X } from 'lucide-react'
 import { useSearchStore } from '../store/search'
 import { usePlayerStore, useAppStore } from '../store/player'
-import { readFlowSettings, startFlow } from '../flow/session'
+import { readFlowSettings, saveFlowSettings, startFlow } from '../flow/session'
+import { FLOW_MOODS } from '../flow/engine'
+import { MOOD_ICONS } from '../flow/moodIcons'
+import ContextMenu, { useContextMenu } from './ContextMenu'
 import { api } from '../api'
 import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
@@ -175,13 +178,19 @@ export default function HeaderSearch() {
     }
   }
 
-  /** Start Flow with the listener's mood and tuner (a random song when Flow has nothing to play). */
-  const playRandom = async () => {
+  /**
+   * Start Flow with the listener's mood and tuner (a random song when Flow
+   * has nothing to play); `mood` picked from the button's right-click menu
+   * becomes the listener's mood.
+   */
+  const playRandom = async mood => {
     if (randomLoading) return
     setRandomLoading(true)
     try {
       const uid = userId || 'guest'
-      if ((await startFlow({ userId: uid, ...readFlowSettings(uid) })) !== 0) return
+      const settings = readFlowSettings(uid)
+      if (typeof mood === 'string') { settings.mood = mood; saveFlowSettings(uid, settings) }
+      if ((await startFlow({ userId: uid, ...settings })) !== 0) return
       const track = await api.getRandomTrack()
       if (track && !track.error) playQueue([track], 0)
     } catch (error) {
@@ -192,6 +201,7 @@ export default function HeaderSearch() {
   }
 
   const showDropdown = focused && dropdownOpen && suggestions.length > 0
+  const moodMenu = useContextMenu()
 
   return (
     <div className="flex items-center gap-1.5 min-w-0 w-full justify-center" style={{ WebkitAppRegion: 'no-drag' }}>
@@ -239,9 +249,18 @@ export default function HeaderSearch() {
           <span className="flex-shrink-0 w-px h-4 bg-border2 mx-1" />
           <button
             onMouseDown={(e) => e.preventDefault()}
-            onClick={playRandom}
+            onClick={() => playRandom()}
+            onContextMenu={event => {
+              const current = readFlowSettings(userId || 'guest').mood
+              moodMenu.open(event, FLOW_MOODS.map(item => ({
+                label: item.id === 'flow' ? 'Flow' : `Flow · ${item.label}`,
+                icon: MOOD_ICONS[item.id],
+                hint: item.id === current ? 'Current' : undefined,
+                onSelect: () => playRandom(item.id),
+              })))
+            }}
             disabled={randomLoading}
-            title="Play Flow"
+            title="Play Flow (right-click for a mood)"
             aria-label="Play Flow"
             className="flex-shrink-0 w-7 h-7 mr-0.5 rounded-full flex items-center justify-center text-muted hover:text-text disabled:opacity-60 transition-colors"
           >
@@ -250,6 +269,7 @@ export default function HeaderSearch() {
               : <Shuffle size={15} />}
           </button>
         </div>
+        <ContextMenu menu={moodMenu} />
 
         <AnimatePresence>
           {showDropdown && (

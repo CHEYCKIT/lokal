@@ -6,7 +6,7 @@
 
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { Brain, CloudRain, Dumbbell, Heart, Infinity as InfinityIcon, ListPlus, Pause, PartyPopper, Play, Plus, RotateCcw, SlidersHorizontal, Waves, X } from 'lucide-react'
+import { Infinity as InfinityIcon, ListPlus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import TrackList from './TrackList'
@@ -15,10 +15,10 @@ import { saveAsPlaylist } from '../trackActions'
 import { plural } from '../plural'
 import { FLOW_MOODS, flowSource, normalizeTuner, sameTuner, topGenres, trackGenres, DEFAULT_TUNER } from '../flow/engine'
 import { ONLINE_SOURCES, onlineError, subscribeOnline } from '../flow/online'
+import { MOOD_ICONS } from '../flow/moodIcons'
 import { api } from '../api'
 import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow, upcoming } from '../flow/session'
 
-const MOOD_ICONS = { flow: InfinityIcon, love: Heart, workout: Dumbbell, chill: Waves, party: PartyPopper, focus: Brain, melancholy: CloudRain }
 const MOOD_HINTS = {
   flow: 'Everything you love, and more',
   love: 'Warm, tender, close',
