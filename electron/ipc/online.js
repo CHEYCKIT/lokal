@@ -428,9 +428,11 @@ function videoFailed(id, message) {
 }
 
 /** One piece of a music video, read whole: { body, from, to, total, mime, engine }. */
-async function videoChunk(id, from, to, fetchImpl, force = false) {
+async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
+  const abort = () => upstream.abort()
+  stop?.addEventListener('abort', abort, { once: true })
   const at = `${(from / 1048576).toFixed(1)} MB in`
   try {
     let answer
@@ -451,8 +453,12 @@ async function videoChunk(id, from, to, fetchImpl, force = false) {
     }
     if (!span || !body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
     return { body, from: Number(span[1]), to: Number(span[1]) + body.length - 1, total: Number(span[3]), mime: res.headers.get('content-type') || mime, engine }
-  } finally { clearTimeout(timer) }
+  } finally { clearTimeout(timer); stop?.removeEventListener('abort', abort) }
 }
+
+// Each video's current stream: a new one (a seek, the player reopened) ends
+// the one before, so dropped streams never queue up behind it.
+const videoStreams = new Map() // videoId -> AbortController
 
 /**
  * A music video's picture (lokal-stream://ytv/<id>). The player sees one
@@ -462,24 +468,31 @@ async function videoChunk(id, from, to, fetchImpl, force = false) {
  * is read whole, so a stream the player drops or stops reading (the video
  * closed, paused, a seek) never holds a connection: those used to pile up
  * on the video's server (Chromium allows six per server) until it stopped
- * loading. A piece that fails is asked for once more with a fresh link; a
+ * loading. A dropped stream's piece in progress is stopped; a newer stream
+ * of the same video (a seek) ends the one before. A piece that fails is asked for once more with a fresh link; a
  * fresh link to another file (another format) ends the stream rather than
  * mixing two files.
  */
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
+  videoStreams.get(id)?.abort()
+  const stop = new AbortController()
+  videoStreams.set(id, stop)
   let first
-  try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
+  try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl, false, stop.signal) } catch (error) {
+    if (!stop.signal.aborted) videoFailed(id, error.message)
+    throw error
+  }
   videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
   let next = first.to + 1
   let cancelled = false
   const piece = async (from, to) => {
-    try { return await videoChunk(id, from, to, fetchImpl) } catch (error) {
-      if (cancelled) throw error
+    try { return await videoChunk(id, from, to, fetchImpl, false, stop.signal) } catch (error) {
+      if (cancelled || stop.signal.aborted) throw error
       try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
-      const again = await videoChunk(id, from, to, fetchImpl, true)
+      const again = await videoChunk(id, from, to, fetchImpl, true, stop.signal)
       if (again.total !== first.total) throw new Error(`YouTube gave another file for this video mid-way (${again.engine} link)`)
       return again
     }
@@ -499,11 +512,16 @@ async function videoStream(id, range, fetchImpl) {
         if (next > last) controller.close()
       } catch (error) {
         if (cancelled) return
+        if (stop.signal.aborted) { controller.error(new Error('Replaced by a newer request')); return }
         videoFailed(id, error.message)
         controller.error(error)
       }
     },
-    cancel() { cancelled = true },
+    cancel() {
+      cancelled = true
+      stop.abort()
+      if (videoStreams.get(id) === stop) videoStreams.delete(id)
+    },
   }, { highWaterMark: 0 })
   return new Response(body, {
     status: 206,

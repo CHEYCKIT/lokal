@@ -10,18 +10,41 @@ export function syncVideo(element, { time, segments, isPlaying, hidden = false, 
     return { outside: true }
   }
   // Don't restart an in-flight seek every 200 ms; allow the first frame to land.
+  let hold = false
   if (!element.seeking) {
     const drift = element.currentTime - target
-    if (Math.abs(drift) > 0.35) {
-      element.currentTime = target
+    if (isStreamed(element) && element.readyState < 3 && Math.abs(drift) < WAIT_FOR_DATA_S) {
+      // Still loading where it was sent (a streamed video's next piece takes
+      // a second or two): seeking again would only throw that request away.
+    } else if (isStreamed(element) && drift > 0.35 && drift < SEEK_LEAD_S + 0.6) {
+      // A little ahead (it was sent ahead of the song): its frame waits for the song.
+      hold = true
+    } else if (Math.abs(drift) > 0.35) {
+      // Somewhere not loaded yet: aim a moment ahead, so the picture is ready
+      // when the song gets there instead of always arriving late.
+      element.currentTime = isStreamed(element) && !isBuffered(element, target) ? target + SEEK_LEAD_S : target
       element.playbackRate = 1
     } else {
       element.playbackRate = Math.abs(drift) > 0.04 ? 1 - Math.max(-0.06, Math.min(0.06, drift)) : 1
     }
   }
-  if (isPlaying && !hidden && element.paused) element.play().catch(() => {})
-  else if ((!isPlaying || hidden) && !element.paused) element.pause()
+  if (isPlaying && !hidden && !hold && element.paused) element.play().catch(() => {})
+  else if ((!isPlaying || hidden || hold) && !element.paused) element.pause()
   return { outside: false }
+}
+
+const WAIT_FOR_DATA_S = 10
+const SEEK_LEAD_S = 1
+
+// Streamed from YouTube (not a downloaded file): its data comes a piece at a time.
+function isStreamed(element) {
+  return String(element.currentSrc || element.src || '').startsWith('lokal-stream:')
+}
+
+function isBuffered(element, time) {
+  const ranges = element.buffered
+  for (let i = 0; i < (ranges?.length || 0); i++) if (time >= ranges.start(i) && time <= ranges.end(i) - 0.1) return true
+  return false
 }
 
 /** A seek preserves play/pause intent and lets both media elements resume. */
