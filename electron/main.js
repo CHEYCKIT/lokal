@@ -140,10 +140,10 @@ if (!gotTheLock) {
     if (filePath) {
       emitOpenFilePath(filePath)
     }
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
+    // Opened again while closing (the window already gone): nothing to show.
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
   })
 }
 autoUpdater.autoDownload = false

@@ -165,12 +165,15 @@ export default function PlayerBar() {
         style={glass ? { backgroundColor: 'rgba(var(--surface-rgb), 0.55)' } : { backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
         <div className="flex items-center gap-3 w-60 min-w-0">
         <button onClick={toggleFullscreen} disabled={!currentTrack}
-          className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
-          <AnimatePresence mode="wait">
+          className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
+          {/* Not "wait": with the window minimized no animation runs, and a
+              wait for an exit that never finishes left the old song's cover
+              (and title) up for good while songs changed. Layers crossfade. */}
+          <AnimatePresence initial={false}>
             {artSrc ? (
               <motion.img key={currentTrack?.id} src={artSrc}
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
-                className="w-full h-full object-cover" />
+                className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-subtle text-xl">♪</div>
             )}
@@ -178,8 +181,8 @@ export default function PlayerBar() {
         </button>
 
         <div className="min-w-0 flex-1">
-          <AnimatePresence mode="wait">
-            <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+          {/* The new song's title in at once (fading in), never waiting on the old one's way out. */}
+            <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
               <div className="flex items-center gap-2 min-w-0">
                 {hasAlbum ? (
                   <button
@@ -230,7 +233,6 @@ export default function PlayerBar() {
                 </button>
               )}
             </motion.div>
-          </AnimatePresence>
         </div>
 
         {currentTrack && (

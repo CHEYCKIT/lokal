@@ -9,7 +9,7 @@ import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
-import { useCoverFlip } from './CoverFlip'
+import MixCovers from './MixCovers'
 import MixingMark from './MixingMark'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { startCoverFlight } from '../coverFlight'
@@ -260,10 +260,6 @@ export default function FullscreenPlayer() {
     return () => { current = false }
   }, [currentTrack?.id, showFullscreen, showLyricsFullscreen])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
-  // AutoMix turns the cover over into the next song's (when it's a still one):
-  // the card stays (it isn't swapped for a new one per song) and turns.
-  const coverFlip = useCoverFlip(!clipNow || coverOff)
-  const flipping = usePlayerStore(s => !!s.crossfade?.automix) && (!clipNow || coverOff)
   const { video: musicVideo } = useMusicVideo(currentTrack, showFullscreen || showLyricsFullscreen)
   const showMusicVideo = useMusicVideoView(s => s.show)
   const clipName = clipNow && (clipNow.tall || clipNow.source === 'spotify') ? 'Canvas' : 'Moving Cover'
@@ -678,14 +674,14 @@ export default function FullscreenPlayer() {
               on it), then the progress, the title and the artist. Clear of
               the header, so a tall canvas doesn't run into "Playing from". */}
           <div className={`relative z-10 flex flex-col items-center justify-center flex-1 min-w-0 px-12 pt-24 pb-12 ${showFullscreen ? 'transition-all duration-500' : ''}`}>
-            <AnimatePresence mode="wait">
+            {/* One card for every song (never swapped, so never waiting on an
+                exit while the window is minimized): the artwork changes inside
+                it (MixCovers: AutoMix's cloudy dissolve, else a short fade). */}
               <motion.div
-                key={flipping ? 'cover' : currentTrack?.id || 'none'}
                 ref={coverRef}
                 initial={{ opacity: 0, scale: 0.92, y: 16 }}
-                animate={{ opacity: 1, scale: 1, y: 0, ...coverFlip.animate }}
-                exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 26, ...coverFlip.transition }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 26 }}
                 onMouseEnter={() => setCoverHover(true)}
                 onMouseLeave={() => setCoverHover(false)}
                 onDoubleClick={doubleClickLike}
@@ -696,19 +692,18 @@ export default function FullscreenPlayer() {
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
                   ? { height: 'min(38rem, 62vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: COVER_SIZE, height: COVER_SIZE, ...coverFlip.style }}
+                  : { width: COVER_SIZE, height: COVER_SIZE }}
               >
                 {artSrc
-                  ? (flipping
-                    // The card stays: the artwork dissolves into the next song's as it turns.
-                    ? <AnimatePresence initial={false}>
-                        <motion.img key={artSrc} src={artSrc} alt="" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.9, ease: [0.4, 0, 0.2, 1] }} className="absolute inset-0 w-full h-full object-cover" />
-                      </AnimatePresence>
-                    : <img src={artSrc} className="w-full h-full object-cover" alt="" />)
+                  ? <MixCovers track={currentTrack} render={(track, { top }) => (
+                      <>
+                        <img src={trackArtURL(track)} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                        <MotionCover trackId={track?.id} only="square" off={coverOff} />
+                        <MotionCover trackId={track?.id} only="tall" onActive={top ? setFsCanvas : undefined} off={coverOff} />
+                      </>
+                    )} />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
-                {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
-                {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
 
                 {currentTrack && (
                   <div data-shown={controlsShown} className="group/controls absolute inset-0 z-10 flex flex-col justify-between">
@@ -765,7 +760,6 @@ export default function FullscreenPlayer() {
                 )}
                 {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
               </motion.div>
-            </AnimatePresence>
 
             <div className="relative mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
               <MixingMark className="absolute -top-4 left-1/2 -translate-x-1/2 pointer-events-none !text-white/80" />
@@ -777,14 +771,13 @@ export default function FullscreenPlayer() {
               <span className="w-11 text-sm tabular-nums text-white/75">{fmt(duration)}</span>
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="mt-5 text-center" style={{ width: COVER_SIZE }}>
-                <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
-                <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
-                {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
-              </motion.div>
-            </AnimatePresence>
+            {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
+            <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="mt-5 text-center" style={{ width: COVER_SIZE }}>
+              <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
+              <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
+              {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
+            </motion.div>
           </div>
 
           {currentTrack && (

@@ -4,9 +4,11 @@ import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 
 import LyricsSearchDrawer from './LyricsSearchDrawer'
 import LyricBreakDots from './LyricBreakDots'
 import { api } from '../api'
+import { useLyricSubline } from '../lyrics/useLyricSubline'
+import { announceLyricsChanged } from '../lyricLine'
 import { usePlayerStore } from '../store/player'
 import {
-  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, hasNonLatin, groupUnits, withOutroBreak,
+  canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, groupUnits, withOutroBreak,
 } from '../lyrics/timing'
 
 // ---------------------------------------------------------------------------
@@ -19,7 +21,6 @@ import {
 // only when the focused line changes.
 // ---------------------------------------------------------------------------
 
-const SUBLINE_KEY = 'lokal-lyrics-subline' // 'original' | 'translation' | 'romanization'
 const BROWSE_IDLE_MS = 3200
 const FOCUS_LEAD_S = 0.3 // the panel starts moving to a line slightly before it lands
 const SCROLL_MS = 560
@@ -27,6 +28,7 @@ const STAGGER_STEPS = 3
 const STAGGER_FRACTION = 0.07
 const EASE = 'cubic-bezier(0.41, 0, 0.12, 0.99)'
 const HANDOVER_MS = 420
+const NO_LINES = []
 
 // Falloff either side of the focused line, indexed by distance. Subtle close in
 // (so you can read ahead and behind), letting go further out.
@@ -35,13 +37,6 @@ const FALLOFF_BLUR = [0, 0.8, 1.2, 1.8, 2.4]
 const UNSUNG = 'rgba(255,255,255,0.42)'
 const SUNG = 'rgba(255,255,255,1)'
 
-function readSubline() {
-  try { return localStorage.getItem(SUBLINE_KEY) || 'original' } catch { return 'original' }
-}
-function writeSubline(v) {
-  try { localStorage.setItem(SUBLINE_KEY, v) } catch {}
-  window.dispatchEvent(new CustomEvent('lokal:lyrics-subline', { detail: v }))
-}
 
 // Where the player actually is, read from the audio element every frame when
 // possible (the store's `progress` only updates a few times a second).
@@ -408,6 +403,10 @@ export default function LyricsPanel({
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
   const [result, setResult] = useState(() => (track?.id && lyricsCache.has(track.id) ? lyricsCache.get(track.id) : null))
+  // The song `result` is for: right after the song changes, until the new
+  // song's lyrics are in, it's still the previous one's.
+  const [resultFor, setResultFor] = useState(() => (track?.id && lyricsCache.has(track.id) ? track.id : null))
+  const setBoundResult = useCallback((trackId, next) => { setResultFor(trackId ?? null); setResult(next) }, [])
   // Loading from the first render when there's nothing to show yet, so a new
   // panel never flashes "no lyrics" before its request has even started.
   const [loading, setLoading] = useState(() => !!track?.id && !lyricsCache.has(track.id))
@@ -415,11 +414,6 @@ export default function LyricsPanel({
   const [notice, setNotice] = useState('')
   const [sources, setSources] = useState([])
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
-  const [subline, setSubline] = useState(readSubline)
-  const [translateTarget, setTranslateTarget] = useState('en')
-  const [autoTranslate, setAutoTranslate] = useState(false)
-  const [translation, setTranslation] = useState({ state: 'idle', lines: null })
-  const [romanization, setRomanization] = useState({ state: 'idle', lines: null })
   const [focusIdx, setFocusIdx] = useState(-1)
   const [liveKey, setLiveKey] = useState('')
   const [browsing, setBrowsing] = useState(false)
@@ -436,7 +430,6 @@ export default function LyricsPanel({
     [result, track?.duration, crossfadeSeconds],
   )
   const synced = result?.type === 'synced'
-  const nonLatin = useMemo(() => hasNonLatin(lines), [lines])
 
   // ---- data
   const trackKey = track?.id
@@ -464,16 +457,14 @@ export default function LyricsPanel({
         cacheLyrics(trackId, next)
         // Same lyrics as shown: keep the scroll position and translations.
         if (quiet && JSON.stringify(next) === JSON.stringify(resultRef.current)) return
-        setResult(next)
-        // A refreshed result has different lines: drop translations and the
-        // scroll position that belonged to the previous one.
-        setTranslation({ state: 'idle', lines: null })
-        setRomanization({ state: 'idle', lines: null })
+        setBoundResult(trackId, next)
+        // A refreshed result has different lines: drop the scroll position
+        // that belonged to the previous one (its translations go with it).
         lastScrollIdx.current = -1
       })
-      .catch(() => { if (seq === requestSeq.current && !quiet) setResult(null) })
+      .catch(() => { if (seq === requestSeq.current && !quiet) setBoundResult(trackId, null) })
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
-  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
+  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path, setBoundResult])
 
   // Manual search. The fullscreen views bring their own drawer (onSearchRequest);
   // anywhere else -- the sidebar -- the panel opens one over itself.
@@ -486,6 +477,7 @@ export default function LyricsPanel({
     const trackId = track?.id
     if (!trackId) return
     try { await api.importLyrics(trackId, lyrics, type) } catch {}
+    announceLyricsChanged(trackId)
     // The song may have changed while saving; its own load already ran.
     if (currentTrackId.current === trackId) load()
   }
@@ -498,8 +490,7 @@ export default function LyricsPanel({
     const cached = trackKey != null && lyricsCache.has(trackKey)
     // Cached: its lines show right away (even if the previous song was still
     // loading); otherwise the loading state until this song's answer.
-    setResult(cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
-    setTranslation({ state: 'idle', lines: null }); setRomanization({ state: 'idle', lines: null })
+    setBoundResult(cached ? trackKey : null, cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
     load({}, cached)
   }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -507,84 +498,24 @@ export default function LyricsPanel({
 
   useEffect(() => {
     api.getLyricsSources?.().then(s => setSources(s?.providers || [])).catch(() => {})
-    // Re-read on every Settings save: this panel stays mounted in the sidebar,
-    // so a new translation language or Auto-Translate choice must apply live.
-    let settingsSeq = 0
-    const loadSettings = () => {
-      const seq = ++settingsSeq
-      api.getSettings().then(s => {
-        if (seq !== settingsSeq) return
-        setAutoTranslate(s?.lyrics_auto_translate === '1')
-        setTranslateTarget(String(s?.lyrics_translate_target || 'en'))
-      }).catch(() => {})
-    }
-    loadSettings()
-    window.addEventListener('lokal:settings-saved', loadSettings)
-    const onSub = (e) => setSubline(e.detail)
     const on = () => setIsOnline(true)
     const off = () => setIsOnline(false)
-    window.addEventListener('lokal:lyrics-subline', onSub)
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
     return () => {
-      window.removeEventListener('lokal:settings-saved', loadSettings)
-      window.removeEventListener('lokal:lyrics-subline', onSub)
       window.removeEventListener('online', on)
       window.removeEventListener('offline', off)
     }
   }, [])
 
-  // ---- translation / romanization (source-embedded first, then on demand)
-  const compactLines = useMemo(() => lines.map(l => (l.gap ? { gap: true } : { text: l.text, bgText: l.bgText || null })), [lines])
-  const embeddedTranslation = useMemo(() => {
-    if (!result?.translationLang) return null
-    const want = translateTarget.split('-')[0].toLowerCase()
-    if (result.translationLang.split('-')[0].toLowerCase() !== want) return null
-    return lines.map(l => l.translation || null)
-  }, [result, lines, translateTarget])
-  // Apple ships a romanization track for e.g. K-pop even when a line is
-  // already in English; only offer it when it actually differs somewhere.
-  const embeddedRomanization = useMemo(() => (
-    lines.some(l => l.romanization?.text && l.romanization.text.trim() !== l.text.trim()) ? lines.map(l => l.romanization || null) : null
-  ), [lines])
-
-  // A different target language invalidates whatever was translated before.
-  useEffect(() => {
-    setTranslation(t => (t.state === 'idle' || t.target === translateTarget ? t : { state: 'idle', lines: null }))
-  }, [translateTarget])
-
-  const wantTranslation = subline === 'translation' || (autoTranslate && subline === 'original' && result?.language && !result.language.toLowerCase().startsWith(translateTarget.split('-')[0].toLowerCase()))
-  useEffect(() => {
-    if (!wantTranslation || !lines.length || embeddedTranslation || translation.state !== 'idle' || !track?.id) return
-    setTranslation({ state: 'loading', lines: null, target: translateTarget })
-    const forResult = resultRef.current
-    const forTarget = translateTarget
-    const stale = () => resultRef.current !== forResult
-    api.translateLyrics(track.id, compactLines, translateTarget)
-      .then(r => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : r?.status === 'translated' ? { state: 'ready', lines: r.lines, target: forTarget } : { state: r?.status || 'unavailable', lines: null, target: forTarget })) })
-      .catch(() => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : { state: 'unavailable', lines: null, target: forTarget })) })
-  }, [wantTranslation, lines.length, embeddedTranslation, translation.state, track?.id, compactLines, translateTarget])
-
-  useEffect(() => {
-    if (subline !== 'romanization' || !lines.length || embeddedRomanization || romanization.state !== 'idle' || !track?.id || !nonLatin) return
-    setRomanization({ state: 'loading', lines: null })
-    const forResult = resultRef.current
-    api.romanizeLyrics?.(track.id, compactLines)
-      .then(r => { if (resultRef.current === forResult) setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }) })
-      .catch(() => { if (resultRef.current === forResult) setRomanization({ state: 'unavailable', lines: null }) })
-  }, [subline, lines.length, embeddedRomanization, romanization.state, track?.id, nonLatin, compactLines])
-
-  const subLines = useMemo(() => {
-    if (wantTranslation) return embeddedTranslation || translation.lines
-    if (subline === 'romanization') return embeddedRomanization || romanization.lines
-    return null
-  }, [wantTranslation, subline, embeddedTranslation, translation.lines, embeddedRomanization, romanization.lines])
-
-  const toggleSub = (mode) => {
-    const next = subline === mode ? 'original' : mode
-    setSubline(next)
-    writeSubline(next)
-  }
+  // ---- translation / romanization (src/lyrics/useLyricSubline.js)
+  const {
+    subline, toggle: toggleSub, subLines, wantTranslation, translateTarget, translationState, romanizationState,
+    translationFrom, translationBusy, romanizationBusy, canRomanize,
+  } = useLyricSubline(resultFor != null && resultFor === track?.id
+    ? { trackId: track?.id, result, lines }
+    // Lyrics still the previous song's: no translating them under this song's name.
+    : { trackId: track?.id, result: null, lines: NO_LINES })
 
   // ---- focus (which line the panel is centred on)
   const nextTimes = useMemo(() => lines.map((l, i) => {
@@ -735,9 +666,8 @@ export default function LyricsPanel({
       .then(r => {
         if (seq !== requestSeq.current) return
         if (r?.lines?.length) {
-          setResult(r)
-          setTranslation({ state: 'idle', lines: null })
-          setRomanization({ state: 'idle', lines: null })
+          setBoundResult(track.id, r)
+          announceLyricsChanged(track.id)
           lastScrollIdx.current = -1
         } else {
           const label = sources.find(s => s.id === id)?.label || id
@@ -755,8 +685,6 @@ export default function LyricsPanel({
   const sourceLabel = sources.find(s => s.id === result?.source)?.label || result?.source
   const attribution = result?.attribution
   const hasContributors = !!(attribution?.uploader || attribution?.maker)
-  const translationBusy = wantTranslation && !embeddedTranslation && translation.state === 'loading'
-  const romanizationBusy = subline === 'romanization' && !embeddedRomanization && romanization.state === 'loading'
   const showToolbar = lines.length > 0
 
   return (
@@ -776,7 +704,7 @@ export default function LyricsPanel({
               {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
               Translate
             </Pill>
-            {(nonLatin || embeddedRomanization) && (
+            {canRomanize && (
               <Pill active={subline === 'romanization'} onClick={() => toggleSub('romanization')} title="Show pronunciation in Latin letters">
                 {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">Aa</span>}
                 Romanize
@@ -802,7 +730,7 @@ export default function LyricsPanel({
       )}
 
       <AnimatePresence>
-        {(notice || (wantTranslation && translation.state === 'same-language') || (wantTranslation && translation.state === 'unavailable') || (subline === 'romanization' && romanization.state === 'unavailable')) && (
+        {(notice || (wantTranslation && translationState === 'same-language') || (wantTranslation && translationState === 'unavailable') || (subline === 'romanization' && romanizationState === 'unavailable')) && (
           <motion.div
             initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18 }}
@@ -811,7 +739,7 @@ export default function LyricsPanel({
             // sidebar, and framer's own transform overrode the centring.
             className="absolute top-11 right-4 z-30 max-w-[calc(100%-2rem)] w-max px-3 py-1.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/10 text-[11px] leading-snug text-white/85 text-right"
           >
-            {notice || (translation.state === 'same-language' ? 'Already in your language' : translation.state === 'unavailable' && wantTranslation ? 'Translation unavailable right now' : 'Romanization unavailable right now')}
+            {notice || (translationState === 'same-language' ? 'Already in your language' : translationState === 'unavailable' && wantTranslation ? 'Translation unavailable right now' : 'Romanization unavailable right now')}
           </motion.div>
         )}
       </AnimatePresence>
@@ -890,7 +818,7 @@ export default function LyricsPanel({
               {sourceLabel && (
                 <p className="px-3 pb-10 text-[11px] text-white/30">
                   Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}
-                  {wantTranslation && (embeddedTranslation || translation.lines) ? ` · ${embeddedTranslation ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
+                  {translationFrom ? ` · ${translationFrom === 'source' ? 'Apple Music translation' : `Translated to ${translateTarget}`}` : ''}
                   {attribution?.provider && <span className="block mt-1">Provided by {attribution.provider}</span>}
                   {hasContributors && (
                     <span className="block mt-1">

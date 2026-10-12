@@ -688,7 +688,16 @@ function videoStreamBase() {
       for (;;) {
         const { done, value } = await reader.read()
         if (done || res.destroyed) break
-        if (!res.write(value)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve) })
+        // Waiting for the player to take more: whichever comes first, the
+        // other listener goes (left behind, they piled up on a long video:
+        // MaxListenersExceededWarning).
+        if (!res.write(value)) {
+          await new Promise(resolve => {
+            const done = () => { res.off('drain', done); res.off('close', done); resolve() }
+            res.once('drain', done)
+            res.once('close', done)
+          })
+        }
       }
       res.end()
     } catch (error) {

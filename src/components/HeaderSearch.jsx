@@ -181,7 +181,7 @@ export default function HeaderSearch() {
     setRandomLoading(true)
     try {
       const uid = userId || 'guest'
-      if (await startFlow({ userId: uid, ...readFlowSettings(uid) })) return
+      if ((await startFlow({ userId: uid, ...readFlowSettings(uid) })) !== 0) return
       const track = await api.getRandomTrack()
       if (track && !track.error) playQueue([track], 0)
     } catch (error) {
