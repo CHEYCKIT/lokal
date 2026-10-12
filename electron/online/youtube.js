@@ -937,7 +937,7 @@ function blockFast(videoId, quality, error) {
  * The audio URL for a video, from cache, the fast engine (`fast`, when on) or
  * yt-dlp (one lookup at a time per video).
  */
-async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null, fast = null } = {}) {
+async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null, force = false, quality = 'best', videoHeight = null, fast = null, keepFast = false } = {}) {
   if (!VIDEO_ID.test(String(videoId || ''))) throw new Error('Not a YouTube video id')
   const q = QUALITY_ARGS[quality] ? quality : 'best'
   const useFast = !!fast && FAST_QUALITIES.has(q)
@@ -947,8 +947,9 @@ async function resolveStream(videoId, { ytdlp, cookieArgs, cookieBrowser = null,
   // A caller with the fast engine off (or a fast link refused before) doesn't take a fast link.
   const usable = cached && (useFast || cached.engine !== 'youtubei')
   if (!force && usable && cached.expiresAt > Date.now()) return cached
-  // Looked up again because its link was refused: a fast link goes to yt-dlp now.
-  if (force && cached?.engine === 'youtubei') blockFast(videoId, q, new Error('its stream link was refused'))
+  // Looked up again because its link was refused: a fast link goes to yt-dlp
+  // now (unless the caller wants a fresh fast link: `keepFast`, the same file).
+  if (force && !keepFast && cached?.engine === 'youtubei') blockFast(videoId, q, new Error('its stream link was refused'))
   if (!force && resolving.has(key)) return resolving.get(key)
   const job = (async () => {
     if (useFast && !fastBlocked(videoId, q) && (q !== 'video' || fast.resolveVideo)) {

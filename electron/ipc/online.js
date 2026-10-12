@@ -448,6 +448,15 @@ async function readUpTo(res, want) {
  * only what's needed; still refused, with a fresh link the same two ways.
  * The error says what each try got.
  */
+// The size of the file each video is being played from: every piece must
+// come from that same file (a fresh link to another format, yt-dlp's after
+// the fast engine's, would hand the player two files: "data source error").
+const videoFiles = new Map() // videoId -> total bytes
+function videoFile(id, total) {
+  if (videoFiles.size > 50 && !videoFiles.has(id)) videoFiles.delete(videoFiles.keys().next().value)
+  videoFiles.set(id, total)
+}
+
 async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
   const upstream = new AbortController()
   const timer = setTimeout(() => upstream.abort(), VIDEO_CHUNK_TIMEOUT_MS)
@@ -456,8 +465,15 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
   const at = `${(from / 1048576).toFixed(1)} MB in`
   const tried = []
   try {
-    for (const fresh of force ? [true] : [false, true]) {
-      const stream = await youtube.resolveStream(id, { ...streamOptions(), quality: 'video', force: fresh })
+    // The link in hand, then a fresh one from the same engine (the same
+    // format, so the same file); another engine's only before the video has
+    // started (from 0), when changing file is still possible.
+    const links = [...(force ? [] : [{}]), { force: true, keepFast: true }, ...(from === 0 ? [{ force: true }] : [])]
+    let previous = null
+    for (const link of links) {
+      const stream = await youtube.resolveStream(id, { ...streamOptions(), quality: 'video', ...link })
+      if (previous === stream.url) continue
+      previous = stream.url
       const engine = stream.engine || 'yt-dlp'
       for (const open of [false, true]) {
         let res
@@ -476,6 +492,12 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
           if (!body.length) throw new Error(`YouTube sent nothing ${at} (${engine} link)`)
           const total = span ? Number(span[3]) : Number(res.headers.get('content-length')) || body.length
           const begin = span ? Number(span[1]) : 0
+          const playing = videoFiles.get(id)
+          if (from > 0 && playing && playing !== total) {
+            tried.push(`another file (${total} bytes, not ${playing}), ${engine} link`)
+            break
+          }
+          if (from === 0) videoFile(id, total)
           return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
         }
         try { await res.body?.cancel?.() } catch {}
