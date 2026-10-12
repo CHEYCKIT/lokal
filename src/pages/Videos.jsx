@@ -17,9 +17,36 @@ import { startVideoPreview } from '../videoPreview'
 import { deleteVideoDownloads, downloadVideos, updateVideoLibrary } from '../videoActions'
 import { losslessMenuItem, losslessManyMenuItem } from '../quality'
 
+// A video that isn't downloaded previews with YouTube's own animated preview
+// (a few seconds, no sound), looked up when the card is pointed at for a
+// moment; one YouTube doesn't have keeps its still. A preview whose link
+// stopped working is skipped and asked for again the next time.
+const PREVIEW_DELAY_MS = 400
+const stalePreviews = new Set() // videoIds whose remembered preview didn't load
+
+function useAnimatedPreview(item, hover, enabled) {
+  const [url, setUrl] = React.useState(null)
+  const videoId = item.video.videoId
+  React.useEffect(() => {
+    if (!enabled || !hover || !videoId) return undefined
+    let current = true
+    const timer = setTimeout(() => {
+      const force = stalePreviews.delete(videoId)
+      const query = item.video.title || `${item.track.artist} ${item.track.title}`
+      Promise.resolve(api.musicVideoAnimatedPreview(videoId, query, force)).then(found => { if (current) setUrl(found || null) }).catch(() => {})
+    }, PREVIEW_DELAY_MS)
+    return () => { current = false; clearTimeout(timer) }
+  }, [enabled, hover, videoId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const broken = () => { stalePreviews.add(videoId); setUrl(null) }
+  return [url, broken]
+}
+
 function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, preview }) {
   const [hover, setHover] = React.useState(false)
   const [failed, setFailed] = React.useState(false)
+  const [animated, animatedBroken] = useAnimatedPreview(item, hover, !preview)
+  const [animatedShown, setAnimatedShown] = React.useState(false)
+  React.useEffect(() => { if (!hover) setAnimatedShown(false) }, [hover])
   const ref = React.useRef(null)
   React.useEffect(() => { setFailed(false) }, [preview])
   React.useEffect(() => {
@@ -40,6 +67,8 @@ function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, 
     <button onClick={onSelect} aria-label={`Play video: ${item.track.title}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="relative block w-full aspect-video overflow-hidden rounded-xl bg-card border border-border shadow-lg">
       <img src={item.video.thumbnail} alt="" loading="lazy" className="w-full h-full object-cover transition-[transform,filter] duration-500 ease-out group-hover:scale-[1.03] group-hover:brightness-110" />
       {preview && hover && !failed && <video ref={ref} src={preview} muted playsInline preload="metadata" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
+      {!preview && hover && animated && <img src={animated} alt="" aria-hidden referrerPolicy="no-referrer" onLoad={() => setAnimatedShown(true)} onError={animatedBroken}
+        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${animatedShown ? 'opacity-100' : 'opacity-0'}`} />}
       {/* Hover: a soft shade along the bottom and the length of the song,
           instead of a play button over the picture (the preview plays). */}
       <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-within:opacity-100" />

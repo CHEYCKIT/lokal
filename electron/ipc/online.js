@@ -207,6 +207,9 @@ function registerOnlineHandlers(ipcMain) {
       return { done, total: rows.length, found, cancelled: job.cancelled }
     } finally { videoIndexJob = null }
   })
+  // Videos page: a card's animated preview when the video isn't downloaded.
+  ipcMain.handle('musicVideo:animatedPreview', (_, videoId, query, force) =>
+    require('../online/videoPreview').animatedPreview(String(videoId || ''), String(query || ''), { force: force === true }).catch(() => null))
   ipcMain.handle('musicVideo:cancelIndex', () => { if (videoIndexJob) videoIndexJob.cancelled = true })
   ipcMain.handle('musicVideo:indexStatus', () => videoIndexStatus)
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {

@@ -446,6 +446,7 @@ export const api = {
   // How the lookup is going ({ trackId, stage, index, total }), desktop only.
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},
   indexAllMusicVideos: () => isE() && el().indexAllMusicVideos ? el().indexAllMusicVideos() : Promise.resolve(null),
+  musicVideoAnimatedPreview: (videoId, query, force = false) => isE() && el().musicVideoAnimatedPreview ? el().musicVideoAnimatedPreview(videoId, query, force) : Promise.resolve(null),
   cancelMusicVideoIndex: () => isE() && el().cancelMusicVideoIndex ? el().cancelMusicVideoIndex() : Promise.resolve(null),
   musicVideoIndexStatus: () => isE() && el().musicVideoIndexStatus ? el().musicVideoIndexStatus() : Promise.resolve(null),
   onMusicVideoIndexProgress: (fn) => isE() && el().onMusicVideoIndexProgress ? el().onMusicVideoIndexProgress((_, p) => fn(p)) : () => {},
