@@ -54,7 +54,7 @@ export default function DownloadNotices({ youtube = false }) {
           <p className="min-w-0 flex-1 text-xs text-muted">
             <span className="text-yellow-100">Set up your YouTube cookie</span>: without it YouTube often refuses downloads ("confirm you're not a bot"). Settings → Library → Use YouTube Cookies.
           </p>
-          <button onClick={() => nav('/settings')}
+          <button onClick={() => nav('/settings', { state: { category: 'library' } })}
             className="flex-shrink-0 rounded-lg bg-yellow-500/15 px-2.5 py-1 text-[11px] font-semibold text-yellow-100 transition-colors hover:bg-yellow-500/25">
             Set up
           </button>

@@ -418,11 +418,11 @@ function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
           )}
           {api.isElectron && (
             <TaskRow icon={Mic2} label="Lyrics" running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
-              detail={lyricsDetail} onStop={cancelLyricsIndex} onOpen={() => onNavigate('/settings')}
+              detail={lyricsDetail} onStop={cancelLyricsIndex} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
               onRun={startLyricsIndex} runLabel="Index" runTitle="Fetch and keep the lyrics of every library song" />
           )}
           <TaskRow icon={Tags} label="Genres" running={!!genres?.running} done={genres?.done} total={genres?.total}
-            detail={genresDetail} onOpen={() => onNavigate('/settings')}
+            detail={genresDetail} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
             onRun={startGenres} runLabel="Fill in" runTitle="Look up a genre for every song that has none" />
         </div>
       </section>
@@ -532,7 +532,7 @@ export function DownloadManagerPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {tab === 'queue'
               ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
-              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={path => { closePanel(); nav(path) }} />}
+              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={(path, options) => { closePanel(); nav(path, options) }} />}
           </div>
           <button
             onClick={findMore}
