@@ -98,3 +98,26 @@ test('a library-only tuner starts at once, with no online search', async () => {
   assert.equal(started, 10)
   assert.equal(searched, false)
 })
+
+test('one opening find of two: the background search looks for the rest', async () => {
+  reset(Array.from({ length: 40 }, (_, i) => song(i)))
+  const asked = []
+  const find = async (context, pool, count) => { asked.push(count); return asked.length === 1 ? [online(5)] : [] }
+  await startFlow({ userId: 'u', tuner: adventurous, find })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(asked, [2, 7], 'eight in all: one found at the start, seven more')
+})
+
+test('the song playing picked again while a Flow waits for its finds: that stays', async () => {
+  reset(Array.from({ length: 40 }, (_, i) => song(i)))
+  const mine = [song(100), song(101)]
+  store.getState().playQueue(mine, 0)
+  let deliver
+  const find = () => new Promise(resolve => { deliver = resolve })
+  const starting = startFlow({ userId: 'u', tuner: adventurous, find })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  store.getState().playQueue(mine, 0) // same song, same (no) context
+  deliver([online(6)])
+  assert.equal(await starting, null)
+  assert.deepEqual(titles(store.getState().queue), titles(mine), 'the queue picked stays')
+})

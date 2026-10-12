@@ -81,7 +81,8 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER, 
   // being picked: that stays, this one doesn't start.
   const stale = () => {
     const now = usePlayerStore.getState()
-    return start !== starts || now.playbackContext !== before.playbackContext || now.currentTrack?.id !== before.currentTrack?.id
+    // (Each play started counts, the song playing picked again included.)
+    return start !== starts || now.playbackGeneration !== before.playbackGeneration || now.playbackContext !== before.playbackContext || now.currentTrack?.id !== before.currentTrack?.id
   }
   const pool = await flowPool(userId, { force: true })
   const tracks = pickFlow(pool, { count: START_COUNT, mood, tuner })
@@ -96,16 +97,23 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER, 
   const isCurrent = () => (playing ? usePlayerStore.getState().playbackContext?.id === context.id : !stale())
   const openingCount = Math.min(OPENING_FINDS, share)
   let opening = []
+  let rest = share // the finds left for the background search
   if (openingCount) {
     const search = Promise.resolve(find(context, pool, openingCount, isCurrent, tracks)).catch(() => [])
     const found = await Promise.race([search, new Promise(resolve => setTimeout(() => resolve(null), openingWaitMs))])
     if (stale()) return null
-    if (found) opening = found
-    else search.then(late => { if (late?.length && isCurrent()) usePlayerStore.getState().insertUpcoming(late, context) })
+    if (found) {
+      // Fewer than asked for: the background search looks for the rest.
+      opening = found
+      rest = share - opening.length
+    } else {
+      rest = share - openingCount
+      search.then(late => { if (late?.length && isCurrent()) usePlayerStore.getState().insertUpcoming(late, context) })
+    }
   }
   usePlayerStore.getState().playQueue(openingQueue(tracks, opening), 0, context)
   playing = true
-  if (share > openingCount) weaveOnline(context, pool, share - openingCount).catch(() => {})
+  if (rest > 0) weaveOnline(context, pool, rest, find).catch(() => {})
   return tracks.length + opening.length
 }
 
@@ -193,14 +201,14 @@ export function continueFlow() {
  */
 const weaving = new Set() // Flow ids with online finds being looked for
 
-async function weaveOnline(context, pool, count) {
+async function weaveOnline(context, pool, count, find = findOnline) {
   if (!count) return
   // One search at a time per Flow: a refill while one runs leaves it to that.
   if (weaving.has(context.id)) return
   weaving.add(context.id)
   try {
     const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-    const found = await findOnline(context, pool, count, isCurrent)
+    const found = await find(context, pool, count, isCurrent)
     if (found.length && isCurrent()) usePlayerStore.getState().insertUpcoming(found, context)
   } finally { weaving.delete(context.id) }
 }
