@@ -1,5 +1,6 @@
 // Spotify-style search in the window header: a Home button, then the search
-// box with a "play a random song" button where Spotify has Browse.
+// box with a "play a random song" button where Spotify has Browse, then
+// the Cast button (CastButton.jsx).
 //
 // - Focusing the box opens the Search page; its results follow the text live.
 // - While the box is focused, past searches drop down under it: all of them
@@ -20,6 +21,7 @@ import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
 } from '../searchHistory'
 import { asLink } from '../downloadLinks'
+import CastButton from './CastButton'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 
@@ -294,6 +296,8 @@ export default function HeaderSearch() {
           )}
         </AnimatePresence>
       </div>
+
+      <CastButton />
     </div>
   )
 }

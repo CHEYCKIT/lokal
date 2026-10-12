@@ -1,0 +1,45 @@
+# Publishes Lokal's Cast receiver (receiver/) on GitHub Pages: the page a TV
+# loads when Lokal casts to it. Its address is what's registered in the
+# Google Cast SDK Developer Console (docs/CASTING.md): for Lokal,
+# https://sipbuu.github.io/lokal/receiver/. Needs Pages turned on once:
+# Settings → Pages → Source: GitHub Actions.
+name: Cast receiver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'receiver/**'
+      - '.github/workflows/cast-receiver.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}receiver/
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Put the receiver together
+        run: |
+          mkdir -p _site/receiver
+          cp receiver/index.html receiver/receiver.js receiver/receiver.css receiver/icon.png _site/receiver/
+          printf '<!doctype html><meta http-equiv="refresh" content="0; url=receiver/">\n' > _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

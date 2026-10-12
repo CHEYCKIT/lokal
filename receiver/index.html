@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lokal</title>
+  <!-- Lokal's Cast receiver: what the TV shows while Lokal casts to it.
+       See docs/CASTING.md for how it's published and registered. -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="receiver.css">
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+<body data-view="idle" data-state="idle">
+  <!-- The cover, blurred once into a tiny canvas and stretched: a soft
+       backdrop that costs nothing per frame (no live blur on a TV's GPU). -->
+  <div id="backdrop" aria-hidden="true">
+    <canvas class="layer" width="64" height="36"></canvas>
+    <canvas class="layer" width="64" height="36"></canvas>
+    <div class="shade"></div>
+  </div>
+
+  <!-- The music video (Lokal → On the TV → Video): muted, kept to the song. -->
+  <video id="video" muted playsinline preload="auto" aria-hidden="true"></video>
+
+  <main id="app">
+    <section id="idle">
+      <img src="icon.png" alt="" class="idle-logo">
+      <p class="idle-hint">Ready to play from Lokal</p>
+    </section>
+
+    <section id="stage">
+      <div class="art">
+        <div class="cover-wrap"><img id="cover" alt=""></div>
+        <div class="meta">
+          <h1 id="title"></h1>
+          <p id="artist"></p>
+          <p id="album"></p>
+          <div class="progress">
+            <div class="bar"><div class="fill"></div></div>
+            <div class="times"><span class="elapsed">0:00</span><span class="remaining">0:00</span></div>
+          </div>
+        </div>
+      </div>
+      <div id="lyrics" aria-live="off">
+        <div id="lines"></div>
+        <p id="no-lyrics">No lyrics for this song</p>
+      </div>
+    </section>
+
+    <!-- Up Next: slides up over the screen, like YouTube's on Google TV. -->
+    <section id="upnext">
+      <p class="heading">Up Next</p>
+      <div id="row"></div>
+    </section>
+
+    <!-- Over the music video: the song, shown a while after it changes or pauses. -->
+    <section id="vbar">
+      <p class="vtitle"></p>
+      <p class="vartist"></p>
+      <div class="progress">
+        <div class="bar"><div class="fill"></div></div>
+        <div class="times"><span class="elapsed">0:00</span><span class="remaining">0:00</span></div>
+      </div>
+    </section>
+
+    <div id="buffering" aria-hidden="true"></div>
+  </main>
+
+  <audio id="audio" preload="auto"></audio>
+  <script src="receiver.js"></script>
+</body>
+</html>

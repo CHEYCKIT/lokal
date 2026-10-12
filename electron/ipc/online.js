@@ -746,4 +746,9 @@ function registerStreamProtocol(protocol, net) {
   })
 }
 
-module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio, listMusicVideos, prepareMusicVideoFor }
+/** A music video's picture for another device (casting): the same stream the player gets. */
+function musicVideoStream(id, range) {
+  return videoStream(id, range, (u, init) => require('electron').net.fetch(u, init))
+}
+
+module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio, listMusicVideos, prepareMusicVideoFor, musicVideoStream }
