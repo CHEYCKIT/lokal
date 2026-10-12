@@ -29,6 +29,17 @@ function writeSubline(value) {
  * @returns { subline, toggle(mode), subLines, wantTranslation, translationBusy,
  *   romanizationBusy, canRomanize, translateTarget }
  */
+// Lyrics already in the language translated to: the same base language, and
+// for Chinese the same script (zh-TW lyrics still go to a zh-CN target).
+const chineseScript = tag => (/^zh[-_](hant|tw|hk|mo)\b/i.test(tag) ? 'hant' : /^zh[-_](hans|cn|sg)\b/i.test(tag) ? 'hans' : '')
+export function sameLanguage(language, target) {
+  const base = tag => String(tag || '').split(/[-_]/)[0].toLowerCase()
+  if (base(language) !== base(target)) return false
+  if (base(target) !== 'zh') return true
+  const [mine, theirs] = [chineseScript(language), chineseScript(target)]
+  return !mine || !theirs || mine === theirs
+}
+
 export function useLyricSubline({ trackId, result, lines }) {
   const [subline, setSubline] = useState(readSubline)
   const [translateTarget, setTranslateTarget] = useState('en')
@@ -90,7 +101,7 @@ export function useLyricSubline({ trackId, result, lines }) {
     setTranslation(t => (t.state === 'idle' || t.target === translateTarget ? t : { state: 'idle', lines: null }))
   }, [translateTarget])
 
-  const wantTranslation = subline === 'translation' || (autoTranslate && subline === 'original' && !!result?.language && !result.language.toLowerCase().startsWith(translateTarget.split('-')[0].toLowerCase()))
+  const wantTranslation = subline === 'translation' || (autoTranslate && subline === 'original' && !!result?.language && !sameLanguage(result.language, translateTarget))
   useEffect(() => {
     if (!wantTranslation || !lines.length || embeddedTranslation || translation.state !== 'idle' || !trackId) return
     setTranslation({ state: 'loading', lines: null, target: translateTarget })

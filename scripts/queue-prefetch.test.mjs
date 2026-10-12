@@ -51,3 +51,20 @@ test('a lookup for a song no longer coming up stops', () => {
   prefetchUpcoming({ queue: other, queueIndex: 0, currentTrack: other[0] }, { prepare, ...fakeClock() })
   assert.equal(signals[0].signal.aborted, true, 'v1 is no longer next')
 })
+
+test('a staggered lookup for a song no longer coming up does not start', async () => {
+  resetPrefetch()
+  const asked = []
+  const prepare = async (provider, id) => { asked.push(id); return { ok: true } }
+  const clock = fakeClock()
+  const queue = [online(0), online(1), online(2), online(3)]
+  let state = { queue, queueIndex: 0, currentTrack: queue[0] }
+  prefetchUpcoming(state, { prepare, getState: () => state, ...clock })
+  assert.equal(asked.length, 1)
+  // The songs coming up were replaced (same song playing) before the timers ran.
+  const replaced = [queue[0], online(7), online(8)]
+  state = { queue: replaced, queueIndex: 0, currentTrack: queue[0] }
+  for (const t of clock.timers) t.fn?.()
+  await new Promise(r => setTimeout(r, 0))
+  assert.deepEqual(asked, ['v1'], 'v2 and v3 are no longer coming up')
+})

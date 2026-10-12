@@ -45,19 +45,29 @@ function setError(state, error) {
 }
 
 /** Forget what was read: a settings change may be another account (and for the tests). */
+// Bumped by each reset: a find started before it is for what was forgotten.
+let generation = 0
+
 export function resetOnline() {
+  generation++
   sources.clear()
   for (const listener of listeners) listener()
 }
 // Settings saved (another Last.fm or YouTube Music account, say): what was read was another account's.
 if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved', () => resetOnline())
 
+// What a failed read says: its message, or a plain one for a rejection without one.
+function errorText(error) {
+  const text = typeof error === 'string' ? error : error?.message
+  return String(text || '').trim() || 'Could not read recommendations.'
+}
+
 async function readMore(source, loadPage) {
   const state = stateOf(source)
   if (state.loading) return state.loading
   state.loading = (async () => {
     for (let n = 0; n < PAGES_PER_ASK && state.page < MAX_PAGES; n++) {
-      const data = await Promise.resolve(loadPage(source, state.page)).catch(error => ({ error: error.message }))
+      const data = await Promise.resolve(loadPage(source, state.page)).catch(error => ({ error: errorText(error) }))
       state.page++
       if (data?.error) { setError(state, String(data.error)); break }
       setError(state, '')
@@ -74,17 +84,21 @@ async function readMore(source, loadPage) {
  * Up to `count` online finds, ready to play.
  * @param exclude song keys (songKey) not to offer: queued, or known from the library
  * @param isCurrent false once the Flow they're for has stopped
+ * Nothing comes back when the online state is reset meanwhile (resetOnline).
  */
 export async function onlineFinds(source, { count, exclude = new Set(), isCurrent = () => true, random = Math.random, loadPage = (from, page) => loadRecommendationPage(from, page, api), resolve = (rows, options) => resolveRecommendationTracks(rows, api, options) } = {}) {
   if (!source || source === 'library' || !(count > 0)) return []
+  const started = generation
+  const live = () => started === generation && isCurrent()
   const state = stateOf(source)
   const found = []
   let tries = 0
-  while (found.length < count && tries < count * 3 && isCurrent()) {
+  while (found.length < count && tries < count * 3 && live()) {
     let left = state.candidates.filter(song => !state.tried.has(songKey(song)) && !exclude.has(songKey(song)))
     if (!left.length) {
       if (state.page >= MAX_PAGES) break
       await readMore(source, loadPage)
+      if (!live()) break
       if (state.error && !state.candidates.length) break
       left = state.candidates.filter(song => !state.tried.has(songKey(song)) && !exclude.has(songKey(song)))
       if (!left.length) break
@@ -92,13 +106,14 @@ export async function onlineFinds(source, { count, exclude = new Set(), isCurren
     const pick = left[Math.floor(random() * Math.min(left.length, PICK_FROM))]
     state.tried.add(songKey(pick))
     tries++
-    const [track] = await Promise.resolve(resolve([pick], { isCurrent })).catch(() => [])
-    if (track && isCurrent() && !exclude.has(songKey(track))) {
+    const [track] = await Promise.resolve(resolve([pick], { isCurrent: live })).catch(() => [])
+    if (track && live() && !exclude.has(songKey(track))) {
       exclude.add(songKey(track))
       found.push({ ...track, flowFind: source })
     }
   }
-  return found
+  // Reset meanwhile: even what was found is the old account's.
+  return started === generation ? found : []
 }
 
 /** How many of `count` songs come from online: more for an adventurous tuner, none for the library alone. */

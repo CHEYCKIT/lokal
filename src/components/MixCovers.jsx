@@ -78,8 +78,9 @@ export default function MixCovers({ track, render }) {
     const mixing = !!state.crossfade?.automix && !!state.mixing && state.mixing.until > Date.now()
     const mode = reduceMotion || !shown.id ? 'base' : mixing ? 'mix' : 'fade'
     const layer = { key: ++nextKey, id, track, mode, blobs: mode === 'mix' ? makeBlobs() : null }
-    // At most the one on its way out stays under the new one.
-    setLayers(list => (mode === 'base' ? [layer] : [list[list.length - 1], layer]))
+    // At most the one on its way out stays under the new one, settled (a skip
+    // mid-transition: all of it shows, not what had faded or dissolved in).
+    setLayers(list => (mode === 'base' ? [layer] : [{ ...list[list.length - 1], mode: 'base' }, layer]))
   }, [id, track]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const settle = key => setLayers(list => {

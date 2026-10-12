@@ -165,7 +165,7 @@ export default function FlowPanel({ userId }) {
     setStarting(true)
     try {
       const count = await startFlow({ userId, mood: nextMood, tuner })
-      if (!count) showToast(nextMood === 'flow' ? 'Nothing to play yet. Add music to your library first.' : `No songs in your library fit ${flowName(nextMood)} with this tuner.`)
+      if (count === 0) showToast(nextMood === 'flow' ? 'Nothing to play yet. Add music to your library first.' : `No songs in your library fit ${flowName(nextMood)} with this tuner.`)
     } finally { setStarting(false) }
   }
 
@@ -293,8 +293,9 @@ export default function FlowPanel({ userId }) {
                     </button>
                   ))}
                 </div>
-                {sourceError && draftSource !== 'library' && (
-                  <p role="status" className="mt-2 text-xs text-amber-300/90">{sourceError} Flow keeps to your library meanwhile.</p>
+                {sourceError && errorSource !== 'library' && (
+                  // The playing Flow's source may not be the one selected: the message says whose it is.
+                  <p role="status" className="mt-2 text-xs text-amber-300/90">{errorSource !== draftSource ? `${ONLINE_SOURCES.find(item => item.id === errorSource)?.label || errorSource}: ` : ''}{sourceError} Flow keeps to your library meanwhile.</p>
                 )}
               </div>
               <div className="mt-7">

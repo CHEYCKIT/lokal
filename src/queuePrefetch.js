@@ -48,9 +48,10 @@ export function resetPrefetch() {
 
 /**
  * Look up the streams of the songs coming up.
+ * @param getState the player's state when a staggered lookup starts (the queue may have changed)
  * @returns the keys asked for, in order (for the tests)
  */
-export function prefetchUpcoming(state, { prepare = (provider, id, options) => api.onlinePrepare(provider, id, false, options), now = Date.now, schedule = setTimeout, cancel = clearTimeout, count = LOOKAHEAD, stagger = STAGGER_MS } = {}) {
+export function prefetchUpcoming(state, { prepare = (provider, id, options) => api.onlinePrepare(provider, id, false, options), now = Date.now, schedule = setTimeout, cancel = clearTimeout, count = LOOKAHEAD, stagger = STAGGER_MS, getState = () => state } = {}) {
   for (const timer of timers) cancel(timer)
   timers = []
   const refs = []
@@ -72,6 +73,8 @@ export function prefetchUpcoming(state, { prepare = (provider, id, options) => a
     asked.push(key)
     const start = () => {
       if (running.has(key)) return
+      // Started later (staggered): still coming up in the queue as it is now?
+      if (!upcomingTracks(getState(), count).some(track => { const now = streamRef(track); return now && keyOf(now) === key })) return
       const controller = new AbortController()
       running.set(key, controller)
       Promise.resolve(prepare(ref.provider, ref.id, { signal: controller.signal }))

@@ -38,6 +38,38 @@ test('a source that is not set up: nothing found, and why', async () => {
   assert.equal(onlineError('library'), '')
 })
 
+test('a read that rejects without a message still says what went wrong', async () => {
+  resetOnline()
+  const found = await onlineFinds('lastfm', { count: 2, loadPage: () => Promise.reject(undefined), resolve: resolveAll })
+  assert.deepEqual(found, [])
+  assert.equal(onlineError('lastfm'), 'Could not read recommendations.')
+  resetOnline()
+  await onlineFinds('lastfm', { count: 1, loadPage: () => Promise.reject('offline'), resolve: resolveAll })
+  assert.equal(onlineError('lastfm'), 'offline')
+})
+
+test('a reset while finding: nothing comes back, not even what was found', async () => {
+  resetOnline()
+  let resolved = 0
+  const resolve = async rows => { if (++resolved === 2) resetOnline(); return resolveAll(rows) }
+  const found = await onlineFinds('youtube', { count: 3, loadPage: async () => page(0, 10), resolve, random: () => 0 })
+  assert.deepEqual(found, [])
+  assert.equal(resolved, 2, 'stops once reset')
+})
+
+test('shuffled: finds go after the song playing in the unshuffled order too', () => {
+  const songs = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, title: `Song ${i}`, artist: 'A', file_path: `/m/${i}.flac` }))
+  const context = { type: 'flow', id: 'flow:shuffled' }
+  store.setState({ shuffle: false, shuffleQueue: [], shuffleIndex: -1, originalQueue: [], playHistory: [], futureHistory: [] })
+  store.getState().playQueue(songs, 0, context)
+  store.setState({ shuffle: true, shuffleQueue: [songs[0], songs[5], songs[2], songs[7], songs[1], songs[3], songs[6], songs[4]], shuffleIndex: 0, originalQueue: songs, queueIndex: 0 })
+  store.getState().insertUpcoming([{ id: 'yt:s', title: 'Find S', artist: 'B', file_path: 'stream://s' }], context)
+  for (const list of ['originalQueue', 'queue']) {
+    const at = store.getState()[list].findIndex(track => track.id === 'yt:s')
+    assert.ok(at > 1 && at < songs.length, `${list}: woven in, not at the end (${at})`)
+  }
+})
+
 test('how many come from online', () => {
   assert.equal(onlineShare({ source: 'library', adventurous: 1 }, 10), 0)
   assert.equal(onlineShare({ adventurous: 1 }, 10), 0)
