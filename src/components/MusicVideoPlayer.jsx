@@ -170,7 +170,8 @@ export default function MusicVideoPlayer({ compact = false }) {
   const status = loading ? 'loading'
     : !video ? 'none'
       : video.error ? 'failed'
-      : video.needsDownload ? 'download'
+      // Streamed until it fails; then, as without streaming, downloading plays it.
+      : video.needsDownload && (!video.src || failed) ? 'download'
       : failed ? 'failed'
         : outside ? 'outside'
           : ready || everPlayed ? 'playing' : 'loading'
@@ -185,11 +186,11 @@ export default function MusicVideoPlayer({ compact = false }) {
   const message = {
     none: lookupProgress?.message || 'No verified music video for this song. Continuing with the song and artwork.',
     failed: video?.error ? `The music video couldn't be downloaded: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
-    download: 'Download this video to your Videos folder to play it. Your song keeps playing.',
+    download: video?.streamed && failed ? "This video couldn't be streamed. Download it to your Videos folder to play it. Your song keeps playing." : 'Download this video to your Videos folder to play it. Your song keeps playing.',
     outside: null,
     loading: loadingText,
   }[status]
-  const canDownload = !!video?.videoId && !video.src && !loading && !video.downloadId
+  const canDownload = !!video?.videoId && (!video.src || video.streamed) && !loading && !video.downloadId
   // The cover card never sits over open lyrics; the shade behind them is enough.
   const showCoverCard = !showVideo && !showLyrics
   const chromeHidden = idle && showVideo
@@ -208,7 +209,7 @@ export default function MusicVideoPlayer({ compact = false }) {
         onPlaying={() => { setReady(true); setEverPlayed(true); recoverRef.current = 0 }} onCanPlay={sync} onLoadedMetadata={sync} onLoadedData={() => { setReady(true); sync() }} onSeeked={sync} onError={onVideoError}
         className={`absolute inset-0 h-full w-full object-contain ${showVideo ? '' : 'opacity-0'}`} />}
       {!showVideo && message && <p role="status" className="absolute inset-x-0 bottom-0 bg-black/65 px-3 py-1 text-center text-[10px] text-white/80">{message}</p>}
-      {canDownload && <button onClick={download} title="Download to your Videos folder" className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-xs text-white"><Download size={13} />Download</button>}
+      {canDownload && !showVideo && <button onClick={download} title="Download to your Videos folder" className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-xs text-white"><Download size={13} />Download</button>}
     </div>
   ) : null
 
