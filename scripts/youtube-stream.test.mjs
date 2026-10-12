@@ -126,3 +126,62 @@ test('a yt-dlp too old for --js-runtimes is run again without it, and not given 
   await youtube.resolveStream('04854XqcfCY', { ytdlp: '/fixture/yt-dlp' })
   assert.deepEqual(calls.map(call => call.args.includes('--js-runtimes')), [true, false, false])
 })
+
+// ------------------------------------------------------------ the fast engine (youtubeFast.js)
+
+const FAST_URL = 'https://rr1.googlevideo.example/videoplayback?expire=4102444800&cver=1.20250219.01.00&itag=251&pot=x'
+const fastEngine = (impl) => ({ calls: 0, resolveAudio(videoId, options) { this.calls++; return impl(videoId, options) } })
+const ytdlpAnswers = (child, url = 'https://rr2.googlevideo.example/ytdlp?expire=4102444800') => setImmediate(() => {
+  child.stdout.write(JSON.stringify({ url, ext: 'm4a', acodec: 'mp4a.40.2', abr: 128 }) + '\n')
+  child.emit('close', 0)
+})
+
+test('audio comes from the fast engine first: no yt-dlp, and none needed', async t => {
+  const { spawn, youtube } = extractorFixture(t)
+  const fast = fastEngine(async () => ({ url: FAST_URL, headers: {}, mime: 'audio/webm', expiresAt: Date.now() + 3600e3, engine: 'youtubei' }))
+  const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast })
+  assert.equal(stream.url, FAST_URL)
+  assert.equal(fast.calls, 1)
+  assert.equal(spawn.mock.callCount(), 0)
+  // Cached like any other.
+  assert.equal((await youtube.resolveStream('j_UhEi3GZOU', { fast })).url, FAST_URL)
+  assert.equal(fast.calls, 1)
+})
+
+test('a song the fast engine can\'t play goes to yt-dlp, and stays there for a while', async t => {
+  const { child, spawn, youtube } = extractorFixture(t)
+  const fast = fastEngine(async () => { throw new Error('YouTube: Sign in to confirm your age') })
+  ytdlpAnswers(child)
+  const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp' })
+  assert.match(stream.url, /ytdlp/)
+  assert.equal(fast.calls, 1)
+  assert.equal(spawn.mock.callCount(), 1)
+  // Looked up again (expired, or refused): straight to yt-dlp, the fast engine isn't asked again.
+  ytdlpAnswers(child)
+  await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp', force: true })
+  assert.equal(fast.calls, 1)
+  // Without yt-dlp, the fast engine's failure is the answer.
+  await assert.rejects(youtube.resolveStream('aaaaaaaaaaa', { fast: fastEngine(async () => { throw new Error('nope') }) }), /yt-dlp is not installed/)
+})
+
+test('a fast link YouTube refuses sends that song to yt-dlp', async t => {
+  const { child, youtube } = extractorFixture(t)
+  const fast = fastEngine(async () => ({ url: FAST_URL, headers: {}, mime: 'audio/webm', expiresAt: Date.now() + 3600e3, engine: 'youtubei' }))
+  let fetched = 0
+  const fetchImpl = async url => { fetched++; return new Response(url.includes('ytdlp') ? 'audio' : null, { status: url.includes('ytdlp') ? 206 : 403 }) }
+  ytdlpAnswers(child)
+  const { res } = await youtube.fetchStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp', range: 'bytes=0-', fetchImpl })
+  assert.equal(res.status, 206)
+  assert.equal(fetched, 2)
+  assert.equal(fast.calls, 1, 'the refused fast link was not asked for again')
+})
+
+test('music videos stay with yt-dlp', async t => {
+  const { child, spawn, youtube } = extractorFixture(t)
+  const fast = fastEngine(async () => { throw new Error('should not be asked') })
+  setImmediate(() => { child.stdout.write(JSON.stringify({ url: 'https://v.example/video?expire=4102444800', ext: 'mp4', vcodec: 'avc1', height: 1080 }) + '\n'); child.emit('close', 0) })
+  const stream = await youtube.resolveStream('j_UhEi3GZOU', { fast, ytdlp: '/fixture/yt-dlp', quality: 'video' })
+  assert.equal(stream.mime, 'video/mp4')
+  assert.equal(fast.calls, 0)
+  assert.equal(spawn.mock.callCount(), 1)
+})

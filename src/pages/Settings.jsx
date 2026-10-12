@@ -1491,6 +1491,17 @@ activeCategory === 'data' ? usersTried
           </select>
         </Row>
         {api.isElectron && (
+        <Row label="YouTube Playback Engine" desc="Fast: Lokal asks YouTube for the song itself, so YouTube Music songs start in a fraction of a second; a song it can't play that way uses yt-dlp. yt-dlp only: every song through yt-dlp, as before.">
+          <select
+            value={settings.yt_fast_engine === '0' ? '0' : '1'}
+            onChange={e => set('yt_fast_engine', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="1">Fast</option>
+            <option value="0">yt-dlp only</option>
+          </select>
+        </Row>
+        )}
+        {api.isElectron && (
         <Row label="Music Video Quality" desc="The most a music video's picture streams at. Lower uses less data and starts faster.">
           <select
             value={settings.video_quality || '1080'}
