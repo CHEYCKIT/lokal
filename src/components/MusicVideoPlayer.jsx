@@ -9,6 +9,8 @@ import { trackArtURL } from '../onlineTracks'
 import { useMusicVideo, useMusicVideoView, videoTimeFor, songTime, useVideoOffsets, withOffset } from '../musicVideo'
 import VideoOffsetControl from './VideoOffsetControl'
 import { syncVideo, seekVideo } from '../musicVideoPlayback'
+import { useLyricLines } from '../lyricLine'
+import LyricSubtitles from './LyricSubtitles'
 
 // Further apart than this and the video jumps to the song; closer, it catches
 // up by playing a touch faster or slower, which you can't see.
@@ -201,7 +203,12 @@ export default function MusicVideoPlayer({ compact = false }) {
   // A streamed video offers Download once it has failed, not while it's still starting.
   const canDownload = !!video?.videoId && (!video.src || (video.streamed && failed)) && !loading && !video.downloadId
   // The cover card never sits over open lyrics; the shade behind them is enough.
-  const showCoverCard = !showVideo && !showLyrics
+  // Synced lyrics show as subtitles under the picture (the mini player's
+  // style); plain lyrics, which have no "now", keep the panel at the side.
+  const lyric = useLyricLines(currentTrack, open && !compact && showLyrics)
+  const subtitles = showLyrics && lyric.synced
+  const lyricsPanel = showLyrics && lyric.loaded && !lyric.synced
+  const showCoverCard = !showVideo && !lyricsPanel
   const chromeHidden = idle && showVideo
   const fade = { duration: reduceMotion ? 0 : 0.5, ease: EASE }
   const seek = (e) => {
@@ -273,7 +280,7 @@ export default function MusicVideoPlayer({ compact = false }) {
           </AnimatePresence>
 
           {/* With the lyrics open the cover card stays away; the status still speaks. */}
-          {!showVideo && showLyrics && message && (
+          {!showVideo && lyricsPanel && message && (
             <div className="absolute top-20 left-8 text-sm text-white/60" aria-live="polite">{message}{canDownload && <button onClick={download} className="ml-3 rounded-lg bg-white/90 px-3 py-1 text-black">Download to Videos</button>}</div>
           )}
 
@@ -310,9 +317,12 @@ export default function MusicVideoPlayer({ compact = false }) {
             )}
           </AnimatePresence>
 
-          {/* Lyrics over the video's side, on a soft shade. */}
+          {/* Synced lyrics: subtitles under the picture, lower when the controls are away. */}
+          {subtitles && <LyricSubtitles lines={lyric.lines} progress={progress} wordSync={wordSyncEnabled()} bottom={chromeHidden ? '2.75rem' : '8.5rem'} />}
+
+          {/* Plain lyrics over the video's side, on a soft shade. */}
           <AnimatePresence>
-            {showLyrics && (
+            {lyricsPanel && (
               <motion.div key="lyrics"
                 initial={{ opacity: 0, x: reduceMotion ? 0 : 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: reduceMotion ? 0 : 40 }}
                 transition={{ duration: reduceMotion ? 0 : 0.4, ease: EASE }}

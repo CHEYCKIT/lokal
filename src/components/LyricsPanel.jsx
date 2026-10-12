@@ -45,7 +45,7 @@ function writeSubline(v) {
 
 // Where the player actually is, read from the audio element every frame when
 // possible (the store's `progress` only updates a few times a second).
-function useLyricClock(progress) {
+export function useLyricClock(progress) {
   const anchor = useRef({ t: progress, at: performance.now() })
   useEffect(() => { anchor.current = { t: progress, at: performance.now() } }, [progress])
   return useCallback(() => {
@@ -76,7 +76,7 @@ function sweepStyle() {
 }
 
 /** One vocal (lead or background): units grouped into unbreakable words. */
-function Voice({ units, text, wordSync, className, style, voiceRef }) {
+export function Voice({ units, text, wordSync, className, style, voiceRef }) {
   if (!wordSync || !units?.length) {
     return <span ref={voiceRef} data-voice="plain" dir="auto" className={className} style={style}>{text}</span>
   }
@@ -113,7 +113,7 @@ function Voice({ units, text, wordSync, className, style, voiceRef }) {
 
 // ---------------------------------------------------------------- per-frame painter
 
-function paintVoice(voiceEl, units, t, live) {
+export function paintVoice(voiceEl, units, t, live) {
   if (!voiceEl || !units?.length) return
   const els = voiceEl.querySelectorAll('[data-u]')
   els.forEach((el) => {
