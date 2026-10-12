@@ -163,6 +163,13 @@ export default function MusicVideoPlayer({ compact = false }) {
     setFailed(true)
     setStalled(false)
     setErrorText(el?.error?.message || 'Could not open the downloaded video')
+    // A streamed video: why YouTube wouldn't give it (the stream answers with the reason).
+    if (video?.streamed && video.src) {
+      fetch(video.src, { headers: { Range: 'bytes=0-0' } })
+        .then(res => res.ok ? null : res.text())
+        .then(reason => { if (reason) setErrorText(reason.trim().slice(0, 200)) })
+        .catch(() => {})
+    }
   }, [video, segments])
 
   const art = trackArtURL(currentTrack)
@@ -186,11 +193,12 @@ export default function MusicVideoPlayer({ compact = false }) {
   const message = {
     none: lookupProgress?.message || 'No verified music video for this song. Continuing with the song and artwork.',
     failed: video?.error ? `The music video couldn't be downloaded: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
-    download: video?.streamed && failed ? "This video couldn't be streamed. Download it to your Videos folder to play it. Your song keeps playing." : 'Download this video to your Videos folder to play it. Your song keeps playing.',
+    download: video?.streamed && failed ? `This video couldn't be streamed${errorText ? ` (${errorText.replace(/[.\s]+$/, '')})` : ''}. Download it to your Videos folder to try it that way. Your song keeps playing.` : 'Download this video to your Videos folder to play it. Your song keeps playing.',
     outside: null,
     loading: loadingText,
   }[status]
-  const canDownload = !!video?.videoId && (!video.src || video.streamed) && !loading && !video.downloadId
+  // A streamed video offers Download once it has failed, not while it's still starting.
+  const canDownload = !!video?.videoId && (!video.src || (video.streamed && failed)) && !loading && !video.downloadId
   // The cover card never sits over open lyrics; the shade behind them is enough.
   const showCoverCard = !showVideo && !showLyrics
   const chromeHidden = idle && showVideo
@@ -384,63 +392,124 @@ export default function MusicVideoPlayer({ compact = false }) {
  * pixels read back (a video from another origin works too), and nothing is
  * drawn while the window is hidden or the video is paused.
  */
-const AMBIENT_SIZE = [64, 36]
+// The bars around the video carry on its picture to the screen's edges, the
+// way YouTube's ambient mode does: each side's outermost strip stretched out
+// to the edge, blurred, fading a little toward the screen's edge. Drawn small
+// (AMBIENT_WIDTH px across) and scaled up, ten times a second.
+const AMBIENT_WIDTH = 96
 const AMBIENT_EVERY_MS = 100
-const AMBIENT_BLEND = 0.18 // how much of each new frame goes in: the glow's fade between scenes
-const AMBIENT_SPREAD = 1.6 // the glow's size, from the video's: it reaches 30% of the video past each edge
-// Brightest at the video's edge, fading out to nothing at the glow's own edge.
-const EDGE_AT = ((AMBIENT_SPREAD - 1) / (2 * AMBIENT_SPREAD)) * 100
-const fade = direction => `linear-gradient(${direction}, transparent 0%, rgba(0,0,0,0.3) ${EDGE_AT * 0.45}%, #000 ${EDGE_AT}%, #000 ${100 - EDGE_AT}%, rgba(0,0,0,0.3) ${100 - EDGE_AT * 0.45}%, transparent 100%)`
-const AMBIENT_FADE = `${fade('to right')}, ${fade('to bottom')}`
+const AMBIENT_STRIP = 0.03 // the edge strip carried on, from the video's width or height
+// How much of each new frame goes in (the glow's fade between scenes); a
+// little more without the look-ahead, so it doesn't trail the picture.
+const AMBIENT_BLEND = 0.3
+const AMBIENT_BLEND_LIVE = 0.45
+// A downloaded video's glow comes from a second, muted copy running this far
+// ahead, so it changes just before the picture does (YouTube's feel). Not for
+// a streamed video: that would fetch it twice.
+const AMBIENT_LEAD_S = 0.4
+const AMBIENT_SHADE = 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)'
+
+/** The video's picture inside the window (object-contain): { x, y, width, height }. */
+function pictureBox(video, width, height) {
+  const scale = Math.min(width / video.videoWidth, height / video.videoHeight)
+  const w = video.videoWidth * scale
+  const h = video.videoHeight * scale
+  return { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h }
+}
+
+/**
+ * `source`'s frame on `context` (the window at `width` x `height`, scaled
+ * down): the picture where it is on screen, its edge strips stretched to the
+ * window's edges around it.
+ */
+function drawCarriedOn(context, source, width, height) {
+  const sw = source.videoWidth
+  const sh = source.videoHeight
+  const { x, y, width: w, height: h } = pictureBox(source, width, height)
+  const right = x + w
+  const bottom = y + h
+  const kx = Math.max(2, Math.round(sw * AMBIENT_STRIP))
+  const ky = Math.max(2, Math.round(sh * AMBIENT_STRIP))
+  const piece = (sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight) => {
+    if (dWidth > 0.01 && dHeight > 0.01) context.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
+  }
+  piece(0, 0, sw, sh, x, y, w, h)
+  piece(0, 0, kx, sh, 0, y, x, h) // left
+  piece(sw - kx, 0, kx, sh, right, y, width - right, h) // right
+  piece(0, 0, sw, ky, x, 0, w, y) // top
+  piece(0, sh - ky, sw, ky, x, bottom, w, height - bottom) // bottom
+  piece(0, 0, kx, ky, 0, 0, x, y)
+  piece(sw - kx, 0, kx, ky, right, 0, width - right, y)
+  piece(0, sh - ky, kx, ky, 0, bottom, x, height - bottom)
+  piece(sw - kx, sh - ky, kx, ky, right, bottom, width - right, height - bottom)
+}
+
+/** A muted copy of `video` kept AMBIENT_LEAD_S ahead of it, for the glow. Returns stop(). */
+function leadCopy(video) {
+  const copy = document.createElement('video')
+  copy.muted = true
+  copy.playsInline = true
+  copy.preload = 'auto'
+  copy.src = video.currentSrc || video.src
+  const follow = () => {
+    const target = video.currentTime + AMBIENT_LEAD_S * (video.playbackRate || 1)
+    if (copy.readyState >= 1 && Math.abs(copy.currentTime - target) > 0.6) copy.currentTime = target
+    copy.playbackRate = video.playbackRate || 1
+    if (video.paused && !copy.paused) copy.pause()
+    else if (!video.paused && copy.paused) copy.play().catch(() => {})
+  }
+  follow()
+  const timer = setInterval(follow, 250)
+  return {
+    copy,
+    // Ready, and where it should be (not still seeking after a jump).
+    usable: () => copy.readyState >= 2 && !copy.seeking && Math.abs(copy.currentTime - video.currentTime - AMBIENT_LEAD_S) < 0.6,
+    stop: () => { clearInterval(timer); copy.pause(); copy.removeAttribute('src'); copy.load() },
+  }
+}
 
 export function VideoGlow({ videoRef, active }) {
   const canvasRef = useRef(null)
   const [drawn, setDrawn] = useState(false)
-  const [box, setBox] = useState(null) // the video's picture on screen: { width, height }
   useEffect(() => {
     if (!active) { setDrawn(false); return undefined }
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d', { alpha: false })
     if (!context) return undefined
+    // The new frame is drawn here, then blended (blurred) onto the canvas.
+    const frame = document.createElement('canvas')
+    const frameContext = frame.getContext('2d', { alpha: false })
     let last = null
     let first = true
-    // Where the picture is: object-contain inside the full-screen element.
-    const measure = () => {
-      const video = videoRef.current
-      if (!video?.videoWidth) return
-      const scale = Math.min(window.innerWidth / video.videoWidth, window.innerHeight / video.videoHeight)
-      setBox(current => {
-        const next = { width: Math.round(video.videoWidth * scale), height: Math.round(video.videoHeight * scale) }
-        return current && current.width === next.width && current.height === next.height ? current : next
-      })
-    }
+    let lead = null
     const draw = () => {
       const video = videoRef.current
       if (document.hidden || !video || video.readyState < 2 || !video.videoWidth) return
+      const src = video.currentSrc || video.src || ''
+      if (!lead && !src.startsWith('lokal-stream:')) lead = leadCopy(video)
       if (video.paused && last === video.currentTime) return
+      const width = AMBIENT_WIDTH
+      const height = Math.max(1, Math.round(AMBIENT_WIDTH * window.innerHeight / Math.max(1, window.innerWidth)))
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = frame.width = width; canvas.height = frame.height = height; first = true }
+      const ahead = lead?.usable() ? lead.copy : null
       try {
-        context.filter = 'blur(4px) saturate(1.4)'
-        context.globalAlpha = first ? 1 : AMBIENT_BLEND
-        context.drawImage(video, -4, -4, canvas.width + 8, canvas.height + 8)
+        drawCarriedOn(frameContext, ahead || video, width, height)
+        context.filter = 'blur(3px) saturate(1.3)'
+        context.globalAlpha = first ? 1 : ahead ? AMBIENT_BLEND : AMBIENT_BLEND_LIVE
+        context.drawImage(frame, 0, 0)
         first = false
         last = video.currentTime
-        measure()
         setDrawn(true)
       } catch {}
     }
     draw()
     const timer = setInterval(draw, AMBIENT_EVERY_MS)
-    window.addEventListener('resize', measure)
-    return () => { clearInterval(timer); window.removeEventListener('resize', measure) }
+    return () => { clearInterval(timer); lead?.stop() }
   }, [active, videoRef])
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
-      <canvas ref={canvasRef} width={AMBIENT_SIZE[0]} height={AMBIENT_SIZE[1]}
-        style={box ? {
-          width: box.width * AMBIENT_SPREAD, height: box.height * AMBIENT_SPREAD,
-          WebkitMaskImage: AMBIENT_FADE, maskImage: AMBIENT_FADE, WebkitMaskComposite: 'source-in', maskComposite: 'intersect',
-        } : { width: '100%', height: '100%' }}
-        className={`flex-shrink-0 transition-opacity duration-1000 ${active && drawn && box ? 'opacity-75' : 'opacity-0'}`} />
+    <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-1000 ${active && drawn ? 'opacity-95' : 'opacity-0'}`}>
+      <canvas ref={canvasRef} width={AMBIENT_WIDTH} height={54} className="absolute inset-0 h-full w-full" />
+      <div className="absolute inset-0" style={{ background: AMBIENT_SHADE }} />
     </div>
   )
 }
