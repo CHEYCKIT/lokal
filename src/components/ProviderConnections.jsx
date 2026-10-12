@@ -145,7 +145,14 @@ export default function ProviderConnections({ compact = false, settingsOverride 
     setYoutubeSigningIn(true)
     setYoutubeState({ message: '', tone: 'muted' })
     try {
-      const result = await api.youtubeSignIn({ mode: 'embedded' })
+      // Electron's embedded Chromium window can complete ordinary Google sign-in,
+      // but Windows passkeys are mediated by the installed browser's WebAuthn
+      // integration. Lokal already has a separate Chrome/Edge flow that captures
+      // only the verified YouTube session and transfers it into its own partition.
+      const windows = typeof navigator !== 'undefined' && (
+        navigator.userAgentData?.platform === 'Windows' || /Windows/i.test(navigator.userAgent || '')
+      )
+      const result = await api.youtubeSignIn({ mode: windows ? 'browser' : 'embedded' })
       await loadSettings(true)
       const verified = result?.authenticated === true && !result.error
       setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: verified ? 'success' : 'error' })
