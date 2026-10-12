@@ -421,7 +421,8 @@ function registerStreamScheme(protocol) {
 }
 
 const PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges']
-const VIDEO_CHUNK = 2 * 1024 * 1024
+const VIDEO_CHUNK = 1024 * 1024 // a piece: what YouTube's own player asks for at a time
+const VIDEO_CACHE_PIECES = 64 // pieces kept in memory (64 MB), shared by every stream of a video
 const VIDEO_CHUNK_TIMEOUT_MS = 30000
 
 // Why a video's stream last failed (shown to the player, which only sees a read error).
@@ -461,8 +462,44 @@ async function readUpTo(res, want) {
 // the fast engine's, would hand the player two files: "data source error").
 const videoFiles = new Map() // videoId -> total bytes
 function videoFile(id, total) {
+  const before = videoFiles.get(id)
+  if (before === total) return
+  // Another file for the video: the pieces kept from the old one are no use.
+  if (before) for (const key of [...videoPieces.keys()]) if (key.startsWith(`${id}:`)) videoPieces.delete(key)
   if (videoFiles.size > 50 && !videoFiles.has(id)) videoFiles.delete(videoFiles.keys().next().value)
   videoFiles.set(id, total)
+}
+
+// Pieces fetched, aligned to VIDEO_CHUNK and kept (least recently used out):
+// the player jumps back and forth while it opens a video (its index, the
+// frame at the song's time, back) and each jump is a new request; served
+// from here, a jump to somewhere already fetched answers at once, and two
+// streams wanting the same piece fetch it once.
+const videoPieces = new Map() // `${id}:${index}` -> Promise<piece>
+
+function videoPiece(id, index, fetchImpl) {
+  const key = `${id}:${index}`
+  const kept = videoPieces.get(key)
+  if (kept) { videoPieces.delete(key); videoPieces.set(key, kept); return kept }
+  const from = index * VIDEO_CHUNK
+  const to = from + VIDEO_CHUNK - 1
+  // Not tied to one stream: another may want it, and a piece is small.
+  const job = videoChunk(id, from, to, fetchImpl).catch(error => {
+    try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
+    return videoChunk(id, from, to, fetchImpl, true)
+  })
+  job.catch(() => { if (videoPieces.get(key) === job) videoPieces.delete(key) })
+  videoPieces.set(key, job)
+  while (videoPieces.size > VIDEO_CACHE_PIECES) videoPieces.delete(videoPieces.keys().next().value)
+  return job
+}
+
+/** The piece holding byte `at` of the video. */
+async function videoBytesAt(id, at, fetchImpl) {
+  const piece = await videoPiece(id, Math.floor(at / VIDEO_CHUNK), fetchImpl)
+  if (at >= piece.from && at <= piece.to) return piece
+  // A short piece (YouTube sent less than asked): the rest of it, on its own.
+  return videoChunk(id, at, Math.floor(at / VIDEO_CHUNK) * VIDEO_CHUNK + VIDEO_CHUNK - 1, fetchImpl)
 }
 
 async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
@@ -511,7 +548,7 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
             tried.push(`another file (${total} bytes, not ${playing}), ${engine} link`)
             break
           }
-          if (from === 0) videoFile(id, total)
+          if (from === 0 || !playing) videoFile(id, total)
           if (tried.length || via === 'node') videoLog(id, `${at}: got it ${open ? 'open-ended' : 'as a range'}${via === 'node' ? ' through Node' : ''} (${engine} link) after: ${tried.join('; ') || 'nothing'}`)
           return { body, from: begin, to: begin + body.length - 1, total, mime: res.headers.get('content-type') || stream.mime, engine }
         }
@@ -526,64 +563,44 @@ async function videoChunk(id, from, to, fetchImpl, force = false, stop = null) {
 
 /**
  * A music video's picture (lokal-stream://ytv/<id>). The player sees one
- * ordinary stream of what it asked for; behind it, YouTube is asked for
- * pieces of at most 2 MB (what its own player asks for: an open-ended range
- * is refused or slowed), the next one only as the player reads. Each piece
- * is read whole, so a stream the player drops or stops reading (the video
- * closed, paused, a seek) never holds a connection: those used to pile up
- * on the video's server (Chromium allows six per server) until it stopped
- * loading. A dropped stream's piece in progress is stopped. A piece that fails is asked for once more with a fresh link; a
- * fresh link to another file (another format) ends the stream rather than
- * mixing two files.
+ * ordinary stream of what it asked for; behind it, YouTube is asked for 1 MB
+ * pieces (what its own player asks for: an open-ended range is refused or
+ * slowed), the next one only as the player reads, kept a while for the next
+ * request (videoPiece). Each piece is read whole, so a stream the player
+ * drops or stops reading (the video closed, paused, a seek) never holds a
+ * connection: those used to pile up on the video's server (Chromium allows
+ * six per server) until it stopped loading.
  */
 async function videoStream(id, range, fetchImpl) {
   const asked = String(range || '').match(/^bytes=(\d+)-(\d*)$/)
   const start = asked ? Number(asked[1]) : 0
-  // Not shared with other streams of the video: the player can read two at
-  // once (the file's index from its end, say), and ending one breaks it.
-  const stop = new AbortController()
   let first
-  try { first = await videoChunk(id, start, start + VIDEO_CHUNK - 1, fetchImpl, false, stop.signal) } catch (error) {
-    if (!stop.signal.aborted) videoFailed(id, error.message)
-    throw error
-  }
+  try { first = await videoBytesAt(id, start, fetchImpl) } catch (error) { videoFailed(id, error.message); throw error }
   videoErrors.delete(id)
   const last = Math.min(asked && asked[2] ? Number(asked[2]) : Infinity, first.total - 1)
   videoLog(id, `asked ${range || 'the whole file'}; serving ${start}-${last} of ${first.total} bytes (${first.mime}, ${first.engine} link)`)
-  let next = first.to + 1
+  let next = start
   let cancelled = false
-  const piece = async (from, to) => {
-    try { return await videoChunk(id, from, to, fetchImpl, false, stop.signal) } catch (error) {
-      if (cancelled || stop.signal.aborted) throw error
-      try { require('electron-log').info(`Music video stream: ${id}: ${error.message}; trying a fresh link`) } catch {}
-      const again = await videoChunk(id, from, to, fetchImpl, true, stop.signal)
-      if (again.total !== first.total) throw new Error(`YouTube gave another file for this video mid-way (${again.engine} link)`)
-      return again
-    }
+  const send = (controller, piece) => {
+    const part = piece.body.subarray(next - piece.from, Math.min(piece.to, last) - piece.from + 1)
+    controller.enqueue(part)
+    next += part.length
+    if (next > last) controller.close()
   }
   const body = new ReadableStream({
-    start(controller) {
-      controller.enqueue(first.body.subarray(0, last - start + 1))
-      if (first.to >= last) controller.close()
-    },
+    start(controller) { send(controller, first) },
     async pull(controller) {
       if (cancelled || next > last) return
       try {
-        const got = await piece(next, Math.min(last, next + VIDEO_CHUNK - 1))
-        if (cancelled) return
-        controller.enqueue(got.body.subarray(0, last - got.from + 1))
-        next = got.to + 1
-        if (next > last) controller.close()
+        const piece = await videoBytesAt(id, next, fetchImpl)
+        if (!cancelled) send(controller, piece)
       } catch (error) {
         if (cancelled) return
         videoFailed(id, error.message)
         controller.error(error)
       }
     },
-    cancel() {
-      cancelled = true
-      stop.abort()
-    },
+    cancel() { cancelled = true },
   }, { highWaterMark: 0 })
   return new Response(body, {
     status: 206,
