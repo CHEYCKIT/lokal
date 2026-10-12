@@ -75,6 +75,11 @@ function registerOnlineHandlers(ipcMain) {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
   } })
+  // The fast engine asks as the account for a video YouTube won't give signed out.
+  require('../online/youtubeFast').setAccount(async () => {
+    const credentials = await accountSession.credentials()
+    return credentials?.cookies ? credentials : null
+  })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
