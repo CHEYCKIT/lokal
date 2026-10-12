@@ -247,10 +247,9 @@ export const usePlayerStore = create((set, get) => ({
   exclusiveSidePanelsUserSet: false,
   audioRef: null, cfAudioRef: null, crossfadeSeconds: 0, crossfade: { ...CROSSFADE_DEFAULTS }, _fetchingRelated: false,
   activeAudioElement: 'primary',
-  // A song transition (crossfade or AutoMix) under way: { kind, until } for the
-  // "Mixing" mark; mixFlip counts them, so the cover flips on each (CoverFlip).
+  // A song transition (crossfade or AutoMix) under way: { kind, until }, for
+  // the "Mixing" mark and AutoMix's cover dissolve (MixCovers).
   mixing: null,
-  mixFlip: 0,
   // Casting (src/cast): true while a TV plays instead of this computer.
   castActive: false,
   outputDeviceId: readOutputDevice(),

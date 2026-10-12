@@ -1908,9 +1908,10 @@ export default function App() {
       // fades in on its own (usually shorter) schedule. AutoMix's plan says both.
       const { fadeIn, fadeOut } = crossfadeDurations(plan ? { fadeIn: plan.fadeIn, fadeOut: plan.length } : options, fadeOutEl.duration - fadeOutEl.currentTime)
       const rampNow = ctx.currentTime
-      // The cover flips and the "mixing" mark shows for a transition worth seeing (2 s or more).
+      // A transition worth seeing (2 s or more): the "mixing" mark shows, and
+      // with AutoMix the cover dissolves into the next song's (MixCovers).
       const transitionSeconds = Math.max(fadeIn, fadeOut)
-      if (transitionSeconds >= 2) usePlayerStore.setState(state => ({ mixFlip: (state.mixFlip || 0) + 1, mixing: { kind: plan ? plan.kind : 'crossfade', until: Date.now() + transitionSeconds * 1000 } }))
+      if (transitionSeconds >= 2) usePlayerStore.setState({ mixing: { kind: plan ? plan.kind : 'crossfade', until: Date.now() + transitionSeconds * 1000 } })
       if (plan?.bassSwap) {
         // A bass swap halfway: the next song comes in without its bass, then
         // takes the low end over from the playing one (two basslines clash).

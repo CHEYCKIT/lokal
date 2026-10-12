@@ -9,7 +9,7 @@ import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import { useMotionCoverOff } from '../motionCoverPrefs'
-import { useCoverFlip } from './CoverFlip'
+import MixCovers from './MixCovers'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { api, wordSyncEnabled } from '../api'
 import {
@@ -203,7 +203,6 @@ export default function RightSidebar() {
   }, [currentTrack?.id])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
   // AutoMix turns the cover over into the next song's (when it's a still one).
-  const coverFlip = useCoverFlip(!clipNow || coverOff)
   // The official music video, once found and checked (musicVideo.js).
   const { video: musicVideo } = useMusicVideo(currentTrack)
   const showMusicVideo = useMusicVideoView(s => s.show)
@@ -329,12 +328,10 @@ export default function RightSidebar() {
               {fx && <ArtworkBackdrop trackId={currentTrack?.id} seam={artSrc ? heroHeight : 0} />}
               <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'} pb-[calc(var(--player-space,0px)+1rem)]`}>
                 <motion.div
-                  {...coverFlip}
                   onDoubleClick={doubleClickLike}
                   title="Double-click to like or unlike this song"
                   className={fx ? 'relative w-full overflow-hidden' : 'relative w-full rounded-xl overflow-hidden bg-card border border-border/50'}
                   style={{
-                    ...coverFlip.style,
                     // Square cover normally; a tall canvas grows it to ~60% of the panel.
                     height: fx ? heroHeight : (canvasHero ? heroHeight - 32 : 268),
                     transition: 'height 420ms cubic-bezier(0.4, 0, 0.2, 1)',
@@ -344,15 +341,18 @@ export default function RightSidebar() {
                     } : null),
                   }}
                 >
-                  <AnimatePresence initial={false}>
-                    {artSrc ? (
-                      <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="absolute inset-0 w-full h-full object-cover" />
-                    ) : (
-                      <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
-                    )}
-                  </AnimatePresence>
-                  {artSrc && <MotionCover trackId={currentTrack?.id} only="square" off={coverOff} />}
-                  {artSrc && <MotionCover trackId={currentTrack?.id} only="tall" onActive={setCanvasOn} off={coverOff} />}
+                  {/* Song to song: AutoMix's cloudy dissolve, else a short fade (MixCovers). */}
+                  {artSrc ? (
+                    <MixCovers track={currentTrack} render={(track, { top }) => (
+                      <>
+                        <img src={trackArtURL(track)} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                        <MotionCover trackId={track?.id} only="square" off={coverOff} />
+                        <MotionCover trackId={track?.id} only="tall" onActive={top ? setCanvasOn : undefined} off={coverOff} />
+                      </>
+                    )} />
+                  ) : (
+                    <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
+                  )}
                   {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
                 </motion.div>
 
