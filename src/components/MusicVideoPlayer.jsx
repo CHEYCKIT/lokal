@@ -163,6 +163,13 @@ export default function MusicVideoPlayer({ compact = false }) {
     setFailed(true)
     setStalled(false)
     setErrorText(el?.error?.message || 'Could not open the downloaded video')
+    // A streamed video: why YouTube wouldn't give it (the stream answers with the reason).
+    if (video?.streamed && video.src) {
+      fetch(video.src, { headers: { Range: 'bytes=0-0' } })
+        .then(res => res.ok ? null : res.text())
+        .then(reason => { if (reason) setErrorText(reason.trim().slice(0, 200)) })
+        .catch(() => {})
+    }
   }, [video, segments])
 
   const art = trackArtURL(currentTrack)
@@ -186,11 +193,12 @@ export default function MusicVideoPlayer({ compact = false }) {
   const message = {
     none: lookupProgress?.message || 'No verified music video for this song. Continuing with the song and artwork.',
     failed: video?.error ? `The music video couldn't be downloaded: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
-    download: video?.streamed && failed ? "This video couldn't be streamed. Download it to your Videos folder to play it. Your song keeps playing." : 'Download this video to your Videos folder to play it. Your song keeps playing.',
+    download: video?.streamed && failed ? `This video couldn't be streamed${errorText ? ` (${errorText.replace(/[.\s]+$/, '')})` : ''}. Download it to your Videos folder to try it that way. Your song keeps playing.` : 'Download this video to your Videos folder to play it. Your song keeps playing.',
     outside: null,
     loading: loadingText,
   }[status]
-  const canDownload = !!video?.videoId && (!video.src || video.streamed) && !loading && !video.downloadId
+  // A streamed video offers Download once it has failed, not while it's still starting.
+  const canDownload = !!video?.videoId && (!video.src || (video.streamed && failed)) && !loading && !video.downloadId
   // The cover card never sits over open lyrics; the shade behind them is enough.
   const showCoverCard = !showVideo && !showLyrics
   const chromeHidden = idle && showVideo
