@@ -31,6 +31,7 @@
   var all = function (selector) { return Array.prototype.slice.call(document.querySelectorAll(selector)) }
 
   var state = {
+    senderProtocol: 1, // the version of Lokal's messages (PROTOCOL), from the last one
     want: 'nowplaying', // Lokal's choice: 'nowplaying', 'lyrics' or 'video' (when the song has one)
     track: null, // { id, title, artist, album, image }
     playback: 'idle', // idle | playing | paused | buffering
@@ -357,8 +358,16 @@
 
   // ---------------------------------------------------------------- Lokal's messages
 
+  // The version of the messages on Lokal's channel this page speaks (see
+  // CAST_PROTOCOL in electron/cast/controller.js). This one page serves every
+  // copy of Lokal: a message says which version sent it (none: a Lokal from
+  // before versions, the same as 1), so a change here can keep the old
+  // messages working for Lokal that hasn't been updated yet.
+  var PROTOCOL = 1
+
   function onMessage(data) {
     if (!data || typeof data !== 'object') return
+    state.senderProtocol = Number(data.protocol) || 1
     if (data.type === 'upnext') setUpNext(data.items)
     else if (data.type === 'lyrics') setLyrics(data)
     else if (data.type === 'video') setVideo(data.url ? data : null)
@@ -396,7 +405,7 @@
     var E = framework.events.EventType
     player.setMediaElement(audio)
 
-    tell = function (data) { try { context.sendCustomMessage(NS, undefined, data) } catch (e) {} }
+    tell = function (data) { data.protocol = PROTOCOL; try { context.sendCustomMessage(NS, undefined, data) } catch (e) {} }
 
     var refresh = function () {
       var info = player.getMediaInformation()
@@ -437,7 +446,7 @@
     context.addCustomMessageListener(NS, function (event) { onMessage(event.data) })
     // Lokal (re)connecting: it sends the Up Next row, lyrics and view again.
     context.addEventListener(framework.system.EventType.SENDER_CONNECTED, function (event) {
-      try { context.sendCustomMessage(NS, event.senderId, { type: 'hello', version: 1 }) } catch (e) {}
+      try { context.sendCustomMessage(NS, event.senderId, { type: 'hello', version: 1, protocol: PROTOCOL }) } catch (e) {}
     })
 
     var options = new framework.CastReceiverOptions()

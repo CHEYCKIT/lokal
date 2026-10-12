@@ -19,6 +19,13 @@ const { CastConnection, NS, RECEIVER } = require('./castv2')
 
 const DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
 const CUSTOM_NAMESPACE = 'urn:x-cast:app.lokal.cast'
+// The version of the messages on Lokal's own channel. One receiver page
+// (GitHub Pages) serves every copy of Lokal, old and new: each message says
+// which version sent it, and the receiver's hello says which it speaks, so
+// either side can tell an older one and keep to what it knows. Raise it when
+// a message changes meaning; adding a field doesn't need it (both sides
+// ignore fields they don't know). See docs/CASTING.md.
+const CAST_PROTOCOL = 1
 const AHEAD = 3
 const UP_NEXT = 12 // the receiver's Up Next row
 const PRELOAD_S = 15
@@ -84,6 +91,7 @@ class CastController extends EventEmitter {
       state: this.state, // idle | connecting | connected
       device: this.device ? { id: this.device.id, name: this.device.name, kind: this.device.kind } : null,
       receiver: this.app ? (this.app.custom ? 'lokal' : 'default') : null,
+      receiverProtocol: this.app?.custom ? this.receiverProtocol ?? null : null,
       trackId: this.currentTrackId(),
       playerState: this.loading ? 'LOADING' : this.playerState,
       idleReason: this.idleReason,
@@ -154,6 +162,7 @@ class CastController extends EventEmitter {
 
   adopt(app) {
     this.app = { appId: app.appId, sessionId: app.sessionId, transportId: app.transportId, custom: app.appId !== DEFAULT_MEDIA_RECEIVER }
+    this.receiverProtocol = null // until its hello
     this.connection.connectTo(app.transportId)
   }
 
@@ -258,7 +267,11 @@ class CastController extends EventEmitter {
     }
     if (namespace === NS.media && data.type === 'MEDIA_STATUS') { this.onMediaStatus(data.status); return }
     if (namespace === NS.connection && data.type === 'CLOSE' && this.app && !this.closing && source === this.app.transportId) { this.end('stopped'); return }
-    if (namespace === CUSTOM_NAMESPACE) this.emit('custom', data)
+    if (namespace === CUSTOM_NAMESPACE) {
+      // The receiver's hello: the version it speaks (0: one from before versions).
+      if (data?.type === 'hello') this.receiverProtocol = Number(data.protocol) || 0
+      this.emit('custom', data)
+    }
   }
 
   onReceiverStatus(status) {
@@ -534,7 +547,7 @@ class CastController extends EventEmitter {
   /** A message for Lokal's own receiver (lyrics, up next, the view); Google's ignores it. */
   sendCustom(data) {
     if (!this.connection || !this.app?.custom) return false
-    return this.connection.send(CUSTOM_NAMESPACE, data, this.app.transportId)
+    return this.connection.send(CUSTOM_NAMESPACE, { ...data, protocol: CAST_PROTOCOL }, this.app.transportId)
   }
 
   /**
@@ -572,4 +585,4 @@ class CastController extends EventEmitter {
   }
 }
 
-module.exports = { CastController, DEFAULT_MEDIA_RECEIVER, CUSTOM_NAMESPACE, AHEAD }
+module.exports = { CastController, DEFAULT_MEDIA_RECEIVER, CUSTOM_NAMESPACE, CAST_PROTOCOL, AHEAD }
