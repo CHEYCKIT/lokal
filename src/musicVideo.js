@@ -161,7 +161,8 @@ export function videoTimeFor(segments, time) {
 
 /** The song's playing position, straight from its audio element when there is one. */
 export function songTime() {
-  const { audioRef, cfAudioRef, activeAudioElement, progress } = usePlayerStore.getState()
+  const { audioRef, cfAudioRef, activeAudioElement, progress, castActive } = usePlayerStore.getState()
+  if (castActive) return progress // the TV plays it: its clock, as the player follows it
   const audio = (activeAudioElement === 'primary' ? audioRef : cfAudioRef)?.current
   return audio && Number.isFinite(audio.currentTime) ? audio.currentTime : progress
 }

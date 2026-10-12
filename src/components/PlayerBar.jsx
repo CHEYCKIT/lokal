@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
@@ -16,6 +16,7 @@ import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../qual
 import AudioOutputPicker from './AudioOutputPicker'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
+import { useCastStore } from '../cast/castStore'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -149,6 +150,10 @@ export default function PlayerBar() {
   }
 
   // The playing song's audio quality, when it's been read (not for streams).
+  // Casting: the device it plays on (the chip under the artist).
+  const castActive = usePlayerStore(s => s.castActive)
+  const castStatusDevice = useCastStore(s => s.status?.device)
+  const castDevice = castActive ? castStatusDevice : null
   const qualityTier = currentTrack && !streamed ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
   const quality = qualityTier !== 'unknown' ? { info: TIERS[qualityTier], format: formatLabel(currentTrack) } : null
 
@@ -203,7 +208,16 @@ export default function PlayerBar() {
                     className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
                     {currentTrack.artist}
                   </button>
-                  {streamed && (
+                  {castDevice && (
+                    // Casting: where it plays; a click opens the Cast menu.
+                    <button onClick={() => window.dispatchEvent(new Event('lokal:open-cast-menu'))}
+                      title={`Playing on ${castDevice.name}`}
+                      className="mt-1 flex max-w-full items-center gap-1 text-[9px] font-display uppercase tracking-wider text-accent hover:opacity-80">
+                      <Cast size={10} className="flex-shrink-0" aria-hidden="true" />
+                      <span className="truncate">Playing on {castDevice.name}</span>
+                    </button>
+                  )}
+                  {streamed && !castDevice && (
                     <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="mt-1 block truncate text-[9px] font-display uppercase tracking-wider text-accent">
                       {streamLabel(currentTrack)}
                     </span>
@@ -286,7 +300,7 @@ export default function PlayerBar() {
               <Waveform isPlaying={isPlaying} className="w-full" />
             </div>
           )}
-          <AudioOutputPicker />
+          {!castDevice && <AudioOutputPicker />}
           <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-text/90 hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
           <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Queue"><ListMusic size={16} /></button>
           <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Now Playing">< PanelRight size={16} /></button>

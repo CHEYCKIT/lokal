@@ -174,3 +174,33 @@ test('a dropped connection is picked up again: the TV played on', async t => {
   await controller.pause()
   assert.equal(device.state.media.playerState, 'PAUSED')
 })
+
+test('a song that can\'t be got ready is reported once, and doesn\'t hold up the windows after it', async t => {
+  const device = await startFakeReceiver()
+  t.after(() => device.close())
+  const { controller } = setup(t, { device })
+  const media = controller.media
+  const plain = media.prepare
+  let release = null
+  media.prepare = async (track, options) => {
+    if (track.id === 'drm') throw new Error('This video is DRM protected')
+    if (track.id === 'slow') return new Promise(resolve => { release = () => resolve(plain(track, options)) })
+    return plain(track, options)
+  }
+  const errors = []
+  controller.on('trackError', info => errors.push(info))
+  await controller.connect(tv(device))
+  // A next song that never gets ready: the playing one still loads, and a newer window isn't kept waiting.
+  const first = controller.setWindow({ current: track('a'), upcoming: [track('slow'), track('c')], play: true })
+  await until(() => device.state.media?.items.length === 1 && release)
+  await controller.setWindow({ current: track('b'), upcoming: [track('c')], play: true })
+  await first
+  assert.deepEqual(device.state.media.items.map(item => item.media.customData.trackId), ['b', 'c'])
+  release()
+  // The playing song failing: reported, and the next window still applies.
+  await controller.setWindow({ current: track('drm'), upcoming: [], play: true })
+  assert.deepEqual(errors.map(error => error.trackId), ['drm'])
+  await controller.setWindow({ current: track('d'), upcoming: [], play: true })
+  assert.equal(controller.status().trackId, 'd')
+  assert.equal(errors.length, 1)
+})

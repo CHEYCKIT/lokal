@@ -31,6 +31,7 @@ function localAddressFor(deviceHost, interfaces = os.networkInterfaces()) {
     }
   }
   const toInt = ip => String(ip).split('.').reduce((n, part) => (n * 256) + (Number(part) & 255), 0) >>> 0
+  if (/^127\./.test(String(deviceHost || ''))) return '127.0.0.1' // a device on this computer (a test receiver)
   if (deviceHost) {
     const device = toInt(deviceHost)
     for (const item of candidates) {

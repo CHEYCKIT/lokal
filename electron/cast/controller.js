@@ -24,6 +24,8 @@ const PRELOAD_S = 15
 const STATUS_POLL_MS = 5000 // the TV only reports changes: its clock is asked now and then
 const RECONNECT_TRIES = 3
 const RECONNECT_DELAY_MS = 2000
+const PREPARE_AHEAD_MS = 20000 // a next song that takes longer (an online one that won't resolve) isn't waited for
+const SUPERSEDED = Symbol('superseded')
 
 class CastController extends EventEmitter {
   /**
@@ -61,6 +63,7 @@ class CastController extends EventEmitter {
     this.generation = 0
     this.applied = 0
     this.syncing = null
+    this.wakeSuperseded()
     this.loading = false
     this.retried = new Set() // track ids converted after the TV refused them
     this.state = 'idle'
@@ -235,11 +238,11 @@ class CastController extends EventEmitter {
     if (namespace === NS.receiver && data.type === 'RECEIVER_STATUS') {
       this.onReceiverStatus(data.status)
       // Our app no longer running: someone else took over the TV, or it was closed.
-      if (this.app && this.state === 'connected' && !(data.status?.applications || []).some(app => app.sessionId === this.app.sessionId)) this.end('stopped')
+      if (this.app && this.state === 'connected' && !this.closing && !(data.status?.applications || []).some(app => app.sessionId === this.app.sessionId)) this.end('stopped')
       return
     }
     if (namespace === NS.media && data.type === 'MEDIA_STATUS') { this.onMediaStatus(data.status); return }
-    if (namespace === NS.connection && data.type === 'CLOSE' && this.app && source === this.app.transportId) { this.end('stopped'); return }
+    if (namespace === NS.connection && data.type === 'CLOSE' && this.app && !this.closing && source === this.app.transportId) { this.end('stopped'); return }
     if (namespace === CUSTOM_NAMESPACE) this.emit('custom', data)
   }
 
@@ -295,7 +298,30 @@ class CastController extends EventEmitter {
     if (!window?.current) return Promise.resolve()
     this.desired = { ...window, upcoming: (window.upcoming || []).slice(0, AHEAD) }
     this.generation++
+    // Whatever the last window was waiting on (a song being prepared) is let go of.
+    this.wakeSuperseded()
     return this.sync()
+  }
+
+  /** Resolves (with SUPERSEDED) when a newer window comes. */
+  whenSuperseded(generation) {
+    if (generation !== this.generation) return Promise.resolve(SUPERSEDED)
+    return new Promise(resolve => { (this.superseded ||= new Set()).add(resolve) })
+  }
+
+  wakeSuperseded() {
+    for (const wake of this.superseded || []) wake(SUPERSEDED)
+    this.superseded?.clear()
+  }
+
+  /** A song prepared for the TV, unless a newer window comes first (it's kept for later either way), or it takes over `timeoutMs`. */
+  async prepareFor(track, options, generation, timeoutMs = 0) {
+    const work = this.prepare(track, options)
+    work.catch(() => {})
+    let timer = null
+    const racers = [work, this.whenSuperseded(generation)]
+    if (timeoutMs) racers.push(new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('it took too long to get ready')), timeoutMs) }))
+    try { return await Promise.race(racers) } finally { clearTimeout(timer) }
   }
 
   sync() {
@@ -304,15 +330,20 @@ class CastController extends EventEmitter {
       try {
         while (this.desired && this.applied !== this.generation && this.app) {
           const generation = this.generation
-          await this.apply(this.desired, generation)
+          const want = this.desired
+          try {
+            await this.apply(want, generation)
+          } catch (error) {
+            this.loading = false
+            // A newer window replaced it meanwhile: that one is what matters.
+            if (generation !== this.generation) continue
+            this.log(`cast: ${error.message}`)
+            this.error = error.message
+            this.publish()
+            if (want.current) this.emit('trackError', { trackId: want.current.id, message: error.message })
+          }
           if (generation === this.generation) this.applied = generation
         }
-      } catch (error) {
-        this.log(`cast: ${error.message}`)
-        this.error = error.message
-        this.loading = false
-        this.publish()
-        if (this.desired?.current) this.emit('trackError', { trackId: this.desired.current.id, message: error.message })
       } finally {
         this.syncing = null
       }
@@ -367,8 +398,8 @@ class CastController extends EventEmitter {
       } else {
         this.loading = true
         this.publish()
-        const prepared = await this.prepare(want.current, { convert: want.convert === want.current.id })
-        if (stale()) { this.loading = false; return }
+        const prepared = await this.prepareFor(want.current, { convert: want.convert === want.current.id }, generation)
+        if (prepared === SUPERSEDED || stale()) { this.loading = false; return }
         const item = this.queueItem(prepared)
         const reply = await this.mediaRequest({
           type: 'LOAD',
@@ -405,8 +436,8 @@ class CastController extends EventEmitter {
     for (const track of want.upcoming.slice(kept)) {
       if (generation !== this.generation) return
       let prepared
-      try { prepared = await this.prepare(track) } catch (error) { this.log(`cast: can't queue ${track.id}: ${error.message}`); break }
-      if (generation !== this.generation) return
+      try { prepared = await this.prepareFor(track, {}, generation, PREPARE_AHEAD_MS) } catch (error) { this.log(`cast: can't queue ${track.id}: ${error.message}`); break }
+      if (prepared === SUPERSEDED || generation !== this.generation) return
       const before = this.items.map(item => item.itemId)
       const reply = await this.mediaRequest({ type: 'QUEUE_INSERT', items: [this.queueItem(prepared)] })
       this.onMediaStatus(reply.status)

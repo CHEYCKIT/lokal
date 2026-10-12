@@ -1,10 +1,13 @@
 // A pretend Cast device for the tests: speaks CASTV2 over plain TCP (the
 // client's connect is swapped for net.connect) and plays a pretend media
-// queue whose clock the test moves with advance(). Enough of the receiver
+// queue whose clock the test moves with advance(). With `tls` (a key and
+// certificate) it listens like a real one, for trying the app against it;
+// `fetchMedia` has it fetch each song it's given, as a TV would. Enough of the receiver
 // and media channels for Lokal's sender: launch, status, volume, load,
 // queue load/insert/remove/update, play, pause, seek.
 
 import net from 'node:net'
+import tls from 'node:tls'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -12,9 +15,20 @@ const { frame, createDeframer, NS } = require('../electron/cast/castv2.js')
 
 export const DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
 
-export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name = 'Living Room TV' } = {}) {
+export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name = 'Living Room TV', tls: secure = null, host = '127.0.0.1', port = 0, fetchMedia = false } = {}) {
   const sockets = new Set()
   const log = []
+  const fetched = [] // { url, status, bytes } for each song fetched (fetchMedia)
+  const fetchItems = items => {
+    if (!fetchMedia) return
+    for (const item of items) {
+      const url = item.media?.contentId
+      if (!url) continue
+      fetch(url, { headers: { Range: 'bytes=0-65535' } })
+        .then(async res => fetched.push({ url, status: res.status, type: res.headers.get('content-type'), bytes: (await res.arrayBuffer()).byteLength }))
+        .catch(error => fetched.push({ url, status: 0, error: error.message }))
+    }
+  }
   const state = {
     volume: { level: 0.5, muted: false },
     app: null, // { appId, sessionId, transportId }
@@ -89,11 +103,13 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
             time: data.currentTime || 0, playerState: data.autoplay === false ? 'PAUSED' : 'PLAYING', idleReason: null,
             repeatMode: data.queueData?.repeatMode || 'REPEAT_OFF',
           }
+          fetchItems(state.media.items)
           reply(); broadcastMedia(); return
         }
         case 'QUEUE_INSERT': {
           if (!m) return
           const items = newItems(data.items || [])
+          fetchItems(items)
           const at = data.insertBefore != null ? m.items.findIndex(item => item.itemId === data.insertBefore) : -1
           if (at >= 0) { m.items.splice(at, 0, ...items); if (at <= m.current) m.current += items.length } else m.items.push(...items)
           reply(); broadcastMedia(); return
@@ -125,14 +141,14 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
     }
   }
 
-  const server = net.createServer(socket => {
+  const server = (secure ? tls.createServer.bind(null, secure) : net.createServer)(socket => {
     sockets.add(socket)
     const deframe = createDeframer(message => onMessage(socket, message))
     socket.on('data', chunk => deframe(chunk))
     socket.on('close', () => sockets.delete(socket))
     socket.on('error', () => {})
   })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  await new Promise(resolve => server.listen(port, host, resolve))
 
   return {
     name,
@@ -140,6 +156,7 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
     connect: options => net.connect(options),
     state,
     log,
+    fetched,
     /** Moves the pretend clock: the playing item runs on, into the next one at its end. */
     advance(seconds) {
       const m = state.media
