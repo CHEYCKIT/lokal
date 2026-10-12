@@ -40,6 +40,8 @@ export function useLyricSubline({ trackId, result, lines }) {
   const sourceLines = result?.lines || null
   const resultRef = useRef(sourceLines)
   resultRef.current = sourceLines
+  const trackRef = useRef(trackId)
+  trackRef.current = trackId
 
   // Different lyrics (another song, another source): what was translated is theirs no more.
   useEffect(() => {
@@ -94,7 +96,8 @@ export function useLyricSubline({ trackId, result, lines }) {
     setTranslation({ state: 'loading', lines: null, target: translateTarget })
     const forResult = resultRef.current
     const forTarget = translateTarget
-    const stale = () => resultRef.current !== forResult
+    const forTrack = trackId
+    const stale = () => resultRef.current !== forResult || trackRef.current !== forTrack
     api.translateLyrics(trackId, compactLines, translateTarget)
       .then(r => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : r?.status === 'translated' ? { state: 'ready', lines: r.lines, target: forTarget } : { state: r?.status || 'unavailable', lines: null, target: forTarget })) })
       .catch(() => { if (!stale()) setTranslation(t => (t.target !== forTarget ? t : { state: 'unavailable', lines: null, target: forTarget })) })
@@ -104,9 +107,11 @@ export function useLyricSubline({ trackId, result, lines }) {
     if (subline !== 'romanization' || !lines.length || embeddedRomanization || romanization.state !== 'idle' || !trackId || !nonLatin) return
     setRomanization({ state: 'loading', lines: null })
     const forResult = resultRef.current
+    const forTrack = trackId
+    const current = () => resultRef.current === forResult && trackRef.current === forTrack
     api.romanizeLyrics?.(trackId, compactLines)
-      .then(r => { if (resultRef.current === forResult) setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }) })
-      .catch(() => { if (resultRef.current === forResult) setRomanization({ state: 'unavailable', lines: null }) })
+      .then(r => { if (current()) setRomanization(r?.status === 'romanized' ? { state: 'ready', lines: r.lines } : { state: r?.status || 'unavailable', lines: null }) })
+      .catch(() => { if (current()) setRomanization({ state: 'unavailable', lines: null }) })
   }, [subline, lines.length, embeddedRomanization, romanization.state, trackId, nonLatin, compactLines])
 
   const subLines = useMemo(() => {

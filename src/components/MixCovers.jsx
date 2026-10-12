@@ -53,7 +53,8 @@ function Layer({ layer, children, onDone }) {
     // Done on a timer too: no animation frames while the window is minimized.
     const timer = setTimeout(onDone, duration + 60)
     return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
-  }, [layer]) // eslint-disable-line react-hooks/exhaustive-deps
+    // The layer's own transition: the song's details updating (new artwork) don't restart it.
+  }, [layer.key, layer.mode]) // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={ref} className="absolute inset-0" style={layer.mode === 'fade' ? { opacity: 0 } : layer.mode === 'mix' ? { WebkitMaskImage: blobMask(layer.blobs, 0), maskImage: blobMask(layer.blobs, 0) } : undefined}>{children}</div>
 }
 

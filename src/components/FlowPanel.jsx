@@ -4,7 +4,7 @@
 // stay on the page until applied; applied while Flow plays, the songs coming
 // up are picked again.
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Brain, CloudRain, Dumbbell, Heart, Infinity as InfinityIcon, ListPlus, Pause, PartyPopper, Play, Plus, RotateCcw, SlidersHorizontal, Waves, X } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -14,7 +14,7 @@ import { showToast } from './Toaster'
 import { saveAsPlaylist } from '../trackActions'
 import { plural } from '../plural'
 import { FLOW_MOODS, flowSource, normalizeTuner, sameTuner, topGenres, trackGenres, DEFAULT_TUNER } from '../flow/engine'
-import { ONLINE_SOURCES, onlineError } from '../flow/online'
+import { ONLINE_SOURCES, onlineError, subscribeOnline } from '../flow/online'
 import { api } from '../api'
 import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow, upcoming } from '../flow/session'
 
@@ -154,7 +154,9 @@ export default function FlowPanel({ userId }) {
     Promise.resolve(api.getSettings?.()).then(s => setDiscoverySource(s?.recommendation_source === 'youtube' ? 'youtube' : 'lastfm')).catch(() => {})
   }, [])
   const draftSource = flowSource(draft, discoverySource)
-  const sourceError = onlineError(flowOn ? context.source || draftSource : draftSource)
+  // Shown as soon as a read fails (not on the next unrelated re-render).
+  const errorSource = flowOn ? context.source || draftSource : draftSource
+  const sourceError = useSyncExternalStore(subscribeOnline, () => onlineError(errorSource))
   const changed = !sameTuner(draft, applied)
   const tuned = !sameTuner(applied, DEFAULT_TUNER)
 

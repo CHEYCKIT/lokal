@@ -28,6 +28,7 @@ const STAGGER_STEPS = 3
 const STAGGER_FRACTION = 0.07
 const EASE = 'cubic-bezier(0.41, 0, 0.12, 0.99)'
 const HANDOVER_MS = 420
+const NO_LINES = []
 
 // Falloff either side of the focused line, indexed by distance. Subtle close in
 // (so you can read ahead and behind), letting go further out.
@@ -402,6 +403,10 @@ export default function LyricsPanel({
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
   const [result, setResult] = useState(() => (track?.id && lyricsCache.has(track.id) ? lyricsCache.get(track.id) : null))
+  // The song `result` is for: right after the song changes, until the new
+  // song's lyrics are in, it's still the previous one's.
+  const [resultFor, setResultFor] = useState(() => (track?.id && lyricsCache.has(track.id) ? track.id : null))
+  const setBoundResult = useCallback((trackId, next) => { setResultFor(trackId ?? null); setResult(next) }, [])
   // Loading from the first render when there's nothing to show yet, so a new
   // panel never flashes "no lyrics" before its request has even started.
   const [loading, setLoading] = useState(() => !!track?.id && !lyricsCache.has(track.id))
@@ -452,14 +457,14 @@ export default function LyricsPanel({
         cacheLyrics(trackId, next)
         // Same lyrics as shown: keep the scroll position and translations.
         if (quiet && JSON.stringify(next) === JSON.stringify(resultRef.current)) return
-        setResult(next)
+        setBoundResult(trackId, next)
         // A refreshed result has different lines: drop the scroll position
         // that belonged to the previous one (its translations go with it).
         lastScrollIdx.current = -1
       })
-      .catch(() => { if (seq === requestSeq.current && !quiet) setResult(null) })
+      .catch(() => { if (seq === requestSeq.current && !quiet) setBoundResult(trackId, null) })
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
-  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path])
+  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path, setBoundResult])
 
   // Manual search. The fullscreen views bring their own drawer (onSearchRequest);
   // anywhere else -- the sidebar -- the panel opens one over itself.
@@ -485,7 +490,7 @@ export default function LyricsPanel({
     const cached = trackKey != null && lyricsCache.has(trackKey)
     // Cached: its lines show right away (even if the previous song was still
     // loading); otherwise the loading state until this song's answer.
-    setResult(cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
+    setBoundResult(cached ? trackKey : null, cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
     load({}, cached)
   }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -507,7 +512,10 @@ export default function LyricsPanel({
   const {
     subline, toggle: toggleSub, subLines, wantTranslation, translateTarget, translationState, romanizationState,
     translationFrom, translationBusy, romanizationBusy, canRomanize,
-  } = useLyricSubline({ trackId: track?.id, result, lines })
+  } = useLyricSubline(resultFor != null && resultFor === track?.id
+    ? { trackId: track?.id, result, lines }
+    // Lyrics still the previous song's: no translating them under this song's name.
+    : { trackId: track?.id, result: null, lines: NO_LINES })
 
   // ---- focus (which line the panel is centred on)
   const nextTimes = useMemo(() => lines.map((l, i) => {
@@ -658,7 +666,7 @@ export default function LyricsPanel({
       .then(r => {
         if (seq !== requestSeq.current) return
         if (r?.lines?.length) {
-          setResult(r)
+          setBoundResult(track.id, r)
           announceLyricsChanged(track.id)
           lastScrollIdx.current = -1
         } else {
