@@ -84,6 +84,32 @@ account both belong to the project, and every copy of Lokal then uses them.
 Changes to `receiver/` go live when the workflow publishes them; no need to
 register again (the URL stays the same).
 
+## Changing the messages on Lokal's channel
+
+One receiver page (GitHub Pages) serves every copy of Lokal, updated or
+not, and a change to `receiver/` reaches every TV as soon as the workflow
+publishes it. So the messages on `urn:x-cast:app.lokal.cast` (`upnext`,
+`lyrics`, `video`, `view`, `hello`) carry a version:
+
+- Every message Lokal sends has `protocol` (`CAST_PROTOCOL` in
+  `electron/cast/controller.js`). A message without it is from a Lokal from
+  before versions: the receiver treats it as version 1.
+- The receiver's `hello` (on each connect) has its own `protocol`
+  (`PROTOCOL` in `receiver/receiver.js`); Lokal keeps it as
+  `receiverProtocol` in the cast status (`0`: a receiver from before
+  versions, `null`: Google's receiver or no hello yet).
+
+The rules:
+
+- **Adding a field or a message type**: no new version. Both sides ignore
+  what they don't know, so an older one simply goes without it.
+- **Changing what a field or message means, or removing one**: raise the
+  version on that side, and keep the receiver handling the old shape for
+  messages with a lower `protocol` (Lokal that hasn't been updated). Lokal
+  checks `receiverProtocol` before sending something only a newer receiver
+  understands.
+- Never rename a field in place.
+
 ## When something doesn't work
 
 - **No devices in the menu**: the TV must be on the same network as this

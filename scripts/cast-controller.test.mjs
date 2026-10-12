@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { startFakeReceiver, DEFAULT_MEDIA_RECEIVER } from './fakeCastReceiver.mjs'
 
 const require = createRequire(import.meta.url)
-const { CastController } = require('../electron/cast/controller.js')
+const { CastController, CAST_PROTOCOL } = require('../electron/cast/controller.js')
 
 const track = id => ({ id, title: `Song ${id}`, artist: 'Artist', duration: 180 })
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -222,17 +222,37 @@ test('Lokal\'s receiver gets the Up Next row (covers it can load) and the music 
 
   controller.sendUpNext([track('b'), track('c')])
   await until(() => custom().length === 1)
-  assert.deepEqual(custom()[0], { type: 'upnext', items: [{ id: 'b', title: 'Song b', artist: 'Artist', image: 'http://pc/cover-b' }, { id: 'c', title: 'Song c', artist: 'Artist', image: null }] })
+  assert.deepEqual(custom()[0], { type: 'upnext', items: [{ id: 'b', title: 'Song b', artist: 'Artist', image: 'http://pc/cover-b' }, { id: 'c', title: 'Song c', artist: 'Artist', image: null }], protocol: CAST_PROTOCOL })
   controller.sendUpNext([track('c')])
   assert.deepEqual(unpublished, ['cover-b'], 'the last row\'s covers are taken down')
 
   controller.sendVideo({ trackId: 'a', item: { kind: 'relay', mime: null }, name: 'video', segments: [{ start: 0, end: null, offset: 2 }] })
   await until(() => custom().length === 3)
-  assert.deepEqual(custom()[2], { type: 'video', trackId: 'a', url: 'http://pc/token/k1/video', segments: [{ start: 0, end: null, offset: 2 }] })
+  assert.deepEqual(custom()[2], { type: 'video', trackId: 'a', url: 'http://pc/token/k1/video', segments: [{ start: 0, end: null, offset: 2 }], protocol: CAST_PROTOCOL })
   controller.sendVideo({ trackId: 'b' })
   await until(() => custom().length === 4)
-  assert.deepEqual(custom()[3], { type: 'video', trackId: 'b' })
+  assert.deepEqual(custom()[3], { type: 'video', trackId: 'b', protocol: CAST_PROTOCOL })
   assert.ok(unpublished.includes('k1'), 'the last video is taken down')
+})
+
+test('Lokal\'s messages say their version; the receiver\'s hello says its own', async t => {
+  const device = await startFakeReceiver({ apps: [DEFAULT_MEDIA_RECEIVER, 'ABCDEF12'] })
+  t.after(() => device.close())
+  const { controller } = setup(t, { device, appId: 'ABCDEF12' })
+  await controller.connect(tv(device))
+  assert.equal(controller.status().receiverProtocol, null, 'unknown until the hello')
+  const heard = []
+  controller.on('custom', data => heard.push(data))
+  device.sendCustom({ type: 'hello', version: 1, protocol: 2 })
+  await until(() => heard.length === 1)
+  assert.equal(controller.status().receiverProtocol, 2)
+  device.sendCustom({ type: 'hello', version: 1 })
+  await until(() => heard.length === 2)
+  assert.equal(controller.status().receiverProtocol, 0, 'a receiver from before versions')
+  controller.sendCustom({ type: 'view', view: 'lyrics' })
+  const custom = () => device.log.filter(entry => entry.namespace === 'urn:x-cast:app.lokal.cast').map(entry => entry.data)
+  await until(() => custom().length === 1)
+  assert.deepEqual(custom()[0], { type: 'view', view: 'lyrics', protocol: CAST_PROTOCOL })
 })
 
 test('Google\'s receiver gets none of Lokal\'s own messages', async t => {

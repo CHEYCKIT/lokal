@@ -177,6 +177,8 @@ export async function startFakeReceiver({ apps = [DEFAULT_MEDIA_RECEIVER], name 
     setVolume(volume) { state.volume = { ...state.volume, ...volume }; broadcast(NS.receiver, receiverStatus()) },
     /** The app on the TV closed (someone pressed Home, or another app took over). */
     stopApp() { const transport = state.app?.transportId; state.app = null; state.media = null; broadcast(NS.receiver, receiverStatus()); if (transport) for (const socket of sockets) send(socket, NS.connection, { type: 'CLOSE' }, transport) },
+    /** Lokal's receiver page saying something on Lokal's channel (its hello, a view picked on the remote). */
+    sendCustom(data) { if (state.app) broadcast('urn:x-cast:app.lokal.cast', data, state.app.transportId) },
     dropConnections() { for (const socket of sockets) socket.destroy() },
     /** The TV couldn't play the current item (a format it refused). */
     failCurrent() { const m = state.media; if (!m) return; m.playerState = 'IDLE'; m.idleReason = 'ERROR'; broadcastMedia() },
