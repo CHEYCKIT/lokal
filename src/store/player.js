@@ -62,6 +62,8 @@ async function applyMiniMode(next, electron, set) {
   set({ showMiniPlayer: next })
 }
 
+const nativePlayback = () => typeof window !== 'undefined' && window.__lokalNativePlaybackActive ? window.electron?.nativePlayback : null
+
 // Shared by setExclusiveSidePanels (the user's Settings toggle) and
 // hydrateExclusiveSidePanels (the backend value at boot): the panel
 // visibility to apply when switching Side Panels mode to `value`. Carries
@@ -422,6 +424,12 @@ export const usePlayerStore = create((set, get) => ({
   togglePlay: () => {
     const { audioRef, cfAudioRef, activeAudioElement, isPlaying } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
+    if (nativePlayback()) {
+      const action = isPlaying ? 'pause' : 'play'
+      nativePlayback()[action]().catch(() => {})
+      set({ isPlaying: !isPlaying })
+      return
+    }
     if (!activeRef?.current) return
     isPlaying ? activeRef.current.pause() : activeRef.current.play()
     set({ isPlaying: !isPlaying })
@@ -541,6 +549,10 @@ export const usePlayerStore = create((set, get) => ({
     } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
     
+    if (progress > 3 && nativePlayback()) {
+      nativePlayback().seek(0).catch(() => {})
+      return
+    }
     if (progress > 3 && activeRef?.current) {
       activeRef.current.currentTime = 0
       return
@@ -754,7 +766,9 @@ export const usePlayerStore = create((set, get) => ({
   setProgressWithAudioUpdate: (v) => {
     const { audioRef, cfAudioRef, activeAudioElement } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
-    if (activeRef?.current) {
+    if (nativePlayback()) {
+      nativePlayback().seek(v).catch(() => {})
+    } else if (activeRef?.current) {
       activeRef.current.currentTime = v
     }
     set({ progress: v })
@@ -952,7 +966,9 @@ export const usePlayerStore = create((set, get) => ({
       if (Date.now() >= sleepTimerEndTime) {
         const { audioRef, cfAudioRef, activeAudioElement } = get()
         const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
-        if (activeRef?.current) {
+        if (nativePlayback()) {
+          nativePlayback().pause().catch(() => {})
+        } else if (activeRef?.current) {
           activeRef.current.pause()
         }
         set({ isPlaying: false, sleepTimerMinutes: 0, sleepTimerEndTime: null, sleepTimerInterval: null })

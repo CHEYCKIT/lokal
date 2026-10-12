@@ -3,6 +3,7 @@ const path = require('path')
 const { spawnSync } = require('child_process')
 
 require('./prepare-audio')
+require('./prepare-rust-audio')
 
 if (process.platform !== 'win32') process.exit(0)
 

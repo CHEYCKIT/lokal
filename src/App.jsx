@@ -1,4 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
+import { NativePlaybackController } from './audio/nativePlayback'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import React, { Activity, useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
@@ -279,6 +280,10 @@ export default function App() {
   const pageWidthRef = usePageWidth()
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
+  const nativePlaybackRef = useRef(null)
+  const nativeCrossfadeTrackRef = useRef(null)
+  const nativeTransitionTrackRef = useRef(null)
+  const [nativePlaybackReady, setNativePlaybackReady] = useState(false)
   const streamRecoveryRef = useRef({ track: null, pending: false, failed: [] })
   // Library → Songs with errors: a song that failed to play is noted, and
   // the note goes once it plays again.
@@ -470,7 +475,7 @@ export default function App() {
   }, [])
 
   const {
-    currentTrack, isPlaying, duration, volume, repeat,
+    currentTrack, isPlaying, duration, progress, volume, repeat,
     outputDeviceId,
     autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
@@ -478,7 +483,7 @@ export default function App() {
     shuffle, playNext, addToQueue, skipAhead,
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   } = usePlayerStore(useShallow(({
-    currentTrack, isPlaying, duration, volume, repeat,
+    currentTrack, isPlaying, duration, progress, volume, repeat,
     outputDeviceId,
     autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
@@ -486,7 +491,7 @@ export default function App() {
     shuffle, playNext, addToQueue, skipAhead,
     showMiniPlayer, likedIds, exclusiveSidePanels, hydrateExclusiveSidePanels,
   }) => ({
-    currentTrack, isPlaying, duration, volume, repeat,
+    currentTrack, isPlaying, duration, progress, volume, repeat,
     outputDeviceId,
     autoNext, setProgress, setDuration, setIsPlaying, setIsBuffering,
     setAudioRef, setCfAudioRef, initLiked, setCrossfade, crossfadeSeconds,
@@ -934,6 +939,92 @@ export default function App() {
     return unsubscribe
   }, [])
 
+  // Desktop builds use the Rust decoder/output engine when the platform addon
+  // is present. The HTMLMediaElement path remains the compatibility fallback
+  // for web mode, unsupported codecs, and development builds without Cargo's
+  // native artifact.
+  useEffect(() => {
+    if (!api.isElectron || typeof api.nativePlaybackAvailable !== 'function') return undefined
+    let alive = true
+    api.nativePlaybackAvailable().then(result => {
+      if (!alive || !result?.available) return
+      const controller = new NativePlaybackController(api, status => {
+        if (status?.error) {
+          api.log('warn', `[native-playback] ${status.error}`)
+          window.__lokalNativePlaybackActive = false
+          setNativePlaybackReady(false)
+          return
+        }
+        const state = usePlayerStore.getState()
+        if (status?.track_id && String(status.track_id) !== String(state.currentTrack?.id)) return
+        if (Number.isFinite(status?.position)) state.setProgress(status.position)
+        const statusDuration = Number(status?.duration) > 0 ? Number(status.duration) : Number(state.currentTrack?.duration) || 0
+        if (statusDuration > 0) state.setDuration(statusDuration)
+        if (status?.playing) state.setIsBuffering(false)
+        const remaining = statusDuration - Number(status?.position || 0)
+        const beforeEnd = Number(state.crossfade?.beforeEnd || 0)
+        if (!status?.event && state.isPlaying && beforeEnd > CROSSFADE_MIN_S && remaining > 0.3 && remaining <= beforeEnd && !nativeCrossfadeTrackRef.current) {
+          const next = state.shuffle && state.shuffleQueue?.length
+            ? state.shuffleQueue[(state.shuffleIndex ?? -1) + 1]
+            : state.queue?.[ (state.queueIndex ?? -1) + 1]
+          if (next) {
+            nativeCrossfadeTrackRef.current = String(next.id)
+            const { fadeIn, fadeOut } = crossfadeDurations(state.crossfade, remaining)
+            const currentId = String(state.currentTrack?.id)
+            controller.load(next, true).then(() => {
+              const live = usePlayerStore.getState()
+              if (String(live.currentTrack?.id) !== currentId || !live.isPlaying) return false
+              return controller.transition(next.id, Math.round(Math.max(fadeIn, fadeOut) * 1000))
+            }).then(transitioned => {
+              if (!transitioned) { nativeCrossfadeTrackRef.current = null; return }
+              nativeTransitionTrackRef.current = String(next.id)
+              flushTime(state.currentTrack?.id)
+              const live = usePlayerStore.getState()
+              const nextIndex = live.shuffle ? live.shuffleIndex + 1 : live.queueIndex + 1
+              usePlayerStore.setState({
+                currentTrack: next,
+                queueIndex: live.shuffle ? live.queueIndex : nextIndex,
+                shuffleIndex: live.shuffle ? nextIndex : live.shuffleIndex,
+                isPlaying: true,
+                playHistory: [...(live.playHistory || []), next.id],
+                futureHistory: [],
+              })
+              currentTrackRef.current = next
+              beginLastfmPlayback(next)
+              nativeCrossfadeTrackRef.current = null
+              prepareNextStream()
+            }).catch(error => {
+              nativeCrossfadeTrackRef.current = null
+              api.log('warn', `[native-playback] crossfade failed: ${error.message}`)
+            })
+          }
+        }
+        if (status?.event !== 'ended') return
+        stopTimer()
+        flushTime(state.currentTrack?.id)
+        if (usePlayerStore.getState().repeat === 'one') {
+          beginLastfmPlayback(state.currentTrack)
+          controller.seek(0).then(() => controller.play()).catch(() => {})
+        } else {
+          state.autoNext()
+        }
+      })
+      nativeAudioRef.current?.setPlaying(false)
+      nativePlaybackRef.current = controller
+      window.__lokalNativePlaybackActive = true
+      setNativePlaybackReady(true)
+    }).catch(error => api.log('warn', `[native-playback] unavailable: ${error.message}`))
+    return () => {
+      alive = false
+      nativePlaybackRef.current?.close()
+      nativePlaybackRef.current = null
+      nativeCrossfadeTrackRef.current = null
+      nativeTransitionTrackRef.current = null
+      window.__lokalNativePlaybackActive = false
+      setNativePlaybackReady(false)
+    }
+  }, [])
+
   useEffect(() => {
     window.__lokalSetOutputPrecision = async preferences => {
       saveOutputPreferences(preferences)
@@ -949,11 +1040,18 @@ export default function App() {
 
   useEffect(() => {
     const bridge = nativeAudioRef.current
+    if (nativePlaybackReady && nativePlaybackRef.current) {
+      const action = isPlaying ? 'play' : 'pause'
+      nativePlaybackRef.current[action]().catch(error => api.log('warn', `[native-playback] ${error.message}`))
+      if (isPlaying) startTimer()
+      else stopTimer()
+      return
+    }
     if (bridge) bridge.setPlaying(isPlaying).catch(error => api.log('warn', `[audio-output] ${error.message}`))
     else if (audioCtxRef.current) {
       audioCtxRef.current[isPlaying ? 'resume' : 'suspend']().catch(() => {})
     }
-  }, [isPlaying, audioOutputReady])
+  }, [isPlaying, audioOutputReady, nativePlaybackReady, startTimer, stopTimer])
 
   useEffect(() => {
     window.__lokalInitAudio = initAudioCtx
@@ -1109,7 +1207,15 @@ export default function App() {
       return state.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
     }
 
-    if (audioRef.current && typeof navigator.mediaSession.setPositionState === 'function') {
+     if (nativePlaybackReady && typeof navigator.mediaSession.setPositionState === 'function') {
+       try {
+         navigator.mediaSession.setPositionState({
+           duration: duration || 0,
+           playbackRate: 1,
+           position: progress || 0,
+         })
+       } catch {}
+     } else if (audioRef.current && typeof navigator.mediaSession.setPositionState === 'function') {
       try {
         navigator.mediaSession.setPositionState({
           duration: audioRef.current.duration || 0,
@@ -1118,11 +1224,20 @@ export default function App() {
         })
       } catch {}
     }
-    navigator.mediaSession.setActionHandler('play', () => { 
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (nativePlaybackReady && nativePlaybackRef.current) {
+        nativePlaybackRef.current.play().catch(() => {})
+        return
+      }
       const activeEl = getActiveAudio()
       activeEl?.play() 
     })
-    navigator.mediaSession.setActionHandler('pause', () => { 
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (nativePlaybackReady && nativePlaybackRef.current) {
+        nativePlaybackRef.current.pause().catch(() => {})
+        usePlayerStore.getState().setIsPlaying(false)
+        return
+      }
       const activeEl = getActiveAudio()
       activeEl?.pause() 
       // An explicit pause: record it in the store directly, since the element's
@@ -1131,6 +1246,11 @@ export default function App() {
       usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (nativePlaybackReady && nativePlaybackRef.current && typeof details.seekTime === 'number') {
+        nativePlaybackRef.current.seek(details.seekTime).catch(() => {})
+        usePlayerStore.getState().setProgress(details.seekTime)
+        return
+      }
       const activeEl = getActiveAudio()
       if (activeEl && typeof details.seekTime === 'number') activeEl.currentTime = details.seekTime
     })
@@ -1140,7 +1260,7 @@ export default function App() {
     navigator.mediaSession.setActionHandler('nexttrack', () => {
       usePlayerStore.getState().next()
     })
-  }, [currentTrack, isPlaying])
+  }, [currentTrack, isPlaying, duration, progress, nativePlaybackReady])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
@@ -1423,9 +1543,13 @@ export default function App() {
     const next = shuffle && Array.isArray(shuffleQueue) && shuffleQueue.length
       ? shuffleQueue[(shuffleIndex ?? -1) + 1]
       : Array.isArray(queue) ? queue[(queueIndex ?? -1) + 1] : null
+    if (nativePlaybackReady && nativePlaybackRef.current && next) {
+      nativePlaybackRef.current.load(next, true).catch(error => api.log('warn', `[native-playback] standby load failed: ${error.message}`))
+      return
+    }
     const ref = streamRef(next)
     if (ref) Promise.resolve(api.onlinePrepare(ref.provider, ref.id)).catch(() => {})
-  }, [])
+  }, [nativePlaybackReady])
 
   const beginLastfmPlayback = useCallback((track) => {
     if (!track?.id) {
@@ -1843,6 +1967,45 @@ export default function App() {
   }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext])
 
   useEffect(() => {
+    if (nativePlaybackReady && nativePlaybackRef.current) {
+      const controller = nativePlaybackRef.current
+      let cancelled = false
+      if (nativeTransitionTrackRef.current === String(currentTrack.id)) {
+        nativeTransitionTrackRef.current = null
+        return () => { cancelled = true }
+      }
+      nativeCrossfadeTrackRef.current = null
+      for (const element of [audioRef.current, cfAudioRef.current]) {
+        try { element?.pause(); element?.removeAttribute('src'); element?.load() } catch {}
+      }
+      controller.stop().catch(() => {})
+      setIsBuffering(true)
+      const load = async () => {
+        try {
+          const duration = await controller.load(currentTrack, false)
+          if (cancelled || usePlayerStore.getState().currentTrack?.id !== currentTrack.id) return
+          if (Number.isFinite(duration) && duration > 0) setDuration(duration)
+          setIsBuffering(false)
+          beginLastfmPlayback(currentTrack)
+          if (usePlayerStore.getState().isPlaying) {
+            await controller.play()
+            startTimer()
+            sendListenBrainzNowPlaying()
+          }
+          prepareNextStream()
+        } catch (error) {
+          if (cancelled) return
+          api.log('warn', `[native-playback] load failed: ${error.message}`)
+          controller.close()
+          nativePlaybackRef.current = null
+          window.__lokalNativePlaybackActive = false
+          setNativePlaybackReady(false)
+          setIsBuffering(false)
+        }
+      }
+      load()
+      return () => { cancelled = true }
+    }
     if (isCrossfadingRef.current) {
       if (currentTrack?.id && currentTrack.id === expectedCrossfadeTrackIdRef.current) return
       cancelCrossfade()
@@ -1925,7 +2088,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
+  }, [currentTrack?.id, currentTrack?.file_path, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, nativePlaybackReady, prepareNextStream, startTimer, sendListenBrainzNowPlaying])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -1941,6 +2104,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (nativePlaybackReady && nativePlaybackRef.current) return
     if (isCrossfadingRef.current) return
     if (!audioRef.current || !cfAudioRef.current) return
     
@@ -1955,9 +2119,13 @@ export default function App() {
       activeEl.pause(); 
       stopTimer() 
     }
-  }, [isPlaying])
+  }, [isPlaying, nativePlaybackReady])
 
   useEffect(() => {
+    if (nativePlaybackReady && nativePlaybackRef.current) {
+      nativePlaybackRef.current.setVolume(volume).catch(error => api.log('warn', `[native-playback] volume failed: ${error.message}`))
+      return
+    }
     const ctx = audioCtxRef.current
     const primary = gainNodeRef.current?.gain
     const secondary = cfGainNodeRef.current?.gain
@@ -1980,7 +2148,7 @@ export default function App() {
       activeGain.setValueAtTime(volume, now)
       inactiveGain.setValueAtTime(0, now)
     } catch {}
-  }, [volume])
+  }, [volume, nativePlaybackReady])
 
   const handleTimeUpdate = useCallback((e) => {
     if (!isEventFromActive(e)) return;

@@ -1,4 +1,5 @@
 const { registerNativeOutput, closeNativeOutput } = require('./audio/output')
+const { registerNativePlayback, closeNativePlayback } = require('./audio/playback')
 const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker } = require('electron')
 const path = require('path')
 // Keep the renderer at normal priority on Windows while minimized so the
@@ -38,6 +39,7 @@ const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
 const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
+const { registerNativePlaybackHandlers } = require('./ipc/nativePlayback')
 // Online songs stream from lokal-stream://; the scheme has to be declared before the app is ready.
 try { registerStreamScheme(protocol) } catch (e) { console.error('registerStreamScheme:', e.message) }
 let isUpdating = false;
@@ -364,9 +366,9 @@ function createWindow() {
       backgroundThrottling: false,
     },
   })
-  mainWindow.webContents.on('render-process-gone', closeNativeOutput)
-  mainWindow.webContents.on('did-start-loading', closeNativeOutput)
-  mainWindow.on('closed', closeNativeOutput)
+  mainWindow.webContents.on('render-process-gone', () => { closeNativeOutput(); closeNativePlayback() })
+  mainWindow.webContents.on('did-start-loading', () => { closeNativeOutput(); closeNativePlayback() })
+  mainWindow.on('closed', () => { closeNativeOutput(); closeNativePlayback() })
   attachFullscreenSleepBlocker(mainWindow, { app, powerSaveBlocker })
   const sendVisibility = (hidden) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:visibility', hidden) }
   mainWindow.on('minimize', () => sendVisibility(true))
@@ -463,6 +465,8 @@ app.whenReady().then(() => {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }
   }
   registerNativeOutput(ipcMain, () => mainWindow)
+  registerNativePlayback(ipcMain, () => mainWindow)
+  try { registerNativePlaybackHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerNativePlaybackHandlers:', e.message) }
   try { registerThumbarHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerThumbarHandlers:', e.message) }
   try { registerSmtcHandlers(ipcMain, () => mainWindow) } catch (e) { console.error('registerSmtcHandlers:', e.message) }
   try { registerArtworkFxHandlers(ipcMain) } catch (e) { console.error('registerArtworkFxHandlers:', e.message) }
@@ -765,6 +769,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   closeNativeOutput()
+  closeNativePlayback()
   try { shutdownActiveDownloads() } catch {}
   try { require('./spotiflac/packages').shutdown(require('./ipc/db').getDB()) } catch {}
   unregisterMediaShortcuts()

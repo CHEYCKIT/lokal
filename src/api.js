@@ -149,6 +149,20 @@ export function wordSyncEnabled() {
 
 export const api = {
   get isElectron() { return isE() },
+  nativePlaybackAvailable: () => isE() && typeof el().nativePlayback?.available === 'function' ? el().nativePlayback.available() : Promise.resolve({ available: false }),
+  nativePlaybackLoad: source => isE() ? el().nativePlayback.load(source) : Promise.reject(new Error('Native playback is available in the desktop app only.')),
+  nativePlaybackPlay: () => isE() ? el().nativePlayback.play() : Promise.resolve(),
+  nativePlaybackPause: () => isE() ? el().nativePlayback.pause() : Promise.resolve(),
+  nativePlaybackStop: () => isE() ? el().nativePlayback.stop() : Promise.resolve(),
+  nativePlaybackClose: () => isE() && el().nativePlayback?.close ? el().nativePlayback.close() : Promise.resolve(),
+  nativePlaybackSeek: seconds => isE() ? el().nativePlayback.seek(seconds) : Promise.resolve(),
+  nativePlaybackSetVolume: value => isE() ? el().nativePlayback.setVolume(value) : Promise.resolve(),
+  nativePlaybackSetRate: value => isE() ? el().nativePlayback.setRate(value) : Promise.resolve(),
+  nativePlaybackTransition: (trackId, fadeMs) => isE() ? el().nativePlayback.transition(trackId, fadeMs) : Promise.resolve(false),
+  nativePlaybackStatus: () => isE() ? el().nativePlayback.status() : Promise.resolve(null),
+  nativePlaybackSource: (provider, id) => isE() ? el().nativePlayback.source(provider, id) : Promise.resolve({ error: 'Native playback is available in the desktop app only.' }),
+  nativePlaybackFile: filePath => isE() ? el().nativePlayback.file(filePath) : Promise.resolve({ error: 'Native playback is available in the desktop app only.' }),
+  onNativePlaybackStatus: callback => isE() && el().nativePlayback?.onStatus ? el().nativePlayback.onStatus(callback) : () => {},
   fileURL: (path) => electronFileURL(path),
   artworkURL: (id) => `${BASE}/artwork/${encodeURIComponent(id)}`,
   // An album's cover (from getAllAlbums: the path, and the track it's from).

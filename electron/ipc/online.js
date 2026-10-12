@@ -11,6 +11,7 @@ const genres = require('../online/genres')
 const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
 const { spelling } = require('../online/spelling')
+const { setNativePlaybackSourceResolver } = require('./nativePlayback')
 const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
 let accountSession
 
@@ -70,6 +71,15 @@ function registerOnlineHandlers(ipcMain) {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
   } })
+  setNativePlaybackSourceResolver(async (provider, id) => {
+    try {
+      if (provider === 'yt') await accountSession.credentials()
+      const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: false })
+      if (stream.type === 'file') return { kind: 'file', path: stream.file, mime: stream.mime || 'audio/*' }
+      if (stream.type === 'live') throw new Error('This addon stream is still being prepared and cannot use native playback.')
+      return { url: stream.url, headers: stream.headers || {}, mime: stream.mime || 'audio/*' }
+    } catch (error) { return { error: error.message } }
+  })
   const accountRequest = async work => { const auth = await accountSession.credentials(); return work(auth) }
   sources.pruneOnlineTracks(getDB())
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
