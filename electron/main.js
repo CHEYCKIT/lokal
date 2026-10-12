@@ -45,6 +45,7 @@ const { registerCastHandlers, shutdownCast } = require('./ipc/cast')
 // Online songs stream from lokal-stream://; the scheme has to be declared before the app is ready.
 try { registerStreamScheme(protocol) } catch (e) { console.error('registerStreamScheme:', e.message) }
 let isUpdating = false;
+let quitting = false // set once quitting starts: nothing opens a window again
 const APP_PROTOCOL = 'lokal'
 let pendingLastfmAuthToken = ''
 let pendingOpenFilePath = ''
@@ -140,8 +141,12 @@ if (!gotTheLock) {
     if (filePath) {
       emitOpenFilePath(filePath)
     }
-    // Opened again while closing (the window already gone): nothing to show.
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    // No window: macOS keeps the app running without one, so it gets a new
+    // one; opened again while quitting, there's nothing to show.
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      if (!quitting && app.isReady()) createWindow()
+      return
+    }
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.focus()
   })
@@ -370,7 +375,14 @@ function createWindow() {
   })
   mainWindow.webContents.on('render-process-gone', closeNativeOutput)
   mainWindow.webContents.on('did-start-loading', closeNativeOutput)
-  mainWindow.on('closed', closeNativeOutput)
+  mainWindow.on('closed', () => {
+    closeNativeOutput()
+    // The app ends with its window (macOS aside). Hidden helper windows (the
+    // fast YouTube engine's sandbox, its attestation page, Spotify's canvas
+    // lookup) would otherwise keep it running unseen, and opening Lokal again
+    // would only find that window-less copy.
+    if (process.platform !== 'darwin' || isUpdating) app.quit()
+  })
   attachFullscreenSleepBlocker(mainWindow, { app, powerSaveBlocker })
   const sendVisibility = (hidden) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:visibility', hidden) }
   mainWindow.on('minimize', () => sendVisibility(true))
@@ -744,7 +756,8 @@ ipcMain.handle('updater:install', () => {
     return app.getVersion()
   })
 
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+  // macOS: its window back from the Dock (hidden helper windows don't count).
+  app.on('activate', () => { if (!mainWindow || mainWindow.isDestroyed()) createWindow() })
   app.on('open-url', (event, url) => {
     event.preventDefault()
     const token = extractLastfmAuthToken(url)
@@ -773,6 +786,10 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   closeNativeOutput()
+  // The hidden helper windows go too.
+  try { require('./online/youtubeFast').forget() } catch {}
+  try { require('./online/poToken').reset() } catch {}
+  for (const window of BrowserWindow.getAllWindows()) { try { if (!window.isDestroyed()) window.destroy() } catch {} }
   try { shutdownActiveDownloads() } catch {}
   try { require('./spotiflac/packages').shutdown(require('./ipc/db').getDB()) } catch {}
   unregisterMediaShortcuts()
@@ -783,6 +800,7 @@ app.on('will-quit', () => {
 // quitting waits (a second at most) for that once, then carries on.
 let discordCleared = false
 app.on('before-quit', (event) => {
+  quitting = true
   if (isUpdating) {
     if (mainWindow) {
       mainWindow.destroy();
