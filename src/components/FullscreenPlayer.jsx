@@ -777,14 +777,13 @@ export default function FullscreenPlayer() {
               <span className="w-11 text-sm tabular-nums text-white/75">{fmt(duration)}</span>
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="mt-5 text-center" style={{ width: COVER_SIZE }}>
-                <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
-                <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
-                {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
-              </motion.div>
-            </AnimatePresence>
+            {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
+            <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="mt-5 text-center" style={{ width: COVER_SIZE }}>
+              <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
+              <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
+              {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
+            </motion.div>
           </div>
 
           {currentTrack && (

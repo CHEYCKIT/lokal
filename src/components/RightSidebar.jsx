@@ -344,7 +344,7 @@ export default function RightSidebar() {
                     } : null),
                   }}
                 >
-                  <AnimatePresence mode="wait">
+                  <AnimatePresence initial={false}>
                     {artSrc ? (
                       <motion.img key={currentTrack?.id} src={artSrc} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
@@ -359,8 +359,8 @@ export default function RightSidebar() {
                 <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>
                   {!fx && contextBlock}
 
-                  <AnimatePresence mode="wait">
-                    <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                  {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
+                    <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                       {currentTrack?.album ? (
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
@@ -384,7 +384,6 @@ export default function RightSidebar() {
                         <p className={fx ? 'text-sm text-white/70 mt-0.5' : 'text-xs text-muted mt-0.5'}>{currentTrack?.artist}</p>
                       )}
                     </motion.div>
-                  </AnimatePresence>
 
                   {fx && contextBlock}
 

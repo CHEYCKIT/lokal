@@ -726,6 +726,36 @@ export const usePlayerStore = create((set, get) => ({
     return true
   },
 
+  // Songs woven in among those coming up (a Flow's online finds), spread
+  // out, never before the very next one; only while `context` still plays.
+  insertUpcoming: (tracks, context) => {
+    const state = get()
+    if (!context?.id || state.playbackContext?.id !== context.id) return
+    const known = new Set(state.queue.map(track => track.id))
+    const extra = sanitizeTrackList(tracks).filter(track => !known.has(track.id))
+    if (!extra.length) return
+    const weave = (list, from) => {
+      const out = [...list]
+      const room = out.length - from // songs after the next one
+      extra.forEach((track, i) => {
+        const at = room > 0 ? from + Math.round(((i + 1) * room) / (extra.length + 1)) + i : out.length
+        out.splice(Math.min(at, out.length), 0, track)
+      })
+      return out
+    }
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    if (shuffled) {
+      set({
+        shuffleQueue: weave(state.shuffleQueue, state.shuffleIndex + 2),
+        queue: [...state.queue, ...extra],
+        ...(state.originalQueue.length ? { originalQueue: [...state.originalQueue, ...extra] } : {}),
+      })
+    } else {
+      const queue = weave(state.queue, state.queueIndex + 2)
+      set({ queue, ...(state.originalQueue.length ? { originalQueue: [...state.originalQueue, ...extra] } : {}) })
+    }
+  },
+
   // Songs played long ago let go of (all but the last `keep` before the one
   // playing), so they can be queued again: a queue holds each song once.
   dropPlayed: (keep) => {

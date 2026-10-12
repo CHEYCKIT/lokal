@@ -12,6 +12,8 @@
 //   recent       0 your all-time favourites … 1 what you've played lately
 //   genres       { genre: false } leaves a genre out, { genre: true } adds
 //                more of it
+//   source       where fresh finds also come from online: 'lastfm',
+//                'youtube', or 'library' (none); unset follows Discovery's
 //
 // Pure (no app state), so it's tested on its own (scripts/flow.test.mjs).
 
@@ -226,7 +228,15 @@ export function normalizeTuner(value) {
     const key = String(name || '').trim().toLowerCase()
     if (key && typeof on === 'boolean') genres[key] = on
   }
-  return { adventurous: unit(tuner.adventurous, DEFAULT_TUNER.adventurous), recent: unit(tuner.recent, DEFAULT_TUNER.recent), genres }
+  const normal = { adventurous: unit(tuner.adventurous, DEFAULT_TUNER.adventurous), recent: unit(tuner.recent, DEFAULT_TUNER.recent), genres }
+  // Where fresh finds come from online (src/flow/online.js): none set follows Home → Discovery's source.
+  if (FLOW_SOURCES.includes(tuner.source)) normal.source = tuner.source
+  return normal
 }
+
+export const FLOW_SOURCES = ['library', 'lastfm', 'youtube']
+
+/** The tuner's source of online finds, or Discovery's (`discoverySource`) when it has none of its own. */
+export const flowSource = (tuner, discoverySource) => (FLOW_SOURCES.includes(tuner?.source) ? tuner.source : discoverySource === 'youtube' ? 'youtube' : 'lastfm')
 
 export const sameTuner = (a, b) => JSON.stringify(normalizeTuner(a)) === JSON.stringify(normalizeTuner(b))

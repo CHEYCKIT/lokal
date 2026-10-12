@@ -3,19 +3,21 @@
 // The mood and tuner it plays with are in its playback context; applying
 // the tuner while it plays swaps the songs coming up for newly picked ones.
 //
-// With an adventurous tuner, a song recommended online (Last.fm or YouTube
-// Music, as set for Discovery) joins now and then among the library's.
+// Fresh finds also come from online (src/flow/online.js): songs Last.fm or
+// YouTube Music recommend (the tuner's choice, else Discovery's source), found
+// in the background and woven in among the library's; more of them the more
+// adventurous the tuner. Moods keep to the library (their songs are picked on
+// audio features online songs don't have).
 
 import { api } from '../api.js'
 import { usePlayerStore } from '../store/player.js'
-import { DEFAULT_TUNER, FLOW_MOODS, flowEligible, flowSongKey, normalizeTuner, pickFlow } from './engine.js'
-import { recommendationSession } from '../recommendationSession.js'
-import { resolveRecommendationTracks } from '../recommendations.js'
+import { DEFAULT_TUNER, FLOW_MOODS, flowEligible, flowSongKey, flowSource, isFresh, normalizeTuner, pickFlow } from './engine.js'
+import { songKey } from '../recommendations.js'
+import { onlineFinds, onlineShare } from './online.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
 const MORE_COUNT = 6
-const ONLINE_FROM = 0.5 // the tuner's adventurousness from which online finds join
 const RECENT_HELD = 30 // played it all: these last ones aren't played again yet
 
 const pools = new Map() // user -> { at, rows: Promise<rows> }
@@ -47,7 +49,14 @@ export function saveFlowSettings(userId, { mood, tuner }) {
 
 export const flowName = mood => (mood && mood !== 'flow' ? `Flow · ${FLOW_MOODS.find(item => item.id === mood)?.label || mood}` : 'Flow')
 
-const flowContext = (userId, mood, tuner) => ({ type: 'flow', id: `flow:${Date.now().toString(36)}`, name: flowName(mood), mood, tuner: normalizeTuner(tuner), userId: userId || 'guest' })
+const flowContext = (userId, mood, tuner, source) => ({ type: 'flow', id: `flow:${Date.now().toString(36)}`, name: flowName(mood), mood, tuner: normalizeTuner(tuner), userId: userId || 'guest', source })
+
+/** Where this tuner's online finds come from ('library': none), Discovery's source when it names none. */
+export async function sourceFor(tuner) {
+  if (normalizeTuner(tuner).source) return flowSource(tuner)
+  const settings = await Promise.resolve(api.getSettings?.()).catch(() => null)
+  return flowSource(tuner, settings?.recommendation_source)
+}
 
 /** The songs coming up, in play order (shuffled when shuffle is on). */
 export function upcoming(state) {
@@ -60,7 +69,9 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER }
   const pool = await flowPool(userId, { force: true })
   const tracks = pickFlow(pool, { count: START_COUNT, mood, tuner })
   if (!tracks.length) return 0
-  usePlayerStore.getState().playQueue(tracks, 0, flowContext(userId, mood, tuner))
+  const context = flowContext(userId, mood, tuner, await sourceFor(tuner))
+  usePlayerStore.getState().playQueue(tracks, 0, context)
+  weaveOnline(context, pool, START_COUNT).catch(() => {})
   return tracks.length
 }
 
@@ -78,7 +89,10 @@ export async function retuneFlow({ userId, mood, tuner }) {
   const order = playOrder(now)
   const played = order.slice(0, order.length - upcoming(now).length)
   const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
-  return usePlayerStore.getState().replaceUpcoming(tracks, flowContext(userId, mood, tuner))
+  const context = flowContext(userId, mood, tuner, await sourceFor(tuner))
+  const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context)
+  if (replaced) weaveOnline(context, pool, START_COUNT).catch(() => {})
+  return replaced
 }
 
 /** The queue in play order (the shuffle order when shuffled). */
@@ -116,24 +130,27 @@ export function continueFlow() {
       tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
     }
     usePlayerStore.getState().extendQueue(tracks, context)
-    if (tuner.adventurous >= ONLINE_FROM && (!context.mood || context.mood === 'flow')) await addOnlineFind(context, exclude).catch(() => {})
+    await weaveOnline(context, pool, MORE_COUNT).catch(() => {})
   })().finally(() => { adding = null })
   return adding
 }
 
-const onlineTried = new Set()
-
-/** One song recommended online, found and ready to play, at the end of the Flow. */
-async function addOnlineFind(context, exclude) {
-  const session = recommendationSession(context.userId)
-  const data = session.getSnapshot().data
-  if (!data) { session.ensure().catch(() => {}); return }
-  const candidates = [...(data.freshFinds || []), ...(data.candidates || [])]
-    .filter(track => track?.title && track?.artist && !exclude.has(flowSongKey(track)) && !onlineTried.has(flowSongKey(track)))
-  const pick = candidates[Math.floor(Math.random() * Math.min(candidates.length, 20))]
-  if (!pick) return
-  onlineTried.add(flowSongKey(pick))
+/**
+ * Online finds for the Flow `context`, woven in among its songs to come, in
+ * the background (finding a song online takes a moment). None for moods, or
+ * for a tuner set to the library.
+ */
+async function weaveOnline(context, pool, batch) {
+  if (context.mood && context.mood !== 'flow') return
+  // A Flow from before this was kept (its context names no source): the tuner's, or Discovery's.
+  const source = context.source || await sourceFor(context.tuner)
+  const count = onlineShare({ ...context.tuner, source }, batch)
+  if (!count) return
+  const state = usePlayerStore.getState()
+  // Not a find: songs in this Flow already, or ones the listener knows (liked or played here).
+  const exclude = new Set(state.queue.map(songKey))
+  for (const track of pool) if (!isFresh(track)) exclude.add(songKey(track))
   const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-  const [found] = await resolveRecommendationTracks([pick], api, { isCurrent })
-  if (found && isCurrent()) usePlayerStore.getState().extendQueue([found], context)
+  const found = await onlineFinds(source, { count, exclude, isCurrent })
+  if (found.length && isCurrent()) usePlayerStore.getState().insertUpcoming(found, context)
 }

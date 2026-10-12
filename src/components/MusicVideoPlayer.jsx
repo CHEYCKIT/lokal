@@ -386,12 +386,10 @@ export default function MusicVideoPlayer({ compact = false }) {
             <div className={`absolute left-8 right-8 bottom-7 flex flex-col gap-3 ${chromeHidden ? '' : 'pointer-events-auto'}`}>
               <div className="flex items-end justify-between gap-6">
                 <div className="min-w-0">
-                  <AnimatePresence mode="wait">
-                    <motion.div key={currentTrack.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.25 }}>
-                      <p className="text-xl font-semibold text-white truncate drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">{currentTrack.title}</p>
-                      <p className="text-sm text-white/70 truncate">{currentTrack.artist}</p>
-                    </motion.div>
-                  </AnimatePresence>
+                  <motion.div key={currentTrack.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+                    <p className="text-xl font-semibold text-white truncate drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">{currentTrack.title}</p>
+                    <p className="text-sm text-white/70 truncate">{currentTrack.artist}</p>
+                  </motion.div>
                 </div>
                 <div className="flex items-center gap-6 flex-shrink-0">
                   <button onClick={prev} title="Previous" aria-label="Previous" className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipBack size={26} fill="currentColor" /></button>
