@@ -31,6 +31,8 @@ function streamOptions() {
     // Settings -> Playback -> Music Video Quality.
     videoHeight: [1080, 720, 480].includes(Number(all.video_quality)) ? Number(all.video_quality) : 1080,
     ytdlp: findYtDlp(), cookieArgs: cookies.args, cookieBrowser: cookies.usedBrowser,
+    // Settings -> Playback -> Fast YouTube Playback (on unless turned off).
+    fast: all.yt_fast_engine === '0' ? null : require('../online/youtubeFast'),
   }
 }
 
@@ -66,6 +68,9 @@ function providers() {
 
 /** IPC: online:search, online:save (keep as ghost tracks), online:prepare (resolve a stream ahead of time, or get why it fails). */
 function registerOnlineHandlers(ipcMain) {
+  // The fast YouTube engine sets itself up a few seconds after launch, so the
+  // first song doesn't wait for it.
+  setTimeout(() => { try { if (streamOptions().fast) require('../online/youtubeFast').warm() } catch {} }, 5000).unref?.()
   accountSession ||= require('../online/youtubeSession').createYouTubeSession({ getSettings: settings, saveSettings: values => {
     const stmt = getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     getDB().transaction(() => { for (const [key, value] of Object.entries(values)) stmt.run(key, String(value)) })()
