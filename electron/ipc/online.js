@@ -616,7 +616,10 @@ async function videoStream(id, range, fetchImpl) {
   let cancelled = false
   const send = (controller, piece) => {
     const part = piece.body.subarray(next - piece.from, Math.min(piece.to, last) - piece.from + 1)
-    controller.enqueue(part)
+    // A copy: the kept piece is served again to the next request for it,
+    // and what's handed to the player may be taken over (transferred) or
+    // read from its whole buffer rather than this slice of it.
+    controller.enqueue(new Uint8Array(part))
     next += part.length
     if (next > last) controller.close()
   }
@@ -633,7 +636,12 @@ async function videoStream(id, range, fetchImpl) {
         controller.error(error)
       }
     },
-    cancel() { cancelled = true; dropped.abort() },
+    cancel() {
+      cancelled = true
+      dropped.abort()
+      // How far the player got before dropping it (0, or a piece's worth, says what it didn't take).
+      videoLog(id, `stream from ${start} dropped after ${next - start} bytes`)
+    },
   }, { highWaterMark: 0 })
   return new Response(body, {
     status: 206,
