@@ -149,6 +149,8 @@ function registerOnlineHandlers(ipcMain) {
   }).catch(() => null))
   ipcMain.handle('musicVideo:download', (_, trackId) => prepareMusicVideoFor(trackId, { download: true }).catch(e => ({ error: e.message })))
   ipcMain.handle('musicVideo:prepare', (_, trackId) => prepareMusicVideoFor(trackId).catch(e => ({ error: e.message })))
+  // Where a video that isn't downloaded is streamed from (see videoStreamBase).
+  ipcMain.handle('musicVideo:streamBase', () => videoStreamBase().catch(() => null))
   ipcMain.handle('musicVideo:deleteDownload', async (_, trackId) => {
     try {
       const video = await musicVideoFor(trackId)
@@ -647,6 +649,59 @@ async function videoStream(id, range, fetchImpl) {
     status: 206,
     headers: { 'content-type': first.mime, 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${last}/${first.total}`, 'content-length': String(last - start + 1) },
   })
+}
+
+// Music videos over plain HTTP, from a server of their own on this machine
+// only (127.0.0.1, a random port, a random token in every address). The
+// player's loader trusts HTTP for jumping around a file: from the custom
+// lokal-stream:// scheme it took the first piece of every stream after a
+// jump and dropped it, asked for the same bytes again, and gave up ("data
+// source error"). Same streams behind it (videoStream); lokal-stream://ytv/
+// stays for when this server can't start.
+let videoServer = null // Promise<base address, e.g. http://127.0.0.1:PORT/TOKEN>
+const VIDEO_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'range, x-lokal-why', 'access-control-expose-headers': 'content-range, content-length, accept-ranges' }
+
+function videoStreamBase() {
+  if (videoServer) return videoServer
+  const token = require('crypto').randomBytes(16).toString('hex')
+  const fetchImpl = (u, init) => require('electron').net.fetch(u, init)
+  const server = require('http').createServer(async (req, res) => {
+    const found = String(req.url || '').match(/^\/([0-9a-f]{32})\/ytv\/([\w-]{11})(?:\?.*)?$/)
+    if (!found || found[1] !== token) { res.writeHead(404); res.end(); return }
+    if (req.method === 'OPTIONS') { res.writeHead(204, VIDEO_CORS); res.end(); return }
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, VIDEO_CORS); res.end(); return }
+    const id = found[2]
+    const why = req.headers['x-lokal-why']
+    if (why) {
+      videoLog(id, `the player stopped: ${String(why).slice(0, 300)}${videoErrors.get(id) ? '' : ' (no request failed)'}`)
+      res.writeHead(200, { ...VIDEO_CORS, 'content-type': 'text/plain' })
+      res.end(videoErrors.get(id) || '')
+      return
+    }
+    let reader = null
+    res.on('close', () => { if (!res.writableEnded) reader?.cancel().catch(() => {}) })
+    try {
+      const answer = await videoStream(id, req.headers.range, fetchImpl)
+      res.writeHead(answer.status, { ...VIDEO_CORS, ...Object.fromEntries(answer.headers) })
+      if (req.method === 'HEAD' || res.destroyed) { answer.body?.cancel().catch(() => {}); res.end(); return }
+      reader = answer.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done || res.destroyed) break
+        if (!res.write(value)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve) })
+      }
+      res.end()
+    } catch (error) {
+      if (!res.headersSent) res.writeHead(502, { ...VIDEO_CORS, 'content-type': 'text/plain' })
+      res.end(String(error?.message || error))
+    }
+  })
+  videoServer = new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}/${token}`))
+  })
+  videoServer.catch(() => { videoServer = null })
+  return videoServer
 }
 
 /** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking; ytv: a music video's picture. */
