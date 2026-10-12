@@ -41,6 +41,9 @@ const MOOD_GENRES = {
   melancholy: ['sad', 'emo', 'slowcore', 'singer-songwriter', 'blues', 'darkwave', 'shoegaze', 'sadcore', 'indie folk', 'ballad'],
 }
 
+/** The listener's own plays of a song (flow:pool's user_plays; play_count when there's none). */
+export const playsOf = track => Math.max(0, Number(track?.user_plays ?? track?.play_count) || 0)
+
 const num = value => (value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? null : Number(value))
 const clamp01 = value => Math.min(1, Math.max(0, value))
 const near = (value, target, span) => clamp01(1 - Math.abs(value - target) / span)
@@ -97,7 +100,7 @@ export function moodScore(track, mood) {
  */
 export function familiarity(track, { recent = DEFAULT_TUNER.recent, maxPlays = 1, maxRecent = 1, now = Date.now() / 1000 } = {}) {
   const liked = track?.is_liked ? 1 : 0
-  const plays = Math.max(0, Number(track?.play_count) || 0)
+  const plays = playsOf(track)
   const recentPlays = Math.max(0, Number(track?.recent_plays) || 0)
   const likedAt = Number(track?.liked_at) || 0
   const allTime = 0.5 * liked + 0.5 * (plays ? Math.log1p(plays) / Math.log1p(Math.max(plays, maxPlays)) : 0)
@@ -106,7 +109,7 @@ export function familiarity(track, { recent = DEFAULT_TUNER.recent, maxPlays = 1
 }
 
 /** A song never played nor liked: a fresh find in your own library. */
-export const isFresh = track => !track?.is_liked && !(Number(track?.play_count) > 0) && !(Number(track?.recent_plays) > 0)
+export const isFresh = track => !track?.is_liked && !(playsOf(track) > 0) && !(Number(track?.recent_plays) > 0)
 
 /** The tuner's genre weight for a song: 0 left out, more than 1 for added genres. */
 export function genreWeight(track, genres = {}) {
@@ -125,7 +128,7 @@ export function genreWeight(track, genres = {}) {
 export function topGenres(tracks, limit = 8) {
   const counts = new Map()
   for (const track of tracks || []) {
-    const weight = track?.is_liked || Number(track?.play_count) > 0 ? 2 : 1
+    const weight = track?.is_liked || playsOf(track) > 0 ? 2 : 1
     for (const genre of trackGenres(track)) counts.set(genre, (counts.get(genre) || 0) + weight)
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([genre]) => genre)
@@ -157,7 +160,7 @@ export function pickFlow(pool, { count = 8, mood = 'flow', tuner = DEFAULT_TUNER
   let maxPlays = 1
   let maxRecent = 1
   for (const track of pool || []) {
-    maxPlays = Math.max(maxPlays, Number(track?.play_count) || 0)
+    maxPlays = Math.max(maxPlays, playsOf(track))
     maxRecent = Math.max(maxRecent, Number(track?.recent_plays) || 0)
   }
   const seen = new Set(exclude)
@@ -201,6 +204,17 @@ export function pickFlow(pool, { count = 8, mood = 'flow', tuner = DEFAULT_TUNER
     if (artists.length > ARTIST_GAP) artists.shift()
   }
   return picked
+}
+
+/** How many different songs of `pool` a Flow in this mood, with this tuner, can play. */
+export function flowEligible(pool, { mood = 'flow', tuner = DEFAULT_TUNER } = {}) {
+  const seen = new Set()
+  for (const track of pool || []) {
+    if (!track?.id || !genreWeight(track, tuner?.genres)) continue
+    if (mood !== 'flow' && moodScore(track, mood) < MOOD_FIT) continue
+    seen.add(flowSongKey(track))
+  }
+  return seen.size
 }
 
 /** The tuner, as saved and as the page edits it: numbers in range, genres a plain map. */

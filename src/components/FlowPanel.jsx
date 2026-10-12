@@ -8,12 +8,13 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Brain, CloudRain, Dumbbell, Heart, Infinity as InfinityIcon, ListPlus, Pause, PartyPopper, Play, Plus, RotateCcw, SlidersHorizontal, Waves, X } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
+import { useShallow } from 'zustand/react/shallow'
 import TrackList from './TrackList'
 import { showToast } from './Toaster'
 import { saveAsPlaylist } from '../trackActions'
 import { plural } from '../plural'
 import { FLOW_MOODS, normalizeTuner, sameTuner, topGenres, trackGenres, DEFAULT_TUNER } from '../flow/engine'
-import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow } from '../flow/session'
+import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow, upcoming } from '../flow/session'
 
 const MOOD_ICONS = { flow: InfinityIcon, love: Heart, workout: Dumbbell, chill: Waves, party: PartyPopper, focus: Brain, melancholy: CloudRain }
 const MOOD_HINTS = {
@@ -127,10 +128,11 @@ export default function FlowPanel({ userId }) {
   const context = usePlayerStore(state => state.playbackContext)
   const isPlaying = usePlayerStore(state => state.isPlaying)
   const togglePlay = usePlayerStore(state => state.togglePlay)
-  const queue = usePlayerStore(state => state.queue)
-  const queueIndex = usePlayerStore(state => state.queueIndex)
+  // In play order: the shuffle order when shuffle is on.
+  const coming = usePlayerStore(useShallow(state => (state.playbackContext?.type === 'flow' ? upcoming(state) : [])))
+  const currentTrack = usePlayerStore(state => state.currentTrack)
   const flowOn = context?.type === 'flow'
-  const comingUp = flowOn ? queue.slice(queueIndex + 1, queueIndex + 6) : []
+  const comingUp = coming.slice(0, 5)
 
   useEffect(() => {
     let live = true
@@ -177,7 +179,7 @@ export default function FlowPanel({ userId }) {
     if (savingList || !flowOn) return
     setSavingList(true)
     try {
-      const tracks = queue.slice(Math.max(0, queueIndex))
+      const tracks = [currentTrack, ...coming].filter(Boolean)
       const name = `${flowName(context.mood)} - ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`
       const playlist = await saveAsPlaylist(name, tracks, { userId, description: 'Saved from Flow' })
       showToast(playlist ? `Saved "${name}" (${plural(tracks.length, 'song')})` : 'Could not create playlist')

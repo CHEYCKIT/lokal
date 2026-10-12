@@ -2838,9 +2838,16 @@ Earth, Wind & Fire"
 function SpotifyLikesRow({ hasCookie, userId }) {
   const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { Promise.resolve(api.spotifyLikesStatus()).then(setStatus).catch(() => {}) }, [])
+  useEffect(() => {
+    const unknown = { enabled: false, unknown: true, error: 'Could not read whether sync is on. Reopen Settings to try again.' }
+    Promise.resolve(api.spotifyLikesStatus()).then(next => setStatus(next || unknown)).catch(() => setStatus(unknown))
+  }, [])
   const on = !!status?.enabled
+  // Until its state is known, the switch waits: turning "on" an already-on
+  // sync would move its starting point past likes not yet brought in.
+  const loading = status === null || !!status.unknown
   const toggle = async () => {
+    if (loading || busy) return
     setBusy(true)
     try {
       const next = on ? await api.spotifyLikesDisable() : await api.spotifyLikesEnable(userId)
@@ -2855,9 +2862,9 @@ function SpotifyLikesRow({ hasCookie, userId }) {
         : 'Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.'
   return (
     <Row label="Sync Likes" desc={desc}>
-      <button disabled={!hasCookie || busy} aria-pressed={on} onClick={toggle}
+      <button disabled={!hasCookie || busy || loading} aria-pressed={on} onClick={toggle}
         className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${on ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-        {busy ? '…' : on ? 'On' : 'Off'}
+        {busy || loading ? '…' : on ? 'On' : 'Off'}
       </button>
     </Row>
   )

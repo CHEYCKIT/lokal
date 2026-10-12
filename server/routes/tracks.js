@@ -583,6 +583,11 @@ router.get('/library-keys', (req, res) => {
   try { res.json(require('../../electron/ipc/libraryKeys').libraryKeys(getDB())) } catch (e) { res.json([]) }
 })
 
+// Flow's songs: the library with this user's likes and plays (electron/ipc/flow.js).
+router.get('/flow-pool', (req, res) => {
+  try { res.json(require('../../electron/ipc/flow').flowPool(getDB(), String(req.query.userId || 'guest'))) } catch (e) { res.json({ error: e.message }) }
+})
+
 router.get('/search', (req, res) => {
   // Every word in one of the fields, in any order (electron/librarySearch.js).
   res.json(require('../../electron/librarySearch').searchTracks(getDB(), String(req.query.q || ''), 60))

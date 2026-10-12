@@ -14,7 +14,8 @@
 // request per look. Unlikes aren't mirrored either way.
 //
 // Settings: spotify_likes_sync '1' | '', spotify_likes_since (ms, the newest
-// like already handled), spotify_likes_user (the Lokal user they're for).
+// like already handled: moved on by spotifyLikes:ack once the window has liked
+// them here), spotify_likes_user (the Lokal user they're for).
 
 const PUSHED_KEEP_MS = 30 * 60 * 1000 // Lokal's own likes, not brought back when Spotify lists them
 
@@ -50,7 +51,9 @@ function registerSpotifyLikesHandlers(ipcMain) {
 
   ipcMain.handle('spotifyLikes:disable', () => { save('spotify_likes_sync', ''); return status() })
 
-  // Songs liked on Spotify since the last look, oldest first, for the window to like in Lokal.
+  // Songs liked on Spotify since the last look, oldest first, for the window to
+  // like in Lokal. Where to look from next moves on only when the window says
+  // it has them (spotifyLikes:ack): one it couldn't like yet comes back.
   ipcMain.handle('spotifyLikes:poll', async () => {
     const now = status()
     if (!now.enabled || !now.since) return { items: [] }
@@ -58,12 +61,16 @@ function registerSpotifyLikesHandlers(ipcMain) {
     polling = (async () => {
       try {
         const { items, newest } = await spotify.likedSince(settings().spotify_sp_dc, now.since)
-        if (newest > now.since) save('spotify_likes_since', newest)
+        // Turned off, or on again for someone else, meanwhile: this look is theirs no more.
+        const after = status()
+        if (!after.enabled || after.userId !== now.userId || after.since !== now.since) return { items: [] }
         const cutoff = Date.now() - PUSHED_KEEP_MS
         for (const [uri, at] of pushed) if (at < cutoff) pushed.delete(uri)
         const fresh = items.filter(item => !pushed.has(item.uri)).reverse()
-        if (fresh.length) log(`spotify likes: ${fresh.length} new on Spotify`)
-        return { items: fresh, userId: now.userId }
+        // Nothing for the window (or only Lokal's own likes): the look is done here.
+        if (!fresh.length) { if (newest > now.since) save('spotify_likes_since', newest); return { items: [] } }
+        log(`spotify likes: ${fresh.length} new on Spotify`)
+        return { items: fresh, userId: now.userId, since: now.since, newest }
       } catch (error) {
         return { items: [], error: error.message }
       } finally {
@@ -71,6 +78,14 @@ function registerSpotifyLikesHandlers(ipcMain) {
       }
     })()
     return polling
+  })
+
+  // The window has liked (or given up on) Spotify's likes up to `through` (ms).
+  ipcMain.handle('spotifyLikes:ack', (_, { userId, since, through } = {}) => {
+    const now = status()
+    if (!now.enabled || now.userId !== userId || now.since !== since || !(Number(through) > now.since)) return status()
+    save('spotify_likes_since', Number(through))
+    return status()
   })
 
   // A song liked in Lokal: liked on Spotify too.

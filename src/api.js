@@ -220,14 +220,11 @@ export const api = {
   spotifyLikesEnable: (userId) => isE() && el()?.spotifyLikesEnable ? el().spotifyLikesEnable(userId) : Promise.resolve({ enabled: false, error: 'Only in the desktop app' }),
   spotifyLikesDisable: () => isE() && el()?.spotifyLikesDisable ? el().spotifyLikesDisable() : Promise.resolve({ enabled: false }),
   spotifyLikesPoll: () => isE() && el()?.spotifyLikesPoll ? el().spotifyLikesPoll() : Promise.resolve({ items: [] }),
+  spotifyLikesAck: (progress) => isE() && el()?.spotifyLikesAck ? el().spotifyLikesAck(progress) : Promise.resolve(null),
   // AutoMix: a song's analysis (desktop; electron/automix), null when it can't be.
   automixAnalyze: (track) => isE() && el()?.automixAnalyze ? el().automixAnalyze(track) : Promise.resolve(null),
-  // Flow's songs: the library with likes and plays (electron/ipc/flow.js); on the web, liked songs and the library.
-  flowPool: (uid) => isE() && el()?.flowPool ? el().flowPool(uid || 'guest') : Promise.all([api.getLikedTracks(uid), api.getTracks()]).then(([liked, all]) => {
-    const likedIds = new Set((Array.isArray(liked) ? liked : []).map(t => t.id))
-    const rows = Array.isArray(all) ? all : all?.tracks || []
-    return [...(Array.isArray(liked) ? liked : []).map(t => ({ ...t, is_liked: 1 })), ...rows.filter(t => !likedIds.has(t.id))]
-  }),
+  // Flow's songs: the library with this user's likes and plays (electron/ipc/flow.js; the server's /tracks/flow-pool on the web).
+  flowPool: (uid) => isE() && el()?.flowPool ? el().flowPool(uid || 'guest') : apiFetch(`/tracks/flow-pool?userId=${encodeURIComponent(uid || 'guest')}`),
   spotifyLikesPush: (track) => isE() && el()?.spotifyLikesPush ? el().spotifyLikesPush(track) : Promise.resolve({ ok: false }),
   getLikedTracks: (uid) => isE() ? el().getLikedTracks(uid) : apiFetch(`/tracks/liked?userId=${uid||'guest'}`),
   incrementPlayTime: (tid, uid, s) => isE() ? el().incrementPlayTime(tid, uid, s) : Promise.resolve(),

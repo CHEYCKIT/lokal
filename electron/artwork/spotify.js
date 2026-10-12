@@ -451,13 +451,19 @@ async function canvasFromCanvaz(t, uri) {
 
 // One lookup at a time: they share the tokens, and it keeps us polite.
 let queue = Promise.resolve()
+/** Runs `work` after every lookup already waiting (and before any asked for later). */
+function serial(work) {
+  const job = queue.then(work)
+  queue = job.catch(() => {})
+  return job
+}
 
 /**
  * Provider for motion.js. `helpers` are motion.js' matching functions.
  * Throws a TransientError (not cached as "no canvas") when Spotify itself failed.
  */
 function fromSpotify(track, settings, helpers) {
-  const job = queue.then(async () => {
+  return serial(async () => {
     const t = await getTokens(settings.spotify_sp_dc)
     if (!t) return null
     const uri = await findTrackUri(t, track, helpers)
@@ -465,8 +471,6 @@ function fromSpotify(track, settings, helpers) {
     const url = await canvasFor(t, uri)
     return url ? { url, kind: 'mp4', source: 'spotify', tall: true } : null
   })
-  queue = job.catch(() => {})
-  return job
 }
 
 /** Settings' "Save & Test": can this cookie get a signed-in token? */
@@ -601,7 +605,8 @@ async function likedSince(rawCookie, since, { fetchPage } = {}) {
 /** Likes a song on Spotify (Lokal → Spotify): found by title and artist, then saved to Liked Songs. Answers its uri, or null when Spotify doesn't have it. */
 async function likeOnSpotify(rawCookie, track) {
   if (!cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) first.')
-  return queue.then(async () => {
+  // In turn: likes made together don't search and save on Spotify at once.
+  return serial(async () => {
     const t = await getTokens(rawCookie)
     if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
     const norm = value => String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()

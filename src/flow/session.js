@@ -6,16 +6,17 @@
 // With an adventurous tuner, a song recommended online (Last.fm or YouTube
 // Music, as set for Discovery) joins now and then among the library's.
 
-import { api } from '../api'
-import { usePlayerStore } from '../store/player'
-import { DEFAULT_TUNER, FLOW_MOODS, flowSongKey, normalizeTuner, pickFlow } from './engine'
-import { recommendationSession } from '../recommendationSession'
-import { resolveRecommendationTracks } from '../recommendations'
+import { api } from '../api.js'
+import { usePlayerStore } from '../store/player.js'
+import { DEFAULT_TUNER, FLOW_MOODS, flowEligible, flowSongKey, normalizeTuner, pickFlow } from './engine.js'
+import { recommendationSession } from '../recommendationSession.js'
+import { resolveRecommendationTracks } from '../recommendations.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
 const MORE_COUNT = 6
 const ONLINE_FROM = 0.5 // the tuner's adventurousness from which online finds join
+const RECENT_HELD = 30 // played it all: these last ones aren't played again yet
 
 const pools = new Map() // user -> { at, rows: Promise<rows> }
 
@@ -49,7 +50,7 @@ export const flowName = mood => (mood && mood !== 'flow' ? `Flow · ${FLOW_MOODS
 const flowContext = (userId, mood, tuner) => ({ type: 'flow', id: `flow:${Date.now().toString(36)}`, name: flowName(mood), mood, tuner: normalizeTuner(tuner), userId: userId || 'guest' })
 
 /** The songs coming up, in play order (shuffled when shuffle is on). */
-function upcoming(state) {
+export function upcoming(state) {
   if (state.shuffle && state.shuffleQueue.length) return state.shuffleQueue.slice(state.shuffleIndex + 1)
   return state.queue.slice(state.queueIndex + 1)
 }
@@ -63,15 +64,25 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER }
   return tracks.length
 }
 
-/** A Flow that's playing, its songs coming up picked again for a new mood or tuner. */
+/**
+ * A Flow that's playing, its songs coming up picked again for a new mood or
+ * tuner. What has played stays in the queue (and its history), so a retuned
+ * Flow still doesn't play those again.
+ */
 export async function retuneFlow({ userId, mood, tuner }) {
   const state = usePlayerStore.getState()
   if (state.playbackContext?.type !== 'flow' || !state.currentTrack) return false
   const pool = await flowPool(userId)
-  const exclude = new Set([...(state.playHistory || []).map(id => state.queue.find(track => track.id === id)).filter(Boolean), state.currentTrack].map(flowSongKey))
-  const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude, lastTracks: [state.currentTrack] })
-  return usePlayerStore.getState().continueAsQueue([state.currentTrack, ...tracks], flowContext(userId, mood, tuner))
+  const now = usePlayerStore.getState()
+  if (now.playbackContext?.id !== state.playbackContext.id || !now.currentTrack) return false
+  const order = playOrder(now)
+  const played = order.slice(0, order.length - upcoming(now).length)
+  const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
+  return usePlayerStore.getState().replaceUpcoming(tracks, flowContext(userId, mood, tuner))
 }
+
+/** The queue in play order (the shuffle order when shuffled). */
+const playOrder = state => (state.shuffle && state.shuffleQueue.length ? state.shuffleQueue : state.queue)
 
 /** A Flow playing with few songs left (App.jsx asks on each time update). */
 export function flowNeedsMore(state) {
@@ -91,11 +102,19 @@ export function continueFlow() {
     const pool = await flowPool(context.userId)
     const now = usePlayerStore.getState()
     if (now.playbackContext?.id !== context.id) return
+    // Everything this Flow has played or queued is in its queue: none of it again.
     const exclude = new Set(now.queue.map(flowSongKey))
-    const order = now.shuffle && now.shuffleQueue.length ? now.shuffleQueue : now.queue
-    let tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude, lastTracks: order.slice(-3) })
-    // Played it all: the songs heard longest ago come round again.
-    if (!tracks.length) tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(now.queue.slice(-30).map(flowSongKey)), lastTracks: order.slice(-3) })
+    const lastTracks = playOrder(now).slice(-3)
+    let tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude, lastTracks })
+    if (!tracks.length && pool.length) {
+      // Played it all: the songs heard longest ago come round again. Only the
+      // last few stay held back (fewer for a small library, so some are left).
+      const eligible = flowEligible(pool, { mood: context.mood, tuner })
+      usePlayerStore.getState().dropPlayed(Math.min(RECENT_HELD, Math.floor(eligible / 2)))
+      const trimmed = usePlayerStore.getState()
+      if (trimmed.playbackContext?.id !== context.id) return
+      tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
+    }
     usePlayerStore.getState().extendQueue(tracks, context)
     if (tuner.adventurous >= ONLINE_FROM && (!context.mood || context.mood === 'flow')) await addOnlineFind(context, exclude).catch(() => {})
   })().finally(() => { adding = null })

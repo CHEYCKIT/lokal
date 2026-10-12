@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { pickFlow, moodScore, familiarity, genreWeight, topGenres, trackGenres, normalizeTuner, flowSongKey } from '../src/flow/engine.js'
+import { pickFlow, moodScore, familiarity, genreWeight, topGenres, trackGenres, normalizeTuner, flowSongKey, flowEligible, isFresh, playsOf } from '../src/flow/engine.js'
 
 // A seeded random, so picks are the same each run.
 function seeded(seed = 1) {
@@ -84,7 +84,7 @@ test("the pool: the library's playable songs with likes and recent plays", async
   const db = new DatabaseSync(':memory:')
   db.exec(`CREATE TABLE tracks (id TEXT PRIMARY KEY, file_path TEXT, title TEXT, artist TEXT, play_count INTEGER DEFAULT 0);
     CREATE TABLE user_likes (user_id TEXT, track_id TEXT, liked_at INTEGER, PRIMARY KEY (user_id, track_id));
-    CREATE TABLE play_history (id INTEGER PRIMARY KEY, user_id TEXT, track_id TEXT, played_at INTEGER);`)
+    CREATE TABLE play_history (id INTEGER PRIMARY KEY, user_id TEXT, track_id TEXT, seconds_played INTEGER DEFAULT 0, played_at INTEGER);`)
   const add = db.prepare('INSERT INTO tracks (id, file_path, title, artist, play_count) VALUES (?, ?, ?, ?, ?)')
   add.run('liked', '/a.flac', 'A', 'X', 0)
   add.run('played', '/b.flac', 'B', 'X', 4)
@@ -94,12 +94,34 @@ test("the pool: the library's playable songs with likes and recent plays", async
   db.prepare('INSERT INTO user_likes VALUES (?, ?, ?)').run('u1', 'liked', 100)
   db.prepare('INSERT INTO user_likes VALUES (?, ?, ?)').run('u2', 'new', 100) // another user's like
   const now = Math.floor(Date.now() / 1000)
-  db.prepare('INSERT INTO play_history (user_id, track_id, played_at) VALUES (?, ?, ?)').run('u1', 'played', now - 3600)
-  db.prepare('INSERT INTO play_history (user_id, track_id, played_at) VALUES (?, ?, ?)').run('u1', 'played', now - 90 * 86400)
+  const play = db.prepare('INSERT INTO play_history (user_id, track_id, seconds_played, played_at) VALUES (?, ?, ?, ?)')
+  play.run('u1', 'played', 200, now - 3600)
+  play.run('u1', 'played', 0, now - 90 * 86400) // from before listens were timed
+  play.run('u1', 'new', 5, now - 60) // a skip: not a play
+  play.run('u2', 'new', 200, now - 60) // another profile's play
   db.exec("CREATE TABLE track_errors (track_id TEXT PRIMARY KEY, message TEXT NOT NULL, at INTEGER NOT NULL); INSERT INTO track_errors VALUES ('broken', 'gone', 1)")
   const rows = Object.fromEntries(flowPool(db, 'u1').map(row => [row.id, row]))
   assert.deepEqual(Object.keys(rows).sort(), ['liked', 'new', 'played'])
   assert.equal(rows.liked.is_liked, 1)
   assert.equal(rows.new.is_liked, 0)
   assert.equal(rows.played.recent_plays, 1)
+  assert.equal(rows.played.user_plays, 2)
+  // Another profile's plays (and this one's skips) don't make it a favourite here.
+  assert.equal(rows.new.user_plays, 0)
+  assert.equal(rows.broken, undefined)
+  assert.equal(isFresh(rows.new), true)
+  assert.equal(isFresh(rows.played), false)
+})
+
+test('Flow counts the listener\'s own plays, not the library-wide count', () => {
+  assert.equal(playsOf({ play_count: 40, user_plays: 0 }), 0)
+  assert.equal(playsOf({ play_count: 40 }), 40) // no per-user count (an older pool): the shared one
+  assert.equal(isFresh({ play_count: 40, user_plays: 0 }), true)
+})
+
+test('how many songs a mood and tuner can play', () => {
+  const pool = [song(1, { genre: 'Rock', energy: 0.9, danceability: 0.8, tempo: 135 }), song(2, { genre: 'Jazz', energy: 0.1, tempo: 70 }), song(3, { genre: 'Rock', energy: 0.95, tempo: 140 })]
+  assert.equal(flowEligible(pool), 3)
+  assert.equal(flowEligible(pool, { mood: 'workout' }), 2)
+  assert.equal(flowEligible(pool, { tuner: { genres: { rock: false } } }), 1)
 })

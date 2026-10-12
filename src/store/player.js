@@ -705,6 +705,45 @@ export const usePlayerStore = create((set, get) => ({
     return true
   },
 
+  // The songs still to come replaced (a Flow retuned): what has played, and
+  // the song playing, stay as they are, history included.
+  replaceUpcoming: (tracks, context = null) => {
+    const state = get()
+    if (!state.currentTrack) return false
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const kept = shuffled ? state.shuffleQueue.slice(0, state.shuffleIndex + 1) : state.queue.slice(0, state.queueIndex + 1)
+    const keptIds = new Set(kept.map(track => track.id))
+    const next = sanitizeTrackList(tracks).filter(track => !keptIds.has(track.id))
+    if (shuffled) {
+      const queue = [...state.queue.filter(track => keptIds.has(track.id)), ...next]
+      set({
+        shuffleQueue: [...kept, ...next], queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack.id),
+        originalQueue: queue, playbackContext: context, futureHistory: [],
+      })
+    } else {
+      set({ queue: [...kept, ...next], playbackContext: context, futureHistory: [] })
+    }
+    return true
+  },
+
+  // Songs played long ago let go of (all but the last `keep` before the one
+  // playing), so they can be queued again: a queue holds each song once.
+  dropPlayed: (keep) => {
+    const state = get()
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const index = shuffled ? state.shuffleIndex : state.queueIndex
+    const drop = Math.max(0, index - Math.max(0, keep))
+    if (!drop) return
+    const order = shuffled ? state.shuffleQueue : state.queue
+    const gone = new Set(order.slice(0, drop).map(track => track.id))
+    const queue = state.queue.filter(track => !gone.has(track.id))
+    set({
+      queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack?.id),
+      ...(shuffled ? { shuffleQueue: state.shuffleQueue.slice(drop), shuffleIndex: state.shuffleIndex - drop } : {}),
+      ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(track => !gone.has(track.id)) } : {}),
+    })
+  },
+
   // More songs at the end of the queue that's playing (a radio still being
   // built), only while that queue is still the one playing: its context's id
   // has to match. Songs already in it aren't added twice.

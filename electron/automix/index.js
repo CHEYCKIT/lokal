@@ -31,11 +31,16 @@ function analyzer() {
     if (error) job.reject(new Error(error))
     else job.resolve(result)
   })
-  worker.on('error', error => {
+  // Crashed or exited (killed for memory, say): the analyses waiting on it fail
+  // rather than wait forever, and the next one starts a new worker.
+  const self = worker
+  const fail = error => {
     for (const job of waiting.values()) job.reject(error)
     waiting.clear()
-    worker = null
-  })
+    if (worker === self) worker = null
+  }
+  worker.on('error', fail)
+  worker.on('exit', code => fail(new Error(`The analysis worker stopped (${code})`)))
   return worker
 }
 
@@ -53,7 +58,8 @@ function decode(ffmpeg, input, headers = null) {
   return new Promise((resolve, reject) => {
     const args = ['-v', 'error', '-nostdin']
     if (headers && Object.keys(headers).length) args.push('-headers', Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join(''))
-    args.push('-i', input, '-vn', '-t', String(MAX_SECONDS), '-ac', '1', '-ar', String(RATE), '-f', 'f32le', 'pipe:1')
+    // A second past the limit, so a longer one shows as longer (and isn't analysed).
+    args.push('-i', input, '-vn', '-t', String(MAX_SECONDS + 1), '-ac', '1', '-ar', String(RATE), '-f', 'f32le', 'pipe:1')
     const child = spawn(ffmpeg, args, { windowsHide: true })
     const chunks = []
     let size = 0
@@ -64,7 +70,8 @@ function decode(ffmpeg, input, headers = null) {
     child.on('error', error => { clearTimeout(timer); reject(error) })
     child.on('close', code => {
       clearTimeout(timer)
-      if (code !== 0 && !size) { reject(new Error(errors.trim().split('\n').pop() || `ffmpeg exited with ${code}`)); return }
+      // Failed part way: what came out is part of the song, not the song.
+      if (code !== 0) { reject(new Error(errors.trim().split('\n').pop() || `ffmpeg exited with ${code}`)); return }
       resolve(Buffer.concat(chunks, size - (size % 4)))
     })
   })
@@ -83,7 +90,10 @@ function analysisFor({ db, key, source, ffmpeg, trackId = null, log = () => {} }
   ensureTable(db)
   const row = db.prepare('SELECT version, data FROM track_analysis WHERE key = ?').get(key)
   if (row && row.version === VERSION) {
-    try { return Promise.resolve(JSON.parse(row.data)) } catch {}
+    try {
+      const data = JSON.parse(row.data)
+      return Promise.resolve(data?.tooLong ? null : data)
+    } catch {}
   }
   if (running.has(key)) return running.get(key)
   const job = (async () => {
@@ -95,6 +105,13 @@ function analysisFor({ db, key, source, ffmpeg, trackId = null, log = () => {} }
       const started = Date.now()
       const pcm = await decode(binary, where.file || where.url, where.headers)
       if (pcm.length < RATE * 4 * 5) return null // under 5 s: nothing to plan with
+      if (pcm.length > RATE * 4 * MAX_SECONDS) {
+        // Longer than the limit: its end was never heard, so it isn't planned
+        // from (remembered, so it isn't decoded again each time).
+        db.prepare('INSERT OR REPLACE INTO track_analysis (key, version, data) VALUES (?, ?, ?)').run(key, VERSION, JSON.stringify({ tooLong: true }))
+        log(`automix: ${key} is over ${MAX_SECONDS / 60} minutes, not analysed`)
+        return null
+      }
       const result = await analyzePcm(pcm)
       db.prepare('INSERT OR REPLACE INTO track_analysis (key, version, data) VALUES (?, ?, ?)').run(key, VERSION, JSON.stringify(result))
       // A library song's tempo and key, when it has none of its own (Flow's moods use them).
