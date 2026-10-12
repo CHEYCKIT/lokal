@@ -274,7 +274,35 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
   if (accountSession) await accountSession.credentials().catch(() => {})
   const { findFfmpeg } = require('./tools')
   const options = streamOptions()
-  const canStream = !!options.ytdlp
+  // The fast engine plays YouTube without yt-dlp (and falls back to it when there).
+  const canStream = !!options.ytdlp || !!options.fast
+  const ytdlpSearch = query => runJsonSearch(options.ytdlp, query, entry => ({
+    ...entry,
+    id: entry.id,
+    videoId: entry.id,
+    artist: entry.channel || entry.uploader || '',
+    artists: [entry.channel || entry.uploader || ''].filter(Boolean),
+    kind: 'video',
+    official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
+    url: `https://www.youtube.com/watch?v=${entry.id}`,
+  }), 1, 10, undefined, { timeoutMs: 15000 })
+  // youtube.com's own search first (a request, under a second); yt-dlp's when that fails.
+  const fastSearch = async query => {
+    try {
+      return (await require('../online/videoPreview').searchVideos(query)).slice(0, 10).map(entry => ({
+        ...entry,
+        videoId: entry.id,
+        artist: entry.channel,
+        artists: [entry.channel].filter(Boolean),
+        kind: 'video',
+        official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title} ${entry.channel}`),
+      }))
+    } catch (error) {
+      require('electron-log').info(`YouTube fast engine (video): search through yt-dlp (${String(error?.message || error).slice(0, 200)})`)
+      if (!options.ytdlp) throw error
+      return ytdlpSearch(query)
+    }
+  }
   const video = await matcher.findMusicVideo(track, {
     ffmpeg: findFfmpeg(),
     onProgress,
@@ -288,16 +316,7 @@ async function musicVideoFor(trackId, { onProgress } = {}) {
       const media = await youtube.resolveStream(item.videoId, { ...options, quality: 'video' })
       return { input: media.url, headers: media.headers }
     }, item.duration || track.duration),
-    youtubeSearch: canStream ? query => runJsonSearch(options.ytdlp, query, entry => ({
-      ...entry,
-      id: entry.id,
-      videoId: entry.id,
-      artist: entry.channel || entry.uploader || '',
-      artists: [entry.channel || entry.uploader || ''].filter(Boolean),
-      kind: 'video',
-      official: /(?:official\s+(?:music\s+)?video|VEVO$)/i.test(`${entry.title || ''} ${entry.channel || entry.uploader || ''}`),
-      url: `https://www.youtube.com/watch?v=${entry.id}`,
-    }), 1, 10, undefined, { timeoutMs: 15000 }) : null,
+    youtubeSearch: options.fast ? fastSearch : options.ytdlp ? ytdlpSearch : null,
     cacheFile,
     log: message => require('electron-log').info(message),
   })

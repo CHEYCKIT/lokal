@@ -5,6 +5,7 @@
 // six hours (its link stops working at some point; the card then skips it and
 // the next look asks again), "none" for a day. A video YouTube shows no
 // animated preview for keeps its still thumbnail: no slideshow stand-in.
+// The same youtube.com search serves the music video lookup (searchVideos).
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000
@@ -91,6 +92,53 @@ function animatedPreview(videoId, query, { fetchImpl = (...a) => fetch(...a), no
   return job
 }
 
+/** "3:45" / "1:02:03" -> seconds, or null. */
+function seconds(text) {
+  const parts = String(text || '').split(':').map(Number)
+  if (!parts.length || parts.some(n => !Number.isFinite(n))) return null
+  return parts.reduce((total, n) => total * 60 + n, 0)
+}
+
+/** The videos in a youtube.com search response: { id, title, channel, duration, url }. */
+function searchResults(response) {
+  const found = []
+  const walk = node => {
+    if (!node || typeof node !== 'object') return
+    const video = node.videoRenderer
+    if (video?.videoId && VIDEO_ID.test(video.videoId)) {
+      found.push({
+        id: video.videoId,
+        title: video.title?.runs?.map(run => run.text).join('') || video.title?.simpleText || '',
+        channel: video.ownerText?.runs?.[0]?.text || video.longBylineText?.runs?.[0]?.text || '',
+        duration: seconds(video.lengthText?.simpleText),
+        url: `https://www.youtube.com/watch?v=${video.videoId}`,
+      })
+      return
+    }
+    for (const value of Object.values(node)) walk(value)
+  }
+  walk(response)
+  return found
+}
+
+/**
+ * A youtube.com search, the same one a browser makes (the music video lookup
+ * uses it instead of a yt-dlp search: a request, not a program started).
+ * Throws when YouTube can't be reached.
+ */
+async function searchVideos(query, { fetchImpl = (...a) => fetch(...a), now = Date.now } = {}) {
+  const text = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (!text) return []
+  const { clientVersion, visitor } = await webSession(fetchImpl, now)
+  const body = JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion, hl: 'en', gl: 'US', visitorData: visitor, userAgent: UA } }, query: text })
+  const response = await fetchText(fetchImpl, 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'user-agent': UA, ...(visitor ? { 'x-goog-visitor-id': visitor } : {}) },
+    body,
+  })
+  return searchResults(JSON.parse(response))
+}
+
 function forget() { remembered.clear(); session = null; queue = Promise.resolve() }
 
-module.exports = { animatedPreview, movingThumbnail, forget }
+module.exports = { animatedPreview, movingThumbnail, searchVideos, searchResults, forget }

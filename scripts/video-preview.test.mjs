@@ -64,3 +64,18 @@ test('one search at a time; bad ids and failures cost nothing and are not rememb
   assert.equal(await preview.animatedPreview('aaaaaaaaaaa', 'q', { fetchImpl: offline }), null)
   assert.equal(calls, 2, 'a failure is not remembered as "none"')
 })
+
+test('the music video lookup\'s youtube.com search: id, title, channel and length of each video', async () => {
+  preview.forget()
+  const video = { videoRenderer: { videoId: 'kffacxfA7G4', title: { runs: [{ text: 'Justin Bieber - Baby ' }, { text: '(Official Music Video)' }] }, ownerText: { runs: [{ text: 'JustinBieberVEVO' }] }, lengthText: { simpleText: '3:45' } } }
+  const long = { videoRenderer: { videoId: 'aaaaaaaaaaa', title: { simpleText: 'Live set' }, longBylineText: { runs: [{ text: 'Channel' }] }, lengthText: { simpleText: '1:02:03' } } }
+  const { asked, fetchImpl } = fakeYouTube(results(video, long, { videoRenderer: { videoId: 'bad' } }))
+  const found = await preview.searchVideos('justin bieber baby official music video', { fetchImpl })
+  assert.deepEqual(found, [
+    { id: 'kffacxfA7G4', title: 'Justin Bieber - Baby (Official Music Video)', channel: 'JustinBieberVEVO', duration: 225, url: 'https://www.youtube.com/watch?v=kffacxfA7G4' },
+    { id: 'aaaaaaaaaaa', title: 'Live set', channel: 'Channel', duration: 3723, url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa' },
+  ])
+  assert.equal(asked.at(-1).body.query, 'justin bieber baby official music video')
+  assert.equal(asked.at(-1).body.context.client.clientName, 'WEB')
+  assert.deepEqual(await preview.searchVideos('   ', { fetchImpl }), [])
+})
