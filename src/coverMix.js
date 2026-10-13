@@ -39,3 +39,10 @@ export function blobMask(blobs, p) {
 
 /** The blur of the incoming cover at `p`: soft at first, sharp near the end. */
 export const blobBlur = p => 16 * (1 - easeOut(clamp01(p / 0.88)))
+
+
+/** Cover transition for a song change; manual skips use AutoMix's dissolve too. */
+export function coverTransitionMode({ automix, reduceMotion, hasPreviousCover }) {
+  if (reduceMotion || !hasPreviousCover) return 'base'
+  return automix ? 'mix' : 'fade'
+}

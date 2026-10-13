@@ -51,6 +51,7 @@ import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './online
 
 // An addon refusing because its access isn't set up (or has lapsed).
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
+
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { handleLiveSeek } from './liveSeek'
@@ -61,6 +62,13 @@ import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
+
+async function addonStreamTrackHash(id) {
+  try {
+    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(id)))
+    return Array.from(new Uint8Array(digest).slice(0, 6), byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch { return null }
+}
 
 // A bass-swap filter at rest: open (below anything audible).
 const MIX_FILTER_OPEN_HZ = 10
@@ -366,6 +374,20 @@ export default function App() {
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
     if (failedRef && String(el?.getAttribute('src') || '').split('?')[0] === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      if (isAddonProvider(failedRef.provider)) {
+        const mediaError = el?.error
+        const diagnostic = {
+          provider: failedRef.provider,
+          track: await addonStreamTrackHash(failedRef.id),
+          mediaErrorCode: Number.isFinite(Number(mediaError?.code)) ? Number(mediaError.code) : null,
+          mediaError: String(mediaError?.message || '').slice(0, 240) || null,
+          networkState: Number.isFinite(el?.networkState) ? el.networkState : null,
+          readyState: Number.isFinite(el?.readyState) ? el.readyState : null,
+          currentTime: Number.isFinite(el?.currentTime) ? Number(el.currentTime.toFixed(3)) : null,
+          duration: Number.isFinite(el?.duration) ? Number(el.duration.toFixed(3)) : null,
+        }
+        api.log('warn', `[online-stream] renderer-error ${JSON.stringify(diagnostic)}`)
+      }
       await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }

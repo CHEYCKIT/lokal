@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { makeBlobs, blobMask, blobBlur } from '../src/coverMix.js'
+import { makeBlobs, blobMask, blobBlur, coverTransitionMode } from '../src/coverMix.js'
 
 let seed = 3
 const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
@@ -21,4 +21,18 @@ test('blurred at first, sharp at the end', () => {
   assert.ok(blobBlur(0) > 10)
   assert.ok(blobBlur(0.5) > blobBlur(0.8))
   assert.equal(blobBlur(1), 0)
+})
+
+
+test('AutoMix cover dissolve also applies to manual track changes without an active audio mix', () => {
+  assert.equal(coverTransitionMode({ automix: true, reduceMotion: false, hasPreviousCover: true }), 'mix')
+})
+
+test('ordinary track changes retain the short fade when AutoMix is off', () => {
+  assert.equal(coverTransitionMode({ automix: false, reduceMotion: false, hasPreviousCover: true }), 'fade')
+})
+
+test('reduced motion and the first cover do not animate', () => {
+  assert.equal(coverTransitionMode({ automix: true, reduceMotion: true, hasPreviousCover: true }), 'base')
+  assert.equal(coverTransitionMode({ automix: true, reduceMotion: false, hasPreviousCover: false }), 'base')
 })
