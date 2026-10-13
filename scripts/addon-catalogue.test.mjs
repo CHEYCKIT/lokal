@@ -6,6 +6,7 @@ import { resolveRecommendationTracks } from '../src/recommendations.js'
 
 const require = createRequire(import.meta.url)
 const addons = require('../electron/online/addons.js')
+const sources = require('../electron/online/sources.js')
 
 function memoryDb() {
   const rows = new Map()
@@ -202,5 +203,13 @@ test("addon stream MIME handles detailed FLAC formats, codec/container metadata 
     assert.equal(stream.format, item.format, item.id)
     assert.equal(stream.mime, item.mime, item.id)
   }
+})
+
+test('addon audio MIME replaces generic upstream content types but preserves specific ones', () => {
+  assert.equal(sources.streamContentType('application/octet-stream', 'audio/flac'), 'audio/flac')
+  assert.equal(sources.streamContentType('application/octet-stream; charset=binary', 'audio/mpeg'), 'audio/mpeg')
+  assert.equal(sources.streamContentType('', 'audio/flac'), 'audio/flac')
+  assert.equal(sources.streamContentType('audio/aac', 'audio/flac'), 'audio/aac')
+  assert.equal(sources.streamContentType('application/octet-stream', 'audio/*'), 'application/octet-stream')
 })
 
