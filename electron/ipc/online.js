@@ -747,7 +747,8 @@ function registerStreamProtocol(protocol, net) {
       const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
-      if (!headers.has('content-type')) headers.set('content-type', mime)
+      const contentType = sources.streamContentType(res.headers.get('content-type'), mime)
+      if (contentType) headers.set('content-type', contentType)
       return new Response(sources.cancellableBody(res.body, () => upstream.abort()), { status: res.status, headers })
     } catch (e) {
       return new Response(String(e.message || e), { status: 502, headers: { 'content-type': 'text/plain' } })
