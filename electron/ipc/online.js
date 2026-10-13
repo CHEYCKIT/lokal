@@ -754,6 +754,7 @@ function registerStreamProtocol(protocol, net) {
     let provider = ''
     let id = ''
     let diagnostic = null
+    let upstream = null
     const startedAt = Date.now()
     try {
       const url = new URL(request.url)
@@ -778,7 +779,7 @@ function registerStreamProtocol(protocol, net) {
       // media server must be aborted then, or its connection stays open: after
       // six (Chromium's limit per server) every new stream from that server
       // waits forever, and songs stop playing until Lokal restarts.
-      const upstream = new AbortController()
+      upstream = new AbortController()
       request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
       const fetchImpl = (u, init) => net.fetch(u, init)
       const range = request.headers.get('Range')
@@ -802,11 +803,12 @@ function registerStreamProtocol(protocol, net) {
       }, res.ok ? 'info' : 'warn')
       return new Response(sources.cancellableBody(res.body, () => upstream.abort()), { status: res.status, headers })
     } catch (e) {
-      logAddonStream(diagnostic, 'failure', {
+      const cancelled = !!upstream?.signal.aborted
+      logAddonStream(diagnostic, cancelled ? 'cancelled' : 'failure', {
         stage: e?.streamStage || 'resolve-or-media-fetch',
         durationMs: Date.now() - startedAt,
         error: safeStreamError(e),
-      }, 'warn')
+      }, cancelled ? 'info' : 'warn')
       return new Response(String(e.message || e), { status: 502, headers: { 'content-type': 'text/plain' } })
     }
   })
