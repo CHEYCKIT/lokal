@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
+import { cacheLyrics, hasLyricLines, peekLyrics } from '../lyrics/lyricsCache'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
@@ -22,6 +23,7 @@ import { trackArtURL } from '../onlineTracks'
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(34rem, 54vh)'
 const PANEL_WIDTH = 'min(52vw, 780px)'
+const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
 // long without the mouse moving.
 const IDLE_MS = 3000
@@ -418,6 +420,33 @@ export default function FullscreenPlayer() {
       el.style.setProperty('visibility', 'hidden')
     })
   }, [open])
+
+  // Opened for a song with lyrics found: the lyrics at the side of the cover
+  // (the Lyrics button's panel); for one without: the cover, centred. Lyrics
+  // not looked up yet are asked for, and found within a moment they open the
+  // panel; later, or none, the cover stays (a view changing under someone
+  // already looking at it is worse than a cover). Only on opening, and only
+  // while the panel is still closed: picking a panel meanwhile wins.
+  const wasShowingRef = useRef(false)
+  useLayoutEffect(() => {
+    const opened = showFullscreen && !wasShowingRef.current
+    wasShowingRef.current = showFullscreen
+    if (!opened || !currentTrack) return undefined
+    const track = currentTrack
+    const showLyrics = () => setFullscreenPanel(panel => (panel === 'none' ? 'lyrics' : panel))
+    const cached = peekLyrics(track.id)
+    if (hasLyricLines(cached)) { showLyrics(); return undefined }
+    if (cached !== undefined) return undefined
+    let cancelled = false
+    const asked = Date.now()
+    Promise.resolve(api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path)).then(result => {
+      const found = result && (result.lines?.length || result.instrumental) ? result : null
+      cacheLyrics(track.id, found)
+      if (cancelled || !hasLyricLines(found) || Date.now() - asked > FULLSCREEN_LYRICS_WAIT_MS) return
+      if (usePlayerStore.getState().currentTrack?.id === track.id) showLyrics()
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [showFullscreen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const canOpenContext = isContextNavigable(playbackContext)
   const openContext = () => {
