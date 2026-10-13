@@ -138,7 +138,8 @@ router.get('/stream/:provider/:id', async (req, res) => {
     upstream = r
     res.status(r.status)
     for (const name of PASS_HEADERS) { const v = r.headers.get(name); if (v) res.setHeader(name, v) }
-    if (!r.headers.get('content-type')) res.setHeader('content-type', mime)
+    const contentType = sources.streamContentType(r.headers.get('content-type'), mime)
+    if (contentType) res.setHeader('content-type', contentType)
     res.setHeader('cache-control', 'no-store')
   } catch (e) {
     return res.status(502).type('text/plain').send(String(e.message || e))
