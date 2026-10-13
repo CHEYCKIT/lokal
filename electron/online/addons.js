@@ -420,15 +420,15 @@ const MIME = { flac: 'audio/flac', mp3: 'audio/mpeg', aac: 'audio/aac', m4a: 'au
 function normalizeAudioFormat(value) {
   const raw = String(value ?? '').trim().toLowerCase()
   if (!raw) return ''
-  if (/\\bflac\\b|free lossless audio codec/.test(raw)) return 'flac'
-  if (/\\b(?:mp3|mpeg|mpga)\\b/.test(raw)) return 'mp3'
-  if (/\\b(?:aac|mp4a)(?:[.\\s;-]|$)/.test(raw)) return 'aac'
-  if (/\\bm4a\\b/.test(raw)) return 'm4a'
-  if (/\\bmp4\\b/.test(raw)) return 'mp4'
-  if (/\\bopus\\b/.test(raw)) return 'opus'
-  if (/\\b(?:ogg|oga|vorbis)\\b/.test(raw)) return 'ogg'
-  if (/\\b(?:wav|wave|pcm)\\b/.test(raw)) return 'wav'
-  if (/\\bwebm\\b/.test(raw)) return 'webm'
+  if (/\bflac\b|free lossless audio codec/.test(raw)) return 'flac'
+  if (/\b(?:mp3|mpeg|mpga)\b/.test(raw)) return 'mp3'
+  if (/\b(?:aac|mp4a)(?:[.\s;-]|$)/.test(raw)) return 'aac'
+  if (/\bm4a\b/.test(raw)) return 'm4a'
+  if (/\bmp4\b/.test(raw)) return 'mp4'
+  if (/\bopus\b/.test(raw)) return 'opus'
+  if (/\b(?:ogg|oga|vorbis)\b/.test(raw)) return 'ogg'
+  if (/\b(?:wav|wave|pcm)\b/.test(raw)) return 'wav'
+  if (/\bwebm\b/.test(raw)) return 'webm'
   return ''
 }
 
@@ -442,13 +442,13 @@ function streamFormat(json, url) {
     if (MIME[format]) return format
   }
   try {
-    const extension = new URL(url).pathname.match(/\\.([^.\\/]+)$/)?.[1]
+    const extension = new URL(url).pathname.match(/\.([^.\/]+)$/)?.[1]
     const format = normalizeAudioFormat(extension)
     if (MIME[format]) return format
   } catch {}
   const codec = normalizeAudioFormat(json.codec)
   if (MIME[codec]) return codec
-  const quality = String(json.quality || '').trim().toLowerCase().replace(/[\\s-]+/g, '_')
+  const quality = String(json.quality || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
   return FORMAT_BY_QUALITY[quality] || ''
 }
 
