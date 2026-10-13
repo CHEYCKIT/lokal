@@ -4,7 +4,6 @@
 //
 // Settings → Playback → Casting:
 //   cast_quality   "max" (FLAC up to 24-bit / 96 kHz) or "standard" (16 / 48)
-//   cast_app_id    Lokal's receiver app id (blank: the built-in one, else Google's)
 //   cast_devices   devices added by their address (JSON)
 
 const { CastDiscovery, probeAddress } = require('../cast/discovery')
@@ -26,10 +25,8 @@ function saveSetting(getDB, key, value) {
   try { getDB().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value)) } catch {}
 }
 
-/** The receiver app to start: Settings' (for testing one), else Lokal's registered one, else none (Google's). */
-function appIdFrom(all) {
-  const custom = String(all.cast_app_id || '').trim().toUpperCase()
-  if (/^[0-9A-F]{8}$/.test(custom)) return custom
+/** The receiver app to start: Lokal's registered one, else none (Google's). */
+function appIdFrom() {
   return LOKAL_CAST_APP_ID || null
 }
 
@@ -74,7 +71,7 @@ function registerCastHandlers(ipcMain, { getWindow, powerSaveBlocker }) {
       trimCache: keep => cache.trim({ keep }),
       log,
     })
-    controller = new CastController({ media, server, appId: appIdFrom(settings(getDB)), log })
+    controller = new CastController({ media, server, appId: appIdFrom(), log })
     controller.on('status', status => {
       send('cast:status', status)
       // The computer stays awake while the TV plays from it.
@@ -116,7 +113,7 @@ function registerCastHandlers(ipcMain, { getWindow, powerSaveBlocker }) {
     const device = ensureDiscovery().get(deviceId)
     if (!device) throw new Error('That device is no longer on the network')
     const session = ensureController()
-    session.appId = appIdFrom(settings(getDB))
+    session.appId = appIdFrom()
     const result = await session.connect(device)
     saveSetting(getDB, 'cast_last_device', device.id)
     return { ...result, status: session.status() }
