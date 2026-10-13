@@ -7,6 +7,7 @@ import { api } from '../api'
 import { useLyricSubline } from '../lyrics/useLyricSubline'
 import { announceLyricsChanged } from '../lyricLine'
 import { usePlayerStore } from '../store/player'
+import { cacheLyrics, hasCachedLyrics, peekLyrics } from '../lyrics/lyricsCache'
 import {
   canGrow, growLetters, unitProgress, unitLift, activeRows, focusRow, stillSinging, lineEndOf, groupUnits, withOutroBreak,
 } from '../lyrics/timing'
@@ -370,14 +371,6 @@ function Pill({ active, onClick, children, title, disabled }) {
 // player side panel, full-screen lyrics). A panel opened for a song another one
 // already shows starts with its lines on the first frame (and refreshes them
 // quietly), instead of "no lyrics", then a skeleton, then the lines.
-const lyricsCache = new Map() // trackId -> result | null
-const LYRICS_CACHE_MAX = 30
-function cacheLyrics(trackId, result) {
-  lyricsCache.delete(trackId)
-  lyricsCache.set(trackId, result)
-  if (lyricsCache.size > LYRICS_CACHE_MAX) lyricsCache.delete(lyricsCache.keys().next().value)
-}
-
 function Loading() {
   return (
     <div className="w-full flex flex-col gap-5 px-3 pt-4">
@@ -402,14 +395,14 @@ export default function LyricsPanel({
 }) {
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
-  const [result, setResult] = useState(() => (track?.id && lyricsCache.has(track.id) ? lyricsCache.get(track.id) : null))
+  const [result, setResult] = useState(() => (track?.id && hasCachedLyrics(track.id) ? peekLyrics(track.id) : null))
   // The song `result` is for: right after the song changes, until the new
   // song's lyrics are in, it's still the previous one's.
-  const [resultFor, setResultFor] = useState(() => (track?.id && lyricsCache.has(track.id) ? track.id : null))
+  const [resultFor, setResultFor] = useState(() => (track?.id && hasCachedLyrics(track.id) ? track.id : null))
   const setBoundResult = useCallback((trackId, next) => { setResultFor(trackId ?? null); setResult(next) }, [])
   // Loading from the first render when there's nothing to show yet, so a new
   // panel never flashes "no lyrics" before its request has even started.
-  const [loading, setLoading] = useState(() => !!track?.id && !lyricsCache.has(track.id))
+  const [loading, setLoading] = useState(() => !!track?.id && !hasCachedLyrics(track.id))
   const [sourceBusy, setSourceBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [sources, setSources] = useState([])
@@ -487,10 +480,10 @@ export default function LyricsPanel({
     // A source request for the previous song won't clear its own spinner
     // (its answer is dropped as stale), so clear it here.
     setSourceBusy(false)
-    const cached = trackKey != null && lyricsCache.has(trackKey)
+    const cached = trackKey != null && hasCachedLyrics(trackKey)
     // Cached: its lines show right away (even if the previous song was still
     // loading); otherwise the loading state until this song's answer.
-    setBoundResult(cached ? trackKey : null, cached ? lyricsCache.get(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
+    setBoundResult(cached ? trackKey : null, cached ? peekLyrics(trackKey) : null); setLoading(!cached && trackKey != null); setFocusIdx(-1); lastScrollIdx.current = -1
     load({}, cached)
   }, [trackKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
