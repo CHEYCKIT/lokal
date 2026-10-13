@@ -366,6 +366,20 @@ export default function App() {
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
     if (failedRef && String(el?.getAttribute('src') || '').split('?')[0] === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      if (isAddonProvider(failedRef.provider)) {
+        const mediaError = el?.error
+        const diagnostic = {
+          provider: failedRef.provider,
+          track: String(failedTrack?.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80) || null,
+          mediaErrorCode: Number.isFinite(Number(mediaError?.code)) ? Number(mediaError.code) : null,
+          mediaError: String(mediaError?.message || '').slice(0, 240) || null,
+          networkState: Number.isFinite(el?.networkState) ? el.networkState : null,
+          readyState: Number.isFinite(el?.readyState) ? el.readyState : null,
+          currentTime: Number.isFinite(el?.currentTime) ? Number(el.currentTime.toFixed(3)) : null,
+          duration: Number.isFinite(el?.duration) ? Number(el.duration.toFixed(3)) : null,
+        }
+        api.log('warn', `[online-stream] renderer-error ${JSON.stringify(diagnostic)}`)
+      }
       await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }
