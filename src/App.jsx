@@ -52,13 +52,6 @@ import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './online
 // An addon refusing because its access isn't set up (or has lapsed).
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
 
-async function addonStreamTrackHash(id) {
-  try {
-    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(id)))
-    return Array.from(new Uint8Array(digest).slice(0, 6), byte => byte.toString(16).padStart(2, '0')).join('')
-  } catch { return null }
-}
-
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { handleLiveSeek } from './liveSeek'
@@ -69,6 +62,13 @@ import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
+
+async function addonStreamTrackHash(id) {
+  try {
+    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(id)))
+    return Array.from(new Uint8Array(digest).slice(0, 6), byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch { return null }
+}
 
 // A bass-swap filter at rest: open (below anything audible).
 const MIX_FILTER_OPEN_HZ = 10
