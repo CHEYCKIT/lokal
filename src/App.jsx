@@ -51,6 +51,14 @@ import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './online
 
 // An addon refusing because its access isn't set up (or has lapsed).
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
+
+async function addonStreamTrackHash(id) {
+  try {
+    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(id)))
+    return Array.from(new Uint8Array(digest).slice(0, 6), byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch { return null }
+}
+
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { handleLiveSeek } from './liveSeek'
@@ -370,7 +378,7 @@ export default function App() {
         const mediaError = el?.error
         const diagnostic = {
           provider: failedRef.provider,
-          track: String(failedTrack?.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80) || null,
+          track: await addonStreamTrackHash(failedRef.id),
           mediaErrorCode: Number.isFinite(Number(mediaError?.code)) ? Number(mediaError.code) : null,
           mediaError: String(mediaError?.message || '').slice(0, 240) || null,
           networkState: Number.isFinite(el?.networkState) ? el.networkState : null,
