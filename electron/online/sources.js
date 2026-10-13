@@ -480,7 +480,16 @@ function pruneOnlineTracks(db, maxAgeMs = 7 * 24 * 3600 * 1000) {
   } catch { return 0 }
 }
 
+/** Prefer a known audio type over a generic type returned by a CDN. */
+function streamContentType(upstreamType, mime) {
+  const type = String(upstreamType || '').split(';', 1)[0].trim().toLowerCase()
+  const generic = new Set(['application/octet-stream', 'application/binary', 'binary/octet-stream', 'application/force-download', 'application/download'])
+  if (mime && mime !== 'audio/*' && (!type || generic.has(type))) return mime
+  return upstreamType || mime || ''
+}
+
 module.exports = {
+  streamContentType,
   streamQuality,
   cancellableBody,
   PROVIDERS, providerOf, validId, ghostPath, addons,
