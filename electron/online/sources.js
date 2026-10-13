@@ -101,18 +101,33 @@ async function fetchAddonMedia(url, { fetchImpl, headers, signal }) {
  * another address) is looked up again once. `signal`: aborts the media
  * request when the one who asked for it goes away.
  */
+function withStreamErrorStage(error, stage) {
+  const value = error instanceof Error ? error : new Error(String(error || 'Unknown stream error'))
+  try { if (!value.streamStage) value.streamStage = stage } catch {}
+  return value
+}
+
 async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...opts } = {}) {
   const attempt = async (force) => {
-    const stream = await resolveStream(provider, id, { ...opts, force, signal })
-    if (stream.type === 'live') return { stream, res: await require('../spotiflac/media').liveResponse(stream.job, { range, signal, mime: stream.mime }) }
-    if (stream.type === 'file') return { stream, res: await require('../spotiflac/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
-    const headers = { ...stream.headers }
-    if (range) headers.Range = range
-    // An addon's media URL is the addon's to choose: follow its redirects one
-    // at a time, each checked like the addon's own URLs (https, or http on
-    // this machine / network only). Built-in providers fetch directly.
-    if (addons.keyOfProvider(provider)) return { stream, res: await fetchAddonMedia(stream.url, { fetchImpl, headers, signal }) }
-    return { stream, res: await fetchImpl(stream.url, { headers, signal }) }
+    let stream
+    try {
+      stream = await resolveStream(provider, id, { ...opts, force, signal })
+    } catch (error) {
+      throw withStreamErrorStage(error, 'resolve')
+    }
+    try {
+      if (stream.type === 'live') return { stream, res: await require('../spotiflac/media').liveResponse(stream.job, { range, signal, mime: stream.mime }) }
+      if (stream.type === 'file') return { stream, res: await require('../spotiflac/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
+      const headers = { ...stream.headers }
+      if (range) headers.Range = range
+      // An addon's media URL is the addon's to choose: follow its redirects one
+      // at a time, each checked like the addon's own URLs (https, or http on
+      // this machine / network only). Built-in providers fetch directly.
+      if (addons.keyOfProvider(provider)) return { stream, res: await fetchAddonMedia(stream.url, { fetchImpl, headers, signal }) }
+      return { stream, res: await fetchImpl(stream.url, { headers, signal }) }
+    } catch (error) {
+      throw withStreamErrorStage(error, 'media-fetch')
+    }
   }
   let { stream, res } = await attempt(false)
   if (res.status === 403 || res.status === 410) {
