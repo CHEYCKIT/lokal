@@ -253,7 +253,7 @@ export default function HeaderSearch() {
             onContextMenu={event => {
               const current = readFlowSettings(userId || 'guest').mood
               moodMenu.open(event, FLOW_MOODS.map(item => ({
-                label: item.id === 'flow' ? 'Flow' : `Flow · ${item.label}`,
+                label: item.label, // "Flow" first, then the moods by name
                 icon: MOOD_ICONS[item.id],
                 hint: item.id === current ? 'Current' : undefined,
                 onSelect: () => playRandom(item.id),
