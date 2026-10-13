@@ -72,14 +72,14 @@ account both belong to the project, and every copy of Lokal then uses them.
    devices). In the console: **Add New Device**, with the TV's serial number
    (Google TV: Settings → System → About → Serial number; Chromecast: on its
    box or in the Google Home app → device → Settings → Device information).
-   Wait about 15 minutes, then restart the TV. In Lokal: Settings → Playback
-   → Casting → **Receiver App ID**: the Application ID. Cast to the TV:
-   Lokal's receiver opens, and the Cast menu shows "Lokal on the TV".
+   Wait about 15 minutes, then restart the TV. Set the Application ID in
+   `electron/cast/appId.js` (`LOKAL_CAST_APP_ID = '1A2B3C4D'`) and run Lokal
+   from source. Cast to the TV: Lokal's receiver opens, and the Cast menu
+   shows "Lokal on the TV".
 4. **Publish it.** In the console, **Publish** the application (it reaches
-   every device within about 15 minutes). Then set the ID in
-   `electron/cast/appId.js` (`LOKAL_CAST_APP_ID = '1A2B3C4D'`), so every
-   Lokal uses it with nothing to set; the Settings field can go back to
-   blank.
+   every device within about 15 minutes). Then release Lokal with the ID in
+   `electron/cast/appId.js`, so every Lokal uses it with nothing to set.
+   Lokal's own receiver is `2060B9B3`.
 
 Changes to `receiver/` go live when the workflow publishes them; no need to
 register again (the URL stays the same).

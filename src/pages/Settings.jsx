@@ -1532,7 +1532,6 @@ activeCategory === 'data' ? usersTried
             <option value="standard">Standard</option>
           </select>
         </Row>
-        <CastAppIdRow value={settings.cast_app_id || ''} onSave={value => set('cast_app_id', value)} />
       </Section>
       )}
 
@@ -2870,25 +2869,3 @@ function SpotifyLikesRow({ hasCookie, userId }) {
   )
 }
 
-// For trying a Lokal receiver on your own TV before it's published (docs/CASTING.md).
-function CastAppIdRow({ value, onSave }) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
-  const clean = draft.trim().toUpperCase()
-  const valid = !clean || /^[0-9A-F]{8}$/.test(clean)
-  return (
-    <Row label="Receiver App ID" desc="Advanced. The TV app Lokal starts when casting; blank uses Lokal's own (or Google's, until Lokal's is published). Applies the next time you connect.">
-      <input
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={() => { if (valid && clean !== value) onSave(clean) }}
-        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        placeholder="Default"
-        spellCheck={false}
-        maxLength={8}
-        aria-invalid={!valid}
-        className={`w-28 bg-card border rounded-lg px-2 py-1.5 text-xs font-mono text-white outline-none ${valid ? 'border-border focus:border-accent/50' : 'border-red-400/70'}`}
-      />
-    </Row>
-  )
-}
