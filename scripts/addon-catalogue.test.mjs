@@ -158,3 +158,49 @@ test('a plain stream link is played when the addon says "manifest": "none"; a re
   await assert.rejects(() => addons.resolveStream(db, key, 'c', { fetchImpl: async () => json({ url: 'https://streaming.example/x.m3u8', manifest: 'none' }) }), /DASH\/HLS/)
   await assert.rejects(() => addons.resolveStream(db, key, 'd', { fetchImpl: async () => json({ url: file, manifest: 'none', encrypted: true }) }), /encrypted/)
 })
+
+test("addon stream MIME handles detailed FLAC formats, codec/container metadata and signed URLs", async () => {
+  const db = memoryDb()
+  const { key } = await addons.install(db, `${BASE}/manifest.json`, { fetchImpl: async () => json(manifest('1.0.0', ['search', 'stream'])) })
+  const cases = [
+    {
+      id: 'verbose-flac',
+      response: { url: 'https://streaming.example/file?token=1', format: 'FLAC 24-bit / 192 kHz', quality: 'HI_RES' },
+      format: 'flac',
+      mime: 'audio/flac',
+    },
+    {
+      id: 'codec-container',
+      response: { url: 'https://streaming.example/file?token=2', codec: 'flac', container: 'audio/x-flac' },
+      format: 'flac',
+      mime: 'audio/flac',
+    },
+    {
+      id: 'container-over-codec',
+      response: { url: 'https://streaming.example/file?token=3', codec: 'opus', container: 'webm' },
+      format: 'webm',
+      mime: 'audio/webm',
+    },
+    {
+      id: 'extension',
+      response: { url: 'https://streaming.example/track.flac?signature=4', quality: 'MAX' },
+      format: 'flac',
+      mime: 'audio/flac',
+    },
+    {
+      id: 'hi-res-quality',
+      response: { url: 'https://streaming.example/download?signature=5', quality: 'HI-RES' },
+      format: 'flac',
+      mime: 'audio/flac',
+    },
+  ]
+
+  for (const item of cases) {
+    const stream = await addons.resolveStream(db, key, item.id, {
+      fetchImpl: async () => json({ ...item.response, manifest: 'none', encrypted: false }),
+    })
+    assert.equal(stream.format, item.format, item.id)
+    assert.equal(stream.mime, item.mime, item.id)
+  }
+})
+
