@@ -17,7 +17,7 @@ export default function VideoOffsetControl({ videoId, compact = false, className
     ? 'flex h-6 w-6 items-center justify-center rounded-full text-white/85 hover:bg-white/15 hover:text-white'
     : 'flex h-8 w-8 items-center justify-center rounded-full text-white/85 hover:bg-white/15 hover:text-white'
   return (
-    <div role="group" aria-label="Video sync" onClick={event => event.stopPropagation()}
+    <div role="group" aria-label="Video offset" onClick={event => event.stopPropagation()}
       className={`inline-flex items-center gap-0.5 rounded-full border border-white/[0.14] bg-black/45 backdrop-blur-md ${compact ? 'px-0.5 py-0.5 text-[10px]' : 'px-1 py-0.5 text-xs'} ${className}`}>
       <button type="button" onClick={event => nudge(event, -1)} className={button}
         title="Video ahead of the song? Move it back (Shift: 1 s)" aria-label="Move the video back">
@@ -25,16 +25,16 @@ export default function VideoOffsetControl({ videoId, compact = false, className
       </button>
       {/* Fixed widths, and the reset button always there (greyed at 0): the
           buttons stay put while the value changes. */}
-      <span className={`select-none whitespace-nowrap px-1 tabular-nums ${offset ? 'text-white' : 'text-white/65'}`} title="Video sync: how far the video is moved against the song">
-        {!compact && 'Video sync '}
-        <span className={`inline-block text-center ${compact ? 'w-[4.6em]' : 'w-[4.8em]'}`}>{offset ? label(offset) : compact ? 'Sync' : '0 s'}</span>
+      <span className={`select-none whitespace-nowrap px-1 tabular-nums ${offset ? 'text-white' : 'text-white/65'}`} title="Offset: how far the video is moved against the song">
+        {!compact && 'Offset '}
+        <span className={`inline-block text-center ${compact ? 'w-[4.6em]' : 'w-[4.8em]'}`}>{offset ? label(offset) : compact ? 'Offset' : '0 s'}</span>
       </span>
       <button type="button" onClick={event => nudge(event, 1)} className={button}
         title="Video behind the song (an intro, say)? Move it forward (Shift: 1 s)" aria-label="Move the video forward">
         <Plus size={compact ? 11 : 14} />
       </button>
       <button type="button" onClick={event => { event.stopPropagation(); setOffset(videoId, 0) }} disabled={offset === 0}
-        className={`${button} disabled:pointer-events-none disabled:opacity-30`} title="Back to the automatic sync" aria-label="Reset the video sync">
+        className={`${button} disabled:pointer-events-none disabled:opacity-30`} title="Back to no offset (the automatic sync)" aria-label="Reset the video offset">
         <RotateCcw size={compact ? 10 : 13} />
       </button>
     </div>
