@@ -2,6 +2,8 @@
 // keeping songs as ghost tracks, and the lokal-stream://<provider>/<id>
 // protocol the player streams from. See electron/online/sources.js.
 
+const crypto = require('node:crypto')
+const log = require('electron-log')
 const { getDB } = require('./db')
 const { findYtDlp } = require('./tools')
 const { cookieArgs } = require('./ytCookies')
@@ -15,6 +17,39 @@ const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, search
 let accountSession
 
 const SCHEME = 'lokal-stream'
+
+// Log enough to diagnose addon playback without exposing source URLs, signed
+// query parameters or provider track IDs. The short hash still correlates
+// resolution, HTTP response and renderer decoder errors for a single track.
+function streamDiagnostic(provider, id) {
+  const key = sources.addons.keyOfProvider(provider)
+  if (!key) return null
+  let addonName = key
+  try { addonName = sources.addons.list(getDB()).find(addon => addon.key === key)?.name || key } catch {}
+  return {
+    provider,
+    addon: addonName,
+    track: crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 12),
+  }
+}
+
+function safeStreamError(error) {
+  return String(error?.message || error || 'Unknown error')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, value => {
+      try {
+        const url = new URL(value)
+        return `${url.protocol}//${url.host}/[redacted]`
+      } catch { return '[URL redacted]' }
+    })
+    .slice(0, 400)
+}
+
+function logAddonStream(diagnostic, event, details = {}, level = 'info') {
+  if (!diagnostic) return
+  const message = `[online-stream] ${JSON.stringify({ ...diagnostic, event, ...details })}`
+  if (level === 'warn') log.warn(message)
+  else log.info(message)
+}
 
 /** All settings as { key: value }. */
 function settings() {
@@ -718,10 +753,13 @@ function registerStreamProtocol(protocol, net) {
   protocol.handle(SCHEME, async (request) => {
     let provider = ''
     let id = ''
+    let diagnostic = null
+    const startedAt = Date.now()
     try {
       const url = new URL(request.url)
       provider = url.hostname
       id = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+      diagnostic = streamDiagnostic(provider, id)
     } catch {}
     try {
       if (provider === 'yt' && accountSession) await accountSession.credentials()
@@ -744,13 +782,31 @@ function registerStreamProtocol(protocol, net) {
       request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
       const fetchImpl = (u, init) => net.fetch(u, init)
       const range = request.headers.get('Range')
+      logAddonStream(diagnostic, 'request', { method: request.method, range: range || null })
       const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
-      const contentType = sources.streamContentType(res.headers.get('content-type'), mime)
+      const upstreamType = res.headers.get('content-type')
+      const contentType = sources.streamContentType(upstreamType, mime)
       if (contentType) headers.set('content-type', contentType)
+      logAddonStream(diagnostic, 'response', {
+        status: res.status,
+        range: range || null,
+        upstreamType: upstreamType || null,
+        mime: mime || null,
+        contentType: contentType || null,
+        contentLength: res.headers.get('content-length') || null,
+        contentRange: res.headers.get('content-range') || null,
+        acceptRanges: res.headers.get('accept-ranges') || null,
+        durationMs: Date.now() - startedAt,
+      }, res.ok ? 'info' : 'warn')
       return new Response(sources.cancellableBody(res.body, () => upstream.abort()), { status: res.status, headers })
     } catch (e) {
+      logAddonStream(diagnostic, 'failure', {
+        stage: e?.streamStage || 'resolve-or-media-fetch',
+        durationMs: Date.now() - startedAt,
+        error: safeStreamError(e),
+      }, 'warn')
       return new Response(String(e.message || e), { status: 502, headers: { 'content-type': 'text/plain' } })
     }
   })
