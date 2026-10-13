@@ -3,6 +3,8 @@ import { packQueue, unpackQueue, QUEUE_KEYS } from '../queueStorage.js'
 import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
 import { CROSSFADE_DEFAULTS } from '../audio/crossfade.js'
+import { cacheLyrics, hasLyricLines, peekLyrics } from '../lyrics/lyricsCache.js'
+import { api } from '../api.js'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
@@ -216,6 +218,24 @@ function announceTrackUpdates(tracks) {
 let outputRoute = null
 export function setOutputRoute(route) { outputRoute = route || null }
 export function getOutputRoute() { return outputRoute }
+
+// Full screen opened for a song whose lyrics aren't looked up yet: they're
+// asked for, and found within a moment, the lyrics layout replaces the cover.
+// Later than that (or when there are none) the cover stays: a view changing
+// under someone who has started looking at it is worse than a cover.
+const FULLSCREEN_LYRICS_WAIT_MS = 1500
+async function openFullscreenLyrics(track) {
+  const asked = Date.now()
+  let found = null
+  try {
+    const result = await api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path)
+    found = result && (result.lines?.length || result.instrumental) ? result : null
+  } catch { return }
+  cacheLyrics(track.id, found)
+  if (!hasLyricLines(found) || Date.now() - asked > FULLSCREEN_LYRICS_WAIT_MS) return
+  const state = usePlayerStore.getState()
+  if (state.showFullscreen && !state.showLyricsFullscreen && state.currentTrack?.id === track.id) usePlayerStore.setState({ showLyricsFullscreen: true })
+}
 
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
@@ -901,6 +921,14 @@ export const usePlayerStore = create((set, get) => ({
   }),
   toggleFullscreen: () => set(s => {
     const next = !s.showFullscreen
+    // Opening it for a song with lyrics found: the lyrics layout (the lyrics
+    // at the side), straight away; a song without any: the cover, centred.
+    // Lyrics not looked up yet are waited for a moment (openFullscreenLyrics).
+    if (next && !s.showLyricsFullscreen && s.currentTrack) {
+      const cached = peekLyrics(s.currentTrack.id)
+      if (hasLyricLines(cached)) return { showFullscreen: true, showLyricsFullscreen: true }
+      if (cached === undefined) openFullscreenLyrics(s.currentTrack)
+    }
     if (!next && typeof window !== 'undefined' && window.electron?.refreshHitRegions) {
       // Closing fullscreen with a side panel (Queue/Lyrics) still open
       // unmounts a wide chunk of DOM at the same moment the whole overlay
