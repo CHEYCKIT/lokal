@@ -91,7 +91,7 @@ function logAddonMediaEvent(eventName, event, slot) {
     currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime.toFixed(3)) : null,
     duration: Number.isFinite(el.duration) ? Number(el.duration.toFixed(3)) : null,
     mediaErrorCode: Number.isFinite(Number(error?.code)) ? Number(error.code) : null,
-    mediaError: String(error?.message || '').replace(/https?:\\/\\/[^\\s"'<>]+/gi, '[URL redacted]').slice(0, 200) || null,
+    mediaError: String(error?.message || '').slice(0, 200) || null,
   }
   void addonStreamTrackHash(ref.id).then(track => {
     api.log(eventName === 'error' || eventName === 'stalled' ? 'warn' : 'info',
