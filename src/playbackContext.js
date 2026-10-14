@@ -117,10 +117,8 @@ export function navigateToTrackAlbum(nav, track) {
   const context = albumContextFromTrack(track)
   const online = isOnlineTrack(track)
   const path = online ? trackAlbumPath(track) : null
-  const sourceAlbum = path ? new URLSearchParams(path.split('?')[1] || '').get('sourceAlbum') : null
-  // Amazon and other add-ons can know a release's ID before they have its
-  // display name. Let the album page load that release by ID in this case.
-  if (!nav || (!context && !(online && sourceAlbum))) return false
+  const sourceAlbumId = path ? new URLSearchParams(path.split('?')[1] || '').get('sourceAlbum') : null
+  if (!nav || (!context && !(online && sourceAlbumId))) return false
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
   if (online) {

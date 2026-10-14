@@ -113,7 +113,7 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
           className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Users size={13} />{t('Followed artists')}<span className="tabular-nums text-muted">{artists.length}</span></button>
         {checking
           ? <button type="button" onClick={stop} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Loader2 size={13} className="animate-spin text-accent" />{t('Stop')}<X size={12} className="text-muted" /></button>
-          : <button type="button" onClick={refresh} disabled={!artists.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))] disabled:opacity-40"><RefreshCw size={13} />{t(saved?.checkedAt ? 'Refresh' : 'Check for releases')}</button>}
+          : <button type="button" onClick={refresh} disabled={!artists.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))] disabled:opacity-40"><RefreshCw size={13} />{saved?.checkedAt ? t('Refresh') : t('Check for releases')}</button>}
         </div>
       </div>
       <FollowedArtistsModal open={choosing} onClose={() => setChoosing(false)} libraryArtists={libraryArtists} />
@@ -125,7 +125,7 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
       ) : !checking && (
         <div className="rounded-xl border border-border bg-elevated px-4 py-12 text-center">
           <CalendarDays size={30} className="mx-auto mb-3 text-muted/60" />
-          <p className="text-sm text-text">{t(artists.length ? (saved?.checkedAt ? 'No dated releases were found.' : 'See what your artists released lately.') : 'Follow artists to see their new releases here.')}</p>
+          <p className="text-sm text-text">{artists.length ? (saved?.checkedAt ? t('No dated releases were found.') : t('See what your artists released lately.')) : t('Follow artists to see their new releases here.')}</p>
           {artists.length > 0
             ? <p className="mt-1 text-xs text-muted">{t("Refresh checks each followed artist’s catalogue on YouTube Music.")}</p>
             : <button type="button" onClick={() => setChoosing(true)} className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))]"><Users size={13} />{t("Choose artists to follow")}</button>}

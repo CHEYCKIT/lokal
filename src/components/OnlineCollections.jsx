@@ -8,10 +8,12 @@ import { CheckCircle, Download, Library, RefreshCw, UserRound } from 'lucide-rea
 import { api } from '../api'
 import { useDownloads, isActive } from '../store/downloads'
 import { normalizeArtistResults } from '../downloadLinks'
+import { useTranslation } from '../i18n'
 
 const DEBOUNCE_MS = 600
 
 export default function OnlineCollections({ query }) {
+  const { t } = useTranslation()
   const q = String(query || '').trim()
   const [items, setItems] = useState([])
   const [page, setPage] = useState(1)
@@ -72,9 +74,9 @@ export default function OnlineCollections({ query }) {
   if (q.length < 2 || (!loading && !items.length)) return null
 
   return (
-    <section className="mt-6" aria-label="Playlists and channels">
+    <section className="mt-6" aria-label={t('Playlists and channels')}>
       <h3 className="mb-3 flex items-center gap-2 text-[11px] font-display uppercase tracking-widest text-muted">
-        Playlists &amp; channels
+        {t('Playlists & channels')}
         {loading && <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />}
       </h3>
       {error && !items.length && <p className="text-xs text-muted">{error}</p>}
@@ -83,7 +85,7 @@ export default function OnlineCollections({ query }) {
           const job = jobs.find(j => !j.removed && j.kind === 'playlist' && j.url === item.url)
           const active = isActive(job) || starting.has(item.url)
           const done = job?.status === 'done'
-          const problem = failed[item.url] || (job?.status === 'error' ? job.error || 'Failed' : null)
+          const problem = failed[item.url] || (job?.status === 'error' ? job.error || t('Failed') : null)
           return (
             <motion.div
               key={`${item.type}-${item.id || item.url}`}
@@ -100,20 +102,20 @@ export default function OnlineCollections({ query }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-text" title={item.title}>{item.title}</p>
                 <p className="truncate text-xs text-muted">
-                  <span className="capitalize">{item.type}</span>
+                  <span className="capitalize">{t(item.type)}</span>
                   {item.channel && item.channel !== item.title ? ` · ${item.channel}` : ''}
-                  {item.videoCount ? ` · ${item.videoCount} videos` : ''}
+                  {item.videoCount ? ` · ${t('{count} videos', { count: item.videoCount })}` : ''}
                 </p>
                 {problem && <p className="truncate text-[11px] text-red-400" title={problem}>{problem}</p>}
               </div>
               <button
                 onClick={() => download(item)}
                 disabled={active || done}
-                title={done ? 'Downloaded to your library' : active ? job?.message || 'Downloading…' : `Download all of ${item.title} to your library`}
-                aria-label={done ? `${item.title} downloaded` : `Download all of ${item.title}`}
+                title={done ? t('Downloaded to your library') : active ? job?.message || t('Downloading…') : t('Download all of {title} to your library', { title: item.title })}
+                aria-label={done ? t('{title} downloaded', { title: item.title }) : t('Download all of {title}', { title: item.title })}
                 className={`flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors ${done ? 'text-green-400' : active ? 'text-accent' : 'bg-accent/15 text-accent hover:bg-accent/25'}`}
               >
-                {done ? <CheckCircle size={14} /> : active ? <RefreshCw size={13} className="animate-spin" /> : <><Download size={13} /> All</>}
+                {done ? <CheckCircle size={14} /> : active ? <RefreshCw size={13} className="animate-spin" /> : <><Download size={13} /> {t('All')}</>}
               </button>
             </motion.div>
           )
@@ -122,7 +124,7 @@ export default function OnlineCollections({ query }) {
       {hasMore && (
         <button onClick={more} disabled={loadingMore}
           className="mt-3 text-xs text-muted transition-colors hover:text-text disabled:opacity-50">
-          {loadingMore ? 'Loading…' : 'Show more'}
+          {loadingMore ? t('Loading…') : t('Show more')}
         </button>
       )}
     </section>

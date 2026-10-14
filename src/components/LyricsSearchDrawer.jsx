@@ -105,7 +105,7 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
           disabled={!title || !artist || loading}
           className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-accent text-base rounded-lg text-sm font-medium hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? 'Searching...' : <><Search size={14} /> Search</>}
+          {loading ? t('Searching…') : <><Search size={14} /> {t('Search')}</>}
         </button>
         {error && <p className="text-xs text-red-400">{error}</p>}
       </form>

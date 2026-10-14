@@ -20,7 +20,7 @@ function Tab({ active, icon: Icon, children, onClick }) {
   return (
     <button type="button" onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-accent/60 bg-accent/10 text-accent' : 'border-border text-muted hover:text-white'}`}>
-      <Icon size={13} /> {children}
+      <Icon size={13} /> {typeof children === 'string' ? t(children) : children}
     </button>
   )
 }

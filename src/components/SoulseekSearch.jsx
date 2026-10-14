@@ -4,6 +4,7 @@
 // into the same download queue as everything else.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from '../i18n'
 import { useNavigate } from 'react-router-dom'
 import { Download, CheckCircle, Clock, RefreshCw, Folder, User, Zap, AlertTriangle } from 'lucide-react'
 import { api } from '../api'
@@ -42,6 +43,7 @@ function groupResults(results, losslessOnly) {
  *                             file the first single file picked here replaces once downloaded
  */
 export default function SoulseekSearch({ query = '', onQueued, initialLosslessOnly = false, replaceTrack = null, upgradeTrack = null }) {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const jobs = useDownloads(s => s.jobs)
   const load = useDownloads(s => s.load)
@@ -150,7 +152,7 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
           <p className="min-w-0 flex-1 text-text">
             Pick a file for <span className="font-semibold">{[replacing.artist, replacing.title].filter(Boolean).join(' – ')}</span>. Once it's downloaded it replaces the streamed version in your playlists.
           </p>
-          <button onClick={() => setReplacing(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">Cancel</button>
+          <button onClick={() => setReplacing(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">{t('Cancel')}</button>
         </div>
       )}
 
@@ -161,7 +163,7 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
             Pick one file for <span className="font-semibold">{[upgrading.artist, upgrading.title].filter(Boolean).join(' – ')}</span>{upgrading.current ? <span className="text-muted"> (now {upgrading.current})</span> : null}.
             Once it's downloaded it replaces that file in your library, keeping its playlists, likes and plays; the old file is moved to Lokal's data folder.
           </p>
-          <button onClick={() => setUpgrading(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">Cancel</button>
+          <button onClick={() => setUpgrading(null)} className="flex-shrink-0 text-xs text-muted hover:text-text">{t('Cancel')}</button>
         </div>
       )}
 
@@ -169,16 +171,16 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-yellow-300" />
           <div className="min-w-0 flex-1 text-sm">
-            <p className="text-yellow-100">{status.error || 'Not signed in to Soulseek yet.'}</p>
-            <p className="mt-1 text-xs text-muted">Sign in with a Soulseek account in Settings → Integrations → Soulseek.</p>
+            <p className="text-yellow-100">{status.error || t('Not signed in to Soulseek yet.')}</p>
+            <p className="mt-1 text-xs text-muted">{t('Sign in with a Soulseek account in Settings → Integrations → Soulseek.')}</p>
           </div>
-          <button onClick={() => nav('/settings')} className="flex-shrink-0 rounded-xl bg-yellow-500/20 px-3 py-1.5 text-xs font-semibold text-yellow-100 hover:bg-yellow-500/30">Settings</button>
+          <button onClick={() => nav('/settings')} className="flex-shrink-0 rounded-xl bg-yellow-500/20 px-3 py-1.5 text-xs font-semibold text-yellow-100 hover:bg-yellow-500/30">{t('Settings')}</button>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
         <button onClick={() => setLosslessOnly(v => !v)} className={`rounded-full px-3 py-1 font-semibold transition-colors ${losslessOnly ? 'bg-accent/15 text-accent border border-accent/30' : 'border border-border hover:text-white'}`}>
-          Lossless only
+          {t('Lossless only')}
         </button>
         {search && !search.complete && (
           <>
@@ -191,7 +193,7 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
                   : 'Searching...'}
             </span>
             {search.responseCount > 0 && !search.finishing && (
-              <button onClick={showNow} className="rounded-full border border-border px-3 py-1 font-semibold text-white/80 transition-colors hover:text-white">Show results now</button>
+              <button onClick={showNow} className="rounded-full border border-border px-3 py-1 font-semibold text-white/80 transition-colors hover:text-white">{t('Show results now')}</button>
             )}
           </>
         )}
@@ -250,7 +252,7 @@ export default function SoulseekSearch({ query = '', onQueued, initialLosslessOn
                         disabled={!!state && state !== 'error' && state !== 'cancelled'}
                         className={`flex flex-shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${state === 'done' ? 'text-green-400' : state === 'active' ? 'text-muted' : 'bg-accent/15 text-accent hover:bg-accent/25'}`}
                       >
-                        {state === 'done' ? <CheckCircle size={13} /> : state === 'active' ? <Clock size={13} /> : state === 'error' || state === 'cancelled' ? 'Retry' : <><Download size={12} />Get</>}
+                        {state === 'done' ? <CheckCircle size={13} /> : state === 'active' ? <Clock size={13} /> : state === 'error' || state === 'cancelled' ? t('Retry') : <><Download size={12} />{t('Get')}</>}
                       </button>
                     </div>
                   )

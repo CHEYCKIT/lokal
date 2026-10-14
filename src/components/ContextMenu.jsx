@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from '../i18n'
 
 export function useContextMenu() {
   const [state, setState] = useState(null) // { x, y, items }
@@ -25,6 +26,7 @@ export function useContextMenu() {
 
 /** @param id  the menu element's id (for a button's aria-controls) */
 export default function ContextMenu({ menu, id }) {
+  const { t } = useTranslation()
   const { state, close } = menu
   const ref = useRef(null)
   const [position, setPosition] = useState(null)
@@ -108,8 +110,8 @@ export default function ContextMenu({ menu, id }) {
           className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-40 ${active === index ? (item.danger ? 'bg-red-500/15 text-red-300' : 'bg-white/10 text-white') : item.danger ? 'text-red-400' : 'text-white/85'}`}
         >
           {item.icon && <item.icon size={14} className="flex-shrink-0 opacity-80" />}
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          {item.hint && <span className="flex-shrink-0 text-[11px] text-muted">{item.hint}</span>}
+          <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
+          {item.hint && <span className="flex-shrink-0 text-[11px] text-muted">{t(item.hint)}</span>}
         </button>
       ))}
     </div>,

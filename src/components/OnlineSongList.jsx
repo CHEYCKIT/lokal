@@ -20,6 +20,7 @@ import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { useAppStore } from '../store/player'
 import { losslessMenuItem } from '../quality'
+import { useTranslation } from '../i18n'
 
 /** A song to tell its album or artist by (an addon's own result, when it's from one). */
 const anchorOf = track => {
@@ -39,6 +40,7 @@ const time = seconds => {
  * @param markOwned      mark the library's songs "In library" (a download button on the others)
  */
 export default function OnlineSongList({ tracks, onPlay, numbered = false, showAlbum = false, highlightTitle = '', markOwned = false }) {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const menu = useContextMenu()
   const userId = useAppStore(state => state.user?.id)
@@ -95,8 +97,8 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
             </div>
             {showAlbum && <p className="hidden truncate text-xs text-muted @lg:block">{track.album || ''}</p>}
             <span className="flex items-center justify-end gap-3">
-              {own && <span title="In your library" className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent"><CheckCircle2 size={11} /> In library</span>}
-              {markOwned && !own && <button type="button" onClick={event => { event.stopPropagation(); downloadOnline([track]) }} title={`Download ${track.title}`} aria-label={`Download ${track.title}`} className="text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100 focus:opacity-100"><Download size={14} /></button>}
+              {own && <span title={t('In your library')} className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent"><CheckCircle2 size={11} /> {t('In library')}</span>}
+              {markOwned && !own && <button type="button" onClick={event => { event.stopPropagation(); downloadOnline([track]) }} title={t('Download {title}', { title: track.title })} aria-label={t('Download {title}', { title: track.title })} className="text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100 focus:opacity-100"><Download size={14} /></button>}
               <span className="text-xs tabular-nums text-subtle">{time(track.duration)}</span>
             </span>
           </div>

@@ -30,13 +30,15 @@ import { useTranslation } from '../i18n'
  * release card. `ownership` from releaseOwnership.
  */
 export function OwnershipBadge({ ownership }) {
+  const { t } = useTranslation()
   if (!ownership) return null
   const { owned, total, full } = ownership
+  const countLabel = total ? t('{owned} of {total} songs in your library', { owned, total }) : t('{count} songs in your library', { count: owned })
   return (
-    <span title={full ? 'In your library' : `${owned}${total ? ` of ${total}` : ''} song${owned === 1 && !total ? '' : 's'} in your library`}
+    <span title={full ? t('In your library') : countLabel}
       className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${full ? 'bg-accent/15 text-accent' : 'border border-accent/40 text-accent/90'}`}>
       {full ? <CheckCircle2 size={10} /> : <CircleDashed size={10} />}
-      {full ? 'In library' : total ? `${owned}/${total}` : `${owned} song${owned === 1 ? '' : 's'}`}
+      {full ? t('In library') : total ? `${owned}/${total}` : t('{count} songs', { count: owned })}
     </span>
   )
 }
@@ -177,19 +179,19 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
     try { await work() } finally { setBusy(false) }
   }
   const openAlbumMenu = (event, album) => menu.open(event, [
-    { label: 'Play album', icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: albumPath(album) }) } },
-    { label: 'Download album', icon: Download, onSelect: () => withBusy(async () => { const tracks = await albumTracks(album); if (tracks.length) await downloadOnline(tracks, { label: `“${album.title}”` }) }) },
+    { label: t('Play album'), icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: albumPath(album) }) } },
+    { label: t('Download album'), icon: Download, onSelect: () => withBusy(async () => { const tracks = await albumTracks(album); if (tracks.length) await downloadOnline(tracks, { label: `“${album.title}”` }) }) },
     { separator: true },
-    { label: 'Open album', icon: Disc3, onSelect: () => openAlbum(album) },
+    { label: t('Open album'), icon: Disc3, onSelect: () => openAlbum(album) },
   ])
 
   return (
     <>
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryPage ? 'Popular online' : 'Popular'}</h2>
+          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t(libraryPage ? 'Popular online' : 'Popular')}</h2>
           {inLibrary && popular.missing.length > 0 && (libraryPage || popular.missing.length < popularTracks.length) && (
-            <button onClick={() => withBusy(() => downloadOnline(popular.missing, { label: `${popular.missing.length} songs` }))} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-accent transition-opacity hover:opacity-80 disabled:opacity-50"><Download size={13} /> {busy ? 'Finding songs…' : `Download missing (${popular.missing.length})`}</button>
+            <button onClick={() => withBusy(() => downloadOnline(popular.missing, { label: t('{count} songs', { count: popular.missing.length }) }))} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-accent transition-opacity hover:opacity-80 disabled:opacity-50"><Download size={13} /> {busy ? t('Finding songs…') : t('Download missing ({count})', { count: popular.missing.length })}</button>
           )}
         </div>
         {songs.loading
@@ -224,12 +226,12 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                       {(albumGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
                       <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
                         {group.items.map(album => (
-                          <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
+            <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
                             <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
                               <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
                             </div>
                             <p className="mt-2 flex items-center gap-1.5 text-sm text-white"><span className="truncate">{album.title}</span><OwnershipBadge ownership={releaseOwnership(album, albumCounts)} /></p>
-                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
+                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? t('{count} tracks', { count: album.track_count }) : null].filter(Boolean).join(' · ') || t(group.label.replace(/s$/, ''))}</p>
                           </button>
                         ))}
                       </div>

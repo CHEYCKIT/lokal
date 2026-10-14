@@ -42,18 +42,31 @@ test('the player album shortcut forwards a streamed add-on album id', () => {
   assert.equal(options.state.anchor.title, 'Song')
 })
 
-test('the player album shortcut stays clickable when a stream has an album id but no album name', () => {
-  const calls = []
+test('an add-on track with an album id but no album name still has an album link', () => {
   const track = {
     file_path: 'ghost://addon/0123456789/track-123',
     title: 'Song',
     artist: 'Artist',
     source_album_id: 'B012345678',
   }
-  assert.equal(navigateToTrackAlbum((...args) => calls.push(args), track), true)
-  const params = new URLSearchParams(calls[0][0].split('?')[1])
+  const path = trackAlbumPath(track)
+  const params = new URLSearchParams(path.split('?')[1])
   assert.equal(params.get('source'), 'a-0123456789')
   assert.equal(params.get('sourceAlbum'), 'B012345678')
+  assert.equal(params.get('album'), '')
+  let destination = null
+  assert.equal(navigateToTrackAlbum((...args) => { destination = args }, track), true)
+  assert.equal(destination[0], path)
+})
+
+test('an add-on track falls back to alternate album-name fields', () => {
+  const path = trackAlbumPath({
+    file_path: 'ghost://addon/0123456789/track-123',
+    title: 'Song',
+    artist: 'Artist',
+    album_name: 'Album from snake case',
+  })
+  assert.equal(new URLSearchParams(path.split('?')[1]).get('album'), 'Album from snake case')
 })
 
 test('an album opened by source id loads and displays the add-on album title', async () => {
@@ -62,10 +75,11 @@ test('an album opened by source id loads and displays the add-on album title', a
     onlineProviders: async () => [{ id: 'a-0123456789', addon: true, album: true }],
     getSettings: async () => ({}),
     discoveryCatalogue: async () => { discoveryLookups++; return { tracks: [] } },
-    addonAlbum: async (provider, id) => ({ id, title: 'Amazon Album', artist: 'Artist', tracks: [{ id: '1', title: 'Song', artist: 'Artist', provider }] }),
+    addonAlbum: async (provider, id) => ({ id, title: 'Amazon Album', artist: 'Resolved Artist', tracks: [{ id: '1', title: 'Song', artist: 'Resolved Artist', provider }] }),
   }
   const result = await loadOnlineAlbum({ artist: 'Artist', album: '', provider: 'a-0123456789', sourceAlbumId: 'B012345678' }, client)
   assert.equal(result.title, 'Amazon Album')
+  assert.equal(result.artist, 'Resolved Artist')
   assert.equal(result.tracks[0].title, 'Song')
   assert.equal(discoveryLookups, 0)
 })

@@ -85,9 +85,10 @@ function SortableHeader({ column, label, children, sort, onSortChange, className
   const active = sort?.column === column
   const next = nextPlaylistSort(sort, column)
   const direction = next.direction === 'asc' ? 'ascending' : 'descending'
+  const sortLabel = t('Sort by {column}, {direction}', { column: label, direction: t(direction) })
   const Arrow = sort?.direction === 'desc' ? ChevronDown : ChevronUp
-  return <button type="button" aria-label={`Sort by ${label} ${direction}`} aria-pressed={active}
-    title={`Sort by ${label} ${direction}`} data-sort-column={column} data-sort-direction={active ? sort.direction : undefined}
+  return <button type="button" aria-label={sortLabel} aria-pressed={active}
+    title={sortLabel} data-sort-column={column} data-sort-direction={active ? sort.direction : undefined}
     onClick={event => { event.stopPropagation(); onSortChange(next) }}
     className={`flex min-w-0 items-center gap-1 rounded uppercase hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? 'text-accent' : ''} ${className}`}>
     <span className="truncate">{children}</span>{active && <Arrow size={11} className="shrink-0" aria-hidden="true" />}
@@ -791,17 +792,17 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
         {layout.grip && <span />}
         {layout.number && <SortableHeader column="number" label={t("playlist number")} sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
-        <span>{layout.album ? 'Title' : 'Title / Album'}</span>
+        <span>{t(layout.album ? 'Title' : 'Title / Album')}</span>
         {layout.album && <span className="truncate">{t("Album")}</span>}
         {layout.source && <span className="flex justify-center" title={t("Source")}><Globe size={12} aria-hidden="true" /><span className="sr-only">{t("Source")}</span></span>}
         {layout.quality && <span className="text-center">{t("Quality")}</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
-        {layout.added && <SortableHeader column="added" label={t("date added")} sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
-        {layout.time && <SortableHeader column="time" label={t("duration")} sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
+        {layout.added && <SortableHeader column="added" label={t("date added")} sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">{t('Date added')}</SortableHeader>}
+        {layout.time && <SortableHeader column="time" label={t("duration")} sort={sort} onSortChange={onSortChange} className="justify-end text-right">{t('Time')}</SortableHeader>}
         <span className="sr-only">{t("Actions")}</span>
         <span aria-hidden="true" />
       </div>
-      {onSortChange && <span className="sr-only" role="status">Sorted by {sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'}, {sort?.direction === 'desc' ? 'descending' : 'ascending'}</span>}
+      {onSortChange && <span className="sr-only" role="status">{t('Sorted by {column}, {direction}', { column: t(sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'), direction: t(sort?.direction === 'desc' ? 'descending' : 'ascending') })}</span>}
 
       <div ref={rowsRef}>
       {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: topSpacerHeight }} />}
@@ -897,7 +898,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
                   {!layout.album && <>
                     {columns.artist && track.artist && <span className="mx-1 shrink-0">·</span>}
-                    <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || 'Unknown album'}>{track.album || 'Unknown album'}</span>
+                    <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || t('Unknown album')}>{track.album || t('Unknown album')}</span>
                   </>}
                 </div>
                 {extraColumns.filter(column => !layout[column.key]).map(column => <span key={column.key} className="mr-2 text-[10px] text-muted">{column.label}: {column.render(track)}</span>)}
@@ -1143,7 +1144,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           </div>
 
           <div className="rounded-xl border border-border bg-card/30 overflow-hidden">
-            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Suggested Downloads<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
+            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">{t('Suggested Downloads')}<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
             <div className="divide-y divide-border">
               {ghostSearchLoading && (
                 <div className="px-4 py-6 text-sm text-muted">{t("Searching…")}</div>

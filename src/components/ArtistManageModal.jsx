@@ -338,7 +338,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
                         <div className="flex items-center gap-3">
                           <button onClick={() => applyLookup(result, 'bio')} disabled={saving || picked}
                             className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 ${picked ? 'bg-accent/20 text-accent' : 'bg-accent text-base hover:bg-accent-dim'}`}>
-                            {picked ? <><Check size={12} /> Using this bio</> : 'Use this bio'}
+                            {picked ? <><Check size={12} /> {t('Using this bio')}</> : t('Use this bio')}
                           </button>
                           {result.bio.length > 180 && (
                             <button onClick={() => setOpenBio(expanded ? null : key)} className="text-xs text-muted hover:text-white transition-colors">

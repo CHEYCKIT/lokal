@@ -10,7 +10,7 @@ import { syncPlaylist } from '../playlistSync'
 import { showLoadingToast } from './Toaster'
 
 function ago(time, t) {
-  if (!time) return t('Never synced')
+  if (!time) return t('never synced')
   const minutes = Math.round((Date.now() - time) / 60000)
   if (minutes < 1) return t('Synced just now')
   if (minutes < 60) return t('Synced {count} min ago', { count: minutes })
@@ -61,7 +61,7 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
 
   // With `buttonClassName`: icon buttons (the playlist toolbar), the details in their tooltips.
   const pill = 'flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40'
-  const syncTitle = t('Sync with {platform}{title} · {age}. Adds songs added there since the last sync; nothing is removed.', { platform: status.platformLabel, title: status.title ? ` · ${status.title}` : '', age: ago(status.syncedAt, t) })
+  const syncTitle = t('Sync with {platform}{title} · {ago}. Adds songs added there since the last sync; nothing is removed.', { platform: status.platformLabel, title: status.title ? ` · ${status.title}` : '', ago: ago(status.syncedAt, t) })
   const linkTitle = t('Link to a playlist on Spotify, Tidal, Apple Music or Qobuz')
   return <>
     {buttonClassName
@@ -77,17 +77,17 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
             : <button onClick={() => setOpen(true)} title={linkTitle} className={`${pill} ${className}`}><Link2 size={15} />{t("Link playlist")}</button>}
           {status.linked && <button onClick={() => setOpen(true)} title={t("Linked playlist settings")} aria-label={t("Linked playlist settings")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-elevated text-muted hover:text-white"><Link2 size={15} /></button>}
         </>}
-    <Modal open={open} onClose={() => setOpen(false)} title={t(status.linked ? 'Linked playlist' : 'Link a streaming playlist')}>
+    <Modal open={open} onClose={() => setOpen(false)} title={status.linked ? t('Linked playlist') : t('Link a streaming playlist')}>
       <div className="space-y-4 px-5 pb-5 pt-4 sm:px-6">
         {status.linked ? <>
           <p className="text-sm text-text">{status.title || status.platformLabel}</p>
           <p className="break-all text-xs text-muted">{status.url}</p>
-          <p className="text-xs leading-relaxed text-muted">{t('Sync adds songs added since the last sync and downloads them from your sources. Removed songs stay here. {age}.', { age: ago(status.syncedAt, t) })}</p>
-          {status.error && <p className="text-xs text-red">{t(status.error)}</p>}
+          <p className="text-xs leading-relaxed text-muted">{t('Sync adds the songs added to it since the last sync and downloads them from your sources. Songs removed there stay here.')} {ago(status.syncedAt, t)}.</p>
+          {status.error && <p className="text-xs text-red">{status.error}</p>}
           <button onClick={unlink} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted hover:text-red"><Unlink size={13} />{t("Unlink")}</button>
         </> : <>
-          <p className="text-xs leading-relaxed text-muted">{t('Paste a Spotify, Tidal, Apple Music or Qobuz playlist link. Each sync adds songs added there since the previous sync, then downloads them through your sources. Removals are never synced. This needs the matching SpotiFLAC add-on from Settings → Add-ons.')}</p>
-          <input autoFocus value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url.trim() && link()} aria-label={t('Playlist link')} placeholder="https://open.spotify.com/playlist/…" spellCheck={false}
+          <p className="text-xs leading-relaxed text-muted">{t('Paste the link of a playlist on Spotify, Tidal, Apple Music or Qobuz (yours or anyone’s). Each sync adds the songs added there since the last one, then downloads them through your sources. Removals are never synced. It needs the matching SpotiFLAC add-on (Spotify Web, Tidal, Apple Music or Qobuz) from Settings → Add-ons.')}</p>
+          <input autoFocus value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url.trim() && link()} placeholder={t('Paste playlist link')} spellCheck={false}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-text outline-none focus:border-accent/50" />
           {error && <p className="text-xs text-red">{error}</p>}
           <button onClick={link} disabled={busy || !url.trim()} className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-[rgb(var(--bg-rgb))] disabled:opacity-40">{busy && <Loader2 size={12} className="animate-spin" />}{t('Link and sync')}</button>
