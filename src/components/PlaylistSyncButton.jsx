@@ -1,6 +1,7 @@
 // Playlist page: link the playlist to one on Spotify, Tidal, Apple Music or
 // Qobuz, then "Sync" adds what was added there since (src/playlistSync.js).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { Link2, Loader2, RefreshCw, Unlink } from 'lucide-react'
 import Modal from './Modal'
@@ -18,6 +19,7 @@ function ago(time) {
 }
 
 export default function PlaylistSyncButton({ playlistId, userId, className = '', buttonClassName = '' }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState(null)
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
