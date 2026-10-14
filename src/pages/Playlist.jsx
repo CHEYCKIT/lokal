@@ -396,7 +396,7 @@ export default function Playlist() {
             <button type="button" onClick={shuffleTracks} disabled={!playableTracks.length} aria-label={t("Shuffle")} title={t("Shuffle")} className={ICON_BUTTON}>
               <Shuffle size={17} />
             </button>
-            <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label="Share as a picture" title="Share as a picture" className={ICON_BUTTON}>
+            <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label={t("Share as a picture")} title="Share as a picture" className={ICON_BUTTON}>
               <Share2 size={17} />
             </button>
             {!isLiked && (
@@ -446,7 +446,7 @@ export default function Playlist() {
       {!isLiked && !smart && tracks.length <= 300 && (tracks.length > 0 || recommendations.length > 0) && (
         <div className="mt-12 mb-6">
           <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-lg font-display text-white">Recommended Songs</h2>
+            <h2 className="text-lg font-display text-white">{t("Recommended Songs")}</h2>
             <button
               onClick={fetchRecommendations}
               disabled={loadingRecs}
