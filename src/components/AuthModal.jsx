@@ -81,12 +81,12 @@ export default function AuthModal() {
               {authMode === 'login' ? <User size={18} className="text-accent" /> : <Sparkles size={18} className="text-accent" />}
             </div>
             <h2 className="font-display text-lg text-white">
-              {authMode === 'login' ? 'Welcome back' : 'Create account'}
+              {authMode === 'login' ? t('Welcome back') : t('Create account')}
             </h2>
-            <p className="text-xs text-muted mt-1">{authMode === 'login' ? 'Sign in to your profile' : 'Set up your local profile'}</p>
+            <p className="text-xs text-muted mt-1">{authMode === 'login' ? t('Sign in to your profile') : t('Set up your local profile')}</p>
           </div>
 
-          <Field label={t("Username")} value={form.username} onChange={set('username')} placeholder={t("sipbuu")} icon={User} />
+          <Field label={t("Username")} value={form.username} onChange={set('username')} placeholder={t("Username")} icon={User} />
 
           {authMode === 'register' && (
             <Field label={t("Display Name")} value={form.displayName} onChange={set('displayName')} placeholder={t("Your name")} />

@@ -770,7 +770,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
     <div ref={listRef} className="w-full min-w-0" style={{ '--tl-columns': layout.template }} onClick={handleContainerClick}>
       <SelectionBar
         open={selection.count > 0}
-        label={`${selection.count} selected`}
+        label={t('{count} selected', { count: selection.count })}
         onClear={selection.clear}
         actions={[
           { label: 'Play', icon: Play, onClick: () => playMany(selectedTracks()) },

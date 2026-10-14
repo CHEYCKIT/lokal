@@ -482,14 +482,14 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
     if (!recap) return
     openShareCard({
       kind: 'Recap',
-      title: shownPeriod?.title || 'My recap',
+      title: shownPeriod?.title || t('My recap'),
       subtitle: `${fmtDate(recap.from)} – ${fmtDate(recap.to)}`,
       art: coversOf(topTracks, 4),
       // Plays (each listen of 30 s or more) and tracks (different songs), as the page shows them.
-      stats: [['Listened', fmtMinutes(recap.totalMinutes)], ['Plays', (recap.totalPlays || 0).toLocaleString()], ['Tracks', (recap.uniqueTracks || 0).toLocaleString()], ['Artists', (recap.uniqueArtists || 0).toLocaleString()]],
+      stats: [[t('Listened'), fmtMinutes(recap.totalMinutes)], [t('Plays'), (recap.totalPlays || 0).toLocaleString()], [t('Tracks'), (recap.uniqueTracks || 0).toLocaleString()], [t('Artists'), (recap.uniqueArtists || 0).toLocaleString()]],
       list: (recap.topArtists || []).length
-        ? { title: 'Top artists', items: recap.topArtists.slice(0, 5).map(item => [item.artist, plural(item.plays, 'play')]) }
-        : { title: 'Top tracks', items: topTracks.slice(0, 5).map(track => [track.title, track.artist]) },
+        ? { title: t('Top artists'), items: recap.topArtists.slice(0, 5).map(item => [item.artist, plural(item.plays, 'play')]) }
+        : { title: t('Top tracks'), items: topTracks.slice(0, 5).map(track => [track.title, track.artist]) },
       fileName: `Recap ${shownPeriod?.title || ''}`,
     })
   }
@@ -656,18 +656,18 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
                   {fmtDate(recap.from)} - {fmtDate(recap.to)}
                   <button onClick={shareRecap} title={t("Share as a picture")}
                     className="ml-auto flex items-center gap-1.5 rounded-full border border-border bg-black/20 px-3 py-1 text-[10px] font-display uppercase tracking-widest text-muted transition-colors hover:border-accent/30 hover:text-white">
-                    <Share2 size={11} /> Share
+                    <Share2 size={11} /> {t('Share')}
                   </button>
                 </div>
                 <h2 className="mt-3 break-words text-3xl font-display text-white @sm:text-4xl">{shownPeriod?.title}</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-                  You played {plural(recap.uniqueTracks || 0, 'track')} ({plural(recap.totalPlays, 'play')}) for {fmtMinutes(recap.totalMinutes)}, with {recap.sessions?.length || 0} sessions strong enough to name.
+                  {t('You played {tracks} ({plays}) for {duration}, with {sessions} sessions strong enough to name.', { tracks: plural(recap.uniqueTracks || 0, 'track'), plays: plural(recap.totalPlays, 'play'), duration: fmtMinutes(recap.totalMinutes), sessions: recap.sessions?.length || 0 })}
                 </p>
                 <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 @sm:grid-cols-2 @xl:grid-cols-4">
-                  <Metric label="Minutes" value={fmtMinutes(recap.totalMinutes)} icon={Clock3} />
-                  <Metric label="Tracks" value={recap.uniqueTracks || 0} icon={ListMusic} />
-                  <Metric label="Artists" value={recap.uniqueArtists || 0} icon={BarChart3} />
-                  <Metric label="Peak Hour" value={fmtHour(recap.peakHour?.hour)} icon={Clock3} />
+                  <Metric label={t('Minutes')} value={fmtMinutes(recap.totalMinutes)} icon={Clock3} />
+                  <Metric label={t('Tracks')} value={recap.uniqueTracks || 0} icon={ListMusic} />
+                  <Metric label={t('Artists')} value={recap.uniqueArtists || 0} icon={BarChart3} />
+                  <Metric label={t('Peak Hour')} value={fmtHour(recap.peakHour?.hour)} icon={Clock3} />
                 </div>
               </div>
               <div className="rounded-xl border border-border bg-black/20 p-4">

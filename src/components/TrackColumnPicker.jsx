@@ -59,7 +59,7 @@ export default function TrackColumnPicker({ columns, playlist, onChange, onReset
       aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog"
       onClick={event => { event.stopPropagation(); setOpen(value => !value) }}
       className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted hover:bg-elevated hover:text-text focus-visible:outline focus-visible:outline-accent">
-      <Columns3 size={14} /> Columns
+      <Columns3 size={14} /> {t('Columns')}
     </button>
     {open && createPortal(
       <div ref={panel} id={id} role="dialog" aria-label={t("Song list columns")} style={position}
@@ -69,13 +69,13 @@ export default function TrackColumnPicker({ columns, playlist, onChange, onReset
         {['Title', 'Album'].map(label => (
           <label key={label} title={t("Always shown")} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted">
             <input type="checkbox" checked disabled className="accent-accent" />
-            <span className="flex-1">{label}</span><LockKeyhole size={12} aria-hidden="true" />
+            <span className="flex-1">{t(label)}</span><LockKeyhole size={12} aria-hidden="true" />
           </label>
         ))}
         {TRACK_COLUMN_OPTIONS.filter(([key]) => key !== 'grip' || playlist).map(([key, label]) => (
           <label key={key} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-text hover:bg-card focus-within:bg-card">
             <input type="checkbox" checked={columns[key]} onChange={event => onChange(key, event.target.checked)} className="accent-accent" />
-            {label}
+            {t(label)}
           </label>
         ))}
         <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">{t("Saved for all song lists in this profile. Narrow lists tuck Album under Title and fit other columns as space allows.")}</p>

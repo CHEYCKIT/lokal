@@ -29,7 +29,6 @@ function readLyricsLayout() {
 
 /** A round button in the video's controls; `active` while what it turns on is on. */
 function ChromeButton({ active, onClick, label, children }) {
-  const { t } = useTranslation()
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={!!active}
       className={`w-10 h-10 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors ${active ? 'border-white/30 bg-white/20 text-white' : 'border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16]'}`}>
@@ -218,14 +217,14 @@ export default function MusicVideoPlayer({ compact = false }) {
   // cover, no words under it (they pushed the cover up as they came and went).
   // A download you asked for still says how far along it is.
   const loadingText = !loading || !slowLoad ? null
-    : lookupProgress?.stage === 'queued' ? 'Music video queued for download'
+    : lookupProgress?.stage === 'queued' ? t('Music video queued for download')
       : lookupProgress?.stage === 'downloading'
-        ? `Downloading music video${Number.isFinite(lookupProgress.percent) ? ` — ${lookupProgress.percent}%` : ''}`
+        ? t('Downloading music video{progress}', { progress: Number.isFinite(lookupProgress.percent) ? ` — ${lookupProgress.percent}%` : '' })
         : null
   const message = {
-    none: lookupProgress?.message || 'No verified music video for this song. Continuing with the song and artwork.',
-    failed: video?.error ? `The music video couldn't be downloaded: ${video.error}` : errorText ? `The music video couldn't be played: ${errorText}` : "The music video couldn't be played",
-    download: video?.streamed && failed ? `This video couldn't be streamed${errorText ? ` (${errorText.replace(/[.\s]+$/, '')})` : ''}. Download it to your Videos folder to try it that way. Your song keeps playing.` : 'Download this video to your Videos folder to play it. Your song keeps playing.',
+    none: lookupProgress?.message ? t(lookupProgress.message) : t('No verified music video for this song. Continuing with the song and artwork.'),
+    failed: video?.error ? t("The music video couldn't be downloaded: {error}", { error: video.error }) : errorText ? t("The music video couldn't be played: {error}", { error: errorText }) : t("The music video couldn't be played"),
+    download: video?.streamed && failed ? t("This video couldn't be streamed{error}. Download it to your Videos folder to try it that way. Your song keeps playing.", { error: errorText ? ` (${errorText.replace(/[.\s]+$/, '')})` : '' }) : t('Download this video to your Videos folder to play it. Your song keeps playing.'),
     outside: null,
     loading: loadingText,
   }[status]
@@ -250,7 +249,7 @@ export default function MusicVideoPlayer({ compact = false }) {
   }
 
   if (compact) return open && currentTrack ? (
-    <div className="relative aspect-video w-full overflow-hidden bg-black" aria-label={`Music video: ${currentTrack.title}`}>
+    <div className="relative aspect-video w-full overflow-hidden bg-black" aria-label={t('Music video: {title}', { title: currentTrack.title })}>
       {!showVideo && (art ? <img src={art} alt={t("Artwork")} className="absolute inset-0 h-full w-full object-contain" /> : <span className="absolute inset-0 flex items-center justify-center text-muted">♪</span>)}
       {video?.src && !video.error && !failed && <video key={video.videoId} ref={el => { videoRef.current = el; if (el) lastVideo.current = el }} src={video.src} muted playsInline preload="auto" disablePictureInPicture
         onPlaying={() => { setReady(true); setEverPlayed(true); recoverRef.current = 0 }} onCanPlay={sync} onLoadedMetadata={sync} onLoadedData={() => { setReady(true); sync() }} onSeeked={sync} onError={onVideoError}
@@ -266,7 +265,7 @@ export default function MusicVideoPlayer({ compact = false }) {
         <motion.div
           key="music-video"
           role="dialog"
-          aria-label={`Music video: ${currentTrack.title}`}
+          aria-label={t('Music video: {title}', { title: currentTrack.title })}
           initial={{ opacity: 0, scale: reduceMotion ? 1 : 1.03 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: reduceMotion ? 1 : 1.03 }}
@@ -381,7 +380,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                 className="ml-auto w-10 h-10 flex items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16] transition-colors">
                 <PictureInPicture2 size={18} />
               </button>
-              <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Enter full screen'} aria-label={screenFull ? 'Exit full screen' : 'Enter full screen'}
+              <button onClick={toggleScreen} title={screenFull ? t('Exit full screen') : t('Enter full screen')} aria-label={screenFull ? t('Exit full screen') : t('Enter full screen')}
                 className="w-10 h-10 flex items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16] transition-colors">
                 {screenFull ? <Minimize size={18} /> : <Expand size={18} />}
               </button>
@@ -396,7 +395,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                 </div>
                 <div className="flex items-center gap-6 flex-shrink-0">
                   <button onClick={prev} title={t("Previous")} aria-label={t("Previous")} className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipBack size={26} fill="currentColor" /></button>
-                  <button onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'} className="text-white hover:scale-105 active:scale-95 transition-transform">
+                  <button onClick={togglePlay} title={isPlaying ? t('Pause') : t('Play')} aria-label={isPlaying ? t('Pause') : t('Play')} className="text-white hover:scale-105 active:scale-95 transition-transform">
                     {isPlaying ? <Pause size={36} fill="currentColor" strokeWidth={0} /> : <Play size={36} fill="currentColor" strokeWidth={0} className="translate-x-0.5" />}
                   </button>
                   <button onClick={() => next(false)} title={t("Next")} aria-label={t("Next")} className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipForward size={26} fill="currentColor" /></button>
@@ -405,7 +404,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                   {video?.videoId && <VideoOffsetControl videoId={video.videoId} />}
                   {subtitles && (
                     <>
-                      <ChromeButton active={sub.wantTranslation} onClick={() => sub.toggle('translation')} label={`Translate the lyrics (${sub.translateTarget})`}>
+                      <ChromeButton active={sub.wantTranslation} onClick={() => sub.toggle('translation')} label={t('Translate the lyrics ({language})', { language: sub.translateTarget })}>
                         {sub.translationBusy ? <Loader2 size={16} className="animate-spin" /> : <Languages size={16} />}
                       </ChromeButton>
                       {sub.canRomanize && (
@@ -417,11 +416,11 @@ export default function MusicVideoPlayer({ compact = false }) {
                   )}
                   {showLyrics && lyric.synced && (
                     <ChromeButton active={lyricsLayout === 'side'} onClick={switchLyricsLayout}
-                      label={lyricsLayout === 'side' ? 'Lyrics as subtitles under the video' : 'Full lyrics at the side (other sources, plain lyrics)'}>
+                      label={lyricsLayout === 'side' ? t('Lyrics as subtitles under the video') : t('Full lyrics at the side (other sources, plain lyrics)')}>
                       {lyricsLayout === 'side' ? <Captions size={17} /> : <PanelRight size={17} />}
                     </ChromeButton>
                   )}
-                  <button onClick={() => setShowLyrics(v => !v)} title={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-label={showLyrics ? 'Hide the lyrics' : 'Show the lyrics'} aria-pressed={showLyrics}
+                  <button onClick={() => setShowLyrics(v => !v)} title={showLyrics ? t('Hide the lyrics') : t('Show the lyrics')} aria-label={showLyrics ? t('Hide the lyrics') : t('Show the lyrics')} aria-pressed={showLyrics}
                     className={`w-10 h-10 flex items-center justify-center rounded-full border backdrop-blur-md transition-colors ${showLyrics ? 'border-white/30 bg-white/20 text-white' : 'border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16]'}`}>
                     <Mic2 size={17} />
                   </button>
@@ -533,7 +532,6 @@ function leadCopy(video) {
 }
 
 export function VideoGlow({ videoRef, active }) {
-  const { t } = useTranslation()
   const canvasRef = useRef(null)
   const [drawn, setDrawn] = useState(false)
   useEffect(() => {

@@ -72,7 +72,7 @@ function AddonCard({ addon, onChanged, focused = false }) {
     setAuth(status)
     setMessage(status.authenticated ? t('Access verified. This source can now stream and download.') : t(status.error || "Verification wasn't completed. Try again when you're ready."))
     onChanged()
-  }), [addon.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [addon.key, t])
   const needsSetup = addon.enabled && addon.access && !addon.access.ready
   const verified = auth ? !!auth.authenticated : !!addon.access?.verified
 

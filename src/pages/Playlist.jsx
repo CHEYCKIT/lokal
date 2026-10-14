@@ -250,12 +250,12 @@ export default function Playlist() {
   const sharePlaylist = () => {
     const artists = new Set(tracks.map(track => String(track.artist || '').split(/\s*,\s*/)[0]).filter(Boolean))
     openShareCard({
-      kind: smart ? 'Smart playlist' : 'Playlist',
-      title: isLiked ? 'Liked Songs' : (playlist?.name || 'Playlist'),
+      kind: smart ? t('Smart playlist') : t('Playlist'),
+      title: isLiked ? t('Liked Songs') : (playlist?.name || t('Playlist')),
       subtitle: smart ? describeRules(playlist.smart_rules) : (playlist?.description || ''),
       art: playlist?.cover_path ? [{ path: playlist.cover_path, url: api.isElectron ? null : api.playlistCoverURL(id) }] : coversOf(tracks, 4),
-      stats: [['Songs', tracks.length.toLocaleString()], ['Length', fmt(totalDuration)], ['Artists', artists.size.toLocaleString()]],
-      list: { title: 'Songs', items: tracks.slice(0, 5).map(track => [track.title, track.artist]) },
+      stats: [[t('Songs'), tracks.length.toLocaleString()], [t('Length'), fmt(totalDuration)], [t('Artists'), artists.size.toLocaleString()]],
+      list: { title: t('Songs'), items: tracks.slice(0, 5).map(track => [track.title, track.artist]) },
     })
   }
 

@@ -58,10 +58,10 @@ export function DownloadsButton() {
   const togglePanel = useDownloads(s => s.togglePanel)
   useEffect(() => { startDownloadSync() }, [])
   const { batch, active, failed, progress, settled } = batchOf(jobs)
-  const label = !batch.length ? 'Downloads'
+  const label = !batch.length ? t('Downloads')
     : settled
-      ? failed.length ? `Downloads: ${failed.length} failed` : 'Downloads finished'
-      : `Downloads: ${active.length} in progress`
+      ? failed.length ? t('Downloads: {count} failed', { count: failed.length }) : t('Downloads finished')
+      : t('Downloads: {count} in progress', { count: active.length })
   return (
     <button
       type="button"
@@ -88,15 +88,15 @@ export function DownloadsButton() {
 
 // ------------------------------------------------------------------ rows
 
-function statusText(job) {
+function statusText(job, t) {
   switch (job.status) {
-    case 'queued': return job.retryAt ? job.message || 'Retrying soon' : job.message && job.message !== 'Queued' ? job.message : 'Queued'
-    case 'downloading': return job.message || 'Downloading...'
-    case 'done': return job.message || 'Saved'
-    case 'error': return explainDownloadError(job.error).summary
-    case 'cancelled': return 'Cancelled'
-    case 'incomplete': return 'Stopped before finishing'
-    default: return job.status
+    case 'queued': return t(job.retryAt ? job.message || 'Retrying soon' : job.message && job.message !== 'Queued' ? job.message : 'Queued')
+    case 'downloading': return t(job.message || 'Downloading...')
+    case 'done': return t(job.message || 'Saved')
+    case 'error': return t(explainDownloadError(job.error).summary)
+    case 'cancelled': return t('Cancelled')
+    case 'incomplete': return t('Stopped before finishing')
+    default: return t(job.status)
   }
 }
 
@@ -140,18 +140,18 @@ export function DownloadRow({ job, detailed = false }) {
           <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]">
             {job.status === 'done' && <Check size={11} className="flex-shrink-0 text-green-400" />}
             {job.status === 'error' && <AlertCircle size={11} className="flex-shrink-0 text-red-400" />}
-            <span className={`truncate ${tone}`} title={failure?.detail || undefined}>{statusText(job)}</span>
+            <span className={`truncate ${tone}`} title={failure?.detail ? t(failure.detail) : undefined}>{statusText(job, t)}</span>
             {job.status === 'downloading' && job.speed ? <span className="flex-shrink-0 text-subtle">· {job.speed}</span> : null}
           </p>
-          {job.from ? <p className="mt-0.5 truncate text-[10.5px] uppercase tracking-[0.14em] text-subtle">from {job.from}</p> : null}
+          {job.from ? <p className="mt-0.5 truncate text-[10.5px] uppercase tracking-[0.14em] text-subtle">{t('from {source}', { source: job.from })}</p> : null}
         </div>
         <div className="flex flex-shrink-0 items-center gap-1">
           {job.status === 'downloading' && <span className="w-9 text-right text-[11px] tabular-nums text-muted">{Math.round(job.progress || 0)}%</span>}
           {job.lyricsCount > 0 && !active && (
-            <span title={`Lyrics added to ${job.lyricsCount} file${job.lyricsCount === 1 ? '' : 's'}`} className="text-accent/80"><Mic2 size={12} /></span>
+            <span title={t('Lyrics added to {count} files', { count: job.lyricsCount })} className="text-accent/80"><Mic2 size={12} /></span>
           )}
           {failure?.detail && (
-            <button onClick={() => setWhy(o => !o)} title={why ? 'Hide the details' : 'What went wrong'} aria-expanded={why}
+            <button onClick={() => setWhy(o => !o)} title={t(why ? 'Hide the details' : 'What went wrong')} aria-expanded={why}
               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Info size={13} /></button>
           )}
           {canRetry && (
@@ -171,7 +171,7 @@ export function DownloadRow({ job, detailed = false }) {
       </div>
 
       {why && failure?.detail && (
-        <p className="mt-2 max-h-32 select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-500/5 p-2 text-[11px] leading-relaxed text-muted">{failure.detail.split(/\s+\|\s+|;\s+/).join('\n')}</p>
+        <p className="mt-2 max-h-32 select-text overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-red-400/20 bg-red-500/5 p-2 text-[11px] leading-relaxed text-muted">{t(failure.detail.split(/\s+\|\s+|;\s+/).join('\n'))}</p>
       )}
 
       {active && (
@@ -187,7 +187,7 @@ export function DownloadRow({ job, detailed = false }) {
 
       {detailed && open && (
         <div className="mt-3 space-y-2">
-          {job.totalTracks ? <p className="text-xs text-muted">{Math.min(job.currentTrack || 0, job.totalTracks)} / {job.totalTracks} tracks</p> : null}
+          {job.totalTracks ? <p className="text-xs text-muted">{t('{current} / {total} tracks', { current: Math.min(job.currentTrack || 0, job.totalTracks), total: job.totalTracks })}</p> : null}
           {files.length > 0 && (
             <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border bg-black/15 p-2">
               {files.map((file, i) => (
@@ -525,7 +525,7 @@ export function DownloadManagerPanel() {
               {[['queue', 'Queue'], ['others', 'Others']].map(([id, label]) => (
                 <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                   className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
-                  {label}
+                  {t(label)}
                   {(id === 'queue' ? active.length : othersRunning) > 0 && (
                     <span className="rounded-full bg-accent/20 px-1.5 text-[10px] tracking-normal tabular-nums text-accent">{id === 'queue' ? active.length : othersRunning}</span>
                   )}
@@ -548,7 +548,7 @@ export function DownloadManagerPanel() {
             onClick={findMore}
             className="flex items-center gap-2 border-t border-border px-4 py-2.5 text-left text-[11px] uppercase tracking-[0.18em] text-accent transition-colors hover:bg-white/[0.04]"
           >
-            <Search size={12} /> Find music to download
+            <Search size={12} /> {t('Find music to download')}
           </button>
         </motion.div>
       )}
