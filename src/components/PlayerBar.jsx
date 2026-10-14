@@ -192,7 +192,7 @@ export default function PlayerBar() {
                   <button
                     onClick={handleTitleClick}
                     onContextMenu={openTrackMenu}
-                    title={`Go to album: ${currentTrack.album}`}
+                    title={`Go to album: ${currentTrack.album || t('Album · Online')}`}
                     className="text-sm font-medium truncate text-text hover:text-accent hover:underline transition-colors text-left min-w-0">
                     {currentTrack.title}
                   </button>
