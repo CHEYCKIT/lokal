@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { providerLabel, streamRef } from '../onlineTracks'
 
@@ -8,6 +9,7 @@ const length = value => {
 
 /** Queue concurrent batch decisions inside the existing ghost resolver. */
 export function useGhostDurationConfirmation(open) {
+  const { t } = useTranslation()
   const active = useRef(open)
   const epoch = useRef(0)
   if (active.current !== open) epoch.current++
@@ -41,8 +43,8 @@ export function useGhostDurationConfirmation(open) {
   }, [])
   const provider = pending && (pending.found.provider || streamRef(pending.found)?.provider)
   const durationChoice = pending && (
-    <div role="region" aria-label="Different song length" className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 p-4 space-y-3">
-      <p className="text-sm font-medium text-white">Use a different-length version?</p>
+    <div role="region" aria-label={t("Different song length")} className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 p-4 space-y-3">
+      <p className="text-sm font-medium text-white">{t("Use a different-length version?")}</p>
       <p className="text-sm text-white">{pending.ghost.artist} — {pending.ghost.title}</p>
       <p className="text-xs text-muted">Playlist: {length(pending.ghost.duration)} · Found: {length(pending.found.duration)} ({provider ? providerLabel(provider) : pending.found.file_path ? 'Your library' : 'YouTube'})</p>
       <p className="text-xs text-muted">{pending.found.title}{pending.found.album ? ` · ${pending.found.album}` : ''}. This may be a different recording or edit.</p>
