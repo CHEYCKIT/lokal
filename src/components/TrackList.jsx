@@ -34,6 +34,7 @@ import HoverScrollTitle from './HoverScrollTitle'
 import { useGhostDownloadSources } from './useGhostDownloadSources'
 import { useGhostDurationConfirmation } from './useGhostDurationConfirmation'
 import { nextPlaylistSort } from '../playlistSorting'
+import { useTranslation } from '../i18n'
 
 const LARGE_LIST_STEP = 200
 // Large lists are windowed: only the rows near the viewport are mounted, with
@@ -93,6 +94,7 @@ function SortableHeader({ column, label, children, sort, onSortChange, className
 }
 
 export default function TrackList({ tracks = [], showQuality = false, onRemove = null, showPlayNext = true, showAddToQueue = true, playlistId = null, onReorder = null, onQuickAdd = null, reduceMotion = false, context = null, highlightTrackId = null, highlightRequestKey = null, extraColumns = [], resolveTracks = null, sort = null, onSortChange = null, trackNumbers = null, toolbarStart = null }) {
+  const { t } = useTranslation()
   const resolvedPlaybackRef = useRef(0)
   const resolvedToastRef = useRef(null)
   useEffect(() => () => { resolvedPlaybackRef.current++; resolvedToastRef.current?.close() }, [])
@@ -790,7 +792,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         {layout.number && <SortableHeader column="number" label="playlist number" sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{layout.album ? 'Title' : 'Title / Album'}</span>
         {layout.album && <span className="truncate">Album</span>}
-        {layout.source && <span className="flex justify-center" title="Source"><Globe size={12} aria-hidden="true" /><span className="sr-only">Source</span></span>}
+        {layout.source && <span className="flex justify-center" title={t("Source")}><Globe size={12} aria-hidden="true" /><span className="sr-only">{t("Source")}</span></span>}
         {layout.quality && <span className="text-center">Quality</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
         {layout.added && <SortableHeader column="added" label="date added" sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
@@ -853,11 +855,11 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
             {layout.number && <div data-track-column="number" className="flex items-center justify-center h-7 text-xs text-muted font-display">
               {isGhost ? (
-                <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} className="text-yellow-300 hover:text-yellow-200 transition-colors" title="Ghost song">
+                <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} className="text-yellow-300 hover:text-yellow-200 transition-colors" title={t("Ghost song")}>
                   <AlertCircle size={14} />
                 </button>
               ) : isHov || isCurrent ? (
-                <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`} className={isCurrent ? 'text-accent' : 'text-white'}>
+                <button onClick={e => handlePlay(track, e)} aria-label={`${t(isCurrent && isPlaying ? 'Pause' : 'Play')} ${track.title}`} className={isCurrent ? 'text-accent' : 'text-white'}>
                   {isCurrent && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="translate-x-px" />}
                 </button>
               ) : <span className={isCurrent ? 'text-accent' : ''}>{trackNumbers?.get(track.playlist_track_id ?? track.id) ?? trackIndex + 1}</span>}
@@ -871,7 +873,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {isCurrent && isPlaying ? <Pause size={14} /> : <Play size={14} />}
                 </button>}
                 {layout.number && api.isElectron && isHov && !resolveTracks && (
-                  <button onClick={e => replaceArtwork(track, e)} title="Replace artwork" className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={e => replaceArtwork(track, e)} title={t("Replace artwork")} className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera size={10} className="text-white" />
                   </button>
                 )}
@@ -886,9 +888,9 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {columns.source && !layout.source && <TrackSourceIcon track={track} addonNames={addonNames} />}
                   <p title={track.title} className={`min-w-0 text-sm font-medium truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>{track.title}</p>
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] leading-[14px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
-                  {isMissing && <span className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">Missing file</span>}
-                  {!isMissing && isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">Ghost</span>}
-                  {!isMissing && track.playback_error && <span title={track.playback_error} className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">Can't play</span>}
+                  {isMissing && <span className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">{t("Missing file")}</span>}
+                  {!isMissing && isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">{t("Ghost")}</span>}
+                  {!isMissing && track.playback_error && <span title={track.playback_error} className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">{t('Can\'t play')}</span>}
                 </div>
                 <div className="flex min-w-0 items-center text-xs text-muted leading-4 h-4">
                   {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
@@ -908,7 +910,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             {layout.quality && (() => {
               // Same badge as the Audio Quality page; opens that page on its list.
               const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
-              if (tier === 'unknown') return <span title="Quality unknown" className="text-center text-xs text-muted/50">—</span>
+              if (tier === 'unknown') return <span title={t("Quality unknown")} className="text-center text-xs text-muted/50">—</span>
               const info = TIERS[tier]
               return (
                 <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
@@ -925,15 +927,15 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             <div className="flex items-center justify-end gap-1.5">
               <div className={`${layout.actions ? 'flex' : 'hidden'} items-center justify-end gap-1.5`}>
                 {showPlayNext && !isGhost && (
-                  <button onClick={e => handlePlayNext(track, e)} title="Play next" aria-label="Play next"
+                  <button onClick={e => handlePlayNext(track, e)} title={t("Play next")} aria-label={t("Play next")}
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                     <Clock size={14} />
                   </button>
                 )}
                 {(streamed || needsResolution(track)) && <SaveToLibraryButton track={track} getTrack={needsResolution(track) ? () => resolveDownloadTrack(track) : undefined} meta={track} className="opacity-0 group-hover:opacity-100 focus:opacity-100" />}
-                {isMissing && <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} title="Redownload or find a replacement" aria-label="Redownload or find a replacement" className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-accent hover:text-white transition-all"><Download size={14} /></button>}
+                {isMissing && <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} title={t("Redownload or find a replacement")} aria-label={t("Redownload or find a replacement")} className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-accent hover:text-white transition-all"><Download size={14} /></button>}
                 {showAddToQueue && !isGhost && (
-                  <button onClick={e => handleAddToQueue(track, e)} title="Add to queue" aria-label="Add to queue"
+                  <button onClick={e => handleAddToQueue(track, e)} title={t("Add to queue")} aria-label={t("Add to queue")}
                     className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all">
                     <ListEnd size={14} />
                   </button>
@@ -976,13 +978,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 })()}
                 <button onClick={e => { e.stopPropagation(); runResolved([track], rows => openAddToPlaylist(rows[0])) }}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
-                  title="Add to another playlist">
+                  title={t("Add to another playlist")}>
                   <Plus size={14} />
                 </button>
                 {!resolveTracks && <button
                   onClick={e => { e.stopPropagation(); setEditingTrack(track) }}
                   className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent transition-all"
-                  title="Edit track info"
+                  title={t("Edit track info")}
                 >
                   <Edit2 size={14} />
                 </button>}
@@ -994,14 +996,14 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 )}
                 {!playlistId && !onRemove && !resolveTracks && (
                   <button onClick={e => { e.stopPropagation(); askDelete([track]) }}
-                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title="Delete from Library">
+                    className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all" title={t("Delete from Library")}>
                     <Trash2 size={12} />
                   </button>
                 )}
               </div>
               <div className={`${layout.actions || layout.likedTrack ? '' : 'hidden'} relative flex-shrink-0`}>
                 <button onClick={e => toggleLike(track, e)}
-                  aria-label={liked ? 'Unlike song' : 'Like song'} className={`transition-all focus:opacity-100 ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
+                  aria-label={liked ? t('Unlike song') : t('Like song')} className={`transition-all focus:opacity-100 ${liked ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100 hover:text-white'}`}>
                   <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
                 </button>
                 <AnimatePresence>
@@ -1022,7 +1024,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   openTrackMenu({ preventDefault() {}, stopPropagation() {}, clientX: r.left, clientY: r.bottom + 4 }, track)
                   setMenuFor(track.id)
                 }}
-                title="More"
+                title={t("More")}
                 aria-label={`More for ${track.title || 'this song'}`}
                 aria-haspopup="menu"
                 aria-expanded={!!menu.state && menuFor === track.id}
@@ -1065,7 +1067,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       <Modal
         open={!!ghostTrack}
         onClose={() => setGhostTrack(null)}
-        title="Resolve Ghost Song"
+        title={t("Resolve Ghost Song")}
         width="max-w-2xl"
       >
         <div className="space-y-4">
@@ -1102,7 +1104,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               value={ghostQuery}
               onChange={e => setGhostQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') refreshGhostMatches(e.currentTarget.value) }}
-              placeholder="Search manually for a better match"
+              placeholder={t("Search manually for a better match")}
               className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
             />
             <button

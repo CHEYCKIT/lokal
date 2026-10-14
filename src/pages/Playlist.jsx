@@ -17,11 +17,13 @@ import GhostSongsModal from '../components/GhostSongsModal'
 import { usePlaylistSortStore, playlistSortPreference } from '../store/playlistSort'
 import { sortPlaylistTracks } from '../playlistSorting'
 import { filterPlaylistTracks } from '../playlistSearch'
+import { useTranslation } from '../i18n'
 
 // The playlist's actions, as plain icons beside the Play button.
 const ICON_BUTTON = 'flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
 
 export default function Playlist() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const nav = useNavigate()
   const { user } = useAppStore()
@@ -295,7 +297,7 @@ export default function Playlist() {
             <button
               onClick={uploadPlaylistPhoto}
               className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/45 transition-colors flex items-center justify-center"
-              title={playlist?.cover_path ? 'Change playlist photo' : 'Upload playlist photo'}
+              title={playlist?.cover_path ? t('Change playlist photo') : t('Upload playlist photo')}
             >
               <span className="w-11 h-11 rounded-full bg-white/12 border border-white/15 text-white hover:bg-white/20 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center">
                 <ImageIcon size={17} />
@@ -307,7 +309,7 @@ export default function Playlist() {
               <button
                 onClick={(e) => { e.stopPropagation(); clearPlaylistPhoto() }}
                 className="w-9 h-9 rounded-full bg-red-500/20 border border-red-400/25 text-red-200 hover:bg-red-500/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
-                title="Reset playlist photo"
+                title={t("Reset playlist photo")}
               >
                 <X size={15} />
               </button>
@@ -317,7 +319,7 @@ export default function Playlist() {
 
         <div className="min-w-0 flex-1">
           <p className="text-xs font-display text-muted uppercase tracking-widest mb-1 flex items-center gap-1.5">
-            {smart && <Sparkles size={11} className="text-accent" />}{smart ? 'Smart playlist' : 'Playlist'}
+            {smart && <Sparkles size={11} className="text-accent" />}{smart ? t('Smart playlist') : t('Playlist')}
           </p>
           {!isLiked && editingName ? (
             <div className="flex items-center gap-2 mb-2">
@@ -337,7 +339,7 @@ export default function Playlist() {
           ) : (
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-2xl font-display text-white truncate">
-                {isLiked ? 'Liked Songs' : (playlist?.name || 'Playlist')}
+                {isLiked ? t('Liked Songs') : (playlist?.name || t('Playlist'))}
               </h1>
               {!isLiked && (
                 <button onClick={() => setEditingName(true)} className="text-muted hover:text-white transition-colors flex-shrink-0">
@@ -359,8 +361,8 @@ export default function Playlist() {
               type="button"
               onClick={() => playQueue(playableTracks, 0, playbackContext)}
               disabled={!playableTracks.length}
-              aria-label="Play all"
-              title="Play all"
+              aria-label={t("Play All")}
+              title={t("Play All")}
               className="mr-1 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))] transition-colors hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play size={17} fill="currentColor" className="translate-x-px" />
@@ -373,14 +375,14 @@ export default function Playlist() {
                   value={playlistSearch}
                   onChange={event => setPlaylistSearch(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Escape') { setPlaylistSearchOpen(false); setPlaylistSearch('') } }}
-                  placeholder="Search this playlist"
-                  aria-label="Search this playlist"
+                  placeholder={t("Search this playlist")}
+                  aria-label={t("Search this playlist")}
                   className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
                 />
                 <button
                   type="button"
                   onClick={() => { setPlaylistSearchOpen(false); setPlaylistSearch('') }}
-                  aria-label="Close playlist search"
+                  aria-label={t("Close playlist search")}
                   className="flex-shrink-0 text-muted transition-colors hover:text-white"
                 >
                   <X size={15} />
@@ -391,7 +393,7 @@ export default function Playlist() {
                 <Search size={17} />
               </button>
             ))}
-            <button type="button" onClick={shuffleTracks} disabled={!playableTracks.length} aria-label="Shuffle" title="Shuffle" className={ICON_BUTTON}>
+            <button type="button" onClick={shuffleTracks} disabled={!playableTracks.length} aria-label={t("Shuffle")} title={t("Shuffle")} className={ICON_BUTTON}>
               <Shuffle size={17} />
             </button>
             <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label="Share as a picture" title="Share as a picture" className={ICON_BUTTON}>
@@ -413,11 +415,11 @@ export default function Playlist() {
                 )}
                 {!smart && playlist?.id && <PlaylistSyncButton playlistId={playlist.id} userId={user?.id} buttonClassName={ICON_BUTTON} />}
                 {smart && (
-                  <button type="button" onClick={() => openSmartPlaylistEditor(playlist)} aria-label="Edit rules" title="Edit rules" className={ICON_BUTTON}>
+                  <button type="button" onClick={() => openSmartPlaylistEditor(playlist)} aria-label={t("Edit rules")} title={t("Edit rules")} className={ICON_BUTTON}>
                     <SlidersHorizontal size={17} />
                   </button>
                 )}
-                <button type="button" onClick={deletePlaylist} aria-label="Delete playlist" title="Delete playlist" className={`${ICON_BUTTON} hover:!bg-red-400/10 hover:!text-red-400`}>
+                <button type="button" onClick={deletePlaylist} aria-label={t("Delete playlist")} title={t("Delete playlist")} className={`${ICON_BUTTON} hover:!bg-red-400/10 hover:!text-red-400`}>
                   <Trash2 size={16} />
                 </button>
               </>

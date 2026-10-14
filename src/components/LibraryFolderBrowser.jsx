@@ -4,8 +4,10 @@ import { ArrowLeft, ChevronRight, Folder, Music } from 'lucide-react'
 import { api } from '../api'
 import TrackList from './TrackList'
 import FadeImg from './FadeImg'
+import { useTranslation } from '../i18n'
 
 export default function LibraryFolderBrowser({ folderPath, onFolderChange, onDataChange, view, playQueue, artSrc }) {
+  const { t } = useTranslation()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -88,7 +90,7 @@ export default function LibraryFolderBrowser({ folderPath, onFolderChange, onDat
         </div>
       )}
 
-      {loading && <p className="text-xs text-muted" role="status">Loading folder…</p>}
+      {loading && <p className="text-xs text-muted" role="status">{t("Loading folder…")}</p>}
 
       {displayedError && (
         <div className="rounded-xl border border-border bg-elevated px-5 py-10 text-center text-muted">
@@ -181,7 +183,7 @@ export default function LibraryFolderBrowser({ folderPath, onFolderChange, onDat
           {!data.folders?.length && !data.tracks?.length && (
             <div className="py-20 text-center text-muted">
               <Folder size={42} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">This folder is empty.</p>
+              <p className="text-sm">{t("This folder is empty.")}</p>
             </div>
           )}
         </motion.div>
