@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from '../i18n'
 import { discoveryArtistKey, useDiscoveryArtists } from '../discoveryArtists'
 import FollowArtistButton from './FollowArtistButton'
 

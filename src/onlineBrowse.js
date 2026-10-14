@@ -26,9 +26,10 @@ export function onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumI
 export function trackAlbumPath(track) {
   const ref = streamRef(track)
   const provider = /^a-/.test(ref?.provider || '') ? ref.provider : /^a-/.test(track.provider || '') ? track.provider : null
+  const sourceAlbumId = track.source_album_id || track.sourceAlbumId || track.albumId || null
   return onlineAlbumPath({
     artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId,
-    provider, sourceAlbumId: provider && track.provider === provider ? track.albumId : null,
+    provider, sourceAlbumId: provider ? sourceAlbumId : null,
   })
 }
 

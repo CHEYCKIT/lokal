@@ -414,15 +414,36 @@ function streamQuality(format) {
 const year = value => (Number(value) >= 1000 && Number(value) <= 2999 ? Math.floor(Number(value)) : null)
 const positive = value => (Number(value) > 0 && Number(value) < 1000 ? Math.floor(Number(value)) : null)
 
+// Add-on album ids are needed to open the provider's album from a streamed
+// track. Older library databases don't have a column for them.
+const sourceAlbumColumnDatabases = new WeakSet()
+function ensureSourceAlbumIdColumn(db) {
+  if (sourceAlbumColumnDatabases.has(db)) return
+  const columns = db.pragma('table_info(tracks)')
+  if (!columns.some(column => column.name === 'source_album_id')) db.exec('ALTER TABLE tracks ADD COLUMN source_album_id TEXT')
+  sourceAlbumColumnDatabases.add(db)
+}
+
+function sourceAlbumIdOf(item) {
+  const album = item?.album && typeof item.album === 'object' ? item.album : null
+  const direct = item?.albumId ?? item?.album_id ?? album?.id ?? album?.album_id ?? album?.albumId
+  if (direct != null && String(direct).trim()) return String(direct).trim().slice(0, 500)
+  const url = String(item?.album_url || item?.albumUrl || '')
+  const match = url.match(/\/albums?\/([^/?#]+)/i)
+  if (!match) return null
+  try { return decodeURIComponent(match[1]).slice(0, 500) } catch { return match[1].slice(0, 500) }
+}
+
 function saveOnlineTracks(db, items = []) {
   try { require('../quality').ensureColumns(db) } catch {}
+  ensureSourceAlbumIdColumn(db)
   // What the source says of the song (an addon's year, track number, ISRC,
   // quality...) is kept for the details panel; it fills in, never erases.
   const upsert = db.prepare(`
     INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, duration, source_url, artwork_url, last_modified,
-      year, track_num, genre, isrc, codec, lossless, bit_depth, sample_rate, bitrate)
+      year, track_num, genre, isrc, codec, lossless, bit_depth, sample_rate, bitrate, source_album_id)
     VALUES (@id, @file_path, @id, @title, @artist, @album, @album_artist, @duration, @source_url, @artwork_url, @now,
-      @year, @track_num, @genre, @isrc, @codec, @lossless, @bit_depth, @sample_rate, @bitrate)
+      @year, @track_num, @genre, @isrc, @codec, @lossless, @bit_depth, @sample_rate, @bitrate, @source_album_id)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title, artist = excluded.artist, album = excluded.album,
       album_artist = excluded.album_artist, duration = excluded.duration,
@@ -431,7 +452,8 @@ function saveOnlineTracks(db, items = []) {
       genre = COALESCE(excluded.genre, tracks.genre), isrc = COALESCE(excluded.isrc, tracks.isrc),
       codec = COALESCE(excluded.codec, tracks.codec), lossless = COALESCE(excluded.lossless, tracks.lossless),
       bit_depth = COALESCE(excluded.bit_depth, tracks.bit_depth), sample_rate = COALESCE(excluded.sample_rate, tracks.sample_rate),
-      bitrate = COALESCE(excluded.bitrate, tracks.bitrate)
+      bitrate = COALESCE(excluded.bitrate, tracks.bitrate),
+      source_album_id = COALESCE(excluded.source_album_id, tracks.source_album_id)
     WHERE tracks.file_path LIKE 'ghost://%'
   `)
   const get = db.prepare('SELECT * FROM tracks WHERE id = ?')
@@ -451,6 +473,7 @@ function saveOnlineTracks(db, items = []) {
       album_artist: item.artists?.[0] ? String(item.artists[0]).slice(0, 500) : null,
       duration: Number(item.duration) > 0 ? Number(item.duration) : null,
       source_url: p.sourceUrl(itemId),
+      source_album_id: sourceAlbumIdOf(item),
       // Search results call it thumbnail; a row played again (a fallback to
       // another source) has artwork_url: keep its cover either way.
       artwork_url: [item.thumbnail, item.artwork_url].map(value => String(value || '')).find(value => /^https:\/\//.test(value))?.slice(0, 1000) || null,
