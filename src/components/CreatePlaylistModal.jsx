@@ -1,9 +1,11 @@
+import { useTranslation } from '../i18n'
 import React, { useState } from 'react'
 import Modal from './Modal'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 
 export default function CreatePlaylistModal({ onCreated }) {
+  const { t } = useTranslation()
   const { showCreatePlaylistModal, closeCreatePlaylist, user } = useAppStore()
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,10 +23,10 @@ export default function CreatePlaylistModal({ onCreated }) {
   }
 
   return (
-    <Modal open={showCreatePlaylistModal} onClose={closeCreatePlaylist} title="New Playlist" width="max-w-xs">
+    <Modal open={showCreatePlaylistModal} onClose={closeCreatePlaylist} title={t("New Playlist")} width="max-w-xs">
       <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">Name</label>
+          <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Name")}</label>
           <input
             autoFocus
             value={name}
