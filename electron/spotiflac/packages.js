@@ -52,7 +52,7 @@ function readArchive(buffer) {
 }
 function isPlaceholderAlbum(value) {
   const album = typeof value === 'string' ? value.trim() : ''
-  return !album || /^(?:unknown(?:\\s+album)?|untitled(?:\\s+album)?|n\\/?a|none|null|undefined)$/i.test(album)
+  return !album || /^(?:unknown(?:\s+album)?|untitled(?:\s+album)?|n\/?a|none|null|undefined)$/i.test(album)
 }
 
 function albumNameOf(track) {
@@ -72,7 +72,7 @@ function albumIdOf(track) {
   const direct = track?.album_id || track?.albumId
   if (direct != null && String(direct).trim()) return String(direct).trim()
   const url = String(track?.album_url || track?.albumUrl || '')
-  const match = url.match(/\\/albums?\\/([^/?#]+)/i)
+  const match = url.match(/\/albums?\/([^/?#]+)/i)
   if (!match) return null
   try { return decodeURIComponent(match[1]) } catch { return match[1] }
 }
