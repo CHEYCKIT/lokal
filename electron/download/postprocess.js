@@ -5,7 +5,7 @@
 
 const fs = require('fs')
 const path = require('path')
-const { readInfo, applyTags, stripArtistPrefix } = require('./tagger')
+const { readInfo, applyTags, stripArtistPrefix, isPlaceholderAlbum } = require('./tagger')
 const { toPortableLyrics, toPrivateTag } = require('../lyrics/embedded')
 const { isYouTube, isSoundCloud } = require('./args')
 
@@ -320,21 +320,30 @@ async function finishFile(filePath, { db, settings = {}, url, meta = null, kind 
   return out
 }
 
+/** Pick source album metadata when the file's current tag is empty or a placeholder. */
+function resolveKnownAlbum(existingAlbum, knownAlbum) {
+  const existing = String(existingAlbum ?? '').trim()
+  const known = String(knownAlbum ?? '').trim()
+  if (isPlaceholderAlbum(existing) && !isPlaceholderAlbum(known)) return { value: known, replace: true }
+  return { value: existing, replace: false }
+}
+
 /** finishFile for a file whose song is known from its source (an addon). */
 async function finishKnownFile(filePath, info, { db, settings, known, outputDir, out }) {
   // yt-dlp tags a bare link with its own guesses, written over anything the
   // file had: the title is the link's file name ("7779369") and the artist
   // "Unknown Artist" (or the host). So the addon's title and artist win.
   // The album isn't guessed: one already in the file is kept.
+  const album = resolveKnownAlbum(info.album, known.album)
   const tags = {
     title: known.title || info.title || '',
     artist: known.artist || info.artist || '',
-    album: info.album || known.album || '',
+    album: album.value,
   }
   const changes = {}
   if (known.title && known.title !== info.title) changes.title = known.title
   if (known.artist && known.artist !== info.artist) changes.artist = known.artist
-  if (!info.album && known.album) changes.album = known.album
+  if (album.replace) changes.album = album.value
   // Year, track and disc numbers, ISRC, genre: only where the file has none.
   for (const key of ['year', 'track', 'disc', 'isrc', 'genre']) if (known[key]) changes[key] = known[key]
   const cover = known.cover ? await fetchCover(known.cover) : null
@@ -367,4 +376,4 @@ async function finishKnownFile(filePath, info, { db, settings, known, outputDir,
   return out
 }
 
-module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, swapped, knownTagsOf }
+module.exports = { finishFile, findLyrics, artistAndTitle, preferKnownArtist, orderByLookup, swapped, knownTagsOf, resolveKnownAlbum }
