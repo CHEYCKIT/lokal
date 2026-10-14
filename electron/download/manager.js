@@ -45,6 +45,26 @@ const TOOL_UPDATE_COOLDOWN_MS = 6 * 60 * 60 * 1000
 // Retrying won't change anything.
 const PERMANENT = /Video unavailable|Private video|members[- ]only|Sign in to confirm your age|confirm you.re not a bot|copyright|not available in your country|has been removed|account .* terminated|Unsupported URL|is not a valid URL|Requested format is not available|No video formats found|Premieres in|live event will begin/i
 
+function mergePackageDownloadTags(meta = {}, existing = {}) {
+  const album = [meta.album, meta.album_name, existing.album]
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .find(value => value && !/^(?:unknown(?:\\s+album)?|untitled(?:\\s+album)?|n\\/?a|none|null|undefined)$/i.test(value))
+  return {
+    title: meta.title || meta.name,
+    artist: meta.artist || (Array.isArray(meta.artists) ? meta.artists.join(', ') : meta.artists),
+    album,
+    cover: meta.cover_url,
+    year: Number(String(meta.release_date || '').slice(0,4)) || undefined,
+    track: meta.track_number,
+    disc: meta.disc_number,
+    isrc: meta.isrc,
+    genre: meta.genre,
+    ...existing,
+    // Source tags may be empty or placeholders; resolved provider metadata wins.
+    album,
+  }
+}
+
 function friendlyError(lines, fallback) {
   const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '')
   if (isCookieError(text)) return COOKIE_FAILURE_MESSAGE
@@ -907,8 +927,8 @@ class DownloadManager {
       for (let suffix = 1; fs.existsSync(target); suffix++) target = path.join(outputDir, `${title} (${suffix})${ext}`)
       await fs.copy(artifact.file, target, { overwrite: false, errorOnExist: true })
       if (controller.signal.aborted) { await fs.remove(target); controller.signal.throwIfAborted() }
-      const meta = artifact.metadata
-      job.opts.tags = { title: meta.title || meta.name, artist: meta.artist || (Array.isArray(meta.artists) ? meta.artists.join(', ') : meta.artists), album: meta.album || meta.album_name, cover: meta.cover_url, year: Number(String(meta.release_date || '').slice(0,4)) || undefined, track: meta.track_number, disc: meta.disc_number, isrc: meta.isrc, genre: meta.genre, ...job.opts.tags }
+      const meta = artifact.metadata || {}
+      job.opts.tags = mergePackageDownloadTags(meta, job.opts.tags || {})
       job.filepaths.push(target); job.exited = true; job.exitCode = 0
       this.afterFile(job, target)
       await this.onExit(job, 0)
@@ -1623,4 +1643,4 @@ function getDownloadManager() {
   return instance
 }
 
-module.exports = { getDownloadManager, DownloadManager, friendlyError, youTubeId, playlistIdOf, TRANSIENT, PERMANENT }
+module.exports = { getDownloadManager, DownloadManager, friendlyError, youTubeId, playlistIdOf, mergePackageDownloadTags, TRANSIENT, PERMANENT }
