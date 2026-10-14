@@ -48,7 +48,7 @@ const PERMANENT = /Video unavailable|Private video|members[- ]only|Sign in to co
 function mergePackageDownloadTags(meta = {}, existing = {}) {
   const album = [meta.album, meta.album_name, existing.album]
     .map(value => typeof value === 'string' ? value.trim() : '')
-    .find(value => value && !/^(?:unknown(?:\\s+album)?|untitled(?:\\s+album)?|n\\/?a|none|null|undefined)$/i.test(value))
+    .find(value => value && !new Set(['unknown', 'unknown album', 'untitled', 'untitled album', 'n/a', 'na', 'none', 'null', 'undefined']).has(value.toLowerCase().replace(/ +/g, ' ')))
   return {
     title: meta.title || meta.name,
     artist: meta.artist || (Array.isArray(meta.artists) ? meta.artists.join(', ') : meta.artists),
