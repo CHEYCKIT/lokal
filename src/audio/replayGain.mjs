@@ -18,7 +18,8 @@ export function replayGainMultiplier(tags, mode) {
   if (gainDb === null) return 1
 
   let multiplier = Math.pow(10, gainDb / 20)
-  const peak = finiteNumber(useAlbum ? tags.albumPeak : tags.trackPeak)
+  const albumPeak = useAlbum ? finiteNumber(tags.albumPeak) : null
+  const peak = albumPeak ?? finiteNumber(tags.trackPeak)
   if (peak !== null && peak > 0) multiplier = Math.min(multiplier, 0.999 / peak)
   return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
 }
