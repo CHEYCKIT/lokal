@@ -1076,7 +1076,7 @@ export default function Settings() {
                 <motion.span key="error" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-red-400 flex items-center gap-2">
                   <AlertTriangle size={12} /> Couldn't save ({saveState.error})
-                  <button onClick={() => flushSettings()} className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-400/10">Retry</button>
+                  <button onClick={() => flushSettings()} className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-400/10">{t("Retry")}</button>
                 </motion.span>
               ) : saveState === 'saving' ? (
                 <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1121,11 +1121,11 @@ activeCategory === 'data' ? usersTried
           : activeCategory !== 'addons'
       } />
       {api.isElectron && inCategory('about') && (
-        <Section title="About">
+        <Section title={t("About")}>
           <Row label="Version" desc="The version you're running.">
             <span className="text-sm text-muted font-mono">{appVersion || '1.0.0'}</span>
           </Row>
-          <Row label="Check for Updates" desc={/-nightly\./i.test(appVersion || '') ? 'Nightly builds update from GitHub Releases, not from here.' : 'Look for a newer version now.'}>
+          <Row label="Check for Updates" desc={t(/-nightly\./i.test(appVersion || '') ? 'Nightly builds update from GitHub Releases, not from here.' : 'Look for a newer version now.')}>
             <div className="flex items-center gap-3">
               <button 
                 onClick={checkForUpdates}
@@ -1136,7 +1136,7 @@ activeCategory === 'data' ? usersTried
                 {checkingUpdate ? t('Checking...') : /-nightly\./i.test(appVersion || '') ? t('Open Releases') : t('Check for updates')}
               </button>
               {updateCheckResult && (
-                <span className="text-xs text-muted">{updateCheckResult}</span>
+                <span className="text-xs text-muted">{t(updateCheckResult)}</span>
               )}
             </div>
           </Row>
@@ -1148,7 +1148,7 @@ activeCategory === 'data' ? usersTried
               <FolderOpen size={14} /> Show Logs
             </button>
           </Row>
-          <Row label="Hardware Acceleration" desc={perfSaveError?.key === 'hardwareAcceleration' ? `Couldn't save (${perfSaveError.message})` : perfRestartNeeded ? 'Restart Lokal to apply this change' : 'Use the graphics card to draw the app. Turn off if the window flickers or shows glitches.'}>
+          <Row label="Hardware Acceleration" desc={perfSaveError?.key === 'hardwareAcceleration' ? `${t("Couldn't save")} (${perfSaveError.message})` : perfRestartNeeded ? t('Restart Lokal to apply this change') : t('Use the graphics card to draw the app. Turn off if the window flickers or shows glitches.')}>
             <div className="flex items-center gap-3">
               {perfRestartNeeded && (
                 <button
@@ -1161,7 +1161,7 @@ activeCategory === 'data' ? usersTried
               <button
                 onClick={() => setHardwareAcceleration(!perfSettings.hardwareAcceleration)}
                 className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${perfSettings.hardwareAcceleration ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                {perfSettings.hardwareAcceleration ? 'On' : 'Off'}
+                {perfSettings.hardwareAcceleration ? t('On') : t('Off')}
               </button>
             </div>
           </Row>
@@ -1169,20 +1169,20 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('library') && (
-      <Section title="Maintenance">
-         <Row label="Repair Missing Downloads" desc={`${missingRepairText} Known original sources are redownloaded and attached to the existing library entries; files that need manual matching are left untouched.`}>
+      <Section title={t("Maintenance")}>
+         <Row label="Repair Missing Downloads" desc={`${missingRepairText} ${t('Known original sources are redownloaded and attached to the existing library entries; files that need manual matching are left untouched.')}`}>
            <button
              onClick={repairMissingLibraryFiles}
              disabled={!!missingRepairJob?.running || !missingRepairJob?.missing}
              className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
            >
-             {missingRepairJob?.running ? 'Repairing…' : 'Repair All'}
+             {missingRepairJob?.running ? t('Repairing…') : t('Repair All')}
            </button>
          </Row>
         <Row label="Rescan Library">
           <button onClick={rescan} disabled={scanning || !settings.music_folder}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">
-            <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? 'Scanning…' : 'Rescan'}
+            <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? t('Scanning…') : t('Rescan')}
           </button>
         </Row>
         <Row label="Find Duplicates" desc="Exact: the same title and artist. Similar: likely copies with close names and lengths, to check after the exact ones.">
@@ -1201,7 +1201,7 @@ activeCategory === 'data' ? usersTried
         <Row label="Index Lyrics" desc={`Fetches and keeps the lyrics of every song in your library now, so they open at once later. ${indexText(lyricsIndexJob, 'lyrics')}`.trim()}>
           <button onClick={indexAllLyrics}
             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-            {lyricsIndexJob?.running ? 'Stop' : 'Index All'}
+            {lyricsIndexJob?.running ? t('Stop') : t('Index All')}
           </button>
         </Row>
         )}
@@ -1209,8 +1209,8 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('library') && (
-      <Section title="Downloads">
-        <Row label="Download Format" desc={`What downloaded songs are saved as. ${(FORMATS.find(f => f.id === savedFormat(settings)) || FORMATS[0]).hint}`}>
+      <Section title={t("Downloads")}>
+        <Row label="Download Format" desc={`${t('What downloaded songs are saved as.')} ${t((FORMATS.find(f => f.id === savedFormat(settings)) || FORMATS[0]).hint)}`}>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             {FORMATS.map(option => (
               <button key={option.id} onClick={() => set('download_format', option.id)} title={option.hint}
@@ -1220,7 +1220,7 @@ activeCategory === 'data' ? usersTried
             ))}
             {savedFormat(settings) === 'mp3' && (
               <select value={MP3_BITRATES.includes(String(settings.download_quality)) ? String(settings.download_quality) : '320'} onChange={e => set('download_quality', e.target.value)}
-                aria-label="MP3 bitrate"
+                aria-label={t("MP3 bitrate")}
                 className="bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
                 {MP3_BITRATES.map(rate => <option key={rate} value={rate}>{rate} kbps</option>)}
               </select>
@@ -1239,28 +1239,28 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => set('download_embed_lyrics', settings.download_embed_lyrics === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.download_embed_lyrics !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.download_embed_lyrics !== '0' ? 'On' : 'Off'}
+            {settings.download_embed_lyrics !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Simpler Artist Names" desc="Use the main artist for downloaded songs, not every name the file lists.">
           <button
             onClick={() => set('clean_download_metadata', settings.clean_download_metadata === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.clean_download_metadata !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.clean_download_metadata !== '0' ? 'On' : 'Off'}
+            {settings.clean_download_metadata !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         {api.isElectron && <Row label="Sync Linked Playlists at Launch" desc="Playlists linked to one on Spotify, Tidal, Apple Music or Qobuz get the songs added there since the last sync each time Lokal starts, downloaded through your sources. Otherwise use Sync on the playlist.">
           <button
             onClick={() => set('playlist_sync_on_launch', settings.playlist_sync_on_launch === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.playlist_sync_on_launch === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.playlist_sync_on_launch === '1' ? 'On' : 'Off'}
+            {settings.playlist_sync_on_launch === '1' ? t('On') : t('Off')}
           </button>
         </Row>}
         <Row label="Add Right Away" desc="When downloading a playlist or album, add each song to your library as soon as it's done, not all at the end.">
           <button
             onClick={() => set('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.index_while_downloading === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.index_while_downloading === '1' ? 'On' : 'Off'}
+            {settings.index_while_downloading === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         {settings.yt_cookies === '1' && ['chrome', 'edge', 'brave', 'opera'].includes(settings.yt_cookie_browser) && (
@@ -1272,7 +1272,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('library') && (
-      <Section title="Genres">
+      <Section title={t("Genres")}>
         <Row label="Set Genres" desc="Choose the genre for an artist, album or song yourself.">
           <button 
             onClick={() => setShowGenreModal(true)}
@@ -1284,14 +1284,14 @@ activeCategory === 'data' ? usersTried
         <Row label="Fill In Genres" desc={genreText || 'Look up a genre online for every song that has none, one album at a time. A big library takes a while; it runs in the background.'}>
           <button onClick={fillGenres} disabled={!!genreJob?.running}
             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50">
-            {genreJob?.running ? 'Running…' : 'Fill In'}
+            {genreJob?.running ? t('Running…') : t('Fill In')}
           </button>
         </Row>
       </Section>
       )}
 
       {inCategory('library') && (
-      <Section title="Artists">
+      <Section title={t("Artists")}>
               <Row label="Names With a Comma" desc="Artists whose name has a comma, like Tyler, The Creator, so they aren't split into two artists.">
           <button onClick={() => setShowCommaModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
@@ -1302,7 +1302,7 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => set('auto_fetch_artist_metadata', settings.auto_fetch_artist_metadata === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_fetch_artist_metadata === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.auto_fetch_artist_metadata === '1' ? 'On' : 'Off'}
+            {settings.auto_fetch_artist_metadata === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row stacked label="Artist Info Source" desc="Where artist pictures and bios come from. Automatic tries the best source for each one.">
@@ -1319,7 +1319,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('library') && (
-      <Section title="Library">
+      <Section title={t("Library")}>
         <Row stacked label="Remove Duplicate Songs" desc="Choose a playlist to remove repeated songs from it. The first occurrence stays in its original position; other playlist entries are removed. Library files are not touched.">
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -1338,7 +1338,7 @@ activeCategory === 'data' ? usersTried
               disabled={!deduplicatePlaylistId || deduplicatingPlaylist}
               className="flex items-center gap-2 rounded-lg border border-accent/25 bg-accent/15 px-4 py-2 text-sm text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-40"
             >
-              <Trash2 size={14} /> {deduplicatingPlaylist ? 'Removing…' : 'Remove duplicates'}
+              <Trash2 size={14} /> {deduplicatingPlaylist ? t('Removing…') : t('Remove duplicates')}
             </button>
           </div>
           {deduplicateResult && <p role="status" className="text-xs text-muted">{deduplicateResult}</p>}
@@ -1349,21 +1349,21 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => set('delete_files_from_disk', settings.delete_files_from_disk === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.delete_files_from_disk === '1' ? 'bg-red-500/15 border-red-500/40 text-red-300' : 'border-border text-muted hover:text-white'}`}>
-            {settings.delete_files_from_disk === '1' ? 'On' : 'Off'}
+            {settings.delete_files_from_disk === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Look Up Missing Info" desc="Find a cover online when a song has none, and a genre for songs you stream.">
           <button
             onClick={() => set('fetch_online_artwork', settings.fetch_online_artwork === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fetch_online_artwork !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.fetch_online_artwork !== '0' ? 'On' : 'Off'}
+            {settings.fetch_online_artwork !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Skip Sample Packs" desc="Leave out files named like drum kits, loops or samples, for producers who keep sample packs in their music folder.">
           <button
             onClick={() => set('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.skip_drumkit_pattern === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.skip_drumkit_pattern === '1' ? 'On' : 'Off'}
+            {settings.skip_drumkit_pattern === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Minimum Length" desc="Leave out files shorter than this when scanning, like sound effects or samples. 0 keeps everything.">
@@ -1376,7 +1376,7 @@ activeCategory === 'data' ? usersTried
         <Row label="Music Folder">
           <div className="flex items-center gap-2">
             <input value={settings.music_folder || ''} onChange={e => set('music_folder', e.target.value)}
-              placeholder="Choose your music folder"
+              placeholder={t("Choose your music folder")}
               className="w-52 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
             {api.isElectron && (
               <button onClick={async () => { const f = await api.openFolder(); if (f) set('music_folder', f) }}
@@ -1390,15 +1390,15 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('playback') && (
-      <Section title="Equalizer">
+      <Section title={t("Equalizer")}>
         <div className="space-y-4">
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm text-white font-medium">{t("10-Band EQ")}</p>
-              <p className="text-xs text-muted mt-1">Preset: {eqPreset === 'custom' ? 'Custom' : EQ_PRESETS[eqPreset]?.label || EQ_PRESETS[DEFAULT_EQ_PRESET].label}</p>
+              <p className="text-xs text-muted mt-1">{t('Preset')}: {eqPreset === 'custom' ? t('Custom') : t(EQ_PRESETS[eqPreset]?.label || EQ_PRESETS[DEFAULT_EQ_PRESET].label)}</p>
             </div>
             <button onClick={() => applyEqGains(EQ_PRESETS[DEFAULT_EQ_PRESET].gains, DEFAULT_EQ_PRESET)}
-              className="text-xs text-muted hover:text-white transition-colors">Reset</button>
+              className="text-xs text-muted hover:text-white transition-colors">{t("Reset")}</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(EQ_PRESETS).map(([key, preset]) => (
@@ -1407,7 +1407,7 @@ activeCategory === 'data' ? usersTried
                 onClick={() => applyEqGains(preset.gains, key)}
                 className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${eqPreset === key ? 'bg-accent/20 border-accent/50 text-accent' : 'bg-card border-border text-muted hover:text-white'}`}
               >
-                {preset.label}
+                {t(preset.label)}
               </button>
             ))}
           </div>
@@ -1431,7 +1431,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('playback') && (
-      <Section title="Playback">
+      <Section title={t("Playback")}>
         <OutputPrecisionSettings />
         <Row label="ReplayGain" desc="Use embedded ReplayGain tags to bring tracks closer in loudness. Peak tags limit boosts; tracks without tags are unchanged.">
           <select aria-label={t("ReplayGain mode")} value={settings.replaygain_mode ?? replayGainMode ?? 'off'} onChange={e => set('replaygain_mode', e.target.value)}
@@ -1458,7 +1458,7 @@ activeCategory === 'data' ? usersTried
             <button
               onClick={() => set('automix_same_album', settings.automix_same_album === '1' ? '0' : '1')}
               className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.automix_same_album === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-              {settings.automix_same_album === '1' ? 'On' : 'Off'}
+              {settings.automix_same_album === '1' ? t('On') : t('Off')}
             </button>
           </Row>
         )}
@@ -1536,7 +1536,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('playback') && api.isElectron && (
-      <Section title="Casting">
+      <Section title={t("Casting")}>
         <Row label="Cast Quality" desc="Best sends lossless songs to the TV as they are, up to 24-bit / 96 kHz (higher is brought down to that). Standard sends at most CD quality (16-bit / 48 kHz), for a weak Wi-Fi.">
           <select
             value={settings.cast_quality === 'standard' ? 'standard' : 'max'}
@@ -1550,12 +1550,12 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('playback') && (
-      <Section title="Lyrics">
+      <Section title={t("Lyrics")}>
         <Row label="Auto-Translate" desc="Show the translation under each line when a song is in another language.">
           <button
             onClick={() => set('lyrics_auto_translate', settings.lyrics_auto_translate === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lyrics_auto_translate === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.lyrics_auto_translate === '1' ? 'On' : 'Off'}
+            {settings.lyrics_auto_translate === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Translation Language" desc="The language lyrics are translated into.">
@@ -1568,14 +1568,14 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => { const v = settings.word_sync === '0'; set('word_sync', v ? '1' : '0'); localStorage.setItem('word-sync', v ? '1' : '0') }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.word_sync !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.word_sync !== '0' ? 'On' : 'Off'}
+            {settings.word_sync !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Time Plain Lyrics" desc="Roughly time lyrics that have no timing, so they scroll with the song.">
           <button
             onClick={() => set('unsynced_auto_sync', settings.unsynced_auto_sync === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.unsynced_auto_sync === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.unsynced_auto_sync === '1' ? 'On' : 'Off'}
+            {settings.unsynced_auto_sync === '1' ? t('On') : t('Off')}
           </button>
         </Row>
         <LyricsSourcesSettings onPersist={(patch) => setSettings(s => ({ ...s, ...patch }))} />
@@ -1589,21 +1589,21 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('integrations') && (
-      <Section title="Account Connections">
+      <Section title={t("Account Connections")}>
         <ProviderConnections settingsOverride={settings} onSettingsChanged={patch => setSettings(previous => ({ ...previous, ...patch }))} onListenBrainzChanged={setLbStatus} />
       </Section>
       )}
 
       {inCategory('integrations') && (
-      <Section title="Scrobbling">
+      <Section title={t("Scrobbling")}>
         <Row label="Last.fm" desc={lastfmConnected ? '' : 'Sign in to Last.fm in Account Connections first.'}>
           <button disabled={!lastfmConnected} aria-pressed={lastfmConnected && settings.lastfm_scrobbling === '1'}
             onClick={() => set('lastfm_scrobbling', settings.lastfm_scrobbling === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${lastfmConnected && settings.lastfm_scrobbling === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {lastfmConnected && settings.lastfm_scrobbling === '1' ? 'On' : 'Off'}
+            {lastfmConnected && settings.lastfm_scrobbling === '1' ? t('On') : t('Off')}
           </button>
         </Row>
-        <Row label="ListenBrainz" desc={lbStatus?.connected ? (lbStatus.queued ? `${lbStatus.queued} listen${lbStatus.queued === 1 ? '' : 's'} waiting to be sent` : '') : 'Sign in to ListenBrainz in Account Connections first.'}>
+        <Row label="ListenBrainz" desc={lbStatus?.connected ? (lbStatus.queued ? `${lbStatus.queued} ${t(lbStatus.queued === 1 ? 'listen' : 'listens')} ${t('waiting to be sent')}` : '') : t('Sign in to ListenBrainz in Account Connections first.')}>
           <button disabled={!lbStatus?.connected} aria-pressed={!!(lbStatus?.connected && lbStatus.enabled)}
             onClick={async () => {
               // Keep the current state if the change didn't go through.
@@ -1611,26 +1611,26 @@ activeCategory === 'data' ? usersTried
               if (next && !next.error) setLbStatus(next)
             }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${!!(lbStatus?.connected && lbStatus.enabled) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {!!(lbStatus?.connected && lbStatus.enabled) ? 'On' : 'Off'}
+            {!!(lbStatus?.connected && lbStatus.enabled) ? t('On') : t('Off')}
           </button>
         </Row>
       </Section>
       )}
 
       {api.isElectron && inCategory('integrations') && (
-      <Section title="Spotify">
+      <Section title={t("Spotify")}>
         <Row stacked label="Spotify Cookie" desc={"Your Spotify sign-in, for Liked Songs here and Spotify Canvas covers: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
           <div className="flex flex-wrap items-center gap-2">
             <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
-              placeholder="sp_dc value" spellCheck={false} autoComplete="off" aria-label="Spotify cookie (sp_dc)"
+              placeholder={t("sp_dc value")} spellCheck={false} autoComplete="off" aria-label={t("Spotify cookie (sp_dc)")}
               className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
             <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading || !settings.spotify_sp_dc}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-              {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+              {spotifyCheck?.loading ? t('Checking...') : t('Save & Test')}
             </button>
             {spotifyCheck && !spotifyCheck.loading && (
               spotifyCheck.error
-                ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                ? <p className="text-xs text-red-400">{t(spotifyCheck.error)}</p>
                 : <p className="text-xs text-green-400">{t("Signed in to Spotify.")}</p>
             )}
           </div>
@@ -1640,12 +1640,12 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('integrations') && (
-      <Section title="Discord Rich Presence">
+      <Section title={t("Discord Rich Presence")}>
         <Row label="Use Lokal's Discord App" desc="Show Lokal's name and icon on your Discord profile.">
           <button
             onClick={() => set('discord_use_default_app_id', usingDefaultDiscordId ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${usingDefaultDiscordId ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {usingDefaultDiscordId ? 'On' : 'Off'}
+            {usingDefaultDiscordId ? t('On') : t('Off')}
           </button>
         </Row>
         {!usingDefaultDiscordId && (
@@ -1659,20 +1659,20 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => set('discord_auto_connect', settings.discord_auto_connect === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_auto_connect === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.discord_auto_connect === '1' ? 'On' : 'Off'}
+            {settings.discord_auto_connect === '1' ? t('On') : t('Off')}
           </button>
         </Row>
       </Section>
       )}
 
       {inCategory('integrations') && (
-        <Section title="Soulseek">
+        <Section title={t("Soulseek")}>
           <p className="text-xs text-muted leading-relaxed">
             Search and download from Soulseek, a peer-to-peer network where lossless (FLAC) copies are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you're allowed to.
           </p>
           {api.isElectron
             ? <>
-                <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">{t("slskd")}</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
+                <p className="text-xs text-muted leading-relaxed">{t("Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (")}<span className="text-white">{t("slskd")}</span>{t(", about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.")}</p>
                 <SoulseekSignIn settings={settings} set={set} />
               </>
             : <p className="text-xs text-muted">{t("Soulseek runs with the Lokal desktop app.")}</p>}
@@ -1680,7 +1680,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {api.isElectron && inCategory('integrations') && (
-        <Section title="External Tools">
+        <Section title={t("External Tools")}>
           <p className="text-xs text-muted mb-4">{t("The tools Lokal uses to download and convert songs.")}</p>
           {toolsError && (
             <div className="flex items-center justify-between gap-3 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
@@ -1700,9 +1700,9 @@ activeCategory === 'data' ? usersTried
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadYtDlpTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? progressLabel('yt-dlp') : toolsStatus?.ytdlp?.found ? 'Update / Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('yt-dlp') : toolsStatus?.ytdlp?.found ? t('Update / Re-download') : t('Download')}
                 </button>
-                <button onClick={() => setCustomToolPath('yt-dlp')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
+                <button onClick={() => setCustomToolPath('yt-dlp')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">{t("Custom Path")}</button>
               </div>
             </div>
             {toolsStatus?.ytdlp?.path && (
@@ -1719,9 +1719,9 @@ activeCategory === 'data' ? usersTried
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadFfmpegTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
-                  {toolsLoading ? progressLabel('ffmpeg') : toolsStatus?.ffmpeg?.found ? 'Re-download' : 'Download'}
+                  {toolsLoading ? progressLabel('ffmpeg') : toolsStatus?.ffmpeg?.found ? t('Re-download') : t('Download')}
                 </button>
-                <button onClick={() => setCustomToolPath('ffmpeg')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">Custom Path</button>
+                <button onClick={() => setCustomToolPath('ffmpeg')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">{t("Custom Path")}</button>
               </div>
             </div>
             {toolsStatus?.ffmpeg?.path && (
@@ -1734,13 +1734,13 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('addons') && (
-      <Section title="Addons">
+      <Section title={t("Addons")}>
         <AddonsSettings />
       </Section>
       )}
 
       {inCategory('appearance') && (
-      <Section title="Language">
+      <Section title={t("Language")}>
         <Row label="App Language" desc="Choose the language used for Lokal’s interface. Track and album titles from your music files are not translated.">
           <select
             value={language}
@@ -1758,7 +1758,7 @@ activeCategory === 'data' ? usersTried
       </Section>
       )}
       {inCategory('appearance') && (
-      <Section title="Theme">
+      <Section title={t("Theme")}>
         <div className="space-y-4">
           <div>
             <p className="text-sm text-white font-medium mb-3">{t("Theme")}</p>
@@ -1804,7 +1804,7 @@ activeCategory === 'data' ? usersTried
                       : 'hover:scale-110'
                   }`}
                   style={{ background: color.value }}
-                  title={color.name}
+                  title={t(color.name)}
                 />
               ))}
             </div>
@@ -1964,7 +1964,7 @@ activeCategory === 'data' ? usersTried
                 }}
                 className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${parseFloat(themeOverrides['--logo-mask-opacity'] || '0') > 0.05 ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
               >
-                {parseFloat(themeOverrides['--logo-mask-opacity'] || '0') > 0.05 ? 'On' : 'Off'}
+                {parseFloat(themeOverrides['--logo-mask-opacity'] || '0') > 0.05 ? t('On') : t('Off')}
               </button>
             </Row>
           </div>
@@ -2005,19 +2005,19 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('appearance') && (
-      <Section title="Now Playing">
+      <Section title={t("Now Playing")}>
         <Row label="Colour Background" desc="Colour the side panel and full screen player from the album cover. Off: a dark background.">
           <button
             onClick={() => set('artwork_backdrop', settings.artwork_backdrop === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.artwork_backdrop !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.artwork_backdrop !== '0' ? 'On' : 'Off'}
+            {settings.artwork_backdrop !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Moving Covers" desc="Play an album's animated cover in the side panel and full screen player, when there is one.">
           <button
             onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.motion_covers !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.motion_covers !== '0' ? 'On' : 'Off'}
+            {settings.motion_covers !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         {settings.motion_covers !== '0' && (() => {
@@ -2030,7 +2030,7 @@ activeCategory === 'data' ? usersTried
             <Row stacked label="Where to Look" desc="Where to find moving covers. These aren't official services, so one can stop working at any time.">
               <div className="flex flex-wrap gap-1.5">
                 {all.map(([id, label, hint]) => (
-                  <button key={id} onClick={() => toggle(id)} title={hint}
+                  <button key={id} onClick={() => toggle(id)} title={t(hint)}
                     className={`px-3 py-1 rounded-lg text-xs border transition-colors ${chosen.includes(id) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
                     {label}
                   </button>
@@ -2041,25 +2041,25 @@ activeCategory === 'data' ? usersTried
               <>
                 <Row stacked label="Spotify Cookie" desc={"Spotify only shows Canvas to signed-in accounts. To sign in here: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
                   <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
-                    placeholder="sp_dc value" spellCheck={false} autoComplete="off"
+                    placeholder={t("sp_dc value")} spellCheck={false} autoComplete="off"
                     className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
                 </Row>
                 <Row label="Prioritize Spotify Canvas" desc="Ask Spotify first. It has Canvas for many more songs, but they're tall videos, cropped to a square here.">
                   <button
                     onClick={() => set('spotify_canvas_first', settings.spotify_canvas_first === '1' ? '0' : '1')}
                     className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.spotify_canvas_first === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                    {settings.spotify_canvas_first === '1' ? 'On' : 'Off'}
+                    {settings.spotify_canvas_first === '1' ? t('On') : t('Off')}
                   </button>
                 </Row>
                 <div className="flex items-center gap-3">
                   <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading}
                     className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-                    {spotifyCheck?.loading ? 'Checking...' : 'Save & Test'}
+                    {spotifyCheck?.loading ? t('Checking...') : t('Save & Test')}
                   </button>
                   {settings.spotify_sp_dc && (
                     <button onClick={async () => {
                       const saved = await api.saveSettings({ spotify_sp_dc: '' }).catch(e => ({ error: e?.message || 'Save failed' }))
-                      if (saved?.error) { setSpotifyCheck({ error: `Couldn't remove the cookie: ${saved.error}` }); return }
+                      if (saved?.error) { setSpotifyCheck({ error: `${t("Couldn't remove the cookie")}: ${saved.error}` }); return }
                       set('spotify_sp_dc', ''); setSpotifyCheck(null)
                       window.dispatchEvent(new Event('lokal:settings-saved'))
                     }}
@@ -2069,7 +2069,7 @@ activeCategory === 'data' ? usersTried
                   )}
                   {spotifyCheck && !spotifyCheck.loading && (
                     spotifyCheck.error
-                      ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
+                      ? <p className="text-xs text-red-400">{t(spotifyCheck.error)}</p>
                       : <p className="text-xs text-green-400">{t("Signed in -- canvases will be looked up.")}</p>
                   )}
                 </div>
@@ -2082,26 +2082,26 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('appearance') && (
-      <Section title="Player Bar">
+      <Section title={t("Player Bar")}>
         <Row label="Glass" desc="The player bar floats over the page, blurred. Turn off for a plain bar, which is lighter if playback stutters.">
           <button
             onClick={() => set('glass_player_bar', settings.glass_player_bar === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.glass_player_bar !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.glass_player_bar !== '0' ? 'On' : 'Off'}
+            {settings.glass_player_bar !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
         <Row label="Waveform" desc="Moving bars next to the volume while music plays.">
           <button
             onClick={() => set('player_waveform', settings.player_waveform === '0' ? '1' : '0')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.player_waveform !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.player_waveform !== '0' ? 'On' : 'Off'}
+            {settings.player_waveform !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
       </Section>
       )}
 
       {inCategory('appearance') && (
-      <Section title="Layout">
+      <Section title={t("Layout")}>
         <Row
           label="Side Panels"
           desc={"Merged: Queue and Lyrics open as tabs in the side panel. Independent: each opens in its own panel next to it."}
@@ -2164,14 +2164,14 @@ activeCategory === 'data' ? usersTried
           <button
             onClick={() => { const v = !autoOpenSidePanel; setAutoOpenSidePanel(v); set('auto_open_side_panel', v ? '1' : '0') }}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${autoOpenSidePanel ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {autoOpenSidePanel ? 'On' : 'Off'}
+            {autoOpenSidePanel ? t('On') : t('Off')}
           </button>
         </Row>
       </Section>
       )}
 
       {inCategory('data') && (
-      <Section title="Accounts">
+      <Section title={t("Accounts")}>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm text-white font-medium">{t("Local Accounts")}</p>
@@ -2214,7 +2214,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('data') && (
-      <Section title="Metadata">
+      <Section title={t("Metadata")}>
         <Row label="Import Track Metadata" desc="Add genres, labels and other details from an export (like Exportify) to the songs you already have.">
           <button onClick={() => { setPlatformImportStatus(''); setPlatformImportPreview(null); setPlatformImportFiles([]); setPlatformImportFileName(''); setPlatformImportFileContent(''); setShowPlatformImportGuide(true) }}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors">
@@ -2225,7 +2225,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('data') && (
-      <Section title="Backup">
+      <Section title={t("Backup")}>
         <Row label="Full App Export" desc="Save everything (accounts, settings, themes, playlists, likes, history) to one file. Your music files aren't included.">
           <button
             onClick={handleFullExport}
@@ -2249,7 +2249,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('data') && (
-      <Section title="History">
+      <Section title={t("History")}>
         <Row label="Export History" desc="Save your listening history as a file.">
           <div className="relative">
             <button 
@@ -2281,7 +2281,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {api.isElectron && inCategory('data') && (
-      <Section title="Cache">
+      <Section title={t("Cache")}>
          <Row label="Cache Size Limit" desc="Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.">
           <select aria-label={t("Cache size limit")} value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
@@ -2301,7 +2301,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('data') && (
-      <Section title="Danger Zone">
+      <Section title={t("Danger Zone")}>
         <Row label="Clear Library" desc="Remove every song, playlist, like and play from Lokal, keeping your accounts and settings. Your music files aren't touched.">
           <button onClick={() => setShowClearModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors">
@@ -2321,14 +2321,14 @@ activeCategory === 'data' ? usersTried
 
       </SectionSwap>
 
-      <Modal open={showClearModal} onClose={() => setShowClearModal(false)} title="Clear All Library Data?" width="max-w-sm">
+      <Modal open={showClearModal} onClose={() => setShowClearModal(false)} title={t("Clear All Library Data?")} width="max-w-sm">
         <div className="space-y-4">
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-white/70 leading-relaxed">{t("Removes all tracks, artists, playlists, and history. Music files are untouched.")}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowClearModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setShowClearModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={async () => { await api.clearTracks(); setShowClearModal(false) }}
               className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">
               Clear Everything
@@ -2339,7 +2339,7 @@ activeCategory === 'data' ? usersTried
       <Modal 
         open={showGenreModal} 
         onClose={() => { setShowGenreModal(false); setStatusMessage(''); }} 
-        title="Manual Genre Assignment" 
+        title={t("Manual Genre Assignment")} 
         width="max-w-md"
       >
         <div className="space-y-4">
@@ -2354,7 +2354,7 @@ activeCategory === 'data' ? usersTried
                 <input 
                   value={manualGenreArtist} 
                   onChange={e => setManualGenreArtist(e.target.value)}
-                  placeholder="e.g. KENTENSHI"
+                  placeholder={t("e.g. KENTENSHI")}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50" 
                 />
               </div>
@@ -2363,7 +2363,7 @@ activeCategory === 'data' ? usersTried
                 <input 
                   value={manualGenreValue} 
                   onChange={e => setManualGenreValue(e.target.value)}
-                  placeholder="e.g. Breakcore"
+                  placeholder={t("e.g. Breakcore")}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50" 
                 />
               </div>
@@ -2375,7 +2375,7 @@ activeCategory === 'data' ? usersTried
                 <input 
                   value={manualGenreTrack} 
                   onChange={e => setManualGenreTrack(e.target.value)}
-                  placeholder="Song name"
+                  placeholder={t("Song name")}
                   className="w-full bg-card/40 border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/30" 
                 />
               </div>
@@ -2384,7 +2384,7 @@ activeCategory === 'data' ? usersTried
                 <input 
                   value={manualGenreAlbum} 
                   onChange={e => setManualGenreAlbum(e.target.value)}
-                  placeholder="Album title"
+                  placeholder={t("Album title")}
                   className="w-full bg-card/40 border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/30" 
                 />
               </div>
@@ -2434,7 +2434,7 @@ activeCategory === 'data' ? usersTried
         </div>
       </Modal>
 
-      <Modal open={showCommaModal} onClose={() => setShowCommaModal(false)} title="Keep Comma in Artist Names" width="max-w-md">
+      <Modal open={showCommaModal} onClose={() => setShowCommaModal(false)} title={t("Keep Comma in Artist Names")} width="max-w-md">
         <div className="space-y-4">
           <p className="text-sm text-muted">
             These artists won't have their comma removed. This prevents "Tyler, The Creator" from becoming "Tyler" and "The Creator". Enter one artist per line.
@@ -2450,13 +2450,12 @@ activeCategory === 'data' ? usersTried
           <div>
             <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Artists (one per line)")}</label>
             <textarea value={commaInput} onChange={e => setCommaInput(e.target.value)}
-              placeholder="Tyler, The Creator
-Earth, Wind & Fire"
+              placeholder={t("Tyler, The Creator\nEarth, Wind & Fire")}
               rows={6}
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50 resize-none" />
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowCommaModal(false)} className="flex-1 py-2 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setShowCommaModal(false)} className="flex-1 py-2 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={saveCommaArtists}
               className="flex-1 py-2 bg-accent text-base rounded-xl text-sm font-medium transition-colors">
               Save
@@ -2465,7 +2464,7 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={showDups} onClose={() => { setShowDups(false); setMergeAllResult(null) }} title="Duplicate Tracks" width="max-w-2xl">
+      <Modal open={showDups} onClose={() => { setShowDups(false); setMergeAllResult(null) }} title={t("Duplicate Tracks")} width="max-w-2xl">
         {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
         {dups?.length === 0 && <p className="text-accent text-sm text-center py-6">{t("✓ No duplicates found!")}</p>}
         
@@ -2512,7 +2511,7 @@ Earth, Wind & Fire"
         )}
       </Modal>
 
-      <Modal open={showMergeAllConfirm} onClose={() => setShowMergeAllConfirm(false)} title="Smart Merge All Duplicates?" width="max-w-sm">
+      <Modal open={showMergeAllConfirm} onClose={() => setShowMergeAllConfirm(false)} title={t("Smart Merge All Duplicates?")} width="max-w-sm">
         <div className="space-y-4">
           <div className="flex gap-3">
             <Zap size={18} className="text-accent flex-shrink-0 mt-0.5" />
@@ -2529,7 +2528,7 @@ Earth, Wind & Fire"
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowMergeAllConfirm(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setShowMergeAllConfirm(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={mergeAllDuplicates} className="flex-1 py-2.5 bg-accent/20 border border-accent/50 text-accent rounded-xl text-sm font-medium hover:bg-accent/30 transition-colors">
               Merge All
             </button>
@@ -2537,7 +2536,7 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={showPossibleDups} onClose={() => setShowPossibleDups(false)} title="Possible Duplicates" width="max-w-4xl">
+      <Modal open={showPossibleDups} onClose={() => setShowPossibleDups(false)} title={t("Possible Duplicates")} width="max-w-4xl">
         {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
         {possibleDups?.length === 0 && (
           <div className="space-y-2 py-4">
@@ -2584,7 +2583,7 @@ Earth, Wind & Fire"
                             </div>
                             <p className="text-xs text-muted truncate">{track.artist}</p>
                             <p className="text-[10px] text-muted/70 truncate">
-                              {track.album || 'No album'} · {track.duration ? `${Math.floor(track.duration / 60)}:${String(Math.floor(track.duration % 60)).padStart(2, '0')}` : '--:--'} · {track.bitrate ? `${track.bitrate}kbps` : 'Unknown bitrate'}
+                              {track.album || t('No album')} · {track.duration ? `${Math.floor(track.duration / 60)}:${String(Math.floor(track.duration % 60)).padStart(2, '0')}` : '--:--'} · {track.bitrate ? `${track.bitrate}kbps` : t('Unknown bitrate')}
                             </p>
                             <p className="text-[10px] text-muted/50 truncate mt-1">{track.file_path}</p>
                           </div>
@@ -2606,12 +2605,12 @@ Earth, Wind & Fire"
         )}
       </Modal>
 
-      <Modal open={showPlatformImportGuide} onClose={() => { setShowPlatformImportGuide(false); setPlatformImportStatus('') }} title="Import Track Metadata" width="max-w-5xl">
+      <Modal open={showPlatformImportGuide} onClose={() => { setShowPlatformImportGuide(false); setPlatformImportStatus('') }} title={t("Import Track Metadata")} width="max-w-5xl">
         <div className="flex max-h-[calc(100vh-8rem)] min-h-0 flex-col gap-5">
           <div className="rounded-xl border border-border bg-card/40 p-4 space-y-2">
             <p className="text-sm text-white">{t("Use CSV, JSON, or M3U exports to enrich songs already in your library.")}</p>
             <p className="text-xs text-muted leading-relaxed">
-              {'Lokal will match each row against your library and apply imported metadata like genres, explicit flags, labels, and audio features. Unmatched rows are saved locally and retried later when those songs enter your library.'}
+              {'{t("Lokal will match each row against your library and apply imported metadata like genres, explicit flags, labels, and audio features. Unmatched rows are saved locally and retried later when those songs enter your library.")}'}
             </p>
           </div>
 
@@ -2688,7 +2687,7 @@ Earth, Wind & Fire"
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-white font-medium">{t("Preview")}</p>
-                <p className="text-xs text-muted mt-1">{'This preview shows which rows Lokal can match now and which rows will be remembered for later.'}</p>
+                <p className="text-xs text-muted mt-1">{'{t("This preview shows which rows Lokal can match now and which rows will be remembered for later.")}'}</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">{t("CSV")}</span>
@@ -2717,7 +2716,7 @@ Earth, Wind & Fire"
                 ))}
                 {!platformImportPreview?.rows?.length && (
                   <div className="px-4 py-8 text-center text-sm text-muted">
-                    Choose an export file to preview the imported songs here.
+                    {t("Choose an export file to preview the imported songs here.")}
                   </div>
                 )}
               </div>
@@ -2726,12 +2725,12 @@ Earth, Wind & Fire"
 
           {platformImportStatus && (
             <div className="rounded-xl border border-border bg-card/30 px-4 py-3 text-sm text-muted">
-              {platformImportStatus}
+              {t(platformImportStatus)}
             </div>
           )}
 
           <div className="sticky bottom-0 flex gap-2 border-t border-border bg-elevated pt-4">
-            <button onClick={() => setShowPlatformImportGuide(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setShowPlatformImportGuide(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={handlePlatformImport} disabled={platformImporting || !platformImportPreview?.total} className="flex-1 py-2.5 bg-accent text-base rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
               {platformImporting ? 'Importing...' : 'Apply Metadata'}
             </button>
@@ -2739,7 +2738,7 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={!!userToDelete} onClose={() => setUserToDelete(null)} title="Delete Local Account?" width="max-w-sm">
+      <Modal open={!!userToDelete} onClose={() => setUserToDelete(null)} title={t("Delete Local Account?")} width="max-w-sm">
         <div className="space-y-4">
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
@@ -2753,7 +2752,7 @@ Earth, Wind & Fire"
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setUserToDelete(null)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setUserToDelete(null)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={handleDeleteUser} className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">
               Delete Account
             </button>
@@ -2761,7 +2760,7 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={showImportModal} onClose={() => { if (!importingAllData) { setShowImportModal(false); setImportPreview(null) } }} title="Import Backup?" width="max-w-lg">
+      <Modal open={showImportModal} onClose={() => { if (!importingAllData) { setShowImportModal(false); setImportPreview(null) } }} title={t("Import Backup?")} width="max-w-lg">
         <div className="space-y-4">
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-orange-300 flex-shrink-0 mt-0.5" />
@@ -2798,7 +2797,7 @@ Earth, Wind & Fire"
             </div>
           )}
           <div className="flex gap-2">
-            <button onClick={() => { setShowImportModal(false); setImportPreview(null) }} disabled={importingAllData} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">Cancel</button>
+            <button onClick={() => { setShowImportModal(false); setImportPreview(null) }} disabled={importingAllData} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">{t("Cancel")}</button>
             <button onClick={handleImportBackup} disabled={importingAllData || !importPreview} className="flex-1 py-2.5 bg-orange-500/20 border border-orange-500/30 text-orange-200 rounded-xl text-sm font-medium hover:bg-orange-500/30 transition-colors disabled:opacity-50">
               {importingAllData ? 'Importing...' : 'Replace with Backup'}
             </button>
@@ -2806,7 +2805,7 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={showFactoryResetModal} onClose={() => setShowFactoryResetModal(false)} title="Factory Reset Lokal?" width="max-w-md">
+      <Modal open={showFactoryResetModal} onClose={() => setShowFactoryResetModal(false)} title={t("Factory Reset Lokal?")} width="max-w-md">
         <div className="space-y-4">
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
@@ -2819,7 +2818,7 @@ Earth, Wind & Fire"
             <p className="text-xs text-red-200">{t("Strongly recommended: export a full backup before continuing.")}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowFactoryResetModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            <button onClick={() => setShowFactoryResetModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={() => { setShowFactoryResetModal(false); setShowFactoryResetConfirmModal(true) }} className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">
               Continue
             </button>
@@ -2827,16 +2826,16 @@ Earth, Wind & Fire"
         </div>
       </Modal>
 
-      <Modal open={showFactoryResetConfirmModal} onClose={() => { if (!factoryResetting) { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) } }} title="Final Confirmation" width="max-w-md">
+      <Modal open={showFactoryResetConfirmModal} onClose={() => { if (!factoryResetting) { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) } }} title={t("Final Confirmation")} width="max-w-md">
         <div className="space-y-4">
           <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 space-y-2">
-            <p className="text-sm text-white">Type <span className="text-red-300 font-medium">{t("RESET LOKAL")}</span> to confirm.</p>
+            <p className="text-sm text-white">Type <span className="text-red-300 font-medium">{t("RESET LOKAL")}</span> {t("to confirm.")}</p>
             <p className="text-xs text-muted">{t("This is intended to make accidental resets much harder.")}</p>
           </div>
           <input
             value={resetConfirmText}
             onChange={(e) => setResetConfirmText(e.target.value)}
-            placeholder="RESET LOKAL"
+            placeholder={t("RESET LOKAL")}
             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-red-400/50"
           />
           <label className="flex items-center gap-2 text-xs text-muted">
@@ -2846,10 +2845,10 @@ Earth, Wind & Fire"
               onChange={(e) => setResetConfirmArmed(e.target.checked)}
               className="accent-red-400"
             />
-            I understand this cannot be undone.
+            {t("I understand this cannot be undone.")}
           </label>
           <div className="flex gap-2">
-            <button onClick={() => { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) }} disabled={factoryResetting} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">Cancel</button>
+            <button onClick={() => { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) }} disabled={factoryResetting} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">{t("Cancel")}</button>
             <button
               onClick={handleFactoryReset}
               disabled={factoryResetting || resetConfirmText !== 'RESET LOKAL' || !resetConfirmArmed}
@@ -2871,7 +2870,7 @@ function SpotifyLikesRow({ hasCookie, userId }) {
   const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    const unknown = { enabled: false, unknown: true, error: 'Could not read whether sync is on. Reopen Settings to try again.' }
+    const unknown = { enabled: false, unknown: true, error: '{t("Could not read whether sync is on. Reopen Settings to try again.")}' }
     Promise.resolve(api.spotifyLikesStatus()).then(next => setStatus(next || unknown)).catch(() => setStatus(unknown))
   }, [])
   const on = !!status?.enabled
@@ -2888,7 +2887,7 @@ function SpotifyLikesRow({ hasCookie, userId }) {
     } finally { setBusy(false) }
   }
   const since = status?.since ? new Date(status.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-  const desc = !hasCookie ? 'Add your Spotify cookie above first.'
+  const desc = !hasCookie ? '{t("Add your Spotify cookie above first.")}'
     : status?.error ? status.error
       : on ? `Songs you like here are liked on Spotify, and songs you like on Spotify are liked here, since ${since}. Likes from before stay where they are.`
         : 'Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.'
@@ -2896,7 +2895,7 @@ function SpotifyLikesRow({ hasCookie, userId }) {
     <Row label="Sync Likes" desc={desc}>
       <button disabled={!hasCookie || busy || loading} aria-pressed={on} onClick={toggle}
         className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${on ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-        {busy || loading ? '…' : on ? 'On' : 'Off'}
+        {busy || loading ? '…' : on ? t('On') : t('Off')}
       </button>
     </Row>
   )
