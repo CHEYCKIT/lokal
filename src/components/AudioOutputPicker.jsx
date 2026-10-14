@@ -1,4 +1,5 @@
 import OutputPrecisionSettings from './OutputPrecisionSettings'
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Headphones, Volume2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -9,6 +10,7 @@ function DeviceIcon({ kind }) {
 }
 
 function BrowserAudioOutputPicker() {
+  const { t } = useTranslation()
   const outputDeviceId = usePlayerStore(state => state.outputDeviceId)
   const setOutputDevice = usePlayerStore(state => state.setOutputDevice)
   const [devices, setDevices] = useState([])
@@ -122,9 +124,9 @@ function BrowserAudioOutputPicker() {
         <DeviceIcon kind={currentKind} />
       </button>
       {open && (
-        <div role="menu" aria-label="Audio output" className="absolute bottom-full right-0 z-30 mb-2 w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
+        <div role="menu" aria-label={t("Audio output")} className="absolute bottom-full right-0 z-30 mb-2 w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
           <div className="flex items-center justify-between px-2 py-1.5">
-            <p className="text-xs font-display uppercase tracking-wider text-muted">Audio output</p>
+            <p className="text-xs font-display uppercase tracking-wider text-muted">{t("Audio output")}</p>
             {loading && <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />}
           </div>
           <div className="space-y-0.5">
@@ -139,14 +141,14 @@ function BrowserAudioOutputPicker() {
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${selected ? 'bg-accent/15 text-accent' : 'text-text hover:bg-card'} disabled:opacity-50`}>
                   <DeviceIcon kind={kind} />
                   <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
-                  {selected && <span className="text-[10px] uppercase tracking-wider">Current</span>}
+                  {selected && <span className="text-[10px] uppercase tracking-wider">{t("Current")}</span>}
                 </button>
               )
             })}
           </div>
-          {!devices.length && !loading && <p className="px-2 py-2 text-xs text-muted">No audio outputs detected.</p>}
+          {!devices.length && !loading && <p className="px-2 py-2 text-xs text-muted">{t("No audio outputs detected.")}</p>}
           {error && <p role="alert" className="px-2 pt-2 text-xs text-red-400">{error}</p>}
-          <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">Choose the Windows speaker or headset to use for Lokal.</p>
+          <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">{t("Choose the Windows speaker or headset to use for Lokal.")}</p>
         </div>
       )}
     </div>
@@ -154,6 +156,7 @@ function BrowserAudioOutputPicker() {
 }
 
 export default function AudioOutputPicker() {
+  const { t } = useTranslation()
   const [native, setNative] = useState(() => window.__lokalOutputStatus?.mode === 'native')
   const [open, setOpen] = useState(false)
   const root = useRef(null)
