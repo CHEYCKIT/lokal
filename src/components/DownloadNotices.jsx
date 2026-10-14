@@ -42,11 +42,11 @@ export default function DownloadNotices({ youtube = false }) {
         <div className="flex items-center gap-3 rounded-xl border border-yellow-500/20 bg-yellow-500/[0.07] px-3.5 py-2.5">
           <AlertTriangle size={14} className="flex-shrink-0 text-yellow-300" />
           <p className="min-w-0 flex-1 text-xs text-muted">
-            <span className="text-yellow-100">{t("Downloads use yt-dlp.")}</span> Only download what you own or are allowed to save; copyright rules depend on where you are and the source.
+            <span className="text-yellow-100">{t("Downloads use yt-dlp.")}</span> {t("Only download what you own or are allowed to save; copyright rules depend on where you are and the source.")}
           </p>
           <button onClick={() => { remember(DISCLAIMER_KEY); setAccepted(true) }}
             className="flex-shrink-0 rounded-lg bg-yellow-500/15 px-2.5 py-1 text-[11px] font-semibold text-yellow-100 transition-colors hover:bg-yellow-500/25">
-            Got it
+            {t("Got it")}
           </button>
         </div>
       )}
@@ -54,13 +54,13 @@ export default function DownloadNotices({ youtube = false }) {
         <div className="flex items-center gap-3 rounded-xl border border-yellow-500/20 bg-yellow-500/[0.07] px-3.5 py-2.5">
           <Cookie size={14} className="flex-shrink-0 text-yellow-300" />
           <p className="min-w-0 flex-1 text-xs text-muted">
-            <span className="text-yellow-100">{t("Set up your YouTube cookie")}</span>: without it YouTube often refuses downloads ("confirm you're not a bot"). Settings → Library → Use YouTube Cookies.
+            <span className="text-yellow-100">{t("Set up your YouTube cookie")}</span>{t(": without it YouTube often refuses downloads (\"confirm you're not a bot\"). Settings → Library → Use YouTube Cookies.")}
           </p>
           <button onClick={() => nav('/settings', { state: { category: 'library' } })}
             className="flex-shrink-0 rounded-lg bg-yellow-500/15 px-2.5 py-1 text-[11px] font-semibold text-yellow-100 transition-colors hover:bg-yellow-500/25">
-            Set up
+            {t("Set up")}
           </button>
-          <button onClick={() => { remember(COOKIE_HINT_KEY); setCookieDismissed(true) }} title="Don't show again" aria-label="Don't show again"
+          <button onClick={() => { remember(COOKIE_HINT_KEY); setCookieDismissed(true) }} title={t("Don't show again")} aria-label={t("Don't show again")}
             className="flex-shrink-0 p-0.5 text-muted transition-colors hover:text-white">
             <X size={13} />
           </button>
