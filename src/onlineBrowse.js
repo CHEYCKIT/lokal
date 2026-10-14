@@ -28,7 +28,7 @@ export function trackAlbumPath(track) {
   const provider = /^a-/.test(ref?.provider || '') ? ref.provider : /^a-/.test(track.provider || '') ? track.provider : null
   const sourceAlbumId = track.source_album_id || track.sourceAlbumId || track.albumId || null
   return onlineAlbumPath({
-    artist: track.album_artist || track.artist, album: track.album, albumId: track.albumId,
+    artist: track.album_artist || track.artist, album: track.album || track.album_name || track.albumName, albumId: track.albumId,
     provider, sourceAlbumId: provider ? sourceAlbumId : null,
   })
 }
@@ -133,12 +133,19 @@ export async function libraryAlbum({ artist, album }, client = api) {
 
 /** An album's songs, in order: { tracks, error } */
 export async function loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, client = api, options = {}) {
+  // A player's direct add-on album link can have the exact source ID before
+  // the search result has a display name. Resolve that ID first so the page
+  // doesn't depend on a title-based catalogue lookup.
+  if (provider && sourceAlbumId) {
+    const fromAddon = await loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client).catch(() => null)
+    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork, title: fromAddon.title }
+  }
   // The catalogues first (Last.fm, YouTube Music); then an addon with album
   // pages (the whole album, in order); then a search of the playback sources.
   let result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, searchSources: false })
   if (!result.tracks?.length) {
     const fromAddon = await loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client).catch(() => null)
-    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork }
+    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork, title: fromAddon.title }
     result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, skipSources: ['lastfm', 'youtube'] })
   }
   // Songs without their own cover show the album's.

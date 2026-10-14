@@ -42,6 +42,34 @@ test('the player album shortcut forwards a streamed add-on album id', () => {
   assert.equal(options.state.anchor.title, 'Song')
 })
 
+test('the player album shortcut stays clickable when a stream has an album id but no album name', () => {
+  const calls = []
+  const track = {
+    file_path: 'ghost://addon/0123456789/track-123',
+    title: 'Song',
+    artist: 'Artist',
+    source_album_id: 'B012345678',
+  }
+  assert.equal(navigateToTrackAlbum((...args) => calls.push(args), track), true)
+  const params = new URLSearchParams(calls[0][0].split('?')[1])
+  assert.equal(params.get('source'), 'a-0123456789')
+  assert.equal(params.get('sourceAlbum'), 'B012345678')
+})
+
+test('an album opened by source id loads and displays the add-on album title', async () => {
+  let discoveryLookups = 0
+  const client = {
+    onlineProviders: async () => [{ id: 'a-0123456789', addon: true, album: true }],
+    getSettings: async () => ({}),
+    discoveryCatalogue: async () => { discoveryLookups++; return { tracks: [] } },
+    addonAlbum: async (provider, id) => ({ id, title: 'Amazon Album', artist: 'Artist', tracks: [{ id: '1', title: 'Song', artist: 'Artist', provider }] }),
+  }
+  const result = await loadOnlineAlbum({ artist: 'Artist', album: '', provider: 'a-0123456789', sourceAlbumId: 'B012345678' }, client)
+  assert.equal(result.title, 'Amazon Album')
+  assert.equal(result.tracks[0].title, 'Song')
+  assert.equal(discoveryLookups, 0)
+})
+
 test('the library album opens instead when the library has its songs as files', async () => {
   const client = tracks => ({ getAlbumTracks: async () => tracks })
   assert.deepEqual(await libraryAlbum({ artist: 'A', album: 'B' }, client([{ file_path: '/music/b.flac' }])), { title: 'B', album_artist: 'A' })

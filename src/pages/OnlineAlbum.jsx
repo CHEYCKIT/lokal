@@ -46,9 +46,9 @@ export default function OnlineAlbum() {
   const cacheKey = albumCacheKey({ artist, album, albumId, provider, sourceAlbumId })
   const fromCache = () => {
     const hit = peekOnline(cacheKey)
-    return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', loadedAt: hit.at } : null
+    return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', albumTitle: hit.value.title || album, loadedAt: hit.at } : null
   }
-  const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '' })
+  const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '', albumTitle: album })
   const [busy, setBusy] = useState('')
   const [reload, setReload] = useState(0)
   const request = useRef(0)
@@ -57,7 +57,7 @@ export default function OnlineAlbum() {
     const version = ++request.current
     const isCurrent = () => version === request.current
     const cached = reload ? null : fromCache()
-    setState(cached || { loading: true, tracks: [], error: '', progress: '' })
+    setState(cached || { loading: true, tracks: [], error: '', progress: '', albumTitle: album })
     ;(async () => {
       // In the library after all (downloaded since, say): its own page.
       const own = await libraryAlbum({ artist, album })
@@ -69,7 +69,7 @@ export default function OnlineAlbum() {
       const result = await loadOnlineAlbumCached({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
         isCurrent, onProgress: progress => { if (isCurrent()) setState(current => ({ ...current, progress })) },
       }, { refresh: reload > 0 })
-      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '', loadedAt: Date.now() })
+      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '', albumTitle: result.title || album, loadedAt: Date.now() })
     })()
     return () => { request.current++ }
   }, [artist, album, albumId, provider, sourceAlbumId, reload]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -95,7 +95,8 @@ export default function OnlineAlbum() {
   const tracks = owned ? merged.tracks.slice(0, state.tracks.length) : state.tracks
   const cover = state.artwork || artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
   const path = onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumId })
-  const label = `“${album}”`
+  const albumTitle = state.albumTitle || album
+  const label = `“${albumTitle}”`
   const run = async (key, work) => {
     if (busy) return
     setBusy(key)
@@ -127,7 +128,7 @@ export default function OnlineAlbum() {
         </div>
         <div className="min-w-0">
           <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Album · Online")}</p>
-          <h1 className="truncate text-3xl font-display text-white">{album}</h1>
+          <h1 className="truncate text-3xl font-display text-white">{albumTitle}</h1>
           <button onClick={() => nav(artistPath(artist), { state: { name: artist, anchor: tracks[0] ? { title: tracks[0].title, album } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{artist}</button>
           {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{t(tracks.length === 1 ? '{count} song' : '{count} songs', { count: tracks.length })}{duration ? ` · ${t('{count} min', { count: Math.round(duration / 60) })}` : ''}{owned ? ` · ${t(owned === tracks.length ? 'All songs are in your library.' : '{owned} of {total} songs are in your library.', { owned, total: tracks.length })}` : ''}</p>}
           <div className="mt-4 flex flex-wrap items-center gap-2">

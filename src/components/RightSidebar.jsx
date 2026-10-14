@@ -280,6 +280,7 @@ export default function RightSidebar() {
       )}
     </div>
   ) : null
+  const hasAlbumLink = !!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
 
   return (
     <>
@@ -375,11 +376,11 @@ export default function RightSidebar() {
 
                   {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
                     <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                      {currentTrack?.album ? (
+                      {hasAlbumLink ? (
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
                           onContextMenu={openTrackMenu}
-                          title={`Go to album: ${currentTrack.album}`}
+                          title={`Go to album: ${currentTrack.album || currentTrack.title}`}
                           className={fx ? 'text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack?.title || 'Nothing playing'}
                         </button>
@@ -432,9 +433,9 @@ export default function RightSidebar() {
                       <InfoRow
                         fx={fx}
                         label={t("Album")}
-                        value={currentTrack.album}
-                        title={currentTrack.album ? `Go to album: ${currentTrack.album}` : null}
-                        onClick={currentTrack.album ? () => navigateToTrackAlbum(nav, currentTrack) : null}
+                        value={currentTrack.album || (hasAlbumLink ? t('Album · Online') : null)}
+                        title={hasAlbumLink ? `Go to album: ${currentTrack.album || currentTrack.title}` : null}
+                        onClick={hasAlbumLink ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
                       {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
                       <InfoRow fx={fx} label={t("Year")} value={currentTrack.year} />

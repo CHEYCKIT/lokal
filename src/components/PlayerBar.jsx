@@ -132,7 +132,7 @@ export default function PlayerBar() {
     navigateToTrackArtist(nav, currentTrack, keepCommaArtists)
   }
 
-  const hasAlbum = !!currentTrack?.album
+  const hasAlbum = !!currentTrack?.album || (streamed && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
   const handleTitleClick = () => {
     if (!hasAlbum) return
     navigateToTrackAlbum(nav, currentTrack)
