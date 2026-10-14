@@ -103,13 +103,13 @@ export default function LinkDownload({ link }) {
   return (
     <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label={t("Download a link")}>
       <h2 className="text-xs font-display text-muted uppercase tracking-widest flex items-center gap-2">
-        <Link2 size={12} /> Link
+        <Link2 size={12} /> {t("Link")}
       </h2>
       <div className="rounded-2xl border border-border bg-elevated/60 p-4">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card text-accent">
             {cover
-              ? <img src={cover} alt="" referrerPolicy="no-referrer" onError={() => setCoverFailed(true)} className="h-full w-full object-cover" />
+              ? <img src={cover} alt="" referrerPolicy="no-referrer" onError={() => {t("setCoverFailed(true)")}} className="h-full w-full object-cover" />
               : kind === 'single' ? <Disc3 size={20} /> : <Library size={20} />}
           </div>
           <div className="min-w-0 flex-1">
@@ -129,7 +129,7 @@ export default function LinkDownload({ link }) {
               return (
                 <button
                   key={choice.id}
-                  onClick={() => start(choice)}
+                  onClick={() => {t("start(choice)")}}
                   disabled={!!job || !!pending}
                   title={i === 0 ? 'Enter in the search box does this too' : undefined}
                   className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors disabled:cursor-default ${i === 0 ? 'bg-accent text-[rgb(var(--bg-rgb))] hover:bg-accent/85 disabled:bg-accent/30' : 'border border-border text-text hover:border-accent/50 disabled:opacity-40'}`}
@@ -146,7 +146,7 @@ export default function LinkDownload({ link }) {
                 className="flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2 text-xs font-semibold text-text transition-colors hover:border-accent/50"
               >
                 <ListPlus size={13} />
-                Save as playlist
+                {t("Save as playlist")}
               </button>
             )}
           </div>
@@ -159,7 +159,7 @@ export default function LinkDownload({ link }) {
         )}
         {!started.length && (
           <p className="mt-3 text-[11px] text-muted">
-            Saved to your music folder and added to the library, with lyrics and a square cover.{main ? '' : ` The real ${kind === 'single' ? 'title' : 'name'} is filled in from ${source.label} once it starts.`}
+            {t("Saved to your music folder and added to the library, with lyrics and a square cover.")}{main ? '' : ` The real ${kind === 'single' ? 'title' : 'name'} is filled in from ${source.label} once it starts.`}
           </p>
         )}
       </div>
