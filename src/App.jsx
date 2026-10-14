@@ -1727,7 +1727,7 @@ export default function App() {
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
   }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
-  // Fewer than 3 songs left (and not a discovery mix): related songs are added.
+  // Top up ordinary queues when fewer than 3 tracks remain.
   // Flow never ends: more of its own songs instead (src/flow/session.js).
   const topUpRelated = useCallback(() => {
     const state = usePlayerStore.getState()
