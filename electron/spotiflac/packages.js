@@ -69,8 +69,10 @@ function albumNameOf(track) {
 }
 
 function albumIdOf(track) {
-  const direct = track?.album_id || track?.albumId
-  if (direct != null && String(direct).trim()) return String(direct).trim()
+  const album = track?.album && typeof track.album === 'object' ? track.album : null
+  const direct = [track?.album_id, track?.albumId, album?.id, album?.album_id, album?.albumId]
+    .find(value => value != null && String(value).trim())
+  if (direct != null) return String(direct).trim()
   const url = String(track?.album_url || track?.albumUrl || '')
   const match = url.match(/\/albums?\/([^/?#]+)/i)
   if (!match) return null
@@ -397,7 +399,7 @@ class PackageService {
             if(name) {
               const albumFields={
                 album:name,album_name:name,
-                album_artist:track.album_artist||album.album_artist||album.artist||album.artists,
+                album_artist:(typeof track.album_artist === 'string' && !track.album_artist.trim() ? null : track.album_artist)||album.album_artist||album.artist||album.artists,
                 cover_url:track.cover_url||album.cover_url||album.cover_art,
                 release_date:track.release_date||album.release_date||album.year,
                 total_tracks:track.total_tracks||album.total_tracks||album.track_count,
