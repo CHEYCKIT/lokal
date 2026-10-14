@@ -25,15 +25,15 @@ export default function AddonSetupNotice({ source, className = '' }) {
     setMessage('')
     const result = await api.addonsPackages({ action: 'package.verify', key }).catch(error => ({ error: error.message }))
     if (result?.error) setMessage(result.error)
-    else if (result?.opened) setMessage('Complete the verification in the window that opened.')
+    else if (result?.opened) setMessage(t('Complete the verification in the window that opened.'))
     else window.dispatchEvent(new Event('lokal:addons-changed'))
   }
   return (
     <div role="status" className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-yellow-500/25 bg-yellow-500/10 px-3 py-2 text-xs text-text/85 ${className}`}>
       <ShieldAlert size={14} className="flex-shrink-0 text-yellow-300" />
-      <span className="min-w-0 flex-1">{message || `${source.label} isn't set up yet: verify access to stream and download from it.`}</span>
+      <span className="min-w-0 flex-1">{message || `${source.label} ${t("isn't set up yet: verify access to stream and download from it.")}`}</span>
       {api.isElectron && <button type="button" onClick={verify} className="rounded-lg bg-yellow-500/20 px-2.5 py-1 text-[11px] font-medium text-yellow-200 hover:bg-yellow-500/30">{t("Verify now")}</button>}
-      <button type="button" onClick={() => openAddonSetup(navigate, key)} className="text-[11px] text-yellow-200/90 underline-offset-2 hover:underline">Addon settings</button>
+      <button type="button" onClick={() => openAddonSetup(navigate, key)} className="text-[11px] text-yellow-200/90 underline-offset-2 hover:underline">{t("Addon settings")}</button>
     </div>
   )
 }
