@@ -36,10 +36,25 @@ function isOutside(basePath, candidatePath) {
   return relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)
 }
 
-function getLibraryFolders(db, relativePath = '') {
+function countTracksInPrefix(db, folderPath) {
+  if (!db || typeof db.prepare !== 'function') return 0
+  const prefix = folderPath.endsWith(path.sep) ? folderPath : folderPath + path.sep
+  try {
+    const stmt = db.prepare(
+      "SELECT COUNT(*) as count FROM tracks WHERE file_path >= ? AND file_path <= ? AND file_path NOT LIKE 'ghost://%'"
+    )
+    if (stmt && typeof stmt.get === 'function') {
+      const row = stmt.get(prefix, prefix + '\uffff')
+      return typeof row?.count === 'number' ? row.count : 0
+    }
+  } catch {}
+  return 0
+}
+
+function getLibraryFolders(db, relativePath = '', search = '') {
   const configuredRoot = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
   if (!configuredRoot) {
-    return { available: false, error: 'No music folder selected', rootName: '', relativePath: '', folders: [], tracks: [] }
+    return { available: false, error: 'No music folder selected', rootName: '', relativePath: '', folders: [], tracks: [], trackCount: 0, totalTracks: 0 }
   }
 
   const rootPath = path.resolve(String(configuredRoot))
@@ -49,7 +64,7 @@ function getLibraryFolders(db, relativePath = '') {
   const normalizedRelative = relative && relative !== '.' ? relative.split(path.sep).join('/') : ''
   const rootName = path.basename(rootPath) || rootPath
   const empty = (error, notFound = false) => ({
-    available: true, error, notFound, rootName, relativePath: normalizedRelative, folders: [], tracks: [],
+    available: true, error, notFound, rootName, relativePath: normalizedRelative, folders: [], tracks: [], trackCount: 0, totalTracks: 0,
   })
 
   if (isOutside(rootPath, targetPath)) return empty('Folder is outside the selected music folder', true)
@@ -71,7 +86,8 @@ function getLibraryFolders(db, relativePath = '') {
     .map(entry => {
       const fullPath = path.join(targetPath, entry.name)
       const childRelative = path.relative(rootPath, fullPath).split(path.sep).join('/')
-      return { name: entry.name, path: childRelative }
+      const trackCount = countTracksInPrefix(db, fullPath)
+      return { name: entry.name, path: childRelative, trackCount }
     })
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
 
@@ -91,7 +107,58 @@ function getLibraryFolders(db, relativePath = '') {
     String(left.title || '').localeCompare(String(right.title || ''), undefined, { numeric: true, sensitivity: 'base' })
   )
 
-  return { available: true, rootName, relativePath: normalizedRelative, folders, tracks, trackCount: tracks.length }
+  const targetPrefix = targetPath.endsWith(path.sep) ? targetPath : targetPath + path.sep
+  const recursiveCount = countTracksInPrefix(db, targetPath)
+  const totalTracks = Math.max(tracks.length, recursiveCount)
+
+  let allTracks = tracks
+  if (tracks.length === 0 && totalTracks > 0) {
+    try {
+      if (db && typeof db.prepare === 'function') {
+        const stmt = db.prepare(
+          "SELECT * FROM tracks WHERE file_path >= ? AND file_path <= ? AND file_path NOT LIKE 'ghost://%' ORDER BY file_path ASC LIMIT 1000"
+        )
+        if (stmt && typeof stmt.all === 'function') {
+          allTracks = stmt.all(targetPrefix, targetPrefix + '\uffff') || []
+        }
+      }
+    } catch {}
+  }
+
+  const query = typeof search === 'string' ? search.trim() : ''
+  let deepTracks = []
+  if (query) {
+    const term = `%${query}%`
+    try {
+      if (db && typeof db.prepare === 'function') {
+        const stmt = db.prepare(
+          "SELECT * FROM tracks WHERE file_path >= ? AND file_path <= ? AND (title LIKE ? OR artist LIKE ? OR album LIKE ? OR file_path LIKE ?) AND file_path NOT LIKE 'ghost://%' LIMIT 100"
+        )
+        if (stmt && typeof stmt.all === 'function') {
+          deepTracks = stmt.all(targetPrefix, targetPrefix + '\uffff', term, term, term, term) || []
+          for (const track of deepTracks) {
+            const trackDir = path.dirname(track.file_path)
+            const subRel = path.relative(rootPath, trackDir).split(path.sep).join('/')
+            track.subfolderPath = subRel
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    available: true,
+    rootName,
+    relativePath: normalizedRelative,
+    folders,
+    tracks,
+    trackCount: tracks.length,
+    totalTracks,
+    allTracks,
+    deepTracks,
+    search: query,
+  }
 }
 
 module.exports = { findFolderArtwork, getLibraryFolders }
+

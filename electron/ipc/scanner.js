@@ -1179,7 +1179,7 @@ function registerScannerHandlers(ipcMain) {
   const { BrowserWindow } = require('electron')
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:status', () => scanStatus)
-  ipcMain.handle('scanner:getLibraryFolders', (_, relativePath) => getLibraryFolders(getDB(), relativePath))
+  ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search) => getLibraryFolders(getDB(), relativePath, search))
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()
     const existing = db.prepare("SELECT * FROM tracks WHERE file_path = ?").get(filePath)

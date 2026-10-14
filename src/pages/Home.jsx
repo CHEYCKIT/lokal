@@ -147,6 +147,7 @@ function ScrobbleHistory({ entries, resolveTracks }) {
 }
 
 function RecommendationSections({ data, localArtists, allArtists, source: selectedSource, loading, error, onRefresh, onSourceChange, onPlay, resolveTracks, getDownloadTrack, onTrackMenu, onRadio, onArtistPlay, onArtistMenu, onAlbumPlay, onAlbumMenu, onProviderMixPlay, onProviderMixMenu, onSaveFresh, onSaveQuick, saving, onOpenSettings, activeSection, onSection }) {
+  const { t } = useTranslation()
   const source = sourceName(selectedSource)
   const quick = Array.isArray(data?.quickPicks) ? data.quickPicks : []
   const liked = Array.isArray(data?.liked) ? data.liked : []

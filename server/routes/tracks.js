@@ -533,7 +533,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 
 router.get('/library-folders', (req, res) => {
   try {
-    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : ''))
+    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : ''))
   } catch (error) {
     console.error('[library-folders] Could not read library folder:', error.message)
     res.status(500).json({ available: false, error: 'Could not read the selected music folder', folders: [], tracks: [] })

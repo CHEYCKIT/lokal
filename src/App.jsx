@@ -194,6 +194,14 @@ function NativeHistoryNavigation() {
     const navigateOnce = (source, direction) => {
       if (isCrossSourceDuplicate(source, direction)) return
       lastNativeNavigationAtRef.current = { at: performance.now(), source, direction }
+
+      const navEvent = new CustomEvent('lokal:history-navigate', {
+        cancelable: true,
+        detail: { direction, source },
+      })
+      const handled = !window.dispatchEvent(navEvent)
+      if (handled) return
+
       navigate(direction)
     }
 
