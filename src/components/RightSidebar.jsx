@@ -32,6 +32,7 @@ import { losslessMenuItem } from '../quality'
 const isPlaceholderGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
 
 function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
+  const { t } = useTranslation()
   if (!value) return null
   return (
     <div className={`flex items-start gap-3 py-1.5 border-b last:border-0 ${fx ? 'border-white/10' : 'border-border/30'}`}>
