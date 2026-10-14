@@ -2867,6 +2867,7 @@ Earth, Wind & Fire"
 
 // Settings → Integrations → Spotify → Sync Likes (electron/ipc/spotifyLikes.js).
 function SpotifyLikesRow({ hasCookie, userId }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
