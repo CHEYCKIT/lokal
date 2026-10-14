@@ -45,7 +45,7 @@ test('streamed add-on tracks retain their source album id across metadata refres
     const [saved] = sources.saveOnlineTracks(db, [item])
     assert.equal(saved.source_album_id, 'B012345678')
 
-    const [refreshed] = sources.saveOnlineTracks(db, { ...item, albumId: null })
+    const [refreshed] = sources.saveOnlineTracks(db, [{ ...item, albumId: null }])
     assert.equal(refreshed.source_album_id, 'B012345678')
   } finally {
     db.close()
