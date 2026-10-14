@@ -8,12 +8,18 @@ import http from 'node:http'
 import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3'),AdmZip=require('adm-zip')
-const {PackageService,readArchive,validateManifest}=require('../electron/spotiflac/packages')
+const {PackageService,readArchive,validateManifest,trackOf}=require('../electron/spotiflac/packages')
 const {rangeOf,fileResponse}=require('../electron/spotiflac/media')
 
 const manifest={name:'fixture-provider',displayName:'Fixture',version:'1.0.0',type:['metadata_provider','download_provider'],permissions:{network:[],storage:true,file:true},requiredRuntimeFeatures:['preparedContext@1'],settings:[{key:'token',type:'string',secret:true},{key:'country',type:'string',default:'US'}]}
 function archive(m=manifest,code=`registerExtension({initialize(s){settings=s;},searchTracks(query){return {tracks:[{id:'source-id',name:query,artists:'Artist',album_name:'Album',duration_ms:180000,isrc:'USAAA2600001'}]};},download(){return {success:false,error:'Fixture does not download'};}})`){const zip=new AdmZip();zip.addFile('manifest.json',Buffer.from(JSON.stringify(m)));zip.addFile('index.js',Buffer.from(code));return zip.toBuffer()}
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-packages-')),db=new Database(':memory:');db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT)');const service=new PackageService(db,{root,tools:()=>({})});t.after(async()=>{for(const runtime of service.runtimes.values())runtime.close();db.close();await fs.rm(root,{recursive:true,force:true})});return {service,db,root}}
+
+test('album metadata handles strings and nested provider album objects',()=>{
+  assert.equal(trackOf({id:'plain',name:'Song',artists:'Artist',album:'Plain Album'},'a-1234567890').album,'Plain Album')
+  assert.equal(trackOf({id:'nested',name:'Song',artists:'Artist',album:{name:'Amazon Album'}},'a-1234567890').album,'Amazon Album')
+  assert.equal(trackOf({id:'nested-title',name:'Song',artists:'Artist',album:{title:'Title Album'}},'a-1234567890').album,'Title Album')
+})
 
 test('install, search, update and enable preserve provider identity and isolated secret settings',async t=>{
   const {service,root}=await fixture(t),installed=await service.install({buffer:archive()})
@@ -78,10 +84,10 @@ test('a package download crosses the real host, FFprobe validation, and staged c
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)))
   const key='fixture-provider',permissions={...manifest.permissions,network:['127.0.0.1'],allowHttp:true}
   service.toolProvider=()=>({ffmpeg:'ffmpeg',ffprobe:'ffprobe'})
-  const code=`registerExtension({getTrack(){return {id:'source-id',name:'Fixture Song',artists:'Fixture Artist',duration_ms:1000};},checkAvailability(){return {available:true,track_id:'source-id'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
+  const code=`registerExtension({getTrack(){return {id:'source-id',name:'Fixture Song',artists:'Fixture Artist',album:{name:'Fixture Album'},duration_ms:1000};},checkAvailability(){return {available:true,track_id:'source-id'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
   const installed=await service.install({buffer:archive({...manifest,permissions},code)})
   const result=await service.download(installed.key,'source-id',{purpose:'playback'})
-  try { assert.equal(result.info.codec,'pcm_s16le');assert.equal(path.extname(result.file),'.wav','WAV audio written to audio.flac is rewrapped for the player');assert.equal(result.info.duration_ms,1000);assert.ok((await fs.stat(result.file)).size>44) } finally { await result.cleanup() }
+  try { assert.equal(result.info.codec,'pcm_s16le');assert.equal(path.extname(result.file),'.wav','WAV audio written to audio.flac is rewrapped for the player');assert.equal(result.info.duration_ms,1000);assert.equal(result.metadata.album,'Fixture Album');assert.equal(result.metadata.album_name,'Fixture Album');assert.ok((await fs.stat(result.file)).size>44) } finally { await result.cleanup() }
 })
 
 test('an addon login (tokens and verification cookies) survives a restart, and Disconnect forgets it',async t=>{
