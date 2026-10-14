@@ -29,6 +29,8 @@ test('album metadata ignores placeholder names when a real album field is availa
   assert.equal(trackOf({id:'plain',name:'Song',artists:'Artist',album:'Plain Album'},'a-1234567890').album,'Plain Album')
   assert.equal(trackOf({id:'nested',name:'Song',artists:'Artist',album:{name:'Amazon Album'}},'a-1234567890').album,'Amazon Album')
   assert.equal(trackOf({id:'nested-title',name:'Song',artists:'Artist',album:{title:'Title Album'}},'a-1234567890').album,'Title Album')
+  assert.equal(trackOf({id:'nested-id',name:'Song',artists:'Artist',album:{id:'B012345678',name:'Amazon Album'}},'a-1234567890').albumId,'B012345678')
+  assert.equal(trackOf({id:'nested-alias',name:'Song',artists:'Artist',album:{albumId:'amazon-album-2',title:'Amazon Album'}},'a-1234567890').albumId,'amazon-album-2')
   assert.equal(trackOf({id:'placeholder',name:'Song',album_name:'Unknown album',album:'Actual Album'},'a-1234567890').album,'Actual Album')
   assert.equal(trackOf({id:'unknown-only',name:'Song',album_name:'Unknown album',album:'N/A'},'a-1234567890').album,null)
 })
