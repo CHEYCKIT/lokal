@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electron', {
   updaterDownload: () => invoke('updater:download'),
   scanFolder: (f) => invoke('scanner:scan', f),
   resolveFileToPlay: (f) => invoke('scanner:resolveFileToPlay', f),
+  getReplayGain: (trackId) => invoke('player:getReplayGain', trackId),
   onOpenFileRequest: (fn) => on('player:openFile', (_, filePath) => fn(filePath)),
   updateThumbarState: (state) => invoke('thumbar:updateState', state),
   onThumbarCommand: (fn) => {

@@ -76,6 +76,18 @@ test('path grants reject traversal and symlink escapes', async t => {
   assert.throws(()=>safePath(root,'link/secret'),/links/)
 })
 
+test('addon paths work beneath symlinked OS ancestors but reject symlinks inside the grant', async t => {
+  const backing=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-home-'))
+  const alias=backing+'-link'
+  t.after(async()=>{await fs.rm(backing,{recursive:true,force:true});await fs.rm(alias,{recursive:true,force:true})})
+  await fs.symlink(backing,alias,'dir')
+  const root=path.join(alias,'user-data','spotiflac')
+  await fs.mkdir(root,{recursive:true})
+  assert.equal(safePath(root,'nested/file.dat'),path.join(root,'nested','file.dat'))
+  await fs.symlink(os.tmpdir(),path.join(root,'inside-link'),'dir')
+  assert.throws(()=>safePath(root,'inside-link/file.dat'),/links/)
+})
+
 test('AES and Blowfish match published block-cipher vectors', async () => {
   const aes=await block('encrypt','6bc1bee22e409f96e93d7e117393172a',{algorithm:'aes',mode:'cbc',key:'2b7e151628aed2a6abf7158809cf4f3c',keyEncoding:'hex',iv:'000102030405060708090a0b0c0d0e0f',ivEncoding:'hex',inputEncoding:'hex',outputEncoding:'hex'})
   assert.equal(aes.data,'7649abac8119b246cee98e9b12e9197d')
