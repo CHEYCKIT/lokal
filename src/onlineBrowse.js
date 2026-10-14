@@ -135,6 +135,13 @@ export async function libraryAlbum({ artist, album }, client = api) {
 
 /** An album's songs, in order: { tracks, error } */
 export async function loadOnlineAlbum({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, client = api, options = {}) {
+  // A player's direct add-on album link can have the exact source ID before
+  // the search result has a display name. Resolve that ID first so the page
+  // doesn't depend on a title-based catalogue lookup.
+  if (provider && sourceAlbumId) {
+    const fromAddon = await loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client).catch(() => null)
+    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork, title: fromAddon.title }
+  }
   // The catalogues first (Last.fm, YouTube Music); then an addon with album
   // pages (the whole album, in order); then a search of the playback sources.
   let result = await loadDiscoveryCatalogue({ type: 'album', artist, album, albumId }, client, { ...options, searchSources: false })

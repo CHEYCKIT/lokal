@@ -18,7 +18,6 @@ import { downloadOnline, playOnline, resolveOnline } from '../onlineActions'
 import { saveAsPlaylist } from '../trackActions'
 import { artistPath } from '../releaseActions'
 import { showToast } from '../components/Toaster'
-import { plural } from '../plural'
 
 const shuffled = list => {
   const out = [...list]
@@ -49,7 +48,7 @@ export default function OnlineAlbum() {
     const hit = peekOnline(cacheKey)
     return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', title: hit.value.title || '', artist: hit.value.artist || '', loadedAt: hit.at } : null
   }
-  const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '' })
+  const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '', albumTitle: album })
   const [busy, setBusy] = useState('')
   const [reload, setReload] = useState(0)
   const request = useRef(0)
@@ -58,7 +57,7 @@ export default function OnlineAlbum() {
     const version = ++request.current
     const isCurrent = () => version === request.current
     const cached = reload ? null : fromCache()
-    setState(cached || { loading: true, tracks: [], error: '', progress: '' })
+    setState(cached || { loading: true, tracks: [], error: '', progress: '', albumTitle: album })
     ;(async () => {
       // In the library after all (downloaded since, say): its own page.
       const own = await libraryAlbum({ artist, album })
@@ -136,8 +135,8 @@ export default function OnlineAlbum() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button onClick={() => play(tracks[0])} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t("Play")}</button>
             <button onClick={() => { const list = shuffled(tracks); play(list[0], list) }} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> {t("Shuffle")}</button>
-            {missing.length > 0 && <button onClick={download} disabled={!!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? 'Finding songs…' : owned ? `Download missing (${missing.length})` : 'Download album'}</button>}
-            <button onClick={savePlaylist} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><ListPlus size={15} /> {busy === 'playlist' ? 'Saving…' : 'Save as playlist'}</button>
+            {missing.length > 0 && <button onClick={download} disabled={!!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? t('Finding songs…') : owned ? t('Download missing ({count})', { count: missing.length }) : t('Download album')}</button>}
+            <button onClick={savePlaylist} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><ListPlus size={15} /> {busy === 'playlist' ? t('Saving…') : t('Save as playlist')}</button>
             <RefreshButton onClick={() => setReload(n => n + 1)} loading={state.loading} loadedAt={state.loadedAt} />
           </div>
         </div>

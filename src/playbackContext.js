@@ -119,9 +119,9 @@ export function navigateToTrackAlbum(nav, track) {
   if (!nav || (!context && !(isOnlineTrack(track) && sourceAlbumId))) return false
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
-  if (isOnlineTrack(track)) {
+  if (online) {
     const ref = streamRef(track)
-    nav(trackAlbumPath(track), { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: { title: track.title, album: track.album, provider: ref?.provider || null, id: ref?.id || null } } })
+    nav(path, { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: { title: track.title, album: track.album || '', provider: ref?.provider || track.provider || null, id: ref?.id || track.id || null } } })
     return true
   }
   nav('/albums', { state: { album: context.album, highlightTrackId: track?.id || null } })

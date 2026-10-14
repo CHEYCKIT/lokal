@@ -281,6 +281,7 @@ export default function RightSidebar() {
       )}
     </div>
   ) : null
+  const hasAlbumLink = !!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
 
   return (
     <>
@@ -433,9 +434,9 @@ export default function RightSidebar() {
                       <InfoRow
                         fx={fx}
                         label={t("Album")}
-                        value={currentTrack.album}
-                        title={currentTrack.album ? `Go to album: ${currentTrack.album}` : null}
-                        onClick={currentTrack.album ? () => navigateToTrackAlbum(nav, currentTrack) : null}
+                        value={currentTrack.album || (hasAlbumLink ? t('Album · Online') : null)}
+                        title={hasAlbumLink ? `Go to album: ${currentTrack.album || t('Album · Online')}` : null}
+                        onClick={hasAlbumLink ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
                       {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
                       <InfoRow fx={fx} label={t("Year")} value={currentTrack.year} />

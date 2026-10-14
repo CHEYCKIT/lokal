@@ -361,9 +361,9 @@ export default function ImportPlaylistModal() {
     <Modal open={open} onClose={() => setOpen(false)} title={t("Import playlist")} width="max-w-lg">
       <div className="space-y-4">
         <div className="flex gap-2">
-          <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>From a link</Tab>
-          <Tab active={source === 'file'} icon={FileUp} onClick={() => setSource('file')}>From a file</Tab>
-          <Tab active={source === 'list'} icon={ListMusic} onClick={() => setSource('list')}>From a list</Tab>
+          <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>{t('From a link')}</Tab>
+          <Tab active={source === 'file'} icon={FileUp} onClick={() => setSource('file')}>{t('From a file')}</Tab>
+          <Tab active={source === 'list'} icon={ListMusic} onClick={() => setSource('list')}>{t('From a list')}</Tab>
         </div>
         {source === 'link' ? <LinkImport key={`l${session}`} onDone={done} initialUrl={linkUrl} />
           : source === 'file' ? <FileImport key={`f${session}`} onDone={done} />

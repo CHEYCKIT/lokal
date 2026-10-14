@@ -11,18 +11,17 @@ import DiscoveryImage from './DiscoveryImage'
 import FollowedArtistsModal from './FollowedArtistsModal'
 import { checkReleases, isNewRelease, loadArtistReleases, savedReleases } from '../newReleases'
 import { api } from '../api'
-import { plural } from '../plural'
 import { discoveryArtistKey, useDiscoveryArtists } from '../discoveryArtists'
 
 const TYPE_LABEL = { album: 'Album', single: 'Single', ep: 'EP' }
 
-export function ago(time) {
+export function ago(time, t = value => value) {
   if (!time) return ''
   const minutes = Math.round((Date.now() - time) / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 1) return t('Just now')
+  if (minutes < 60) return t('{count} min ago', { count: minutes })
   const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} h ago`
+  if (hours < 24) return t('{count} h ago', { count: hours })
   return new Date(time).toLocaleDateString()
 }
 
@@ -37,12 +36,12 @@ function dateLabel(release) {
 
 function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
   const { t } = useTranslation()
-  const type = TYPE_LABEL[release.release_type] || 'Release'
+  const type = t(TYPE_LABEL[release.release_type] || 'Release')
   return (
     <div role="listitem" onContextMenu={event => onMenu?.(event, release)}
       className="group grid grid-cols-[2rem_4.5rem_minmax(0,1fr)_auto] items-center gap-4 rounded-xl px-3 py-2.5 transition-colors hover:bg-elevated">
       <span className="text-right text-xs tabular-nums text-muted">{index + 1}</span>
-      <button type="button" onClick={() => onOpen(release)} aria-label={`Open ${release.title}`} className="relative h-[4.5rem] w-[4.5rem] overflow-hidden rounded-lg bg-card shadow-md">
+      <button type="button" onClick={() => onOpen(release)} aria-label={t('Open {title}', { title: release.title })} className="relative h-[4.5rem] w-[4.5rem] overflow-hidden rounded-lg bg-card shadow-md">
         <DiscoveryImage item={release} type="album" src={release.artwork_url} className="h-full w-full object-cover" fallback={<div className="flex h-full items-center justify-center text-muted"><Disc3 size={24} /></div>} />
       </button>
       <div className="min-w-0">
@@ -57,8 +56,8 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
         </p>
       </div>
       <div className="flex items-center gap-1">
-        <button type="button" onClick={() => onPlay(release)} title={`Play ${release.title}`} aria-label={`Play ${release.title}`} className="flex h-9 w-9 items-center justify-center text-white/80 transition hover:scale-110 hover:text-accent"><Play size={20} fill="currentColor" strokeWidth={0} /></button>
-        <button type="button" onClick={event => onMenu?.(event, release)} title={t("More")} aria-label={`More for ${release.title}`} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"><MoreHorizontal size={16} /></button>
+        <button type="button" onClick={() => onPlay(release)} title={t('Play {title}', { title: release.title })} aria-label={t('Play {title}', { title: release.title })} className="flex h-9 w-9 items-center justify-center text-white/80 transition hover:scale-110 hover:text-accent"><Play size={20} fill="currentColor" strokeWidth={0} /></button>
+        <button type="button" onClick={event => onMenu?.(event, release)} title={t("More")} aria-label={t('More for {title}', { title: release.title })} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"><MoreHorizontal size={16} /></button>
       </div>
     </div>
   )
@@ -104,9 +103,9 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
           <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">{t("Releases")}</p>
           <h2 className="mt-1 text-xl font-medium text-white">{t("New from your artists")}</h2>
           <p className="mt-1 text-xs text-muted">
-            {checking ? `Checking ${checking.done}/${checking.total} artists for new releases…${checking.added ? ` · ${checking.added} added` : ''}`
-              : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(artists.length, 'followed artist')}, newest first · checked ${ago(saved.checkedAt)}${saved.added ? ` (${saved.added} added)` : ''}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
-              : `The latest ${100} releases by the artists you follow, newest first.`}
+            {checking ? t('Checking releases: {done}/{total} artists{added}', { done: checking.done, total: checking.total, added: checking.added ? ` · ${t('{count} added', { count: checking.added })}` : '' })
+              : saved?.checkedAt ? t('Latest {count} releases by {artists} followed artists · checked {age}{details}', { count: items.length, artists: artists.length, age: ago(saved.checkedAt, t), details: [saved.added ? t('{count} added', { count: saved.added }) : '', newCount ? t('{count} new', { count: newCount }) : '', saved.failures ? t('{count} artists could not be checked', { count: saved.failures }) : ''].filter(Boolean).map(value => ` · ${value}`).join('') })
+              : t('The latest {count} releases by the artists you follow, newest first.', { count: 100 })}
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -167,7 +167,7 @@ export default function MadeForYou({ picks, onPlay, onContextMenu }) {
         {size.width > 0 && picks.map((pick, index) => (
           <Card key={pick.track.id} index={index} count={count} scroll={scroll} width={size.width} height={size.height} half={size.half}
             onPress={() => { if (dragged.current) { dragged.current = false; return } onPlay(index) }}>
-            <button type="button" aria-label={`Play ${pick.track.title} by ${pick.track.artist}`} onContextMenu={event => onContextMenu?.(event, pick.track)}
+            <button type="button" aria-label={t('Play {title} by {artist}', { title: pick.track.title, artist: pick.track.artist })} onContextMenu={event => onContextMenu?.(event, pick.track)}
               className="group relative block h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-card text-left shadow-[0_18px_40px_rgba(0,0,0,0.45)] transition-[translate,box-shadow] duration-300 ease-out hover:shadow-[0_26px_50px_rgba(0,0,0,0.55)] motion-safe:hover:-translate-y-2">
               {trackArtURL(pick.track) ? <FadeImg src={trackArtURL(pick.track)} className="pointer-events-none absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-black" />}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />

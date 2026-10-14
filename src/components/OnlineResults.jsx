@@ -22,6 +22,7 @@ import SourceIcon from './SourceIcon'
 import AddonCollections from './AddonCollections'
 import AddonSetupNotice from './AddonSetupNotice'
 import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
+import { useTranslation } from '../i18n'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -65,6 +66,7 @@ function useProviders() {
  *                     there replaces the stream / the track's file
  */
 export default function OnlineResults({ query, soulseekFor = null, findOn = null }) {
+  const { t } = useTranslation()
   // YouTube Music and SoundCloud, then Soulseek, then installed addons.
   const loaded = useProviders()
   const providers = orderedFindOnSources(loaded)
@@ -142,7 +144,7 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
             Online
             {loading && !soulseek && <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
           </h2>
-          <div role="tablist" aria-label="Online source" className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl border border-border p-0.5">
+          <div role="tablist" aria-label={t('Online source')} className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl border border-border p-0.5">
             {providers.map(p => (
               <button
                 key={p.id}
