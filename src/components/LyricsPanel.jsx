@@ -706,7 +706,7 @@ export default function LyricsPanel({
             </Pill>
             {canRomanize && (
               <Pill active={subline === 'romanization'} onClick={() => toggleSub('romanization')} title="Show pronunciation in Latin letters">
-                {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">{t("Aa")}</span>}
+                {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">Aa</span>}
                 Romanize
               </Pill>
             )}
