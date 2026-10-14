@@ -1,7 +1,9 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { readOutputPreferences } from '../audio/nativeOutput'
 
 export default function OutputPrecisionSettings({ compact = false }) {
+  const { t } = useTranslation()
   const [preferences, setPreferences] = useState(readOutputPreferences)
   const [status, setStatus] = useState(() => window.__lokalOutputStatus || { mode: 'auto' })
   const [capabilities, setCapabilities] = useState(null)
@@ -38,8 +40,8 @@ export default function OutputPrecisionSettings({ compact = false }) {
   const native = status.mode === 'native'
   return (
     <div className={compact ? 'space-y-3 p-2' : 'space-y-3 border-b border-border pb-4 mb-4'}>
-      <p className="text-xs font-display uppercase tracking-wider text-muted">Output precision</p>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Output precision">
+      <p className="text-xs font-display uppercase tracking-wider text-muted">{t("Output precision")}</p>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t("Output precision")}>
         {[['auto', 'Auto'], ['pcm16', '16-bit PCM'], ['float32', '32-bit float']].map(([value, label]) => (
           <button type="button" key={value} aria-pressed={preferences.precision === value}
             disabled={busy || (value !== 'auto' && (!desktop || !capabilities?.available))}
@@ -51,10 +53,10 @@ export default function OutputPrecisionSettings({ compact = false }) {
       </div>
       {desktop && preferences.precision !== 'auto' && (
         <label className="block text-xs text-muted">Native output device
-          <select aria-label="Native output device" value={preferences.deviceName} disabled={busy}
+          <select aria-label={t("Native output device")} value={preferences.deviceName} disabled={busy}
             onChange={event => choose({ deviceName: event.target.value })}
             className="mt-1 block w-full rounded-lg border border-border bg-card text-text p-2">
-            <option value="">System default</option>
+            <option value="">{t("System default")}</option>
             {preferences.deviceName && !capabilities?.devices?.some(device => device.name === preferences.deviceName) && (
               <option value={preferences.deviceName}>{preferences.deviceName} (unavailable)</option>
             )}
@@ -62,7 +64,7 @@ export default function OutputPrecisionSettings({ compact = false }) {
           </select>
         </label>
       )}
-      {desktop && capabilities?.supportsExclusive && !compact && <p className="text-xs text-muted">Windows exclusive output is temporarily disabled because it can stutter when Lokal is minimized.</p>}
+      {desktop && capabilities?.supportsExclusive && !compact && <p className="text-xs text-muted">{t("Windows exclusive output is temporarily disabled because it can stutter when Lokal is minimized.")}</p>}
       <p className="text-xs text-muted" aria-live="polite">
         {status.mode === 'switching'
           ? 'Switching output…'
@@ -73,7 +75,7 @@ export default function OutputPrecisionSettings({ compact = false }) {
           : `Auto output${status.sampleRate ? ` · ${status.sampleRate / 1000} kHz processing` : ' · starts with playback'}`}
       </p>
       {status.warning && <p role="alert" className="text-xs text-amber-400">{status.warning}</p>}
-      {!desktop ? <p className="text-xs text-muted">Choose an output precision in the desktop app. Web playback uses the browser’s output.</p>
+      {!desktop ? <p className="text-xs text-muted">{t("Choose an output precision in the desktop app. Web playback uses the browser’s output.")}</p>
         : capabilities?.error ? <p className="text-xs text-muted">{capabilities.error}</p> : null}
       {!compact && <p className="text-xs text-muted">Auto uses the system-managed output. Explicit modes keep EQ and crossfade, then send stereo PCM to the selected device using shared output. Shared output may be converted by the system mixer. Higher precision does not restore detail missing from a recording.</p>}
     </div>
