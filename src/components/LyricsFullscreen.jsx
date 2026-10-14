@@ -134,13 +134,13 @@ export default function LyricsFullscreen({ idle = false, onChromeHover = null, s
         >
           <div className={`relative z-10 flex items-center justify-between px-8 py-5 flex-shrink-0 transition-opacity duration-300 ${hidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
             inert={hidden}
-            onMouseEnter={() => onChromeHover?.(true)}
+            onMouseEnter={() => {t("onChromeHover?.(true)")}}
             onMouseLeave={() => onChromeHover?.(false)}>
             <div className="flex items-center gap-4">
               {artSrc && (
                 // The player's big cover flies into this one (and back), and
                 // clicking it goes back to the player, like the Player button.
-                <button type="button" onClick={() => switchFullscreenView('player')}
+                <button type="button" onClick={() => {t("switchFullscreenView('player')")}}
                   title="Switch to the full-screen player" aria-label="Back to the full-screen player"
                   className="flex-shrink-0 rounded-lg transition-transform hover:scale-105 active:scale-95">
                   <img data-fullscreen-thumb src={artSrc} alt=""
@@ -154,22 +154,22 @@ export default function LyricsFullscreen({ idle = false, onChromeHover = null, s
             </div>
             <div className="flex items-center gap-2">
               {currentTrack && (
-                <button onClick={() => switchFullscreenView('player')} title="Switch to the full-screen player"
+                <button onClick={() => {t("switchFullscreenView('player')")}} title="Switch to the full-screen player"
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                  <Disc3 size={12} /> Player
+                  <Disc3 size={12} /> {t("Player")}
                 </button>
               )}
               {currentTrack && (
-                <button onClick={() => setShowSearch(true)}
+                <button onClick={() => {t("setShowSearch(true)")}}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                  <Search size={12} /> Search
+                  <Search size={12} /> {t("Search")}
                 </button>
               )}
               {api.isElectron && currentTrack && (
                 <>
                   <button onClick={importLyrics}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                    <Download size={12} /> Import .lrc / .ttml
+                    <Download size={12} /> {t("Import .lrc / .ttml")}
                   </button>
                   <button onClick={() => { api.clearLyricsCache(currentTrack.id); setRefreshKey(k => k + 1) }}
                     className="p-1.5 text-white/30 hover:text-white transition-colors rounded-lg hover:bg-white/8">
@@ -210,7 +210,7 @@ export default function LyricsFullscreen({ idle = false, onChromeHover = null, s
                 track={currentTrack}
                 session={activeSearchSession}
                 onSessionChange={updateSearchSession}
-                onClose={() => setShowSearch(false)}
+                onClose={() => {t("setShowSearch(false)")}}
                 onSelect={(lyrics, type) => {
                   api.importLyrics(currentTrack.id, lyrics, type)
                   setRefreshKey(k => k + 1)
