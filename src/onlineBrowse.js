@@ -30,7 +30,7 @@ export function trackAlbumPath(track) {
   return onlineAlbumPath({
     // Some add-ons (including Amazon) return the album id before its display
     // name. The album page resolves that id and displays the add-on's title.
-    artist: track.album_artist || track.artist, album: track.album || '', albumId: track.albumId,
+    artist: track.album_artist || track.artist, album: track.album || track.album_name || track.albumName || '', albumId: track.albumId,
     provider, sourceAlbumId: provider ? sourceAlbumId : null,
   })
 }
@@ -140,7 +140,7 @@ export async function loadOnlineAlbum({ artist, album, albumId, artwork, provide
   // doesn't depend on a title-based catalogue lookup.
   if (provider && sourceAlbumId) {
     const fromAddon = await loadAddonAlbum({ artist, album, provider, sourceAlbumId, anchor }, client).catch(() => null)
-    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork, title: fromAddon.title }
+    if (fromAddon) return { tracks: fromAddon.tracks, error: '', provider: fromAddon.provider, artwork: fromAddon.artwork, title: fromAddon.title, artist: fromAddon.artist }
   }
   // The catalogues first (Last.fm, YouTube Music); then an addon with album
   // pages (the whole album, in order); then a search of the playback sources.

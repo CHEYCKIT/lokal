@@ -85,9 +85,10 @@ function SortableHeader({ column, label, children, sort, onSortChange, className
   const active = sort?.column === column
   const next = nextPlaylistSort(sort, column)
   const direction = next.direction === 'asc' ? 'ascending' : 'descending'
+  const sortLabel = t('Sort by {column}, {direction}', { column: label, direction: t(direction) })
   const Arrow = sort?.direction === 'desc' ? ChevronDown : ChevronUp
-  return <button type="button" aria-label={`Sort by ${label} ${direction}`} aria-pressed={active}
-    title={`Sort by ${label} ${direction}`} data-sort-column={column} data-sort-direction={active ? sort.direction : undefined}
+  return <button type="button" aria-label={sortLabel} aria-pressed={active}
+    title={sortLabel} data-sort-column={column} data-sort-direction={active ? sort.direction : undefined}
     onClick={event => { event.stopPropagation(); onSortChange(next) }}
     className={`flex min-w-0 items-center gap-1 rounded uppercase hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? 'text-accent' : ''} ${className}`}>
     <span className="truncate">{children}</span>{active && <Arrow size={11} className="shrink-0" aria-hidden="true" />}

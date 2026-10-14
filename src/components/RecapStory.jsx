@@ -16,7 +16,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Disc3, Pause, Play, Plus, Volume2, VolumeX, X } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
-import { albumArt, artistAlbumName, filteredGenres, fmtHour, fmtMinutes, genreComment, hourComment, sessionComment, trackArt } from '../recapText'
+import { albumArt, artistAlbumName, filteredGenres, fmtHour, genreComment, hourComment, sessionComment, trackArt } from '../recapText'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { useTranslation } from '../i18n'
 
@@ -27,6 +27,16 @@ const HOLD_MS = 220
 // wider than the window minus the side arrows.
 const CARD_HEIGHT = 'min(calc(100dvh - 8.5rem), calc((100vw - 8rem) * 16 / 9))'
 const CARD_WIDTH = `calc(${CARD_HEIGHT} * 9 / 16)`
+
+function formatStoryDuration(minutes, language, t) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0))
+  const hours = Math.floor(total / 60)
+  const remainder = total % 60
+  const number = value => new Intl.NumberFormat(language).format(value)
+  if (!hours) return t('{count} min', { count: number(total) })
+  if (!remainder) return t('{count} h', { count: number(hours) })
+  return t('{hours} h {minutes} min', { hours: number(hours), minutes: number(remainder) })
+}
 
 /** "11 pm": short enough for a headline. */
 function shortHour(hour) {
@@ -39,7 +49,7 @@ function readSound() {
 }
 
 /** The slides a recap has something to say in (no "nothing here yet" slides). */
-function buildSlides(recap, period, t) {
+function buildSlides(recap, period, t, language) {
   const topGenres = filteredGenres(recap?.topGenres || [])
   const topArtists = recap?.topArtists || []
   const topAlbums = recap?.topAlbums || []
@@ -53,7 +63,7 @@ function buildSlides(recap, period, t) {
   const slides = [{
     key: 'overview',
     eyebrow: t(period?.label || 'your recap').toLowerCase(),
-    title: t('{duration} of music.', { duration: fmtMinutes(recap?.totalMinutes || 0) }),
+    title: t('{duration} of music.', { duration: formatStoryDuration(recap?.totalMinutes || 0, language, t) }),
     body: t("(that's about {duration}... you okay?)", { duration: daysSummary }),
     track: topTracks[0],
     duration: 6500,
@@ -70,7 +80,7 @@ function buildSlides(recap, period, t) {
     key: 'session',
     eyebrow: t('the vibe check'),
     title: t('deep session: {session}.', { session: String(session.label || t('one long run')).toLowerCase() }),
-    body: t('{tracks} over {duration}, mostly by {artist}. {comment}', { tracks: t(sessionTrackCount === 1 ? '1 track' : '{count} tracks', { count: sessionTrackCount }), duration: fmtMinutes(session.durationMinutes), artist: session.topArtists?.[0]?.artist || t('your queue'), comment: t(sessionComment(session)) }),
+    body: t('{tracks} over {duration}, mostly by {artist}. {comment}', { tracks: t(sessionTrackCount === 1 ? '1 track' : '{count} tracks', { count: sessionTrackCount }), duration: formatStoryDuration(session.durationMinutes, language, t), artist: session.topArtists?.[0]?.artist || t('your queue'), comment: t(sessionComment(session)) }),
     track: session.tracks[0],
     session,
     duration: 8000,
@@ -125,9 +135,9 @@ export default function RecapStory({ open, recap, ...props }) {
 }
 
 function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const reduceMotion = useReducedMotion()
-  const slides = useMemo(() => buildSlides(recap, period, t), [recap, period, t])
+  const slides = useMemo(() => buildSlides(recap, period, t, language), [recap, period, t, language])
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const [held, setHeld] = useState(false)
@@ -370,7 +380,7 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
           <SideArrow label={t('Next slide')} disabled={index === last} onClick={() => go(1)}><ChevronRight size={18} /></SideArrow>
         </div>
       </div>
-      <p className="sr-only" aria-live="polite">{`Slide ${index + 1} of ${slides.length}: ${slide.title}`}</p>
+      <p className="sr-only" aria-live="polite">{t('Slide {current} of {total}: {title}', { current: index + 1, total: slides.length, title: slide.title })}</p>
     </motion.div>
   )
 }
@@ -469,7 +479,7 @@ function SlideVisual({ t, slide, recap, topTracks, replayQueue, playAndClose, pe
           {covers.map((track, i) => <Cover key={track.id || i} src={trackArt(track)} className="aspect-square rounded-[2.5cqw]" />)}
         </div>
         <div className="grid grid-cols-3 gap-[2cqw] text-center">
-          {[[fmtMinutes(session.durationMinutes), t('long')], [session.trackCount || 0, t('tracks')], [session.skippedCount || 0, t('skips')]].map(([value, label]) => (
+          {[[formatStoryDuration(session.durationMinutes, language, t), t('long')], [session.trackCount || 0, t('tracks')], [session.skippedCount || 0, t('skips')]].map(([value, label]) => (
             <div key={label} className="rounded-[3cqw] bg-white/[0.06] py-[2.5cqw]">
               <p className="font-display text-[4.6cqw]">{value}</p>
               <p className="text-[2.6cqw] text-white/45 lowercase">{label}</p>
@@ -555,7 +565,7 @@ function SlideVisual({ t, slide, recap, topTracks, replayQueue, playAndClose, pe
   const topArtist = recap.topArtists?.[0]?.artist
   const topGenre = filteredGenres(recap.topGenres || [])[0]?.genre
   const summary = [
-    [t('listened'), fmtMinutes(recap.totalMinutes || 0)],
+    [t('listened'), formatStoryDuration(recap.totalMinutes || 0, language, t)],
     [t('top track'), topTracks[0]?.title],
     [t('top artist'), topArtist],
     [t('top genre'), topGenre],
