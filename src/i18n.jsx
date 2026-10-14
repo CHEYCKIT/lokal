@@ -748,6 +748,15 @@ const ROWS = {
   "any": ["au moins un","beliebig","cualquiera","qualsiasi","qualquer","willekeurig","dowolne","vilka som helst"],
   "Order": ["Ordre","Reihenfolge","Orden","Ordine","Ordem","Volgorde","Kolejność","Ordning"],
   "Jazz I haven't heard": ["Jazz que je n’ai pas écouté","Jazz, das ich noch nicht gehört habe","Jazz que no he escuchado","Jazz che non ho ascoltato","Jazz que ainda não ouvi","Jazz dat ik nog niet heb beluisterd","Jazz, którego nie słuchałem","Jazz jag inte har hört"],
+  "Change the picture": ["Changer l’image","Bild ändern","Cambiar la imagen","Cambia immagine","Alterar a imagem","Afbeelding wijzigen","Zmień obraz","Ändra bilden"],
+  "Share as a picture": ["Partager en image","Als Bild teilen","Compartir como imagen","Condividi come immagine","Partilhar como imagem","Delen als afbeelding","Udostępnij jako obraz","Dela som bild"],
+  "Popular": ["Populaire","Beliebt","Popular","Popolare","Popular","Populair","Popularne","Populär"],
+  "No releases of the types chosen.": ["Aucune sortie pour les types sélectionnés.","Keine Veröffentlichungen der gewählten Typen.","No hay lanzamientos de los tipos seleccionados.","Nessuna pubblicazione dei tipi selezionati.","Não há lançamentos dos tipos escolhidos.","Geen releases van de gekozen typen.","Brak wydań wybranych typów.","Inga utgåvor av valda typer."],
+  "Play Album": ["Lire l’album","Album abspielen","Reproducir álbum","Riproduci album","Reproduzir álbum","Album afspelen","Odtwórz album","Spela album"],
+  "Album · Online": ["Album · en ligne","Album · online","Álbum · en línea","Album · online","Álbum · online","Album · online","Album · online","Album · online"],
+  "Radio": ["Radio","Radio","Radio","Radio","Rádio","Radio","Radio","Radio"],
+  "A continuous mix based on": ["Un mix continu basé sur","Ein fortlaufender Mix basierend auf","Una mezcla continua basada en","Un mix continuo basato su","Uma mistura contínua baseada em","Een doorlopende mix gebaseerd op","Ciągły miks oparty na","En kontinuerlig mix baserad på"],
+  "your selection": ["votre sélection","deiner Auswahl","tu selección","la tua selezione","a tua seleção","je selectie","wybranym elemencie","ditt val"],
 }
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
   phrase, Object.fromEntries(LOCALES.map((locale, index) => [locale, values[index]])),
