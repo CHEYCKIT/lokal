@@ -108,9 +108,9 @@ function netFetch(net, input, init = {}) {
     })
 
     request.on('error', error => rejectBeforeResponse(error))
-    request.on('close', () => {
-      if (!settled) rejectBeforeResponse(new Error('The network request closed before receiving a response'))
-    })
+    // Electron can emit close before redirect for a manually handled 3xx.
+    // Do not treat close alone as failure: the redirect/error events, the
+    // caller's abort signal, or its response timeout settle the request.
 
     try { request.end() } catch (error) { rejectBeforeResponse(error) }
   })
