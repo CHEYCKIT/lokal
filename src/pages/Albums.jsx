@@ -49,6 +49,7 @@ function releaseLabel(type) {
 // An album's page, laid out like an online album's (OnlineAlbum): the cover,
 // what it is, and its actions in one row; the songs below.
 function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, children }) {
+  const { t } = useTranslation()
   const artSrc = getAlbumArtwork(album)
   const artistName = album.album_artist || album.artists || ''
   // The cover, big (click it).
@@ -72,7 +73,7 @@ function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, chil
           <h1 className="truncate text-3xl font-display text-white" title={album.title}>{album.title}</h1>
           {artistName
             ? <button onClick={onArtist} className="mt-1 max-w-full truncate text-sm text-muted transition-colors hover:text-accent hover:underline">{artistName}</button>
-            : <p className="mt-1 text-sm text-muted">Unknown Artist</p>}
+            : <p className="mt-1 text-sm text-muted">{t("Unknown Artist")}</p>}
           <p className="mt-1 text-xs text-subtle">{facts.join(' · ')}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2">{children}</div>
         </div>
@@ -89,6 +90,7 @@ function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, chil
  * the text under it open it.
  */
 function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false }) {
+  const { t } = useTranslation()
   const artSrc = getAlbumArtwork(album)
 
   return (
@@ -464,10 +466,10 @@ export default function Albums() {
                 ? `Refreshing releases · ${refreshStatus.done.toLocaleString()} of ${refreshStatus.total.toLocaleString()} checked · ${refreshStatus.matched.toLocaleString()} matched`
                 : `Refresh complete · ${refreshStatus.matched.toLocaleString()} matched${refreshStatus.failed ? ` · ${refreshStatus.failed.toLocaleString()} not found` : ''}`)}
             </p>
-            <div role="progressbar" aria-label="Release refresh" aria-valuemin={0} aria-valuemax={refreshStatus.total || 1} aria-valuenow={refreshStatus.done} className="h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div role="progressbar" aria-label={t("Release refresh")} aria-valuemin={0} aria-valuemax={refreshStatus.total || 1} aria-valuenow={refreshStatus.done} className="h-1.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${refreshStatus.total ? refreshStatus.done / refreshStatus.total * 100 : refreshStatus.running ? 0 : 100}%` }} />
             </div>
-            {refreshStatus.running && <p className="text-[11px] text-muted/70">You can leave this page; the refresh keeps going.</p>}
+            {refreshStatus.running && <p className="text-[11px] text-muted/70">{t("You can leave this page; the refresh keeps going.")}</p>}
           </div>
         )}
         </>}
@@ -511,7 +513,7 @@ export default function Albums() {
             ) : loadingTracks ? (
               <p role="status" className="text-sm text-muted">Loading {selectedAlbum.title}…</p>
             ) : albumTracks.length === 0 ? (
-              <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">No tracks found for this release.</p>
+              <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{t("No tracks found for this release.")}</p>
             ) : (
               <div className="flex flex-col" onClick={trackSelection.clear}>
                 <SelectionBar
@@ -595,7 +597,7 @@ export default function Albums() {
               onClear={releaseSelection.clear}
               actions={releases.barActions(selectedReleases())}
             />
-            {groupedAlbums.length === 0 && <p className="text-sm text-muted">No releases of the types chosen.</p>}
+            {groupedAlbums.length === 0 && <p className="text-sm text-muted">{t("No releases of the types chosen.")}</p>}
             {groupedAlbums.map((group) => (
               <section key={group.key} className="space-y-4">
                 <div className="flex items-end justify-between gap-4">
