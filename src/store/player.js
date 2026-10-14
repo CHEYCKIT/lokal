@@ -139,6 +139,11 @@ function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
 }
 
+const normalizeReplayGainMode = value => ['off', 'track', 'album'].includes(value) ? value : 'off'
+function readReplayGainModeSetting() {
+  try { return normalizeReplayGainMode(localStorage.getItem('lokal-replaygain-mode')) } catch { return 'off' }
+}
+
 // Starting playback yourself (a track, album, playlist, mix...) opens the
 // Now Playing panel when it's closed, as Spotify does. Only playTrack and
 // playQueue call this -- the queue moving on, resuming, skipping don't --
@@ -253,6 +258,8 @@ export const usePlayerStore = create((set, get) => ({
   // Casting (src/cast): true while a TV plays instead of this computer.
   castActive: false,
   outputDeviceId: readOutputDevice(),
+  replayGainMode: readReplayGainModeSetting(),
+  replayGainModeUserSet: false,
 
   originalQueue: [], 
   shuffleQueue: [], 
@@ -271,6 +278,17 @@ export const usePlayerStore = create((set, get) => ({
     const value = String(id || 'default')
     try { localStorage.setItem('lokal-output-device', value) } catch {}
     set({ outputDeviceId: value })
+  },
+  setReplayGainMode: (value) => {
+    const mode = normalizeReplayGainMode(value)
+    try { localStorage.setItem('lokal-replaygain-mode', mode) } catch {}
+    set({ replayGainMode: mode, replayGainModeUserSet: true })
+  },
+  hydrateReplayGainMode: (value) => {
+    if (get().replayGainModeUserSet || !['off', 'track', 'album'].includes(value)) return
+    const mode = normalizeReplayGainMode(value)
+    try { localStorage.setItem('lokal-replaygain-mode', mode) } catch {}
+    set({ replayGainMode: mode })
   },
   setFetchingRelated: (v) => set({ _fetchingRelated: v }),
   appendRelated: (tracks) => {

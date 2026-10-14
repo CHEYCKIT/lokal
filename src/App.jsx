@@ -1,4 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
+import { replayGainMultiplier } from './audio/replayGain.mjs'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
 import { prefetchUpcoming } from './queuePrefetch'
@@ -464,6 +465,10 @@ export default function App() {
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
+  const replayGainNodeRef = useRef(null)
+  const cfReplayGainNodeRef = useRef(null)
+  const replayGainRequestRef = useRef({ primary: 0, cf: 0 })
+  const replayGainCacheRef = useRef(new Map())
   // Crossfades ramp these, after the volume gains, so volume changes never cut a fade short.
   const fadeGainRef = useRef({ primary: null, cf: null })
   // AutoMix's bass swap: a high-pass per side (10 Hz, open, outside a transition).
@@ -576,6 +581,7 @@ export default function App() {
   const miniSwitching = usePlayerStore(s => s.miniSwitching)
   // Casting: the TV plays, and this computer's audio is parked (src/cast).
   const castActive = usePlayerStore(s => s.castActive)
+  const replayGainMode = usePlayerStore(s => s.replayGainMode)
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
   const { user } = useAppStore()
@@ -584,6 +590,58 @@ export default function App() {
   useEffect(() => {
     volumeRef.current = volume
   }, [volume])
+
+  const applyReplayGainToElement = useCallback(async (element, track) => {
+    if (!element) return null
+    const side = element === audioRef.current ? 'primary' : 'cf'
+    const request = ++replayGainRequestRef.current[side]
+    const id = track?.id == null ? '' : String(track.id)
+    const assignedId = element.dataset.lokalTrackPending || element.dataset.lokalTrackId
+    if (assignedId && assignedId !== id) return null
+
+    const apply = multiplier => {
+      if (request !== replayGainRequestRef.current[side]) return
+      const node = side === 'primary' ? replayGainNodeRef.current : cfReplayGainNodeRef.current
+      if (!node?.gain) return
+      const ctx = audioCtxRef.current
+      const now = ctx?.currentTime || 0
+      try {
+        node.gain.cancelScheduledValues(now)
+        if (ctx) node.gain.setTargetAtTime(multiplier, now, 0.04)
+        else node.gain.value = multiplier
+      } catch { node.gain.value = multiplier }
+    }
+
+    try {
+      const mode = usePlayerStore.getState().replayGainMode
+      if (mode === 'off' || !id || typeof window.electron?.getReplayGain !== 'function') {
+        apply(1)
+        return null
+      }
+
+      let tags
+      if (replayGainCacheRef.current.has(id)) {
+        tags = replayGainCacheRef.current.get(id)
+        if (tags && typeof tags.then === 'function') tags = await tags
+      } else {
+        const pending = Promise.resolve().then(() => window.electron.getReplayGain(id)).catch(() => null)
+        replayGainCacheRef.current.set(id, pending)
+        tags = await pending
+        replayGainCacheRef.current.set(id, tags || null)
+        if (replayGainCacheRef.current.size > 400) {
+          replayGainCacheRef.current.delete(replayGainCacheRef.current.keys().next().value)
+        }
+      }
+
+      const latestAssignedId = element.dataset.lokalTrackPending || element.dataset.lokalTrackId
+      if (latestAssignedId && latestAssignedId !== id) return null
+      apply(replayGainMultiplier(tags, usePlayerStore.getState().replayGainMode))
+      return tags || null
+    } catch {
+      apply(1)
+      return null
+    }
+  }, [])
 
   const applyAudioOutput = useCallback(async (deviceId = 'default') => {
     const id = String(deviceId || 'default')
@@ -887,11 +945,17 @@ export default function App() {
 
     const primaryGain = ctx.createGain()
     const cfGain = ctx.createGain()
+    const primaryReplayGain = ctx.createGain()
+    const cfReplayGain = ctx.createGain()
     gainNodeRef.current = primaryGain
     cfGainNodeRef.current = cfGain
+    replayGainNodeRef.current = primaryReplayGain
+    cfReplayGainNodeRef.current = cfReplayGain
 
     primaryGain.gain.value = volumeRef.current
     cfGain.gain.value = 0
+    primaryReplayGain.gain.value = 1
+    cfReplayGain.gain.value = 1
     const primaryFade = ctx.createGain()
     const cfFade = ctx.createGain()
     fadeGainRef.current = { primary: primaryFade, cf: cfFade }
@@ -914,12 +978,15 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('lokal:analyser-ready'))
 
     if (isIOS) {
-      primarySource.connect(ctx.destination)
-      cfSource.connect(ctx.destination)
+      primarySource.connect(primaryReplayGain)
+      primaryReplayGain.connect(ctx.destination)
+      cfSource.connect(cfReplayGain)
+      cfReplayGain.connect(ctx.destination)
     } else {
       let prev = primarySource
       for (const n of nodes) { prev.connect(n); prev = n }
-      prev.connect(primaryGain)
+      prev.connect(primaryReplayGain)
+      primaryReplayGain.connect(primaryGain)
       primaryGain.connect(primaryFade)
       primaryFade.connect(primaryMix)
       primaryMix.connect(analyser)
@@ -927,7 +994,8 @@ export default function App() {
 
       let cfPrev = cfSource
       for (const n of cfNodes) { cfPrev.connect(n); cfPrev = n }
-      cfPrev.connect(cfGain)
+      cfPrev.connect(cfReplayGain)
+      cfReplayGain.connect(cfGain)
       cfGain.connect(cfFade)
       cfFade.connect(cfMix)
       cfMix.connect(analyser)
@@ -1421,6 +1489,7 @@ export default function App() {
     setCfAudioRef(cfAudioRef)
     api.getSettings().then(s => {
       if (s) usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings(s))
+      usePlayerStore.getState().hydrateReplayGainMode(s?.replaygain_mode)
       // Sync the backend-persisted Side Panels mode at boot -- previously
       // this only happened once the Settings page itself mounted, so a
       // user who never opened Settings stayed on whatever
@@ -1863,6 +1932,7 @@ export default function App() {
     fadeInEl.dataset.lokalTrackPending = String(nextTrack.id)
     fadeInEl.dataset.fallbackFor = ''
     fadeInEl.dataset.fallbackSrc = ''
+    const replayGainReady = applyReplayGainToElement(fadeInEl, nextTrack)
     replaceAudioSource(fadeInEl, encodedSrc)
 
     // The current track stays the active one until the next one can play
@@ -1937,7 +2007,9 @@ export default function App() {
       beginCrossfade()
     })
 
-    const beginCrossfade = () => {
+    const beginCrossfade = async () => {
+      if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
+      await replayGainReady
       if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
       flushTime(currentTrackRef.current?.id)
 
@@ -2124,12 +2196,16 @@ export default function App() {
     const resumeFrom = takeResumePosition(currentTrack.id)
     let cancelled = false
     const start = async () => {
+      const replayGainReady = applyReplayGainToElement(el, currentTrack)
       const generation = usePlayerStore.getState().playbackGeneration
       const ref = streamRef(currentTrack)
       let addonError = ''
       const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider, api, undefined, error => { addonError = String(error || '') }).catch(() => 'unavailable') : null
       const live = usePlayerStore.getState()
       if (cancelled || live.playbackGeneration !== generation || live.currentTrack?.id !== currentTrack.id || live.currentTrack?.file_path !== currentTrack.file_path) return
+      await replayGainReady
+      const afterGain = usePlayerStore.getState()
+      if (cancelled || afterGain.playbackGeneration !== generation || afterGain.currentTrack?.id !== currentTrack.id || afterGain.currentTrack?.file_path !== currentTrack.file_path) return
       // An addon that still needs verifying says so, rather than only
       // falling back to the next source.
       // The addon's own reason (also in Lokal's log) goes into the fallback
@@ -2149,7 +2225,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering])
+  }, [currentTrack?.id, currentTrack?.file_path, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -2205,7 +2281,18 @@ export default function App() {
       activeGain.setValueAtTime(volume, now)
       inactiveGain.setValueAtTime(0, now)
     } catch {}
-  }, [volume])
+  }, [volume, applyReplayGainToElement])
+
+  useEffect(() => {
+    const state = usePlayerStore.getState()
+    const tracks = [state.currentTrack, ...state.queue, ...state.shuffleQueue, ...state.originalQueue].filter(Boolean)
+    for (const element of [audioRef.current, cfAudioRef.current]) {
+      if (!element) continue
+      const id = element.dataset.lokalTrackPending || element.dataset.lokalTrackId
+      const track = id ? tracks.find(item => String(item.id) === id) : null
+      applyReplayGainToElement(element, track)
+    }
+  }, [replayGainMode, audioOutputReady, applyReplayGainToElement])
 
   const handleTimeUpdate = useCallback((e) => {
     if (!isEventFromActive(e)) return;
