@@ -27,6 +27,7 @@ const readCollapsed = () => { try { return localStorage.getItem(COLLAPSED_KEY) =
 
 /** A menu entry: icon and name, or just the icon (named on hover) when collapsed. */
 function NavItem({ icon: Icon, label, active, onClick, collapsed, badge, tour }) {
+  const { t } = useTranslation()
   return (
     <button
       data-tour={tour || undefined}
@@ -190,7 +191,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      aria-label="Sidebar"
+      aria-label={t("Sidebar")}
       className={`${collapsed ? 'w-[4.5rem]' : 'w-56'} border-r border-border flex flex-col h-full pb-[var(--player-space,0px)] flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out`}
       style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
     >
@@ -207,7 +208,7 @@ export default function Sidebar() {
           >
             <img
               src="lokal-icon.png"
-              alt="Lokal"
+              alt={t("Lokal")}
               className="w-7 h-7 rounded-lg flex-shrink-0"
               style={{
                 filter: 'var(--logo-image-filter, none)',
@@ -232,7 +233,7 @@ export default function Sidebar() {
               }}
             />
           </div>
-          {!collapsed && <span className="font-display text-sm uppercase tracking-widest text-white">Lokal</span>}
+          {!collapsed && <span className="font-display text-sm uppercase tracking-widest text-white">{t("Lokal")}</span>}
           <button
             onClick={toggleCollapsed}
             title={collapsed ? t('Expand sidebar') : t('Collapse sidebar')}
@@ -274,7 +275,7 @@ export default function Sidebar() {
               >
                 <img 
                   src={api.getAvatarSrc(user)} 
-                  alt="Profile" 
+                  alt={t("Profile")} 
                   className="w-7 h-7 rounded-full flex-shrink-0 object-cover" 
                 />
                 <p className="text-xs text-white truncate flex-1">{user.display_name || user.username}</p>
@@ -390,7 +391,7 @@ export default function Sidebar() {
               className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-xs transition-all group ${collapsed ? 'justify-center px-0' : 'px-2'} ${loc.pathname === `/playlist/${pl.id}` ? 'bg-accent/10 text-accent' : 'text-muted hover:text-white hover:bg-elevated'}`}>
               <PlaylistCover playlistId={pl.id} coverPath={pl.cover_path} size={28} className="flex-shrink-0 rounded" />
               {!collapsed && <span className="truncate">{pl.name}</span>}
-              {!collapsed && pl.smart_rules && <Sparkles size={11} className="ml-auto flex-shrink-0 text-accent/70" aria-label="Smart playlist" />}
+              {!collapsed && pl.smart_rules && <Sparkles size={11} className="ml-auto flex-shrink-0 text-accent/70" aria-label={t("Smart playlist")} />}
             </button>
           </div>
         ))}
