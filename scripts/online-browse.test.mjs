@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { libraryAlbum, loadOnlineAlbum, loadOnlineArtistAlbums, onlineAlbumPath } from '../src/onlineBrowse.js'
+import { libraryAlbum, loadOnlineAlbum, loadOnlineArtistAlbums, onlineAlbumPath, trackAlbumPath } from '../src/onlineBrowse.js'
 import { isContextNavigable } from '../src/playbackContext.js'
 
 test('album pages are addressed by artist and album (and YouTube album id)', () => {
@@ -9,6 +9,20 @@ test('album pages are addressed by artist and album (and YouTube album id)', () 
   assert.equal(path.split('?')[0], '/online/album')
   assert.deepEqual([params.get('artist'), params.get('album'), params.get('albumId')], ['Earth, Wind & Fire', 'I Am', 'MPREiam'])
   assert.equal(new URLSearchParams(onlineAlbumPath({ artist: 'A', album: 'B', albumId: 'javascript:x' }).split('?')[1]).get('albumId'), null)
+})
+
+test('a streamed add-on track uses its persisted source album id', () => {
+  const path = trackAlbumPath({
+    file_path: 'ghost://addon/0123456789/track-123',
+    title: 'Song',
+    artist: 'Artist',
+    album: 'Amazon Album',
+    source_album_id: 'B012345678',
+  })
+  const params = new URLSearchParams(path.split('?')[1])
+  assert.equal(params.get('source'), 'a-0123456789')
+  assert.equal(params.get('sourceAlbum'), 'B012345678')
+  assert.equal(params.get('album'), 'Amazon Album')
 })
 
 test('the library album opens instead when the library has its songs as files', async () => {
