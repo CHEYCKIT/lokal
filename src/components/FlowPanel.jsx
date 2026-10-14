@@ -4,6 +4,7 @@
 // stay on the page until applied; applied while Flow plays, the songs coming
 // up are picked again.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Infinity as InfinityIcon, ListPlus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
@@ -31,6 +32,7 @@ const MOOD_HINTS = {
 
 /** Flow's mark: soft rings breathing out of a glow, faster while it plays. */
 function FlowOrb({ playing }) {
+  const { t } = useTranslation()
   const reduce = useReducedMotion()
   return (
     <div className={`flow-orb ${playing && !reduce ? 'is-playing' : ''} ${reduce ? 'is-still' : ''}`} aria-hidden="true">
@@ -44,6 +46,7 @@ function FlowOrb({ playing }) {
 }
 
 function TunerSlider({ label, left, right, hint, value, onChange }) {
+  const { t } = useTranslation()
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">
@@ -66,6 +69,7 @@ const titleCase = genre => genre.replace(/(^|[\s\-/])(\p{L})/gu, (_, gap, letter
 
 /** The tuner's genres: the library's most common (tap: leave out, tap again: back in), and added ones (more of them). */
 function GenreChips({ suggested, all, genres, onChange }) {
+  const { t } = useTranslation()
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const added = Object.entries(genres).filter(([, on]) => on === true).map(([name]) => name)
@@ -85,8 +89,8 @@ function GenreChips({ suggested, all, genres, onChange }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-white">Genres</p>
-        <p className="text-xs text-muted">Tap to leave one out · add one for more of it</p>
+        <p className="text-sm font-medium text-white">{t("Genres")}</p>
+        <p className="text-xs text-muted">{t("Tap to leave one out · add one for more of it")}</p>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {shown.map(name => {
@@ -119,6 +123,7 @@ function GenreChips({ suggested, all, genres, onChange }) {
 }
 
 export default function FlowPanel({ userId }) {
+  const { t } = useTranslation()
   const saved = useMemo(() => readFlowSettings(userId), [userId])
   const [mood, setMood] = useState(saved.mood)
   const [applied, setApplied] = useState(saved.tuner)
@@ -206,12 +211,12 @@ export default function FlowPanel({ userId }) {
         <div className="relative flex flex-col gap-6 @md:flex-row @md:items-center">
           <FlowOrb playing={playingThis} />
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">Flow</p>
+            <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">{t("Flow")}</p>
             <h2 className="mt-1 flex items-center gap-2 text-4xl font-display text-white">
               {flowOn ? flowName(context.mood) : flowName(mood)}<InfinityIcon size={28} className="text-white/50" />
             </h2>
             <p className="mt-1.5 text-sm text-muted">
-              Your personal soundtrack{tuned && <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-display uppercase tracking-wider text-white/70">Tuned</span>}
+              Your personal soundtrack{tuned && <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-display uppercase tracking-wider text-white/70">{t("Tuned")}</span>}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => (flowOn ? togglePlay() : play())} disabled={starting}
@@ -224,7 +229,7 @@ export default function FlowPanel({ userId }) {
                 <SlidersHorizontal size={16} />
               </button>
               {flowOn && (
-                <button type="button" onClick={saveUpcoming} disabled={savingList} title="Save as playlist"
+                <button type="button" onClick={saveUpcoming} disabled={savingList} title={t("Save as playlist")}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-muted hover:text-white disabled:opacity-50">
                   <ListPlus size={16} />
                 </button>
@@ -236,7 +241,7 @@ export default function FlowPanel({ userId }) {
 
       {/* Moods: a tap plays Flow in it (or retunes the Flow that's playing). */}
       <section>
-        <h3 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Moods</h3>
+        <h3 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{t("Moods")}</h3>
         <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
           {FLOW_MOODS.map(item => {
             const Icon = MOOD_ICONS[item.id]
@@ -270,7 +275,7 @@ export default function FlowPanel({ userId }) {
                     <RotateCcw size={12} />Reset
                   </button>
                   <button type="button" onClick={apply} disabled={!changed}
-                    className="rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-base transition-opacity disabled:opacity-40">Apply</button>
+                    className="rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-base transition-opacity disabled:opacity-40">{t("Apply")}</button>
                 </div>
               </div>
               {/* Two cards: how Flow picks (Discovery, Era), and where from (online, genres). */}
@@ -284,10 +289,10 @@ export default function FlowPanel({ userId }) {
               <div className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">
               <div>
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-sm font-medium text-white">Fresh finds from</p>
+                  <p className="text-sm font-medium text-white">{t("Fresh finds from")}</p>
                   <p className="text-xs text-muted">{draftSource === 'library' ? 'Only songs in your library' : 'Your library, and songs recommended online'}</p>
                 </div>
-                <div role="radiogroup" aria-label="Fresh finds from" className="mt-3 inline-flex rounded-full border border-border bg-card p-1">
+                <div role="radiogroup" aria-label={t("Fresh finds from")} className="mt-3 inline-flex rounded-full border border-border bg-card p-1">
                   {ONLINE_SOURCES.map(item => (
                     <button key={item.id} type="button" role="radio" aria-checked={draftSource === item.id}
                       onClick={() => setDraft(d => ({ ...d, source: item.id }))}
@@ -302,7 +307,7 @@ export default function FlowPanel({ userId }) {
                 )}
               </div>
               <div className="mt-7">
-                {pool === null ? <p className="text-xs text-muted">Reading your library…</p>
+                {pool === null ? <p className="text-xs text-muted">{t("Reading your library…")}</p>
                   : <GenreChips suggested={suggested} all={allGenres} genres={draft.genres} onChange={genres => setDraft(d => ({ ...d, genres }))} />}
               </div>
               </div>
@@ -314,7 +319,7 @@ export default function FlowPanel({ userId }) {
 
       {flowOn && comingUp.length > 0 && (
         <section>
-          <h3 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Coming up in Flow</h3>
+          <h3 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{t("Coming up in Flow")}</h3>
           <TrackList tracks={comingUp} reduceMotion context={context} />
         </section>
       )}
