@@ -8,7 +8,6 @@ import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
 import { api } from '../api'
 import { makeAlbumContext, makeArtistContext } from '../playbackContext'
-import { plural } from '../plural'
 import { openShareCard, artistArtSource, coversOf } from '../shareCard'
 import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
@@ -211,8 +210,8 @@ export default function Artist() {
       title: artist.name,
       round: !!photo,
       art: photo ? [photo] : coversOf(tracks, 1),
-      stats: [['Songs', tracks.length.toLocaleString()], ['Albums', albums.size.toLocaleString()], ['Plays', plays.toLocaleString()]],
-      list: { title: 'Top songs', items: top.slice(0, 5).map(track => [track.title, track.album && track.album !== track.title ? track.album : null]) },
+      stats: [[t('Songs'), tracks.length.toLocaleString()], [t('Albums'), albums.size.toLocaleString()], [t('Plays'), plays.toLocaleString()]],
+      list: { title: t('Top songs'), items: top.slice(0, 5).map(track => [track.title, track.album && track.album !== track.title ? track.album : null]) },
     })
   }
 
@@ -230,7 +229,7 @@ export default function Artist() {
           className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white @md:left-8 @md:top-5"
         >
           <ArrowLeft size={14} />
-          Back
+          {t('Back')}
         </button>
         {imgSrc ? <img src={imgSrc} className="h-full w-full object-cover opacity-40" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
@@ -238,7 +237,7 @@ export default function Artist() {
           {/* Click: the picture, big (no picture: choose one). The camera
               in the corner changes it. */}
           <div className="relative group flex-shrink-0">
-            <button onClick={imgSrc ? () => setZoom(true) : pickArtistImage} title={imgSrc ? 'View the picture' : api.isElectron ? 'Choose a picture' : undefined} className={`flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${imgSrc ? 'cursor-zoom-in' : ''}`}>
+          <button onClick={imgSrc ? () => setZoom(true) : pickArtistImage} title={imgSrc ? t('View the picture') : api.isElectron ? t('Choose a picture') : undefined} className={`flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${imgSrc ? 'cursor-zoom-in' : ''}`}>
               {imgSrc ? <img src={imgSrc} alt={artist.name} className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
             </button>
             {api.isElectron && imgSrc && (
@@ -251,11 +250,11 @@ export default function Artist() {
           <div>
             <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Artist")}</p>
             <h1 className="text-3xl font-display text-white">{artist.name}</h1>
-            <p className="mt-1 text-xs text-muted">{plural(artist.tracks?.length, 'track')}</p>
+            <p className="mt-1 text-xs text-muted">{t((artist.tracks?.length || 0) === 1 ? '{count} track' : '{count} tracks', { count: artist.tracks?.length || 0 })}</p>
           </div>
         </div>
         <button onClick={() => setShowManage(true)} className="absolute top-4 right-6 flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs text-white/60 transition-all backdrop-blur-sm hover:border-white/20 hover:text-white">
-          <Settings size={12} /> Manage
+          <Settings size={12} /> {t('Manage')}
         </button>
         <FollowArtistButton name={artist.name} className="absolute top-14 right-6 flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs text-white/60 transition-all hover:border-white/20 hover:text-white" />
       </div>
@@ -263,18 +262,18 @@ export default function Artist() {
       <div className="space-y-7 px-8 py-5">
         <div className="flex items-center gap-3">
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
-            <Play size={14} fill="currentColor" className="translate-x-px" /> Play All
+            <Play size={14} fill="currentColor" className="translate-x-px" /> {t('Play all')}
           </button>
           <button onClick={() => openRadio(nav, { artist: artist.name, type: 'artist' }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
-            <Radio size={14} /> Radio
+            <Radio size={14} /> {t('Radio')}
           </button>
           <button onClick={shareArtist} title={t("Share as a picture")}
             className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
-            <Share2 size={14} /> Share
+            <Share2 size={14} /> {t('Share')}
           </button>
           <button onClick={toggleConnected} aria-pressed={connected} title={connected ? 'Hide their music online' : 'Show their other songs and albums online'}
             className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${connected ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border bg-elevated text-white/80 hover:border-accent/30 hover:text-white'}`}>
-            <Globe size={14} /> {connected ? 'Online: on' : 'More online'}
+            <Globe size={14} /> {connected ? t('Online: on') : t('More online')}
           </button>
           {connected && <RefreshButton onClick={onlineData.refresh} loading={onlineData.loading} loadedAt={onlineData.loadedAt} className="bg-elevated" />}
         </div>
@@ -308,7 +307,7 @@ export default function Artist() {
             </div>
             <SelectionBar
               open={releaseSelection.count > 0}
-              label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+              label={t('{count} releases selected', { count: releaseSelection.count })}
               onClear={releaseSelection.clear}
               actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
             />
@@ -347,7 +346,7 @@ export default function Artist() {
                         <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-display uppercase tracking-[0.18em] text-white/70">
                           {releaseLabel(album.release_type)}
                         </span>
-                        <span className="block truncate">{album.year ? `${album.year} • ` : ''}{plural(album.track_count, 'track')}</span>
+                        <span className="block truncate">{album.year ? `${album.year} • ` : ''}{t((Number(album.track_count) || 0) === 1 ? '{count} track' : '{count} tracks', { count: Number(album.track_count) || 0 })}</span>
                         {/* Part of a release ("1/9"), when the release online has more songs. */}
                         {(() => { const total = onlineTotals.get(releaseTitleKey(album.title)); return total > album.track_count ? <OwnershipBadge ownership={{ owned: album.track_count, total, full: false }} /> : null })()}
                       </div>

@@ -116,7 +116,7 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
               const buttons = visible.map(({ label: text, icon: Icon, onClick, danger, disabled }) => (
                 <button key={text} onClick={onClick} disabled={disabled}
                   className={`flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${danger ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25' : 'border border-border bg-card text-white/80 hover:border-accent/40 hover:text-white'}`}>
-                  {Icon && <Icon size={12} />} {text}
+                  {Icon && <Icon size={12} />} {t(text)}
                 </button>
               ))
               const count = <span className="flex-shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-accent">{shown.current.label}</span>

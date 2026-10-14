@@ -178,7 +178,7 @@ export default function PostOnboardingTour() {
                   className="flex-1 py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-1"
                 >
                   <ChevronLeft size={14} />
-                  Back
+                  {t('Back')}
                 </button>
               )}
               <button

@@ -382,6 +382,8 @@ export default function Settings() {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
+  const [statusMessageValues, setStatusMessageValues] = useState(null)
+  const [statusMessageIsError, setStatusMessageIsError] = useState(false)
   // Fill In Genres and Index Lyrics run in the background (src/libraryJobs.js,
   // shared with the Downloads panel, which can start them too).
   const genreJob = useLibraryJobs(s => s.genres)
@@ -2341,7 +2343,7 @@ activeCategory === 'data' ? usersTried
       </Modal>
       <Modal 
         open={showGenreModal} 
-        onClose={() => { setShowGenreModal(false); setStatusMessage(''); }} 
+        onClose={() => { setShowGenreModal(false); setStatusMessage(''); setStatusMessageValues(null); setStatusMessageIsError(false) }}
         title={t("Manual Genre Assignment")} 
         width="max-w-md"
       >
@@ -2395,14 +2397,14 @@ activeCategory === 'data' ? usersTried
           </div>
 
           {statusMessage && (
-            <div className={`p-2.5 rounded-lg border text-center text-xs font-medium ${statusMessage.includes('Error') || statusMessage.includes('required') ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-accent/10 border-accent/20 text-accent'}`}>
-              {t(statusMessage)}
+            <div className={`p-2.5 rounded-lg border text-center text-xs font-medium ${statusMessageIsError ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-accent/10 border-accent/20 text-accent'}`}>
+              {t(statusMessage, statusMessageValues)}
             </div>
           )}
 
           <div className="flex gap-2 pt-2">
             <button 
-              onClick={() => { setShowGenreModal(false); setStatusMessage(''); }} 
+              onClick={() => { setShowGenreModal(false); setStatusMessage(''); setStatusMessageValues(null); setStatusMessageIsError(false) }}
               className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors"
             >
               {t('Cancel')}
@@ -2410,7 +2412,9 @@ activeCategory === 'data' ? usersTried
             <button 
               onClick={async () => {
                 if (!manualGenreArtist || !manualGenreValue) {
-                  setStatusMessage(t('Artist and Genre are required'));
+                  setStatusMessage('Artist and Genre are required')
+                  setStatusMessageValues(null)
+                  setStatusMessageIsError(true)
                   return;
                 }
                 const result = await api.setManualGenre({ 
@@ -2419,7 +2423,9 @@ activeCategory === 'data' ? usersTried
                   album: manualGenreAlbum || null,
                   genre: manualGenreValue 
                 });
-                setStatusMessage(result?.error ? t(result.error) : t('✓ Updated {count} track(s)', { count: result?.updated || 0 }));
+                setStatusMessage(result?.error || '✓ Updated {count} track(s)')
+                setStatusMessageValues(result?.error ? null : { count: result?.updated || 0 })
+                setStatusMessageIsError(!!result?.error)
                 
                 if (!result?.error) {
                   setManualGenreArtist('');
@@ -2854,7 +2860,7 @@ activeCategory === 'data' ? usersTried
             <button onClick={() => { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) }} disabled={factoryResetting} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">{t("Cancel")}</button>
             <button
               onClick={handleFactoryReset}
-              disabled={factoryResetting || resetConfirmText !== 'RESET LOKAL' || !resetConfirmArmed}
+              disabled={factoryResetting || resetConfirmText !== t('RESET LOKAL') || !resetConfirmArmed}
               className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50"
             >
               {factoryResetting ? t('Resetting...') : t('Factory Reset')}

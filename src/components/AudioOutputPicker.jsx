@@ -42,7 +42,7 @@ function BrowserAudioOutputPicker() {
     } finally {
       if (seq === refreshSeq.current) setLoading(false)
     }
-  }, [supported])
+  }, [supported, t])
 
   useEffect(() => {
     refresh()

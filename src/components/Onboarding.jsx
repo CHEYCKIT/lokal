@@ -433,7 +433,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                     
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
                       <p className="text-xs text-muted font-medium flex items-center gap-2">
-                        <Palette size={14} /> Theme
+                        <Palette size={14} /> {t('Theme')}
                       </p>
                       <div className="grid grid-cols-5 gap-2">
                         {Object.entries(THEMES).slice(0, 5).map(([key, theme]) => (
@@ -466,7 +466,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                         <span>{toolsError}</span>
                         {toolsErrorTool && (
                           <button onClick={retryToolDownload} disabled={toolsLoading} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-300 hover:bg-red-500/30 disabled:opacity-40">
-                            Retry
+                            {t('Retry')}
                           </button>
                         )}
                       </div>
@@ -487,7 +487,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                               disabled={toolsLoading}
                               className="px-3 py-1.5 bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs hover:bg-accent/30 transition-colors disabled:opacity-40"
                             >
-                              {toolsLoading ? 'Downloading...' : 'Download'}
+                              {toolsLoading ? t('Downloading…') : t('Download')}
                             </button>
                           )}
                         </div>
@@ -508,14 +508,14 @@ export default function Onboarding({ isOpen, onComplete }) {
                               disabled={toolsLoading}
                               className="px-3 py-1.5 bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs hover:bg-accent/30 transition-colors disabled:opacity-40"
                             >
-                              {toolsLoading ? 'Downloading...' : 'Download'}
+                              {toolsLoading ? t('Downloading…') : t('Download')}
                             </button>
                           )}
                         </div>
                       </div>
                     </div>
                     <p className="text-xs text-muted text-center">
-                      You can also download these later from Settings → External Tools
+                      {t('You can also download these later from Settings → External Tools')}
                     </p>
                   </div>
                 )}
@@ -528,8 +528,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                   <div className="space-y-4">
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
                       <p className="text-xs text-muted">
-                        This feature originally existed for the original span of the project while it was server-based.
-                        Now that it's local-first, you can skip this, all your data is stored on this device.
+                        {t("This feature originally existed when the project was server-based. Now that Lokal is local-first, you can skip this; all your data is stored on this device.")}
                       </p>
                       
                       {!showUserForm ? (
@@ -537,7 +536,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                           onClick={() => setShowUserForm(true)}
                           className="w-full py-2.5 bg-accent/20 border border-accent/30 text-accent rounded-xl text-sm font-medium hover:bg-accent/30 transition-colors"
                         >
-                          Create Account (Optional)
+                          {t('Create Account (Optional)')}
                         </button>
                       ) : (
                         <div className="space-y-3">
@@ -569,7 +568,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                               disabled={creatingUser}
                               className="flex-1 py-2 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors disabled:opacity-40"
                             >
-                              {creatingUser ? 'Creating...' : 'Create Account'}
+                              {creatingUser ? t('Creating…') : t('Create Account')}
                             </button>
                             <button
                               onClick={() => {
@@ -579,7 +578,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                               }}
                               className="px-4 py-2 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors"
                             >
-                              Cancel
+                              {t('Cancel')}
                             </button>
                           </div>
                         </div>
@@ -596,10 +595,10 @@ export default function Onboarding({ isOpen, onComplete }) {
                           <Disc3 size={48} className="mx-auto text-accent animate-spin" />
                         </div>
                         <div className="space-y-2">
-                          <p className="text-sm text-white">{t("Scanning your music library...")}</p>
+                          <p className="text-sm text-white">{t('Scanning your music library…')}</p>
                           {scanProgress.isActive && scanProgress.total > 0 && (
                             <p className="text-xs text-muted">
-                              {scanProgress.current} / {scanProgress.total} tracks
+                              {scanProgress.current} / {scanProgress.total} {t('tracks')}
                             </p>
                           )}
                         </div>
@@ -619,10 +618,10 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="bg-card/50 rounded-xl p-4 space-y-3">
                         <div className="flex items-center gap-3">
                           <FolderOpen size={18} className="text-accent" />
-                          <p className="text-sm text-white truncate">{musicFolder || 'No folder selected'}</p>
+                        <p className="text-sm text-white truncate">{musicFolder || t('No folder selected')}</p>
                         </div>
                         <p className="text-xs text-muted">
-                          Your music folder is set. Ready to scan and discover your tracks!
+                          {t('Your music folder is set. Ready to scan and discover your tracks!')}
                         </p>
                       </div>
                     )}
@@ -635,7 +634,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <Check size={40} className="text-green-400" />
                     </div>
                     <p className="text-sm text-muted">
-                      Your library has been scanned and is ready to play!
+                      {t('Your library has been scanned and is ready to play!')}
                     </p>
                     <div className="bg-card/50 rounded-xl p-3 text-xs text-muted">
                       <p>{t("Next steps:")}</p>
@@ -659,13 +658,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Skip Setup
+                  {t('Skip Setup')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Get Started
+                  {t('Get Started')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -677,13 +676,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  I Understand
+                  {t('I Understand')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -695,14 +694,14 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   disabled={!musicFolder}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -714,13 +713,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  {api.isElectron ? 'Continue' : 'Skip (Web Mode)'}
+                  {api.isElectron ? t('Continue') : t('Skip (Web Mode)')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -733,13 +732,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Skip (Use Locally)
+                  {t('Skip (Use Locally)')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -752,13 +751,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Do This Later
+                  {t('Do This Later')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -772,7 +771,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Scan Later
+                  {t('Scan Later')}
                 </button>
                 <button
                   onClick={handleScan}
@@ -782,12 +781,12 @@ export default function Onboarding({ isOpen, onComplete }) {
                   {scanning ? (
                     <>
                       <Disc3 size={16} className="animate-spin" />
-                      Scanning...
+                      {t('Scanning…')}
                     </>
                   ) : (
                     <>
                       <Play size={16} />
-                      Scan Now
+                      {t('Scan Now')}
                     </>
                   )}
                 </button>
@@ -800,7 +799,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                 className="w-full py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
               >
                 <Check size={16} />
-                Start Listening
+                {t('Start Listening')}
               </button>
             )}
           </div>

@@ -96,7 +96,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
       </div>
       <div className="min-w-0 w-full">
         <p className="truncate text-sm font-medium text-white">{artist.name}</p>
-        <p className="truncate text-xs text-white/55">{artist.track_count} {artist.track_count === 1 ? 'track' : 'tracks'}</p>
+        <p className="truncate text-xs text-white/55">{t(artist.track_count === 1 ? '{count} track' : '{count} tracks', { count: artist.track_count })}</p>
       </div>
     </motion.div>
   )
@@ -359,7 +359,7 @@ export default function Artists() {
               </button>
             </div>
             <p className="mt-3 text-sm text-muted">
-              {loading ? '\u00a0' : `${total.toLocaleString()} ${followedOnly ? 'followed ' : ''}artist${total === 1 ? '' : 's'}`}
+              {loading ? '\u00a0' : t(followedOnly ? (total === 1 ? '{count} followed artist' : '{count} followed artists') : (total === 1 ? '{count} artist' : '{count} artists'), { count: total.toLocaleString() })}
             </p>
           </div>
 
@@ -369,7 +369,7 @@ export default function Artists() {
                 <button key={label} role="radio" aria-checked={followedOnly === value} onClick={() => changeFollowedOnly(value)}
                   title={value ? 'Only the artists you follow' : 'Every artist in your library'}
                   className={`h-8 rounded-lg px-3 text-sm transition-colors ${followedOnly === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}>
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>

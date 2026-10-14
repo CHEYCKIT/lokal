@@ -3,6 +3,7 @@
 
 import React from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
+import { useTranslation } from '../i18n'
 import { useVideoOffsets, VIDEO_OFFSET_STEP } from '../musicVideo'
 
 const label = value => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(2).replace(/\.?0+$/, '')} s`

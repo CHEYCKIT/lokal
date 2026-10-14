@@ -381,7 +381,7 @@ export default function RightSidebar() {
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
                           onContextMenu={openTrackMenu}
-                          title={currentTrack.album ? `Go to album: ${currentTrack.album}` : t('Go to album')}
+                          title={currentTrack.album ? t('Go to album: {album}', { album: currentTrack.album }) : t('Go to album')}
                           className={fx ? 'text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack?.title || 'Nothing playing'}
                         </button>
@@ -435,7 +435,7 @@ export default function RightSidebar() {
                         fx={fx}
                         label={t("Album")}
                         value={currentTrack.album || (hasAlbumLink ? t('Album · Online') : null)}
-                        title={hasAlbumLink ? `Go to album: ${currentTrack.album || t('Album · Online')}` : null}
+                        title={hasAlbumLink ? t('Go to album: {album}', { album: currentTrack.album || t('Album · Online') }) : null}
                         onClick={hasAlbumLink ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
                       {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
@@ -477,7 +477,7 @@ export default function RightSidebar() {
                   </div>
                   <div className="p-3 border-t border-border flex-shrink-0">
                     <button onClick={toggleLyricsFullscreen} className="w-full py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
-                      <Maximize2 size={11} /> Expand Lyrics
+                      <Maximize2 size={11} /> {t('Expand Lyrics')}
                     </button>
                   </div>
                 </motion.div>

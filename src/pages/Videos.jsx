@@ -217,7 +217,7 @@ export default function Videos() {
     {loaded && !visible.length && <div className="text-center py-16 text-muted"><Clapperboard size={40} className="mx-auto mb-4 opacity-40" /><p>{items.length ? t('No videos match this view.') : t('Your discovered music videos will appear here.')}</p><p className="text-xs mt-2">{t("Play songs to discover videos, or use “Find videos for my library” above.")}</p></div>}
     {/* Like the Library's bar: short labels, and only what applies to the
         selection (not greyed-out actions widening it). */}
-    <SelectionBar open={selection.count > 0} label={`${selection.count} selected`} onClear={selection.clear} actions={[
+    <SelectionBar open={selection.count > 0} label={t('{count} selected', { count: selection.count })} onClear={selection.clear} actions={[
       { label: t('Play'), icon: Play, onClick: () => play(selectedItems[0], false, selectedItems) },
       { label: t('Play next'), icon: Clock, onClick: () => playNextMany(selectedItems.map(row => row.track)) },
       { label: t('Add to queue'), icon: ListEnd, onClick: () => addToQueueMany(selectedItems.map(row => row.track)) },
