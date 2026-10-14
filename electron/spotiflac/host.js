@@ -15,11 +15,14 @@ function safePath(root, raw, grants = []) {
   const value = path.resolve(root, raw)
   const allowed = [root, ...grants].map(p => path.resolve(p)).find(p => contained(p, value))
   if (!allowed) throw new Error('File path is outside the addon sandbox')
-  // Validate every existing component, including the granted root. Packages
-  // cannot create symlinks, and a later symlink must not widen a file grant.
-  let current = path.parse(value).root
-  for (const part of value.slice(current.length).split(path.sep).filter(Boolean)) {
-    current = path.join(current, part)
+  // Validate from the sandbox/grant root down. Checking all the way from
+  // the filesystem root rejects legitimate paths on systems like Bazzite,
+  // where /home is commonly a symlink to /var/home. Symlinked OS ancestors
+  // are fine; symlinks or special files inside an addon grant are not.
+  let current = allowed
+  const parts = path.relative(allowed, value).split(path.sep).filter(Boolean)
+  for (const part of ['.', ...parts]) {
+    if (part !== '.') current = path.join(current, part)
     try { const stat = fs.lstatSync(current); if (stat.isSymbolicLink() || !stat.isFile() && !stat.isDirectory()) throw new Error('Addon paths cannot contain links or special files') }
     catch (error) { if (error.code !== 'ENOENT') throw error }
   }
