@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -60,6 +61,7 @@ const steps = [
 ]
 
 export default function Onboarding({ isOpen, onComplete }) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState(0)
   const [musicFolder, setMusicFolder] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -340,11 +342,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                 </div>
 
                 <h2 className="text-2xl font-bold text-white text-center mb-3">
-                  {step.title}
+                  {t(step.title)}
                 </h2>
 
                 <p className="text-muted text-center text-sm leading-relaxed mb-8">
-                  {step.description}
+                  {t(step.description)}
                 </p>
 
                 {step.id === 'local-only' && (
@@ -353,11 +355,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-start gap-3">
                         <AlertCircle size={20} className="text-yellow-400 flex-shrink-0 mt-0.5" />
                         <div className="space-y-2 text-xs text-yellow-200/80">
-                          <p><strong>NOT a streaming service!</strong></p>
-                          <p>Lokal doesn't have any built-in music. You must:</p>
+                          <p><strong>{t("NOT a streaming service!")}</strong></p>
+                          <p>{t("Lokal doesn't have any built-in music. You must:")}</p>
                           <ul className="list-disc list-inside space-y-1 ml-1">
-                            <li>Download music from Search (requires yt-dlp)</li>
-                            <li>OR import music files from a folder on your computer</li>
+                            <li>{t("Download music from Search (requires yt-dlp)")}</li>
+                            <li>{t("OR import music files from a folder on your computer")}</li>
                           </ul>
                         </div>
                       </div>
@@ -375,21 +377,21 @@ export default function Onboarding({ isOpen, onComplete }) {
                         <div className="space-y-2">
                           <FolderOpen size={24} className="mx-auto text-accent" />
                           <p className="text-sm text-white truncate px-4">{musicFolder}</p>
-                          <p className="text-xs text-muted">Click to change folder</p>
+                          <p className="text-xs text-muted">{t("Click to change folder")}</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
                           <FolderOpen size={24} className="mx-auto text-muted group-hover:text-accent transition-colors" />
-                          <p className="text-sm text-muted group-hover:text-white transition-colors">Click to select your music folder</p>
+                          <p className="text-sm text-muted group-hover:text-white transition-colors">{t("Click to select your music folder")}</p>
                         </div>
                       )}
                     </div>
                     
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
-                      <p className="text-xs text-muted font-medium">Quick Settings</p>
+                      <p className="text-xs text-muted font-medium">{t("Quick Settings")}</p>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Fetch Online Artwork</span>
+                        <span className="text-sm text-white">{t("Fetch Online Artwork")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('fetch_online_artwork', settings.fetch_online_artwork === '0' ? '1' : '0') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fetch_online_artwork !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -399,7 +401,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Index While Downloading</span>
+                        <span className="text-sm text-white">{t("Index While Downloading")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.index_while_downloading === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -409,7 +411,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Auto-fetch Genres</span>
+                        <span className="text-sm text-white">{t("Auto-fetch Genres")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('auto_fetch_genres', settings.auto_fetch_genres === '0' ? '1' : '0') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_fetch_genres !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -419,7 +421,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Skip Drum-kit Pattern</span>
+                        <span className="text-sm text-white">{t("Skip Drum-kit Pattern")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.skip_drumkit_pattern === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -474,11 +476,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-center justify-between bg-card/50 rounded-xl p-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${toolsStatus?.ytdlp?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                          <span className="text-sm text-white">yt-dlp</span>
+                          <span className="text-sm text-white">{t("yt-dlp")}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {toolsStatus?.ytdlp?.found ? (
-                            <span className="text-xs text-green-400">Installed</span>
+                            <span className="text-xs text-green-400">{t("Installed")}</span>
                           ) : (
                             <button
                               onClick={downloadYtDlp}
@@ -495,11 +497,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-center justify-between bg-card/50 rounded-xl p-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${toolsStatus?.ffmpeg?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                          <span className="text-sm text-white">ffmpeg</span>
+                          <span className="text-sm text-white">{t("ffmpeg")}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {toolsStatus?.ffmpeg?.found ? (
-                            <span className="text-xs text-green-400">Installed</span>
+                            <span className="text-xs text-green-400">{t("Installed")}</span>
                           ) : (
                             <button
                               onClick={downloadFfmpeg}
@@ -541,21 +543,21 @@ export default function Onboarding({ isOpen, onComplete }) {
                         <div className="space-y-3">
                           <input
                             type="text"
-                            placeholder="Username"
+                            placeholder={t("Username")}
                             value={userForm.username}
                             onChange={(e) => setUserForm({...userForm, username: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
                           />
                           <input
                             type="email"
-                            placeholder="Email (optional)"
+                            placeholder={t("Email (optional)")}
                             value={userForm.email}
                             onChange={(e) => setUserForm({...userForm, email: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
                           />
                           <input
                             type="password"
-                            placeholder="Password"
+                            placeholder={t("Password")}
                             value={userForm.password}
                             onChange={(e) => setUserForm({...userForm, password: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
@@ -594,7 +596,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                           <Disc3 size={48} className="mx-auto text-accent animate-spin" />
                         </div>
                         <div className="space-y-2">
-                          <p className="text-sm text-white">Scanning your music library...</p>
+                          <p className="text-sm text-white">{t("Scanning your music library...")}</p>
                           {scanProgress.isActive && scanProgress.total > 0 && (
                             <p className="text-xs text-muted">
                               {scanProgress.current} / {scanProgress.total} tracks
@@ -636,11 +638,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                       Your library has been scanned and is ready to play!
                     </p>
                     <div className="bg-card/50 rounded-xl p-3 text-xs text-muted">
-                      <p>Next steps:</p>
+                      <p>{t("Next steps:")}</p>
                       <ul className="list-disc list-inside mt-2 space-y-1">
-                        <li>Search for music online, or paste a link, to download it</li>
-                        <li>Use the Player to play your tracks</li>
-                        <li>Search for tracks, artists, albums, and genres</li>
+                        <li>{t("Search for music online, or paste a link, to download it")}</li>
+                        <li>{t("Use the Player to play your tracks")}</li>
+                        <li>{t("Search for tracks, artists, albums, and genres")}</li>
                       </ul>
                     </div>
                   </div>
