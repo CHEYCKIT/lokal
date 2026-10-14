@@ -43,6 +43,20 @@ test('manual redirects resolve as a 3xx Response with Location', async () => {
   assert.equal(response.headers.get('location'), 'https://cdn.example/audio')
 })
 
+test('a close emitted before a delayed manual redirect does not reject the response', async () => {
+  const { net } = fakeNet(request => {
+    request.emit('close')
+    setTimeout(() => request.emit('redirect', 307, 'GET', 'https://cdn.example/audio', {
+      location: ['https://cdn.example/audio'],
+    }), 20)
+  })
+
+  const response = await netFetch(net, 'https://addon.example/stream/track')
+
+  assert.equal(response.status, 307)
+  assert.equal(response.headers.get('location'), 'https://cdn.example/audio')
+})
+
 test('normal media responses preserve status, headers and streamed bytes', async () => {
   const audio = Buffer.from([0x66, 0x4c, 0x61, 0x43, 0x00, 0x01])
   const { net } = fakeNet(request => queueMicrotask(() => {
