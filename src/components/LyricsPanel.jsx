@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
@@ -73,6 +74,7 @@ function sweepStyle() {
 
 /** One vocal (lead or background): units grouped into unbreakable words. */
 export function Voice({ units, text, wordSync, className, style, voiceRef }) {
+  const { t } = useTranslation()
   if (!wordSync || !units?.length) {
     return <span ref={voiceRef} data-voice="plain" dir="auto" className={className} style={style}>{text}</span>
   }
@@ -148,6 +150,7 @@ export function paintVoice(voiceEl, units, t, live) {
 const Row = React.memo(function Row({
   line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
 }) {
+  const { t } = useTranslation()
   const rowRef = useRef(null)
   const leadRef = useRef(null)
   const bgRef = useRef(null)
@@ -286,6 +289,7 @@ const TOOLBAR_FADE = 'transition-[opacity,color,background-color] duration-300 g
 const SYNC_LABEL = { syllable: 'Syllable synced', line: 'Line synced', none: 'Not synced' }
 
 function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSearch, hidden = false }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   // The toolbar hid (full screen idle): the menu goes with it rather than
@@ -320,7 +324,7 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSea
             transition={{ duration: 0.14 }}
             className="absolute right-0 top-full mt-1.5 z-30 w-64 rounded-xl border border-white/10 bg-[#161616]/95 backdrop-blur-xl shadow-2xl p-1"
           >
-            <p className="px-2.5 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-white/35">Try another source</p>
+            <p className="px-2.5 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-white/35">{t("Try another source")}</p>
             {sources.map(s => {
               const status = attempts?.[s.id]
               const note = status === 'syllable' ? 'Syllable' : status === 'line' ? 'Line' : status === 'none' ? 'Plain' : status === 'miss' ? 'Not found' : ''
@@ -353,6 +357,7 @@ function SourceMenu({ sources, current, attempts, busy, onPick, onRefresh, onSea
 }
 
 function Pill({ active, onClick, children, title, disabled }) {
+  const { t } = useTranslation()
   return (
     <button
       onClick={onClick}
@@ -372,6 +377,7 @@ function Pill({ active, onClick, children, title, disabled }) {
 // already shows starts with its lines on the first frame (and refreshes them
 // quietly), instead of "no lyrics", then a skeleton, then the lines.
 function Loading() {
+  const { t } = useTranslation()
   return (
     <div className="w-full flex flex-col gap-5 px-3 pt-4">
       {[0.92, 0.6, 0.8, 0.45, 0.7].map((w, i) => (
@@ -393,6 +399,7 @@ export default function LyricsPanel({
   // seconds without the mouse moving.
   toolbarHidden = false,
 }) {
+  const { t } = useTranslation()
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
   const [result, setResult] = useState(() => (track?.id && hasCachedLyrics(track.id) ? peekLyrics(track.id) : null))
@@ -699,7 +706,7 @@ export default function LyricsPanel({
             </Pill>
             {canRomanize && (
               <Pill active={subline === 'romanization'} onClick={() => toggleSub('romanization')} title="Show pronunciation in Latin letters">
-                {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">Aa</span>}
+                {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">{t("Aa")}</span>}
                 Romanize
               </Pill>
             )}
@@ -761,12 +768,12 @@ export default function LyricsPanel({
             <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-3 text-white/35 select-none pt-24">
               <Mic2 size={fullscreen ? 40 : 28} />
               {result?.instrumental ? (
-                <p className={fullscreen ? 'text-sm' : 'text-xs'}>Instrumental — nothing to sing along to.</p>
+                <p className={fullscreen ? 'text-sm' : 'text-xs'}>{t("Instrumental — nothing to sing along to.")}</p>
               ) : !isOnline ? (
-                <p className={fullscreen ? 'text-sm' : 'text-xs'}>You're offline. Lyrics will load once you're back online.</p>
+                <p className={fullscreen ? 'text-sm' : 'text-xs'}>{t("You're offline. Lyrics will load once you're back online.")}</p>
               ) : (
                 <>
-                  <p className={fullscreen ? 'text-sm' : 'text-xs'}>No lyrics found</p>
+                  <p className={fullscreen ? 'text-sm' : 'text-xs'}>{t("No lyrics found")}</p>
                   <div className="flex items-center gap-3">
                     <button onClick={requestSearch} className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
                       <Search size={12} /> Search manually
