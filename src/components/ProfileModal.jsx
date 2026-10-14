@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { Camera, Save } from 'lucide-react'
 import Modal from './Modal'
@@ -5,6 +6,7 @@ import { useAppStore } from '../store/player'
 import { api } from '../api'
 
 export default function ProfileModal() {
+  const { t } = useTranslation()
   const { showProfileModal, closeProfile, user, setUser } = useAppStore()
   const fileInputRef = useRef(null)
   const [form, setForm] = useState({ display_name: '', bio: '' })
@@ -65,7 +67,7 @@ export default function ProfileModal() {
   if (!user) return null
 
   return (
-    <Modal open={showProfileModal} onClose={closeProfile} title="Profile" width="max-w-sm">
+    <Modal open={showProfileModal} onClose={closeProfile} title={t("Profile")} width="max-w-sm">
       <input
         ref={fileInputRef}
         type="file"
@@ -82,7 +84,7 @@ export default function ProfileModal() {
           <div className="relative group">
             <div className="w-20 h-20 rounded-full bg-accent/20 border-2 border-accent/40 overflow-hidden flex items-center justify-center">
               {user.avatar_path
-                ? <img src={avatarSrc} alt="Profile" className="w-full h-full object-cover" />
+                ? <img src={avatarSrc} alt={t("Profile")} className="w-full h-full object-cover" />
                 : <span className="text-accent text-2xl font-display font-bold">{(user.display_name || user.username)?.[0]?.toUpperCase()}</span>
               }
             </div>
@@ -101,12 +103,12 @@ export default function ProfileModal() {
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">Display Name</label>
+            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Display Name")}</label>
             <input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))}
               className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors" />
           </div>
           <div>
-            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">Bio</label>
+            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Bio")}</label>
             <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={2}
               className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 resize-none transition-colors" />
           </div>
