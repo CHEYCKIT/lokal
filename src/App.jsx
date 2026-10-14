@@ -58,6 +58,7 @@ import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { handleLiveSeek } from './liveSeek'
 import { useMusicVideoView } from './musicVideo'
 import { skipUnavailableRecommendation } from './recommendationPlayback'
+import { useTranslation } from './i18n'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
@@ -129,13 +130,13 @@ const SCROBBLE_RETRY_MS = 30 * 1000
 // How long a crossfade waits for the next track (a stream may start slowly).
 const CROSSFADE_READY_TIMEOUT_MS = 15 * 1000
 
-function formatRelativeDays(days) {
-  if (!Number.isFinite(days) || days <= 0) return 'up to date'
-  if (days < 30) return `${days} day${days === 1 ? '' : 's'} behind`
+function formatRelativeDays(days, t) {
+  if (!Number.isFinite(days) || days <= 0) return t('up to date')
+  if (days < 30) return t(days === 1 ? '{count} day behind' : '{count} days behind', { count: days })
   const months = Math.floor(days / 30)
-  if (months < 12) return `${months} month${months === 1 ? '' : 's'} behind`
+  if (months < 12) return t(months === 1 ? '{count} month behind' : '{count} months behind', { count: months })
   const years = Math.floor(months / 12)
-  return `${years} year${years === 1 ? '' : 's'} behind`
+  return t(years === 1 ? '{count} year behind' : '{count} years behind', { count: years })
 }
 
 function getYtDlpDismissKey(status) {
@@ -334,6 +335,7 @@ function AnimatedRoutes() {
 
 /** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
+  const { t } = useTranslation()
   // The glass player bar floats over the pages, which keep room for it.
   const glassPlayerBar = useAppearanceFlag('glass_player_bar')
   // Pages lay out by the space they get between the sidebars (pageWidth.js).
@@ -2502,7 +2504,7 @@ export default function App() {
               </div>
               <div>
                 <h4 className="text-xl font-black text-white tracking-tight">
-                  {isReady ? 'Update Ready' : isDownloading ? 'Downloading...' : 'Update Available'}
+                  {t(isReady ? 'Update Ready' : isDownloading ? 'Downloading…' : 'Update Available')}
                 </h4>
                 <p className="text-xs text-accent uppercase tracking-[0.2em] font-bold mt-1 opacity-80">
                   Lokal v{updateState.info?.version}
@@ -2534,7 +2536,7 @@ export default function App() {
             {isDownloading && (
               <div className="space-y-3 pt-4 border-t border-white/5">
                 <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
-                  <span className="text-muted">Downloading Package</span>
+                  <span className="text-muted">{t('Downloading package')}</span>
                   <span className="text-accent">{Math.round(updateState.progress)}%</span>
                 </div>
                 <div className="h-2.5 bg-white/5 rounded-full overflow-hidden p-[2px]">
@@ -2552,7 +2554,7 @@ export default function App() {
                   onClick={handleStartDownload}
                   className="flex-1 py-4 bg-accent text-base text-sm font-bold rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
                 >
-                  Download Update
+                  {t('Download update')}
                 </button>
               )}
               
@@ -2561,7 +2563,7 @@ export default function App() {
                   onClick={handleInstallUpdate}
                   className="flex-1 py-4 bg-white text-black text-sm font-black rounded-2xl hover:bg-gray-100 active:scale-[0.98] transition-all uppercase tracking-widest"
                 >
-                  Restart & Install
+                  {t('Restart & install')}
                 </button>
               )}
 
@@ -2570,7 +2572,7 @@ export default function App() {
                   onClick={handleDismissUpdate}
                   className="px-6 py-4 bg-white/5 text-white text-sm font-bold rounded-2xl hover:bg-white/10 transition-all"
                 >
-                  Later
+                  {t('Later')}
                 </button>
               )}
             </div>
@@ -2587,7 +2589,7 @@ export default function App() {
     const isDone = ytDlpVersionState.downloadState === 'done'
     const summary = ytDlpVersionState.releasesBehind
       ? `${ytDlpVersionState.releasesBehind} release${ytDlpVersionState.releasesBehind === 1 ? '' : 's'} behind`
-      : formatRelativeDays(ytDlpVersionState.daysBehind)
+      : formatRelativeDays(ytDlpVersionState.daysBehind, t)
     const latestDate = ytDlpVersionState.latestPublishedAt
       ? new Date(ytDlpVersionState.latestPublishedAt).toLocaleDateString()
       : null
@@ -2605,7 +2607,7 @@ export default function App() {
                 </svg>
               </div>
               <div>
-                <h4 className="text-xl font-black tracking-tight text-white">yt-dlp Update Recommended</h4>
+                <h4 className="text-xl font-black tracking-tight text-white">{t('yt-dlp update recommended')}</h4>
                 <p className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-yellow-200/80">{summary}</p>
               </div>
             </div>
@@ -2621,23 +2623,23 @@ export default function App() {
             <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-4 text-sm">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-muted">Installed</p>
-                  <p className="mt-1 font-semibold text-white">{ytDlpVersionState.installedVersion || 'Unknown'}</p>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-muted">{t('Installed')}</p>
+                  <p className="mt-1 font-semibold text-white">{ytDlpVersionState.installedVersion || t('Unknown')}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-muted">Latest</p>
-                  <p className="mt-1 font-semibold text-white">{ytDlpVersionState.latestVersion || 'Unknown'}</p>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-muted">{t('Latest')}</p>
+                  <p className="mt-1 font-semibold text-white">{ytDlpVersionState.latestVersion || t('Unknown')}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
                 {ytDlpVersionState.source && <span className="rounded-full border border-white/10 px-2.5 py-1 uppercase tracking-[0.18em]">{ytDlpVersionState.source}</span>}
-                {Number.isFinite(ytDlpVersionState.daysBehind) && ytDlpVersionState.daysBehind > 0 && <span className="rounded-full border border-white/10 px-2.5 py-1">{formatRelativeDays(ytDlpVersionState.daysBehind)}</span>}
-                {latestDate && <span className="rounded-full border border-white/10 px-2.5 py-1">Latest released {latestDate}</span>}
+                {Number.isFinite(ytDlpVersionState.daysBehind) && ytDlpVersionState.daysBehind > 0 && <span className="rounded-full border border-white/10 px-2.5 py-1">{formatRelativeDays(ytDlpVersionState.daysBehind, t)}</span>}
+                {latestDate && <span className="rounded-full border border-white/10 px-2.5 py-1">{t('Latest released {date}', { date: latestDate })}</span>}
               </div>
             </div>
 
             <p className="text-sm leading-relaxed text-muted">
-              Older yt-dlp builds can break when sites change. Updating usually fixes downloader errors without changing your library.
+              {t('Older yt-dlp builds can break when sites change. Updating usually fixes downloader errors without changing your library.')}
             </p>
 
             {ytDlpVersionState.error && (
@@ -2669,15 +2671,15 @@ export default function App() {
                   className="flex-1 rounded-2xl bg-accent py-4 text-sm font-bold text-[rgb(var(--bg-rgb))] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isDownloading
-                    ? `Updating yt-dlp${Number.isFinite(ytDlpVersionState.downloadPercent) ? ` · ${ytDlpVersionState.downloadPercent}%` : '...'}`
-                    : 'Update yt-dlp'}
+                    ? t('Updating yt-dlp{progress}', { progress: Number.isFinite(ytDlpVersionState.downloadPercent) ? ` · ${ytDlpVersionState.downloadPercent}%` : '…' })
+                    : t('Update yt-dlp')}
                 </button>
               )}
               <button
                 onClick={handleDismissYtDlpNotice}
                 className="rounded-2xl bg-white/5 px-6 py-4 text-sm font-bold text-white transition-all hover:bg-white/10"
               >
-                Later
+                {t('Later')}
               </button>
             </div>
           </div>
@@ -2763,7 +2765,7 @@ export default function App() {
                   exit={{ opacity: 0, y: 12 }}
                   className="fixed bottom-28 right-6 z-[60] max-w-sm rounded-xl border border-border bg-elevated px-4 py-3 shadow-2xl"
                 >
-                  <p className="text-sm font-medium text-text truncate">Couldn't stream "{streamError.title}"</p>
+                  <p className="text-sm font-medium text-text truncate">{t('Couldn’t stream “{title}”', { title: streamError.title })}</p>
                   <p className="text-xs text-muted mt-1">{streamError.message}</p>
                 </motion.div>
               )}

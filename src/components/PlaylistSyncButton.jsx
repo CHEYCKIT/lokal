@@ -9,13 +9,13 @@ import { api } from '../api'
 import { syncPlaylist } from '../playlistSync'
 import { showLoadingToast } from './Toaster'
 
-function ago(time) {
-  if (!time) return 'never synced'
+function ago(time, t) {
+  if (!time) return t('never synced')
   const minutes = Math.round((Date.now() - time) / 60000)
-  if (minutes < 1) return 'synced just now'
-  if (minutes < 60) return `synced ${minutes} min ago`
+  if (minutes < 1) return t('Synced just now')
+  if (minutes < 60) return t('Synced {count} min ago', { count: minutes })
   const hours = Math.round(minutes / 60)
-  return hours < 24 ? `synced ${hours} h ago` : `synced ${new Date(time).toLocaleDateString()}`
+  return hours < 24 ? t('Synced {count} h ago', { count: hours }) : t('Synced {date}', { date: new Date(time).toLocaleDateString() })
 }
 
 export default function PlaylistSyncButton({ playlistId, userId, className = '', buttonClassName = '' }) {
@@ -31,7 +31,7 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
 
   const sync = async () => {
     setBusy(true); setError('')
-    const toast = showLoadingToast(`Syncing with ${status.platformLabel}…`)
+    const toast = showLoadingToast(t('Syncing with {platform}…', { platform: status.platformLabel }))
     let message = ''
     try {
       const result = await syncPlaylist(playlistId, { userId, onProgress: text => toast.update(text) })
@@ -61,36 +61,36 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
 
   // With `buttonClassName`: icon buttons (the playlist toolbar), the details in their tooltips.
   const pill = 'flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40'
-  const syncTitle = `Sync with ${status.platformLabel}${status.title ? ` · ${status.title}` : ''} · ${ago(status.syncedAt)}. Adds songs added there since the last sync; nothing is removed.`
-  const linkTitle = 'Link to a playlist on Spotify, Tidal, Apple Music or Qobuz'
+  const syncTitle = t('Sync with {platform}{title} · {ago}. Adds songs added there since the last sync; nothing is removed.', { platform: status.platformLabel, title: status.title ? ` · ${status.title}` : '', ago: ago(status.syncedAt, t) })
+  const linkTitle = t('Link to a playlist on Spotify, Tidal, Apple Music or Qobuz')
   return <>
     {buttonClassName
       ? <>
-          {status.linked && <button type="button" onClick={sync} disabled={busy} title={syncTitle} aria-label={`Sync with ${status.platformLabel}`} className={buttonClassName}><RefreshCw size={17} className={busy ? 'animate-spin' : ''} /></button>}
-          <button type="button" onClick={() => setOpen(true)} title={status.linked ? 'Linked playlist settings' : linkTitle} aria-label={status.linked ? 'Linked playlist settings' : 'Link playlist'} className={buttonClassName}><Link2 size={17} /></button>
+          {status.linked && <button type="button" onClick={sync} disabled={busy} title={syncTitle} aria-label={t('Sync with {platform}', { platform: status.platformLabel })} className={buttonClassName}><RefreshCw size={17} className={busy ? 'animate-spin' : ''} /></button>}
+          <button type="button" onClick={() => setOpen(true)} title={status.linked ? t('Linked playlist settings') : linkTitle} aria-label={status.linked ? t('Linked playlist settings') : t('Link playlist')} className={buttonClassName}><Link2 size={17} /></button>
         </>
       : <>
           {status.linked
             ? <button onClick={sync} disabled={busy} title={syncTitle} className={`${pill} ${className}`}>
-                <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />Sync<span className="text-xs font-normal text-muted">{status.platformLabel} · {ago(status.syncedAt).replace('synced ', '')}</span>
+                <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />{t('Sync')}<span className="text-xs font-normal text-muted">{status.platformLabel} · {ago(status.syncedAt, t)}</span>
               </button>
             : <button onClick={() => setOpen(true)} title={linkTitle} className={`${pill} ${className}`}><Link2 size={15} />{t("Link playlist")}</button>}
           {status.linked && <button onClick={() => setOpen(true)} title={t("Linked playlist settings")} aria-label={t("Linked playlist settings")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-elevated text-muted hover:text-white"><Link2 size={15} /></button>}
         </>}
-    <Modal open={open} onClose={() => setOpen(false)} title={status.linked ? 'Linked playlist' : 'Link a streaming playlist'}>
+    <Modal open={open} onClose={() => setOpen(false)} title={status.linked ? t('Linked playlist') : t('Link a streaming playlist')}>
       <div className="space-y-4 px-5 pb-5 pt-4 sm:px-6">
         {status.linked ? <>
           <p className="text-sm text-text">{status.title || status.platformLabel}</p>
           <p className="break-all text-xs text-muted">{status.url}</p>
-          <p className="text-xs leading-relaxed text-muted">Sync adds the songs added to it since the last sync and downloads them from your sources. Songs removed there stay here. {ago(status.syncedAt)}.</p>
+          <p className="text-xs leading-relaxed text-muted">{t('Sync adds the songs added to it since the last sync and downloads them from your sources. Songs removed there stay here.')} {ago(status.syncedAt, t)}.</p>
           {status.error && <p className="text-xs text-red">{status.error}</p>}
           <button onClick={unlink} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted hover:text-red"><Unlink size={13} />{t("Unlink")}</button>
         </> : <>
-          <p className="text-xs leading-relaxed text-muted">Paste the link of a playlist on Spotify, Tidal, Apple Music or Qobuz (yours or anyone’s). Each sync adds the songs added there since the last one, then downloads them through your sources. Removals are never synced. It needs the matching SpotiFLAC addon (Spotify Web, Tidal, Apple Music or Qobuz) from Settings → Addons.</p>
-          <input autoFocus value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url.trim() && link()} placeholder="https://open.spotify.com/playlist/…" spellCheck={false}
+          <p className="text-xs leading-relaxed text-muted">{t('Paste the link of a playlist on Spotify, Tidal, Apple Music or Qobuz (yours or anyone’s). Each sync adds the songs added there since the last one, then downloads them through your sources. Removals are never synced. It needs the matching SpotiFLAC add-on (Spotify Web, Tidal, Apple Music or Qobuz) from Settings → Add-ons.')}</p>
+          <input autoFocus value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url.trim() && link()} placeholder={t('Paste playlist link')} spellCheck={false}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-text outline-none focus:border-accent/50" />
           {error && <p className="text-xs text-red">{error}</p>}
-          <button onClick={link} disabled={busy || !url.trim()} className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-[rgb(var(--bg-rgb))] disabled:opacity-40">{busy && <Loader2 size={12} className="animate-spin" />}Link and sync</button>
+          <button onClick={link} disabled={busy || !url.trim()} className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-[rgb(var(--bg-rgb))] disabled:opacity-40">{busy && <Loader2 size={12} className="animate-spin" />}{t('Link and sync')}</button>
         </>}
       </div>
     </Modal>

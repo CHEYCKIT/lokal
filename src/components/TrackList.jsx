@@ -791,13 +791,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
         {layout.grip && <span />}
         {layout.number && <SortableHeader column="number" label={t("playlist number")} sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
-        <span>{layout.album ? 'Title' : 'Title / Album'}</span>
+        <span>{t(layout.album ? 'Title' : 'Title / Album')}</span>
         {layout.album && <span className="truncate">{t("Album")}</span>}
         {layout.source && <span className="flex justify-center" title={t("Source")}><Globe size={12} aria-hidden="true" /><span className="sr-only">{t("Source")}</span></span>}
         {layout.quality && <span className="text-center">{t("Quality")}</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
-        {layout.added && <SortableHeader column="added" label={t("date added")} sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
-        {layout.time && <SortableHeader column="time" label={t("duration")} sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
+        {layout.added && <SortableHeader column="added" label={t("date added")} sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">{t('Date added')}</SortableHeader>}
+        {layout.time && <SortableHeader column="time" label={t("duration")} sort={sort} onSortChange={onSortChange} className="justify-end text-right">{t('Time')}</SortableHeader>}
         <span className="sr-only">{t("Actions")}</span>
         <span aria-hidden="true" />
       </div>
@@ -1143,7 +1143,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           </div>
 
           <div className="rounded-xl border border-border bg-card/30 overflow-hidden">
-            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Suggested Downloads<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
+            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">{t('Suggested Downloads')}<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
             <div className="divide-y divide-border">
               {ghostSearchLoading && (
                 <div className="px-4 py-6 text-sm text-muted">{t("Searching…")}</div>

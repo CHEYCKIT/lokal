@@ -47,7 +47,7 @@ export default function OnlineAlbum() {
   const cacheKey = albumCacheKey({ artist, album, albumId, provider, sourceAlbumId })
   const fromCache = () => {
     const hit = peekOnline(cacheKey)
-    return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', loadedAt: hit.at } : null
+    return hit ? { loading: false, tracks: hit.value.tracks, error: '', progress: '', artwork: hit.value.artwork || '', title: hit.value.title || '', artist: hit.value.artist || '', loadedAt: hit.at } : null
   }
   const [state, setState] = useState(() => fromCache() || { loading: true, tracks: [], error: '', progress: '' })
   const [busy, setBusy] = useState('')
@@ -70,7 +70,7 @@ export default function OnlineAlbum() {
       const result = await loadOnlineAlbumCached({ artist, album, albumId, artwork, provider, sourceAlbumId, anchor }, undefined, {
         isCurrent, onProgress: progress => { if (isCurrent()) setState(current => ({ ...current, progress })) },
       }, { refresh: reload > 0 })
-      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '', loadedAt: Date.now() })
+      if (isCurrent()) setState({ loading: false, tracks: result.tracks, error: result.error || '', progress: '', artwork: result.artwork || '', title: result.title || '', artist: result.artist || '', loadedAt: Date.now() })
     })()
     return () => { request.current++ }
   }, [artist, album, albumId, provider, sourceAlbumId, reload]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -96,20 +96,22 @@ export default function OnlineAlbum() {
   const tracks = owned ? merged.tracks.slice(0, state.tracks.length) : state.tracks
   const cover = state.artwork || artwork || tracks.find(track => track.artwork_url)?.artwork_url || ''
   const path = onlineAlbumPath({ artist, album, albumId, provider, sourceAlbumId })
-  const label = `“${album}”`
+  const displayAlbum = state.title || album || anchor?.album || anchor?.title || t('Unknown album')
+  const displayArtist = state.artist || artist
+  const label = `“${displayAlbum}”`
   const run = async (key, work) => {
     if (busy) return
     setBusy(key)
     try { await work() } finally { setBusy('') }
   }
-  const play = (selected, list = tracks) => playOnline(list, { selected, name: album, path })
+  const play = (selected, list = tracks) => playOnline(list, { selected, name: displayAlbum, path })
   // With some of it in the library: only the songs it doesn't have.
   const missing = tracks.filter(isOnlineTrack)
   const download = () => run('download', () => downloadOnline(missing, { label: owned ? `${missing.length} missing songs` : label }))
   const savePlaylist = () => run('playlist', async () => {
     const rows = await resolveOnline(tracks, { label })
     if (!rows.length) return
-    const playlist = await saveAsPlaylist(album, rows, { description: `${album} by ${artist}`, coverURL: /^https:\/\//.test(cover) ? cover : undefined }).catch(() => null)
+    const playlist = await saveAsPlaylist(displayAlbum, rows, { description: `${displayAlbum} by ${displayArtist}`, coverURL: /^https:\/\//.test(cover) ? cover : undefined }).catch(() => null)
     showToast(playlist ? `Saved ${label} as a playlist.` : `Could not save ${label}.`)
   })
   const duration = useMemo(() => tracks.reduce((sum, track) => sum + (Number(track.duration) || 0), 0), [tracks])
@@ -122,14 +124,14 @@ export default function OnlineAlbum() {
         <ArrowLeft size={14} /> Back
       </button>
       <div className="mb-8 flex flex-col gap-5 @md:flex-row @md:items-end">
-        <ImageZoom src={cover} alt={album} open={zoom} onClose={() => setZoom(false)} />
+        <ImageZoom src={cover} alt={displayAlbum} open={zoom} onClose={() => setZoom(false)} />
         <div onClick={cover ? () => setZoom(true) : undefined} title={cover ? 'View the cover' : undefined} className={`h-44 w-44 flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-elevated shadow-xl ${cover ? 'cursor-zoom-in' : ''}`}>
-          <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
+          <DiscoveryImage item={{ title: displayAlbum, artist: displayArtist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
         </div>
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Album · Online")}</p>
-          <h1 className="truncate text-3xl font-display text-white">{album}</h1>
-          <button onClick={() => nav(artistPath(artist), { state: { name: artist, anchor: tracks[0] ? { title: tracks[0].title, album } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{artist}</button>
+        <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Album · Online")}</p>
+          <h1 className="truncate text-3xl font-display text-white">{displayAlbum}</h1>
+          <button onClick={() => nav(artistPath(displayArtist), { state: { name: displayArtist, anchor: tracks[0] ? { title: tracks[0].title, album: displayAlbum } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{displayArtist}</button>
           {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{plural(tracks.length, 'song')}{duration ? ` · ${Math.round(duration / 60)} min` : ''}{owned ? ` · ${owned === tracks.length ? 'all' : `${owned} of ${tracks.length}`} in your library` : ''}</p>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button onClick={() => play(tracks[0])} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t("Play")}</button>
@@ -141,10 +143,10 @@ export default function OnlineAlbum() {
         </div>
       </div>
       {state.loading
-        ? <p role="status" className="text-sm text-muted">{state.progress || `Loading ${album}…`}</p>
+        ? <p role="status" className="text-sm text-muted">{state.progress || `Loading ${displayAlbum}…`}</p>
         : tracks.length
           ? <OnlineSongList tracks={tracks} numbered markOwned={owned > 0} highlightTitle={highlightTitle} onPlay={track => play(track)} />
-          : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{state.error || `No songs were found for ${album}.`}</p>}
+          : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{state.error || `No songs were found for ${displayAlbum}.`}</p>}
     </div>
   )
 }

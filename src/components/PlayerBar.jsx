@@ -8,6 +8,7 @@ import { api } from '../api'
 import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
+import { isOnlineTrack } from '../onlineBrowse'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
@@ -132,7 +133,7 @@ export default function PlayerBar() {
     navigateToTrackArtist(nav, currentTrack, keepCommaArtists)
   }
 
-  const hasAlbum = !!currentTrack?.album
+  const hasAlbum = !!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
   const handleTitleClick = () => {
     if (!hasAlbum) return
     navigateToTrackAlbum(nav, currentTrack)

@@ -338,7 +338,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
                         <div className="flex items-center gap-3">
                           <button onClick={() => applyLookup(result, 'bio')} disabled={saving || picked}
                             className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 ${picked ? 'bg-accent/20 text-accent' : 'bg-accent text-base hover:bg-accent-dim'}`}>
-                            {picked ? <><Check size={12} /> Using this bio</> : 'Use this bio'}
+                            {picked ? <><Check size={12} /> {t('Using this bio')}</> : t('Use this bio')}
                           </button>
                           {result.bio.length > 180 && (
                             <button onClick={() => setOpenBio(expanded ? null : key)} className="text-xs text-muted hover:text-white transition-colors">
@@ -358,7 +358,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
 
       {tab === 'merge' && (
         <div className="space-y-4">
-          <p className="text-xs text-muted leading-relaxed">Merge <strong className="text-white">{artist.name}</strong> into another artist. All tracks will be reassigned. This cannot be undone.</p>
+          <p className="text-xs text-muted leading-relaxed">{t('Merge {artist} into another artist. All tracks will be reassigned. This cannot be undone.', { artist: artist.name })}</p>
           <div>
             <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Search artists")}</label>
             <input
@@ -386,7 +386,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
 
       {tab === 'danger' && (
         <div className="space-y-4">
-          <p className="text-xs text-muted leading-relaxed">Delete the artist entry for <strong className="text-white">{artist.name}</strong>. Tracks will remain in your library but this artist profile will be removed.</p>
+          <p className="text-xs text-muted leading-relaxed">{t('Delete the artist entry for {artist}. Tracks will remain in your library but this artist profile will be removed.', { artist: artist.name })}</p>
           <button onClick={doDelete} className="w-full py-2.5 bg-red-500/15 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/25 transition-colors flex items-center justify-center gap-2">
             <Trash2 size={14} /> Delete Artist Profile
           </button>

@@ -48,15 +48,15 @@ function secureImage(value) {
   return url.replace(/^http:\/\//i, 'https://')
 }
 
-function relativeAge(timestamp) {
+function relativeAge(timestamp, t) {
   const value = Number(timestamp) || 0
-  if (!value) return 'Unknown time'
+  if (!value) return t('Unknown time')
   const seconds = Math.max(0, Math.floor(Date.now() / 1000) - value)
-  if (seconds < 60) return 'Just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`
-  return `${Math.floor(seconds / 604800)} weeks ago`
+  if (seconds < 60) return t('Just now')
+  if (seconds < 3600) return t('{count} min ago', { count: Math.floor(seconds / 60) })
+  if (seconds < 86400) return t('{count} hr ago', { count: Math.floor(seconds / 3600) })
+  if (seconds < 604800) return t('{count} days ago', { count: Math.floor(seconds / 86400) })
+  return t('{count} weeks ago', { count: Math.floor(seconds / 604800) })
 }
 
 function dateLabel(timestamp) {
@@ -91,11 +91,11 @@ function SectionHeader({ icon: Icon, eyebrow, title, count, subtitle, onExpand, 
   return (
     <div className="mb-4 flex items-end justify-between gap-4">
       <div className="min-w-0">
-        {eyebrow && <p className="mb-1 text-[11px] font-display uppercase tracking-[0.24em] text-muted">{eyebrow}</p>}
-        <div className="flex items-center gap-2"><Icon size={15} className="text-accent" /><h2 className="text-xl font-medium text-white">{title}</h2>{count != null && <span className="text-sm text-muted">{count}</span>}</div>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+        {eyebrow && <p className="mb-1 text-[11px] font-display uppercase tracking-[0.24em] text-muted">{t(eyebrow)}</p>}
+        <div className="flex items-center gap-2"><Icon size={15} className="text-accent" /><h2 className="text-xl font-medium text-white">{t(title)}</h2>{count != null && <span className="text-sm text-muted">{count}</span>}</div>
+        {subtitle && <p className="mt-1 text-sm text-muted">{t(subtitle)}</p>}
       </div>
-      {(onExpand || action) && <div className="flex shrink-0 items-center gap-3">{action}{onExpand && <button type="button" onClick={onExpand} className="inline-flex items-center gap-1 text-xs text-muted hover:text-white">{expanded ? 'Show less' : 'See all'}{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>}</div>}
+      {(onExpand || action) && <div className="flex shrink-0 items-center gap-3">{action}{onExpand && <button type="button" onClick={onExpand} className="inline-flex items-center gap-1 text-xs text-muted hover:text-white">{expanded ? t('Show less') : t('See all')}{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>}</div>}
     </div>
   )
 }
@@ -107,7 +107,7 @@ function DiscoveryTrack({ track, onPlay, onRadio, onContextMenu, getDownloadTrac
     <div onContextMenu={event => onContextMenu?.(event, track)} className="group flex min-w-0 items-center gap-1 rounded-xl p-2 transition-colors hover:bg-white/[0.06]">
       <button type="button" onClick={() => onPlay(track)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-card"><DiscoveryImage item={track} src={artwork} className="h-full w-full object-cover" /></div>
-        <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}{track.scrobbleCount ? ` · ${track.scrobbleCount} this week` : ''}</p></div>
+        <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{track.title}</p><p className="truncate text-xs text-muted">{track.artist}{track.scrobbleCount ? ` · ${t('{count} this week', { count: track.scrobbleCount })}` : ''}</p></div>
       </button>
       <SaveToLibraryButton track={track} getTrack={() => getDownloadTrack(track)} meta={track} className="p-2 opacity-0 group-hover:opacity-100 focus:opacity-100" />
       {onRadio && <button type="button" aria-label={`Start radio for ${track.title}`} onClick={() => onRadio(track)} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100" title={t("Start radio")}><Radio size={14} /></button>}
@@ -120,7 +120,7 @@ function ArtistRecommendation({ artist, onClick, onContextMenu }) {
   const image = secureImage(artist?.image)
   return <button type="button" onClick={() => onClick(artist)} onContextMenu={event => onContextMenu?.(event, artist)} className="group min-w-0 text-center">
     <div className="mx-auto aspect-square w-full max-w-28 overflow-hidden rounded-full bg-card ring-1 ring-white/10 transition-transform group-hover:scale-105"><DiscoveryImage item={artist} type="artist" src={image} className="h-full w-full object-cover" fallback={<div className="flex h-full items-center justify-center bg-accent/20 text-2xl font-medium text-accent">{artist.name.charAt(0)}</div>} /></div>
-    <p className="mt-2 truncate text-sm text-white">{artist.name}</p><p className="text-xs text-muted">{artist.source === 'library' ? 'In your library' : 'Play artist songs'}</p>
+    <p className="mt-2 truncate text-sm text-white">{artist.name}</p><p className="text-xs text-muted">{artist.source === 'library' ? t('In your library') : t('Play artist songs')}</p>
   </button>
 }
 
@@ -133,9 +133,9 @@ function AlbumRecommendation({ album, onClick, onContextMenu }) {
   </button>
 }
 
-const historyColumns = [
-  { key: 'scrobbled', label: 'Scrobbled', width: 5.5, render: track => new Date(Number(track.scrobbledAt) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
-  { key: 'age', label: 'Age', width: 5.5, render: track => relativeAge(track.scrobbledAt) },
+const historyColumns = t => [
+  { key: 'scrobbled', label: t('Scrobbled'), width: 5.5, render: track => new Date(Number(track.scrobbledAt) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+  { key: 'age', label: t('Age'), width: 5.5, render: track => relativeAge(track.scrobbledAt, t) },
 ]
 const recommendationRows = tracks => tracks.map((track, index) => ({ ...track, id: track.id || `recommendation:${songKey(track)}:${track.scrobbledAt || index}` }))
 
@@ -149,7 +149,7 @@ function ScrobbleHistory({ entries, resolveTracks }) {
     if (!byDate.has(date)) { const group = { date, entries: [] }; byDate.set(date, group); groups.push(group) }
     byDate.get(date).entries.push(entry)
   }
-  return <div className="space-y-6">{groups.map(group => <section key={group.date}><div className="mb-2 flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><CalendarDays size={14} />{group.date}</div><div className="rounded-xl border border-border bg-elevated p-3"><TrackList tracks={recommendationRows(group.entries)} extraColumns={historyColumns} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'Scrobble History' }} /></div></section>)}</div>
+  return <div className="space-y-6">{groups.map(group => <section key={group.date}><div className="mb-2 flex items-center gap-2 text-xs font-display uppercase tracking-widest text-muted"><CalendarDays size={14} />{group.date}</div><div className="rounded-xl border border-border bg-elevated p-3"><TrackList tracks={recommendationRows(group.entries)} extraColumns={historyColumns(t)} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'Scrobble History' }} /></div></section>)}</div>
 }
 
 function RecommendationSections({ data, localArtists, allArtists, source: selectedSource, loading, error, onRefresh, onSourceChange, onPlay, resolveTracks, getDownloadTrack, onTrackMenu, onRadio, onArtistPlay, onArtistMenu, onAlbumPlay, onAlbumMenu, onProviderMixPlay, onProviderMixMenu, onSaveFresh, onSaveQuick, saving, onOpenSettings, activeSection, onSection }) {
@@ -173,13 +173,13 @@ function RecommendationSections({ data, localArtists, allArtists, source: select
       </div>
       <div className="flex shrink-0 items-center gap-3"><div role="group" aria-label={t("Discovery provider")} className="flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">{[['lastfm', 'Last.fm'], ['youtube', 'YouTube Music']].map(([id, label]) => <button key={id} type="button" aria-pressed={selectedSource === id} onClick={() => onSourceChange?.(id)} className={`rounded-md px-2.5 py-1 !text-[11px] transition-colors ${selectedSource === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{t(label)}</button>)}</div><button onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/70 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />{t("Refresh")}</button></div>
     </div>
-    {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+    {error && <p role="status" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{t(error)}</p>}
     {!data && (loading
-      ? <p className="py-10 text-center text-sm text-muted">Building your {source} recommendations…</p>
+      ? <p className="py-10 text-center text-sm text-muted">{t('Building your {source} recommendations…', { source })}</p>
       : <div className="rounded-xl border border-border bg-elevated p-4"><ProviderConnections compact onOpenSettings={onOpenSettings} /></div>)}
-    {data && !secondary.length && !history.length && !albums.length && !providerMixes.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">No {source} recommendations are available yet.</p>}
+    {data && !secondary.length && !history.length && !albums.length && !providerMixes.length && !artists.length && !fresh.length && <p className="py-10 text-center text-sm text-muted">{t('No {source} recommendations are available yet.', { source })}</p>}
     {/* YouTube Music: your personal mixes first. */}
-    {selectedSource === 'youtube' && data && <section><SectionHeader icon={Radio} eyebrow="Made for you" title={t("Mixed for you")} count={providerMixes.length || null} onExpand={providerMixes.length ? () => toggle('mixes') : undefined} expanded={activeSection === 'mixes'} />{providerMixes.length ? <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'mixes' ? providerMixes : providerMixes.slice(0, 6)).map((mix, index) => <div key={mix.id} className={activeSection === 'mixes' || index < 2 ? '' : index < 3 ? 'hidden @md:block' : 'hidden @lg:block'}><AlbumRecommendation album={{ ...mix, artist: mix.author || 'YouTube Music' }} onClick={() => onProviderMixPlay(mix)} onContextMenu={event => onProviderMixMenu(event, mix)} /></div>)}</div> : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{loading ? 'Loading your YouTube Music mixes…' : data.mixError ? `Could not load your YouTube Music mixes. ${data.mixError}` : 'YouTube Music did not return your personalized mixes. Refresh to try again.'}</p>}</section>}
+    {selectedSource === 'youtube' && data && <section><SectionHeader icon={Radio} eyebrow="Made for you" title={t("Mixed for you")} count={providerMixes.length || null} onExpand={providerMixes.length ? () => toggle('mixes') : undefined} expanded={activeSection === 'mixes'} />{providerMixes.length ? <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-6">{(activeSection === 'mixes' ? providerMixes : providerMixes.slice(0, 6)).map((mix, index) => <div key={mix.id} className={activeSection === 'mixes' || index < 2 ? '' : index < 3 ? 'hidden @md:block' : 'hidden @lg:block'}><AlbumRecommendation album={{ ...mix, artist: mix.author || 'YouTube Music' }} onClick={() => onProviderMixPlay(mix)} onContextMenu={event => onProviderMixMenu(event, mix)} /></div>)}</div> : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{loading ? t('Loading your YouTube Music mixes…') : data.mixError ? t('Could not load your YouTube Music mixes. {error}', { error: data.mixError }) : t('YouTube Music did not return your personalized mixes. Refresh to try again.')}</p>}</section>}
     {fresh.length > 0 && <section><SectionHeader icon={Music} eyebrow="Fresh Finds" title={t("Fresh Finds")} count={fresh.length} subtitle={`More music from ${source}.`} onExpand={() => toggle('fresh')} expanded={activeSection === 'fresh'} action={<button type="button" aria-label={t("Save Fresh Finds as a playlist")} title={t("Save Fresh Finds as a playlist")} onClick={onSaveFresh} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === 'fresh-finds' ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === 'fresh' ? fresh : fresh.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} getDownloadTrack={getDownloadTrack} onPlay={item => onPlay(item, 'fresh')} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, 'fresh')} />)}</div></section>}
     {secondary.length > 0 && <section><SectionHeader icon={Sparkles} eyebrow={selectedSource === 'youtube' ? 'Recently liked' : 'Jump back in'} title={selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} count={secondary.length} subtitle={selectedSource === 'youtube' ? 'Your 30 most recently liked tracks on YouTube Music.' : 'Tracks you scrobbled most often over the past week.'} onExpand={() => toggle(secondaryKey)} expanded={activeSection === secondaryKey} action={<button type="button" aria-label={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} title={`Save ${selectedSource === 'youtube' ? 'YouTube Music Likes' : 'Quick Picks'} as a playlist`} onClick={onSaveQuick} disabled={!!saving} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-accent hover:bg-accent/10 hover:text-accent/70 disabled:opacity-50">{saving === (selectedSource === 'youtube' ? 'youtube-likes' : 'quick-picks') ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" /> : <ListPlus size={15} />}</button>} /><div className="grid gap-2 @md:grid-cols-2 @lg:grid-cols-3">{(activeSection === secondaryKey ? secondary : secondary.slice(0, 6)).map(track => <DiscoveryTrack key={songKey(track)} track={track} getDownloadTrack={getDownloadTrack} onPlay={item => onPlay(item, secondaryKey)} onRadio={onRadio} onContextMenu={(event, item) => onTrackMenu(event, item, secondaryKey)} />)}</div></section>}
     {history.length > 0 && <section><SectionHeader icon={History} eyebrow="History" title={selectedSource === 'youtube' ? 'YouTube Music History' : 'Scrobble History'} count={history.length} subtitle={selectedSource === 'youtube' ? 'Recent tracks from your YouTube Music listening history.' : 'Your last 100 provider scrobbles, grouped by date.'} onExpand={() => toggle('history')} expanded={activeSection === 'history'} />{selectedSource === 'youtube' ? <TrackList tracks={recommendationRows(activeSection === 'history' ? history : history.slice(0, 6))} resolveTracks={resolveTracks} reduceMotion context={{ type: 'discovery', name: 'YouTube Music History' }} /> : <ScrobbleHistory entries={activeSection === 'history' ? history : history.slice(0, 6)} resolveTracks={resolveTracks} />}</section>}

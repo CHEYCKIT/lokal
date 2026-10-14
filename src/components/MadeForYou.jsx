@@ -12,6 +12,7 @@ import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 
 import { Play, Sparkles } from 'lucide-react'
 import FadeImg from './FadeImg'
 import { trackArtURL } from '../onlineTracks'
+import { useTranslation } from '../i18n'
 
 const ASPECT = 3 / 4 // card width / height
 const MAX_HEIGHT = 250 // the middle card's height, when there's room
@@ -55,6 +56,7 @@ function Card({ index, count, scroll, width, height, half, children, onPress }) 
 }
 
 export default function MadeForYou({ picks, onPlay, onContextMenu }) {
+  const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const scroll = useMotionValue(0)
   const stage = useRef(null)
@@ -154,8 +156,8 @@ export default function MadeForYou({ picks, onPlay, onContextMenu }) {
   // (half way out: sunk by ARC, at MIN_SCALE, scaled about its centre).
   const stageHeight = TOP + size.height * (ARC + (1 + MIN_SCALE) / 2) + 14
   return (
-    <section aria-roledescription="carousel" aria-label="Made for you">
-      <div className="mb-3 flex items-center gap-2"><Sparkles size={14} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">Made for you</h2></div>
+    <section aria-roledescription="carousel" aria-label={t('Made for you')}>
+      <div className="mb-3 flex items-center gap-2"><Sparkles size={14} className="text-accent" /><h2 className="text-xs font-display uppercase tracking-widest text-muted">{t('Made for you')}</h2></div>
       <div ref={stage} tabIndex={0} onKeyDown={onKeyDown} onWheel={onWheel}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         className="relative isolate cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"

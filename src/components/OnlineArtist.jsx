@@ -23,19 +23,22 @@ import { showToast } from './Toaster'
 import { useAppStore } from '../store/player'
 import { api } from '../api'
 import FollowArtistButton from './FollowArtistButton'
+import { useTranslation } from '../i18n'
 
 /**
  * "In library" (all of a release) or "1/9" / "1 song" (part of it), for a
  * release card. `ownership` from releaseOwnership.
  */
 export function OwnershipBadge({ ownership }) {
+  const { t } = useTranslation()
   if (!ownership) return null
   const { owned, total, full } = ownership
+  const countLabel = total ? t('{owned} of {total} songs in your library', { owned, total }) : t('{count} songs in your library', { count: owned })
   return (
-    <span title={full ? 'In your library' : `${owned}${total ? ` of ${total}` : ''} song${owned === 1 && !total ? '' : 's'} in your library`}
+    <span title={full ? t('In your library') : countLabel}
       className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${full ? 'bg-accent/15 text-accent' : 'border border-accent/40 text-accent/90'}`}>
       {full ? <CheckCircle2 size={10} /> : <CircleDashed size={10} />}
-      {full ? 'In library' : total ? `${owned}/${total}` : `${owned} song${owned === 1 ? '' : 's'}`}
+      {full ? t('In library') : total ? `${owned}/${total}` : t('{count} songs', { count: owned })}
     </span>
   )
 }
@@ -134,6 +137,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
  * @param libraryAlbums  the library's releases by them: left out of the albums ("More albums")
  */
 export function OnlineArtistSections({ data, path, libraryTracks = null, libraryAlbums = null, shownTypes = null }) {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const menu = useContextMenu()
   const { songs, albums, name } = data
@@ -175,19 +179,19 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
     try { await work() } finally { setBusy(false) }
   }
   const openAlbumMenu = (event, album) => menu.open(event, [
-    { label: 'Play album', icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: albumPath(album) }) } },
-    { label: 'Download album', icon: Download, onSelect: () => withBusy(async () => { const tracks = await albumTracks(album); if (tracks.length) await downloadOnline(tracks, { label: `“${album.title}”` }) }) },
+    { label: t('Play album'), icon: Play, onSelect: async () => { const tracks = await albumTracks(album); if (tracks.length) playOnline(tracks, { name: album.title, path: albumPath(album) }) } },
+    { label: t('Download album'), icon: Download, onSelect: () => withBusy(async () => { const tracks = await albumTracks(album); if (tracks.length) await downloadOnline(tracks, { label: `“${album.title}”` }) }) },
     { separator: true },
-    { label: 'Open album', icon: Disc3, onSelect: () => openAlbum(album) },
+    { label: t('Open album'), icon: Disc3, onSelect: () => openAlbum(album) },
   ])
 
   return (
     <>
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryPage ? 'Popular online' : 'Popular'}</h2>
+          <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t(libraryPage ? 'Popular online' : 'Popular')}</h2>
           {inLibrary && popular.missing.length > 0 && (libraryPage || popular.missing.length < popularTracks.length) && (
-            <button onClick={() => withBusy(() => downloadOnline(popular.missing, { label: `${popular.missing.length} songs` }))} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-accent transition-opacity hover:opacity-80 disabled:opacity-50"><Download size={13} /> {busy ? 'Finding songs…' : `Download missing (${popular.missing.length})`}</button>
+            <button onClick={() => withBusy(() => downloadOnline(popular.missing, { label: t('{count} songs', { count: popular.missing.length }) }))} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-accent transition-opacity hover:opacity-80 disabled:opacity-50"><Download size={13} /> {busy ? t('Finding songs…') : t('Download missing ({count})', { count: popular.missing.length })}</button>
           )}
         </div>
         {songs.loading
@@ -198,23 +202,23 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
               {popularTracks.length > 5 && (
                 <button type="button" onClick={() => setAllPopular(value => !value)} aria-expanded={allPopular}
                   className="mt-2 px-2 text-xs font-medium text-muted transition-colors hover:text-white">
-                  {allPopular ? 'Show less' : 'Show more'}
+                  {t(allPopular ? 'Show less' : 'Show more')}
                 </button>
               )}
             </>
-            : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{songs.error || `No songs were found for ${name}.`}</p>}
+            : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{songs.error || t('No songs were found for {artist}.', { artist: name })}</p>}
       </section>
 
       {(albums.loading ? !songs.loading : albumItems.length > 0) && (
-        <section aria-label={libraryAlbums ? 'More releases online' : 'Releases'}>
+        <section aria-label={t(libraryAlbums ? 'More releases online' : 'Releases')}>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-display uppercase tracking-widest text-muted">{libraryAlbums ? 'More releases online' : 'Releases'}</h2>
+            <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t(libraryAlbums ? 'More releases online' : 'Releases')}</h2>
             {!shownTypes && !albums.loading && <ReleaseTypeFilter types={albumTypes} shown={shown} onToggle={toggleType} />}
           </div>
           {albums.loading
-            ? <p role="status" className="text-sm text-muted">Loading albums…</p>
+            ? <p role="status" className="text-sm text-muted">{t('Loading albums…')}</p>
             : albumGroups.length === 0
-              ? <p className="text-sm text-muted">No releases of the types chosen.</p>
+              ? <p className="text-sm text-muted">{t('No releases of the types chosen.')}</p>
               : (
                 <div className="space-y-6">
                   {albumGroups.map(group => (
@@ -222,12 +226,12 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                       {(albumGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
                       <div className="grid grid-cols-2 gap-4 @md:grid-cols-4 @xl:grid-cols-6">
                         {group.items.map(album => (
-                          <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
+            <button key={`${album.title}-${album.sourceAlbumId || album.albumId || ''}`} onClick={() => openAlbum(album)} onContextMenu={event => openAlbumMenu(event, album)} className="group text-left">
                             <div className="aspect-square overflow-hidden rounded-xl border border-border bg-elevated">
                               <DiscoveryImage item={album} type="album" src={album.artwork_url} lookup className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>} />
                             </div>
                             <p className="mt-2 flex items-center gap-1.5 text-sm text-white"><span className="truncate">{album.title}</span><OwnershipBadge ownership={releaseOwnership(album, albumCounts)} /></p>
-                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? `${album.track_count} tracks` : null].filter(Boolean).join(' · ') || group.label.replace(/s$/, '')}</p>
+                            <p className="truncate text-xs text-muted">{[album.year, album.track_count ? t('{count} tracks', { count: album.track_count }) : null].filter(Boolean).join(' · ') || t(group.label.replace(/s$/, ''))}</p>
                           </button>
                         ))}
                       </div>
@@ -243,6 +247,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
 }
 
 export default function OnlineArtist({ id, name: givenName, anchor = null }) {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const userId = useAppStore(state => state.user?.id)
   const data = useOnlineArtist(givenName || nameFromSlug(id), true, { anchor })
@@ -272,22 +277,22 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
     <div className="pb-8">
       <div className="relative h-56 overflow-hidden">
         <button onClick={() => nav(-1)} className="absolute left-6 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:text-white @md:left-8 @md:top-5">
-          <ArrowLeft size={14} /> Back
+          <ArrowLeft size={14} /> {t('Back')}
         </button>
         {image ? <img src={image} alt="" className="h-full w-full object-cover opacity-30 blur-sm" /> : <div className="h-full w-full bg-gradient-to-b from-accent/8 to-transparent" />}
         <div className="absolute inset-0 bg-gradient-to-t from-base via-base/20" />
         <div className="absolute bottom-5 left-8 right-8 flex items-end gap-5">
-          <button type="button" onClick={image ? () => setZoom(true) : undefined} disabled={!image} title={image ? 'View the picture' : undefined} className={`flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${image ? 'cursor-zoom-in' : 'cursor-default'}`}>
+          <button type="button" onClick={image ? () => setZoom(true) : undefined} disabled={!image} title={image ? t('View the picture') : undefined} className={`flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-border bg-elevated ${image ? 'cursor-zoom-in' : 'cursor-default'}`}>
             {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
           </button>
           <ImageZoom src={image} alt={name} open={zoom} onClose={() => setZoom(false)} />
           <div className="min-w-0">
-            <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Artist · Online</p>
+            <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t('Artist · Online')}</p>
             <h1 className="truncate text-3xl font-display text-white">{name}</h1>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button onClick={() => play(songs.tracks[0])} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
-              <button onClick={() => openRadio(nav, { artist: name, type: 'artist' }, userId)} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50"><Radio size={15} /> Artist radio</button>
-              <button onClick={downloadPopular} disabled={!songs.tracks.length || busy} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy ? 'Finding songs…' : 'Download popular songs'}</button>
+              <button onClick={() => play(songs.tracks[0])} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t('Play')}</button>
+              <button onClick={() => openRadio(nav, { artist: name, type: 'artist' }, userId)} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50"><Radio size={15} /> {t('Artist radio')}</button>
+              <button onClick={downloadPopular} disabled={!songs.tracks.length || busy} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy ? t('Finding songs…') : t('Download popular songs')}</button>
               <RefreshButton onClick={data.refresh} loading={data.loading} loadedAt={data.loadedAt} className="border-white/15 bg-black/30 backdrop-blur-sm" />
               <FollowArtistButton name={name} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white" />
             </div>

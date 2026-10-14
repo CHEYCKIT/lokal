@@ -115,7 +115,8 @@ export function navigateToContext(nav, context, highlightTrackId = null) {
 /** Navigate to the album page for a single track (bottom-bar title shortcut). */
 export function navigateToTrackAlbum(nav, track) {
   const context = albumContextFromTrack(track)
-  if (!nav || !context) return false
+  const sourceAlbumId = track?.source_album_id || track?.sourceAlbumId || track?.albumId
+  if (!nav || (!context && !(isOnlineTrack(track) && sourceAlbumId))) return false
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
   if (isOnlineTrack(track)) {
