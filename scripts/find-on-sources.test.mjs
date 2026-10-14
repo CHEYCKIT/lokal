@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFindOnRequest, orderedFindOnSources } from '../src/findOnSources.js'
+import { DEFAULT_FIND_ON_SOURCES, buildFindOnRequest, orderedFindOnSources } from '../src/findOnSources.js'
 
 test('lists built-in sources, Soulseek, then enabled addon sources with their icons', () => {
   const sources = orderedFindOnSources([
@@ -11,6 +11,10 @@ test('lists built-in sources, Soulseek, then enabled addon sources with their ic
   assert.deepEqual(sources.map(source => source.id), ['yt', 'sc', 'slsk', 'a-1234567890'])
   assert.equal(sources[3].label, 'HiFi addon')
   assert.equal(sources[3].icon, 'https://example.com/icon.png')
+})
+
+test('exports valid default menu sources including Soulseek', () => {
+  assert.deepEqual(DEFAULT_FIND_ON_SOURCES.map(source => source.id), ['yt', 'sc', 'slsk'])
 })
 
 test('uses safe defaults and does not duplicate Soulseek or providers', () => {
