@@ -1106,7 +1106,7 @@ export default function Settings() {
                 }`}
               >
                 <Icon size={13} />
-                {item.label}
+                {t(item.label)}
               </button>
             )
           })}
@@ -1133,7 +1133,7 @@ activeCategory === 'data' ? usersTried
                 className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 disabled:opacity-40 transition-colors"
               >
                 <RefreshCcw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
-                {checkingUpdate ? 'Checking...' : /-nightly\./i.test(appVersion || '') ? 'Open Releases' : 'Check for updates'}
+                {checkingUpdate ? t('Checking...') : /-nightly\./i.test(appVersion || '') ? t('Open Releases') : t('Check for updates')}
               </button>
               {updateCheckResult && (
                 <span className="text-xs text-muted">{updateCheckResult}</span>
@@ -1323,13 +1323,13 @@ activeCategory === 'data' ? usersTried
         <Row stacked label="Remove Duplicate Songs" desc="Choose a playlist to remove repeated songs from it. The first occurrence stays in its original position; other playlist entries are removed. Library files are not touched.">
           <div className="flex flex-wrap items-center gap-2">
             <select
-              aria-label="Playlist to remove duplicates from"
+              aria-label={t("Playlist to remove duplicates from")}
               value={deduplicatePlaylistId}
               onChange={event => { setDeduplicatePlaylistId(event.target.value); setDeduplicateResult('') }}
               disabled={!deduplicatePlaylists.length || deduplicatingPlaylist}
               className="min-w-48 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50 disabled:opacity-50"
             >
-              {!deduplicatePlaylists.length && <option value="">No regular playlists</option>}
+              {!deduplicatePlaylists.length && <option value="">{t("No regular playlists")}</option>}
               {deduplicatePlaylists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}
             </select>
             <button
@@ -1370,7 +1370,7 @@ activeCategory === 'data' ? usersTried
           <div className="flex items-center gap-2">
             <input type="number" min={0} max={300} value={settings.min_duration ?? 0} onChange={e => set('min_duration', e.target.value)}
               className="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white text-center outline-none focus:border-accent/50" />
-            <span className="text-xs text-muted">sec</span>
+            <span className="text-xs text-muted">{t("sec")}</span>
           </div>
         </Row>
         <Row label="Music Folder">
@@ -1394,7 +1394,7 @@ activeCategory === 'data' ? usersTried
         <div className="space-y-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-sm text-white font-medium">10-Band EQ</p>
+              <p className="text-sm text-white font-medium">{t("10-Band EQ")}</p>
               <p className="text-xs text-muted mt-1">Preset: {eqPreset === 'custom' ? 'Custom' : EQ_PRESETS[eqPreset]?.label || EQ_PRESETS[DEFAULT_EQ_PRESET].label}</p>
             </div>
             <button onClick={() => applyEqGains(EQ_PRESETS[DEFAULT_EQ_PRESET].gains, DEFAULT_EQ_PRESET)}
@@ -1425,7 +1425,7 @@ activeCategory === 'data' ? usersTried
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted mt-3 text-center opacity-50">The equalizer starts after your first click in the app.</p>
+          <p className="text-xs text-muted mt-3 text-center opacity-50">{t("The equalizer starts after your first click in the app.")}</p>
         </div>
       </Section>
       )}
@@ -1434,7 +1434,7 @@ activeCategory === 'data' ? usersTried
       <Section title="Playback">
         <OutputPrecisionSettings />
         <Row label="ReplayGain" desc="Use embedded ReplayGain tags to bring tracks closer in loudness. Peak tags limit boosts; tracks without tags are unchanged.">
-          <select aria-label="ReplayGain mode" value={settings.replaygain_mode ?? replayGainMode ?? 'off'} onChange={e => set('replaygain_mode', e.target.value)}
+          <select aria-label={t("ReplayGain mode")} value={settings.replaygain_mode ?? replayGainMode ?? 'off'} onChange={e => set('replaygain_mode', e.target.value)}
             className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             <option value="off">{t('Off')}</option>
             <option value="track">{t('Track gain')}</option>
@@ -1444,7 +1444,7 @@ activeCategory === 'data' ? usersTried
         <Row label="Song Transitions" desc={crossfade.mode === 'automix'
           ? 'AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.'
           : crossfade.mode === 'crossfade' ? 'The next song starts before the current one ends, by the amounts below.' : 'Each song plays to its end, then the next starts.'}>
-          <div role="radiogroup" aria-label="Song transitions" className="flex rounded-lg bg-card border border-border p-0.5">
+          <div role="radiogroup" aria-label={t("Song transitions")} className="flex rounded-lg bg-card border border-border p-0.5">
             {[['off', 'Off'], ['crossfade', 'Crossfade'], ['automix', 'AutoMix']].map(([value, label]) => (
               <button key={value} type="button" role="radio" aria-checked={crossfade.mode === value} onClick={() => set('song_transitions', value)}
                 className={`px-3 py-1 rounded-md text-xs transition-colors ${crossfade.mode === value ? 'bg-accent text-base font-medium' : 'text-muted hover:text-white'}`}>
@@ -1492,8 +1492,8 @@ activeCategory === 'data' ? usersTried
               onChange={e => set('crossfade_curve', e.target.value)}
               className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50"
             >
-              <option value="logarithmic">Logarithmic</option>
-              <option value="linear">Linear</option>
+              <option value="logarithmic">{t("Logarithmic")}</option>
+              <option value="linear">{t("Linear")}</option>
             </select>
           </Row>
         </>)}
@@ -1502,8 +1502,8 @@ activeCategory === 'data' ? usersTried
             value={settings.online_quality || 'best'}
             onChange={e => set('online_quality', e.target.value)}
             className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="best">Best</option>
-            <option value="saver">Data saver</option>
+            <option value="best">{t("Best")}</option>
+            <option value="saver">{t("Data saver")}</option>
           </select>
         </Row>
         {api.isElectron && (
@@ -1512,8 +1512,8 @@ activeCategory === 'data' ? usersTried
             value={settings.yt_fast_engine === '0' ? '0' : '1'}
             onChange={e => set('yt_fast_engine', e.target.value)}
             className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="1">Fast</option>
-            <option value="0">yt-dlp only</option>
+            <option value="1">{t("Fast")}</option>
+            <option value="0">{t("yt-dlp only")}</option>
           </select>
         </Row>
         )}
@@ -1523,9 +1523,9 @@ activeCategory === 'data' ? usersTried
             value={settings.video_quality || '1080'}
             onChange={e => set('video_quality', e.target.value)}
             className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="1080">Up to 1080p</option>
-            <option value="720">Up to 720p</option>
-            <option value="480">Up to 480p</option>
+            <option value="1080">{t("Up to 1080p")}</option>
+            <option value="720">{t("Up to 720p")}</option>
+            <option value="480">{t("Up to 480p")}</option>
           </select>
         </Row>
         )}
@@ -1542,8 +1542,8 @@ activeCategory === 'data' ? usersTried
             value={settings.cast_quality === 'standard' ? 'standard' : 'max'}
             onChange={e => set('cast_quality', e.target.value)}
             className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="max">Best</option>
-            <option value="standard">Standard</option>
+            <option value="max">{t("Best")}</option>
+            <option value="standard">{t("Standard")}</option>
           </select>
         </Row>
       </Section>
@@ -1631,7 +1631,7 @@ activeCategory === 'data' ? usersTried
             {spotifyCheck && !spotifyCheck.loading && (
               spotifyCheck.error
                 ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
-                : <p className="text-xs text-green-400">Signed in to Spotify.</p>
+                : <p className="text-xs text-green-400">{t("Signed in to Spotify.")}</p>
             )}
           </div>
         </Row>
@@ -1672,16 +1672,16 @@ activeCategory === 'data' ? usersTried
           </p>
           {api.isElectron
             ? <>
-                <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">slskd</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
+                <p className="text-xs text-muted leading-relaxed">Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (<span className="text-white">{t("slskd")}</span>, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.</p>
                 <SoulseekSignIn settings={settings} set={set} />
               </>
-            : <p className="text-xs text-muted">Soulseek runs with the Lokal desktop app.</p>}
+            : <p className="text-xs text-muted">{t("Soulseek runs with the Lokal desktop app.")}</p>}
         </Section>
       )}
 
       {api.isElectron && inCategory('integrations') && (
         <Section title="External Tools">
-          <p className="text-xs text-muted mb-4">The tools Lokal uses to download and convert songs.</p>
+          <p className="text-xs text-muted mb-4">{t("The tools Lokal uses to download and convert songs.")}</p>
           {toolsError && (
             <div className="flex items-center justify-between gap-3 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
               <span>{toolsError}</span>
@@ -1696,7 +1696,7 @@ activeCategory === 'data' ? usersTried
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${toolsStatus?.ytdlp?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-sm text-white">yt-dlp</span>
+                <span className="text-sm text-white">{t("yt-dlp")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadYtDlpTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
@@ -1715,7 +1715,7 @@ activeCategory === 'data' ? usersTried
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${toolsStatus?.ffmpeg?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-sm text-white">ffmpeg</span>
+                <span className="text-sm text-white">{t("ffmpeg")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => downloadFfmpegTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
@@ -1761,7 +1761,7 @@ activeCategory === 'data' ? usersTried
       <Section title="Theme">
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-white font-medium mb-3">Theme</p>
+            <p className="text-sm text-white font-medium mb-3">{t("Theme")}</p>
             <div className="grid grid-cols-4 gap-2">
               {Object.entries(THEMES).map(([key, theme]) => (
                 <button
@@ -1782,7 +1782,7 @@ activeCategory === 'data' ? usersTried
                     <div className="flex items-center justify-between">
                       <div className="w-2 h-2 rounded-full" style={{ background: theme.vars['--accent'] }} />
                       <span className={`text-xs ${themeName === key ? 'text-accent' : 'text-muted'}`}>
-                        {theme.name}
+                        {t(theme.name)}
                       </span>
                     </div>
                   </div>
@@ -1792,7 +1792,7 @@ activeCategory === 'data' ? usersTried
           </div>
           
           <div>
-            <p className="text-sm text-white font-medium mb-3">Accent Color</p>
+            <p className="text-sm text-white font-medium mb-3">{t("Accent Color")}</p>
             <div className="flex flex-wrap gap-2">
               {ACCENT_COLORS.map((color) => (
                 <button
@@ -1811,7 +1811,7 @@ activeCategory === 'data' ? usersTried
           </div>
 
           <div>
-            <p className="text-sm text-white font-medium mb-3">Text Size</p>
+            <p className="text-sm text-white font-medium mb-3">{t("Text Size")}</p>
             <div className="flex items-center gap-4">
               <span className="text-xs text-muted">A</span>
               <input
@@ -1829,16 +1829,16 @@ activeCategory === 'data' ? usersTried
               </span>
             </div>
             <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-muted/50">Small</span>
-              <span className="text-[10px] text-muted/50">Large</span>
+              <span className="text-[10px] text-muted/50">{t("Small")}</span>
+              <span className="text-[10px] text-muted/50">{t("Large")}</span>
             </div>
           </div>
 
           <div className="pt-4 mt-4 border-t border-border">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <p className="text-sm text-white font-medium">Custom Background</p>
-                <p className="text-xs text-muted">Set a custom image for the app background.</p>
+                <p className="text-sm text-white font-medium">{t("Custom Background")}</p>
+                <p className="text-xs text-muted">{t("Set a custom image for the app background.")}</p>
               </div>
               <div className="flex gap-2">
                 {bgImage && (
@@ -1875,7 +1875,7 @@ activeCategory === 'data' ? usersTried
                 
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs text-muted">
-                    <span>Background Fade / Overlay</span>
+                    <span>{t("Background Fade / Overlay")}</span>
                     <span>{Math.round((themeOverrides['--bg-overlay'] || 0) * 100)}%</span>
                   </div>
                   <input 
@@ -1887,12 +1887,12 @@ activeCategory === 'data' ? usersTried
                     onChange={handleOpacityChange}
                     className="w-full accent-accent h-1 bg-elevated rounded-lg appearance-none cursor-pointer"
                   />
-                  <p className="text-[10px] text-muted">Adjusts the visibility of the solid background color over your image.</p>
+                  <p className="text-[10px] text-muted">{t("Adjusts the visibility of the solid background color over your image.")}</p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs text-muted">
-                    <span>Background Blur</span>
+                    <span>{t("Background Blur")}</span>
                     <span>{parseInt(themeOverrides['--bg-blur'] || '0')}px</span>
                   </div>
                   <input 
@@ -1904,29 +1904,29 @@ activeCategory === 'data' ? usersTried
 
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="text-[10px] text-muted uppercase tracking-wider block mb-1.5">Image Fit</label>
+                    <label className="text-[10px] text-muted uppercase tracking-wider block mb-1.5">{t("Image Fit")}</label>
                     <select 
                       value={themeOverrides['--bg-size'] || 'cover'}
                       onChange={(e) => saveOverride('--bg-size', e.target.value)}
                       className="w-full bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50"
                     >
-                      <option value="cover">Cover (Fill)</option>
-                      <option value="contain">Contain (Fit)</option>
-                      <option value="auto">Auto (Original)</option>
+                      <option value="cover">{t("Cover (Fill)")}</option>
+                      <option value="contain">{t("Contain (Fit)")}</option>
+                      <option value="auto">{t("Auto (Original)")}</option>
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted uppercase tracking-wider block mb-1.5">Position</label>
+                    <label className="text-[10px] text-muted uppercase tracking-wider block mb-1.5">{t("Position")}</label>
                     <select 
                       value={themeOverrides['--bg-position'] || 'center'}
                       onChange={(e) => saveOverride('--bg-position', e.target.value)}
                       className="w-full bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50"
                     >
-                      <option value="center">Center</option>
-                      <option value="top">Top</option>
-                      <option value="bottom">Bottom</option>
-                      <option value="left">Left</option>
-                      <option value="right">Right</option>
+                      <option value="center">{t("Center")}</option>
+                      <option value="top">{t("Top")}</option>
+                      <option value="bottom">{t("Bottom")}</option>
+                      <option value="left">{t("Left")}</option>
+                      <option value="right">{t("Right")}</option>
                     </select>
                   </div>
                 </div>
@@ -1979,7 +1979,7 @@ activeCategory === 'data' ? usersTried
 
           {showAdvanced && (
             <div className="space-y-3 pt-2 border-t border-border">
-              <p className="text-xs text-muted">Override CSS variables</p>
+              <p className="text-xs text-muted">{t("Override CSS variables")}</p>
               {Object.keys(THEMES.dark.vars).filter(k => k !== '--accent' && k !== '--accent-dim').map((key) => (
                 <div key={key} className="flex items-center gap-3">
                   <span className="text-xs text-muted w-24 truncate">{key}</span>
@@ -2070,7 +2070,7 @@ activeCategory === 'data' ? usersTried
                   {spotifyCheck && !spotifyCheck.loading && (
                     spotifyCheck.error
                       ? <p className="text-xs text-red-400">{spotifyCheck.error}</p>
-                      : <p className="text-xs text-green-400">Signed in -- canvases will be looked up.</p>
+                      : <p className="text-xs text-green-400">{t("Signed in -- canvases will be looked up.")}</p>
                   )}
                 </div>
               </>
@@ -2174,7 +2174,7 @@ activeCategory === 'data' ? usersTried
       <Section title="Accounts">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-white font-medium">Local Accounts</p>
+            <p className="text-sm text-white font-medium">{t("Local Accounts")}</p>
             <button
               onClick={loadUsers}
               disabled={usersLoading}
@@ -2189,14 +2189,14 @@ activeCategory === 'data' ? usersTried
           {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
           <div className="space-y-2">
             {!usersLoading && usersTried && appUsers.length === 0 && (
-              <p className="text-xs text-muted">No local accounts found.</p>
+              <p className="text-xs text-muted">{t("No local accounts found.")}</p>
             )}
             {appUsers.map((account) => (
               <div key={account.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card/40">
                 <div className="min-w-0">
                   <p className="text-sm text-white truncate">
                     {account.display_name || account.username}
-                    {user?.id === account.id && <span className="text-xs text-accent ml-2">Current</span>}
+                    {user?.id === account.id && <span className="text-xs text-accent ml-2">{t("Current")}</span>}
                   </p>
                   <p className="text-xs text-muted truncate">@{account.username}</p>
                 </div>
@@ -2283,7 +2283,7 @@ activeCategory === 'data' ? usersTried
       {api.isElectron && inCategory('data') && (
       <Section title="Cache">
          <Row label="Cache Size Limit" desc="Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.">
-          <select aria-label="Cache size limit" value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
+          <select aria-label={t("Cache size limit")} value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
           </select>
@@ -2325,7 +2325,7 @@ activeCategory === 'data' ? usersTried
         <div className="space-y-4">
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-white/70 leading-relaxed">Removes all tracks, artists, playlists, and history. Music files are untouched.</p>
+            <p className="text-sm text-white/70 leading-relaxed">{t("Removes all tracks, artists, playlists, and history. Music files are untouched.")}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowClearModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
@@ -2350,7 +2350,7 @@ activeCategory === 'data' ? usersTried
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-display text-muted uppercase tracking-widest block mb-1.5">Artist (Required)</label>
+                <label className="text-[10px] font-display text-muted uppercase tracking-widest block mb-1.5">{t("Artist (Required)")}</label>
                 <input 
                   value={manualGenreArtist} 
                   onChange={e => setManualGenreArtist(e.target.value)}
@@ -2359,7 +2359,7 @@ activeCategory === 'data' ? usersTried
                 />
               </div>
               <div>
-                <label className="text-[10px] font-display text-muted uppercase tracking-widest block mb-1.5">Genre (Required)</label>
+                <label className="text-[10px] font-display text-muted uppercase tracking-widest block mb-1.5">{t("Genre (Required)")}</label>
                 <input 
                   value={manualGenreValue} 
                   onChange={e => setManualGenreValue(e.target.value)}
@@ -2371,7 +2371,7 @@ activeCategory === 'data' ? usersTried
 
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
               <div>
-                <label className="text-[10px] font-display text-muted/60 uppercase tracking-widest block mb-1.5">Track (Optional)</label>
+                <label className="text-[10px] font-display text-muted/60 uppercase tracking-widest block mb-1.5">{t("Track (Optional)")}</label>
                 <input 
                   value={manualGenreTrack} 
                   onChange={e => setManualGenreTrack(e.target.value)}
@@ -2380,7 +2380,7 @@ activeCategory === 'data' ? usersTried
                 />
               </div>
               <div>
-                <label className="text-[10px] font-display text-muted/60 uppercase tracking-widest block mb-1.5">Album (Optional)</label>
+                <label className="text-[10px] font-display text-muted/60 uppercase tracking-widest block mb-1.5">{t("Album (Optional)")}</label>
                 <input 
                   value={manualGenreAlbum} 
                   onChange={e => setManualGenreAlbum(e.target.value)}
@@ -2440,7 +2440,7 @@ activeCategory === 'data' ? usersTried
             These artists won't have their comma removed. This prevents "Tyler, The Creator" from becoming "Tyler" and "The Creator". Enter one artist per line.
           </p>
           <div className="bg-card/50 rounded-lg p-3 mb-2">
-            <p className="text-xs text-muted mb-2">Examples (one per line):</p>
+            <p className="text-xs text-muted mb-2">{t("Examples (one per line):")}</p>
             <div className="flex flex-wrap gap-2">
               {['Tyler, The Creator', 'Earth, Wind & Fire'].map(ex => (
                 <span key={ex} className="text-xs bg-accent/20 text-accent px-2 py-1 rounded">{ex}</span>
@@ -2448,7 +2448,7 @@ activeCategory === 'data' ? usersTried
             </div>
           </div>
           <div>
-            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">Artists (one per line)</label>
+            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Artists (one per line)")}</label>
             <textarea value={commaInput} onChange={e => setCommaInput(e.target.value)}
               placeholder="Tyler, The Creator
 Earth, Wind & Fire"
@@ -2467,7 +2467,7 @@ Earth, Wind & Fire"
 
       <Modal open={showDups} onClose={() => { setShowDups(false); setMergeAllResult(null) }} title="Duplicate Tracks" width="max-w-2xl">
         {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
-        {dups?.length === 0 && <p className="text-accent text-sm text-center py-6">✓ No duplicates found!</p>}
+        {dups?.length === 0 && <p className="text-accent text-sm text-center py-6">{t("✓ No duplicates found!")}</p>}
         
         {dups?.length > 0 && (
           <div className="mb-4">
@@ -2489,7 +2489,7 @@ Earth, Wind & Fire"
         
         {dups?.length > 0 && (
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            <p className="text-xs text-muted mb-2">Merge keeps the selected copy and fills missing metadata from the others. Removed copies’ audio files go to Trash on desktop and are permanently deleted in web mode, even when “Delete files too” is off.</p>
+            <p className="text-xs text-muted mb-2">{t("Merge keeps the selected copy and fills missing metadata from the others. Removed copies’ audio files go to Trash on desktop and are permanently deleted in web mode, even when “Delete files too” is off.")}</p>
             {dups.map((d, i) => {
               return (
                 <div key={i} className="p-3 bg-card border border-border rounded-xl flex items-center gap-4">
@@ -2517,15 +2517,15 @@ Earth, Wind & Fire"
           <div className="flex gap-3">
             <Zap size={18} className="text-accent flex-shrink-0 mt-0.5" />
             <div className="text-sm text-white/70 leading-relaxed">
-              <p>This will automatically merge all duplicate tracks across your entire library using smart scoring:</p>
+              <p>{t("This will automatically merge all duplicate tracks across your entire library using smart scoring:")}</p>
               <ul className="mt-2 text-xs text-muted space-y-1">
-                <li>• Bitrate ÷ 100 points (320kbps = 3.2pts)</li>
-                <li>• +10 points if has artwork</li>
-                <li>• +5 points if has album</li>
-                <li>• +3 points if has year</li>
-                <li>• +2 points if has genre</li>
+                <li>{t("• Bitrate ÷ 100 points (320kbps = 3.2pts)")}</li>
+                <li>{t("• +10 points if has artwork")}</li>
+                <li>{t("• +5 points if has album")}</li>
+                <li>{t("• +3 points if has year")}</li>
+                <li>{t("• +2 points if has genre")}</li>
               </ul>
-              <p className="mt-2">The highest scoring copy wins. Missing metadata is filled from the other copies, then their audio files are removed from your music folder (Trash on desktop; permanently deleted in web mode).</p>
+              <p className="mt-2">{t("The highest scoring copy wins. Missing metadata is filled from the other copies, then their audio files are removed from your music folder (Trash on desktop; permanently deleted in web mode).")}</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -2541,8 +2541,8 @@ Earth, Wind & Fire"
         {duplicateMessage && <p role="alert" className="text-sm text-amber-400 mb-3 break-words">{duplicateMessage}</p>}
         {possibleDups?.length === 0 && (
           <div className="space-y-2 py-4">
-            <p className="text-accent text-sm text-center">✓ No possible duplicates found.</p>
-            <p className="text-xs text-muted text-center">Run Exact first, then come back here for what's left.</p>
+            <p className="text-accent text-sm text-center">{t("✓ No possible duplicates found.")}</p>
+            <p className="text-xs text-muted text-center">{t("Run Exact first, then come back here for what's left.")}</p>
           </div>
         )}
 
@@ -2556,12 +2556,12 @@ Earth, Wind & Fire"
                 <div key={group.id} className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm text-white font-medium">Possible match group</p>
+                      <p className="text-sm text-white font-medium">{t("Possible match group")}</p>
                       <p className="text-xs text-muted mt-1">{group.summary}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-display uppercase tracking-widest text-accent">{group.confidence}% confidence</p>
-                      <p className="text-[10px] text-muted mt-1">Suggested keep is marked below</p>
+                      <p className="text-[10px] text-muted mt-1">{t("Suggested keep is marked below")}</p>
                     </div>
                   </div>
 
@@ -2580,7 +2580,7 @@ Earth, Wind & Fire"
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-white truncate">{track.title}</p>
-                              {suggested && <span className="text-[10px] text-accent uppercase tracking-widest">Suggested</span>}
+                              {suggested && <span className="text-[10px] text-accent uppercase tracking-widest">{t("Suggested")}</span>}
                             </div>
                             <p className="text-xs text-muted truncate">{track.artist}</p>
                             <p className="text-[10px] text-muted/70 truncate">
@@ -2609,7 +2609,7 @@ Earth, Wind & Fire"
       <Modal open={showPlatformImportGuide} onClose={() => { setShowPlatformImportGuide(false); setPlatformImportStatus('') }} title="Import Track Metadata" width="max-w-5xl">
         <div className="flex max-h-[calc(100vh-8rem)] min-h-0 flex-col gap-5">
           <div className="rounded-xl border border-border bg-card/40 p-4 space-y-2">
-            <p className="text-sm text-white">Use CSV, JSON, or M3U exports to enrich songs already in your library.</p>
+            <p className="text-sm text-white">{t("Use CSV, JSON, or M3U exports to enrich songs already in your library.")}</p>
             <p className="text-xs text-muted leading-relaxed">
               {'Lokal will match each row against your library and apply imported metadata like genres, explicit flags, labels, and audio features. Unmatched rows are saved locally and retried later when those songs enter your library.'}
             </p>
@@ -2618,24 +2618,24 @@ Earth, Wind & Fire"
           <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(320px,1.1fr)]">
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">Source Platform</label>
+                <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Source Platform")}</label>
                 <select
                   value={platformImportPlatform}
                   onChange={e => setPlatformImportPlatform(e.target.value)}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
                 >
-                  <option value="spotify">Spotify / Exportify CSV</option>
-                  <option value="apple-music">Apple Music Export</option>
-                  <option value="youtube-music">YouTube Music / Google Takeout</option>
-                  <option value="lastfm">Last.fm Export</option>
-                  <option value="generic">Generic CSV / JSON / M3U</option>
+                  <option value="spotify">{t("Spotify / Exportify CSV")}</option>
+                  <option value="apple-music">{t("Apple Music Export")}</option>
+                  <option value="youtube-music">{t("YouTube Music / Google Takeout")}</option>
+                  <option value="lastfm">{t("Last.fm Export")}</option>
+                  <option value="generic">{t("Generic CSV / JSON / M3U")}</option>
                 </select>
               </div>
               <div className="rounded-xl border border-border bg-card/30 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm text-white">Choose Export File</p>
-                    <p className="text-xs text-muted mt-1">CSV works best. You can select multiple files at once and Lokal will merge them into one preview/import pass.</p>
+                    <p className="text-sm text-white">{t("Choose Export File")}</p>
+                    <p className="text-xs text-muted mt-1">{t("CSV works best. You can select multiple files at once and Lokal will merge them into one preview/import pass.")}</p>
                   </div>
                   <button
                     onClick={handlePlatformFileSelect}
@@ -2661,24 +2661,24 @@ Earth, Wind & Fire"
             </div>
 
             <div className="rounded-xl border border-border bg-card/30 p-4 space-y-3">
-              <p className="text-sm text-white">What Lokal will do</p>
+              <p className="text-sm text-white">{t("What Lokal will do")}</p>
               <div className="space-y-2 text-xs text-muted leading-relaxed">
-                <p>Matched songs stay in place and get enriched with imported metadata.</p>
-                <p>Multi-genre values, explicit flags, labels, and audio features can then feed mixes and queue suggestions.</p>
-                <p>Unmatched rows are stored locally so future downloads or imports can use that metadata automatically.</p>
+                <p>{t("Matched songs stay in place and get enriched with imported metadata.")}</p>
+                <p>{t("Multi-genre values, explicit flags, labels, and audio features can then feed mixes and queue suggestions.")}</p>
+                <p>{t("Unmatched rows are stored locally so future downloads or imports can use that metadata automatically.")}</p>
               </div>
               <div className="grid grid-cols-3 gap-2 pt-2">
                 <div className="rounded-lg bg-elevated/70 px-3 py-3 text-center">
                   <p className="text-lg text-white font-medium">{platformImportPreview?.total || 0}</p>
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">Rows</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">{t("Rows")}</p>
                 </div>
                 <div className="rounded-lg bg-elevated/70 px-3 py-3 text-center">
                   <p className="text-lg text-white font-medium">{platformImportPreview?.matched || 0}</p>
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">Matched</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">{t("Matched")}</p>
                 </div>
                 <div className="rounded-lg bg-elevated/70 px-3 py-3 text-center">
                   <p className="text-lg text-white font-medium">{platformImportPreview?.ghostable || 0}</p>
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">Saved</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted">{t("Saved")}</p>
                 </div>
               </div>
             </div>
@@ -2687,23 +2687,23 @@ Earth, Wind & Fire"
           <div className="min-h-0 rounded-xl border border-border bg-card/30 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-white font-medium">Preview</p>
+                <p className="text-sm text-white font-medium">{t("Preview")}</p>
                 <p className="text-xs text-muted mt-1">{'This preview shows which rows Lokal can match now and which rows will be remembered for later.'}</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">CSV</span>
-                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">JSON</span>
+                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">{t("CSV")}</span>
+                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">{t("JSON")}</span>
                 <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">M3U</span>
-                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">Text</span>
+                <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">{t("Text")}</span>
               </div>
             </div>
             <div className="overflow-hidden rounded-xl border border-border">
               <div className="hidden gap-0 bg-elevated/80 px-4 py-3 text-[10px] uppercase tracking-[0.24em] text-muted md:grid md:grid-cols-[1.3fr_1.1fr_1.1fr_0.9fr_1.2fr]">
-                <span>Track</span>
-                <span>Artist</span>
-                <span>Album</span>
-                <span>Status</span>
-                <span>What Lokal Does</span>
+                <span>{t("Track")}</span>
+                <span>{t("Artist")}</span>
+                <span>{t("Album")}</span>
+                <span>{t("Status")}</span>
+                <span>{t("What Lokal Does")}</span>
               </div>
               <div className="max-h-[34vh] overflow-y-auto divide-y divide-border bg-card/30">
                 {(platformImportPreview?.rows || []).map((row) => (
@@ -2766,8 +2766,8 @@ Earth, Wind & Fire"
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-orange-300 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-white/70 leading-relaxed">
-              <p>This will replace Lokal's current local database and settings with the selected backup.</p>
-              <p className="text-xs text-muted mt-2">Current local data will be overwritten. Audio files on disk are not deleted.</p>
+              <p>{t("This will replace Lokal's current local database and settings with the selected backup.")}</p>
+              <p className="text-xs text-muted mt-2">{t("Current local data will be overwritten. Audio files on disk are not deleted.")}</p>
             </div>
           </div>
           {importPreview && (
@@ -2776,23 +2776,23 @@ Earth, Wind & Fire"
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div className="rounded-lg bg-card px-2 py-3">
                   <p className="text-lg text-white font-medium">{importPreview.summary.users}</p>
-                  <p className="text-[10px] text-muted uppercase tracking-wider">Users</p>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{t("Users")}</p>
                 </div>
                 <div className="rounded-lg bg-card px-2 py-3">
                   <p className="text-lg text-white font-medium">{importPreview.summary.artists}</p>
-                  <p className="text-[10px] text-muted uppercase tracking-wider">Artists</p>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{t("Artists")}</p>
                 </div>
                 <div className="rounded-lg bg-card px-2 py-3">
                   <p className="text-lg text-white font-medium">{importPreview.summary.tracks}</p>
-                  <p className="text-[10px] text-muted uppercase tracking-wider">Tracks</p>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{t("Tracks")}</p>
                 </div>
                 <div className="rounded-lg bg-card px-2 py-3">
                   <p className="text-lg text-white font-medium">{importPreview.summary.playlists}</p>
-                  <p className="text-[10px] text-muted uppercase tracking-wider">Playlists</p>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{t("Playlists")}</p>
                 </div>
                 <div className="rounded-lg bg-card px-2 py-3">
                   <p className="text-lg text-white font-medium">{importPreview.summary.history}</p>
-                  <p className="text-[10px] text-muted uppercase tracking-wider">History</p>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{t("History")}</p>
                 </div>
               </div>
             </div>
@@ -2811,12 +2811,12 @@ Earth, Wind & Fire"
           <div className="flex gap-3">
             <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-white/70 leading-relaxed">
-              <p>This will erase Lokal's local accounts, settings, themes, playlists, history, artists, tracks, and cached assets on this device.</p>
-              <p className="text-xs text-muted mt-2">Your music files on disk will not be deleted.</p>
+              <p>{t("This will erase Lokal's local accounts, settings, themes, playlists, history, artists, tracks, and cached assets on this device.")}</p>
+              <p className="text-xs text-muted mt-2">{t("Your music files on disk will not be deleted.")}</p>
             </div>
           </div>
           <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-            <p className="text-xs text-red-200">Strongly recommended: export a full backup before continuing.</p>
+            <p className="text-xs text-red-200">{t("Strongly recommended: export a full backup before continuing.")}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowFactoryResetModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Cancel</button>
@@ -2830,8 +2830,8 @@ Earth, Wind & Fire"
       <Modal open={showFactoryResetConfirmModal} onClose={() => { if (!factoryResetting) { setShowFactoryResetConfirmModal(false); setResetConfirmText(''); setResetConfirmArmed(false) } }} title="Final Confirmation" width="max-w-md">
         <div className="space-y-4">
           <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 space-y-2">
-            <p className="text-sm text-white">Type <span className="text-red-300 font-medium">RESET LOKAL</span> to confirm.</p>
-            <p className="text-xs text-muted">This is intended to make accidental resets much harder.</p>
+            <p className="text-sm text-white">Type <span className="text-red-300 font-medium">{t("RESET LOKAL")}</span> to confirm.</p>
+            <p className="text-xs text-muted">{t("This is intended to make accidental resets much harder.")}</p>
           </div>
           <input
             value={resetConfirmText}
