@@ -130,10 +130,10 @@ export default function Library() {
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="all">{t("All sources")}</option>
             <option value="local">{t("Music folder")}</option>
-            <option value="yt">YouTube</option>
-            <option value="sc">SoundCloud</option>
-            <option value="addon">Addons</option>
-            <option value="soulseek">Soulseek</option>
+            <option value="yt">{t("YouTube")}</option>
+            <option value="sc">{t("SoundCloud")}</option>
+            <option value="addon">{t("Addons")}</option>
+            <option value="soulseek">{t("Soulseek")}</option>
             <option value="web">{t("Other sites")}</option>
           </select>
           <select value={genre} onChange={e => setGenre(e.target.value)} aria-label={t("Genres")}
@@ -146,13 +146,13 @@ export default function Library() {
           <select value={quality} onChange={e => setQuality(e.target.value)} aria-label={t("Quality")}
             className={`bg-elevated border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent/50 ${quality ? 'border-accent/40 text-accent' : 'border-border text-muted'}`}>
             <option value="">{t("All qualities")}</option>
-            <option value="hires">Hi-res</option>
-            <option value="lossless">Lossless</option>
-            <option value="high">High</option>
-            <option value="low">Low</option>
-            <option value="suspect">Suspect</option>
+            <option value="hires">{t("Hi-res")}</option>
+            <option value="lossless">{t("Lossless")}</option>
+            <option value="high">{t("High")}</option>
+            <option value="low">{t("Low")}</option>
+            <option value="suspect">{t("Suspect")}</option>
           </select>
-          <label title="Only songs that can't be played: their file is missing, or playing them failed" className={`flex items-center gap-1.5 text-xs ${problemsOnly ? 'text-accent' : 'text-muted'}`}><input type="checkbox" checked={problemsOnly} onChange={e => setProblemsOnly(e.target.checked)} className="accent-accent" />{t("Songs with errors")}</label>
+          <label title={t("Only songs that can't be played: their file is missing, or playing them failed")} className={`flex items-center gap-1.5 text-xs ${problemsOnly ? 'text-accent' : 'text-muted'}`}><input type="checkbox" checked={problemsOnly} onChange={e => setProblemsOnly(e.target.checked)} className="accent-accent" />{t("Songs with errors")}</label>
           <select value={sort} onChange={e => setSort(e.target.value)} aria-label={t("Sort")}
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="added_at DESC">{t("Recently Added")}</option>
