@@ -3,6 +3,7 @@
 // downloaded from the playback sources. When the library does have the
 // album, its own page opens instead.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, ListPlus, Play, Shuffle } from 'lucide-react'
@@ -29,6 +30,7 @@ const shuffled = list => {
 }
 
 export default function OnlineAlbum() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const location = useLocation()
   const params = new URLSearchParams(location.search)
@@ -125,7 +127,7 @@ export default function OnlineAlbum() {
           <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
         </div>
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Album · Online</p>
+          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Album · Online")}</p>
           <h1 className="truncate text-3xl font-display text-white">{album}</h1>
           <button onClick={() => nav(artistPath(artist), { state: { name: artist, anchor: tracks[0] ? { title: tracks[0].title, album } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{artist}</button>
           {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{plural(tracks.length, 'song')}{duration ? ` · ${Math.round(duration / 60)} min` : ''}{owned ? ` · ${owned === tracks.length ? 'all' : `${owned} of ${tracks.length}`} in your library` : ''}</p>}
