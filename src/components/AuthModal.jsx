@@ -86,14 +86,14 @@ export default function AuthModal() {
             <p className="text-xs text-muted mt-1">{authMode === 'login' ? 'Sign in to your profile' : 'Set up your local profile'}</p>
           </div>
 
-          <Field label="Username" value={form.username} onChange={set('username')} placeholder={t("sipbuu")} icon={User} />
+          <Field label={t("Username")} value={form.username} onChange={set('username')} placeholder={t("sipbuu")} icon={User} />
 
           {authMode === 'register' && (
-            <Field label="Display Name" value={form.displayName} onChange={set('displayName')} placeholder={t("Your name")} />
+            <Field label={t("Display Name")} value={form.displayName} onChange={set('displayName')} placeholder={t("Your name")} />
           )}
 
           <Field
-            label="Password" type={showPass ? 'text' : 'password'}
+            label={t("Password")} type={showPass ? 'text' : 'password'}
             value={form.password} onChange={set('password')} placeholder={t("••••••••")} icon={Lock}
             rightSlot={
               <button type="button" onClick={() => setShowPass(v => !v)} className="text-muted hover:text-white transition-colors">

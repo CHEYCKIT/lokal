@@ -247,7 +247,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
           </div>
           <div>
             <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Bio")}</label>
-            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} placeholder="Artist biography..." className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors resize-none" />
+            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} placeholder={t("Artist biography...")} className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors resize-none" />
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
@@ -280,7 +280,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
               value={lookupQuery}
               onChange={e => setLookupQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') runLookup() }}
-              placeholder="Search artist name..."
+              placeholder={t("Search artist name...")}
               className="flex-1 bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors"
             />
             <button onClick={() => runLookup()} disabled={lookupLoading || !lookupQuery.trim()} className="px-4 py-2.5 rounded-xl bg-accent text-base text-sm font-medium hover:bg-accent-dim transition-colors disabled:opacity-40">
@@ -364,7 +364,7 @@ export default function ArtistManageModal({ artist, open, onClose, onChanged }) 
             <input
               value={mergeSearch}
               onChange={e => setMergeSearch(e.target.value)}
-              placeholder="Search by artist name..."
+              placeholder={t("Search by artist name...")}
               className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent/60 transition-colors mb-3"
             />
             <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1.5">{t("Merge into")}</label>

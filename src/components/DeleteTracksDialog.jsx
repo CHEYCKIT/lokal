@@ -40,7 +40,7 @@ export default function DeleteTracksDialog({ request, onClose, onDone }) {
   }
 
   return (
-    <Modal open={!!request} onClose={busy ? () => {} : onClose} title="Delete from Library?" width="max-w-sm">
+    <Modal open={!!request} onClose={busy ? () => {} : onClose} title={t("Delete from Library?")} width="max-w-sm">
       <div className="space-y-4">
         <div className="flex gap-3">
           <div className="p-3 bg-red-500/10 rounded-full h-fit flex-shrink-0">

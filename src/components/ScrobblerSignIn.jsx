@@ -108,9 +108,9 @@ export function LastfmSignInModal({ open, onClose, settings = {}, onConnected })
     <Modal open={open} onClose={close} title={t("Sign in to Last.fm")} width="max-w-sm">
       <div className="space-y-4">
         <Step n={1}><LinkButton href="https://www.last.fm/api/account/create">Create an API account</LinkButton></Step>
-        <Step n={2}><input aria-label={t("API key")} value={form.key} onChange={field('key')} placeholder="API key" spellCheck={false} autoComplete="off" className={input} /></Step>
-        <Step n={3}><input aria-label={t("Shared secret")} type="password" value={form.secret} onChange={field('secret')} placeholder="Shared secret" spellCheck={false} autoComplete="off" className={input} /></Step>
-        <Step n={4}><input aria-label={t("Username")} value={form.username} onChange={field('username')} placeholder="Username" spellCheck={false} autoComplete="off" className={input} /></Step>
+        <Step n={2}><input aria-label={t("API key")} value={form.key} onChange={field('key')} placeholder={t("API key")} spellCheck={false} autoComplete="off" className={input} /></Step>
+        <Step n={3}><input aria-label={t("Shared secret")} type="password" value={form.secret} onChange={field('secret')} placeholder={t("Shared secret")} spellCheck={false} autoComplete="off" className={input} /></Step>
+        <Step n={4}><input aria-label={t("Username")} value={form.username} onChange={field('username')} placeholder={t("Username")} spellCheck={false} autoComplete="off" className={input} /></Step>
         <Step n={5}><PrimaryButton onClick={authorize} disabled={!ready || status?.busy} busy={status?.busy}>Authorize</PrimaryButton></Step>
         <Status status={status} />
       </div>
@@ -141,7 +141,7 @@ export function ListenBrainzSignInModal({ open, onClose, onConnected }) {
         <Step n={1}><LinkButton href="https://listenbrainz.org/settings/">Get your user token</LinkButton></Step>
         <Step n={2}>
           <input aria-label={t("User token")} type="password" value={token} onChange={e => { setToken(e.target.value); setStatus(null) }}
-            onKeyDown={e => { if (e.key === 'Enter') connect() }} placeholder="User token" spellCheck={false} autoComplete="off" className={input} />
+            onKeyDown={e => { if (e.key === 'Enter') connect() }} placeholder={t("User token")} spellCheck={false} autoComplete="off" className={input} />
         </Step>
         <Step n={3}><PrimaryButton onClick={connect} disabled={!token.trim() || status?.busy} busy={status?.busy}>Connect</PrimaryButton></Step>
         <Status status={status} />

@@ -112,7 +112,7 @@ export default function AddTracksToPlaylistModal({ open, onClose, playlistId, ex
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search tracks, artists, or albums"
+            placeholder={t("Search tracks, artists, or albums")}
             className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-white outline-none focus:border-accent/50"
           />
         </div>

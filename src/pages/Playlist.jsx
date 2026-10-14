@@ -180,7 +180,7 @@ export default function Playlist() {
   }
 
   const deletePlaylist = async () => {
-    if (!confirm('Delete this playlist?')) return
+    if (!confirm(t("Delete this playlist?"))) return
     await api.deletePlaylist(id)
     window.dispatchEvent(new CustomEvent('lokal:playlists-changed', {
       detail: { playlistId: id, action: 'deleted' },
@@ -389,14 +389,14 @@ export default function Playlist() {
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => setPlaylistSearchOpen(true)} aria-label="Search this playlist" title="Search this playlist" className={ICON_BUTTON}>
+              <button type="button" onClick={() => setPlaylistSearchOpen(true)} aria-label={t("Search this playlist")} title={t("Search this playlist")} className={ICON_BUTTON}>
                 <Search size={17} />
               </button>
             ))}
             <button type="button" onClick={shuffleTracks} disabled={!playableTracks.length} aria-label={t("Shuffle")} title={t("Shuffle")} className={ICON_BUTTON}>
               <Shuffle size={17} />
             </button>
-            <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label={t("Share as a picture")} title="Share as a picture" className={ICON_BUTTON}>
+            <button type="button" onClick={sharePlaylist} disabled={!tracks.length} aria-label={t("Share as a picture")} title={t("Share as a picture")} className={ICON_BUTTON}>
               <Share2 size={17} />
             </button>
             {!isLiked && (

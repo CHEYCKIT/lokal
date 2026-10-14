@@ -55,7 +55,7 @@ export default function TrackColumnPicker({ columns, playlist, onChange, onReset
   }, [open])
 
   return <>
-    <button ref={button} type="button" title={t("Edit song list columns")} aria-label="Edit song list columns"
+    <button ref={button} type="button" title={t("Edit song list columns")} aria-label={t("Edit song list columns")}
       aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog"
       onClick={event => { event.stopPropagation(); setOpen(value => !value) }}
       className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted hover:bg-elevated hover:text-text focus-visible:outline focus-visible:outline-accent">

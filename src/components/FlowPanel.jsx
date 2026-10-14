@@ -108,7 +108,7 @@ function GenreChips({ suggested, all, genres, onChange }) {
           <form onSubmit={event => { event.preventDefault(); add(text) }} className="inline-flex">
             <input autoFocus list="flow-genres" value={text} onChange={event => setText(event.target.value)} onBlur={() => (text ? add(text) : setAdding(false))}
               onKeyDown={event => { if (event.key === 'Escape') { setText(''); setAdding(false) } }}
-              placeholder="Genre" aria-label="Add a genre"
+              placeholder={t("Genre")} aria-label={t("Add a genre")}
               className="w-36 rounded-full border border-accent/50 bg-card px-3 py-1.5 text-xs text-white outline-none placeholder:text-muted" />
             <datalist id="flow-genres">{all.map(name => <option key={name} value={titleCase(name)} />)}</datalist>
           </form>
@@ -187,8 +187,8 @@ export default function FlowPanel({ userId }) {
     setApplied(tuner)
     setDraft(tuner)
     saveFlowSettings(userId, { mood, tuner })
-    if (flowOn && await retuneFlow({ userId, mood, tuner })) showToast('Flow retuned: the next songs follow your changes')
-    else showToast('Flow Tuner saved')
+    if (flowOn && await retuneFlow({ userId, mood, tuner })) showToast(t("Flow retuned: the next songs follow your changes"))
+    else showToast(t("Flow Tuner saved"))
   }
 
   const saveUpcoming = async () => {
@@ -199,7 +199,7 @@ export default function FlowPanel({ userId }) {
       const name = `${flowName(context.mood)} - ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`
       const playlist = await saveAsPlaylist(name, tracks, { userId, description: 'Saved from Flow' })
       showToast(playlist ? `Saved "${name}" (${plural(tracks.length, 'song')})` : 'Could not create playlist')
-    } catch { showToast('Could not create playlist') } finally { setSavingList(false) }
+    } catch { showToast(t("Could not create playlist")) } finally { setSavingList(false) }
   }
 
   const playingThis = flowOn && isPlaying
@@ -224,7 +224,7 @@ export default function FlowPanel({ userId }) {
                 {playingThis ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
                 {playingThis ? 'Pause' : flowOn ? 'Resume' : starting ? 'Starting…' : 'Play Flow'}
               </button>
-              <button type="button" onClick={() => setTunerOpen(open => !open)} aria-expanded={tunerOpen} title="Flow Tuner"
+              <button type="button" onClick={() => setTunerOpen(open => !open)} aria-expanded={tunerOpen} title={t("Flow Tuner")}
                 className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${tunerOpen ? 'border-accent/60 bg-accent/15 text-accent' : 'border-border bg-card text-muted hover:text-white'}`}>
                 <SlidersHorizontal size={16} />
               </button>
@@ -266,7 +266,7 @@ export default function FlowPanel({ userId }) {
             <div>
               <div className="flex flex-wrap items-start justify-between gap-3 px-1">
                 <div>
-                  <h3 className="flex items-center gap-2 text-base font-medium text-white"><SlidersHorizontal size={15} className="text-accent" />Flow Tuner</h3>
+                  <h3 className="flex items-center gap-2 text-base font-medium text-white"><SlidersHorizontal size={15} className="text-accent" />{t("Flow Tuner")}</h3>
                   <p className="mt-0.5 text-xs text-muted">{changed ? 'Edits stay here until you apply them' : 'Shape what Flow plays for you'}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -281,9 +281,9 @@ export default function FlowPanel({ userId }) {
               {/* Two cards: how Flow picks (Discovery, Era), and where from (online, genres). */}
               <div className="mt-4 grid gap-4 @lg:grid-cols-2">
               <div className="grid gap-7 rounded-2xl border border-border bg-elevated p-5 @md:p-6">
-                <TunerSlider label="Discovery" left="Personal" right="Adventurous" hint="Favourites vs fresh finds"
+                <TunerSlider label={t("Discovery")} left="Personal" right="Adventurous" hint="Favourites vs fresh finds"
                   value={draft.adventurous} onChange={value => setDraft(d => ({ ...d, adventurous: value }))} />
-                <TunerSlider label="Era" left="All-time" right="Recent" hint="All-time likes vs what you've played lately"
+                <TunerSlider label={t("Era")} left="All-time" right="Recent" hint="All-time likes vs what you've played lately"
                   value={draft.recent} onChange={value => setDraft(d => ({ ...d, recent: value }))} />
               </div>
               <div className="rounded-2xl border border-border bg-elevated p-5 @md:p-6">

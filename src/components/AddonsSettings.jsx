@@ -83,7 +83,7 @@ function AddonCard({ addon, onChanged, focused = false }) {
     catch (error) { setMessage(error.message); return null }
     finally { setBusy(false) }
   }
-  const save = () => run(async () => { const result = await api.addonsSetSettings(addon.key, values); if (!result?.error) { setMessage('Settings saved'); onChanged() } return result })
+  const save = () => run(async () => { const result = await api.addonsSetSettings(addon.key, values); if (!result?.error) { setMessage(t("Settings saved")); onChanged() } return result })
   const toggle = async () => {
     if (await run(() => api.addonsSetEnabled(addon.key, !addon.enabled))) onChanged()
   }
@@ -106,8 +106,8 @@ function AddonCard({ addon, onChanged, focused = false }) {
   const verify = () => run(async () => {
     const result = await api.addonsPackages({ action: 'package.verify', key: addon.key })
     setAuth(result)
-    if (result?.opened) setMessage('Complete the verification in the window that opened. Access is checked when it closes.')
-    else if (result?.authenticated) { setMessage('Access verified.'); onChanged() }
+    if (result?.opened) setMessage(t("Complete the verification in the window that opened. Access is checked when it closes."))
+    else if (result?.authenticated) { setMessage(t("Access verified.")); onChanged() }
     return result
   })
 
@@ -131,7 +131,7 @@ function AddonCard({ addon, onChanged, focused = false }) {
           {confirmRemove ? (
             <button onClick={remove} disabled={busy} className="rounded-lg border border-red/40 px-2.5 py-1 text-[11px] text-red hover:bg-red/10">{t("Remove?")}</button>
           ) : (
-            <button onClick={() => setConfirmRemove(true)} title="Remove addon" aria-label={`Remove ${addon.name}`} className="p-1 text-muted hover:text-red"><Trash2 size={14} /></button>
+            <button onClick={() => setConfirmRemove(true)} title={t("Remove addon")} aria-label={`Remove ${addon.name}`} className="p-1 text-muted hover:text-red"><Trash2 size={14} /></button>
           )}
         </div>
       </div>
@@ -154,13 +154,13 @@ function AddonCard({ addon, onChanged, focused = false }) {
                     ? 'This source needs a one-time browser verification before it can stream or download. A window opens; access is checked automatically when it closes.'
                     : 'Log in with the button above to stream and download from this source. Access is checked automatically when the login window closes.'}</p>
                 {addon.signedSession && !verified && <button disabled={busy || !addon.enabled} onClick={verify} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">{t("Verify access")}</button>}
-                {verified && <button disabled={busy} onClick={() => run(async () => { const result = await api.addonsPackages({ action: 'package.logout', key: addon.key }); setAuth({ authenticated: false }); onChanged(); return result })} className="text-xs text-muted hover:text-text">Disconnect</button>}
+                {verified && <button disabled={busy} onClick={() => run(async () => { const result = await api.addonsPackages({ action: 'package.logout', key: addon.key }); setAuth({ authenticated: false }); onChanged(); return result })} className="text-xs text-muted hover:text-text">{t("Disconnect")}</button>}
               </div>}
-              {!api.isElectron && auth?.open_auth_url && /^https:\/\//i.test(auth.open_auth_url) && <button onClick={() => api.openExternal(auth.open_auth_url)} className="text-xs text-accent underline">Open verification / login page</button>}
+              {!api.isElectron && auth?.open_auth_url && /^https:\/\//i.test(auth.open_auth_url) && <button onClick={() => api.openExternal(auth.open_auth_url)} className="text-xs text-accent underline">{t("Open verification / login page")}</button>}
               {form && <form onSubmit={e => { e.preventDefault(); action(form.submit_action, formInput, form.token) }} className="space-y-3 rounded-lg border border-border p-3">
                 <p className="text-sm text-text">{form.title || 'Account details'}</p>{form.description && <p className="text-xs text-muted">{form.description}</p>}
                 {form.fields.map(field => <SettingField key={field.key} field={{ ...field, secret: ['password', 'otp'].includes(field.type), options: field.options?.map(o => ({ value: o, label: o })) }} value={formInput[field.key] ?? field.default} onChange={v => setFormInput(current => ({ ...current, [field.key]: v }))} />)}
-                <button disabled={busy} type="submit" className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent">{t("Continue")}</button><button type="button" onClick={() => { setForm(null); setFormInput({}) }} className="ml-3 text-xs text-muted">Cancel</button>
+                <button disabled={busy} type="submit" className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent">{t("Continue")}</button><button type="button" onClick={() => { setForm(null); setFormInput({}) }} className="ml-3 text-xs text-muted">{t("Cancel")}</button>
               </form>}
             </div>
           )}
@@ -221,11 +221,11 @@ function RepositoryBrowser({ onChanged }) {
   return <div className="space-y-3">
     <p className="text-sm font-medium text-text">{t("SpotiFLAC repositories")}</p>
     <p className="text-xs leading-relaxed text-muted">{t("Add a repository to browse its downloadable sources, or install a .sflx / .spotiflac-ext package. Installed sources appear in search and can play or save songs to your library.")}</p>
-    <div className="flex gap-2"><input aria-label={t("Repository registry URL")} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…/registry.json" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !url.trim()} onClick={() => run(async () => { const result = await request({ action: 'repository.add', url: url.trim() }); if (!result?.error) setUrl(''); return result })} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Add repository</button></div>
+    <div className="flex gap-2"><input aria-label={t("Repository registry URL")} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…/registry.json" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !url.trim()} onClick={() => run(async () => { const result = await request({ action: 'repository.add', url: url.trim() }); if (!result?.error) setUrl(''); return result })} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">{t("Add repository")}</button></div>
     <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted ${busy ? 'pointer-events-none opacity-40' : ''}`}><Upload size={13} />Install package file<input type="file" accept=".sflx,.spotiflac-ext" disabled={busy} onChange={upload} className="hidden" /></label>
-    {repos.map(repo => <div key={repo.id} className="flex items-start gap-3 rounded-lg border border-border p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm text-text" title={repo.url}>{repositoryLabel(repo)}</p><p className="mt-0.5 truncate text-[10px] text-muted/70" title={repo.url}>{repo.url}</p><p className="mt-1 text-[11px] text-muted">{repo.error || (repo.refreshed_at ? `Refreshed ${new Date(repo.refreshed_at).toLocaleString()}` : 'Not refreshed')}</p></div><button disabled={busy} title={t("Refresh repository")} aria-label="Refresh repository" onClick={() => run(() => request({ action: 'repository.refresh', id: repo.id }))} className="text-muted hover:text-accent"><RefreshCw size={14} /></button><button disabled={busy} title={t("Remove repository")} aria-label="Remove repository" onClick={() => run(() => request({ action: 'repository.remove', id: repo.id }))} className="text-muted hover:text-red"><Trash2 size={14} /></button></div>)}
+    {repos.map(repo => <div key={repo.id} className="flex items-start gap-3 rounded-lg border border-border p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm text-text" title={repo.url}>{repositoryLabel(repo)}</p><p className="mt-0.5 truncate text-[10px] text-muted/70" title={repo.url}>{repo.url}</p><p className="mt-1 text-[11px] text-muted">{repo.error || (repo.refreshed_at ? `Refreshed ${new Date(repo.refreshed_at).toLocaleString()}` : 'Not refreshed')}</p></div><button disabled={busy} title={t("Refresh repository")} aria-label={t("Refresh repository")} onClick={() => run(() => request({ action: 'repository.refresh', id: repo.id }))} className="text-muted hover:text-accent"><RefreshCw size={14} /></button><button disabled={busy} title={t("Remove repository")} aria-label={t("Remove repository")} onClick={() => run(() => request({ action: 'repository.remove', id: repo.id }))} className="text-muted hover:text-red"><Trash2 size={14} /></button></div>)}
     {entries.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{entries.map(entry => <div key={`${entry.repositoryId}:${entry.id}`} className="rounded-xl border border-border bg-card/60 p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm text-text">{entry.display_name || entry.id}<span className="ml-2 text-[11px] text-muted">v{entry.version}</span></p><button disabled={busy || !entry.compatible || entry.installed && !entry.updateAvailable} onClick={() => run(() => request({ action: 'package.install', repositoryId: entry.repositoryId, id: entry.id }))} className="rounded-lg bg-accent/20 px-3 py-1 text-xs text-accent disabled:opacity-40">{entry.updateAvailable ? 'Update' : entry.installed ? 'Installed' : 'Install'}</button></div>{entry.category === 'integration' && <p className="mt-1 text-[10px] uppercase tracking-wider text-accent/80">{t("Reads playlist links · for playlist sync")}</p>}<p className="mt-2 text-[11px] leading-relaxed text-muted">{entry.description}</p>{!entry.compatible && <p className="mt-1 text-xs text-muted">Requires SpotiFLAC compatibility {entry.min_app_version}</p>}</div>)}</div>}
-    {busy && <p className="flex items-center gap-2 text-xs text-muted"><Loader2 size={13} className="animate-spin" />Working…</p>}{message && <p role="alert" className="text-xs text-red">{message}</p>}
+    {busy && <p className="flex items-center gap-2 text-xs text-muted"><Loader2 size={13} className="animate-spin" />{t("Working…")}</p>}{message && <p role="alert" className="text-xs text-red">{message}</p>}
   </div>
 }
 

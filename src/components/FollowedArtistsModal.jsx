@@ -107,7 +107,7 @@ export default function FollowedArtistsModal({ open, onClose, libraryArtists = [
         <p className="text-xs leading-relaxed text-muted">{t("Releases shows the new releases of the artists you follow. Artists of songs you add to your library aren't followed until you tick them here (or press Follow on their page).")}</p>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 focus-within:border-accent/50">
           <Search size={13} className="flex-shrink-0 text-muted" />
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search artists" aria-label="Search artists"
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Search artists")} aria-label={t("Search artists")}
             className="min-w-0 flex-1 bg-transparent text-xs text-text outline-none placeholder:text-muted" />
         </div>
         <div className="flex items-center gap-3 text-[11px] text-muted">

@@ -275,7 +275,7 @@ export default function AlbumsModal() {
                     <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                     <input
                       value={q} onChange={e => setQ(e.target.value)}
-                      placeholder="Search albums…"
+                      placeholder={t("Search albums…")}
                       className="w-full bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-accent/50 placeholder-muted"
                     />
                   </div>

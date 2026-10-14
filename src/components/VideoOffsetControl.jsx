@@ -21,7 +21,7 @@ export default function VideoOffsetControl({ videoId, compact = false, className
     <div role="group" aria-label={t("Video offset")} onClick={event => event.stopPropagation()}
       className={`inline-flex items-center gap-0.5 rounded-full border border-white/[0.14] bg-black/45 backdrop-blur-md ${compact ? 'px-0.5 py-0.5 text-[10px]' : 'px-1 py-0.5 text-xs'} ${className}`}>
       <button type="button" onClick={event => nudge(event, -1)} className={button}
-        title="Video ahead of the song? Move it back (Shift: 1 s)" aria-label="Move the video back">
+        title={t("Video ahead of the song? Move it back (Shift: 1 s)")} aria-label={t("Move the video back")}>
         <Minus size={compact ? 11 : 14} />
       </button>
       {/* Fixed widths, and the reset button always there (greyed at 0): the
@@ -31,11 +31,11 @@ export default function VideoOffsetControl({ videoId, compact = false, className
         <span className={`inline-block text-center ${compact ? 'w-[4.6em]' : 'w-[4.8em]'}`}>{offset ? label(offset) : compact ? 'Offset' : '0 s'}</span>
       </span>
       <button type="button" onClick={event => nudge(event, 1)} className={button}
-        title="Video behind the song (an intro, say)? Move it forward (Shift: 1 s)" aria-label="Move the video forward">
+        title={t("Video behind the song (an intro, say)? Move it forward (Shift: 1 s)")} aria-label={t("Move the video forward")}>
         <Plus size={compact ? 11 : 14} />
       </button>
       <button type="button" onClick={event => { event.stopPropagation(); setOffset(videoId, 0) }} disabled={offset === 0}
-        className={`${button} disabled:pointer-events-none disabled:opacity-30`} title="Back to no offset (the automatic sync)" aria-label="Reset the video offset">
+        className={`${button} disabled:pointer-events-none disabled:opacity-30`} title={t("Back to no offset (the automatic sync)")} aria-label={t("Reset the video offset")}>
         <RotateCcw size={compact ? 10 : 13} />
       </button>
     </div>

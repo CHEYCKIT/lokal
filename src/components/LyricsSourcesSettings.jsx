@@ -157,14 +157,14 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
       <div className="mt-5 space-y-2">
         <div>
           <p className="text-sm text-white">Spicy Lyrics secret key <span className="text-muted">{t("(optional)")}</span></p>
-          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>. It stays in Lokal's backend; a Spotify account isn't required.</p>
+          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>{t(". It stays in Lokal's backend; a Spotify account isn't required.")}</p>
         </div>
         <input
           type="password"
           value={spicyKey}
           onChange={event => setSpicyKey(event.target.value)}
           onBlur={() => persist({ spicylyrics_api_key: spicyKey.trim() })}
-          placeholder="SpicyLyrics API key"
+          placeholder={t("SpicyLyrics API key")}
           autoComplete="off"
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
         />

@@ -86,7 +86,7 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
             type="text"
             value={title}
             onChange={(e) => onSessionChange({ title: e.target.value })}
-            placeholder="Track title"
+            placeholder={t("Track title")}
             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent/50"
           />
         </div>
@@ -96,7 +96,7 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
             type="text"
             value={artist}
             onChange={(e) => onSessionChange({ artist: e.target.value })}
-            placeholder="Artist name"
+            placeholder={t("Artist name")}
             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent/50"
           />
         </div>

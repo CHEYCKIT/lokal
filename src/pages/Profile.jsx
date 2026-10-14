@@ -360,7 +360,7 @@ export default function Profile() {
         <button
           onClick={() => bannerInputRef.current?.click()}
           className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-black/20"
-          aria-label="Upload banner"
+          aria-label={t("Upload banner")}
         >
           <span className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/55 border border-white/10 text-xs text-white/80 backdrop-blur-sm">
             <ImageIcon size={12} /> {uploadingBanner ? 'Uploading banner...' : 'Upload banner'}
@@ -619,7 +619,7 @@ export default function Profile() {
                           type="button"
                           onClick={() => navigateToTrackAlbum(nav, track)}
                           className="block max-w-full truncate text-left text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
-                          title="Open album"
+                          title={t("Open album")}
                         >
                           {trackTitle}
                         </button>
@@ -628,7 +628,7 @@ export default function Profile() {
                             type="button"
                             onClick={() => navigateToTrackArtist(nav, track, keepCommaArtists)}
                             className="block max-w-full truncate text-left text-xs text-muted transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
-                            title="Open artist"
+                            title={t("Open artist")}
                           >
                             {trackArtist}
                           </button>

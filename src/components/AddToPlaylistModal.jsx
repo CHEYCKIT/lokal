@@ -116,7 +116,7 @@ export default function AddToPlaylistModal() {
                 <div className="flex gap-2">
                   <input value={newName} onChange={e => setNewName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && createAndAdd()}
-                    placeholder="New playlist name…"
+                    placeholder={t("New playlist name…")}
                     className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-accent/60 placeholder:text-muted/60" />
                   <motion.button onClick={createAndAdd} disabled={!newName.trim() || creating}
                     whileTap={{ scale: 0.9 }}

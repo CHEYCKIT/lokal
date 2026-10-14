@@ -252,7 +252,7 @@ export default function Sidebar() {
             <button
               onClick={() => nav('/profile')}
               title={`Your profile (${user.display_name || user.username})`}
-              aria-label="Your profile"
+              aria-label={t("Your profile")}
               aria-current={loc.pathname === '/profile' ? 'page' : undefined}
               className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${loc.pathname === '/profile' ? 'bg-accent/15' : 'hover:bg-elevated'}`}
             >
@@ -269,7 +269,7 @@ export default function Sidebar() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => nav('/profile')}
-                title="Your profile"
+                title={t("Your profile")}
                 aria-current={loc.pathname === '/profile' ? 'page' : undefined}
                 className={`-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors ${loc.pathname === '/profile' ? 'bg-accent/15' : 'hover:bg-elevated'}`}
               >

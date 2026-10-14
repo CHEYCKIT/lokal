@@ -146,7 +146,7 @@ export default function LosslessModal() {
           <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Buy in lossless")}</p>
           {links?.exact?.map(link => <LinkRow key={link.url} link={link} />)}
           {storeSearches(track).map(link => <LinkRow key={link.url} link={link} />)}
-          {!links && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> Looking for the exact release on MusicBrainz (a few seconds)…</p>}
+          {!links && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> {t("Looking for the exact release on MusicBrainz (a few seconds)…")}</p>}
           {links && !links.exact?.length && (
             <p className="text-[11px] text-muted">
               {links.identified ? 'MusicBrainz knows this recording but lists no lossless store for it.' : "MusicBrainz doesn't list a store for this song."}
@@ -157,7 +157,7 @@ export default function LosslessModal() {
         <div className="space-y-2">
           <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("From your addon sources")}</p>
           {setup.map(source => <AddonSetupNotice key={source.id} source={source} />)}
-          {online === null && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> Searching your addon sources…</p>}
+          {online === null && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> {t("Searching your addon sources…")}</p>}
           {online?.length === 0 && !setup.length && <p className="text-[11px] text-muted">{t("No addon sources installed. Add one in Settings → Addons to download a lossless copy from it.")}</p>}
           {online?.map(({ source, items, error }) => (
             <div key={source.id} className="space-y-1.5">
@@ -171,8 +171,8 @@ export default function LosslessModal() {
                       <span className="block truncate text-[11px] text-muted">{[source.label, item.album, item.quality, item.duration ? fmtTime(item.duration) : ''].filter(Boolean).join(' · ')}</span>
                     </span>
                     {replaced === key
-                      ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />Downloading</span>
-                      : <button onClick={() => replaceWith(item, source)} disabled={!!replacing || !!replaced} title="Download this copy; it replaces your file, keeping its playlists, likes and plays"
+                      ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />{t("Downloading")}</span>
+                      : <button onClick={() => replaceWith(item, source)} disabled={!!replacing || !!replaced} title={t("Download this copy; it replaces your file, keeping its playlists, likes and plays")}
                           className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] text-text hover:border-accent/40 disabled:opacity-40">
                           {replacing === key ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}Replace
                         </button>}

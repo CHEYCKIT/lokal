@@ -159,7 +159,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   const disconnectLastfm = async () => {
-    if (!window.confirm('Disconnect Last.fm?')) return
+    if (!window.confirm(t("Disconnect Last.fm?"))) return
     const patch = { lastfm_session_key: '', lastfm_auth_token: '', lastfm_username: '' }
     const saved = await Promise.resolve(api.saveSettings(patch)).catch(error => ({ error: error.message }))
     if (saved?.error) { setSettingsError(saved.error); return }
@@ -167,13 +167,13 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   const disconnectListenBrainz = async () => {
-    if (!window.confirm('Disconnect ListenBrainz?')) return
+    if (!window.confirm(t("Disconnect ListenBrainz?"))) return
     await Promise.resolve(api.listenbrainzDisconnect()).catch(() => {})
     refreshListenBrainz()
   }
 
   const disconnectYouTube = async () => {
-    if (!window.confirm('Disconnect YouTube Music and sign out of its saved session?')) return
+    if (!window.confirm(t("Disconnect YouTube Music and sign out of its saved session?"))) return
     setYoutubeAuthorizing(true)
     try {
       const result = await api.youtubeDisconnect()
@@ -186,7 +186,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   if (loading) {
-    return <div className="rounded-xl border border-border bg-card/40 p-4 text-xs text-muted">Loading account connections…</div>
+    return <div className="rounded-xl border border-border bg-card/40 p-4 text-xs text-muted">{t("Loading account connections…")}</div>
   }
 
   return (
@@ -197,14 +197,14 @@ export default function ProviderConnections({ compact = false, settingsOverride 
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
             {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
           </p>
-          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">Retry</button></p>}
+          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">{t("Retry")}</button></p>}
         </div>
         <button
           type="button"
           onClick={() => loadSettings(true)}
           disabled={refreshing}
-          title="Refresh account status"
-          aria-label="Refresh account status"
+          title={t("Refresh account status")}
+          aria-label={t("Refresh account status")}
           className="rounded-lg p-1.5 text-muted transition-colors hover:bg-card hover:text-white disabled:opacity-50"
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />

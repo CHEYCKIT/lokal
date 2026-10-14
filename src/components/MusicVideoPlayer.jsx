@@ -256,7 +256,7 @@ export default function MusicVideoPlayer({ compact = false }) {
         onPlaying={() => { setReady(true); setEverPlayed(true); recoverRef.current = 0 }} onCanPlay={sync} onLoadedMetadata={sync} onLoadedData={() => { setReady(true); sync() }} onSeeked={sync} onError={onVideoError}
         className={`absolute inset-0 h-full w-full object-contain ${showVideo ? '' : 'opacity-0'}`} />}
       {!showVideo && message && <p role="status" className="absolute inset-x-0 bottom-0 bg-black/65 px-3 py-1 text-center text-[10px] text-white/80">{message}</p>}
-      {canDownload && !showVideo && <button onClick={download} title={t("Download to your Videos folder")} className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-xs text-white"><Download size={13} />Download</button>}
+      {canDownload && !showVideo && <button onClick={download} title={t("Download to your Videos folder")} className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-xs text-white"><Download size={13} />{t("Download")}</button>}
     </div>
   ) : null
 
@@ -305,7 +305,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                       {message}
                     </div>
                   )}
-                  {canDownload && <button onClick={download} className="inline-flex items-center gap-2 rounded-full bg-white/90 px-5 py-2 text-sm text-black"><Download size={16} />Download to Videos</button>}
+                  {canDownload && <button onClick={download} className="inline-flex items-center gap-2 rounded-full bg-white/90 px-5 py-2 text-sm text-black"><Download size={16} />{t("Download to Videos")}</button>}
                 </div>
               </motion.div>
             )}
@@ -372,12 +372,12 @@ export default function MusicVideoPlayer({ compact = false }) {
             <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 to-transparent" />
             <div className={`absolute top-5 left-5 right-5 flex items-center gap-3 ${chromeHidden ? '' : 'pointer-events-auto'}`}>
-              <button onClick={hide} title={t("Close the music video (Esc)")} aria-label="Close the music video"
+              <button onClick={hide} title={t("Close the music video (Esc)")} aria-label={t("Close the music video")}
                 className="w-10 h-10 flex items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.08] backdrop-blur-md text-white/90 hover:bg-white/[0.16] hover:text-white transition-colors">
                 <X size={18} />
               </button>
-              <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-white/60"><Clapperboard size={13} /> Music Video</span>
-              <button onClick={toMiniPlayer} title={t("Mini player: keep watching in a small window")} aria-label="Open the video in the mini player"
+              <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-white/60"><Clapperboard size={13} /> {t("Music Video")}</span>
+              <button onClick={toMiniPlayer} title={t("Mini player: keep watching in a small window")} aria-label={t("Open the video in the mini player")}
                 className="ml-auto w-10 h-10 flex items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.08] text-white/90 hover:bg-white/[0.16] transition-colors">
                 <PictureInPicture2 size={18} />
               </button>
@@ -395,11 +395,11 @@ export default function MusicVideoPlayer({ compact = false }) {
                   </motion.div>
                 </div>
                 <div className="flex items-center gap-6 flex-shrink-0">
-                  <button onClick={prev} title={t("Previous")} aria-label="Previous" className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipBack size={26} fill="currentColor" /></button>
+                  <button onClick={prev} title={t("Previous")} aria-label={t("Previous")} className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipBack size={26} fill="currentColor" /></button>
                   <button onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'} className="text-white hover:scale-105 active:scale-95 transition-transform">
                     {isPlaying ? <Pause size={36} fill="currentColor" strokeWidth={0} /> : <Play size={36} fill="currentColor" strokeWidth={0} className="translate-x-0.5" />}
                   </button>
-                  <button onClick={() => next(false)} title="Next" aria-label="Next" className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipForward size={26} fill="currentColor" /></button>
+                  <button onClick={() => next(false)} title={t("Next")} aria-label={t("Next")} className="text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-transform"><SkipForward size={26} fill="currentColor" /></button>
                 </div>
                 <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
                   {video?.videoId && <VideoOffsetControl videoId={video.videoId} />}
@@ -409,7 +409,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                         {sub.translationBusy ? <Loader2 size={16} className="animate-spin" /> : <Languages size={16} />}
                       </ChromeButton>
                       {sub.canRomanize && (
-                        <ChromeButton active={sub.subline === 'romanization'} onClick={() => sub.toggle('romanization')} label="Show the pronunciation in Latin letters">
+                        <ChromeButton active={sub.subline === 'romanization'} onClick={() => sub.toggle('romanization')} label={t("Show the pronunciation in Latin letters")}>
                           {sub.romanizationBusy ? <Loader2 size={16} className="animate-spin" /> : <span className="text-[13px] font-semibold leading-none">Aa</span>}
                         </ChromeButton>
                       )}

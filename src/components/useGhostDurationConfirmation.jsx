@@ -49,8 +49,8 @@ export function useGhostDurationConfirmation(open) {
       <p className="text-xs text-muted">Playlist: {length(pending.ghost.duration)} · Found: {length(pending.found.duration)} ({provider ? providerLabel(provider) : pending.found.file_path ? 'Your library' : 'YouTube'})</p>
       <p className="text-xs text-muted">{pending.found.title}{pending.found.album ? ` · ${pending.found.album}` : ''}. This may be a different recording or edit.</p>
       <div className="flex gap-2">
-        <button type="button" onClick={() => settle(true)} className="px-3 py-2 rounded-lg bg-accent text-base text-xs">Use this version</button>
-        <button type="button" onClick={() => settle(false)} className="px-3 py-2 rounded-lg bg-card text-white text-xs">Skip</button>
+        <button type="button" onClick={() => settle(true)} className="px-3 py-2 rounded-lg bg-accent text-base text-xs">{t("Use this version")}</button>
+        <button type="button" onClick={() => settle(false)} className="px-3 py-2 rounded-lg bg-card text-white text-xs">{t("Skip")}</button>
       </div>
     </div>
   )

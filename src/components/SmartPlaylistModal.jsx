@@ -60,13 +60,13 @@ function RuleRow({ rule, genres, onChange, onRemove }) {
           <input aria-label={t("Folder")} value={rule.value} onChange={(e) => set({ value: e.target.value })}
             placeholder={api.isElectron ? 'Choose a folder…' : '/music/Live'} className={`${field} min-w-0 flex-1`} />
           {api.isElectron && (
-            <button onClick={pickFolder} title={t("Choose a folder")} aria-label="Choose a folder"
+            <button onClick={pickFolder} title={t("Choose a folder")} aria-label={t("Choose a folder")}
               className="rounded-lg border border-border p-1.5 text-muted hover:text-white"><FolderOpen size={13} /></button>
           )}
         </span>
       )}
       {(spec.input === 'none' || (spec.input === 'days' && rule.op === 'never')) && <span className="flex-1" />}
-      <button onClick={onRemove} title={t("Remove this rule")} aria-label="Remove this rule" className="rounded p-1 text-muted hover:bg-card hover:text-white">
+      <button onClick={onRemove} title={t("Remove this rule")} aria-label={t("Remove this rule")} className="rounded p-1 text-muted hover:bg-card hover:text-white">
         <X size={13} />
       </button>
     </div>
@@ -159,7 +159,7 @@ export default function SmartPlaylistModal() {
       <div className="space-y-5">
         <div>
           <label htmlFor="smart-name" className="mb-1.5 block text-[11px] font-display uppercase tracking-widest text-muted">{t("Name")}</label>
-          <input id="smart-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Jazz I haven't heard lately"
+          <input id="smart-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Jazz I haven't heard lately")}
             onKeyDown={(e) => { if (e.key === 'Enter') save() }}
             className="w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-white outline-none placeholder:text-subtle focus:border-accent/60" />
         </div>
@@ -203,7 +203,7 @@ export default function SmartPlaylistModal() {
           <p className="flex min-w-0 items-center gap-2 text-xs text-muted">
             <Sparkles size={13} className="flex-shrink-0 text-accent" />
             {preview?.error ? <span className="text-red-400">{preview.error}</span>
-              : preview?.count === undefined ? <span className="flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Counting…</span>
+              : preview?.count === undefined ? <span className="flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> {t("Counting…")}</span>
                 : <span className={preview.loading ? 'opacity-60' : ''}>{plural(preview.count, 'song')}{preview.count ? ` · ${fmtLength(preview.duration)}` : ''} · updates as your library changes</span>}
           </p>
           <div className="flex flex-shrink-0 gap-2">

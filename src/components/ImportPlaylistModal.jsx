@@ -64,8 +64,8 @@ function LinkImport({ onDone, initialUrl = '' }) {
   })
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!chosen.length) { setError('Pick at least one track'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!chosen.length) { setError(t("Pick at least one track")); return }
     setImporting(true)
     setError('')
     const result = await api.importLinkPlaylist({
@@ -105,8 +105,8 @@ function LinkImport({ onDone, initialUrl = '' }) {
             <div className="mb-1.5 flex items-center justify-between">
               <span className={`${label} mb-0`}>{plural(preview.total, 'track')} · {preview.matched} in library</span>
               <span className="flex gap-3 text-[11px] text-muted">
-                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set(preview.entries.map(e => e.key)))}>All</button>
-                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set())}>None</button>
+                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set(preview.entries.map(e => e.key)))}>{t("All")}</button>
+                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set())}>{t("None")}</button>
               </span>
             </div>
             <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-card/60 divide-y divide-border/60">
@@ -199,8 +199,8 @@ function FileImport({ onDone }) {
   }
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!files.length) { setError('Choose one or more CSV, JSON, or M3U files'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!files.length) { setError(t("Choose one or more CSV, JSON, or M3U files")); return }
     setImporting(true)
     setError('')
     const result = await api.importExternalPlaylist({
@@ -281,8 +281,8 @@ function ListImport({ onDone }) {
   }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!preview?.total) { setError('Add at least one song'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!preview?.total) { setError(t("Add at least one song")); return }
     setImporting(true)
     setError('')
     const result = await api.importExternalPlaylist({ name: name.trim(), userId: user?.id || 'guest', files: files(), sourcePlatform: 'generic' }).catch(e => ({ error: e.message }))
@@ -295,7 +295,7 @@ function ListImport({ onDone }) {
     <div className="space-y-4">
       <div>
         <label className={label}>{t("Playlist name")}</label>
-        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="My playlist" className={input} />
+        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder={t("My playlist")} className={input} />
       </div>
       <div>
         <label className={label}>{t("Songs, one per line")}</label>
@@ -358,7 +358,7 @@ export default function ImportPlaylistModal() {
   }
 
   return (
-    <Modal open={open} onClose={() => setOpen(false)} title="Import playlist" width="max-w-lg">
+    <Modal open={open} onClose={() => setOpen(false)} title={t("Import playlist")} width="max-w-lg">
       <div className="space-y-4">
         <div className="flex gap-2">
           <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>From a link</Tab>

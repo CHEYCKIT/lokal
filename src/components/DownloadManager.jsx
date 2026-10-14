@@ -155,15 +155,15 @@ export function DownloadRow({ job, detailed = false }) {
               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Info size={13} /></button>
           )}
           {canRetry && (
-            <button onClick={() => retry(job.id)} title="Retry" className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><RotateCcw size={13} /></button>
+            <button onClick={() => retry(job.id)} title={t("Retry")} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><RotateCcw size={13} /></button>
           )}
           {active ? (
-            <button onClick={() => cancel(job.id)} title="Cancel" className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Square size={11} fill="currentColor" /></button>
+            <button onClick={() => cancel(job.id)} title={t("Cancel")} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Square size={11} fill="currentColor" /></button>
           ) : (
-            <button onClick={() => remove(job.id)} title="Remove from list" className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white"><X size={13} /></button>
+            <button onClick={() => remove(job.id)} title={t("Remove from list")} className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white"><X size={13} /></button>
           )}
           {detailed && (files.length > 0 || job.output) && (
-            <button onClick={() => setOpen(o => !o)} title="Details" className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white">
+            <button onClick={() => setOpen(o => !o)} title={t("Details")} className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white">
               <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
           )}
@@ -277,8 +277,8 @@ function DownloadedPlaylists() {
             </div>
             {confirming === playlist.id ? (
               <div className="flex flex-shrink-0 items-center gap-1">
-                <button onClick={() => remove(playlist.id)} className="rounded-lg bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25">Remove</button>
-                <button onClick={() => setConfirming(null)} className="rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:text-white">Keep</button>
+                <button onClick={() => remove(playlist.id)} className="rounded-lg bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25">{t("Remove")}</button>
+                <button onClick={() => setConfirming(null)} className="rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:text-white">{t("Keep")}</button>
               </div>
             ) : (
               <div className="flex flex-shrink-0 items-center gap-1">
@@ -288,7 +288,7 @@ function DownloadedPlaylists() {
                   className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
                   <RotateCcw size={13} className={downloading ? 'animate-spin' : ''} />
                 </button>
-                <button onClick={() => setConfirming(playlist.id)} title="Remove from this list" aria-label={`Remove ${title}`}
+                <button onClick={() => setConfirming(playlist.id)} title={t("Remove from this list")} aria-label={`Remove ${title}`}
                   className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-red-300">
                   <Trash2 size={13} />
                 </button>
@@ -413,24 +413,24 @@ function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
       <section>
         <p className="px-2 pb-1 pt-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">{t("Library jobs")}</p>
         <div className="space-y-0.5">
-          <TaskRow icon={CalendarDays} label="Artist releases" running={!!releases} done={releases?.done} total={releases?.total}
+          <TaskRow icon={CalendarDays} label={t("Artist releases")} running={!!releases} done={releases?.done} total={releases?.total}
             detail={releases ? 'Checking for new releases' : releasesCheckedAt ? `Checked ${ago(releasesCheckedAt)}` : 'Not checked yet'}
             onStop={stopReleases} onOpen={() => onNavigate('/home/releases')}
             onRun={checkReleases} runLabel="Check" runDisabled={!followed.size} runTitle={followed.size ? `Check ${plural(followed.size, 'followed artist')} for new releases` : 'Follow artists first (Home → Releases)'} />
-          <TaskRow icon={UserRound} label="Artist info" running={!!artists?.running} done={artists?.done} total={artists?.total}
+          <TaskRow icon={UserRound} label={t("Artist info")} running={!!artists?.running} done={artists?.done} total={artists?.total}
             detail={artistsDetail} onStop={cancelArtists} onOpen={() => onNavigate('/artists')}
             onRun={startArtists} runLabel="Refresh" runTitle="Refresh every artist's bio and picture" />
           {api.isElectron && (
-            <TaskRow icon={ScanSearch} label="Music videos" running={!!videos?.running} done={videos?.done} total={videos?.total}
+            <TaskRow icon={ScanSearch} label={t("Music videos")} running={!!videos?.running} done={videos?.done} total={videos?.total}
               detail={videosDetail} onStop={cancelVideoIndex} onOpen={() => onNavigate('/videos')}
               onRun={startVideoIndex} runLabel="Find" runTitle="Find the music video of every library song" />
           )}
           {api.isElectron && (
-            <TaskRow icon={Mic2} label="Lyrics" running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
+            <TaskRow icon={Mic2} label={t("Lyrics")} running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
               detail={lyricsDetail} onStop={cancelLyricsIndex} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
               onRun={startLyricsIndex} runLabel="Index" runTitle="Fetch and keep the lyrics of every library song" />
           )}
-          <TaskRow icon={Tags} label="Genres" running={!!genres?.running} done={genres?.done} total={genres?.total}
+          <TaskRow icon={Tags} label={t("Genres")} running={!!genres?.running} done={genres?.done} total={genres?.total}
             detail={genresDetail} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
             onRun={startGenres} runLabel="Fill in" runTitle="Look up a genre for every song that has none" />
         </div>
@@ -536,7 +536,7 @@ export function DownloadManagerPanel() {
               <button onClick={cancelAll} className="whitespace-nowrap text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">{t("Cancel all")}</button>
             )}
             {tab === 'queue' && finished.length > 0 && (
-              <button onClick={clearFinished} className="flex flex-shrink-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />Clear</button>
+              <button onClick={clearFinished} className="flex flex-shrink-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />{t("Clear")}</button>
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">

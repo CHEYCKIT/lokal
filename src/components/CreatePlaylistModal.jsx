@@ -31,7 +31,7 @@ export default function CreatePlaylistModal({ onCreated }) {
             autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="My Playlist"
+            placeholder={t("My Playlist")}
             className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white placeholder-subtle outline-none focus:border-accent/60 transition-colors"
           />
         </div>

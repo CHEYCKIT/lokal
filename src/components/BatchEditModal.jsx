@@ -204,7 +204,7 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
       }
       const updatedTracks = Array.isArray(result?.tracks) ? result.tracks : []
       if (!updatedTracks.length) {
-        alert('No tracks were changed.')
+        alert(t("No tracks were changed."))
         return
       }
       onSave?.(updatedTracks)

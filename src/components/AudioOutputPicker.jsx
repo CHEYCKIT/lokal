@@ -177,7 +177,7 @@ export default function AudioOutputPicker() {
   if (!native) return <BrowserAudioOutputPicker />
   return (
     <div ref={root} className="relative flex items-center justify-center">
-      <button type="button" onClick={() => setOpen(value => !value)} aria-label="Native audio output" aria-expanded={open} className="text-accent">
+      <button type="button" onClick={() => setOpen(value => !value)} aria-label={t("Native audio output")} aria-expanded={open} className="text-accent">
         <Volume2 size={14} />
       </button>
       {open && <div className="absolute bottom-full right-0 z-30 mb-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">

@@ -113,14 +113,14 @@ export default function SoulseekSignIn({ settings, set }) {
         <label className="space-y-1">
           <span className="text-xs text-muted">{t("Username")}</span>
           <input value={settings.soulseek_username || ''} onChange={e => set('soulseek_username', e.target.value)} disabled={busy}
-            spellCheck={false} autoComplete="username" placeholder="Your Soulseek username"
+            spellCheck={false} autoComplete="username" placeholder={t("Your Soulseek username")}
             className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
         </label>
         <label className="space-y-1">
           <span className="text-xs text-muted">{t("Password")}</span>
           <input type="password" value={settings.soulseek_password || ''} onChange={e => set('soulseek_password', e.target.value)} disabled={busy}
             onKeyDown={e => { if (e.key === 'Enter' && !busy) signIn() }}
-            autoComplete="current-password" placeholder="Its password"
+            autoComplete="current-password" placeholder={t("Its password")}
             className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
         </label>
       </div>
@@ -153,14 +153,14 @@ export default function SoulseekSignIn({ settings, set }) {
                 className="inline-flex items-center gap-1 rounded-md border border-accent/50 bg-accent/15 px-2 py-0.5 text-accent hover:bg-accent/25 disabled:opacity-50">
                 {updating ? <Loader2 size={11} className="animate-spin" /> : <ArrowUpCircle size={11} />}Update to {client.update.version}
               </button>
-              <button onClick={() => api.openExternal(client.update.notes)} className="hover:text-white hover:underline">What's new</button>
+              <button onClick={() => api.openExternal(client.update.notes)} className="hover:text-white hover:underline">{t("What's new")}</button>
             </>
           ) : (
             <button onClick={checkUpdate} disabled={busy || updating || updateCheck?.busy} className="inline-flex items-center gap-1 hover:text-white disabled:opacity-50">
               <RefreshCw size={11} className={updateCheck?.busy ? 'animate-spin' : ''} />{updateCheck?.busy ? 'Checking…' : 'Check for updates'}
             </button>
           )}
-          {updateCheck?.upToDate && <span role="status" className="inline-flex items-center gap-1 text-green-400"><Check size={11} />Up to date</span>}
+          {updateCheck?.upToDate && <span role="status" className="inline-flex items-center gap-1 text-green-400"><Check size={11} />{t("Up to date")}</span>}
           {updateCheck?.error && <span role="alert" className="text-red-400">{updateCheck.error}</span>}
           {client.update && client.running && !updating && <span>{t("Updating restarts Soulseek; Soulseek downloads in progress are interrupted.")}</span>}
         </div>

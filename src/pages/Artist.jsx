@@ -186,7 +186,7 @@ export default function Artist() {
   }, [releaseList, connected, onlineData.albums.items])
 
   if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]?.name} anchor={onlineNames.current[id]?.anchor} />
-  if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
+  if (!artist) return <div className="p-6 text-muted text-sm">{t("Loading...")}</div>
 
   // Web mode previously hardcoded this to null, so the artist detail page
   // never showed an image outside Electron even when one existed — see
@@ -242,7 +242,7 @@ export default function Artist() {
               {imgSrc ? <img src={imgSrc} alt={artist.name} className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
             </button>
             {api.isElectron && imgSrc && (
-              <button onClick={pickArtistImage} title={t("Change the picture")} aria-label="Change the picture" className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-elevated text-muted opacity-0 shadow-lg transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100">
+              <button onClick={pickArtistImage} title={t("Change the picture")} aria-label={t("Change the picture")} className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-elevated text-muted opacity-0 shadow-lg transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100">
                 <Camera size={14} />
               </button>
             )}
@@ -407,7 +407,7 @@ function AlbumTracks({ album, artistName = null, highlightTrackId = null, highli
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-white">{album.title}</h3>
-        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
+        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">{t("Play Album")}</button>
       </div>
       <TrackList tracks={tracks} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
     </motion.div>

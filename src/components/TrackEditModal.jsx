@@ -265,7 +265,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
                 value={formData.title}
                 onChange={(e) => handleChange('title', e.target.value)}
                 className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
-                placeholder="Track title"
+                placeholder={t("Track title")}
               />
             </div>
             
@@ -275,7 +275,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
                 value={formData.artist}
                 onChange={(e) => handleChange('artist', e.target.value)}
                 className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
-                placeholder="Artist name"
+                placeholder={t("Artist name")}
               />
             </div>
           </div>
@@ -287,7 +287,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
             value={formData.album}
             onChange={(e) => handleChange('album', e.target.value)}
             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
-            placeholder="Album name"
+            placeholder={t("Album name")}
           />
         </div>
 
@@ -297,7 +297,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
             value={formData.album_artist}
             onChange={(e) => handleChange('album_artist', e.target.value)}
             className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
-            placeholder="Album artist (if different)"
+            placeholder={t("Album artist (if different)")}
           />
         </div>
 
@@ -332,7 +332,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               onChange={(value) => handleChange('genre', value)}
               suggestions={genreOptions}
               listId="track-edit-genre-options"
-              placeholder="Rock"
+              placeholder={t("Rock")}
             />
           </div>
         </div>
@@ -346,7 +346,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               suggestions={genreOptions}
               listId="track-edit-genres-options"
               multi
-              placeholder="slowcore, shoegaze"
+              placeholder={t("slowcore, shoegaze")}
             />
           </div>
           <div>
@@ -355,7 +355,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               value={formData.record_label}
               onChange={(e) => handleChange('record_label', e.target.value)}
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
-              placeholder="Label"
+              placeholder={t("Label")}
             />
           </div>
         </div>

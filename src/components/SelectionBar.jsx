@@ -121,7 +121,7 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
               ))
               const count = <span className="flex-shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-accent">{shown.current.label}</span>
               const clear = (
-                <button onClick={onClear} title={t("Clear selection (Esc)")} aria-label="Clear selection" className="flex-shrink-0 p-1.5 text-muted transition-colors hover:text-white">
+                <button onClick={onClear} title={t("Clear selection (Esc)")} aria-label={t("Clear selection")} className="flex-shrink-0 p-1.5 text-muted transition-colors hover:text-white">
                   <X size={14} />
                 </button>
               )

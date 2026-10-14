@@ -31,8 +31,8 @@ export default function TitleBar() {
           type="button"
           data-tour="settings"
           onClick={() => nav('/settings')}
-          title="Settings"
-          aria-label="Settings"
+          title={t("Settings")}
+          aria-label={t("Settings")}
           aria-current={onSettings ? 'page' : undefined}
           className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${onSettings ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-elevated hover:text-text'}`}
         >

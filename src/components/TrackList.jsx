@@ -424,7 +424,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       if (!rows.length) { toast?.close('No playable matches were found.'); return }
       toast?.close()
       return await action(rows)
-    } catch { if (toast) toast.close('Could not resolve the selected tracks.'); else showToast('Could not resolve the selected tracks.') }
+    } catch { if (toast) toast.close('Could not resolve the selected tracks.'); else showToast(t("Could not resolve the selected tracks.")) }
   }
 
   const playResolved = (list, selected) => {
@@ -790,14 +790,14 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       </div>
       <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
         {layout.grip && <span />}
-        {layout.number && <SortableHeader column="number" label="playlist number" sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
+        {layout.number && <SortableHeader column="number" label={t("playlist number")} sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{layout.album ? 'Title' : 'Title / Album'}</span>
         {layout.album && <span className="truncate">{t("Album")}</span>}
         {layout.source && <span className="flex justify-center" title={t("Source")}><Globe size={12} aria-hidden="true" /><span className="sr-only">{t("Source")}</span></span>}
         {layout.quality && <span className="text-center">{t("Quality")}</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
-        {layout.added && <SortableHeader column="added" label="date added" sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
-        {layout.time && <SortableHeader column="time" label="duration" sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
+        {layout.added && <SortableHeader column="added" label={t("date added")} sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
+        {layout.time && <SortableHeader column="time" label={t("duration")} sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
         <span className="sr-only">{t("Actions")}</span>
         <span aria-hidden="true" />
       </div>
@@ -1117,10 +1117,10 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           </div>
 
           <div className="rounded-xl border border-border bg-card/30 overflow-hidden">
-            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Assign Existing Local Track</div>
+            <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">{t("Assign Existing Local Track")}</div>
             <div className="divide-y divide-border">
               {ghostLocalLoading && (
-                <div className="px-4 py-6 text-sm text-muted">Searching local library…</div>
+                <div className="px-4 py-6 text-sm text-muted">{t("Searching local library…")}</div>
               )}
               {!ghostLocalLoading && ghostLocalResults.map((item) => (
                 <div key={item.id} className="px-4 py-3 flex items-center gap-3">
@@ -1137,7 +1137,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 </div>
               ))}
               {!ghostLocalLoading && !ghostLocalResults.length && (
-                <div className="px-4 py-6 text-sm text-muted">No strong local matches yet. If you just downloaded the song, try Refresh Matches after indexing finishes.</div>
+                <div className="px-4 py-6 text-sm text-muted">{t("No strong local matches yet. If you just downloaded the song, try Refresh Matches after indexing finishes.")}</div>
               )}
             </div>
           </div>
@@ -1146,7 +1146,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-widest text-muted font-display">Suggested Downloads<div className="mt-2 normal-case tracking-normal">{sourceChoice}</div></div>
             <div className="divide-y divide-border">
               {ghostSearchLoading && (
-                <div className="px-4 py-6 text-sm text-muted">Searching…</div>
+                <div className="px-4 py-6 text-sm text-muted">{t("Searching…")}</div>
               )}
               {!ghostSearchLoading && ghostSearchResults.map((item) => (
                 <div key={item.id || item.url} className="px-4 py-3 flex items-center gap-3">
@@ -1163,7 +1163,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 </div>
               ))}
               {!ghostSearchLoading && !ghostSearchResults.length && (
-                <div className="px-4 py-6 text-sm text-muted">No suggestions yet. Try another source or search query.</div>
+                <div className="px-4 py-6 text-sm text-muted">{t("No suggestions yet. Try another source or search query.")}</div>
               )}
             </div>
           </div>
@@ -1171,7 +1171,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
           {ghostActionStatus && <p className="text-xs text-muted">{ghostActionStatus}</p>}
 
           <div className="flex gap-2">
-            <button onClick={() => setGhostTrack(null)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">Close</button>
+            <button onClick={() => setGhostTrack(null)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Close")}</button>
           </div>
         </div>
       </Modal>

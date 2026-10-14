@@ -28,9 +28,9 @@ function jobFor(jobs, ghostId) {
 function JobChip({ job }) {
   const { t } = useTranslation()
   if (!job) return null
-  if (job.status === 'queued') return <span className="inline-flex items-center gap-1 text-[10px] text-muted"><Loader2 size={10} className="animate-spin" />Queued</span>
+  if (job.status === 'queued') return <span className="inline-flex items-center gap-1 text-[10px] text-muted"><Loader2 size={10} className="animate-spin" />{t("Queued")}</span>
   if (isActive(job)) return <span className="inline-flex items-center gap-1 text-[10px] tabular-nums text-accent"><Loader2 size={10} className="animate-spin" />{Math.round(job.progress || 0)}%</span>
-  if (job.status === 'error') return <span className="inline-flex items-center gap-1 text-[10px] text-red" title={job.error || ''}><AlertTriangle size={10} />Failed</span>
+  if (job.status === 'error') return <span className="inline-flex items-center gap-1 text-[10px] text-red" title={job.error || ''}><AlertTriangle size={10} />{t("Failed")}</span>
   return null
 }
 
@@ -124,7 +124,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
   }, [open, selectedKey, search])
 
   const assign = async (ghost, item) => {
-    setStatus('Assigning…')
+    setStatus(t("Assigning…"))
     try {
       const result = await api.resolveGhostTrack(ghost.id, item.id)
       if (result?.error) { setStatus('Assign failed: ' + result.error); return }
@@ -144,7 +144,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
       if (result?.cancelled) return
       if (result?.error) { setStatus('Download failed: ' + result.error); return }
       useDownloads.getState().load?.()
-      if (result?.alreadyInLibrary) { setStatus('Replaced with your library copy.'); onChanged?.() }
+      if (result?.alreadyInLibrary) { setStatus(t("Replaced with your library copy.")); onChanged?.() }
     } catch (e) { setStatus('Download failed: ' + e.message) }
     finally { setStartingId('') }
   }
@@ -177,7 +177,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <p className="min-w-0 truncate whitespace-nowrap text-xs font-display uppercase tracking-[0.18em] text-muted">Unresolved · {ghostTracks.length}</p>
             <button type="button" onClick={downloadAll} disabled={downloadingAll || !ghostTracks.length}
-              title={t("Find and download every unresolved song")} aria-label="Download all unresolved songs"
+              title={t("Find and download every unresolved song")} aria-label={t("Download all unresolved songs")}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/15 px-2.5 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50">
               {downloadingAll ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} {downloadingAll ? 'Finding…' : 'Download all'}
             </button>
@@ -235,7 +235,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
               <div className="flex gap-2">
                 <input value={query} onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') search(selected, e.currentTarget.value) }}
-                  placeholder="Search manually for a better match"
+                  placeholder={t("Search manually for a better match")}
                   className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-white outline-none focus:border-accent/50" />
                 <button type="button" onClick={() => search(selected, query)}
                   className="flex items-center gap-2 rounded-xl border border-accent/25 bg-accent/15 px-3 py-2.5 text-sm text-accent transition-colors hover:bg-accent/25">
@@ -257,7 +257,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
                             <p className="truncate text-xs text-muted">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
                           </div>
                           <button type="button" onClick={() => assign(selected, item)}
-                            className="rounded-lg border border-accent/25 bg-accent/15 px-3 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25">Assign</button>
+                            className="rounded-lg border border-accent/25 bg-accent/15 px-3 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25">{t("Assign")}</button>
                         </div>
                       )} />
                   </div>
