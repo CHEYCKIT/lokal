@@ -50,9 +50,32 @@ function readArchive(buffer) {
   if(Buffer.byteLength(code)>8*1024*1024)throw new Error('Addon script exceeds 8 MB')
   return {zip,manifest,code}
 }
+function albumNameOf(track) {
+  const album = track?.album
+  const candidates = [
+    track?.album_name,
+    track?.albumName,
+    track?.album_title,
+    track?.albumTitle,
+    typeof album === 'string' ? album : null,
+    album && typeof album === 'object' ? album.name || album.title || album.album_name || album.albumName : null,
+  ]
+  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || null
+}
+
+/** Keep album metadata string-valued before passing it into file taggers. */
+function normalizeTrackMetadata(track) {
+  if (!track || typeof track !== 'object') return track
+  const album = albumNameOf(track)
+  if (album) return { ...track, album, album_name: album }
+  // Never leak an album object to downstream taggers, which accept strings.
+  if (track.album && typeof track.album === 'object') return { ...track, album: null }
+  return track
+}
+
 function trackOf(track, provider) {
   const artists=Array.isArray(track.artists)?track.artists.map(a=>typeof a==='string'?a:a.name).filter(Boolean):[String(track.artists || track.artist || '')].filter(Boolean)
-  return {provider,id:String(track.id),title:String(track.name || track.title || '').slice(0,500),artist:artists.join(', '),artists,artistIds:track.artist_id?[String(track.artist_id)]:[],album:track.album_name || track.albumName || null,albumId:track.album_id || track.albumId || null,track_num:Number(track.track_number || track.trackNumber)||null,disc_num:Number(track.disc_number || track.discNumber)||null,year:Number(String(track.release_date || '').slice(0,4))||null,isrc:track.isrc || null,genre:track.genre || null,duration:(Number(track.duration_ms ?? track.durationMs)||0)/1000 || null,thumbnail:track.cover_url || track.coverUrl || (typeof track.images==='string'?track.images:null),quality:track.audio_quality || null,spotify_id:track.spotify_id || track.spotifyId || null,deezer_id:track.deezer_id || track.deezerId || null,qobuz_id:track.qobuz_id || track.qobuzId || null,tidal_id:track.tidal_id || track.tidalId || null,kind:'song'}
+  return {provider,id:String(track.id),title:String(track.name || track.title || '').slice(0,500),artist:artists.join(', '),artists,artistIds:track.artist_id?[String(track.artist_id)]:[],album:albumNameOf(track),albumId:track.album_id || track.albumId || null,track_num:Number(track.track_number || track.trackNumber)||null,disc_num:Number(track.disc_number || track.discNumber)||null,year:Number(String(track.release_date || '').slice(0,4))||null,isrc:track.isrc || null,genre:track.genre || null,duration:(Number(track.duration_ms ?? track.durationMs)||0)/1000 || null,thumbnail:track.cover_url || track.coverUrl || (typeof track.images==='string'?track.images:null),quality:track.audio_quality || null,spotify_id:track.spotify_id || track.spotifyId || null,deezer_id:track.deezer_id || track.deezerId || null,qobuz_id:track.qobuz_id || track.qobuzId || null,tidal_id:track.tidal_id || track.tidalId || null,kind:'song'}
 }
 class PackageService {
   constructor(db, {root, fetchImpl = fetch, tools}={}) {
@@ -380,7 +403,7 @@ class PackageService {
         await runTool(tools.ffmpeg,['-nostdin','-y','-i',file,'-map','0:a:0','-c:a','copy',target],combined);file=target;info=await mediaInfo(file,tools,combined)
       }
       combined.throwIfAborted()
-      return {file,staging:staged,metadata:{...track,...result},info,cleanup:()=>fsp.rm(staged,{recursive:true,force:true})}
+      return {file,staging:staged,metadata:normalizeTrackMetadata({...track,...result}),info,cleanup:()=>fsp.rm(staged,{recursive:true,force:true})}
     }catch(error){await fsp.rm(staged,{recursive:true,force:true});throw error}
     finally{runtime.close();this.operations.delete(opId)}
   }
