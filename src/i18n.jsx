@@ -779,6 +779,17 @@ const ROWS = {
   "Nothing in your library for \"{query}\"": ["Rien dans votre bibliothèque pour « {query} »","Nichts in deiner Bibliothek für „{query}“","No hay nada en tu biblioteca para «{query}»","Niente nella libreria per «{query}»","Nada na tua biblioteca para «{query}»","Niets in je bibliotheek voor ‘{query}’","Brak wyników w bibliotece dla „{query}”","Inget i biblioteket för ”{query}”"],
   "Search for \"{query}\" instead": ["Rechercher plutôt « {query} »","Stattdessen nach „{query}“ suchen","Buscar «{query}» en su lugar","Cerca invece «{query}»","Pesquisar «{query}» em alternativa","Zoek in plaats daarvan naar ‘{query}’","Zamiast tego wyszukaj „{query}”","Sök efter ”{query}” i stället"],
   "Unknown Artist": ["Artiste inconnu","Unbekannter Künstler","Artista desconocido","Artista sconosciuto","Artista desconhecido","Onbekende artiest","Nieznany wykonawca","Okänd artist"],
+  "Your profile": ["Votre profil","Dein Profil","Tu perfil","Il tuo profilo","O teu perfil","Je profiel","Twój profil","Din profil"],
+  "No track playing": ["Aucun morceau en cours","Kein Titel wird abgespielt","No se está reproduciendo ninguna canción","Nessun brano in riproduzione","Nenhuma música a tocar","Er wordt geen nummer afgespeeld","Żaden utwór nie jest odtwarzany","Ingen låt spelas"],
+  "Playing on {device}": ["Lecture sur {device}","Wiedergabe auf {device}","Reproduciendo en {device}","In riproduzione su {device}","A reproduzir em {device}","Afspelen op {device}","Odtwarzanie na {device}","Spelar på {device}"],
+  "Timer active: {timer}": ["Minuteur actif : {timer}","Timer aktiv: {timer}","Temporizador activo: {timer}","Timer attivo: {timer}","Temporizador ativo: {timer}","Timer actief: {timer}","Timer aktywny: {timer}","Timer aktiv: {timer}"],
+  "Alb. Artist": ["Artiste de l’album","Album-Interpret","Artista del álbum","Artista album","Artista do álbum","Albumartiest","Wykonawca albumu","Albumartist"],
+  "Bitrate": ["Débit","Bitrate","Tasa de bits","Bitrate","Taxa de bits","Bitrate","Przepływność","Bithastighet"],
+  "Plays": ["Écoutes","Wiedergaben","Reproducciones","Riproduzioni","Reproduções","Afgespeeld","Odtworzenia","Spelningar"],
+  "Actions": ["Actions","Aktionen","Acciones","Azioni","Ações","Acties","Działania","Åtgärder"],
+  "date added": ["date d’ajout","Hinzugefügt am","fecha de adición","data di aggiunta","data de adição","datum toegevoegd","data dodania","datum tillagd"],
+  "duration": ["durée","Dauer","duración","durata","duração","duur","czas trwania","längd"],
+  "playlist number": ["numéro dans la playlist","Playlistnummer","número en la lista","numero nella playlist","número na playlist","nummer in afspeellijst","numer na playliście","spellistenummer"],
 }
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
   phrase, Object.fromEntries(LOCALES.map((locale, index) => [locale, values[index]])),
