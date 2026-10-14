@@ -410,7 +410,7 @@ export default function MusicVideoPlayer({ compact = false }) {
                       </ChromeButton>
                       {sub.canRomanize && (
                         <ChromeButton active={sub.subline === 'romanization'} onClick={() => sub.toggle('romanization')} label="Show the pronunciation in Latin letters">
-                          {sub.romanizationBusy ? <Loader2 size={16} className="animate-spin" /> : <span className="text-[13px] font-semibold leading-none">{t("Aa")}</span>}
+                          {sub.romanizationBusy ? <Loader2 size={16} className="animate-spin" /> : <span className="text-[13px] font-semibold leading-none">Aa</span>}
                         </ChromeButton>
                       )}
                     </>
