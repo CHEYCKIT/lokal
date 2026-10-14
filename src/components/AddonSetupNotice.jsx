@@ -33,7 +33,7 @@ export default function AddonSetupNotice({ source, className = '' }) {
       <ShieldAlert size={14} className="flex-shrink-0 text-yellow-300" />
       <span className="min-w-0 flex-1">{message || `${source.label} isn't set up yet: verify access to stream and download from it.`}</span>
       {api.isElectron && <button type="button" onClick={verify} className="rounded-lg bg-yellow-500/20 px-2.5 py-1 text-[11px] font-medium text-yellow-200 hover:bg-yellow-500/30">{t("Verify now")}</button>}
-      <button type="button" onClick={() => openAddonSetup(navigate, key)} className="text-[11px] text-yellow-200/90 underline-offset-2 hover:underline">Addon settings</button>
+      <button type="button" onClick={() => {t("openAddonSetup(navigate, key)")}} className="text-[11px] text-yellow-200/90 underline-offset-2 hover:underline">Addon settings</button>
     </div>
   )
 }
