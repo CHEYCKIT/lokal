@@ -359,7 +359,7 @@ class PackageService {
         try {
           const enriched=await runtime.invoke('enrichTrack',[track],{timeoutMs:60000,signal:combined})
           if(enriched && typeof enriched==='object' && !Array.isArray(enriched)) {
-            const values=Object.fromEntries(Object.entries(enriched).filter(([,value])=>value!==undefined&&value!==null&&value!==''&&value!==0))
+            const values=Object.fromEntries(Object.entries(enriched).filter(([,value])=>value!==undefined&&value!==null&&value!==''&&value!==0&&!(typeof value==='string'&&!value.trim())&&!(Array.isArray(value)&&value.length===0)))
             track={...track,...values}
           }
         } catch(error) {

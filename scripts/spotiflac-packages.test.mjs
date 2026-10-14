@@ -96,11 +96,11 @@ test('a package download crosses the real host, FFprobe validation, and staged c
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)))
   const key='fixture-provider',permissions={...manifest.permissions,network:['127.0.0.1'],allowHttp:true}
   service.toolProvider=()=>({ffmpeg:'ffmpeg',ffprobe:'ffprobe'})
-  const code=`registerExtension({enrichTrack(track){return {...track,album_name:'Fixture Album'};},checkAvailability(isrc,name,artists,options){return options.track.album_name==='Fixture Album'?{available:true,track_id:'source-id'}:{available:false,reason:'enrichTrack was not applied'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
+  const code=`registerExtension({enrichTrack(track){return {...track,artists:[],album_name:'Fixture Album',album_artist:'   '};},checkAvailability(isrc,name,artists,options){return options.track.album_name==='Fixture Album'&&options.track.artists==='Fixture Artist'&&options.track.album_artist==='Fixture Album Artist'?{available:true,track_id:'source-id'}:{available:false,reason:'enrichTrack empty values were merged incorrectly'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
   const installed=await service.install({buffer:archive({...manifest,permissions},code)})
   // Simulate the sparse row Amazon can return from search; getTrack() isn't
   // available here, so download() must use the explicit enrichment hook.
-  service.remember(installed.key,[{id:'source-id',name:'Fixture Song',artists:'Fixture Artist',duration_ms:1000}])
+  service.remember(installed.key,[{id:'source-id',name:'Fixture Song',artists:'Fixture Artist',album_artist:'Fixture Album Artist',duration_ms:1000}])
   const result=await service.download(installed.key,'source-id',{purpose:'playback'})
   try { assert.equal(result.info.codec,'pcm_s16le');assert.equal(path.extname(result.file),'.wav','WAV audio written to audio.flac is rewrapped for the player');assert.equal(result.info.duration_ms,1000);assert.equal(result.metadata.album,'Fixture Album');assert.equal(result.metadata.album_name,'Fixture Album');assert.ok((await fs.stat(result.file)).size>44) } finally { await result.cleanup() }
 })
