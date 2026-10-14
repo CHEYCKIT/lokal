@@ -22,7 +22,7 @@ function Metric({ label, value, icon: Icon }) {
     <div className="rounded-xl border border-border bg-elevated/80 p-4">
       <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted">
         <Icon size={12} />
-        {label}
+        {t(label)}
       </div>
       <div className="mt-3 text-2xl font-display text-white">{value}</div>
     </div>
