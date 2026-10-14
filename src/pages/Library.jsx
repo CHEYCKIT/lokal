@@ -107,7 +107,7 @@ export default function Library() {
   }, [hasMore, loading, sort, source, genre, quality, problemsOnly, tracks.length])
 
   const artSrc = (t) => t.artwork_path
-    ? (api.isElectron ? `file://${t.artwork_path}` : api.artworkURL(t.id))
+    ? (api.isElectron ? api.fileURL(t.artwork_path) : api.artworkURL(t.id))
     : null
 
   return (
