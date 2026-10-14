@@ -1,6 +1,6 @@
 import React from 'react'
 import { Bird, Globe, Puzzle, createLucideIcon } from 'lucide-react'
-import { downloadSourceLabel, streamRef } from '../onlineTracks'
+import { downloadSourceLabel, isAddonProvider, streamRef } from '../onlineTracks'
 
 // lucide 1.x dropped its brand icons (trademarks); this is its YouTube outline
 // from 0.577 (ISC licence), rebuilt as a lucide icon so it takes the same props.
