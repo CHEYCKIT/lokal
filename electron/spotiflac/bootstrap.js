@@ -20,7 +20,7 @@ module.exports = String.raw`(function(bridge, config) {
     if (value.__bytes) { const bytes = new Uint8Array(value.__bytes); return value.__buffer ? bytes.buffer : bytes; }
     if (value.__callback) return (...args) => call('callback', [value.__callback,args]);
     if (Array.isArray(value)) return value.map(unpack);
-    const out = Object.create(null); for (const k of Object.keys(value)) out[k] = unpack(value[k]); return out;
+    const out = {}; for (const k of Object.keys(value)) Object.defineProperty(out,k,{value:unpack(value[k]),writable:true,enumerable:true,configurable:true}); return out;
   }
   function call(method, args = []) {
     const result = parse(bridge(method, stringify(pack(args))));
