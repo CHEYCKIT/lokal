@@ -368,7 +368,7 @@ function StoryViewer({ onClose, recap, period, onSavePlaylist, playlistStatus })
                   transition={{ delay: 0.24, duration: 0.5 }}
                   className="mt-auto pt-[5cqw]"
                 >
-                  <SlideVisual t={t} slide={slide} recap={recap} topTracks={topTracks} replayQueue={replayQueue}
+                  <SlideVisual t={t} language={language} slide={slide} recap={recap} topTracks={topTracks} replayQueue={replayQueue}
                     playAndClose={playAndClose} periodTitle={period?.title} onSavePlaylist={onSavePlaylist} playlistStatus={playlistStatus} />
                 </motion.div>
               </motion.div>
@@ -427,7 +427,7 @@ function TrackChip({ track }) {
   )
 }
 
-function SlideVisual({ t, slide, recap, topTracks, replayQueue, playAndClose, periodTitle, onSavePlaylist, playlistStatus }) {
+function SlideVisual({ t, language, slide, recap, topTracks, replayQueue, playAndClose, periodTitle, onSavePlaylist, playlistStatus }) {
   if (slide.key === 'overview') {
     const stats = [
       [recap.totalPlays || 0, t('plays')],
