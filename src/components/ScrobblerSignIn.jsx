@@ -42,9 +42,10 @@ function PrimaryButton({ onClick, disabled, busy, children }) {
   )
 }
 
-const Status = ({ status }) => status?.message
-  ? <p role="status" className={`text-xs ${status.error ? 'text-red-400' : 'text-muted'}`}>{status.message}</p>
-  : null
+function Status({ status }) {
+  const { t } = useTranslation()
+  return status?.message ? <p role="status" className={`text-xs ${status.error ? 'text-red-400' : 'text-muted'}`}>{t(status.message)}</p> : null
+}
 
 /**
  * Last.fm: the API account's key and secret, the username, then authorization
@@ -77,17 +78,17 @@ export function LastfmSignInModal({ open, onClose, settings = {}, onConnected })
     const saved = await Promise.resolve(api.saveSettings({ lastfm_api_key: key, lastfm_api_secret: secret, lastfm_username: username, lastfm_enabled: '1' })).catch(e => ({ error: e.message }))
     if (saved?.error) { setStatus({ message: saved.error, error: true }); return }
     onConnected?.({ lastfm_api_key: key, lastfm_api_secret: secret, lastfm_username: username, lastfm_enabled: '1' })
-    setStatus({ message: 'Waiting for Last.fm…', busy: true })
+    setStatus({ message: t('Waiting for Last.fm…'), busy: true })
 
     let done = false
-    const timer = setTimeout(() => { if (!done) { stop(); setStatus({ message: 'Authorization timed out. Try again.', error: true }) } }, AUTH_TIMEOUT_MS)
+    const timer = setTimeout(() => { if (!done) { stop(); setStatus({ message: t('Authorization timed out. Try again.'), error: true }) } }, AUTH_TIMEOUT_MS)
     const off = api.onLastfmAuthToken?.(async token => {
       if (!token || done) return
       done = true
       stop()
-      setStatus({ message: 'Connecting…', busy: true })
+      setStatus({ message: t('Connecting…'), busy: true })
       const result = await Promise.resolve(api.lastfmConnect(key, secret, token)).catch(e => ({ error: e.message }))
-      if (!result?.sessionKey) { setStatus({ message: result?.error || 'Last.fm refused the authorization.', error: true }); return }
+      if (!result?.sessionKey) { setStatus({ message: t(result?.error || 'Last.fm refused the authorization.'), error: true }); return }
       const patch = { lastfm_auth_token: token, lastfm_session_key: result.sessionKey, lastfm_username: result.username || username }
       const stored = await Promise.resolve(api.saveSettings(patch)).catch(e => ({ error: e.message }))
       if (stored?.error) { setStatus({ message: stored.error, error: true }); return }
@@ -100,18 +101,18 @@ export function LastfmSignInModal({ open, onClose, settings = {}, onConnected })
       await api.lastfmAuthorize(key)
     } catch (e) {
       stop()
-      setStatus({ message: e?.message || 'Could not open Last.fm.', error: true })
+      setStatus({ message: t(e?.message || 'Could not open Last.fm.'), error: true })
     }
   }
 
   return (
     <Modal open={open} onClose={close} title={t("Sign in to Last.fm")} width="max-w-sm">
       <div className="space-y-4">
-        <Step n={1}><LinkButton href="https://www.last.fm/api/account/create">Create an API account</LinkButton></Step>
+        <Step n={1}><LinkButton href="https://www.last.fm/api/account/create">{t('Create an API account')}</LinkButton></Step>
         <Step n={2}><input aria-label={t("API key")} value={form.key} onChange={field('key')} placeholder={t("API key")} spellCheck={false} autoComplete="off" className={input} /></Step>
         <Step n={3}><input aria-label={t("Shared secret")} type="password" value={form.secret} onChange={field('secret')} placeholder={t("Shared secret")} spellCheck={false} autoComplete="off" className={input} /></Step>
         <Step n={4}><input aria-label={t("Username")} value={form.username} onChange={field('username')} placeholder={t("Username")} spellCheck={false} autoComplete="off" className={input} /></Step>
-        <Step n={5}><PrimaryButton onClick={authorize} disabled={!ready || status?.busy} busy={status?.busy}>Authorize</PrimaryButton></Step>
+        <Step n={5}><PrimaryButton onClick={authorize} disabled={!ready || status?.busy} busy={status?.busy}{t('Authorize')}</PrimaryButton></Step>
         <Status status={status} />
       </div>
     </Modal>
@@ -127,9 +128,9 @@ export function ListenBrainzSignInModal({ open, onClose, onConnected }) {
 
   const connect = async () => {
     if (!token.trim() || status?.busy) return
-    setStatus({ message: 'Connecting…', busy: true })
+    setStatus({ message: t('Connecting…'), busy: true })
     const result = await Promise.resolve(api.listenbrainzConnect(token.trim())).catch(e => ({ error: e.message }))
-    if (!result?.ok) { setStatus({ message: result?.error || 'ListenBrainz refused the token.', error: true }); return }
+    if (!result?.ok) { setStatus({ message: t(result?.error || 'ListenBrainz refused the token.'), error: true }); return }
     setStatus(null)
     onConnected?.()
     onClose?.()
@@ -138,12 +139,12 @@ export function ListenBrainzSignInModal({ open, onClose, onConnected }) {
   return (
     <Modal open={open} onClose={onClose} title={t("Sign in to ListenBrainz")} width="max-w-sm">
       <div className="space-y-4">
-        <Step n={1}><LinkButton href="https://listenbrainz.org/settings/">Get your user token</LinkButton></Step>
+        <Step n={1}><LinkButton href="https://listenbrainz.org/settings/">{t('Get your user token')}</LinkButton></Step>
         <Step n={2}>
           <input aria-label={t("User token")} type="password" value={token} onChange={e => { setToken(e.target.value); setStatus(null) }}
             onKeyDown={e => { if (e.key === 'Enter') connect() }} placeholder={t("User token")} spellCheck={false} autoComplete="off" className={input} />
         </Step>
-        <Step n={3}><PrimaryButton onClick={connect} disabled={!token.trim() || status?.busy} busy={status?.busy}>Connect</PrimaryButton></Step>
+        <Step n={3}><PrimaryButton onClick={connect} disabled={!token.trim() || status?.busy} busy={status?.busy}{t('Connect')}</PrimaryButton></Step>
         <Status status={status} />
       </div>
     </Modal>

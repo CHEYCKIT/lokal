@@ -93,6 +93,7 @@ function Row({ label, desc, children, stacked = false }) {
 }
 
 function ThreeDotsMenu({ items = [], align = 'right' }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -110,6 +111,8 @@ function ThreeDotsMenu({ items = [], align = 'right' }) {
     <div className="relative" ref={menuRef}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        aria-label={t('More options')}
+        title={t('More options')}
         className="p-1.5 rounded-full hover:bg-card text-muted hover:text-white transition-colors"
       >
         <MoreHorizontal size={16} />
@@ -330,16 +333,16 @@ export default function Settings() {
     setSpotifyCheck({ loading: true })
     try {
       const saved = await api.saveSettings({ spotify_sp_dc: settings.spotify_sp_dc || '' })
-      if (saved?.error) { setSpotifyCheck({ error: `Couldn't save the cookie: ${saved.error}` }); return }
+      if (saved?.error) { setSpotifyCheck({ error: t("Couldn't save the cookie: {error}", { error: t(saved.error) }) }); return }
       // Never leave the button on "Checking...": give up after a minute.
       const status = await Promise.race([
         api.spotifyCanvasCheck(),
-        new Promise(resolve => setTimeout(() => resolve({ error: 'No answer from Spotify after a minute. Try again, or check your connection.' }), 60000)),
+        new Promise(resolve => setTimeout(() => resolve({ error: t('No answer from Spotify after a minute. Try again, or check your connection.') }), 60000)),
       ])
-      setSpotifyCheck(status || { error: 'No answer' })
+      setSpotifyCheck(status || { error: t('No answer') })
       window.dispatchEvent(new Event('lokal:settings-saved'))
     } catch (e) {
-      setSpotifyCheck({ error: e.message || 'Could not reach Spotify' })
+      setSpotifyCheck({ error: t(e.message || 'Could not reach Spotify') })
     }
   }
   // Live progress of a yt-dlp / ffmpeg download, so the button doesn't look stuck.
@@ -386,14 +389,14 @@ export default function Settings() {
   const lyricsIndexJob = useLibraryJobs(s => s.lyrics)
   const indexAllLyrics = () => (lyricsIndexJob?.running ? cancelLyricsIndex() : startLyricsIndex())
   const indexText = (job, what) => job?.running
-    ? `${job.done || 0} of ${job.total || '…'} songs · ${job.found || 0} ${what} found${job.title ? ` · ${job.title}` : ''}`
-    : job ? `Done: ${job.found || 0} ${what} found for ${job.done || 0} songs${job.cancelled ? ' (stopped)' : ''}` : ''
+    ? t('{done} of {total} songs · {found} {what} found{title}', { done: job.done || 0, total: job.total || '…', found: job.found || 0, what: t(what), title: job.title ? ` · ${job.title}` : '' })
+    : job ? t('Done: {found} {what} found for {done} songs{cancelled}', { found: job.found || 0, what: t(what), done: job.done || 0, cancelled: job.cancelled ? ` (${t('stopped')})` : '' }) : ''
   useEffect(() => { readGenresStatus() }, [])
   const fillGenres = startGenres
-  const genreText = genreJob?.error ? genreJob.error
-    : genreJob?.running ? `Looking up… ${genreJob.done} of ${genreJob.total} albums and songs · ${genreJob.updated} songs filled in`
-      : genreJob?.total ? `Done: ${genreJob.updated} of ${genreJob.songs} songs filled in. Songs iTunes doesn't know stay empty.`
-        : genreJob?.started ? 'Every song already has a genre.' : ''
+  const genreText = genreJob?.error ? t(genreJob.error)
+    : genreJob?.running ? t('Looking up… {done} of {total} albums and songs · {updated} songs filled in', { done: genreJob.done, total: genreJob.total, updated: genreJob.updated })
+      : genreJob?.total ? t('Done: {updated} of {songs} songs filled in. Songs iTunes doesn’t know stay empty.', { updated: genreJob.updated, songs: genreJob.songs })
+        : genreJob?.started ? t('Every song already has a genre.') : ''
   const loadMissingTracks = async () => {
     const rows = await Promise.resolve(api.getMissingTracks?.()).catch(() => null)
     return Array.isArray(rows) ? rows : []
@@ -405,7 +408,7 @@ export default function Settings() {
     if (missingRepairJob?.running) return
     const rows = await loadMissingTracks()
     if (!rows.length) {
-      setMissingRepairJob({ missing: 0, message: 'No missing downloaded files found.' })
+      setMissingRepairJob({ missing: 0, message: t('No missing downloaded files found.') })
       return
     }
     setMissingRepairJob({ missing: rows.length, running: true, done: 0, queued: 0, unsupported: 0, failed: 0 })
@@ -414,18 +417,18 @@ export default function Settings() {
     })
     const remaining = await loadMissingTracks()
     const summaryParts = []
-    if (result.queued) summaryParts.push('Queued ' + result.queued + ' redownload' + (result.queued === 1 ? '' : 's'))
-    if (result.unsupported) summaryParts.push(result.unsupported + ' need manual matching')
-    if (result.failed) summaryParts.push(result.failed + ' could not be queued')
-    if (result.cancelled) summaryParts.push('repair stopped')
-    const message = summaryParts.join('; ') || (remaining.length ? remaining.length + ' files still missing.' : 'All missing downloads were queued for repair.')
+    if (result.queued) summaryParts.push(t(result.queued === 1 ? 'Queued {count} redownload' : 'Queued {count} redownloads', { count: result.queued }))
+    if (result.unsupported) summaryParts.push(t('{count} need manual matching', { count: result.unsupported }))
+    if (result.failed) summaryParts.push(t('{count} could not be queued', { count: result.failed }))
+    if (result.cancelled) summaryParts.push(t('Repair stopped'))
+    const message = summaryParts.join('; ') || (remaining.length ? t('{count} files still missing.', { count: remaining.length }) : t('All missing downloads were queued for repair.'))
     setMissingRepairJob({ missing: remaining.length, done: result.total, total: result.total, queued: result.queued, unsupported: result.unsupported, failed: result.failed, cancelled: result.cancelled, message })
     window.dispatchEvent(new Event('lokal:refresh'))
   }
   const missingRepairText = missingRepairJob?.running
-    ? `Queuing ${missingRepairJob.done || 0} of ${missingRepairJob.total || missingRepairJob.missing || 0} missing downloads…`
+    ? t('Queuing {done} of {total} missing downloads…', { done: missingRepairJob.done || 0, total: missingRepairJob.total || missingRepairJob.missing || 0 })
     : missingRepairJob?.message
-      || (missingRepairJob?.missing ? `${missingRepairJob.missing} downloaded file${missingRepairJob.missing === 1 ? '' : 's'} missing.` : 'No missing downloaded files detected.')
+      || t(missingRepairJob?.missing ? '{count} downloaded files missing.' : 'No missing downloaded files detected.', { count: missingRepairJob?.missing })
   const [manualGenreArtist, setManualGenreArtist] = useState('')
   const [bgImage, setBgImage] = useState(null)
   const [manualGenreTrack, setManualGenreTrack] = useState('')
@@ -587,13 +590,13 @@ export default function Settings() {
         api.openExternal('https://github.com/sipbuu/lokal/releases')
         return
       }
-      setUpdateCheckResult('Checking for updates...')
+      setUpdateCheckResult(t('Checking for updates...'))
       setTimeout(() => {
         setUpdateCheckResult('')
         setCheckingUpdate(false)
       }, 5000)
     } catch (e) {
-      setUpdateCheckResult('Error checking for updates')
+      setUpdateCheckResult(t('Error checking for updates'))
       setCheckingUpdate(false)
     }
   }
@@ -668,10 +671,10 @@ export default function Settings() {
     setDuplicateMessage('')
     try {
       const result = await api.mergeDuplicates(keepId, removeIds)
-      if (!result?.ok) throw new Error(result?.error || 'Could not merge these copies. Please try again.')
-      setDuplicateMessage(result.warning || '')
+      if (!result?.ok) throw new Error(t(result?.error || 'Could not merge these copies. Please try again.'))
+      setDuplicateMessage(t(result.warning || ''))
       setDups(prev => prev.filter(d => d.ids !== group.ids))
-    } catch (error) { setDuplicateMessage(error.message) }
+    } catch (error) { setDuplicateMessage(t(error.message)) }
     finally { setMergingDuplicate(false) }
   }
 
@@ -682,12 +685,12 @@ export default function Settings() {
     try {
       const result = await api.mergeAllDuplicates()
       setMergeAllResult(result)
-      setDuplicateMessage([result.error, result.warning].filter(Boolean).join(' '))
+      setDuplicateMessage([result.error, result.warning].filter(Boolean).map(value => t(value)).join(' '))
       const d = await api.checkDuplicates()
       setDups(Array.isArray(d) ? d : [])
     } catch (e) {
       setMergeAllResult({ error: e.message })
-      setDuplicateMessage(e.message)
+      setDuplicateMessage(t(e.message))
     }
     setMergingAll(false)
   }
@@ -706,20 +709,20 @@ export default function Settings() {
     try {
       const result = await api.deduplicatePlaylist(deduplicatePlaylistId)
       if (result?.error === 'Playlist not found') {
-        setDeduplicateResult('This playlist no longer exists. Please select another playlist.')
+        setDeduplicateResult(t('This playlist no longer exists. Please select another playlist.'))
         return
       }
       if (result?.error === 'Smart playlists cannot be deduplicated.') {
-        setDeduplicateResult('Choose a regular playlist. Smart playlists manage their songs automatically.')
+        setDeduplicateResult(t('Choose a regular playlist. Smart playlists manage their songs automatically.'))
         return
       }
-      if (!result?.ok) throw new Error(result?.error || 'Unexpected deduplication response')
+      if (!result?.ok) throw new Error(t(result?.error || 'Unexpected deduplication response'))
       const count = Number(result.removed) || 0
-      setDeduplicateResult(count ? `Removed ${count} duplicate song${count === 1 ? '' : 's'}.` : 'No duplicate songs were found.')
+      setDeduplicateResult(count ? t(count === 1 ? 'Removed {count} duplicate song.' : 'Removed {count} duplicate songs.', { count }) : t('No duplicate songs were found.'))
       window.dispatchEvent(new CustomEvent('lokal:playlist-updated', { detail: { playlistId: deduplicatePlaylistId } }))
     } catch (e) {
       console.error('Playlist duplicate removal failed:', e)
-      setDeduplicateResult('We couldn’t remove duplicate songs. Please try again. If this keeps happening, restart Lokal and try again.')
+      setDeduplicateResult(t('We couldn’t remove duplicate songs. Please try again. If this keeps happening, restart Lokal and try again.'))
     } finally {
       setDeduplicatingPlaylist(false)
     }
@@ -733,10 +736,10 @@ export default function Settings() {
     setDuplicateMessage('')
     try {
       const result = await api.mergeDuplicates(keepId, removeIds)
-      if (!result?.ok) throw new Error(result?.error || 'Could not merge these copies. Please try again.')
-      setDuplicateMessage(result.warning || '')
+      if (!result?.ok) throw new Error(t(result?.error || 'Could not merge these copies. Please try again.'))
+      setDuplicateMessage(t(result.warning || ''))
       setPossibleDups(prev => prev.filter(item => item.id !== group.id))
-    } catch (error) { setDuplicateMessage(error.message) }
+    } catch (error) { setDuplicateMessage(t(error.message)) }
     finally { setMergingDuplicate(false) }
   }
 
@@ -776,7 +779,7 @@ export default function Settings() {
         console.log("Data received from API:", data);
 
         if (!data || (Array.isArray(data) && data.length === 0)) {
-            alert("No history found to export!");
+            alert(t("No history found to export!"));
             setExportingHistory(false);
             return;
         }
@@ -795,7 +798,7 @@ export default function Settings() {
 
     } catch (e) {
         console.error('Export error:', e);
-        alert("Failed to export: " + e.message);
+        alert(t('Failed to export: {error}', { error: t(e.message) }));
     } finally {
         setExportingHistory(false);
     }
@@ -805,7 +808,7 @@ export default function Settings() {
     setExportingAllData(true)
     try {
       const data = await api.exportAllData()
-      if (!data || data.error) throw new Error(data?.error || 'Export failed')
+      if (!data || data.error) throw new Error(t(data?.error || 'Export failed'))
       triggerDownload(
         JSON.stringify(data, null, 2),
         `lokal-app-data-${new Date().toISOString().split('T')[0]}.json`,
@@ -814,7 +817,7 @@ export default function Settings() {
       setFullExported(true)
       setTimeout(() => setFullExported(false), 3000)
     } catch (e) {
-      alert('Failed to export app data: ' + e.message)
+      alert(t('Failed to export app data: {error}', { error: t(e.message) }))
     } finally {
       setExportingAllData(false)
     }
@@ -830,7 +833,7 @@ export default function Settings() {
     if (user?.id === userToDelete.id) {
       logout()
     }
-    setAccountStatus(`Deleted ${userToDelete.display_name || userToDelete.username}`)
+    setAccountStatus(t('Deleted {name}', { name: userToDelete.display_name || userToDelete.username }))
     setUserToDelete(null)
     loadUsers()
     setTimeout(() => setAccountStatus(''), 4000)
@@ -856,8 +859,8 @@ export default function Settings() {
     try {
       const content = await api.readFileBinary(fp)
       const parsed = JSON.parse(content)
-      if (!parsed || typeof parsed !== 'object') throw new Error('Invalid backup file')
-      if (parsed.version !== 1) throw new Error('Unsupported backup version')
+      if (!parsed || typeof parsed !== 'object') throw new Error(t('Invalid backup file'))
+      if (parsed.version !== 1) throw new Error(t('Unsupported backup version'))
       setImportPreview({
         filePath: fp,
         data: parsed,
@@ -871,7 +874,7 @@ export default function Settings() {
       })
       setShowImportModal(true)
     } catch (e) {
-      alert('Failed to read backup: ' + e.message)
+      alert(t('Failed to read backup: {error}', { error: t(e.message) }))
     }
   }
 
@@ -880,12 +883,12 @@ export default function Settings() {
     setImportingAllData(true)
     try {
       const result = await api.importAllData(importPreview.data)
-      if (!result || result.error) throw new Error(result?.error || 'Import failed')
+      if (!result || result.error) throw new Error(t(result?.error || 'Import failed'))
       setShowImportModal(false)
       setImportPreview(null)
       await reloadAfterDataReplace()
     } catch (e) {
-      alert('Failed to import backup: ' + e.message)
+      alert(t('Failed to import backup: {error}', { error: t(e.message) }))
     } finally {
       setImportingAllData(false)
     }
@@ -895,14 +898,14 @@ export default function Settings() {
     setFactoryResetting(true)
     try {
       const result = await api.factoryReset()
-      if (!result || result.error) throw new Error(result?.error || 'Factory reset failed')
+      if (!result || result.error) throw new Error(t(result?.error || 'Factory reset failed'))
       setShowFactoryResetConfirmModal(false)
       setShowFactoryResetModal(false)
       setResetConfirmText('')
       setResetConfirmArmed(false)
       await reloadAfterDataReplace()
     } catch (e) {
-      alert('Factory reset failed: ' + e.message)
+      alert(t('Factory reset failed: {error}', { error: t(e.message) }))
     } finally {
       setFactoryResetting(false)
     }
@@ -973,7 +976,7 @@ export default function Settings() {
         sourcePlatform: platformImportPlatform,
       })
       if (preview?.error) {
-        setPlatformImportStatus('Error: ' + preview.error)
+        setPlatformImportStatus(t('Error: {error}', { error: t(preview.error) }))
         setPlatformImportPreview(null)
         return
       }
@@ -983,10 +986,10 @@ export default function Settings() {
       setPlatformImportFileType(files[0]?.fileType || 'csv')
       setPlatformImportPreview(preview)
       setPlatformImportStatus(preview.total
-        ? `Ready to apply metadata to ${preview.total} tracks from ${preview.fileCount || files.length} file${(preview.fileCount || files.length) === 1 ? '' : 's'}`
-        : 'No tracks found in selected files')
+        ? t('Ready to apply metadata to {total} tracks from {files}', { total: preview.total, files: preview.fileCount || files.length })
+        : t('No tracks found in selected files'))
     } catch (e) {
-      setPlatformImportStatus('Error reading file: ' + e.message)
+      setPlatformImportStatus(t('Error reading file: {error}', { error: t(e.message) }))
       setPlatformImportPreview(null)
     }
   }
@@ -994,11 +997,11 @@ export default function Settings() {
   const handlePlatformImport = async () => {
     const uid = user?.id
     if (!platformImportFiles.length && !platformImportFileContent) {
-      setPlatformImportStatus('Please choose one or more CSV, JSON, or M3U files')
+      setPlatformImportStatus(t('Please choose one or more CSV, JSON, or M3U files'))
       return
     }
     setPlatformImporting(true)
-    setPlatformImportStatus('Importing...')
+    setPlatformImportStatus(t('Importing...'))
     try {
       const payload = {
         files: platformImportFiles.length ? platformImportFiles : [{
@@ -1010,9 +1013,9 @@ export default function Settings() {
       }
       const result = await api.importExternalTrackMetadata(payload)
       if (result?.error) {
-        setPlatformImportStatus('Error: ' + result.error)
+        setPlatformImportStatus(`${t('Error')}: ${t(result.error)}`)
       } else {
-        setPlatformImportStatus(`Applied metadata to ${result.matched}/${result.total} tracks and saved ${result.savedForLater || 0} unmatched rows for future matches.`)
+        setPlatformImportStatus(t('Applied metadata to {matched}/{total} tracks and saved {saved} unmatched rows for future matches.', { matched: result.matched, total: result.total, saved: result.savedForLater || 0 }))
         setPlatformImportPreview(prev => prev ? {
           ...prev,
           imported: result,
@@ -1020,7 +1023,7 @@ export default function Settings() {
         window.dispatchEvent(new Event('lokal:refresh'))
       }
     } catch (e) {
-      setPlatformImportStatus('Error: ' + e.message)
+      setPlatformImportStatus(`${t('Error')}: ${t(e.message)}`)
     } finally {
       setPlatformImporting(false)
     }
@@ -1068,27 +1071,27 @@ export default function Settings() {
           <h1 className="font-display text-lg uppercase tracking-widest text-white">{t("Settings")}</h1>
           <div className="flex items-center gap-3">
             {settingsLoadError && (
-              <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> Couldn't load settings ({settingsLoadError})</span>
+              <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {t("Couldn't load settings")} ({t(settingsLoadError)})</span>
             )}
             {/* No Save button: changes save as they're made. */}
             <AnimatePresence mode="wait" initial={false}>
               {saveState?.error ? (
                 <motion.span key="error" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-red-400 flex items-center gap-2">
-                  <AlertTriangle size={12} /> Couldn't save ({saveState.error})
+                  <AlertTriangle size={12} /> {t("Couldn't save")} ({t(saveState.error)})
                   <button onClick={() => flushSettings()} className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-400/10">{t("Retry")}</button>
                 </motion.span>
               ) : saveState === 'saving' ? (
                 <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="text-xs text-muted">Saving...</motion.span>
+                  className="text-xs text-muted">{t('Saving...')}</motion.span>
               ) : saveState === 'saved' ? (
                 <motion.span key="saved" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
                   className="text-xs text-accent flex items-center gap-1">
-                  <CheckCircle size={12} /> Saved
+                  <CheckCircle size={12} /> {t('Saved')}
                 </motion.span>
               ) : (
                 <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="text-xs text-muted">Changes save automatically</motion.span>
+                  className="text-xs text-muted">{t('Changes save automatically')}</motion.span>
               )}
             </AnimatePresence>
           </div>
@@ -1278,10 +1281,10 @@ activeCategory === 'data' ? usersTried
             onClick={() => setShowGenreModal(true)}
             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center gap-2"
           >
-            <Tags size={14} /> Configure Overrides
+            <Tags size={14} /> {t('Configure Overrides')}
           </button>
         </Row>
-        <Row label={t("Fill In Genres")} desc={genreText || 'Look up a genre online for every song that has none, one album at a time. A big library takes a while; it runs in the background.'}>
+        <Row label={t("Fill In Genres")} desc={genreText || t('Look up a genre online for every song that has none, one album at a time. A big library takes a while; it runs in the background.')}>
           <button onClick={fillGenres} disabled={!!genreJob?.running}
             className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50">
             {genreJob?.running ? t('Running…') : t('Fill In')}
@@ -1295,7 +1298,7 @@ activeCategory === 'data' ? usersTried
               <Row label={t("Names With a Comma")} desc={t("Artists whose name has a comma, like Tyler, The Creator, so they aren't split into two artists.")}>
           <button onClick={() => setShowCommaModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
-            Configure ({keepCommaArtists.length})
+            {t('Configure ({count})', { count: keepCommaArtists.length })}
           </button>
         </Row>
         <Row label={t("Fill In Artist Pages")} desc={t("When you open an artist, look up their bio and picture if they're missing.")}>
@@ -1310,7 +1313,7 @@ activeCategory === 'data' ? usersTried
             {ARTIST_SOURCES.map(([id, label]) => (
               <button key={id} onClick={() => set('artist_metadata_source', id)}
                 className={`px-3 py-1 !text-[11px] font-display uppercase tracking-wider rounded transition-colors ${(settings.artist_metadata_source || 'either') === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
@@ -1341,7 +1344,7 @@ activeCategory === 'data' ? usersTried
               <Trash2 size={14} /> {deduplicatingPlaylist ? t('Removing…') : t('Remove duplicates')}
             </button>
           </div>
-          {deduplicateResult && <p role="status" className="text-xs text-muted">{deduplicateResult}</p>}
+          {deduplicateResult && <p role="status" className="text-xs text-muted">{t(deduplicateResult)}</p>}
         </Row>
         <Row label={t("Delete Files Too")} desc={api.isElectron
           ? 'Deleting a song in Lokal also moves its file to the Recycle Bin. Only files in your music folder.'
@@ -1442,13 +1445,13 @@ activeCategory === 'data' ? usersTried
           </select>
         </Row>
         <Row label={t("Song Transitions")} desc={crossfade.mode === 'automix'
-          ? 'AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.'
-          : crossfade.mode === 'crossfade' ? 'The next song starts before the current one ends, by the amounts below.' : 'Each song plays to its end, then the next starts.'}>
+          ? t('AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.')
+          : crossfade.mode === 'crossfade' ? t('The next song starts before the current one ends, by the amounts below.') : t('Each song plays to its end, then the next starts.')}>
           <div role="radiogroup" aria-label={t("Song transitions")} className="flex rounded-lg bg-card border border-border p-0.5">
             {[['off', 'Off'], ['crossfade', 'Crossfade'], ['automix', 'AutoMix']].map(([value, label]) => (
               <button key={value} type="button" role="radio" aria-checked={crossfade.mode === value} onClick={() => set('song_transitions', value)}
                 className={`px-3 py-1 rounded-md text-xs transition-colors ${crossfade.mode === value ? 'bg-accent text-base font-medium' : 'text-muted hover:text-white'}`}>
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
@@ -1596,14 +1599,14 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('integrations') && (
       <Section title={t("Scrobbling")}>
-        <Row label="Last.fm" desc={lastfmConnected ? '' : 'Sign in to Last.fm in Account Connections first.'}>
+        <Row label={t('Last.fm')} desc={lastfmConnected ? '' : t('Sign in to Last.fm in Account Connections first.')}>
           <button disabled={!lastfmConnected} aria-pressed={lastfmConnected && settings.lastfm_scrobbling === '1'}
             onClick={() => set('lastfm_scrobbling', settings.lastfm_scrobbling === '1' ? '0' : '1')}
             className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors disabled:opacity-40 ${lastfmConnected && settings.lastfm_scrobbling === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
             {lastfmConnected && settings.lastfm_scrobbling === '1' ? t('On') : t('Off')}
           </button>
         </Row>
-        <Row label="ListenBrainz" desc={lbStatus?.connected ? (lbStatus.queued ? `${lbStatus.queued} ${t(lbStatus.queued === 1 ? 'listen' : 'listens')} ${t('waiting to be sent')}` : '') : t('Sign in to ListenBrainz in Account Connections first.')}>
+        <Row label={t('ListenBrainz')} desc={lbStatus?.connected ? (lbStatus.queued ? `${lbStatus.queued} ${t(lbStatus.queued === 1 ? 'listen' : 'listens')} ${t('waiting to be sent')}` : '') : t('Sign in to ListenBrainz in Account Connections first.')}>
           <button disabled={!lbStatus?.connected} aria-pressed={!!(lbStatus?.connected && lbStatus.enabled)}
             onClick={async () => {
               // Keep the current state if the change didn't go through.
@@ -1668,11 +1671,11 @@ activeCategory === 'data' ? usersTried
       {inCategory('integrations') && (
         <Section title={t("Soulseek")}>
           <p className="text-xs text-muted leading-relaxed">
-            Search and download from Soulseek, a peer-to-peer network where lossless (FLAC) copies are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you're allowed to.
+            {t("Search and download from Soulseek, a peer-to-peer network where lossless (FLAC) copies are common. Soulseek is a sharing network and most of what's on it is copyrighted, so only download what you're allowed to.")}
           </p>
           {api.isElectron
             ? <>
-                <p className="text-xs text-muted leading-relaxed">{t("Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses (")}<span className="text-white">{t("slskd")}</span>{t(", about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.")}</p>
+                <p className="text-xs text-muted leading-relaxed">{t('Sign in with a Soulseek account. The first time, Lokal downloads the Soulseek client it uses ({client}, about 55 MB) and then runs it in the background while Lokal is open. Nothing to install or configure.', { client: 'slskd' })}</p>
                 <SoulseekSignIn settings={settings} set={set} />
               </>
             : <p className="text-xs text-muted">{t("Soulseek runs with the Lokal desktop app.")}</p>}
@@ -1687,7 +1690,7 @@ activeCategory === 'data' ? usersTried
               <span>{toolsError}</span>
               {toolsErrorTool && (
                 <button onClick={retryToolDownload} disabled={toolsLoading} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-300 hover:bg-red-500/30 disabled:opacity-40">
-                  Retry
+                  {t('Retry')}
                 </button>
               )}
             </div>
@@ -1854,7 +1857,7 @@ activeCategory === 'data' ? usersTried
                   className="px-3 py-1.5 bg-card border border-border text-white rounded-lg text-xs hover:bg-elevated/80 transition-colors flex items-center gap-2"
                 >
                   <ImageIcon size={14} />
-                  {bgImage ? 'Change Image' : 'Upload Image'}
+                  {bgImage ? t('Change Image') : t('Upload Image')}
                 </button>
               </div>
             </div>
@@ -1974,7 +1977,7 @@ activeCategory === 'data' ? usersTried
             className="flex items-center gap-2 text-xs text-muted hover:text-white transition-colors"
           >
             {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            Advanced Options
+            {t('Advanced Options')}
           </button>
 
           {showAdvanced && (
@@ -1996,7 +1999,7 @@ activeCategory === 'data' ? usersTried
                 onClick={resetTheme}
                 className="text-xs text-muted hover:text-white transition-colors"
               >
-                Reset Overrides
+                {t('Reset Overrides')}
               </button>
             </div>
           )}
@@ -2032,14 +2035,14 @@ activeCategory === 'data' ? usersTried
                 {all.map(([id, label, hint]) => (
                   <button key={id} onClick={() => toggle(id)} title={t(hint)}
                     className={`px-3 py-1 rounded-lg text-xs border transition-colors ${chosen.includes(id) ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
             </Row>
             {chosen.includes('spotify') && (
               <>
-                <Row stacked label={t("Spotify Cookie")} desc={"Spotify only shows Canvas to signed-in accounts. To sign in here: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
+                <Row stacked label={t("Spotify Cookie")} desc={t("Spotify only shows Canvas to signed-in accounts. To sign in here: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify.")}>
                   <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
                     placeholder={t("sp_dc value")} spellCheck={false} autoComplete="off"
                     className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
@@ -2064,7 +2067,7 @@ activeCategory === 'data' ? usersTried
                       window.dispatchEvent(new Event('lokal:settings-saved'))
                     }}
                       className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
-                      Remove
+                      {t('Remove')}
                     </button>
                   )}
                   {spotifyCheck && !spotifyCheck.loading && (
@@ -2104,7 +2107,7 @@ activeCategory === 'data' ? usersTried
       <Section title={t("Layout")}>
         <Row
           label={t("Side Panels")}
-          desc={"Merged: Queue and Lyrics open as tabs in the side panel. Independent: each opens in its own panel next to it."}
+          desc={t("Merged: Queue and Lyrics open as tabs in the side panel. Independent: each opens in its own panel next to it.")}
         >
           <div className="flex flex-col items-end gap-1">
           <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
@@ -2148,14 +2151,14 @@ activeCategory === 'data' ? usersTried
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
                 >
-                  {label}
+                  {t(label)}
                 </button>
               )
             })}
           </div>
           {sidePanelsSaveError && (
             <p className="text-[11px] text-red-400 flex items-center gap-1">
-              <AlertTriangle size={11} /> Couldn't save -- will retry on next change
+              <AlertTriangle size={11} /> {t("Couldn't save -- will retry on next change")}
             </p>
           )}
           </div>
@@ -2180,13 +2183,13 @@ activeCategory === 'data' ? usersTried
               disabled={usersLoading}
               className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors disabled:opacity-50"
             >
-              {usersLoading ? 'Loading...' : 'Refresh'}
+              {usersLoading ? t('Loading...') : t('Refresh')}
             </button>
           </div>
           <p className="text-xs text-muted">
-            Delete accounts directly from Lokal if one was created with the wrong password or is no longer needed.
+            {t('Delete accounts directly from Lokal if one was created with the wrong password or is no longer needed.')}
           </p>
-          {accountStatus && <p className="text-xs text-accent">{accountStatus}</p>}
+          {accountStatus && <p className="text-xs text-accent">{t(accountStatus)}</p>}
           <div className="space-y-2">
             {!usersLoading && usersTried && appUsers.length === 0 && (
               <p className="text-xs text-muted">{t("No local accounts found.")}</p>
@@ -2232,7 +2235,7 @@ activeCategory === 'data' ? usersTried
             disabled={exportingAllData}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
           >
-            <Download size={13} /> {exportingAllData ? 'Exporting...' : 'Export All'}
+            <Download size={13} /> {exportingAllData ? t('Exporting...') : t('Export All')}
             {fullExported && <span className="text-accent text-xs ml-1">✓</span>}
           </button>
         </Row>
@@ -2242,7 +2245,7 @@ activeCategory === 'data' ? usersTried
             disabled={importingAllData}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors disabled:opacity-50"
           >
-            <RefreshCcw size={13} /> {importingAllData ? 'Importing...' : 'Import'}
+            <RefreshCcw size={13} /> {importingAllData ? t('Importing...') : t('Import')}
           </button>
         </Row>
       </Section>
@@ -2256,7 +2259,7 @@ activeCategory === 'data' ? usersTried
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors"
             >
-              <Download size={13} /> Export
+              <Download size={13} /> {t('Export')}
               {historyExported && <span className="text-accent text-xs ml-1">✓</span>}
             </button>
             {showExportMenu && (
@@ -2265,13 +2268,13 @@ activeCategory === 'data' ? usersTried
                   onClick={() => handleHistoryExport('json')}
                   className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
                 >
-                  <Download size={14} /> JSON
+                  <Download size={14} /> {t('JSON')}
                 </button>
                 <button
                   onClick={() => handleHistoryExport('csv')}
                   className="w-full px-3 py-2 text-left text-sm text-muted hover:text-white hover:bg-card flex items-center gap-2"
                 >
-                  <Download size={14} /> CSV
+                  <Download size={14} /> {t('CSV')}
                 </button>
               </div>
             )}
@@ -2288,12 +2291,12 @@ activeCategory === 'data' ? usersTried
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
           </select>
         </Row>
-         <Row label={t("In Use")} desc={cacheInfo ? `Older video downloads ${fmtBytes(cacheInfo.musicVideo)} · Moving covers ${fmtBytes(cacheInfo.motion)} · Playable copies ${fmtBytes(cacheInfo.playback)} · Web cache ${fmtBytes(cacheInfo.web)}` : 'Measuring…'}>
+         <Row label={t("In Use")} desc={cacheInfo ? t('Older video downloads {video} · Moving covers {covers} · Playable copies {playback} · Web cache {web}', { video: fmtBytes(cacheInfo.musicVideo), covers: fmtBytes(cacheInfo.motion), playback: fmtBytes(cacheInfo.playback), web: fmtBytes(cacheInfo.web) }) : t('Measuring…')}>
           <div className="flex items-center gap-3">
             <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
             <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
-              {cacheInfo?.busy ? 'Clearing…' : 'Clear Cache'}
+              {cacheInfo?.busy ? t('Clearing…') : t('Clear Cache')}
             </button>
           </div>
         </Row>
@@ -2305,7 +2308,7 @@ activeCategory === 'data' ? usersTried
         <Row label={t("Clear Library")} desc={t("Remove every song, playlist, like and play from Lokal, keeping your accounts and settings. Your music files aren't touched.")}>
           <button onClick={() => setShowClearModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors">
-            <Trash2 size={13} /> Clear
+            <Trash2 size={13} /> {t('Clear')}
           </button>
         </Row>
         <Row label={t("Factory Reset Lokal")} desc={t("Start over: erase everything Lokal keeps on this computer, accounts and settings included. Your music files aren't touched.")}>
@@ -2313,7 +2316,7 @@ activeCategory === 'data' ? usersTried
             onClick={() => setShowFactoryResetModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-red-500/15 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/25 transition-colors"
           >
-            <Trash2 size={13} /> Factory Reset
+            <Trash2 size={13} /> {t('Factory Reset')}
           </button>
         </Row>
       </Section>
@@ -2331,7 +2334,7 @@ activeCategory === 'data' ? usersTried
             <button onClick={() => setShowClearModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={async () => { await api.clearTracks(); setShowClearModal(false) }}
               className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">
-              Clear Everything
+              {t('Clear Everything')}
             </button>
           </div>
         </div>
@@ -2344,7 +2347,7 @@ activeCategory === 'data' ? usersTried
       >
         <div className="space-y-4">
           <p className="text-xs text-muted leading-relaxed">
-            Overrides take priority over online fetching. Use this if iTunes or MusicBrainz can't find it.
+            {t("Overrides take priority over online fetching. Use this if iTunes or MusicBrainz can't find it.")}
           </p>
 
           <div className="space-y-3">
@@ -2393,7 +2396,7 @@ activeCategory === 'data' ? usersTried
 
           {statusMessage && (
             <div className={`p-2.5 rounded-lg border text-center text-xs font-medium ${statusMessage.includes('Error') || statusMessage.includes('required') ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-accent/10 border-accent/20 text-accent'}`}>
-              {statusMessage}
+              {t(statusMessage)}
             </div>
           )}
 
@@ -2402,12 +2405,12 @@ activeCategory === 'data' ? usersTried
               onClick={() => { setShowGenreModal(false); setStatusMessage(''); }} 
               className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors"
             >
-              Cancel
+              {t('Cancel')}
             </button>
             <button 
               onClick={async () => {
                 if (!manualGenreArtist || !manualGenreValue) {
-                  setStatusMessage('Artist and Genre are required');
+                  setStatusMessage(t('Artist and Genre are required'));
                   return;
                 }
                 const result = await api.setManualGenre({ 
@@ -2416,7 +2419,7 @@ activeCategory === 'data' ? usersTried
                   album: manualGenreAlbum || null,
                   genre: manualGenreValue 
                 });
-                setStatusMessage(result?.error || `✓ Updated ${result?.updated || 0} track(s)`);
+                setStatusMessage(result?.error ? t(result.error) : t('✓ Updated {count} track(s)', { count: result?.updated || 0 }));
                 
                 if (!result?.error) {
                   setManualGenreArtist('');
@@ -2428,7 +2431,7 @@ activeCategory === 'data' ? usersTried
               }} 
               className="flex-1 py-2.5 bg-accent text-base rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
             >
-              Apply Mapping
+              {t('Apply Mapping')}
             </button>
           </div>
         </div>
@@ -2437,7 +2440,7 @@ activeCategory === 'data' ? usersTried
       <Modal open={showCommaModal} onClose={() => setShowCommaModal(false)} title={t("Keep Comma in Artist Names")} width="max-w-md">
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            These artists won't have their comma removed. This prevents "Tyler, The Creator" from becoming "Tyler" and "The Creator". Enter one artist per line.
+            {t("These artists won't have their comma removed. This prevents \"Tyler, The Creator\" from becoming \"Tyler\" and \"The Creator\". Enter one artist per line.")}
           </p>
           <div className="bg-card/50 rounded-lg p-3 mb-2">
             <p className="text-xs text-muted mb-2">{t("Examples (one per line):")}</p>
@@ -2458,7 +2461,7 @@ activeCategory === 'data' ? usersTried
             <button onClick={() => setShowCommaModal(false)} className="flex-1 py-2 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={saveCommaArtists}
               className="flex-1 py-2 bg-accent text-base rounded-xl text-sm font-medium transition-colors">
-              Save
+              {t('Save')}
             </button>
           </div>
         </div>
@@ -2476,11 +2479,11 @@ activeCategory === 'data' ? usersTried
               className="flex items-center gap-2 px-4 py-2 bg-accent/20 border border-accent/50 text-accent rounded-lg text-sm font-medium hover:bg-accent/30 disabled:opacity-40 transition-colors"
             >
               <Zap size={14} />
-              {mergingAll ? 'Merging...' : 'Smart Merge All'}
+              {mergingAll ? t('Merging...') : t('Smart Merge All')}
             </button>
             {mergeAllResult && (
               <p className={`text-xs mt-2 ${mergeAllResult.error ? 'text-red-400' : 'text-accent'}`}>
-                {mergeAllResult.error ? `Error: ${mergeAllResult.error}` : `✓ Merged ${mergeAllResult.merged} tracks across ${mergeAllResult.groups} groups`}
+                {mergeAllResult.error ? t('Error: {error}', { error: t(mergeAllResult.error) }) : t('✓ Merged {tracks} tracks across {groups} groups', { tracks: mergeAllResult.merged, groups: mergeAllResult.groups })}
               </p>
             )}
           </div>
@@ -2502,7 +2505,7 @@ activeCategory === 'data' ? usersTried
                     onClick={() => mergeDup(d)}
                     className="flex-shrink-0 px-3 py-1.5 bg-accent/15 border border-accent/30 text-accent rounded-lg text-xs font-display uppercase tracking-wider hover:bg-accent/25 transition-colors"
                   >
-                    Merge → Keep First
+                    {t('Merge → Keep First')}
                   </button>
                 </div>
               )
@@ -2530,7 +2533,7 @@ activeCategory === 'data' ? usersTried
           <div className="flex gap-2">
             <button onClick={() => setShowMergeAllConfirm(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={mergeAllDuplicates} className="flex-1 py-2.5 bg-accent/20 border border-accent/50 text-accent rounded-xl text-sm font-medium hover:bg-accent/30 transition-colors">
-              Merge All
+              {t('Merge All')}
             </button>
           </div>
         </div>
@@ -2592,7 +2595,7 @@ activeCategory === 'data' ? usersTried
                             onClick={() => mergePossibleDup(group, track.id)}
                             className={`flex-shrink-0 px-3 py-2 rounded-lg text-xs font-display uppercase tracking-wider transition-colors ${suggested ? 'bg-accent/20 border border-accent/40 text-accent hover:bg-accent/30' : 'bg-card border border-border text-muted hover:text-white hover:border-accent/30'}`}
                           >
-                            Keep This
+                            {t('Keep This')}
                           </button>
                         </div>
                       )
@@ -2610,7 +2613,7 @@ activeCategory === 'data' ? usersTried
           <div className="rounded-xl border border-border bg-card/40 p-4 space-y-2">
             <p className="text-sm text-white">{t("Use CSV, JSON, or M3U exports to enrich songs already in your library.")}</p>
             <p className="text-xs text-muted leading-relaxed">
-              {'{t("Lokal will match each row against your library and apply imported metadata like genres, explicit flags, labels, and audio features. Unmatched rows are saved locally and retried later when those songs enter your library.")}'}
+              {t("Lokal will match each row against your library and apply imported metadata like genres, explicit flags, labels, and audio features. Unmatched rows are saved locally and retried later when those songs enter your library.")}
             </p>
           </div>
 
@@ -2640,11 +2643,11 @@ activeCategory === 'data' ? usersTried
                     onClick={handlePlatformFileSelect}
                     className="px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center gap-2"
                   >
-                    <ListMusic size={14} /> Choose Files
+                    <ListMusic size={14} /> {t('Choose Files')}
                   </button>
                 </div>
                 <div className="rounded-lg border border-border bg-elevated/70 px-3 py-2 text-xs text-muted">
-                  {platformImportFileName || 'No files selected'}
+                  {platformImportFileName || t('No files selected')}
                 </div>
                 {!!platformImportPreview?.files?.length && (
                   <div className="max-h-28 overflow-y-auto rounded-lg border border-border bg-elevated/40">
@@ -2687,7 +2690,7 @@ activeCategory === 'data' ? usersTried
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-white font-medium">{t("Preview")}</p>
-                <p className="text-xs text-muted mt-1">{'{t("This preview shows which rows Lokal can match now and which rows will be remembered for later.")}'}</p>
+                <p className="text-xs text-muted mt-1">{t("This preview shows which rows Lokal can match now and which rows will be remembered for later.")}</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <span className="px-2.5 py-1 rounded-full border border-border text-[10px] uppercase tracking-[0.22em] text-muted">{t("CSV")}</span>
@@ -2710,8 +2713,8 @@ activeCategory === 'data' ? usersTried
                     <span className="text-white truncate pr-3">{row.title}</span>
                     <span className="text-muted truncate pr-3">{row.artist}</span>
                     <span className="text-muted truncate pr-3">{row.album}</span>
-                    <span className="text-accent truncate pr-3">{row.status !== 'Matched' ? 'Saved for Later' : row.status}</span>
-                    <span className="text-muted truncate">{row.status === 'Matched' ? 'Apply imported metadata' : 'Save for future match'}</span>
+                    <span className="text-accent truncate pr-3">{t(row.status !== 'Matched' ? 'Saved for Later' : row.status)}</span>
+                    <span className="text-muted truncate">{t(row.status === 'Matched' ? 'Apply imported metadata' : 'Save for future match')}</span>
                   </div>
                 ))}
                 {!platformImportPreview?.rows?.length && (
@@ -2732,7 +2735,7 @@ activeCategory === 'data' ? usersTried
           <div className="sticky bottom-0 flex gap-2 border-t border-border bg-elevated pt-4">
             <button onClick={() => setShowPlatformImportGuide(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={handlePlatformImport} disabled={platformImporting || !platformImportPreview?.total} className="flex-1 py-2.5 bg-accent text-base rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
-              {platformImporting ? 'Importing...' : 'Apply Metadata'}
+              {platformImporting ? t('Importing...') : t('Apply Metadata')}
             </button>
           </div>
         </div>
@@ -2799,7 +2802,7 @@ activeCategory === 'data' ? usersTried
           <div className="flex gap-2">
             <button onClick={() => { setShowImportModal(false); setImportPreview(null) }} disabled={importingAllData} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">{t("Cancel")}</button>
             <button onClick={handleImportBackup} disabled={importingAllData || !importPreview} className="flex-1 py-2.5 bg-orange-500/20 border border-orange-500/30 text-orange-200 rounded-xl text-sm font-medium hover:bg-orange-500/30 transition-colors disabled:opacity-50">
-              {importingAllData ? 'Importing...' : 'Replace with Backup'}
+              {importingAllData ? t('Importing...') : t('Replace with Backup')}
             </button>
           </div>
         </div>
@@ -2820,7 +2823,7 @@ activeCategory === 'data' ? usersTried
           <div className="flex gap-2">
             <button onClick={() => setShowFactoryResetModal(false)} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors">{t("Cancel")}</button>
             <button onClick={() => { setShowFactoryResetModal(false); setShowFactoryResetConfirmModal(true) }} className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors">
-              Continue
+              {t('Continue')}
             </button>
           </div>
         </div>
@@ -2854,7 +2857,7 @@ activeCategory === 'data' ? usersTried
               disabled={factoryResetting || resetConfirmText !== 'RESET LOKAL' || !resetConfirmArmed}
               className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50"
             >
-              {factoryResetting ? 'Resetting...' : 'Factory Reset'}
+              {factoryResetting ? t('Resetting...') : t('Factory Reset')}
             </button>
           </div>
         </div>
@@ -2870,7 +2873,7 @@ function SpotifyLikesRow({ hasCookie, userId }) {
   const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    const unknown = { enabled: false, unknown: true, error: '{t("Could not read whether sync is on. Reopen Settings to try again.")}' }
+    const unknown = { enabled: false, unknown: true, error: t('Error reading whether sync is enabled. Reopen Settings to try again.') }
     Promise.resolve(api.spotifyLikesStatus()).then(next => setStatus(next || unknown)).catch(() => setStatus(unknown))
   }, [])
   const on = !!status?.enabled
@@ -2887,10 +2890,10 @@ function SpotifyLikesRow({ hasCookie, userId }) {
     } finally { setBusy(false) }
   }
   const since = status?.since ? new Date(status.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-  const desc = !hasCookie ? '{t("Add your Spotify cookie above first.")}'
-    : status?.error ? status.error
-      : on ? `Songs you like here are liked on Spotify, and songs you like on Spotify are liked here, since ${since}. Likes from before stay where they are.`
-        : 'Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.'
+  const desc = !hasCookie ? t('Add your Spotify cookie above first.')
+    : status?.error ? t(status.error)
+      : on ? t('Songs you like here are liked on Spotify, and songs you like on Spotify are liked here, since {since}. Likes from before stay where they are.', { since })
+        : t('Songs you like here are liked on Spotify, and songs you like on Spotify from now on are liked here. Your existing Spotify likes aren\'t brought in.')
   return (
     <Row label={t("Sync Likes")} desc={desc}>
       <button disabled={!hasCookie || busy || loading} aria-pressed={on} onClick={toggle}
