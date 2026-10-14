@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState } from 'react'
 import { Camera, RefreshCw, Save } from 'lucide-react'
 import Modal from './Modal'
@@ -83,6 +84,7 @@ function formatPreviewValue(field, value) {
 }
 
 export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
+  const { t } = useTranslation()
   const [modes, setModes] = useState(DEFAULT_MODES)
   const [values, setValues] = useState(createDefaultValues())
   const [artworkPreview, setArtworkPreview] = useState(null)
@@ -213,7 +215,7 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Batch Edit Tracks" width="max-w-4xl">
+    <Modal open={open} onClose={onClose} title={t("Batch Edit Tracks")} width="max-w-4xl">
       <div className="space-y-5">
         <div className="flex items-center gap-3 text-xs text-muted">
           <span>{summary.count} selected</span>
@@ -222,9 +224,9 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
         </div>
 
         <div className="grid grid-cols-[7rem_8rem_1fr] gap-3 items-center">
-          <span className="text-xs font-display text-muted uppercase tracking-widest">Field</span>
-          <span className="text-xs font-display text-muted uppercase tracking-widest">Mode</span>
-          <span className="text-xs font-display text-muted uppercase tracking-widest">Value</span>
+          <span className="text-xs font-display text-muted uppercase tracking-widest">{t("Field")}</span>
+          <span className="text-xs font-display text-muted uppercase tracking-widest">{t("Mode")}</span>
+          <span className="text-xs font-display text-muted uppercase tracking-widest">{t("Value")}</span>
 
           {['title', 'artist', 'album', 'album_artist', 'track_num', 'year', 'genre', 'genres', 'record_label', 'explicit', 'instrumental'].map(field => (
             <React.Fragment key={field}>
@@ -234,13 +236,13 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
                 onChange={(e) => setMode(field, e.target.value)}
                 className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
               >
-                <option value="ignore">Ignore</option>
-                <option value="replace">Replace all</option>
-                <option value="fillMissing">Fill missing</option>
-                {TEXT_FIELDS.has(field) && <option value="removeText">Remove text</option>}
-                {TEXT_FIELDS.has(field) && <option value="keepAfterText">Keep after text</option>}
-                {TEXT_FIELDS.has(field) && <option value="keepBeforeText">Keep before text</option>}
-                <option value="clear">Clear</option>
+                <option value="ignore">{t("Ignore")}</option>
+                <option value="replace">{t("Replace all")}</option>
+                <option value="fillMissing">{t("Fill missing")}</option>
+                {TEXT_FIELDS.has(field) && <option value="removeText">{t("Remove text")}</option>}
+                {TEXT_FIELDS.has(field) && <option value="keepAfterText">{t("Keep after text")}</option>}
+                {TEXT_FIELDS.has(field) && <option value="keepBeforeText">{t("Keep before text")}</option>}
+                <option value="clear">{t("Clear")}</option>
               </select>
               {field === 'explicit' || field === 'instrumental' ? (
                 <select
@@ -249,7 +251,7 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
                   disabled={modes[field] === 'clear'}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50 disabled:opacity-40"
                 >
-                  <option value="">Select...</option>
+                  <option value="">{t("Select...")}</option>
                   <option value="1">{field === 'explicit' ? 'Explicit' : 'Instrumental'}</option>
                   <option value="0">{field === 'explicit' ? 'Clean' : 'Has vocals'}</option>
                 </select>
@@ -274,15 +276,15 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
             </React.Fragment>
           ))}
 
-          <label className="text-sm text-white">Artwork</label>
+          <label className="text-sm text-white">{t("Artwork")}</label>
           <select
             value={modes.artwork}
             onChange={(e) => setMode('artwork', e.target.value)}
             className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
           >
-            <option value="ignore">Ignore</option>
-            <option value="replace">Replace all</option>
-            <option value="clear">Clear</option>
+            <option value="ignore">{t("Ignore")}</option>
+            <option value="replace">{t("Replace all")}</option>
+            <option value="clear">{t("Clear")}</option>
           </select>
           <div className="flex items-center gap-3">
             <button
@@ -297,10 +299,10 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-display text-muted uppercase tracking-widest">Preview</p>
+          <p className="text-xs font-display text-muted uppercase tracking-widest">{t("Preview")}</p>
           <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-card/40 p-3 space-y-2">
             {previewRows.length === 0 && (
-              <p className="text-sm text-muted">No pending changes yet.</p>
+              <p className="text-sm text-muted">{t("No pending changes yet.")}</p>
             )}
             {previewRows.map(row => (
               <div key={row.id} className="rounded-lg border border-border bg-card px-3 py-2">
@@ -310,7 +312,7 @@ export default function BatchEditModal({ tracks = [], open, onClose, onSave }) {
               </div>
             ))}
             {tracks.length > 12 && previewRows.length > 0 && (
-              <p className="text-xs text-muted">Previewing first 12 matching rows.</p>
+              <p className="text-xs text-muted">{t("Previewing first 12 matching rows.")}</p>
             )}
           </div>
         </div>
