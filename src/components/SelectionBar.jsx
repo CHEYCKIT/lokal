@@ -3,6 +3,7 @@
 // player bar) instead of being inserted above the list, so nothing moves
 // when it comes and goes; it glides in and out.
 
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -68,6 +69,7 @@ function usePageBox(open) {
  * @param actions  [{ label, icon, onClick, danger, hidden }]
  */
 export default function SelectionBar({ open = true, label, actions = [], onClear }) {
+  const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const box = usePageBox(open)
   const [barRef, barHeight] = useHeight(open)
@@ -119,7 +121,7 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
               ))
               const count = <span className="flex-shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-accent">{shown.current.label}</span>
               const clear = (
-                <button onClick={onClear} title="Clear selection (Esc)" aria-label="Clear selection" className="flex-shrink-0 p-1.5 text-muted transition-colors hover:text-white">
+                <button onClick={onClear} title={t("Clear selection (Esc)")} aria-label="Clear selection" className="flex-shrink-0 p-1.5 text-muted transition-colors hover:text-white">
                   <X size={14} />
                 </button>
               )
@@ -132,7 +134,7 @@ export default function SelectionBar({ open = true, label, actions = [], onClear
               return (
                 <div ref={rowRef} className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                   {count}
-                  {mode === 'line' && <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-muted">Ctrl+click to add · Shift+click for a range · right-click for more</span>}
+                  {mode === 'line' && <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-muted">{t("Ctrl+click to add · Shift+click for a range · right-click for more")}</span>}
                   <div className="ml-auto flex flex-shrink-0 items-center gap-2 pl-2">{buttons}</div>
                   {clear}
                 </div>
