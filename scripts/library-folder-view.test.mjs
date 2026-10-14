@@ -8,83 +8,121 @@ const require = createRequire(import.meta.url)
 const { findFolderArtwork, getLibraryFolders } = require('../electron/libraryFolder.js')
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-library-folders-'))
 
+function likeMatches(value, pattern) {
+  const regexSpecials = '.^$*+?()[]{}|\\'
+  let expression = ''
+  for (let i = 0; i < pattern.length; i++) {
+    let character = pattern[i]
+    if (character === '\\' && i + 1 < pattern.length) {
+      character = pattern[++i]
+      expression += regexSpecials.includes(character) ? '\\' + character : character
+    } else if (character === '%') {
+      expression += '.*'
+    } else if (character === '_') {
+      expression += '.'
+    } else {
+      expression += regexSpecials.includes(character) ? '\\' + character : character
+    }
+  }
+  return new RegExp('^' + expression + '$', 'i').test(String(value == null ? '' : value))
+}
+
 try {
   const album = path.join(root, 'Artist', 'Album')
+  const emojiAlbum = path.join(root, '🎧Artist', 'Album')
   fs.mkdirSync(album, { recursive: true })
+  fs.mkdirSync(emojiAlbum, { recursive: true })
   fs.writeFileSync(path.join(album, 'a.png'), 'image')
   fs.writeFileSync(path.join(album, 'cover.jpg'), 'cover')
   fs.writeFileSync(path.join(album, '01-track.flac'), 'audio')
+  fs.writeFileSync(path.join(album, '02-percent.flac'), 'audio')
+  fs.writeFileSync(path.join(album, '03-underscore.flac'), 'audio')
 
   assert.equal(findFolderArtwork(album), path.join(album, 'cover.jpg'), 'named cover art takes priority over other images')
-
   fs.unlinkSync(path.join(album, 'cover.jpg'))
   assert.equal(findFolderArtwork(album), path.join(album, 'a.png'), 'an image without a conventional name still works as fallback')
 
-  const indexedTrack = {
-    id: 'track-1',
-    title: 'Track One',
-    artist: 'Artist',
-    album: 'Album',
-    file_path: path.join(album, '01-track.flac'),
+  const indexedTracks = [
+    { id: 'track-1', title: 'Track One', artist: 'Artist', album: 'Album', file_path: path.join(album, '01-track.flac') },
+    { id: 'track-percent', title: 'Literal 100% Track', artist: 'Artist', album: 'Album', file_path: path.join(album, '02-percent.flac') },
+    { id: 'track-underscore', title: 'Name_with_underscore', artist: 'Artist', album: 'Album', file_path: path.join(album, '03-underscore.flac') },
+    // This row is stale: it must not count or appear in a playable queue.
+    { id: 'stale', title: 'Deleted Track', artist: 'Artist', album: 'Album', file_path: path.join(album, 'deleted.flac') },
+  ]
+  for (let i = 0; i < 1001; i++) {
+    const filename = 'bulk-' + String(i).padStart(4, '0') + '.flac'
+    const filePath = path.join(emojiAlbum, filename)
+    fs.writeFileSync(filePath, 'audio')
+    indexedTracks.push({ id: 'bulk-' + i, title: 'Bulk Track ' + i, artist: 'Bulk Artist', album: 'Large Album', file_path: filePath })
   }
+
+  const isInRange = (filePath, start, end) => filePath >= start && filePath < end
   const db = {
     prepare(sql) {
       if (sql.includes("key = 'music_folder'")) return { get: () => ({ value: root }) }
-      if (sql.includes('COUNT(*) as count')) {
+      if (sql.includes('SELECT file_path FROM tracks')) {
         return {
-          get: (start, end) => {
-            const inRange = indexedTrack.file_path >= start && indexedTrack.file_path <= end
-            return { count: inRange ? 1 : 0 }
-          },
+          all: (start, end) => indexedTracks
+            .filter(track => isInRange(track.file_path, start, end))
+            .map(track => ({ file_path: track.file_path }))
+            .sort((a, b) => a.file_path.localeCompare(b.file_path)),
         }
       }
-      if (sql.includes('SELECT * FROM tracks WHERE file_path >= ? AND file_path <= ? AND (title LIKE ?')) {
+      if (sql.includes('FROM tracks WHERE file_path IN (')) {
+        return { all: (...paths) => indexedTracks.filter(track => paths.includes(track.file_path)) }
+      }
+      if (sql.includes('substr(file_path, length(?)+1) LIKE ?')) {
         return {
-          all: (start, end, term) => {
-            const inRange = indexedTrack.file_path >= start && indexedTrack.file_path <= end
-            const rawTerm = String(term || '').replace(/%/g, '').toLowerCase()
-            const matchesText = indexedTrack.title.toLowerCase().includes(rawTerm) || indexedTrack.artist.toLowerCase().includes(rawTerm)
-            return inRange && matchesText ? [indexedTrack] : []
-          },
+          all: (start, end, titlePattern, artistPattern, albumPattern, pathPrefix, pathPattern) =>
+            indexedTracks.filter(track =>
+              isInRange(track.file_path, start, end) &&
+              (likeMatches(track.title, titlePattern) ||
+                likeMatches(track.artist, artistPattern) ||
+                likeMatches(track.album, albumPattern) ||
+                likeMatches(track.file_path.slice(pathPrefix.length), pathPattern)),
         }
       }
-      if (sql.includes('SELECT * FROM tracks WHERE file_path >= ? AND file_path <= ?')) {
-        return {
-          all: (start, end) => {
-            const inRange = indexedTrack.file_path >= start && indexedTrack.file_path <= end
-            return inRange ? [indexedTrack] : []
-          },
-        }
-      }
-      return { all: (...paths) => paths.map(filePath => filePath === indexedTrack.file_path ? indexedTrack : null).filter(Boolean) }
+      throw new Error('Unexpected SQL in library folder test: ' + sql)
     },
   }
 
   const rootView = getLibraryFolders(db, '')
   assert.equal(rootView.available, true)
-  assert.deepEqual(rootView.folders.map(folder => folder.name), ['Artist'])
+  assert.deepEqual(rootView.folders.map(folder => folder.name), ['Artist', '🎧Artist'])
   assert.equal(rootView.tracks.length, 0)
-  assert.equal(rootView.totalTracks, 1, 'root folder counts tracks in folders below')
-  assert.equal(rootView.folders[0].trackCount, 1, 'child folder displays recursive track count')
+  assert.equal(rootView.totalTracks, 1004, 'root count excludes stale database paths')
+  assert.equal(rootView.allTracks.length, 1004, 'Play All includes every descendant, with no 1,000-track cap')
+  assert.equal(rootView.folders[0].trackCount, 3, 'child folder count is recursive and excludes stale files')
+  assert.equal(rootView.folders[1].trackCount, 1001, 'emoji-leading folder names are included in the recursive count')
 
   const artistView = getLibraryFolders(db, 'Artist')
   assert.equal(artistView.relativePath, 'Artist')
   assert.equal(artistView.tracks.length, 0, 'direct tracks in Artist folder is 0')
-  assert.equal(artistView.totalTracks, 1, 'parent subfolder counts tracks in folders below instead of saying 0')
-  assert.equal(artistView.allTracks.length, 1, 'parent subfolder provides recursive tracks for Play All')
+  assert.equal(artistView.totalTracks, 3, 'parent subfolder counts tracks below it')
+  assert.equal(artistView.allTracks.length, 3, 'parent subfolder Play All includes all valid descendants')
   assert.equal(artistView.folders[0].name, 'Album')
-  assert.equal(artistView.folders[0].trackCount, 1)
+  assert.equal(artistView.folders[0].trackCount, 3)
+
+  const emojiView = getLibraryFolders(db, '🎧Artist')
+  assert.equal(emojiView.totalTracks, 1001)
+  assert.equal(emojiView.allTracks.length, 1001, 'Unicode folder Play All returns every descendant')
 
   const albumView = getLibraryFolders(db, 'Artist/Album')
   assert.equal(albumView.relativePath, 'Artist/Album')
-  assert.equal(albumView.tracks.length, 1)
-  assert.equal(albumView.tracks[0].id, 'track-1')
-  assert.equal(albumView.totalTracks, 1)
+  assert.equal(albumView.tracks.length, 3)
+  assert.equal(albumView.totalTracks, 3)
 
   const searchView = getLibraryFolders(db, '', 'Track One')
   assert.equal(searchView.deepTracks.length, 1, 'deep search finds tracks in subfolders')
   assert.equal(searchView.deepTracks[0].id, 'track-1')
   assert.equal(searchView.deepTracks[0].subfolderPath, 'Artist/Album')
+
+  assert.equal(getLibraryFolders(db, '', 'lokal-library-folders').deepTracks.length, 0,
+    'deep search only searches the path relative to the selected folder')
+  assert.deepEqual(getLibraryFolders(db, '', '100%').deepTracks.map(track => track.id), ['track-percent'],
+    'percent signs in a query are treated literally')
+  assert.deepEqual(getLibraryFolders(db, '', '_').deepTracks.map(track => track.id), ['track-underscore'],
+    'underscores in a query are treated literally')
 
   const outsideView = getLibraryFolders(db, '../../outside')
   assert.equal(outsideView.notFound, true, 'paths cannot escape the configured music folder')

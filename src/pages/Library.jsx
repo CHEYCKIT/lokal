@@ -208,7 +208,7 @@ export default function Library() {
         </p>
         <div className="flex flex-shrink-0 items-center gap-3">
           {playAllTracks.length > 0 && (
-            <button onClick={() => playQueue(playAllTracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
+            <button onClick={() => playQueue(playAllTracks, 0, libraryMode === 'advanced' ? { type: 'library-folder' } : null)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
           )}
           <button
             type="button"

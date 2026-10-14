@@ -113,6 +113,12 @@ export default function LibraryFolderBrowser({
         if (result?.notFound && folderPath) {
           setData(null)
           onDataChange?.(null)
+          // Drop a deleted/unavailable path from Back and Forward history.
+          const resetHistory = ['']
+          historyRef.current = resetHistory
+          historyIndexRef.current = 0
+          setHistory(resetHistory)
+          setHistoryIndex(0)
           onFolderChange('')
           return
         }
@@ -293,7 +299,7 @@ export default function LibraryFolderBrowser({
           )}
 
           {visibleTracks.length > 0 && view === 'list' && (
-            <TrackList tracks={visibleTracks} showQuality reduceMotion />
+            <TrackList tracks={visibleTracks} showQuality reduceMotion context={{ type: 'library-folder' }} />
           )}
 
           {visibleTracks.length > 0 && view === 'grid' && (
@@ -306,7 +312,7 @@ export default function LibraryFolderBrowser({
                     type="button"
                     initial={false}
                     whileHover={{ y: -2 }}
-                    onDoubleClick={() => playQueue(visibleTracks, index)}
+                    onDoubleClick={() => playQueue(visibleTracks, index, { type: 'library-folder' })}
                     className="group flex min-w-0 flex-col gap-2 text-left"
                   >
                     <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-elevated">
@@ -330,7 +336,13 @@ export default function LibraryFolderBrowser({
                 <Folder size={14} className="text-muted" />
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Tracks in subfolders")}</h2>
               </div>
-              <TrackList tracks={matchingDeepTracks} showQuality reduceMotion />
+              <TrackList
+                tracks={matchingDeepTracks}
+                showQuality
+                reduceMotion
+                context={{ type: 'library-folder' }}
+                extraColumns={[{ key: 'subfolderPath', label: t('Folder'), width: 10, render: track => track.subfolderPath || '' }]}
+              />
             </div>
           )}
 
@@ -349,7 +361,7 @@ export default function LibraryFolderBrowser({
                       type="button"
                       initial={false}
                       whileHover={{ y: -2 }}
-                      onDoubleClick={() => playQueue(matchingDeepTracks, index)}
+                      onDoubleClick={() => playQueue(matchingDeepTracks, index, { type: 'library-folder' })}
                       className="group flex min-w-0 flex-col gap-2 text-left"
                     >
                       <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-elevated">

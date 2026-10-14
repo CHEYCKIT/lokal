@@ -1736,7 +1736,7 @@ export default function App() {
       return
     }
     const { queue, queueIndex, _fetchingRelated } = state
-    if (state.playbackContext?.type === 'discovery' || state.playbackContext?.type === 'mix' || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
+    if (['discovery', 'mix', 'library-folder'].includes(state.playbackContext?.type) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
     const generation = state.playbackGeneration
     state.setFetchingRelated(true)
     api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
