@@ -45,7 +45,7 @@ function AccountCard({ icon: Icon, tint, name, connected, status, note, children
         {connected && <CheckCircle2 size={16} className="text-green-400" />}
       </div>
       <div className="flex flex-nowrap items-center gap-2">{children}</div>
-      {note && <p className="text-xs leading-relaxed text-red-300">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-red-300">{t(note)}</p>}
     </div>
   )
 }
@@ -87,11 +87,11 @@ export default function ProviderConnections({ compact = false, settingsOverride 
 
   const connectDiscord = async () => {
     const id = discordClientId(settings)
-    if (!id) { setDiscord(d => ({ ...d, error: 'Add your Discord app ID under Discord Rich Presence first.' })); return }
+    if (!id) { setDiscord(d => ({ ...d, error: t('Add your Discord app ID under Discord Rich Presence first.') })); return }
     setDiscord(d => ({ ...d, busy: true, error: '' }))
     await Promise.resolve(api.saveSettings({ discord_client_id: id })).catch(() => {})
     const ok = await Promise.resolve(api.discordConnect(id)).catch(() => false)
-    setDiscord({ connected: !!ok, busy: false, error: ok ? '' : 'Could not connect. Is Discord open?' })
+    setDiscord({ connected: !!ok, busy: false, error: ok ? '' : t('Could not connect. Is Discord open?') })
   }
 
   const disconnectDiscord = async () => {
@@ -115,10 +115,10 @@ export default function ProviderConnections({ compact = false, settingsOverride 
         setSettingsError('')
         onSettingsChanged?.(Object.fromEntries(Object.entries(next).filter(([key]) => key.startsWith('yt_') || key.startsWith('lastfm_'))))
       } else if (next?.error) {
-        setSettingsError(next.error)
+        setSettingsError(t(next.error))
       }
     } catch (error) {
-      setSettingsError(error?.message || 'Could not load account settings.')
+      setSettingsError(t(error?.message || 'Could not load account settings.'))
     } finally {
       if (quiet) setRefreshing(false)
       else setLoading(false)
@@ -136,14 +136,14 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   const youtubeAccountReady = settings.yt_account_session === '1'
   const youtubeConnected = youtubeAccountReady && youtubeStatus.verified && youtubeStatus.connected
   useEffect(() => api.onYoutubeSignInStatus(status => {
-    if (status?.message) setYoutubeState({ message: status.message, tone: 'muted' })
+    if (status?.message) setYoutubeState({ message: t(status.message), tone: 'muted' })
   }), [])
   const verifyYouTube = async () => {
     setYoutubeAuthorizing(true)
     const result = await api.youtubeAccount(true).catch(error => ({ error: error.message }))
     setYoutubeAuthorizing(false)
     const verified = result?.authenticated === true && !result.error
-    setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'YouTube Music did not confirm account access. Please sign in again.', tone: verified ? 'success' : 'error' })
+    setYoutubeState({ message: verified ? t('YouTube Music account access verified.') : t(result?.error || 'YouTube Music did not confirm account access. Please sign in again.'), tone: verified ? 'success' : 'error' })
   }
   const signInYouTube = async () => {
     setYoutubeAuthorizing(true)
@@ -153,8 +153,8 @@ export default function ProviderConnections({ compact = false, settingsOverride 
       const result = await api.youtubeSignIn({ mode: 'embedded' })
       await loadSettings(true)
       const verified = result?.authenticated === true && !result.error
-      setYoutubeState({ message: verified ? 'YouTube Music account access verified.' : result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.', tone: verified ? 'success' : 'error' })
-    } catch (error) { setYoutubeState({ message: error.message || 'YouTube Music sign-in failed.', tone: 'error' }) }
+      setYoutubeState({ message: verified ? t('YouTube Music account access verified.') : t(result?.error || 'Sign-in was closed before account access could be verified. Please sign in again.'), tone: verified ? 'success' : 'error' })
+    } catch (error) { setYoutubeState({ message: t(error.message || 'YouTube Music sign-in failed.'), tone: 'error' }) }
     finally { setYoutubeAuthorizing(false); setYoutubeSigningIn(false) }
   }
 
@@ -177,11 +177,11 @@ export default function ProviderConnections({ compact = false, settingsOverride 
     setYoutubeAuthorizing(true)
     try {
       const result = await api.youtubeDisconnect()
-      if (!result?.ok || result.error) throw new Error(result?.error || 'Could not disconnect YouTube Music.')
+      if (!result?.ok || result.error) throw new Error(result?.error || t('Could not disconnect YouTube Music.'))
       await loadSettings(true)
-      setYoutubeState({ message: 'YouTube disconnected from Lokal.', tone: 'success' })
+      setYoutubeState({ message: t('YouTube disconnected from Lokal.'), tone: 'success' })
       window.dispatchEvent(new Event('lokal:refresh'))
-    } catch (error) { setYoutubeState({ message: error.message || 'Could not disconnect YouTube Music.', tone: 'error' }) }
+    } catch (error) { setYoutubeState({ message: t(error.message || 'Could not disconnect YouTube Music.'), tone: 'error' }) }
     finally { setYoutubeAuthorizing(false) }
   }
 
@@ -195,9 +195,9 @@ export default function ProviderConnections({ compact = false, settingsOverride 
         <div>
           <p className="text-sm font-medium text-white">{t("Account connections")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
-            {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
+            {api.isElectron ? t('Lokal keeps provider credentials on this device and uses them only for the selected integration.') : t('Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.')}
           </p>
-          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">{t("Retry")}</button></p>}
+          {settingsError && <p className="mt-1 text-xs text-red-400">{t(settingsError)} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">{t("Retry")}</button></p>}
         </div>
         <button
           type="button"
@@ -213,32 +213,32 @@ export default function ProviderConnections({ compact = false, settingsOverride 
 
       <div className={compact ? 'space-y-3' : 'grid gap-3 @md:grid-cols-2'}>
         <AccountCard icon={Music2} tint="bg-red-500/10 text-red-300" name="Last.fm" connected={lastfmConnected}
-          status={lastfmConnected ? `Connected as ${settings.lastfm_username}` : 'Not connected'}>
-          <ActionButton onClick={() => setSignIn('lastfm')}><LogIn size={13} />{lastfmConnected ? 'Reconnect' : 'Sign in'}</ActionButton>
-          {lastfmConnected && <ActionButton onClick={disconnectLastfm} muted>Disconnect</ActionButton>}
+          status={lastfmConnected ? t('Connected as {username}', { username: settings.lastfm_username }) : t('Not connected')}>
+          <ActionButton onClick={() => setSignIn('lastfm')}><LogIn size={13} />{lastfmConnected ? t('Reconnect') : t('Sign in')}</ActionButton>
+          {lastfmConnected && <ActionButton onClick={disconnectLastfm} muted>{t('Disconnect')}</ActionButton>}
         </AccountCard>
 
         <AccountCard icon={AudioLines} tint="bg-orange-500/10 text-orange-300" name="ListenBrainz" connected={listenbrainzConnected}
-          status={listenbrainzConnected ? `Connected as ${listenbrainz.username || 'ListenBrainz user'}` : 'Not connected'}>
+          status={listenbrainzConnected ? t('Connected as {username}', { username: listenbrainz.username || t('ListenBrainz user') }) : t('Not connected')}>
           {listenbrainzConnected
-            ? <><ActionButton onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(listenbrainz.username || '')}/`)} muted>Profile</ActionButton><ActionButton onClick={disconnectListenBrainz} muted>Disconnect</ActionButton></>
-            : <ActionButton onClick={() => setSignIn('listenbrainz')}><LogIn size={13} />Sign in</ActionButton>}
+            ? <><ActionButton onClick={() => api.openExternal(`https://listenbrainz.org/user/${encodeURIComponent(listenbrainz.username || '')}/`)} muted>{t('Profile')}</ActionButton><ActionButton onClick={disconnectListenBrainz} muted>{t('Disconnect')}</ActionButton></>
+            : <ActionButton onClick={() => setSignIn('listenbrainz')}><LogIn size={13} />{t('Sign in')}</ActionButton>}
         </AccountCard>
 
         <AccountCard icon={YoutubeIcon} tint="bg-red-600/10 text-red-300" name="YouTube Music" connected={youtubeConnected}
           note={youtubeState.tone === 'error' ? youtubeState.message : youtubeStatus.error}
-          status={!api.isElectron ? 'Available in the desktop app' : youtubeConnected ? 'Connected' : youtubeAccountReady ? youtubeStatus.error ? 'Needs signing in again' : 'Not verified' : 'Not connected'}>
-          {api.isElectron && !youtubeConnected && <ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeSigningIn ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Sign in</ActionButton>}
-          {youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>Cancel</ActionButton>}
-          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>Verify</ActionButton>}
-          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>Disconnect</ActionButton>}
+          status={!api.isElectron ? t('Available in the desktop app') : youtubeConnected ? t('Connected') : youtubeAccountReady ? youtubeStatus.error ? t('Needs signing in again') : t('Not verified') : t('Not connected')}>
+          {api.isElectron && !youtubeConnected && <ActionButton onClick={signInYouTube} disabled={youtubeAuthorizing}>{youtubeSigningIn ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}{t('Sign in')}</ActionButton>}
+          {youtubeSigningIn && <ActionButton onClick={() => api.youtubeCancelSignIn()} muted>{t('Cancel')}</ActionButton>}
+          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={verifyYouTube} disabled={youtubeAuthorizing} muted>{t('Verify')}</ActionButton>}
+          {api.isElectron && youtubeAccountReady && !youtubeSigningIn && <ActionButton onClick={disconnectYouTube} disabled={youtubeAuthorizing} muted>{t('Disconnect')}</ActionButton>}
         </AccountCard>
 
-        <AccountCard icon={Gamepad2} tint="bg-[#5865F2]/15 text-[#8b95f5]" name="Discord" connected={discord.connected} note={discord.error}
-          status={!api.isElectron ? 'Available in the desktop app' : discord.connected ? 'Rich Presence connected' : 'Not connected'}>
+        <AccountCard icon={Gamepad2} tint="bg-[#5865F2]/15 text-[#8b95f5]" name="Discord" connected={discord.connected} note={t(discord.error)}
+          status={!api.isElectron ? t('Available in the desktop app') : discord.connected ? t('Rich Presence connected') : t('Not connected')}>
           {api.isElectron && (discord.connected
-            ? <ActionButton onClick={disconnectDiscord} disabled={discord.busy} muted>Disconnect</ActionButton>
-            : <ActionButton onClick={connectDiscord} disabled={discord.busy}>{discord.busy ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}Connect</ActionButton>)}
+            ? <ActionButton onClick={disconnectDiscord} disabled={discord.busy} muted>{t('Disconnect')}</ActionButton>
+            : <ActionButton onClick={connectDiscord} disabled={discord.busy}>{discord.busy ? <RefreshCw size={13} className="animate-spin" /> : <LogIn size={13} />}{t('Connect')}</ActionButton>)}
         </AccountCard>
       </div>
       <LastfmSignInModal open={signIn === 'lastfm'} onClose={() => setSignIn(null)} settings={settings} onConnected={changeSettings} />
