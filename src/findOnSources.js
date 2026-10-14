@@ -24,6 +24,9 @@ export function orderedFindOnSources(providers) {
   ]
 }
 
+/** Default menu entries before installed providers have loaded. */
+export const DEFAULT_FIND_ON_SOURCES = Object.freeze(orderedFindOnSources(DEFAULT_SEARCH_SOURCES))
+
 /** Build a Search-page request while retaining the stream to replace on save. */
 export function buildFindOnRequest(provider, track, fallback = {}) {
   const title = String(track?.title || fallback?.title || '').trim()
