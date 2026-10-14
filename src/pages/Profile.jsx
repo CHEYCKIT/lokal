@@ -5,12 +5,14 @@ import { Camera, BarChart2, LogIn, LogOut, UserRound, Heart, Clock3, Music4, Tre
 import { useAppStore, usePlayerStore } from '../store/player'
 import { showToast } from '../components/Toaster'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
 import PlaylistCover from '../components/PlaylistCover'
 import { filteredGenres } from '../recapText'
 
 function StatTile({ icon: Icon, label, value }) {
+  const { t } = useTranslation()
   // Side by side when there's room, the icon above the numbers when the
   // Snapshot card is narrow (the page split in two beside open sidebars).
   return (
@@ -20,7 +22,7 @@ function StatTile({ icon: Icon, label, value }) {
       </div>
       <div className="min-w-0">
         <p className="text-lg font-display text-white truncate">{value}</p>
-        <p className="text-xs text-muted">{label}</p>
+        <p className="text-xs text-muted">{t(label)}</p>
       </div>
     </div>
   )
@@ -38,6 +40,7 @@ function normalizeBio(text) {
 }
 
 export default function Profile() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const playQueue = usePlayerStore(s => s.playQueue)
   // Top Genres chips play that genre's songs from the library, most played
@@ -184,9 +187,9 @@ export default function Profile() {
               <UserRound size={34} className="text-muted" />
             </div>
             <div>
-              <p className="text-xs font-display text-muted uppercase tracking-widest mb-1">Profile</p>
-              <h1 className="text-3xl font-display text-white">Local profile</h1>
-              <p className="text-xs text-muted mt-1">Lives on this app only and is not tied to any online service</p>
+              <p className="text-xs font-display text-muted uppercase tracking-widest mb-1">{t("Profile")}</p>
+              <h1 className="text-3xl font-display text-white">{t("Local profile")}</h1>
+              <p className="text-xs text-muted mt-1">{t("Lives on this app only and is not tied to any online service")}</p>
             </div>
           </div>
         </div>
@@ -198,14 +201,14 @@ export default function Profile() {
               className="flex items-center gap-2 px-5 py-2 bg-accent text-base rounded-full font-medium text-sm hover:bg-accent-dim transition-colors"
             >
               <LogIn size={14} />
-              Sign In / Register
+              {t('Sign In / Register')}
             </button>
           </div>
 
           <section>
-            <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-2">About</h2>
+            <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-2">{t("About")}</h2>
             <p className="text-sm text-muted leading-relaxed max-w-2xl">
-              This is your personal Lokal identity for this device. Nothing here becomes a public profile and nothing is backed by a remote account.
+              {t('This is your personal Lokal identity for this device. Nothing here becomes a public profile and nothing is backed by a remote account.')}
             </p>
           </section>
         </div>
@@ -374,14 +377,14 @@ export default function Profile() {
             </div>
             <div className="absolute inset-0 rounded-full bg-black/55 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center">
               <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/50 text-[11px] text-white/85">
-                <Camera size={11} /> {uploadingAvatar ? 'Uploading...' : 'Upload'}
+                <Camera size={11} /> {uploadingAvatar ? t('Uploading...') : t('Upload')}
               </span>
             </div>
           </button>
           <div>
             <p className="text-xs font-display text-muted uppercase tracking-widest mb-1">Profile</p>
             <h1 className="text-3xl font-display text-white">{user.display_name || user.username}</h1>
-            <p className="text-xs text-muted mt-1">@{user.username} · local only</p>
+            <p className="text-xs text-muted mt-1">@{user.username} · {t("local only")}</p>
           </div>
         </div>
         <div className="absolute top-4 right-6 flex items-center gap-2">
@@ -389,13 +392,13 @@ export default function Profile() {
             onClick={openProfile}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white/60 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
           >
-            <Pencil size={12} /> Edit Profile
+            <Pencil size={12} /> {t("Edit Profile")}
           </button>
           <button
             onClick={logout}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white/60 hover:text-red-300 hover:border-white/20 transition-all backdrop-blur-sm"
           >
-            <LogOut size={12} /> Sign Out
+            <LogOut size={12} /> {t("Sign Out")}
           </button>
         </div>
       </div>
@@ -403,7 +406,7 @@ export default function Profile() {
       <div className="px-8 py-5 space-y-7 w-full max-w-6xl mx-auto">
         <section>
           <div className="flex items-center justify-between gap-3 mb-2">
-            <h2 className="text-xs font-display text-muted uppercase tracking-widest">About</h2>
+            <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("About")}</h2>
             <button
               onClick={() => {
                 setBioDraft(user.bio || '')
@@ -451,19 +454,19 @@ export default function Profile() {
 
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @md:grid-cols-2 @lg:gap-6 max-w-6xl items-stretch">
           <section className="rounded-2xl border border-border bg-elevated p-5">
-            <h2 className="mb-4 text-xs font-display uppercase tracking-widest text-muted">Snapshot</h2>
+            <h2 className="mb-4 text-xs font-display uppercase tracking-widest text-muted">{t("Snapshot")}</h2>
             <div className="grid grid-cols-2 gap-3">
-              <StatTile icon={Music4} label="Total Plays" value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
-              <StatTile icon={Clock3} label="Hours Listened" value={statsLoading ? '...' : `${hours}h`} />
-              <StatTile icon={Heart} label="Liked Tracks" value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
-              <StatTile icon={TrendingUp} label="This Week" value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
+              <StatTile icon={Music4} label={t("Total Plays")} value={statsLoading ? '...' : (stats?.totalPlays || 0).toLocaleString()} />
+              <StatTile icon={Clock3} label={t("Hours Listened")} value={statsLoading ? '...' : `${hours}h`} />
+              <StatTile icon={Heart} label={t("Liked Tracks")} value={statsLoading ? '...' : String(stats?.likedCount || 0)} />
+              <StatTile icon={TrendingUp} label={t("This Week")} value={statsLoading ? '...' : String(stats?.weeklyPlays || 0)} />
             </div>
           </section>
 
           {stats?.topArtists?.length > 0 ? (
             <section className="rounded-2xl border border-border bg-elevated p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Artists</h2>
+                <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Top Artists")}</h2>
                 <BarChart2 size={14} className="text-accent/70" />
               </div>
               <div className="space-y-1">
@@ -482,7 +485,7 @@ export default function Profile() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                           <span className="truncate text-sm text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{artistName}</span>
-                          <span className="flex-shrink-0 text-xs text-muted">{artist.plays} plays</span>
+                          <span className="flex-shrink-0 text-xs text-muted">{artist.plays} {t('plays')}</span>
                         </div>
                         <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-border">
                           <motion.div
@@ -500,7 +503,7 @@ export default function Profile() {
             </section>
           ) : (
             <section className="flex min-h-full items-center justify-center rounded-2xl border border-border bg-elevated p-5">
-              <p className="text-sm text-muted">No artist listening data yet.</p>
+              <p className="text-sm text-muted">{t("No artist listening data yet.")}</p>
             </section>
           )}
 
@@ -509,7 +512,7 @@ export default function Profile() {
           {topGenres.length > 0 && (
             <section className="rounded-2xl border border-border bg-elevated px-5 py-4 @md:col-span-2">
               <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:gap-5">
-                <h2 className="flex-shrink-0 text-xs font-display uppercase tracking-widest text-muted">Top Genres</h2>
+                <h2 className="flex-shrink-0 text-xs font-display uppercase tracking-widest text-muted">{t("Top Genres")}</h2>
                 {/* Always there, so screen readers announce the change. */}
                 <span role="status" aria-live="polite" className="sr-only">{playingGenre ? `Loading ${playingGenre} songs` : ''}</span>
                 <div className="flex min-w-0 flex-wrap gap-2">
@@ -552,7 +555,7 @@ export default function Profile() {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Artist</p>
+                <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Top Artist")}</p>
                 <p className="mt-2 truncate text-base text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4">{topArtist}</p>
                 <p className="mt-1 text-xs text-muted">{topArtistSupport}</p>
               </div>
@@ -572,13 +575,13 @@ export default function Profile() {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] font-display uppercase tracking-widest text-muted">Top Track</p>
+                <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Top Track")}</p>
                 <button
                   type="button"
                   onClick={() => topTrackData && navigateToTrackAlbum(nav, topTrackData)}
                   disabled={!topTrackData}
                   className="mt-2 block max-w-full truncate text-left text-base text-white transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4 disabled:cursor-default"
-                  title="Open album"
+                  title={t("Open album")}
                 >
                   {topTrackData?.title || 'No top track yet'}
                 </button>
@@ -587,7 +590,7 @@ export default function Profile() {
                     type="button"
                     onClick={() => navigateToTrackArtist(nav, topTrackData, keepCommaArtists)}
                     className="mt-1 block max-w-full truncate text-left text-xs text-muted transition-colors hover:text-accent hover:underline hover:decoration-accent hover:underline-offset-4"
-                    title="Open artist"
+                    title={t("Open artist")}
                   >
                     {topTrackData.artist}
                   </button>
@@ -600,7 +603,7 @@ export default function Profile() {
           {stats?.topTracks?.length > 0 ? (
             <section className="rounded-2xl border border-border bg-elevated p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
+                <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Top Tracks")}</h2>
                 <Disc3 size={14} className="text-accent/70" />
               </div>
               <div className="space-y-1">
@@ -639,14 +642,14 @@ export default function Profile() {
             </section>
           ) : (
             <section className="flex items-center justify-center rounded-2xl border border-border bg-elevated p-5">
-              <p className="text-sm text-muted">No track listening data yet.</p>
+              <p className="text-sm text-muted">{t("No track listening data yet.")}</p>
             </section>
           )}
         </div>
 
         {!!playlists.length && (
           <section className="mt-6 max-w-6xl">
-            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Playlists</h2>
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{t("Playlists")}</h2>
             <div className="grid grid-cols-2 gap-4 @lg:grid-cols-4">
               {playlists.map((playlist) => (
                 <motion.button
@@ -660,7 +663,7 @@ export default function Profile() {
                   </div>
                   <div className="px-3 pb-3">
                     <p className="truncate text-sm font-medium text-white">{playlist.name}</p>
-                    <p className="mt-1 truncate text-xs text-muted">{playlist.description || 'Local playlist'}</p>
+                    <p className="mt-1 truncate text-xs text-muted">{playlist.description || t('Local playlist')}</p>
                   </div>
                 </motion.button>
               ))}

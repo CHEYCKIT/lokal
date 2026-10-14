@@ -12,6 +12,7 @@ import { useMotionCoverOff } from '../motionCoverPrefs'
 import MixCovers from './MixCovers'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import { api, wordSyncEnabled } from '../api'
+import { useTranslation } from '../i18n'
 import {
   contextLabel,
   isContextNavigable,
@@ -58,6 +59,7 @@ function streamQualityLabel(track) {
 }
 
 export default function RightSidebar() {
+  const { t } = useTranslation()
   const { user } = useAppStore()
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
@@ -295,7 +297,7 @@ export default function RightSidebar() {
           initial={{ width: 0 }}
           animate={{ width: 300 }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          aria-label="Now playing"
+          aria-label={t("Now Playing")}
           className="overflow-hidden flex-shrink-0"
           style={{ minWidth: 300 }}
         >
@@ -320,7 +322,7 @@ export default function RightSidebar() {
                 </button>
               ))}
             </div>
-            <button onClick={toggleRightSidebar} aria-label="Close the side panel" className="text-muted hover:text-white transition-colors ml-2">
+            <button onClick={toggleRightSidebar} aria-label={t("Close the side panel")} className="text-muted hover:text-white transition-colors ml-2">
               <ChevronRight size={16} />
             </button>
           </div>
@@ -340,7 +342,7 @@ export default function RightSidebar() {
               <div className={`relative flex-1 overflow-y-auto ${fx ? '' : 'p-4'} pb-[calc(var(--player-space,0px)+1rem)]`}>
                 <motion.div
                   onDoubleClick={doubleClickLike}
-                  title="Double-click to like or unlike this song"
+                  title={t("Double-click to like or unlike this song")}
                   className={fx ? 'relative w-full overflow-hidden' : 'relative w-full rounded-xl overflow-hidden bg-card border border-border/50'}
                   style={{
                     // Square cover normally; a tall canvas grows it to ~60% of the panel.
@@ -413,7 +415,7 @@ export default function RightSidebar() {
                       },
                     ].filter(Boolean)
                     return (
-                      <div role="toolbar" aria-label="Song actions" className={`flex overflow-hidden rounded-xl border ${fx ? 'divide-x divide-white/10 border-white/10 bg-white/[0.12]' : 'divide-x divide-border border-border bg-card'}`}>
+                      <div role="toolbar" aria-label={t("Song actions")} className={`flex overflow-hidden rounded-xl border ${fx ? 'divide-x divide-white/10 border-white/10 bg-white/[0.12]' : 'divide-x divide-border border-border bg-card'}`}>
                         {actions.map(({ key, label, title, icon: Icon, onClick, pressed }) => (
                           <button key={key} type="button" onClick={onClick} title={title || label} aria-label={label} aria-pressed={pressed}
                             className={`${btn} ${pressed ? (fx ? 'text-white/45' : 'text-muted/60') : ''}`}>

@@ -25,6 +25,7 @@ import { startReleaseRefresh, useReleaseRefresh } from '../store/releaseRefresh'
 import { albumCacheKey, isConnected, loadOnlineAlbumCached, mergeWithLibrary, onlineAlbumPath, peekOnline, setConnected } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { losslessMenuItem, losslessManyMenuItem } from '../quality'
+import { useTranslation } from '../i18n'
 
 const shuffledList = list => {
   const out = [...list]
@@ -140,6 +141,7 @@ function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false }) 
 }
 
 export default function Albums() {
+  const { t } = useTranslation()
   // Last visit's releases (and the settings already read) paint at once on
   // the way back, instead of "Loading releases..." first; they refresh quietly.
   const [albums, setAlbumsState] = useState(() => peekCache('albums:all') || [])
@@ -411,14 +413,14 @@ export default function Albums() {
         {!selectedAlbum && <>
         <div className="flex flex-col gap-4 @md:flex-row @md:items-end @md:justify-between">
           <div>
-            <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
-            <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">Albums</h1>
+            <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">{t("Collection")}</p>
+            <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">{t("Albums")}</h1>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <p className="text-sm text-muted">
                 {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
               </p>
               <RefreshButton
-                label="Refresh releases"
+                label={t("Refresh releases")}
                 loading={refreshStatus.running}
                 onClick={() => startReleaseRefresh(albums)}
                 className="shrink-0"
@@ -431,14 +433,14 @@ export default function Albums() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search albums, singles, EPs, or artists..."
+                placeholder={t("Search albums, singles, EPs, or artists...")}
                 className="w-full rounded-2xl border border-border bg-elevated/90 pl-11 pr-4 py-3 text-sm text-white outline-none transition-colors focus:border-accent/50 placeholder:text-muted"
               />
             </div>
 
             <div className="flex items-center gap-2 justify-start @sm:justify-end">
               <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
-              <label className="text-[11px] text-muted uppercase tracking-[0.16em]">Sort</label>
+              <label className="text-[11px] text-muted uppercase tracking-[0.16em]">{t("Sort")}</label>
               <select
                 value={settings.album_sort_mode || 'default'}
                 onChange={(e) => {
@@ -448,8 +450,8 @@ export default function Albums() {
                 }}
                 className="bg-elevated/90 border border-border rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
               >
-                <option value="default">Default</option>
-                <option value="newest">Newest</option>
+                <option value="default">{t("Default")}</option>
+                <option value="newest">{t("Newest")}</option>
               </select>
             </div>
           </div>

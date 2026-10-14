@@ -13,6 +13,7 @@ import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from 
 import { isStreamed } from '../onlineTracks'
 import { plural } from '../plural'
 import { asLink } from '../downloadLinks'
+import { useTranslation } from '../i18n'
 
 // Results for what's typed in the header search box (HeaderSearch.jsx); with
 // nothing typed, the things recently opened from a search. It's also where
@@ -20,6 +21,7 @@ import { asLink } from '../downloadLinks'
 // addons, Soulseek) save to the library, and a pasted link downloads.
 /** The Search page: results for the header query, or recently opened items when it's empty. */
 export default function Search() {
+  const { t } = useTranslation()
   const query = useSearchStore(s => s.query)
   const setQuery = useSearchStore(s => s.setQuery)
   // "Find on Soulseek…" (a streamed song) or "Get it in lossless" (a library
@@ -272,8 +274,8 @@ export default function Search() {
           {recentItems.length === 0 && (
             <div className="text-center py-16 text-muted">
               <SearchIcon size={36} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">Search your library, and online, from the bar at the top.</p>
-              <p className="text-xs mt-1 opacity-70">Or just start typing anywhere in Lokal. Paste a link to download it.</p>
+              <p className="text-sm">{t("Search your library, and online, from the bar at the top.")}</p>
+              <p className="text-xs mt-1 opacity-70">{t("Or just start typing anywhere in Lokal. Paste a link to download it.")}</p>
             </div>
           )}
           
@@ -294,7 +296,7 @@ export default function Search() {
 
           {artists.length > 0 && (
             <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Artists</h2>
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Artists")}</h2>
               <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
                 {artists.map((a, i) => (
                   <motion.button key={a.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.04 }}
@@ -311,7 +313,7 @@ export default function Search() {
 
           {albums.length > 0 && (
             <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Albums</h2>
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Albums")}</h2>
               <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
                 {albums.map((a, i) => (
                   <motion.button key={`${a.title}-${i}`} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }}
@@ -333,8 +335,8 @@ export default function Search() {
           {tracks.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-display text-muted uppercase tracking-widest">Tracks</h2>
-                <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
+                <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Tracks")}</h2>
+                <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
               </div>
               <TrackList tracks={tracks} />
             </section>
@@ -342,7 +344,7 @@ export default function Search() {
 
           {lyricMatches.length > 0 && (
             <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">Lyrics Matches</h2>
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Lyrics Matches")}</h2>
               <div className="space-y-2">
                 {lyricMatches.map((track, i) => (
                   <motion.button

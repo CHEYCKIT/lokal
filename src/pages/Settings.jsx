@@ -1,4 +1,5 @@
 import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
+import { APP_LANGUAGES, useTranslation } from '../i18n'
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
@@ -57,9 +58,10 @@ const TRANSLATION_LANGUAGES = [
 // the page, so on a wide or full-screen window the cards don't stretch edge
 // to edge. The page header and category tabs above still span the width.
 function Section({ title, children }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-3 w-full max-w-2xl mx-auto">
-      <h2 className="text-xs font-display text-muted uppercase tracking-widest">{title}</h2>
+      <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t(title)}</h2>
       <div className="bg-elevated border border-border rounded-xl p-5 space-y-5">{children}</div>
     </div>
   )
@@ -78,11 +80,12 @@ function fmtBytes(bytes) {
 // `stacked`: the control goes under the text, full width (a wide control
 // beside it would squeeze the description into a narrow column).
 function Row({ label, desc, children, stacked = false }) {
+  const { t } = useTranslation()
   return (
     <div className={stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'}>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-white font-medium">{label}</p>
-        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{desc}</p>}
+        <p className="text-sm text-white font-medium">{t(label)}</p>
+        {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{t(desc)}</p>}
       </div>
       <div className={stacked ? '' : 'flex-shrink-0'}>{children}</div>
     </div>
@@ -129,7 +132,7 @@ function ThreeDotsMenu({ items = [], align = 'right' }) {
                 } ${item.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {item.icon}
-                {item.label}
+                {t(item.label)}
               </button>
             )
           ))}
@@ -234,6 +237,7 @@ function withSettingDefaults(s) {
 
 export default function Settings() {
   const location = useLocation()
+  const { t, language, setLanguage } = useTranslation()
   // Seeded from the settings already read (and the version / tools found on
   // the last visit), so the first frame already has the real values: rows
   // used to appear, change text and push everything below them down.
@@ -1059,7 +1063,7 @@ export default function Settings() {
           Section); the category buttons use the full width, centred. */}
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
         <div className="w-full max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <h1 className="font-display text-lg uppercase tracking-widest text-white">Settings</h1>
+          <h1 className="font-display text-lg uppercase tracking-widest text-white">{t("Settings")}</h1>
           <div className="flex items-center gap-3">
             {settingsLoadError && (
               <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> Couldn't load settings ({settingsLoadError})</span>
@@ -1725,6 +1729,24 @@ activeCategory === 'data' ? usersTried
       </Section>
       )}
 
+      {inCategory('appearance') && (
+      <Section title="Language">
+        <Row label="App Language" desc="Choose the language used for Lokal’s interface. Track and album titles from your music files are not translated.">
+          <select
+            value={language}
+            onChange={event => {
+              const code = event.target.value
+              setSettings(previous => ({ ...previous, app_language: code }))
+              setLanguage(code)
+            }}
+            aria-label={t('App Language')}
+            className="min-w-44 bg-card border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+          >
+            {APP_LANGUAGES.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
+          </select>
+        </Row>
+      </Section>
+      )}
       {inCategory('appearance') && (
       <Section title="Theme">
         <div className="space-y-4">

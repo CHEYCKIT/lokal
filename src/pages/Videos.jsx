@@ -16,6 +16,7 @@ import SelectionBar from '../components/SelectionBar'
 import { startVideoPreview } from '../videoPreview'
 import { deleteVideoDownloads, downloadVideos, updateVideoLibrary } from '../videoActions'
 import { losslessMenuItem, losslessManyMenuItem } from '../quality'
+import { useTranslation } from '../i18n'
 
 // A video that isn't downloaded previews with YouTube's own animated preview
 // (a few seconds, no sound), looked up when the card is pointed at for a
@@ -42,6 +43,7 @@ function useAnimatedPreview(item, hover, enabled) {
 }
 
 function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, preview }) {
+  const { t } = useTranslation()
   const [hover, setHover] = React.useState(false)
   const [failed, setFailed] = React.useState(false)
   const [animated, animatedBroken] = useAnimatedPreview(item, hover, !preview)
@@ -64,7 +66,7 @@ function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, 
     return () => { element.removeEventListener('loadedmetadata', start); cleanup(); element.pause(); element.removeAttribute('src'); element.load() }
   }, [hover, preview, failed])
   return <article className={`group relative min-w-0 ${selected ? 'rounded-xl ring-2 ring-accent/70' : ''}`} onContextMenu={onMenu}>
-    <button onClick={onSelect} aria-label={`Play video: ${item.track.title}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="relative block w-full aspect-video overflow-hidden rounded-xl bg-card border border-border shadow-lg">
+    <button onClick={onSelect} aria-label={`${t("Play video:")} ${item.track.title}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="relative block w-full aspect-video overflow-hidden rounded-xl bg-card border border-border shadow-lg">
       <img src={item.video.thumbnail} alt="" loading="lazy" className="w-full h-full object-cover transition-[transform,filter] duration-500 ease-out group-hover:scale-[1.03] group-hover:brightness-110" />
       {preview && hover && !failed && <video ref={ref} src={preview} muted playsInline preload="metadata" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
       {!preview && hover && animated && <img src={animated} alt="" aria-hidden referrerPolicy="no-referrer" onLoad={() => setAnimatedShown(true)} onError={animatedBroken}
@@ -73,20 +75,21 @@ function VideoCard({ item, selected, playing, onSelect, onMenu, onSave, saving, 
           instead of a play button over the picture (the preview plays). */}
       <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-within:opacity-100" />
       {item.track.duration > 0 && <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white">{Math.floor(item.track.duration / 60)}:{String(Math.floor(item.track.duration % 60)).padStart(2, '0')}</span>}
-      {item.downloaded && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white">Downloaded</span>}
-      {playing && <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--bg-rgb))]"><Play size={9} fill="currentColor" />Playing</span>}
+      {item.downloaded && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white">{t("Downloaded")}</span>}
+      {playing && <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--bg-rgb))]"><Play size={9} fill="currentColor" />{t("Playing")}</span>}
       {selected && <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[rgb(var(--bg-rgb))]"><Check size={13} strokeWidth={3} /></span>}
     </button>
     <div className="flex gap-2 items-center mt-3">
       <div className="min-w-0 flex-1"><button onClick={onSelect} className="block truncate w-full text-left text-sm font-medium text-white hover:text-accent">{item.track.title}</button><p className="truncate text-xs text-muted mt-0.5">{item.track.artist}</p></div>
       {isStreamed(item.track) && <SaveToLibraryButton track={item.track} className="p-1.5" />}
-      <button disabled={saving} onClick={onSave} title={item.saved ? 'Remove video from library' : 'Save video to library'} aria-label={item.saved ? 'Remove video from library' : 'Save video to library'} className={`p-1.5 rounded-full hover:bg-elevated disabled:opacity-50 ${item.saved ? 'text-accent' : 'text-muted'}`}>{item.saved ? <Check size={17} /> : <Plus size={17} />}</button>
-      <button onClick={onMenu} title="Video actions" aria-label={`Actions for ${item.track.title}`} className="p-1.5 rounded-full text-muted hover:text-text hover:bg-elevated"><MoreHorizontal size={17} /></button>
+      <button disabled={saving} onClick={onSave} title={item.saved ? t('Remove video from library') : t('Save video to library')} aria-label={item.saved ? t('Remove video from library') : t('Save video to library')} className={`p-1.5 rounded-full hover:bg-elevated disabled:opacity-50 ${item.saved ? 'text-accent' : 'text-muted'}`}>{item.saved ? <Check size={17} /> : <Plus size={17} />}</button>
+      <button onClick={onMenu} title={t("Video actions")} aria-label={`${t("Actions for")} ${item.track.title}`} className="p-1.5 rounded-full text-muted hover:text-text hover:bg-elevated"><MoreHorizontal size={17} /></button>
     </div>
   </article>
 }
 
 export default function Videos() {
+  const { t } = useTranslation()
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState('')
@@ -180,11 +183,11 @@ export default function Videos() {
     { label: chosen.length > 1 ? 'Play selected videos' : 'Play video', icon: Play, onSelect: () => play(chosen[0] || item, false, chosen) },
     chosen.some(row => !row.saved) && { label: chosen.length > 1 ? 'Save selected videos to library' : 'Save video to library', icon: Plus, disabled: !!saving, onSelect: () => saveMany(chosen.filter(row => !row.saved), true) },
     chosen.some(row => row.saved) && { label: chosen.length > 1 ? 'Remove selected videos from library' : 'Remove video from library', icon: Trash2, disabled: !!saving, onSelect: () => saveMany(chosen.filter(row => row.saved), false) },
-    { label: 'Download', icon: Download, disabled: !!saving, onSelect: () => downloadMany(chosen) },
+    { label: t('Download'), icon: Download, disabled: !!saving, onSelect: () => downloadMany(chosen) },
     chosen.some(row => row.downloaded) && { label: 'Delete downloads', icon: Trash2, disabled: !!saving, onSelect: () => deleteMany(chosen) },
     { separator: true },
-    { label: 'Play next', icon: Clock, onSelect: () => playNextMany(tracks) },
-    { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany(tracks) },
+    { label: t('Play next'), icon: Clock, onSelect: () => playNextMany(tracks) },
+    { label: t('Add to queue'), icon: ListEnd, onSelect: () => addToQueueMany(tracks) },
     { label: 'Add to playlist…', icon: ListPlus, onSelect: () => addToPlaylistMany(tracks) },
     tracks.length === 1 ? losslessMenuItem(tracks[0], Gem) : losslessManyMenuItem(tracks, Gem),
     ])
@@ -192,37 +195,37 @@ export default function Videos() {
 
   return <div className="p-6 space-y-6 max-w-7xl mx-auto pb-10">
     <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-xs uppercase tracking-[0.2em] text-muted mb-2">Your music, in motion</p><h1 className="text-3xl font-display text-white">Videos</h1><p className="text-sm text-muted mt-2">{items.length} music videos · Save your favorites and play them from your Videos folder.</p></div>
+      <div><p className="text-xs uppercase tracking-[0.2em] text-muted mb-2">{t("Your music, in motion")}</p><h1 className="text-3xl font-display text-white">{t("Videos")}</h1><p className="text-sm text-muted mt-2">{items.length} {t("music videos · Save your favorites and play them from your Videos folder.")}</p></div>
       <div className="flex flex-wrap gap-2">
         {api.isElectron && (indexing
-          ? <button onClick={cancelVideoIndex} title="Stop finding videos" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><Loader2 size={15} className="animate-spin text-accent" /><span className="tabular-nums">{indexing.total ? `Finding videos ${indexing.done}/${indexing.total} · ${indexing.found} found` : 'Finding videos…'}</span><X size={14} className="text-muted" /></button>
-          : <button onClick={startIndex} title="Look up the music video of every song in your library. Videos are only found, not downloaded." className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><ScanSearch size={15} />Find videos for my library</button>)}
-        <button disabled={!visible.length} onClick={() => play(visible[0])} className="inline-flex items-center gap-2 rounded-full px-4 py-2 bg-accent text-base disabled:opacity-40"><Play size={15} fill="currentColor" />Play</button>
-        <button disabled={!visible.length} onClick={() => play(visible[Math.floor(Math.random() * visible.length)], true)} className="inline-flex items-center gap-2 rounded-full px-4 py-2 border border-border text-text disabled:opacity-40"><Shuffle size={15} />Shuffle</button>
+          ? <button onClick={cancelVideoIndex} title={t("Stop finding videos")} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><Loader2 size={15} className="animate-spin text-accent" /><span className="tabular-nums">{indexing.total ? `${t('Finding videos')} ${indexing.done}/${indexing.total} · ${indexing.found} ${t('found')}` : t('Finding videos…')}</span><X size={14} className="text-muted" /></button>
+          : <button onClick={startIndex} title={t("Look up the music video of every song in your library. Videos are only found, not downloaded.")} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-text hover:border-accent/40"><ScanSearch size={15} />{t("Find videos for my library")}</button>)}
+        <button disabled={!visible.length} onClick={() => play(visible[0])} className="inline-flex items-center gap-2 rounded-full px-4 py-2 bg-accent text-base disabled:opacity-40"><Play size={15} fill="currentColor" />{t("Play")}</button>
+        <button disabled={!visible.length} onClick={() => play(visible[Math.floor(Math.random() * visible.length)], true)} className="inline-flex items-center gap-2 rounded-full px-4 py-2 border border-border text-text disabled:opacity-40"><Shuffle size={15} />{t("Shuffle")}</button>
       </div>
     </header>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div role="group" aria-label="Video collection" className="flex gap-1 p-1 rounded-lg bg-elevated border border-border">
-        {[['all', 'All Videos'], ['saved', 'Saved'], ['downloaded', 'Downloaded']].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`px-3 py-1.5 rounded-md text-xs ${filter === id ? 'bg-accent text-base' : 'text-muted hover:text-text'}`}>{label}</button>)}
+      <div role="group" aria-label={t("Video collection")} className="flex gap-1 p-1 rounded-lg bg-elevated border border-border">
+        {[['all', 'All Videos'], ['saved', 'Saved'], ['downloaded', 'Downloaded']].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`px-3 py-1.5 rounded-md text-xs ${filter === id ? 'bg-accent text-base' : 'text-muted hover:text-text'}`}>{t(label)}</button>)}
       </div>
-      <label className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2"><Search size={14} className="text-muted" /><input aria-label="Search videos" placeholder="Search videos" value={query} onChange={e => setQuery(e.target.value)} className="bg-transparent outline-none text-sm text-text w-44" /></label>
+      <label className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2"><Search size={14} className="text-muted" /><input aria-label={t("Search videos")} placeholder={t("Search videos")} value={query} onChange={e => setQuery(e.target.value)} className="bg-transparent outline-none text-sm text-text w-44" /></label>
     </div>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 @2xl:grid-cols-4 gap-x-5 gap-y-7">
       {visible.map(item => <VideoCard key={item.track.id} item={item} selected={selection.has(item.track.id)} playing={currentId === item.track.id} onSelect={event => selection.click(item.track.id, event) || play(item)} onSave={() => save(item)} saving={!!saving} onMenu={event => openMenu(event, item)} preview={item.downloaded && item.video.file ? api.fileURL(item.video.file) : null} />)}
     </div>
-    {loaded && !visible.length && <div className="text-center py-16 text-muted"><Clapperboard size={40} className="mx-auto mb-4 opacity-40" /><p>{items.length ? 'No videos match this view.' : 'Your discovered music videos will appear here.'}</p><p className="text-xs mt-2">Play songs to discover videos, or use “Find videos for my library” above.</p></div>}
+    {loaded && !visible.length && <div className="text-center py-16 text-muted"><Clapperboard size={40} className="mx-auto mb-4 opacity-40" /><p>{items.length ? t('No videos match this view.') : t('Your discovered music videos will appear here.')}</p><p className="text-xs mt-2">{t("Play songs to discover videos, or use “Find videos for my library” above.")}</p></div>}
     {/* Like the Library's bar: short labels, and only what applies to the
         selection (not greyed-out actions widening it). */}
     <SelectionBar open={selection.count > 0} label={`${selection.count} selected`} onClear={selection.clear} actions={[
-      { label: 'Play', icon: Play, onClick: () => play(selectedItems[0], false, selectedItems) },
-      { label: 'Play next', icon: Clock, onClick: () => playNextMany(selectedItems.map(row => row.track)) },
-      { label: 'Add to queue', icon: ListEnd, onClick: () => addToQueueMany(selectedItems.map(row => row.track)) },
-      { label: 'Add to playlist', icon: ListPlus, onClick: () => addToPlaylistMany(selectedItems.map(row => row.track)) },
-      { label: 'Save', icon: Plus, hidden: selectedItems.every(row => row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => !row.saved), true) },
-      { label: 'Remove', icon: X, hidden: selectedItems.every(row => !row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => row.saved), false) },
-      { label: 'Download', icon: Download, hidden: selectedItems.every(row => row.downloaded), disabled: !!saving, onClick: () => downloadMany(selectedItems) },
-      { label: 'Delete download', icon: Trash2, danger: true, hidden: selectedItems.every(row => !row.downloaded), disabled: !!saving, onClick: () => deleteMany(selectedItems) },
+      { label: t('Play'), icon: Play, onClick: () => play(selectedItems[0], false, selectedItems) },
+      { label: t('Play next'), icon: Clock, onClick: () => playNextMany(selectedItems.map(row => row.track)) },
+      { label: t('Add to queue'), icon: ListEnd, onClick: () => addToQueueMany(selectedItems.map(row => row.track)) },
+      { label: t('Add to playlist'), icon: ListPlus, onClick: () => addToPlaylistMany(selectedItems.map(row => row.track)) },
+      { label: t('Save'), icon: Plus, hidden: selectedItems.every(row => row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => !row.saved), true) },
+      { label: t('Remove'), icon: X, hidden: selectedItems.every(row => !row.saved), disabled: !!saving, onClick: () => saveMany(selectedItems.filter(row => row.saved), false) },
+      { label: t('Download'), icon: Download, hidden: selectedItems.every(row => row.downloaded), disabled: !!saving, onClick: () => downloadMany(selectedItems) },
+      { label: t('Delete download'), icon: Trash2, danger: true, hidden: selectedItems.every(row => !row.downloaded), disabled: !!saving, onClick: () => deleteMany(selectedItems) },
     ]} />
     <ContextMenu menu={menu} />
   </div>
