@@ -68,9 +68,12 @@ function netFetch(net, input, init = {}) {
 
     signalListener = () => {
       const error = abortError()
+      const hadResponse = settled
+      settled = true
+      removeSignalListener()
       try { request.abort() } catch {}
       try { responseMessage?.destroy(error) } catch {}
-      rejectBeforeResponse(error)
+      if (!hadResponse) reject(error)
     }
     init.signal?.addEventListener?.('abort', signalListener, { once: true })
     // Cover an abort racing with request creation/listener registration.
