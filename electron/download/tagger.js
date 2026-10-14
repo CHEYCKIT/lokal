@@ -104,7 +104,7 @@ async function squareCover(T, file) {
 
 function isPlaceholderAlbum(value) {
   const album = String(value ?? '').trim()
-  return !album || /^(?:unknown(?:\\s+album)?|untitled(?:\\s+album)?|n\\/?a|none|null|undefined)$/i.test(album)
+  return !album || /^(?:unknown(?:\s+album)?|untitled(?:\s+album)?|n\/?a|none|null|undefined)$/i.test(album)
 }
 
 function stripArtistPrefix(title, artist) {
