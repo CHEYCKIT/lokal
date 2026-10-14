@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronRight, ChevronLeft } from 'lucide-react'
@@ -31,6 +32,7 @@ const tourSteps = [
 
 /** First-run tour pointing at search, library, downloader and settings. */
 export default function PostOnboardingTour() {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 })
@@ -145,7 +147,7 @@ export default function PostOnboardingTour() {
           className="bg-elevated border border-border rounded-2xl shadow-2xl overflow-hidden"
         >
           <div className="flex items-center justify-between px-4 py-3 bg-accent/10 border-b border-border">
-            <span className="text-xs font-medium text-accent uppercase tracking-wider">Quick Tour</span>
+            <span className="text-xs font-medium text-accent uppercase tracking-wider">{t("Quick Tour")}</span>
             <button
               onClick={handleSkip}
               className="text-muted hover:text-white transition-colors p-1"
@@ -155,8 +157,8 @@ export default function PostOnboardingTour() {
           </div>
 
           <div className="p-4">
-            <h3 className="text-base font-bold text-white mb-1">{step.title}</h3>
-            <p className="text-xs text-muted mb-3">{step.description}</p>
+            <h3 className="text-base font-bold text-white mb-1">{t(step.title)}</h3>
+            <p className="text-xs text-muted mb-3">{t(step.description)}</p>
 
             <div className="flex items-center gap-2 mb-3">
               {tourSteps.map((s, i) => (
