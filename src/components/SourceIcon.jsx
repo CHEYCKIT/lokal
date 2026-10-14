@@ -9,13 +9,12 @@ export const YoutubeIcon = createLucideIcon('youtube', [
   ['path', { d: 'm10 15 5-3-5-3z', key: '1jp15x' }],
 ])
 
-// Quiet marks by default; online search opts into coloured provider branding.
 function addonBrandKey(name) {
   const label = String(name || '').toLowerCase()
-  if (/\\bamazon\\b/.test(label)) return 'amazon'
-  if (/\\bqobuz\\b/.test(label)) return 'qobuz'
-  if (/\\btidal\\b/.test(label)) return 'tidal'
-  if (/\\bdeezer\\b/.test(label)) return 'deezer'
+  if (/\bamazon\b/.test(label)) return 'amazon'
+  if (/\bqobuz\b/.test(label)) return 'qobuz'
+  if (/\btidal\b/.test(label)) return 'tidal'
+  if (/\bdeezer\b/.test(label)) return 'deezer'
   return null
 }
 
