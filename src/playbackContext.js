@@ -115,8 +115,10 @@ export function navigateToContext(nav, context, highlightTrackId = null) {
 /** Navigate to the album page for a single track (bottom-bar title shortcut). */
 export function navigateToTrackAlbum(nav, track) {
   const context = albumContextFromTrack(track)
-  const sourceAlbumId = track?.source_album_id || track?.sourceAlbumId || track?.albumId
-  if (!nav || (!context && !(isOnlineTrack(track) && sourceAlbumId))) return false
+  const online = isOnlineTrack(track)
+  const path = online ? trackAlbumPath(track) : null
+  const sourceAlbumId = path ? new URLSearchParams(path.split('?')[1] || '').get('sourceAlbum') : null
+  if (!nav || (!context && !(online && sourceAlbumId))) return false
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
   if (online) {

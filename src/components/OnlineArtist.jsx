@@ -206,7 +206,7 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
                 </button>
               )}
             </>
-            : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{songs.error || t('No songs were found for {artist}.', { artist: name })}</p>}
+            : <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{songs.error ? t(songs.error) : t('No songs were found for {artist}.', { artist: name })}</p>}
       </section>
 
       {(albums.loading ? !songs.loading : albumItems.length > 0) && (

@@ -175,7 +175,7 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
         />
       ) : (
         <>
-        {error && !results.length && <p className="text-xs text-muted py-2">{error}</p>}
+        {error && !results.length && <p className="text-xs text-muted py-2">{t(error)}</p>}
         {!loading && !error && !results.length && <p className="text-xs text-muted py-2">{t('No songs found on {source}.', { source: providerLabel })}</p>}
         <div className="space-y-0.5">
           {results.map((item, i) => {
