@@ -3,6 +3,7 @@
 // signs in; the progress and the result show here, with a check for a newer
 // slskd and the update to it.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { ArrowUpCircle, Check, Loader2, LogOut, RefreshCw } from 'lucide-react'
 import { api } from '../api'
@@ -10,14 +11,17 @@ import { api } from '../api'
 const LOGIN_WAIT_MS = 25000
 
 /** Why the client isn't signed in, from its connection state. */
-export function signInProblem(serverState = '') {
+export function signInProblem(serverState = '', translate = value => value) {
   const state = String(serverState || '')
-  if (/connecting|disconnected/i.test(state) && !/connected,/i.test(state)) return `Can't reach the Soulseek network yet (${state}). Check your internet connection or firewall, or try again in a minute.`
-  if (/logging ?in/i.test(state)) return 'Soulseek is still signing you in. Try again in a moment.'
-  return `Soulseek didn't accept the sign-in${state ? ` (${state})` : ''}. Check the username and password; if the username is taken by someone else, pick another.`
+  if (/connecting|disconnected/i.test(state) && !/connected,/i.test(state)) {
+    return translate("Can't reach the Soulseek network yet ({state}). Check your internet connection or firewall, or try again in a minute.", { state })
+  }
+  if (/logging ?in/i.test(state)) return translate('Soulseek is still signing you in. Try again in a moment.')
+  return translate("Soulseek didn't accept the sign-in{state}. Check the username and password; if the username is taken by someone else, pick another.", { state: state ? ` (${state})` : '' })
 }
 
 export default function SoulseekSignIn({ settings, set }) {
+  const { t } = useTranslation()
   const [client, setClient] = useState(null) // the client's phase: installing (progress) / starting / running / stopped / error
   const [account, setAccount] = useState(null) // slskd.status(): { loggedIn, username, serverState } | { error }
   const [busy, setBusy] = useState(false)
@@ -55,9 +59,9 @@ export default function SoulseekSignIn({ settings, set }) {
       }
       if (id !== run.current) return
       setAccount(status)
-      if (!status?.loggedIn) setError(signInProblem(status?.serverState))
+      if (!status?.loggedIn) setError(signInProblem(status?.serverState, t))
     } catch (e) {
-      if (id === run.current) setError(e.message)
+      if (id === run.current) setError(t(e.message))
     } finally {
       if (id === run.current) setBusy(false)
     }
@@ -99,68 +103,68 @@ export default function SoulseekSignIn({ settings, set }) {
   const phase = client?.phase
   const working = busy && (phase === 'installing' || phase === 'starting' || !account)
   const progressText = phase === 'updating'
-    ? `Updating the Soulseek client to slskd ${client.update?.version || ''}… ${client.progress || 0}%`
+    ? t('Updating the Soulseek client to slskd {version}… {percent}%', { version: client.update?.version || '', percent: client.progress || 0 })
     : phase === 'installing'
-    ? `Downloading the Soulseek client (slskd ${client.version}, once)… ${client.progress || 0}%`
-    : phase === 'starting' ? 'Starting the Soulseek client…' : 'Signing in to Soulseek…'
+    ? t('Downloading the Soulseek client (slskd {version}, once)… {percent}%', { version: client.version, percent: client.progress || 0 })
+    : phase === 'starting' ? t('Starting the Soulseek client…') : t('Signing in to Soulseek…')
   const signedIn = !!account?.loggedIn
 
   return (
     <div className="space-y-3">
       <div className="grid gap-2 @md:grid-cols-2">
         <label className="space-y-1">
-          <span className="text-xs text-muted">Username</span>
+          <span className="text-xs text-muted">{t("Username")}</span>
           <input value={settings.soulseek_username || ''} onChange={e => set('soulseek_username', e.target.value)} disabled={busy}
-            spellCheck={false} autoComplete="username" placeholder="Your Soulseek username"
+            spellCheck={false} autoComplete="username" placeholder={t("Your Soulseek username")}
             className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
         </label>
         <label className="space-y-1">
-          <span className="text-xs text-muted">Password</span>
+          <span className="text-xs text-muted">{t("Password")}</span>
           <input type="password" value={settings.soulseek_password || ''} onChange={e => set('soulseek_password', e.target.value)} disabled={busy}
             onKeyDown={e => { if (e.key === 'Enter' && !busy) signIn() }}
-            autoComplete="current-password" placeholder="Its password"
+            autoComplete="current-password" placeholder={t("Its password")}
             className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50 disabled:opacity-60" />
         </label>
       </div>
-      <p className="text-[11px] leading-relaxed text-muted">New to Soulseek? Make up a username and password: the account is created the first time you sign in. Use one that isn't signed in anywhere else (Nicotine+, another slskd) at the same time.</p>
+      <p className="text-[11px] leading-relaxed text-muted">{t("New to Soulseek? Make up a username and password: the account is created the first time you sign in. Use one that isn't signed in anywhere else (Nicotine+, another slskd) at the same time.")}</p>
       <label className="flex cursor-pointer items-start gap-2 text-xs text-muted">
         <input type="checkbox" checked={settings.soulseek_share_library === '1'} disabled={busy || !settings.music_folder}
           onChange={e => set('soulseek_share_library', e.target.checked ? '1' : '0')} className="mt-0.5 accent-[rgb(var(--accent-rgb))]" />
-        <span>Share my music folder{settings.music_folder ? ` (${settings.music_folder})` : ''} with the Soulseek network. Many Soulseek users only send files to people who share; takes effect at the next sign-in.</span>
+        <span>{t('Share my music folder{path} with the Soulseek network. Many Soulseek users only send files to people who share; takes effect at the next sign-in.', { path: settings.music_folder ? ` (${settings.music_folder})` : '' })}</span>
       </label>
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={signIn} disabled={busy || updating || !String(settings.soulseek_username || '').trim() || !settings.soulseek_password} aria-label="Sign in to Soulseek"
+        <button onClick={signIn} disabled={busy || updating || !String(settings.soulseek_username || '').trim() || !settings.soulseek_password} aria-label={t("Sign in to Soulseek")}
           className="inline-flex items-center gap-2 rounded-lg border border-accent/50 bg-accent/20 px-4 py-1.5 text-xs font-display uppercase tracking-wider text-accent disabled:opacity-50">
-          {busy && <Loader2 size={12} className="animate-spin" />}{signedIn ? 'Sign in again' : 'Sign in'}
+          {busy && <Loader2 size={12} className="animate-spin" />}{signedIn ? t('Sign in again') : t('Sign in')}
         </button>
         {(signedIn || client?.running) && !updating && (
-          <button onClick={signOut} aria-label="Sign out of Soulseek" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
-            <LogOut size={12} /> Sign out
+          <button onClick={signOut} aria-label={t("Sign out of Soulseek")} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
+            <LogOut size={12} /> {t('Sign out of Soulseek')}
           </button>
         )}
         {(working || updating) && <p role="status" className="text-xs text-muted">{progressText}</p>}
-        {!busy && signedIn && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-green-400"><Check size={12} />Signed in as {account.username || settings.soulseek_username} · slskd {account.version || client?.version}</p>}
-        {!busy && !updating && (error || (phase === 'error' && client?.error)) && <p role="alert" className="text-xs text-red-400">{error || client.error}</p>}
+        {!busy && signedIn && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-green-400"><Check size={12} />{t('Signed in as {username} · slskd {version}', { username: account.username || settings.soulseek_username, version: account.version || client?.version })}</p>}
+        {!busy && !updating && (error || (phase === 'error' && client?.error)) && <p role="alert" className="text-xs text-red-400">{t(error || client.error)}</p>}
       </div>
       {client?.installed && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-          <span>Soulseek client: slskd {client.version}</span>
+          <span>{t('Soulseek client: slskd {version}', { version: client.version })}</span>
           {client.update ? (
             <>
-              <button onClick={update} disabled={busy || updating} aria-label={`Update slskd to ${client.update.version}`}
+              <button onClick={update} disabled={busy || updating} aria-label={t('Update slskd to {version}', { version: client.update.version })}
                 className="inline-flex items-center gap-1 rounded-md border border-accent/50 bg-accent/15 px-2 py-0.5 text-accent hover:bg-accent/25 disabled:opacity-50">
-                {updating ? <Loader2 size={11} className="animate-spin" /> : <ArrowUpCircle size={11} />}Update to {client.update.version}
+                {updating ? <Loader2 size={11} className="animate-spin" /> : <ArrowUpCircle size={11} />}{t('Update to {version}', { version: client.update.version })}
               </button>
-              <button onClick={() => api.openExternal(client.update.notes)} className="hover:text-white hover:underline">What's new</button>
+              <button onClick={() => api.openExternal(client.update.notes)} className="hover:text-white hover:underline">{t("What's new")}</button>
             </>
           ) : (
             <button onClick={checkUpdate} disabled={busy || updating || updateCheck?.busy} className="inline-flex items-center gap-1 hover:text-white disabled:opacity-50">
-              <RefreshCw size={11} className={updateCheck?.busy ? 'animate-spin' : ''} />{updateCheck?.busy ? 'Checking…' : 'Check for updates'}
+              <RefreshCw size={11} className={updateCheck?.busy ? 'animate-spin' : ''} />{updateCheck?.busy ? t('Checking…') : t('Check for updates')}
             </button>
           )}
-          {updateCheck?.upToDate && <span role="status" className="inline-flex items-center gap-1 text-green-400"><Check size={11} />Up to date</span>}
-          {updateCheck?.error && <span role="alert" className="text-red-400">{updateCheck.error}</span>}
-          {client.update && client.running && !updating && <span>Updating restarts Soulseek; Soulseek downloads in progress are interrupted.</span>}
+          {updateCheck?.upToDate && <span role="status" className="inline-flex items-center gap-1 text-green-400"><Check size={11} />{t("Up to date")}</span>}
+          {updateCheck?.error && <span role="alert" className="text-red-400">{t(updateCheck.error)}</span>}
+          {client.update && client.running && !updating && <span>{t("Updating restarts Soulseek; Soulseek downloads in progress are interrupted.")}</span>}
         </div>
       )}
       {(phase === 'installing' || phase === 'updating') && (

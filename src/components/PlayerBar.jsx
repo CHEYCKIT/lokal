@@ -8,6 +8,7 @@ import { api } from '../api'
 import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
+import { isOnlineTrack } from '../onlineBrowse'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
@@ -132,7 +133,7 @@ export default function PlayerBar() {
     navigateToTrackArtist(nav, currentTrack, keepCommaArtists)
   }
 
-  const hasAlbum = !!currentTrack?.album
+  const hasAlbum = !!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
   const handleTitleClick = () => {
     if (!hasAlbum) return
     navigateToTrackAlbum(nav, currentTrack)
@@ -192,7 +193,7 @@ export default function PlayerBar() {
                   <button
                     onClick={handleTitleClick}
                     onContextMenu={openTrackMenu}
-                    title={`Go to album: ${currentTrack.album}`}
+                    title={`Go to album: ${currentTrack.album || t('Album · Online')}`}
                     className="text-sm font-medium truncate text-text hover:text-accent hover:underline transition-colors text-left min-w-0">
                     {currentTrack.title}
                   </button>
@@ -226,7 +227,7 @@ export default function PlayerBar() {
                     </span>
                   )}
                 </div>
-              ) : <p className="text-xs text-muted">No track playing</p>}
+              ) : <p className="text-xs text-muted">{t("No track playing")}</p>}
               {quality && (
                 // The Audio Quality page's pill (same colours), what it means on hover.
                 <button onClick={() => nav('/quality', { state: { tier: qualityTier } })}

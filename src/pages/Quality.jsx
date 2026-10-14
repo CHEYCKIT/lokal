@@ -239,7 +239,7 @@ export default function Quality() {
         <ReadyWhen ready={rowsFor === filter || !!rowsError} />
         {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">{t("Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.")}</p>}
 
-        {loading && rowsFor !== filter && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
+        {loading && rowsFor !== filter && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> {t('Loading…')}</p>}
         {rowsError && (
           <p className="flex items-center gap-2 py-3 text-xs text-red">
             {t("Couldn't load this list")} ({rowsError}).

@@ -34,6 +34,7 @@ function hashStringToHue(str) {
 }
 
 function FallbackAvatar({ name }) {
+  const { t } = useTranslation()
   const hue = hashStringToHue(name || '?')
   const hue2 = (hue + 50) % 360
   return (
@@ -51,6 +52,7 @@ function FallbackAvatar({ name }) {
 const FIRST_SCREEN_CARDS = 24
 
 function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = true }) {
+  const { t } = useTranslation()
   const imgSrc = getArtistImage(artist)
 
   return (
@@ -94,7 +96,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
       </div>
       <div className="min-w-0 w-full">
         <p className="truncate text-sm font-medium text-white">{artist.name}</p>
-        <p className="truncate text-xs text-white/55">{artist.track_count} {artist.track_count === 1 ? 'track' : 'tracks'}</p>
+        <p className="truncate text-xs text-white/55">{t(artist.track_count === 1 ? '{count} track' : '{count} tracks', { count: artist.track_count })}</p>
       </div>
     </motion.div>
   )
@@ -102,6 +104,7 @@ function ArtistCard({ artist, onClick, onPlay, onContextMenu, rank, animateIn = 
 
 /** One artist as a list row: small avatar, full name (wraps instead of being cut), track count. */
 function ArtistRow({ artist, onClick, onPlay, onContextMenu }) {
+  const { t } = useTranslation()
   const imgSrc = getArtistImage(artist)
   return (
     <div
@@ -356,7 +359,7 @@ export default function Artists() {
               </button>
             </div>
             <p className="mt-3 text-sm text-muted">
-              {loading ? '\u00a0' : `${total.toLocaleString()} ${followedOnly ? 'followed ' : ''}artist${total === 1 ? '' : 's'}`}
+              {loading ? '\u00a0' : t(followedOnly ? (total === 1 ? '{count} followed artist' : '{count} followed artists') : (total === 1 ? '{count} artist' : '{count} artists'), { count: total.toLocaleString() })}
             </p>
           </div>
 
@@ -366,7 +369,7 @@ export default function Artists() {
                 <button key={label} role="radio" aria-checked={followedOnly === value} onClick={() => changeFollowedOnly(value)}
                   title={value ? 'Only the artists you follow' : 'Every artist in your library'}
                   className={`h-8 rounded-lg px-3 text-sm transition-colors ${followedOnly === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}>
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>
@@ -429,7 +432,7 @@ export default function Artists() {
 
         <section className="space-y-4">
           {!query.trim() && !followedOnly && topArtists.length > 0 && density !== 'list' && (
-            <h2 className="text-xs font-display text-muted uppercase tracking-widest">All Artists</h2>
+            <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("All Artists")}</h2>
           )}
           {loading ? (
             <div className="flex items-center justify-center py-24">
@@ -473,7 +476,7 @@ export default function Artists() {
               )}
               {(hasMore || loadingMore) && (
                 <div ref={loadMoreRef} className="flex min-h-20 items-center justify-center">
-                  {loadingMore ? <Loader2 size={18} className="animate-spin text-muted" /> : <p className="text-xs text-muted/60">Scroll for more</p>}
+                  {loadingMore ? <Loader2 size={18} className="animate-spin text-muted" /> : <p className="text-xs text-muted/60">{t("Scroll for more")}</p>}
                 </div>
               )}
             </div>

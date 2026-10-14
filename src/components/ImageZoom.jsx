@@ -3,6 +3,7 @@
 // closes it. Online pictures are asked for in a larger size where the source
 // allows (YouTube/Google, iTunes).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -25,6 +26,7 @@ export function largerImage(url) {
  * @param open / onClose
  */
 export default function ImageZoom({ src, alt = '', open, onClose }) {
+  const { t } = useTranslation()
   const big = largerImage(src)
   const [shown, setShown] = useState(big)
   useEffect(() => { setShown(big) }, [big])
@@ -59,7 +61,7 @@ export default function ImageZoom({ src, alt = '', open, onClose }) {
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
             className="max-h-[min(80vh,900px)] max-w-[min(80vw,900px)] rounded-2xl object-contain shadow-2xl"
           />
-          <button type="button" onClick={onClose} aria-label="Close" className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white">
+          <button type="button" onClick={onClose} aria-label={t("Close")} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white">
             <X size={18} />
           </button>
         </motion.div>

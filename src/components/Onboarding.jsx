@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -60,6 +61,7 @@ const steps = [
 ]
 
 export default function Onboarding({ isOpen, onComplete }) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState(0)
   const [musicFolder, setMusicFolder] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -340,11 +342,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                 </div>
 
                 <h2 className="text-2xl font-bold text-white text-center mb-3">
-                  {step.title}
+                  {t(step.title)}
                 </h2>
 
                 <p className="text-muted text-center text-sm leading-relaxed mb-8">
-                  {step.description}
+                  {t(step.description)}
                 </p>
 
                 {step.id === 'local-only' && (
@@ -353,11 +355,11 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-start gap-3">
                         <AlertCircle size={20} className="text-yellow-400 flex-shrink-0 mt-0.5" />
                         <div className="space-y-2 text-xs text-yellow-200/80">
-                          <p><strong>NOT a streaming service!</strong></p>
-                          <p>Lokal doesn't have any built-in music. You must:</p>
+                          <p><strong>{t("NOT a streaming service!")}</strong></p>
+                          <p>{t("Lokal doesn't have any built-in music. You must:")}</p>
                           <ul className="list-disc list-inside space-y-1 ml-1">
-                            <li>Download music from Search (requires yt-dlp)</li>
-                            <li>OR import music files from a folder on your computer</li>
+                            <li>{t("Download music from Search (requires yt-dlp)")}</li>
+                            <li>{t("OR import music files from a folder on your computer")}</li>
                           </ul>
                         </div>
                       </div>
@@ -375,21 +377,21 @@ export default function Onboarding({ isOpen, onComplete }) {
                         <div className="space-y-2">
                           <FolderOpen size={24} className="mx-auto text-accent" />
                           <p className="text-sm text-white truncate px-4">{musicFolder}</p>
-                          <p className="text-xs text-muted">Click to change folder</p>
+                          <p className="text-xs text-muted">{t("Click to change folder")}</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
                           <FolderOpen size={24} className="mx-auto text-muted group-hover:text-accent transition-colors" />
-                          <p className="text-sm text-muted group-hover:text-white transition-colors">Click to select your music folder</p>
+                          <p className="text-sm text-muted group-hover:text-white transition-colors">{t("Click to select your music folder")}</p>
                         </div>
                       )}
                     </div>
                     
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
-                      <p className="text-xs text-muted font-medium">Quick Settings</p>
+                      <p className="text-xs text-muted font-medium">{t("Quick Settings")}</p>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Fetch Online Artwork</span>
+                        <span className="text-sm text-white">{t("Fetch Online Artwork")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('fetch_online_artwork', settings.fetch_online_artwork === '0' ? '1' : '0') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fetch_online_artwork !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -399,7 +401,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Index While Downloading</span>
+                        <span className="text-sm text-white">{t("Index While Downloading")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('index_while_downloading', settings.index_while_downloading === '1' ? '0' : '1') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.index_while_downloading === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -409,7 +411,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Auto-fetch Genres</span>
+                        <span className="text-sm text-white">{t("Auto-fetch Genres")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('auto_fetch_genres', settings.auto_fetch_genres === '0' ? '1' : '0') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_fetch_genres !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -419,7 +421,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                       </div>
                       
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-white">Skip Drum-kit Pattern</span>
+                        <span className="text-sm text-white">{t("Skip Drum-kit Pattern")}</span>
                         <button
                           onClick={(e) => { e.stopPropagation(); updateSetting('skip_drumkit_pattern', settings.skip_drumkit_pattern === '1' ? '0' : '1') }}
                           className={`px-3 py-1 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.skip_drumkit_pattern === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
@@ -431,7 +433,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                     
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
                       <p className="text-xs text-muted font-medium flex items-center gap-2">
-                        <Palette size={14} /> Theme
+                        <Palette size={14} /> {t('Theme')}
                       </p>
                       <div className="grid grid-cols-5 gap-2">
                         {Object.entries(THEMES).slice(0, 5).map(([key, theme]) => (
@@ -464,7 +466,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                         <span>{toolsError}</span>
                         {toolsErrorTool && (
                           <button onClick={retryToolDownload} disabled={toolsLoading} className="shrink-0 px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-300 hover:bg-red-500/30 disabled:opacity-40">
-                            Retry
+                            {t('Retry')}
                           </button>
                         )}
                       </div>
@@ -474,18 +476,18 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-center justify-between bg-card/50 rounded-xl p-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${toolsStatus?.ytdlp?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                          <span className="text-sm text-white">yt-dlp</span>
+                          <span className="text-sm text-white">{t("yt-dlp")}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {toolsStatus?.ytdlp?.found ? (
-                            <span className="text-xs text-green-400">Installed</span>
+                            <span className="text-xs text-green-400">{t("Installed")}</span>
                           ) : (
                             <button
                               onClick={downloadYtDlp}
                               disabled={toolsLoading}
                               className="px-3 py-1.5 bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs hover:bg-accent/30 transition-colors disabled:opacity-40"
                             >
-                              {toolsLoading ? 'Downloading...' : 'Download'}
+                              {toolsLoading ? t('Downloading…') : t('Download')}
                             </button>
                           )}
                         </div>
@@ -495,25 +497,25 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="flex items-center justify-between bg-card/50 rounded-xl p-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${toolsStatus?.ffmpeg?.found ? 'bg-green-500' : 'bg-red-500'}`} />
-                          <span className="text-sm text-white">ffmpeg</span>
+                          <span className="text-sm text-white">{t("ffmpeg")}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {toolsStatus?.ffmpeg?.found ? (
-                            <span className="text-xs text-green-400">Installed</span>
+                            <span className="text-xs text-green-400">{t("Installed")}</span>
                           ) : (
                             <button
                               onClick={downloadFfmpeg}
                               disabled={toolsLoading}
                               className="px-3 py-1.5 bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs hover:bg-accent/30 transition-colors disabled:opacity-40"
                             >
-                              {toolsLoading ? 'Downloading...' : 'Download'}
+                              {toolsLoading ? t('Downloading…') : t('Download')}
                             </button>
                           )}
                         </div>
                       </div>
                     </div>
                     <p className="text-xs text-muted text-center">
-                      You can also download these later from Settings → External Tools
+                      {t('You can also download these later from Settings → External Tools')}
                     </p>
                   </div>
                 )}
@@ -526,8 +528,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                   <div className="space-y-4">
                     <div className="bg-card/50 rounded-xl p-4 space-y-3">
                       <p className="text-xs text-muted">
-                        This feature originally existed for the original span of the project while it was server-based.
-                        Now that it's local-first, you can skip this, all your data is stored on this device.
+                        {t("This feature originally existed when the project was server-based. Now that Lokal is local-first, you can skip this; all your data is stored on this device.")}
                       </p>
                       
                       {!showUserForm ? (
@@ -535,27 +536,27 @@ export default function Onboarding({ isOpen, onComplete }) {
                           onClick={() => setShowUserForm(true)}
                           className="w-full py-2.5 bg-accent/20 border border-accent/30 text-accent rounded-xl text-sm font-medium hover:bg-accent/30 transition-colors"
                         >
-                          Create Account (Optional)
+                          {t('Create Account (Optional)')}
                         </button>
                       ) : (
                         <div className="space-y-3">
                           <input
                             type="text"
-                            placeholder="Username"
+                            placeholder={t("Username")}
                             value={userForm.username}
                             onChange={(e) => setUserForm({...userForm, username: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
                           />
                           <input
                             type="email"
-                            placeholder="Email (optional)"
+                            placeholder={t("Email (optional)")}
                             value={userForm.email}
                             onChange={(e) => setUserForm({...userForm, email: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
                           />
                           <input
                             type="password"
-                            placeholder="Password"
+                            placeholder={t("Password")}
                             value={userForm.password}
                             onChange={(e) => setUserForm({...userForm, password: e.target.value})}
                             className="w-full px-3 py-2 bg-card border border-border rounded-xl text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent"
@@ -567,7 +568,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                               disabled={creatingUser}
                               className="flex-1 py-2 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors disabled:opacity-40"
                             >
-                              {creatingUser ? 'Creating...' : 'Create Account'}
+                              {creatingUser ? t('Creating…') : t('Create Account')}
                             </button>
                             <button
                               onClick={() => {
@@ -577,7 +578,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                               }}
                               className="px-4 py-2 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors"
                             >
-                              Cancel
+                              {t('Cancel')}
                             </button>
                           </div>
                         </div>
@@ -594,10 +595,10 @@ export default function Onboarding({ isOpen, onComplete }) {
                           <Disc3 size={48} className="mx-auto text-accent animate-spin" />
                         </div>
                         <div className="space-y-2">
-                          <p className="text-sm text-white">Scanning your music library...</p>
+                          <p className="text-sm text-white">{t('Scanning your music library…')}</p>
                           {scanProgress.isActive && scanProgress.total > 0 && (
                             <p className="text-xs text-muted">
-                              {scanProgress.current} / {scanProgress.total} tracks
+                              {scanProgress.current} / {scanProgress.total} {t('tracks')}
                             </p>
                           )}
                         </div>
@@ -617,10 +618,10 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <div className="bg-card/50 rounded-xl p-4 space-y-3">
                         <div className="flex items-center gap-3">
                           <FolderOpen size={18} className="text-accent" />
-                          <p className="text-sm text-white truncate">{musicFolder || 'No folder selected'}</p>
+                        <p className="text-sm text-white truncate">{musicFolder || t('No folder selected')}</p>
                         </div>
                         <p className="text-xs text-muted">
-                          Your music folder is set. Ready to scan and discover your tracks!
+                          {t('Your music folder is set. Ready to scan and discover your tracks!')}
                         </p>
                       </div>
                     )}
@@ -633,14 +634,14 @@ export default function Onboarding({ isOpen, onComplete }) {
                       <Check size={40} className="text-green-400" />
                     </div>
                     <p className="text-sm text-muted">
-                      Your library has been scanned and is ready to play!
+                      {t('Your library has been scanned and is ready to play!')}
                     </p>
                     <div className="bg-card/50 rounded-xl p-3 text-xs text-muted">
-                      <p>Next steps:</p>
+                      <p>{t("Next steps:")}</p>
                       <ul className="list-disc list-inside mt-2 space-y-1">
-                        <li>Search for music online, or paste a link, to download it</li>
-                        <li>Use the Player to play your tracks</li>
-                        <li>Search for tracks, artists, albums, and genres</li>
+                        <li>{t("Search for music online, or paste a link, to download it")}</li>
+                        <li>{t("Use the Player to play your tracks")}</li>
+                        <li>{t("Search for tracks, artists, albums, and genres")}</li>
                       </ul>
                     </div>
                   </div>
@@ -657,13 +658,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Skip Setup
+                  {t('Skip Setup')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Get Started
+                  {t('Get Started')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -675,13 +676,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  I Understand
+                  {t('I Understand')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -693,14 +694,14 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   disabled={!musicFolder}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -712,13 +713,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   onClick={handleBack}
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
-                  Back
+                  {t('Back')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  {api.isElectron ? 'Continue' : 'Skip (Web Mode)'}
+                  {api.isElectron ? t('Continue') : t('Skip (Web Mode)')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -731,13 +732,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Skip (Use Locally)
+                  {t('Skip (Use Locally)')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -750,13 +751,13 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Do This Later
+                  {t('Do This Later')}
                 </button>
                 <button
                   onClick={handleNext}
                   className="flex-1 py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {t('Continue')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -770,7 +771,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                   className="flex-1 py-3 bg-card border border-border rounded-xl text-sm text-muted hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <SkipForward size={16} />
-                  Scan Later
+                  {t('Scan Later')}
                 </button>
                 <button
                   onClick={handleScan}
@@ -780,12 +781,12 @@ export default function Onboarding({ isOpen, onComplete }) {
                   {scanning ? (
                     <>
                       <Disc3 size={16} className="animate-spin" />
-                      Scanning...
+                      {t('Scanning…')}
                     </>
                   ) : (
                     <>
                       <Play size={16} />
-                      Scan Now
+                      {t('Scan Now')}
                     </>
                   )}
                 </button>
@@ -798,7 +799,7 @@ export default function Onboarding({ isOpen, onComplete }) {
                 className="w-full py-3 bg-accent rounded-xl text-sm font-medium text-white hover:bg-accent/80 transition-colors flex items-center justify-center gap-2"
               >
                 <Check size={16} />
-                Start Listening
+                {t('Start Listening')}
               </button>
             )}
           </div>

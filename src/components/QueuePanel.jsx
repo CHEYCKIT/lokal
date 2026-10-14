@@ -123,7 +123,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
               {shuffle ? 'Up Next (Shuffled)' : 'Queue'} ({displayQueue.length})
             </p>
             {shuffle && (
-              <p className="text-[10px] text-accent/70">Drag disabled in shuffle mode</p>
+              <p className="text-[10px] text-accent/70">{t("Drag disabled in shuffle mode")}</p>
             )}
           </div>
           {onClose && (
@@ -136,7 +136,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
       <div className="flex-1 overflow-y-auto p-2 pb-[calc(var(--player-space,0px)+0.5rem)]">
         {!displayQueue.length && (
-          <p className="text-xs text-muted text-center py-8">Queue is empty</p>
+          <p className="text-xs text-muted text-center py-8">{t("Queue is empty")}</p>
         )}
 
         {start > 0 && (
@@ -278,6 +278,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 // instead, so the two panels can never overlap or momentarily add up their
 // widths against each other.
 export default function QueuePanel() {
+  const { t } = useTranslation()
   const { showQueue, toggleQueue } = usePlayerStore(useShallow(({ showQueue, toggleQueue }) => ({ showQueue, toggleQueue })))
 
   return (

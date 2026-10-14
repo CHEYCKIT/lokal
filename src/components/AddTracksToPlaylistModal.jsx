@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AlertCircle, Check, Music, Plus, RefreshCw, Search } from 'lucide-react'
@@ -12,6 +13,7 @@ const LIBRARY_KEY = 'add-songs:library'
 const SKELETON_ROWS = 7
 
 export default function AddTracksToPlaylistModal({ open, onClose, playlistId, existingTrackIds = [], onAdded }) {
+  const { t } = useTranslation()
   const [tracks, setTracks] = useState(() => peekCache(LIBRARY_KEY) || [])
   const [loaded, setLoaded] = useState(() => !!peekCache(LIBRARY_KEY))
   // The rows (with their artwork) mount once the window has finished opening,
@@ -102,7 +104,7 @@ export default function AddTracksToPlaylistModal({ open, onClose, playlistId, ex
   const showRows = loaded && entered
 
   return (
-    <Modal open={open} onClose={onClose} title="Add Songs" width="max-w-2xl" onEntered={() => setEntered(true)}>
+    <Modal open={open} onClose={onClose} title={t("Add Songs")} width="max-w-2xl" onEntered={() => setEntered(true)}>
       <div className="space-y-4">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -110,7 +112,7 @@ export default function AddTracksToPlaylistModal({ open, onClose, playlistId, ex
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search tracks, artists, or albums"
+            placeholder={t("Search tracks, artists, or albums")}
             className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-white outline-none focus:border-accent/50"
           />
         </div>

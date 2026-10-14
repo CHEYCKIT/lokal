@@ -115,12 +115,15 @@ export function navigateToContext(nav, context, highlightTrackId = null) {
 /** Navigate to the album page for a single track (bottom-bar title shortcut). */
 export function navigateToTrackAlbum(nav, track) {
   const context = albumContextFromTrack(track)
-  if (!nav || !context) return false
+  const online = isOnlineTrack(track)
+  const path = online ? trackAlbumPath(track) : null
+  const sourceAlbumId = path ? new URLSearchParams(path.split('?')[1] || '').get('sourceAlbum') : null
+  if (!nav || (!context && !(online && sourceAlbumId))) return false
   // A streamed song: its album online (that page opens the library's copy
   // instead when there is one).
-  if (isOnlineTrack(track)) {
+  if (online) {
     const ref = streamRef(track)
-    nav(trackAlbumPath(track), { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: { title: track.title, album: track.album, provider: ref?.provider || null, id: ref?.id || null } } })
+    nav(path, { state: { artwork: track.artwork_url || null, highlightTitle: track.title, anchor: { title: track.title, album: track.album || '', provider: ref?.provider || track.provider || null, id: ref?.id || track.id || null } } })
     return true
   }
   nav('/albums', { state: { album: context.album, highlightTrackId: track?.id || null } })

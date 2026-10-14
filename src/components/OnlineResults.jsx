@@ -22,6 +22,7 @@ import SourceIcon from './SourceIcon'
 import AddonCollections from './AddonCollections'
 import AddonSetupNotice from './AddonSetupNotice'
 import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
+import { useTranslation } from '../i18n'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -65,6 +66,7 @@ function useProviders() {
  *                     there replaces the stream / the track's file
  */
 export default function OnlineResults({ query, soulseekFor = null, findOn = null }) {
+  const { t } = useTranslation()
   // YouTube Music and SoundCloud, then Soulseek, then installed addons.
   const loaded = useProviders()
   const providers = orderedFindOnSources(loaded)
@@ -142,24 +144,24 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
             Online
             {loading && !soulseek && <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />}
           </h2>
-          <div role="tablist" aria-label="Online source" className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl border border-border p-0.5">
+          <div role="tablist" aria-label={t('Online source')} className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl border border-border p-0.5">
             {providers.map(p => (
               <button
                 key={p.id}
                 role="tab"
                 aria-selected={provider === p.id}
                 onClick={() => choose(p.id)}
-                title={p.addon ? `${p.label} (addon)` : p.label}
+                title={p.addon ? t('{source} (add-on)', { source: p.label }) : p.label}
                 className={`flex max-w-full min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${provider === p.id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'}`}
               >
                  {p.addon && p.icon ? <img src={p.icon} alt="" className="h-3.5 w-3.5 shrink-0 rounded-sm object-cover" referrerPolicy="no-referrer" /> : <SourceIcon source={p.id} colored />}
                 <span className="truncate">{p.label}</span>
-                {p.needsSetup && <span title="Needs setting up" aria-label="Needs setting up" className="h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400" />}
+                {p.needsSetup && <span title={t('Needs setting up')} aria-label={t('Needs setting up')} className="h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400" />}
               </button>
             ))}
           </div>
         </div>
-        <span className="min-w-0 text-[10px] text-muted/80 truncate">{soulseek ? 'Files people share, through slskd' : providers.find(p => p.id === provider)?.addon ? 'From an addon you installed' : 'Streams with yt-dlp'} · not in your library</span>
+        <span className="min-w-0 text-[10px] text-muted/80 truncate">{t(soulseek ? 'Files people share, through slskd' : providers.find(p => p.id === provider)?.addon ? 'From an add-on you installed' : 'Streams with yt-dlp')}{t(' · not in your library')}</span>
       </div>
       <div className="mb-3 empty:hidden"><DownloadNotices youtube={provider === 'yt'} /></div>
       {!soulseek && <AddonSetupNotice source={providers.find(p => p.id === provider)} className="mb-3" />}
@@ -173,8 +175,8 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
         />
       ) : (
         <>
-        {error && !results.length && <p className="text-xs text-muted py-2">{error}</p>}
-        {!loading && !error && !results.length && <p className="text-xs text-muted py-2">No songs found on {providerLabel}.</p>}
+        {error && !results.length && <p className="text-xs text-muted py-2">{t(error)}</p>}
+        {!loading && !error && !results.length && <p className="text-xs text-muted py-2">{t('No songs found on {source}.', { source: providerLabel })}</p>}
         <div className="space-y-0.5">
           {results.map((item, i) => {
             const current = currentTrack && sameStream(currentTrack, item)
@@ -189,8 +191,8 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
               >
                 <button
                   onClick={() => play(item, i)}
-                  title={current && isPlaying ? 'Pause' : 'Play'}
-                  aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${item.title}`}
+                  title={t(current && isPlaying ? 'Pause' : 'Play')}
+                  aria-label={t('{action} {title}', { action: t(current && isPlaying ? 'Pause' : 'Play'), title: item.title })}
                   className="relative w-10 h-10 rounded overflow-hidden bg-card flex items-center justify-center text-muted"
                 >
                   {item.thumbnail ? <img src={item.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" /> : <Music size={14} />}
@@ -202,13 +204,13 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                   <p className={`text-sm font-medium truncate ${current ? 'text-accent' : 'text-text'}`}>{item.title}</p>
                   <p className="text-xs text-muted truncate">
                     {[item.artist, item.album].filter(Boolean).join(' · ')}
-                    {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">Video</span>}
+                    {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">{t('Video')}</span>}
                     {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
-                    {item.preview && <span title="SoundCloud only lets non-subscribers play 30 seconds of this track" className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">30 s preview</span>}
+                    {item.preview && <span title={t('SoundCloud only lets non-subscribers play 30 seconds of this track')} className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{t('30 s preview')}</span>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <button onClick={() => addToPlaylist(item)} title="Add to playlist" aria-label={`Add ${item.title} to a playlist`}
+                  <button onClick={() => addToPlaylist(item)} title={t('Add to playlist')} aria-label={t('Add {title} to a playlist', { title: item.title })}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
                     <Plus size={15} />
                   </button>

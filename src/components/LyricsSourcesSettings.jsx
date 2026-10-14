@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { GripVertical, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react'
 import { api } from '../api'
@@ -11,6 +12,7 @@ import { api } from '../api'
 //                              for a syllable-synced one
 
 export default function LyricsSourcesSettings({ onPersist } = {}) {
+  const { t } = useTranslation()
   const [providers, setProviders] = useState([])
   const [order, setOrder] = useState([])
   const [enabled, setEnabled] = useState([])
@@ -90,11 +92,11 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
   return (
     <div className="py-3">
       <div className="flex items-baseline justify-between gap-4 mb-1">
-        <p className="text-sm text-white">Lyrics sources</p>
-        <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-accent' : 'opacity-0'}`}>Saved</span>
+        <p className="text-sm text-white">{t("Lyrics sources")}</p>
+        <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-accent' : 'opacity-0'}`}>{t("Saved")}</span>
       </div>
       <p className="text-xs text-muted mb-3">
-        Sources are tried in this order. Drag to reorder them. The first source with lyrics wins unless syllable lyrics are prioritized.
+        {t('Sources are tried in this order. Drag to reorder them. The first source with lyrics wins unless syllable lyrics are prioritized.')}
       </p>
       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
         {rows.map((id, index) => {
@@ -115,22 +117,22 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
               <div className="flex-1 min-w-0">
                 <p className={`text-sm truncate ${on ? 'text-white' : 'text-muted'}`}>
                   {p.label}
-                  {p.wordSynced && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent/70">Syllable</span>}
+                  {p.wordSynced && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent/70">{t("Syllable")}</span>}
                 </p>
-                <p className="text-xs text-muted truncate">{p.detail}</p>
+                <p className="text-xs text-muted truncate">{t(p.detail)}</p>
               </div>
               <div className="flex flex-col shrink-0">
-                <button onClick={() => move(id, -1)} disabled={index === 0} className="text-muted hover:text-white disabled:opacity-20" aria-label={`Move ${p.label} up`}><ChevronUp size={13} /></button>
-                <button onClick={() => move(id, 1)} disabled={index === rows.length - 1} className="text-muted hover:text-white disabled:opacity-20" aria-label={`Move ${p.label} down`}><ChevronDown size={13} /></button>
+                <button onClick={() => move(id, -1)} disabled={index === 0} className="text-muted hover:text-white disabled:opacity-20" aria-label={t('Move {source} up', { source: t(p.label) })}><ChevronUp size={13} /></button>
+                <button onClick={() => move(id, 1)} disabled={index === rows.length - 1} className="text-muted hover:text-white disabled:opacity-20" aria-label={t('Move {source} down', { source: t(p.label) })}><ChevronDown size={13} /></button>
               </div>
               <button
                 role="switch"
                 aria-checked={on}
                 disabled={on && enabled.filter(x => rows.includes(x)).length <= 1}
-                title={on && enabled.filter(x => rows.includes(x)).length <= 1 ? 'At least one source has to stay on' : undefined}
+                title={on && enabled.filter(x => rows.includes(x)).length <= 1 ? t('At least one source has to stay on') : undefined}
                 onClick={() => toggle(id)}
                 className={`relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'bg-accent' : 'bg-white/15'}`}
-                aria-label={`${on ? 'Disable' : 'Enable'} ${p.label}`}
+                aria-label={t(on ? 'Disable {source}' : 'Enable {source}', { source: t(p.label) })}
               >
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
               </button>
@@ -141,35 +143,35 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
 
       <div className="flex items-center justify-between gap-4 mt-4">
         <div>
-          <p className="text-sm text-white">Prioritize syllable lyrics</p>
-          <p className="text-xs text-muted">Keep searching past a line-synced match for word-by-word lyrics</p>
+          <p className="text-sm text-white">{t("Prioritize syllable lyrics")}</p>
+          <p className="text-xs text-muted">{t("Keep searching past a line-synced match for word-by-word lyrics")}</p>
         </div>
         <button
           onClick={() => { const v = !prioritize; setPrioritize(v); persist({ lyrics_prioritize_syllable: v ? '1' : '0' }) }}
           className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${prioritize ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
         >
-          {prioritize ? 'On' : 'Off'}
+          {prioritize ? t('On') : t('Off')}
         </button>
       </div>
 
       <div className="mt-5 space-y-2">
         <div>
-          <p className="text-sm text-white">Spicy Lyrics secret key <span className="text-muted">(optional)</span></p>
-          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>. It stays in Lokal's backend; a Spotify account isn't required.</p>
+          <p className="text-sm text-white">{t('Spicy Lyrics secret key')} <span className="text-muted">{t("(optional)")}</span></p>
+          <p className="text-xs text-muted">{t('Create a secret key at')} <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>{t(". It stays in Lokal's backend; a Spotify account isn't required.")}</p>
         </div>
         <input
           type="password"
           value={spicyKey}
           onChange={event => setSpicyKey(event.target.value)}
           onBlur={() => persist({ spicylyrics_api_key: spicyKey.trim() })}
-          placeholder="SpicyLyrics API key"
+          placeholder={t("SpicyLyrics API key")}
           autoComplete="off"
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
         />
       </div>
 
       <button onClick={reset} className="mt-4 flex items-center gap-1.5 text-xs text-muted hover:text-white transition-colors">
-        <RotateCcw size={12} /> Reset to default
+        <RotateCcw size={12} /> {t('Reset to default')}
       </button>
     </div>
   )

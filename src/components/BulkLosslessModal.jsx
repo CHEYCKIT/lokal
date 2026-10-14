@@ -5,6 +5,7 @@
 // likes and plays. "More" opens the one-song dialog (stores, Soulseek).
 // Opened from anywhere with openLosslessMany(tracks) (src/quality.js).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Blocks, Check, Download, Loader2 } from 'lucide-react'
 import Modal from './Modal'
@@ -20,6 +21,7 @@ const SEARCHES_AT_ONCE = 3
 const fmtTime = s => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`
 
 export default function BulkLosslessModal() {
+  const { t } = useTranslation()
   const [batch, setBatch] = useState(null) // { eligible, skipped }
   const [sources, setSources] = useState(null) // null: loading; { usable, setup }
   const [rows, setRows] = useState({}) // id -> { status: 'searching' | 'found' | 'none', match, checked, result, error }
@@ -109,7 +111,7 @@ export default function BulkLosslessModal() {
 
         {sources?.setup.map(source => <AddonSetupNotice key={source.id} source={source} />)}
         {sources && !sources.usable.length && !sources.setup.length && (
-          <p className="rounded-xl border border-border bg-card/40 px-3 py-2.5 text-xs text-muted">No addon sources installed. Add one in Settings → Addons to upgrade songs from it, or use More on a song for stores and Soulseek.</p>
+          <p className="rounded-xl border border-border bg-card/40 px-3 py-2.5 text-xs text-muted">{t("No addon sources installed. Add one in Settings → Addons to upgrade songs from it, or use More on a song for stores and Soulseek.")}</p>
         )}
 
         {!!eligible.length && (
@@ -118,13 +120,13 @@ export default function BulkLosslessModal() {
               {sources === null || searching ? <><Loader2 size={11} className="animate-spin" />Searching {searched}/{eligible.length}…</> : sources.usable.length ? `${plural(matches, 'match', 'matches')} found for ${plural(eligible.length, 'song')}` : ''}
             </span>
             {withMatch.length > 0 && (
-              <button type="button" onClick={() => tickAll(!allTicked)} className="flex-shrink-0 hover:text-white">{allTicked ? 'Untick all' : 'Tick all'}</button>
+              <button type="button" onClick={() => tickAll(!allTicked)} className="flex-shrink-0 hover:text-white">{allTicked ? t('Untick all') : t('Tick all')}</button>
             )}
           </div>
         )}
 
         <div className="max-h-[50vh] space-y-1 overflow-y-auto pr-1">
-          {!eligible.length && <p className="py-6 text-center text-sm text-muted">None of these songs can be upgraded: they're already lossless, streamed or missing.</p>}
+          {!eligible.length && <p className="py-6 text-center text-sm text-muted">{t("None of these songs can be upgraded: they're already lossless, streamed or missing.")}</p>}
           {eligible.map(track => {
             const row = rows[track.id] || {}
             const match = row.match
@@ -138,22 +140,22 @@ export default function BulkLosslessModal() {
                   <p className="flex min-w-0 items-center gap-1.5 truncate text-[11px] text-muted">
                     <span className="flex-shrink-0">{formatLabel(track) || 'Quality not read'}</span>
                     <span className="flex-shrink-0 text-muted/50">→</span>
-                    {row.status === 'searching' || (!row.status && sources?.usable.length) ? <span className="inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" />Searching</span>
+                    {row.status === 'searching' || (!row.status && sources?.usable.length) ? <span className="inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" />{t("Searching")}</span>
                       : match ? <span className="inline-flex min-w-0 items-center gap-1 truncate">
                           {match.source.icon ? <img src={match.source.icon} alt="" className="h-3 w-3 flex-shrink-0 rounded-sm object-cover" referrerPolicy="no-referrer" /> : <Blocks size={10} className="flex-shrink-0 text-accent" />}
                           <span className="truncate">{[match.source.label, match.item.quality, match.item.duration ? fmtTime(match.item.duration) : ''].filter(Boolean).join(' · ')}</span>
-                          {match.lengthUnknown && <span className="flex-shrink-0 text-muted" title="This copy's length (or yours) isn't known: check it before ticking">· length unknown</span>}
-                          {match.lengthDiffers && <span className="inline-flex flex-shrink-0 items-center gap-0.5 text-yellow-200" title={`This copy is ${fmtTime(match.item.duration)} long; yours is ${fmtTime(track.duration)}`}><AlertTriangle size={10} />length differs</span>}
+                          {match.lengthUnknown && <span className="flex-shrink-0 text-muted" title={t("This copy's length (or yours) isn't known: check it before ticking")}>{t("· length unknown")}</span>}
+                          {match.lengthDiffers && <span className="inline-flex flex-shrink-0 items-center gap-0.5 text-yellow-200" title={`This copy is ${fmtTime(match.item.duration)} long; yours is ${fmtTime(track.duration)}`}><AlertTriangle size={10} />{t("length differs")}</span>}
                         </span>
                       : row.status === 'none' ? <span className="truncate">{row.error || 'No close match on your addon sources'}</span>
                       : null}
                   </p>
                 </div>
-                {row.result === 'queued' ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />Downloading</span>
+                {row.result === 'queued' ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />{t("Downloading")}</span>
                   : row.result === 'failed' ? <span className="max-w-[9rem] flex-shrink-0 truncate text-[11px] text-red" title={row.error}>{row.error || 'Failed'}</span>
                   : null}
-                <button type="button" onClick={() => openLossless(track)} title="Stores, Soulseek and every match for this song"
-                  className="flex-shrink-0 rounded-lg border border-border px-2 py-1 text-[11px] text-muted hover:border-accent/40 hover:text-white">More</button>
+                <button type="button" onClick={() => openLossless(track)} title={t("Stores, Soulseek and every match for this song")}
+                  className="flex-shrink-0 rounded-lg border border-border px-2 py-1 text-[11px] text-muted hover:border-accent/40 hover:text-white">{t("More")}</button>
               </div>
             )
           })}

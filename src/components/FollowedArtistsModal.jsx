@@ -3,6 +3,7 @@
 // all of what's shown, and importing the artists you follow on Spotify or
 // have in your Apple Music library.
 
+import { useTranslation } from '../i18n'
 import React, { useMemo, useState } from 'react'
 import { Link2, Loader2, Search } from 'lucide-react'
 import Modal from './Modal'
@@ -30,6 +31,7 @@ const SERVICES = {
 const needsSignIn = message => /cookie|token|sp_dc|accept/i.test(String(message || ''))
 
 function LinkService({ id, onImported }) {
+  const { t } = useTranslation()
   const service = SERVICES[id]
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
@@ -74,6 +76,7 @@ function LinkService({ id, onImported }) {
 }
 
 export default function FollowedArtistsModal({ open, onClose, libraryArtists = [] }) {
+  const { t } = useTranslation()
   const followed = useDiscoveryArtists(s => s.followed)
   const [query, setQuery] = useState('')
   // Every library artist, and anyone followed who isn't in the library.
@@ -99,12 +102,12 @@ export default function FollowedArtistsModal({ open, onClose, libraryArtists = [
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Followed artists" width="max-w-lg">
+    <Modal open={open} onClose={onClose} title={t("Followed artists")} width="max-w-lg">
       <div className="space-y-3">
-        <p className="text-xs leading-relaxed text-muted">Releases shows the new releases of the artists you follow. Artists of songs you add to your library aren't followed until you tick them here (or press Follow on their page).</p>
+        <p className="text-xs leading-relaxed text-muted">{t("Releases shows the new releases of the artists you follow. Artists of songs you add to your library aren't followed until you tick them here (or press Follow on their page).")}</p>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 focus-within:border-accent/50">
           <Search size={13} className="flex-shrink-0 text-muted" />
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search artists" aria-label="Search artists"
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Search artists")} aria-label={t("Search artists")}
             className="min-w-0 flex-1 bg-transparent text-xs text-text outline-none placeholder:text-muted" />
         </div>
         <div className="flex items-center gap-3 text-[11px] text-muted">
@@ -115,20 +118,20 @@ export default function FollowedArtistsModal({ open, onClose, libraryArtists = [
             </button>
           )}
         </div>
-        <div role="list" aria-label="Artists" className="max-h-[45vh] space-y-0.5 overflow-y-auto pr-1">
+        <div role="list" aria-label={t("Artists")} className="max-h-[45vh] space-y-0.5 overflow-y-auto pr-1">
           {!shown.length && <p className="py-6 text-center text-xs text-muted">{artists.length ? 'No artist matches.' : 'No artists yet. Add music to your library, or import the ones you follow below.'}</p>}
           {shown.map(artist => (
             <label key={artist.key} role="listitem" className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
               <input type="checkbox" checked={followed.has(artist.key)} onChange={event => save([artist.name], event.target.checked)}
                 className="h-3.5 w-3.5 flex-shrink-0 accent-[rgb(var(--accent-rgb))]" />
               <span className="min-w-0 flex-1 truncate text-sm text-white">{artist.name}</span>
-              {!artist.library && <span className="flex-shrink-0 text-[10px] text-muted">Not in library</span>}
+              {!artist.library && <span className="flex-shrink-0 text-[10px] text-muted">{t("Not in library")}</span>}
             </label>
           ))}
         </div>
         {api.isElectron && (
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-[11px] font-display uppercase tracking-widest text-muted">Import from</p>
+            <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Import from")}</p>
             {Object.keys(SERVICES).map(id => <LinkService key={id} id={id} onImported={imported} />)}
           </div>
         )}

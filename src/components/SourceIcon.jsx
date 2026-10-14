@@ -1,6 +1,6 @@
 import React from 'react'
 import { Bird, Globe, Puzzle, createLucideIcon } from 'lucide-react'
-import { downloadSourceLabel, streamRef } from '../onlineTracks'
+import { downloadSourceLabel, isAddonProvider, streamRef } from '../onlineTracks'
 
 // lucide 1.x dropped its brand icons (trademarks); this is its YouTube outline
 // from 0.577 (ISC licence), rebuilt as a lucide icon so it takes the same props.
@@ -9,9 +9,51 @@ export const YoutubeIcon = createLucideIcon('youtube', [
   ['path', { d: 'm10 15 5-3-5-3z', key: '1jp15x' }],
 ])
 
+function addonBrandKey(name) {
+  const label = String(name || '').toLowerCase()
+  if (/\bamazon\b/.test(label)) return 'amazon'
+  if (/\bqobuz\b/.test(label)) return 'qobuz'
+  if (/\btidal\b/.test(label)) return 'tidal'
+  if (/\bdeezer\b/.test(label)) return 'deezer'
+  return null
+}
+
+function AddonBrandIcon({ brand, props }) {
+  if (brand === 'tidal') return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.012 3.992 8.008 7.996 4.004 3.992 0 7.996 4.004 12l4.004-4.004L12.012 12l-4.004 4.004 4.004 4.004 4.004-4.004L12.012 12l4.004-4.004-4.004-4.004zM16.042 7.996l3.979-3.979L24 7.996l-3.979 3.979z" />
+    </svg>
+  )
+  if (brand === 'qobuz') return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M6 12c0-1.7.7-3.2 1.8-4.2" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M18 12c0 1.7-.7 3.2-1.8 4.2" />
+    </svg>
+  )
+  if (brand === 'deezer') return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M.693 10.024c.381 0 .693-1.256.693-2.807 0-1.55-.312-2.807-.693-2.807C.312 4.41 0 5.666 0 7.217s.312 2.808.693 2.808ZM21.038 1.56c-.364 0-.684.805-.91 2.096C19.765 1.446 19.184 0 18.526 0c-.78 0-1.464 2.036-1.784 5-.312-2.158-.788-3.536-1.325-3.536-.745 0-1.386 2.704-1.62 6.472-.442-1.932-1.083-3.145-1.793-3.145s-1.35 1.213-1.793 3.145c-.242-3.76-.874-6.463-1.628-6.463-.537 0-1.013 1.378-1.325 3.535C6.938 2.036 6.262 0 5.474 0c-.658 0-1.247 1.447-1.602 3.665-.217-1.291-.546-2.105-.91-2.105-.675 0-1.221 2.807-1.221 6.272 0 3.466.546 6.273 1.221 6.273.277 0 .537-.476.736-1.273.32 2.928.996 4.938 1.776 4.938.606 0 1.143-1.204 1.507-3.11.251 3.622.875 6.195 1.602 6.195.46 0 .875-1.023 1.187-2.677C10.142 21.6 11 24 12.004 24c1.005 0 1.863-2.4 2.235-5.822.312 1.654.727 2.677 1.186 2.677.728 0 1.352-2.573 1.603-6.195.364 1.906.9 3.11 1.507 3.11.78 0 1.455-2.01 1.775-4.938.208.797.46 1.273.737 1.273.675 0 1.22-2.807 1.22-6.273-.008-3.457-.553-6.272-1.23-6.272ZM23.307 10.024c.381 0 .693-1.256.693-2.807 0-1.55-.312-2.807-.693-2.807-.381 0-.693 1.256-.693 2.807s.312 2.808.693 2.808Z" />
+    </svg>
+  )
+  if (brand === 'amazon') return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </svg>
+  )
+  return null
+}
+
 // Quiet marks by default; online search opts into coloured provider branding.
-export default function SourceIcon({ source, size = 14, className = '', colored = false }) {
+export default function SourceIcon({ source, size = 14, className = '', colored = false, addonName = '' }) {
   const props = { width: size, height: size, className: `shrink-0 ${className}`, 'aria-hidden': true }
+  if (source?.startsWith('a-')) {
+    const brand = addonBrandKey(addonName)
+    if (brand) return <AddonBrandIcon brand={brand} props={props} />
+  }
   if (source === 'sc' && !colored) return (
     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 12v4m3-6v8m3-9v9m3-12v12h7a4 4 0 1 0-.5-8A6 6 0 0 0 11 6Z" />
@@ -36,7 +78,7 @@ export function TrackSourceIcon({ track, addonNames, className = '' }) {
   const description = label ? `${stream ? 'Streamed' : 'Downloaded'} from ${label}${stream ? ' · not in your library yet' : ''}` : 'Source unknown'
   return (
     <span role="img" aria-label={description} title={description} className={`inline-flex shrink-0 items-center justify-center text-muted ${className}`}>
-      <SourceIcon source={source} />
+      <SourceIcon source={source} addonName={isAddonProvider(source) ? addonNames?.[source] : ''} />
     </span>
   )
 }

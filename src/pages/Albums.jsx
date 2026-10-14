@@ -14,7 +14,6 @@ import SelectionBar from '../components/SelectionBar'
 import { useSelection } from '../selection'
 import { addToPlaylistMany, addToQueueMany, playNextMany } from '../trackActions'
 import { artistPath, releaseKey, useReleaseActions } from '../releaseActions'
-import { plural } from '../plural'
 import { openRadio } from '../radioActions'
 import OnlineSongList from '../components/OnlineSongList'
 import RefreshButton from '../components/RefreshButton'
@@ -49,15 +48,17 @@ function releaseLabel(type) {
 // An album's page, laid out like an online album's (OnlineAlbum): the cover,
 // what it is, and its actions in one row; the songs below.
 function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, children }) {
+  const { t } = useTranslation()
   const artSrc = getAlbumArtwork(album)
   const artistName = album.album_artist || album.artists || ''
   // The cover, big (click it).
   const [zoom, setZoom] = useState(false)
-  const facts = [plural(trackCount, 'song'), duration ? `${Math.round(duration / 60)} min` : '', album.year || '', online || ''].filter(Boolean)
+  const songCount = Number(trackCount) || 0
+  const facts = [t(songCount === 1 ? '{count} song' : '{count} songs', { count: songCount }), duration ? t('{count} min', { count: Math.round(duration / 60) }) : '', album.year || '', online || ''].filter(Boolean)
   return (
     <div>
       <button onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-xs text-muted transition-colors hover:text-white">
-        <ArrowLeft size={14} /> Back
+        <ArrowLeft size={14} /> {t('Back')}
       </button>
       <div className="flex flex-col gap-5 @md:flex-row @md:items-end">
         <ImageZoom src={artSrc} alt={album.title} open={zoom} onClose={() => setZoom(false)} />
@@ -68,11 +69,11 @@ function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, chil
             : <div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>}
         </div>
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{releaseLabel(album.release_type)} · Library</p>
+          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t(releaseLabel(album.release_type))} · {t('Library')}</p>
           <h1 className="truncate text-3xl font-display text-white" title={album.title}>{album.title}</h1>
           {artistName
             ? <button onClick={onArtist} className="mt-1 max-w-full truncate text-sm text-muted transition-colors hover:text-accent hover:underline">{artistName}</button>
-            : <p className="mt-1 text-sm text-muted">Unknown Artist</p>}
+            : <p className="mt-1 text-sm text-muted">{t("Unknown Artist")}</p>}
           <p className="mt-1 text-xs text-subtle">{facts.join(' · ')}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2">{children}</div>
         </div>
@@ -89,6 +90,7 @@ function AlbumHero({ album, trackCount, duration, online, onBack, onArtist, chil
  * the text under it open it.
  */
 function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false }) {
+  const { t } = useTranslation()
   const artSrc = getAlbumArtwork(album)
 
   return (
@@ -132,7 +134,7 @@ function AlbumCard({ album, onClick, onPlay, onContextMenu, selected = false }) 
           <p className="truncate text-sm font-medium text-white decoration-white/60 underline-offset-2 group-hover/open:underline">{album.title}</p>
           <p className="truncate text-xs text-muted">{album.artists || album.album_artist || 'Unknown Artist'}</p>
           <p className="text-[11px] uppercase leading-snug tracking-[0.16em] text-muted/70">
-            {releaseLabel(album.release_type)} • {plural(album.track_count, 'track')}{album.year ? ` • ${album.year}` : ''}
+            {t(releaseLabel(album.release_type))} • {t((Number(album.track_count) || 0) === 1 ? '{count} track' : '{count} tracks', { count: Number(album.track_count) || 0 })}{album.year ? ` • ${album.year}` : ''}
           </p>
         </div>
       </button>
@@ -417,7 +419,7 @@ export default function Albums() {
             <h1 className="mt-2 font-display text-3xl uppercase tracking-[0.14em] text-white">{t("Albums")}</h1>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <p className="text-sm text-muted">
-                {loadingAlbums ? '\u00a0' : `${filteredAlbums.length.toLocaleString()} visible releases`}
+                {loadingAlbums ? '\u00a0' : t('{count} visible releases', { count: filteredAlbums.length.toLocaleString() })}
               </p>
               <RefreshButton
                 label={t("Refresh releases")}
@@ -464,10 +466,10 @@ export default function Albums() {
                 ? `Refreshing releases · ${refreshStatus.done.toLocaleString()} of ${refreshStatus.total.toLocaleString()} checked · ${refreshStatus.matched.toLocaleString()} matched`
                 : `Refresh complete · ${refreshStatus.matched.toLocaleString()} matched${refreshStatus.failed ? ` · ${refreshStatus.failed.toLocaleString()} not found` : ''}`)}
             </p>
-            <div role="progressbar" aria-label="Release refresh" aria-valuemin={0} aria-valuemax={refreshStatus.total || 1} aria-valuenow={refreshStatus.done} className="h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div role="progressbar" aria-label={t("Release refresh")} aria-valuemin={0} aria-valuemax={refreshStatus.total || 1} aria-valuenow={refreshStatus.done} className="h-1.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${refreshStatus.total ? refreshStatus.done / refreshStatus.total * 100 : refreshStatus.running ? 0 : 100}%` }} />
             </div>
-            {refreshStatus.running && <p className="text-[11px] text-muted/70">You can leave this page; the refresh keeps going.</p>}
+            {refreshStatus.running && <p className="text-[11px] text-muted/70">{t("You can leave this page; the refresh keeps going.")}</p>}
           </div>
         )}
         </>}
@@ -478,45 +480,45 @@ export default function Albums() {
               album={selectedAlbum}
               trackCount={showOnline ? merged.tracks.length : (albumTracks.length || selectedAlbum.track_count || 0)}
               duration={(showOnline ? merged.tracks : albumTracks).reduce((sum, track) => sum + (Number(track.duration) || 0), 0)}
-              online={showOnline ? `${merged.owned === merged.tracks.length ? 'all' : `${merged.owned} of ${merged.tracks.length}`} in your library` : ''}
+              online={showOnline ? (merged.owned === merged.tracks.length ? t('All songs are in your library.') : t('{owned} of {total} songs are in your library.', { owned: merged.owned, total: merged.tracks.length })) : ''}
               onBack={() => navigate(-1)}
               onArtist={() => navigate(artistPath(selectedAlbum.album_artist || selectedAlbum.artists))}
             >
               <button onClick={() => (showOnline ? playMerged(merged.tracks[0]) : playQueue(albumTracks, 0, albumContext))} disabled={!(showOnline ? merged.tracks.length : albumTracks.length)}
-                className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
+                className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t("Play")}</button>
               <button onClick={() => { const list = shuffledList(albumTracks); if (list.length) playQueue(list, 0, albumContext) }} disabled={!albumTracks.length}
-                className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> Shuffle</button>
+                className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> {t("Shuffle")}</button>
               {albumTracks.length > 0 && (
                 <button onClick={toggleConnected} aria-pressed={connected}
-                  title={connected ? 'Show only your library' : 'Show the whole album, with the songs you have marked'}
+                  title={t(connected ? 'Show only your library' : 'Show the whole album, with the songs you have marked')}
                   className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${connected ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border text-white hover:border-accent/50'}`}>
-                  {connected && onlineAlbum.loading ? <Loader2 size={15} className="animate-spin" /> : <Globe size={15} />} Full album online
+                  {connected && onlineAlbum.loading ? <Loader2 size={15} className="animate-spin" /> : <Globe size={15} />} {t('Full album online')}
                 </button>
               )}
               {showOnline && merged.missing.length > 0 && (
                 <button onClick={downloadMissing} disabled={downloadingMissing}
                   className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40">
-                  <Download size={15} /> {downloadingMissing ? 'Finding songs…' : `Download missing (${merged.missing.length})`}
+                  <Download size={15} /> {downloadingMissing ? t('Finding the songs not in your library…') : t('Download missing ({count})', { count: merged.missing.length })}
                 </button>
               )}
               {connected && <RefreshButton onClick={() => setReloadOnline(n => n + 1)} loading={onlineAlbum.loading} loadedAt={onlineAlbum.loadedAt} />}
             </AlbumHero>
 
             {connected && !onlineAlbum.loading && !onlineAlbum.tracks.length && (
-              <p role="status" className="text-xs text-muted">{onlineAlbum.error || 'This album was not found online.'} Showing your library's songs.</p>
+              <p role="status" className="text-xs text-muted">{onlineAlbum.error ? t(onlineAlbum.error) : t('This album was not found online.')} {t("Showing your library's songs.")}</p>
             )}
 
             {showOnline && !loadingTracks ? (
               <OnlineSongList tracks={merged.tracks} numbered markOwned onPlay={playMerged} />
             ) : loadingTracks ? (
-              <p role="status" className="text-sm text-muted">Loading {selectedAlbum.title}…</p>
+              <p role="status" className="text-sm text-muted">{t('Loading {album}…', { album: selectedAlbum.title })}</p>
             ) : albumTracks.length === 0 ? (
-              <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">No tracks found for this release.</p>
+              <p role="status" className="rounded-xl border border-border bg-elevated p-4 text-sm text-muted">{t("No tracks found for this release.")}</p>
             ) : (
               <div className="flex flex-col" onClick={trackSelection.clear}>
                 <SelectionBar
                   open={trackSelection.count > 0}
-                  label={`${trackSelection.count} selected`}
+                  label={t('{count} selected', { count: trackSelection.count })}
                   onClear={trackSelection.clear}
                   actions={[
                     { label: 'Play', icon: Play, onClick: () => playQueue(selectedAlbumTracks(), 0, albumContext) },
@@ -591,17 +593,17 @@ export default function Albums() {
           <div className="space-y-10">
             <SelectionBar
               open={releaseSelection.count > 0}
-              label={`${releaseSelection.count} ${releaseSelection.count === 1 ? 'release' : 'releases'} selected`}
+              label={t('{count} releases selected', { count: releaseSelection.count })}
               onClear={releaseSelection.clear}
               actions={releases.barActions(selectedReleases())}
             />
-            {groupedAlbums.length === 0 && <p className="text-sm text-muted">No releases of the types chosen.</p>}
+            {groupedAlbums.length === 0 && <p className="text-sm text-muted">{t("No releases of the types chosen.")}</p>}
             {groupedAlbums.map((group) => (
               <section key={group.key} className="space-y-4">
                 <div className="flex items-end justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">{group.label}</p>
-                    <p className="mt-1 text-sm text-white/60">{group.items.length} shown</p>
+                    <p className="mt-1 text-sm text-white/60">{t('{count} shown', { count: group.items.length })}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 @sm:grid-cols-3 @lg:grid-cols-5 @xl:grid-cols-6">

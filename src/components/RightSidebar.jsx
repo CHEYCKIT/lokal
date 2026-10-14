@@ -20,6 +20,7 @@ import {
   navigateToTrackAlbum,
 } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
+import { isOnlineTrack } from '../onlineBrowse'
 import { isStreamed, trackArtURL } from '../onlineTracks'
 
 import ContextMenu, { useContextMenu } from './ContextMenu'
@@ -32,6 +33,7 @@ import { losslessMenuItem } from '../quality'
 const isPlaceholderGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
 
 function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
+  const { t } = useTranslation()
   if (!value) return null
   return (
     <div className={`flex items-start gap-3 py-1.5 border-b last:border-0 ${fx ? 'border-white/10' : 'border-border/30'}`}>
@@ -279,6 +281,7 @@ export default function RightSidebar() {
       )}
     </div>
   ) : null
+  const hasAlbumLink = !!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
 
   return (
     <>
@@ -374,11 +377,11 @@ export default function RightSidebar() {
 
                   {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
                     <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                      {currentTrack?.album ? (
+                      {currentTrack?.album || (isOnlineTrack(currentTrack) && (currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)) ? (
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
                           onContextMenu={openTrackMenu}
-                          title={`Go to album: ${currentTrack.album}`}
+                          title={currentTrack.album ? t('Go to album: {album}', { album: currentTrack.album }) : t('Go to album')}
                           className={fx ? 'text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack?.title || 'Nothing playing'}
                         </button>
@@ -430,19 +433,19 @@ export default function RightSidebar() {
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
                       <InfoRow
                         fx={fx}
-                        label="Album"
-                        value={currentTrack.album}
-                        title={currentTrack.album ? `Go to album: ${currentTrack.album}` : null}
-                        onClick={currentTrack.album ? () => navigateToTrackAlbum(nav, currentTrack) : null}
+                        label={t("Album")}
+                        value={currentTrack.album || (hasAlbumLink ? t('Album · Online') : null)}
+                        title={hasAlbumLink ? t('Go to album: {album}', { album: currentTrack.album || t('Album · Online') }) : null}
+                        onClick={hasAlbumLink ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
-                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label="Alb. Artist" value={currentTrack.album_artist} />}
-                      <InfoRow fx={fx} label="Year" value={currentTrack.year} />
-                      <InfoRow fx={fx} label="Genre" value={genre} />
-                      <InfoRow fx={fx} label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
-                      <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
+                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
+                      <InfoRow fx={fx} label={t("Year")} value={currentTrack.year} />
+                      <InfoRow fx={fx} label={t("Genre")} value={genre} />
+                      <InfoRow fx={fx} label={t("Track #")} value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
+                      <InfoRow fx={fx} label={t("Bitrate")} value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
-                      {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
-                      <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
+                      {!currentTrack.bitrate && <InfoRow fx={fx} label={t("Quality")} value={streamQualityLabel(currentTrack)} />}
+                      <InfoRow fx={fx} label={t("Plays")} value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
                   )}
                 </div>
@@ -469,12 +472,12 @@ export default function RightSidebar() {
                     {currentTrack ? (
                       <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-muted text-xs">No track playing</div>
+                      <div className="flex items-center justify-center h-full text-muted text-xs">{t("No track playing")}</div>
                     )}
                   </div>
                   <div className="p-3 border-t border-border flex-shrink-0">
                     <button onClick={toggleLyricsFullscreen} className="w-full py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
-                      <Maximize2 size={11} /> Expand Lyrics
+                      <Maximize2 size={11} /> {t('Expand Lyrics')}
                     </button>
                   </div>
                 </motion.div>

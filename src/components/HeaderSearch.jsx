@@ -47,6 +47,7 @@ function appInFront() {
 
 /** The typed text with the part matching `typed` emphasised. */
 function Highlighted({ text, typed }) {
+  const { t } = useTranslation()
   const q = typed.trim().toLowerCase()
   const at = q ? text.toLowerCase().indexOf(q) : -1
   if (at < 0) return <span className="text-text/80">{text}</span>

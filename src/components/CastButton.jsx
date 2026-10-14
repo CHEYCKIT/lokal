@@ -3,6 +3,7 @@
 // the TV's volume while casting, and adding a device by its address when it
 // isn't found by itself (a guest network, a VPN, a firewall in the way).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Cast, Check, Laptop, Plus, Speaker, Tv, Users, Volume1, Volume2, VolumeX, X } from 'lucide-react'
@@ -12,6 +13,7 @@ import { usePlayerStore } from '../store/player'
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
 
 function DeviceIcon({ device, size = 16 }) {
+  const { t } = useTranslation()
   const kind = deviceKind(device)
   if (kind === 'group') return <Users size={size} aria-hidden="true" />
   if (kind === 'speaker') return <Speaker size={size} aria-hidden="true" />
@@ -19,10 +21,12 @@ function DeviceIcon({ device, size = 16 }) {
 }
 
 function Spinner() {
+  const { t } = useTranslation()
   return <span className="h-3.5 w-3.5 flex-shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden="true" />
 }
 
 export default function CastButton() {
+  const { t } = useTranslation()
   const available = useCastStore(s => s.available)
   const devices = useCastStore(s => s.devices)
   const status = useCastStore(s => s.status)
@@ -102,7 +106,7 @@ export default function CastButton() {
         {open && (
           <motion.div
             role="menu"
-            aria-label="Cast to"
+            aria-label={t("Cast to")}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
@@ -110,7 +114,7 @@ export default function CastButton() {
             className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl z-50"
           >
             <div className="flex items-center justify-between px-2 py-1.5">
-              <p className="text-xs font-display uppercase tracking-wider text-muted">Play on</p>
+              <p className="text-xs font-display uppercase tracking-wider text-muted">{t("Play on")}</p>
               {searching && <Spinner />}
             </div>
 
@@ -118,7 +122,7 @@ export default function CastButton() {
               <button type="button" role="menuitemradio" aria-checked={!castActive} onClick={backHere}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${!castActive ? 'bg-accent/15 text-accent' : 'text-text hover:bg-card'}`}>
                 <Laptop size={16} aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">This computer</span>
+                <span className="min-w-0 flex-1 truncate">{t("This computer")}</span>
                 {!castActive && <Check size={14} aria-hidden="true" />}
               </button>
 
@@ -183,6 +187,7 @@ export default function CastButton() {
 }
 
 function TvVolume() {
+  const { t } = useTranslation()
   const volume = usePlayerStore(s => s.volume)
   const setVolume = usePlayerStore(s => s.setVolume)
   const Icon = volume <= 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
@@ -191,7 +196,7 @@ function TvVolume() {
       <Icon size={15} className="flex-shrink-0 text-muted" aria-hidden="true" />
       <input type="range" min="0" max="1" step="0.01" value={volume}
         onChange={e => setVolume(Number(e.target.value))}
-        aria-label="TV volume"
+        aria-label={t("TV volume")}
         className="flex-1 accent-accent cursor-pointer" />
       <span className="w-8 text-right text-[11px] tabular-nums text-muted">{Math.round(volume * 100)}</span>
     </div>
@@ -199,6 +204,7 @@ function TvVolume() {
 }
 
 function AddByAddress({ onDone }) {
+  const { t } = useTranslation()
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
@@ -223,7 +229,7 @@ function AddByAddress({ onDone }) {
     <form onSubmit={add} className="px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
         <input autoFocus value={address} onChange={e => setAddress(e.target.value)} placeholder="192.168.1.40"
-          aria-label="The device's IP address" spellCheck={false} inputMode="decimal"
+          aria-label={t("The device's IP address")} spellCheck={false} inputMode="decimal"
           className="min-w-0 flex-1 h-7 rounded-md bg-card border border-border px-2 text-xs text-text outline-none focus:border-accent/60" />
         <button type="submit" disabled={!valid || busy}
           className="h-7 px-2.5 rounded-md bg-accent text-base text-xs font-medium disabled:opacity-40">
@@ -237,12 +243,13 @@ function AddByAddress({ onDone }) {
 
 // What Lokal's receiver shows on the TV.
 function TvView() {
+  const { t } = useTranslation()
   const view = useCastStore(s => s.tvView)
   const setTvView = useCastStore(s => s.setTvView)
   return (
     <div className="px-2.5 pb-2">
-      <p className="mb-1.5 text-[11px] text-muted">On the TV</p>
-      <div role="radiogroup" aria-label="On the TV" className="flex rounded-full bg-card p-0.5">
+      <p className="mb-1.5 text-[11px] text-muted">{t("On the TV")}</p>
+      <div role="radiogroup" aria-label={t("On the TV")} className="flex rounded-full bg-card p-0.5">
         {[['nowplaying', 'Now playing'], ['lyrics', 'Lyrics'], ['video', 'Video']].map(([value, label]) => (
           <button key={value} type="button" role="radio" aria-checked={view === value} onClick={() => setTvView(value)}
             title={value === 'video' ? 'The music video, when the song has one' : undefined}

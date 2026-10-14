@@ -261,10 +261,10 @@ export default function Search() {
                         <p className="text-[10px] text-muted truncate w-full max-w-full">{item.artist}</p>
                       )}
                       {item.type === 'artist' && (
-                        <p className="text-[10px] text-muted">Artist</p>
+                        <p className="text-[10px] text-muted">{t("Artist")}</p>
                       )}
                       {item.type === 'album' && (
-                        <p className="text-[10px] text-muted">Album</p>
+                        <p className="text-[10px] text-muted">{t("Album")}</p>
                       )}
                     </div>
                   </motion.button>
@@ -363,7 +363,7 @@ export default function Search() {
                         <p className="text-xs text-muted truncate">{track.artist}{track.album ? ` · ${track.album}` : ''}</p>
                       </div>
                       <div className="flex items-center gap-2 text-accent flex-shrink-0">
-                        <span className="text-[10px] font-display uppercase tracking-[0.22em]">Play</span>
+                        <span className="text-[10px] font-display uppercase tracking-[0.22em]">{t("Play")}</span>
                         <Play size={13} fill="currentColor" />
                       </div>
                     </div>

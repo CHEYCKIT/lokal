@@ -1,4 +1,5 @@
 import OutputPrecisionSettings from './OutputPrecisionSettings'
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Headphones, Volume2 } from 'lucide-react'
 import { usePlayerStore } from '../store/player'
@@ -9,6 +10,7 @@ function DeviceIcon({ kind }) {
 }
 
 function BrowserAudioOutputPicker() {
+  const { t } = useTranslation()
   const outputDeviceId = usePlayerStore(state => state.outputDeviceId)
   const setOutputDevice = usePlayerStore(state => state.setOutputDevice)
   const [devices, setDevices] = useState([])
@@ -28,19 +30,19 @@ function BrowserAudioOutputPicker() {
       const found = await listAudioOutputs()
       const next = found.some(device => device.deviceId === 'default')
         ? found
-        : [{ deviceId: 'default', label: 'System default', kind: 'audiooutput' }, ...found]
+        : [{ deviceId: 'default', label: t('System default'), kind: 'audiooutput' }, ...found]
       if (seq !== refreshSeq.current) return null
       setDevices(next)
       setError('')
       return next
     } catch (e) {
       if (seq !== refreshSeq.current) return null
-      setError(e?.message || 'Could not list audio outputs')
+      setError(t(e?.message || 'Could not list audio outputs'))
       return []
     } finally {
       if (seq === refreshSeq.current) setLoading(false)
     }
-  }, [supported])
+  }, [supported, t])
 
   useEffect(() => {
     refresh()
@@ -77,13 +79,13 @@ function BrowserAudioOutputPicker() {
           if (selected?.deviceId) {
             const apply = window.__lokalSetAudioOutput
             const result = typeof apply === 'function' ? await apply(selected.deviceId) : { ok: true, pending: true }
-            if (result && !result.ok) throw new Error(result.error || 'Could not change audio output')
+            if (result && !result.ok) throw new Error(result.error || t('Could not change audio output'))
             setOutputDevice(selected.deviceId)
           }
         } catch (e) {
           // Cancelling the native chooser is not an error; the custom menu remains
           // available with whatever outputs the browser has already disclosed.
-          if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') setError(e?.message || 'Could not list audio outputs')
+          if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') setError(t(e?.message || 'Could not list audio outputs'))
         } finally {
           setSelecting(null)
         }
@@ -99,32 +101,32 @@ function BrowserAudioOutputPicker() {
     try {
       const apply = window.__lokalSetAudioOutput
       const result = typeof apply === 'function' ? await apply(id) : { ok: true, pending: true }
-      if (result && !result.ok) throw new Error(result.error || 'Could not change audio output')
+      if (result && !result.ok) throw new Error(result.error || t('Could not change audio output'))
       setOutputDevice(id)
       setOpen(false)
     } catch (e) {
-      setError(e?.message || 'Could not change audio output')
+      setError(t(e?.message || 'Could not change audio output'))
     } finally {
       setSelecting(null)
     }
   }
 
   const current = devices.find(device => (device.deviceId || 'default') === outputDeviceId) || devices.find(device => (device.deviceId || 'default') === 'default')
-  const currentLabel = current ? outputLabel(current) : 'Audio output'
+  const currentLabel = current ? outputLabel(current) : t('Audio output')
   const currentKind = outputKind(currentLabel)
 
   return (
     <div ref={root} className="relative flex items-center justify-center">
       <button type="button" onClick={openPicker} disabled={!supported}
-        aria-label={`Audio output: ${currentLabel}`} aria-expanded={open} aria-haspopup="menu"
-        title={supported ? `Audio output: ${currentLabel}` : 'Audio output selection is unavailable'}
+        aria-label={t('Audio output: {label}', { label: t(currentLabel) })} aria-expanded={open} aria-haspopup="menu"
+        title={supported ? t('Audio output: {label}', { label: t(currentLabel) }) : t('Audio output selection is unavailable')}
         className={`transition-colors ${open || outputDeviceId !== 'default' ? 'text-accent' : 'text-text/90 hover:text-text'} disabled:cursor-not-allowed disabled:opacity-40`}>
         <DeviceIcon kind={currentKind} />
       </button>
       {open && (
-        <div role="menu" aria-label="Audio output" className="absolute bottom-full right-0 z-30 mb-2 w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
+        <div role="menu" aria-label={t("Audio output")} className="absolute bottom-full right-0 z-30 mb-2 w-64 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
           <div className="flex items-center justify-between px-2 py-1.5">
-            <p className="text-xs font-display uppercase tracking-wider text-muted">Audio output</p>
+            <p className="text-xs font-display uppercase tracking-wider text-muted">{t("Audio output")}</p>
             {loading && <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />}
           </div>
           <div className="space-y-0.5">
@@ -139,14 +141,14 @@ function BrowserAudioOutputPicker() {
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${selected ? 'bg-accent/15 text-accent' : 'text-text hover:bg-card'} disabled:opacity-50`}>
                   <DeviceIcon kind={kind} />
                   <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
-                  {selected && <span className="text-[10px] uppercase tracking-wider">Current</span>}
+                  {selected && <span className="text-[10px] uppercase tracking-wider">{t("Current")}</span>}
                 </button>
               )
             })}
           </div>
-          {!devices.length && !loading && <p className="px-2 py-2 text-xs text-muted">No audio outputs detected.</p>}
-          {error && <p role="alert" className="px-2 pt-2 text-xs text-red-400">{error}</p>}
-          <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">Choose the Windows speaker or headset to use for Lokal.</p>
+          {!devices.length && !loading && <p className="px-2 py-2 text-xs text-muted">{t("No audio outputs detected.")}</p>}
+          {error && <p role="alert" className="px-2 pt-2 text-xs text-red-400">{t(error)}</p>}
+          <p className="border-t border-border px-2 pt-2 text-[11px] leading-relaxed text-muted">{t("Choose the Windows speaker or headset to use for Lokal.")}</p>
         </div>
       )}
     </div>
@@ -154,6 +156,7 @@ function BrowserAudioOutputPicker() {
 }
 
 export default function AudioOutputPicker() {
+  const { t } = useTranslation()
   const [native, setNative] = useState(() => window.__lokalOutputStatus?.mode === 'native')
   const [open, setOpen] = useState(false)
   const root = useRef(null)
@@ -174,7 +177,7 @@ export default function AudioOutputPicker() {
   if (!native) return <BrowserAudioOutputPicker />
   return (
     <div ref={root} className="relative flex items-center justify-center">
-      <button type="button" onClick={() => setOpen(value => !value)} aria-label="Native audio output" aria-expanded={open} className="text-accent">
+      <button type="button" onClick={() => setOpen(value => !value)} aria-label={t("Native audio output")} aria-expanded={open} className="text-accent">
         <Volume2 size={14} />
       </button>
       {open && <div className="absolute bottom-full right-0 z-30 mb-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-elevated p-2 shadow-2xl">

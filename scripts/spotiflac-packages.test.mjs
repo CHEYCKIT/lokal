@@ -9,16 +9,40 @@ import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3'),AdmZip=require('adm-zip')
 const {PackageService,readArchive,validateManifest,trackOf}=require('../electron/spotiflac/packages')
+const {mergePackageDownloadTags}=require('../electron/download/manager')
 const {rangeOf,fileResponse}=require('../electron/spotiflac/media')
+const {resolveKnownAlbum}=require('../electron/download/postprocess')
+const {isPlaceholderAlbum}=require('../electron/download/tagger')
 
 const manifest={name:'fixture-provider',displayName:'Fixture',version:'1.0.0',type:['metadata_provider','download_provider'],permissions:{network:[],storage:true,file:true},requiredRuntimeFeatures:['preparedContext@1'],settings:[{key:'token',type:'string',secret:true},{key:'country',type:'string',default:'US'}]}
 function archive(m=manifest,code=`registerExtension({initialize(s){settings=s;},searchTracks(query){return {tracks:[{id:'source-id',name:query,artists:'Artist',album_name:'Album',duration_ms:180000,isrc:'USAAA2600001'}]};},download(){return {success:false,error:'Fixture does not download'};}})`){const zip=new AdmZip();zip.addFile('manifest.json',Buffer.from(JSON.stringify(m)));zip.addFile('index.js',Buffer.from(code));return zip.toBuffer()}
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-packages-')),db=new Database(':memory:');db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT)');const service=new PackageService(db,{root,tools:()=>({})});t.after(async()=>{for(const runtime of service.runtimes.values())runtime.close();db.close();await fs.rm(root,{recursive:true,force:true})});return {service,db,root}}
 
-test('album metadata handles strings and nested provider album objects',()=>{
+test('resolved addon album metadata wins over blank or placeholder queue tags',()=>{
+  assert.equal(mergePackageDownloadTags({album:'Amazon Album'},{album:undefined}).album,'Amazon Album')
+  assert.equal(mergePackageDownloadTags({album_name:'Amazon Album'},{album:'Unknown album'}).album,'Amazon Album')
+  assert.equal(mergePackageDownloadTags({album:'Unknown album'},{album:'Spotify Album'}).album,'Spotify Album')
+  assert.equal(mergePackageDownloadTags({album:'Unknown album'},{album:'Unknown album'}).album,undefined)
+})
+
+test('album metadata ignores placeholder names when a real album field is available',()=>{
   assert.equal(trackOf({id:'plain',name:'Song',artists:'Artist',album:'Plain Album'},'a-1234567890').album,'Plain Album')
   assert.equal(trackOf({id:'nested',name:'Song',artists:'Artist',album:{name:'Amazon Album'}},'a-1234567890').album,'Amazon Album')
   assert.equal(trackOf({id:'nested-title',name:'Song',artists:'Artist',album:{title:'Title Album'}},'a-1234567890').album,'Title Album')
+  assert.equal(trackOf({id:'nested-id',name:'Song',artists:'Artist',album:{id:'B012345678',name:'Amazon Album'}},'a-1234567890').albumId,'B012345678')
+  assert.equal(trackOf({id:'nested-alias',name:'Song',artists:'Artist',album:{albumId:'amazon-album-2',title:'Amazon Album'}},'a-1234567890').albumId,'amazon-album-2')
+  assert.equal(trackOf({id:'placeholder',name:'Song',album_name:'Unknown album',album:'Actual Album'},'a-1234567890').album,'Actual Album')
+  assert.equal(trackOf({id:'unknown-only',name:'Song',album_name:'Unknown album',album:'N/A'},'a-1234567890').album,null)
+})
+
+test('placeholder album tags yield to real source metadata without replacing valid embedded albums',()=>{
+  assert.equal(isPlaceholderAlbum('Unknown album'),true)
+  assert.equal(isPlaceholderAlbum(''),true)
+  assert.equal(isPlaceholderAlbum('The Real Album'),false)
+  assert.deepEqual(resolveKnownAlbum('Unknown album','Amazon Album'),{value:'Amazon Album',replace:true})
+  assert.deepEqual(resolveKnownAlbum('','Amazon Album'),{value:'Amazon Album',replace:true})
+  assert.deepEqual(resolveKnownAlbum('Existing Album','Amazon Album'),{value:'Existing Album',replace:false})
+  assert.deepEqual(resolveKnownAlbum('Unknown album','Unknown album'),{value:'Unknown album',replace:false})
 })
 
 test('install, search, update and enable preserve provider identity and isolated secret settings',async t=>{
@@ -84,10 +108,14 @@ test('a package download crosses the real host, FFprobe validation, and staged c
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)))
   const key='fixture-provider',permissions={...manifest.permissions,network:['127.0.0.1'],allowHttp:true}
   service.toolProvider=()=>({ffmpeg:'ffmpeg',ffprobe:'ffprobe'})
-  const code=`registerExtension({getTrack(){return {id:'source-id',name:'Fixture Song',artists:'Fixture Artist',album:{name:'Fixture Album'},duration_ms:1000};},checkAvailability(){return {available:true,track_id:'source-id'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
-  const installed=await service.install({buffer:archive({...manifest,permissions},code)})
+  const code=`registerExtension({enrichTrack(track){return {...track,artists:[],album_name:'Unknown album',album_artist:'   '};},getTrack(id){return id==='B012345678'?{id,name:'Fixture Song',artists:'Fixture Artist',album:{id:'album-123',name:'Unknown album'},album_name:'Unknown album',album_artist:'   ',provider_id:'amazon'}:null;},getAlbum(id){return id==='album-123'?{id,name:'Fixture Album',artist:'Fixture Album Artist'}:null;},checkAvailability(isrc,name,artists,options){return options.track.album_name==='Unknown album'?{available:true,track_id:'B012345678'}:{available:false,reason:'Expected unresolved source metadata before Amazon match'};},download(id,quality,output,progress){var r=file.download('http://127.0.0.1:${server.address().port}/audio',output,{onProgress:function(w,t){progress(t?100*w/t:0);}});return {success:r.success,file_path:r.path,title:'Fixture Song',artist:'Fixture Artist'};}})`
+  const installed=await service.install({buffer:archive({...manifest,name:'amazon',permissions},code)})
+  // The original cross-provider row has no Amazon album ID. checkAvailability()
+  // resolves an ASIN; getTrack() then reveals a nested album ID and placeholder
+  // title, so getAlbum() must run after matching and fill the prepared metadata.
+  service.remember(installed.key,[{id:'source-id',name:'Fixture Song',artists:'Fixture Artist',album_artist:'   ',album_name:'Unknown album',duration_ms:1000}])
   const result=await service.download(installed.key,'source-id',{purpose:'playback'})
-  try { assert.equal(result.info.codec,'pcm_s16le');assert.equal(path.extname(result.file),'.wav','WAV audio written to audio.flac is rewrapped for the player');assert.equal(result.info.duration_ms,1000);assert.equal(result.metadata.album,'Fixture Album');assert.equal(result.metadata.album_name,'Fixture Album');assert.ok((await fs.stat(result.file)).size>44) } finally { await result.cleanup() }
+  try { assert.equal(result.info.codec,'pcm_s16le');assert.equal(path.extname(result.file),'.wav','WAV audio written to audio.flac is rewrapped for the player');assert.equal(result.info.duration_ms,1000);assert.equal(result.metadata.album,'Fixture Album');assert.equal(result.metadata.album_name,'Fixture Album');assert.equal(result.metadata.album_artist,'Fixture Album Artist');assert.ok((await fs.stat(result.file)).size>44) } finally { await result.cleanup() }
 })
 
 test('an addon login (tokens and verification cookies) survives a restart, and Disconnect forgets it',async t=>{
