@@ -2119,7 +2119,7 @@ export default function App() {
         setTimeout(() => { pauseSuppressRef.current = false }, 200)
       }, Math.max(fadeIn, fadeOut) * 1000)
     }
-  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext, openMixFilters])
+  }, [flushTime, setActiveAudioElement, beginLastfmPlayback, cancelCrossfade, stopTimer, autoNext, openMixFilters, applyReplayGainToElement])
 
   useEffect(() => {
     if (isCrossfadingRef.current) {
@@ -2281,7 +2281,7 @@ export default function App() {
       activeGain.setValueAtTime(volume, now)
       inactiveGain.setValueAtTime(0, now)
     } catch {}
-  }, [volume, applyReplayGainToElement])
+  }, [volume])
 
   useEffect(() => {
     const state = usePlayerStore.getState()
