@@ -411,6 +411,47 @@ async function artist(db, key, id, options = {}) {
 
 const MIME = { flac: 'audio/flac', mp3: 'audio/mpeg', aac: 'audio/aac', m4a: 'audio/mp4', mp4: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm' }
 
+/**
+ * Addons don't all spell their stream format the same way. Eclipse-compatible
+ * responses may provide format, container and codec separately, and some put
+ * bit depth / sample rate into a descriptive format string (e.g. "FLAC 24-bit
+ * / 192 kHz"). Normalize the common audio names before choosing a MIME type.
+ */
+function normalizeAudioFormat(value) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return ''
+  if (/\bflac\b|free lossless audio codec/.test(raw)) return 'flac'
+  if (/\b(?:mp3|mpeg|mpga)\b/.test(raw)) return 'mp3'
+  if (/\b(?:aac|mp4a)(?:[.\s;-]|$)/.test(raw)) return 'aac'
+  if (/\bm4a\b/.test(raw)) return 'm4a'
+  if (/\bmp4\b/.test(raw)) return 'mp4'
+  if (/\bopus\b/.test(raw)) return 'opus'
+  if (/\b(?:ogg|oga|vorbis)\b/.test(raw)) return 'ogg'
+  if (/\b(?:wav|wave|pcm)\b/.test(raw)) return 'wav'
+  if (/\bwebm\b/.test(raw)) return 'webm'
+  return ''
+}
+
+/** Determine the direct stream's format without trusting a display-quality label alone. */
+function streamFormat(json, url) {
+  // Prefer the addon's explicit format, then its container. The URL extension
+  // describes the bytes being fetched; codec is the fallback when neither is
+  // useful (e.g. a signed URL ending in an opaque id).
+  for (const value of [json.format, json.container, json.mimeType, json.mime]) {
+    const format = normalizeAudioFormat(value)
+    if (MIME[format]) return format
+  }
+  try {
+    const extension = new URL(url).pathname.match(/\.([^.\/]+)$/)?.[1]
+    const format = normalizeAudioFormat(extension)
+    if (MIME[format]) return format
+  } catch {}
+  const codec = normalizeAudioFormat(json.codec)
+  if (MIME[codec]) return codec
+  const quality = String(json.quality || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return FORMAT_BY_QUALITY[quality] || ''
+}
+
 /** The audio URL for an addon track (from its /stream), cached until it expires. */
 async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
   const addon = findByKey(db, key)
@@ -425,7 +466,7 @@ async function resolveStream(db, key, id, { fetchImpl, force = false } = {}) {
       try { url = checkUrl(json.url).toString() } catch { throw new Error('The addon gave no playable link for this track.') }
       if (ADAPTIVE.test(url) || needsManifest(json.manifest)) throw new Error('This addon streams in a format Lokal cannot play yet (DASH/HLS).')
       if (json.encrypted === true) throw new Error('This addon only gave an encrypted stream for this track, which Lokal cannot play.')
-      const format = String(json.format || FORMAT_BY_QUALITY[String(json.quality || '').toLowerCase()] || '').toLowerCase()
+      const format = streamFormat(json, url)
       const expires = Number(json.expiresAt) > 0 ? Number(json.expiresAt) * (Number(json.expiresAt) < 1e12 ? 1000 : 1) - 60000 : Date.now() + STREAM_TTL_MS
       const stream = { url, headers: {}, mime: MIME[format] || 'audio/*', expiresAt: Math.max(Date.now() + 30000, expires), format: format || null, quality: json.quality || null }
       if (streamCache.size > 200) streamCache.delete(streamCache.keys().next().value)

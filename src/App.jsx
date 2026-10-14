@@ -51,6 +51,7 @@ import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './online
 
 // An addon refusing because its access isn't set up (or has lapsed).
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
+
 import { playbackAvailability, playbackFallbackMessage, resolveRecommendationTracks } from './recommendations'
 import { isAudioEventForTrack, replaceAudioSource } from './playerAudio'
 import { handleLiveSeek } from './liveSeek'
@@ -61,6 +62,42 @@ import { useAppearanceFlag } from './appearanceFlags'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
+
+async function addonStreamTrackHash(id) {
+  try {
+    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(id)))
+    return Array.from(new Uint8Array(digest).slice(0, 6), byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch { return null }
+}
+
+function logAddonMediaEvent(eventName, event, slot) {
+  const el = event?.currentTarget
+  if (!el) return
+  const state = usePlayerStore.getState()
+  const ref = streamRef(state.currentTrack)
+  if (!ref || !isAddonProvider(ref.provider)) return
+  if (String(el.getAttribute('src') || '').split('?')[0] !== api.onlineStreamURL(ref.provider, ref.id)) return
+
+  const error = el.error
+  const snapshot = {
+    event: eventName,
+    provider: ref.provider,
+    slot,
+    active: state.activeAudioElement === slot,
+    storeIsPlaying: !!state.isPlaying,
+    paused: !!el.paused,
+    readyState: Number.isFinite(el.readyState) ? el.readyState : null,
+    networkState: Number.isFinite(el.networkState) ? el.networkState : null,
+    currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime.toFixed(3)) : null,
+    duration: Number.isFinite(el.duration) ? Number(el.duration.toFixed(3)) : null,
+    mediaErrorCode: Number.isFinite(Number(error?.code)) ? Number(error.code) : null,
+    mediaError: String(error?.message || '').slice(0, 200) || null,
+  }
+  void addonStreamTrackHash(ref.id).then(track => {
+    api.log(eventName === 'error' || eventName === 'stalled' ? 'warn' : 'info',
+      `[online-stream] media-event ${JSON.stringify({ ...snapshot, track })}`)
+  }).catch(() => {})
+}
 
 // A bass-swap filter at rest: open (below anything audible).
 const MIX_FILTER_OPEN_HZ = 10
@@ -366,6 +403,20 @@ export default function App() {
     const failedTrack = usePlayerStore.getState().currentTrack
     const failedRef = streamRef(failedTrack)
     if (failedRef && String(el?.getAttribute('src') || '').split('?')[0] === api.onlineStreamURL(failedRef.provider, failedRef.id)) {
+      if (isAddonProvider(failedRef.provider)) {
+        const mediaError = el?.error
+        const diagnostic = {
+          provider: failedRef.provider,
+          track: await addonStreamTrackHash(failedRef.id),
+          mediaErrorCode: Number.isFinite(Number(mediaError?.code)) ? Number(mediaError.code) : null,
+          mediaError: String(mediaError?.message || '').slice(0, 240) || null,
+          networkState: Number.isFinite(el?.networkState) ? el.networkState : null,
+          readyState: Number.isFinite(el?.readyState) ? el.readyState : null,
+          currentTime: Number.isFinite(el?.currentTime) ? Number(el.currentTime.toFixed(3)) : null,
+          duration: Number.isFinite(el?.duration) ? Number(el.duration.toFixed(3)) : null,
+        }
+        api.log('warn', `[online-stream] renderer-error ${JSON.stringify(diagnostic)}`)
+      }
       await recoverOnlinePlayback(el, failedTrack, failedRef)
       return
     }
@@ -2630,33 +2681,45 @@ export default function App() {
             and the graph outputs silence. */}
         <audio
           ref={audioRef}
+          onLoadStart={(e) => logAddonMediaEvent('loadstart', e, 'primary')}
+          onLoadedMetadata={(e) => logAddonMediaEvent('loadedmetadata', e, 'primary')}
+          onCanPlay={(e) => { logAddonMediaEvent('canplay', e, 'primary'); handleAudioCanPlay(e) }}
           onSeeking={onAudioSeeking}
           preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handlePrimaryDurationChange}
-          onCanPlay={handleAudioCanPlay}
-          onEnded={handlePrimaryEnded}
-          onError={handleAudioError}
-          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
-          onPlaying={(e) => { if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
-          onPlay={(e) => { if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
-          onPause={(e) => { if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
+          onEnded={(e) => { logAddonMediaEvent('ended', e, 'primary'); handlePrimaryEnded(e) }}
+          onError={(e) => { logAddonMediaEvent('error', e, 'primary'); handleAudioError(e) }}
+          onWaiting={(e) => { logAddonMediaEvent('waiting', e, 'primary'); if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onStalled={(e) => logAddonMediaEvent('stalled', e, 'primary')}
+          onSuspend={(e) => logAddonMediaEvent('suspend', e, 'primary')}
+          onAbort={(e) => logAddonMediaEvent('abort', e, 'primary')}
+          onEmptied={(e) => logAddonMediaEvent('emptied', e, 'primary')}
+          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'primary'); if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
+          onPlay={(e) => { logAddonMediaEvent('play', e, 'primary'); if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPause={(e) => { logAddonMediaEvent('pause', e, 'primary'); if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         <audio
           ref={cfAudioRef}
+          onLoadStart={(e) => logAddonMediaEvent('loadstart', e, 'cf')}
+          onLoadedMetadata={(e) => logAddonMediaEvent('loadedmetadata', e, 'cf')}
+          onCanPlay={(e) => { logAddonMediaEvent('canplay', e, 'cf'); handleAudioCanPlay(e) }}
           onSeeking={onAudioSeeking}
           preload="auto"
           crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onDurationChange={handleCfDurationChange}
-          onCanPlay={handleAudioCanPlay}
-          onEnded={handleCfEnded}
-          onError={handleAudioError}
-          onWaiting={(e) => { if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
-          onPlaying={(e) => { if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
-          onPlay={(e) => { if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
-          onPause={(e) => { if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
+          onEnded={(e) => { logAddonMediaEvent('ended', e, 'cf'); handleCfEnded(e) }}
+          onError={(e) => { logAddonMediaEvent('error', e, 'cf'); handleAudioError(e) }}
+          onWaiting={(e) => { logAddonMediaEvent('waiting', e, 'cf'); if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onStalled={(e) => logAddonMediaEvent('stalled', e, 'cf')}
+          onSuspend={(e) => logAddonMediaEvent('suspend', e, 'cf')}
+          onAbort={(e) => logAddonMediaEvent('abort', e, 'cf')}
+          onEmptied={(e) => logAddonMediaEvent('emptied', e, 'cf')}
+          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'cf'); if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
+          onPlay={(e) => { logAddonMediaEvent('play', e, 'cf'); if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
+          onPause={(e) => { logAddonMediaEvent('pause', e, 'cf'); if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
         {/* Never connect this to the Web Audio graph (no createMediaElementSource) -
             it exists purely to keep a native, audible HTMLMediaElement "playing"

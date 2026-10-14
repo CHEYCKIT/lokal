@@ -16,7 +16,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'framer-motion'
 import { usePlayerStore } from '../store/player'
-import { blobBlur, blobMask, clamp01, makeBlobs } from '../coverMix'
+import { blobBlur, blobMask, clamp01, coverTransitionMode, makeBlobs } from '../coverMix'
 
 const MIX_MS = 2400
 const FADE_MS = 300
@@ -75,8 +75,11 @@ export default function MixCovers({ track, render }) {
       return
     }
     const state = usePlayerStore.getState()
-    const mixing = !!state.crossfade?.automix && !!state.mixing && state.mixing.until > Date.now()
-    const mode = reduceMotion || !shown.id ? 'base' : mixing ? 'mix' : 'fade'
+    const mode = coverTransitionMode({
+      automix: !!state.crossfade?.automix,
+      reduceMotion,
+      hasPreviousCover: !!shown.id,
+    })
     const layer = { key: ++nextKey, id, track, mode, blobs: mode === 'mix' ? makeBlobs() : null }
     // At most the one on its way out stays under the new one, settled (a skip
     // mid-transition: all of it shows, not what had faded or dissolved in).
