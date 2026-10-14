@@ -93,9 +93,13 @@ app.get('/api/artwork/:trackId', (req, res) => {
       const relative = path.relative(base, candidate)
       return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
     }
-    if (resolved && fs.existsSync(resolved) &&
-        (isWithin(dir, resolved) || (root && isWithin(root, resolved)))) {
-      return res.sendFile(resolved)
+    if (resolved && fs.existsSync(resolved)) {
+      const realArtwork = fs.realpathSync(resolved)
+      let inCache = false
+      let inMusicFolder = false
+      try { inCache = isWithin(fs.realpathSync(dir), realArtwork) } catch {}
+      try { inMusicFolder = !!root && isWithin(fs.realpathSync(root), realArtwork) } catch {}
+      if (inCache || inMusicFolder) return res.sendFile(resolved)
     }
   } catch {}
   res.status(404).send('No artwork')
