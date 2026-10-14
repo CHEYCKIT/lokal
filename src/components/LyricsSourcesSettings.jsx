@@ -93,7 +93,7 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
     <div className="py-3">
       <div className="flex items-baseline justify-between gap-4 mb-1">
         <p className="text-sm text-white">{t("Lyrics sources")}</p>
-        <span className={`text-[11px] transition-opacity ${saved ? t("opacity-100 text-accent") : t("opacity-0")}`}>{t("Saved")}</span>
+        <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-accent' : 'opacity-0'}`}>{t("Saved")}</span>
       </div>
       <p className="text-xs text-muted mb-3">
         Sources are tried in this order. Drag to reorder them. The first source with lyrics wins unless syllable lyrics are prioritized.
