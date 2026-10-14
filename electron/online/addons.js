@@ -317,6 +317,14 @@ function trackOf(t, provider) {
   const artistList = Array.isArray(t.artists) ? t.artists.filter(a => name(a)) : []
   const artists = artistList.map(name)
   if (!artists.length && name(t.artist)) artists.push(name(t.artist))
+  // Add-ons use both a plain album string and an album object. Amazon-style
+  // results commonly put the display name in `album.name`, so normalize that
+  // before the track is saved as the player's current track. Without it the
+  // player hides its album navigation controls while the song is streaming.
+  const album = t.album && typeof t.album === 'object'
+    ? t.album.title || t.album.name || t.album.albumName || t.album.album_name
+    : t.album
+  const albumId = t.albumId ?? t.album_id ?? (typeof t.album === 'object' ? t.album?.id ?? t.album?.albumId ?? t.album?.album_id : null)
   return {
     provider,
     id: String(t.id).slice(0, 300),
@@ -325,8 +333,8 @@ function trackOf(t, provider) {
     artists,
     // The addon's ids: its artists (told apart from namesakes) and album.
     artistIds: artistList.length ? artistList.map(a => (typeof a === 'object' ? idOf(a.id) : null)) : [],
-    album: t.album ? String(typeof t.album === 'object' ? t.album.title || '' : t.album).slice(0, 500) || null : null,
-    albumId: idOf(t.albumId ?? (typeof t.album === 'object' ? t.album?.id : null)),
+    album: album ? String(album).slice(0, 500) || null : null,
+    albumId: idOf(albumId),
     track_num: positive(t.trackNumber),
     disc_num: positive(t.discNumber),
     year: positive(t.year),

@@ -5,6 +5,7 @@ import { usePlayerStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import { api, wordSyncEnabled } from '../api'
+import { useTranslation } from '../i18n'
 
 // The actual lyrics view, with no opinion about how it's framed -- used both
 // by the standalone panel below (independent mode) and, via RightSidebar's
@@ -12,6 +13,7 @@ import { api, wordSyncEnabled } from '../api'
 // visual presentations never drift out of sync with each other. Mirrors
 // QueuePanel's QueueContent/QueuePanel split for the same reason.
 export function LyricsContent({ onClose }) {
+  const { t } = useTranslation()
   const { currentTrack, progress, toggleLyricsFullscreen } = usePlayerStore(useShallow(({ currentTrack, progress, toggleLyricsFullscreen }) => ({ currentTrack, progress, toggleLyricsFullscreen })))
   const wordSync = wordSyncEnabled()
   // Backend-persisted setting (Settings' Auto Translate/unsynced-auto-sync
@@ -43,7 +45,7 @@ export function LyricsContent({ onClose }) {
   return (
     <>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-        <p className="text-xs font-display text-muted uppercase tracking-widest">Lyrics</p>
+        <p className="text-xs font-display text-muted uppercase tracking-widest">{t('Lyrics')}</p>
         {onClose && (
           <button onClick={onClose} className="text-muted hover:text-white transition-colors">
             <X size={14} />
@@ -55,12 +57,12 @@ export function LyricsContent({ onClose }) {
         {currentTrack ? (
           <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
         ) : (
-          <div className="flex items-center justify-center h-full text-muted text-xs">No track playing</div>
+          <div className="flex items-center justify-center h-full text-muted text-xs">{t('No track playing')}</div>
         )}
       </div>
       <div className="p-3 border-t border-border flex-shrink-0">
         <button onClick={toggleLyricsFullscreen} className="w-full py-2 bg-card border border-border rounded-xl text-xs text-muted hover:text-white hover:border-accent/30 transition-all font-display uppercase tracking-wider flex items-center justify-center gap-1.5">
-          <Maximize2 size={11} /> Expand Lyrics
+          <Maximize2 size={11} /> {t('Expand Lyrics')}
         </button>
       </div>
     </>
