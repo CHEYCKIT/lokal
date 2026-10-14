@@ -102,6 +102,11 @@ async function squareCover(T, file) {
   return true
 }
 
+function isPlaceholderAlbum(value) {
+  const album = String(value ?? '').trim()
+  return !album || /^(?:unknown(?:\s+album)?|untitled(?:\s+album)?|n\/?a|none|null|undefined)$/i.test(album)
+}
+
 function stripArtistPrefix(title, artist) {
   const t = String(title || '')
   const a = String(artist || '').split(/,|&| feat\.? | ft\.? /i)[0].trim()
@@ -134,7 +139,7 @@ async function applyTags(filePath, changes = {}) {
     if (changes.squareCover) {
       try { if (await squareCover(T, file)) { done.cover = true; dirty = true } } catch {}
     }
-    if (changes.album && !file.tag.album) { file.tag.album = changes.album; done.album = changes.album; dirty = true }
+    if (changes.album && isPlaceholderAlbum(file.tag.album)) { file.tag.album = changes.album; done.album = changes.album; dirty = true }
     // A source's details (an addon's): only where the file has none.
     if (changes.year && !file.tag.year) { file.tag.year = changes.year; done.year = changes.year; dirty = true }
     if (changes.track && !file.tag.track) { file.tag.track = changes.track; done.track = changes.track; dirty = true }
@@ -213,4 +218,4 @@ async function imageThumbnail(imagePath, size = 96) {
   } catch { return null }
 }
 
-module.exports = { readInfo, applyTags, stripArtistPrefix, coverThumbnail, imageThumbnail }
+module.exports = { readInfo, applyTags, stripArtistPrefix, isPlaceholderAlbum, coverThumbnail, imageThumbnail }

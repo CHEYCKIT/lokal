@@ -34,6 +34,25 @@ test('isolated guest preserves synchronous host APIs, settings, storage, this, a
   assert.deepEqual(await runtime.invoke('inspect'),{value:'Lokal',cached:{a:null,b:2},token:'secret',binary:[0,1,255],process:'undefined',require:'undefined'})
 })
 
+test('host response objects support hasOwnProperty without prototype pollution', async t => {
+  const server=http.createServer((_req,res)=>{res.setHeader('Content-Type','application/json');res.end('{"ok":true}')})
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)))
+  const {runtime}=await fixture(t,`registerExtension({inspect(url,payload){
+    const response=http.get(url)
+    return {
+      hasHeaderMethod:typeof response.headers.hasOwnProperty==='function',
+      hasContentType:response.headers.hasOwnProperty('content-type')&&response.headers['content-type']==='application/json',
+      payloadPrototype:Object.getPrototypeOf(payload)===Object.prototype,
+      ownProto:Object.prototype.hasOwnProperty.call(payload,'__proto__'),
+      payloadValue:payload.__proto__.polluted,
+      globalPrototypeSafe:{}.polluted===undefined
+    };
+  }})`)
+  const payload=JSON.parse('{"__proto__":{"polluted":true}}')
+  const result=await runtime.invoke('inspect',[`http://127.0.0.1:${server.address().port}/headers`,payload],{timeoutMs:5000})
+  assert.deepEqual(result,{hasHeaderMethod:true,hasContentType:true,payloadPrototype:true,ownProto:true,payloadValue:true,globalPrototypeSafe:true})
+})
+
 test('guest promises drain jobs and return results without leaking interpreter handles', async t => {
   const { runtime } = await fixture(t, `registerExtension({async answer(){return 42;}})`)
   assert.equal(await runtime.invoke('answer'),42)

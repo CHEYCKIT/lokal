@@ -352,6 +352,22 @@ class PackageService {
       let track=JSON.parse(this.db.prepare('SELECT metadata_json FROM spotiflac_tracks WHERE provider=? AND id=?').get(`a-${key}`,String(id))?.metadata_json || 'null')
       if(!track&&runtime.methods.includes('getTrack'))track=await runtime.invoke('getTrack',[String(id)],{signal:combined})
       track ||= {id:String(id),name:'',artists:'',duration_ms:0,provider_id:addon.name}
+      // Search results may be sparse; SpotiFLAC providers such as Amazon
+      // expose enrichTrack() to resolve canonical release metadata before the
+      // availability check and prepared download context are built.
+      if(runtime.methods.includes('enrichTrack')) {
+        try {
+          const enriched=await runtime.invoke('enrichTrack',[track],{timeoutMs:60000,signal:combined})
+          if(enriched && typeof enriched==='object' && !Array.isArray(enriched)) {
+            const values=Object.fromEntries(Object.entries(enriched).filter(([,value])=>value!==undefined&&value!==null&&value!==''&&value!==0&&!(typeof value==='string'&&!value.trim())&&!(Array.isArray(value)&&value.length===0)))
+            track={...track,...values}
+          }
+        } catch(error) {
+          // Enrichment is optional, but a timed-out/aborted worker cannot be
+          // reused safely for checkAvailability() or download().
+          if(combined.aborted || runtime.closed) throw error
+        }
+      }
       const providerName=addon.name.replace(/-web$/,'')
       const options={track,duration_ms:track.duration_ms || 0}
       const directFields={qobuz:'qobuz_id',tidal:'tidal_id',deezer:'deezer_id',soundcloud:'spotify_id',amazon:'spotify_id'}
