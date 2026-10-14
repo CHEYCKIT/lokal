@@ -276,7 +276,7 @@ export default function PlayerBar() {
             {isPlaying ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" className="translate-x-0.5" />}
           </motion.button>
           <button onClick={next} className="text-text/90 hover:text-text transition-colors" title={t("Next")}><SkipForward size={18} fill="currentColor" /></button>
-          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={`${t("Repeat")}: ${repeat}`}><RepeatIcon size={15} /></button>
+          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={t(repeat === 'none' ? 'Repeat off' : repeat === 'one' ? 'Repeat one' : 'Repeat all')}><RepeatIcon size={15} /></button>
         </div>
         <div className="relative flex items-center gap-2 w-full max-w-md">
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
@@ -315,7 +315,7 @@ export default function PlayerBar() {
             <button 
               onClick={() => setShowSleepTimer(!showSleepTimer)} 
               className={`flex items-center justify-center transition-colors ${sleepTimerEndTime ? 'text-accent' : 'text-text/90 hover:text-text'}`} 
-              title={sleepTimerEndTime ? `Sleep timer: ${sleepTimerDisplay}`  : t("Sleep Timer")}
+              title={sleepTimerEndTime ? `${t("Sleep Timer")}: ${sleepTimerDisplay}` : t("Sleep Timer")}
             >
               <Moon size={16} />
             </button>
