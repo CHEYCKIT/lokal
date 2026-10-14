@@ -10,8 +10,47 @@ export const YoutubeIcon = createLucideIcon('youtube', [
 ])
 
 // Quiet marks by default; online search opts into coloured provider branding.
-export default function SourceIcon({ source, size = 14, className = '', colored = false }) {
+function addonBrandKey(name) {
+  const label = String(name || '').toLowerCase()
+  if (/\\bamazon\\b/.test(label)) return 'amazon'
+  if (/\\bqobuz\\b/.test(label)) return 'qobuz'
+  if (/\\btidal\\b/.test(label)) return 'tidal'
+  if (/\\bdeezer\\b/.test(label)) return 'deezer'
+  return null
+}
+
+function AddonBrandIcon({ brand, props }) {
+  if (brand === 'tidal') return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 3 9 6 6 9 3 6Z M12 3 15 6 12 9 9 6Z M18 3 21 6 18 9 15 6Z M6 9 9 12 6 15 3 12Z M12 9 15 12 12 15 9 12Z M18 9 21 12 18 15 15 12Z M6 15 9 18 6 21 3 18Z M12 15 15 18 12 21 9 18Z M18 15 21 18 18 21 15 18Z" />
+    </svg>
+  )
+  if (brand === 'qobuz') return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+      <text x="12" y="18.5" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="20" fontWeight="700">Q</text>
+    </svg>
+  )
+  if (brand === 'deezer') return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2 17h3v4H2z M2 12h3v4H2z M6 13h3v8H6z M6 8h3v4H6z M10 9h3v12h-3z M10 4h3v4h-3z M14 13h3v8h-3z M14 8h3v4h-3z M18 5h3v16h-3z" />
+    </svg>
+  )
+  if (brand === 'amazon') return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <text x="10.8" y="16.5" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="17" fontWeight="700" fill="currentColor" stroke="none">a</text>
+      <path d="M3.5 18.2c4.4 3.1 10.7 3.3 16.2.1m-3.1-.3 3.3.2-1.5 2" />
+    </svg>
+  )
+  return null
+}
+
+// Quiet marks by default; online search opts into coloured provider branding.
+export default function SourceIcon({ source, size = 14, className = '', colored = false, addonName = '' }) {
   const props = { width: size, height: size, className: `shrink-0 ${className}`, 'aria-hidden': true }
+  if (source?.startsWith('a-')) {
+    const brand = addonBrandKey(addonName)
+    if (brand) return <AddonBrandIcon brand={brand} props={props} />
+  }
   if (source === 'sc' && !colored) return (
     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 12v4m3-6v8m3-9v9m3-12v12h7a4 4 0 1 0-.5-8A6 6 0 0 0 11 6Z" />
@@ -36,7 +75,7 @@ export function TrackSourceIcon({ track, addonNames, className = '' }) {
   const description = label ? `${stream ? 'Streamed' : 'Downloaded'} from ${label}${stream ? ' · not in your library yet' : ''}` : 'Source unknown'
   return (
     <span role="img" aria-label={description} title={description} className={`inline-flex shrink-0 items-center justify-center text-muted ${className}`}>
-      <SourceIcon source={source} />
+      <SourceIcon source={source} addonName={isAddonProvider(source) ? addonNames?.[source] : ''} />
     </span>
   )
 }
