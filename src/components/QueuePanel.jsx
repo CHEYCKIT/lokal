@@ -4,6 +4,7 @@ import { X, Music, GripVertical, ListPlus, ListStart, FolderPlus } from 'lucide-
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import { trackArtURL } from '../onlineTracks'
 
 // The actual queue list, with no opinion about how it's framed -- used both
@@ -23,6 +24,7 @@ const PAGE = 200
 const ANIMATE_UP_TO = 150
 
 export function QueueContent({ onClose, variant = 'panel' }) {
+  const { t } = useTranslation()
   const {
     queue, queueIndex, playQueue, playbackContext, isBuffering,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
@@ -173,7 +175,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                 }`}
               >
                 {isCurrent && isBuffering && (
-                  <div role="progressbar" aria-label="Loading track" className="absolute bottom-0 left-2 right-2 h-0.5 overflow-hidden rounded-full bg-elevated">
+                  <div role="progressbar" aria-label={t("Loading track")} className="absolute bottom-0 left-2 right-2 h-0.5 overflow-hidden rounded-full bg-elevated">
                     <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
                   </div>
                 )}
@@ -221,7 +223,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                 >
                   <button
                     onClick={(e) => handlePlayNext(track, e)}
-                    title="Play next"
+                    title={t("Play next")}
                     className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
                   >
                     <ListStart size={14} />
@@ -229,7 +231,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
                   <button
                     onClick={(e) => handleAddToQueue(track, e)}
-                    title="Add to queue"
+                    title={t("Add to queue")}
                     className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
                   >
                     <ListPlus size={14} />
@@ -237,7 +239,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
                   <button
                     onClick={(e) => handleDragToPlaylist(track, e)}
-                    title="Add to playlist"
+                    title={t("Add to playlist")}
                     className="p-1 rounded hover:bg-accent/20 text-muted hover:text-accent transition-colors"
                   >
                     <FolderPlus size={14} />
@@ -246,7 +248,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                   {!isCurrent && (
                     <button
                       onClick={(e) => handleRemove(track.id, e)}
-                      title="Remove from queue"
+                      title={t("Remove from queue")}
                       className="p-1 rounded hover:bg-red-500/20 text-muted hover:text-red-400 transition-colors"
                     >
                       <X size={14} />

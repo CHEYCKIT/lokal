@@ -6,6 +6,7 @@ const https = require('https')
 const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
+const { findFolderArtwork, getLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
@@ -195,12 +196,17 @@ function relinkArtistsIfNeeded(db = getDB()) {
   return changed
 }
 
-async function extractArtwork(metadata, trackId) {
+async function extractArtwork(metadata, trackId, fallbackArtwork = null) {
   const pic = metadata.common.picture?.[0]
-  if (!pic) return null
-  const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-  if (!fs.existsSync(artPath)) await fs.writeFile(artPath, pic.data)
-  return artPath
+  if (pic) {
+    const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
+    if (!fs.existsSync(artPath)) {
+      await fs.ensureDir(path.dirname(artPath))
+      await fs.writeFile(artPath, pic.data)
+    }
+    return artPath
+  }
+  return fallbackArtwork || null
 }
 
 function walkDir(dir, files = []) {
@@ -421,14 +427,30 @@ async function scanFolder(folderPath) {
 
   const BATCH = 20
   let batch = []
+  const folderArtworkCache = new Map()
+  const getFolderArtwork = (filePath) => {
+    const folderPath = path.dirname(filePath)
+    if (!folderArtworkCache.has(folderPath)) folderArtworkCache.set(folderPath, findFolderArtwork(folderPath))
+    return folderArtworkCache.get(folderPath)
+  }
 
   for (const filePath of files) {
     try {
       const stat = fs.statSync(filePath)
       const trackId = 't-' + hashFile(filePath, stat)
-      const existing = db.prepare('SELECT last_modified FROM tracks WHERE id = ?').get(trackId)
+      const existing = db.prepare('SELECT last_modified, artwork_path FROM tracks WHERE id = ?').get(trackId)
+      const folderArtwork = getFolderArtwork(filePath)
       if (existing && existing.last_modified === stat.mtimeMs) {
-        scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue
+        const existingArtwork = existing.artwork_path ? path.resolve(existing.artwork_path) : null
+        const storedArtworkDir = path.resolve(getStorageDir(), 'artwork')
+        const hasCachedArtwork = existingArtwork &&
+          path.dirname(existingArtwork) === storedArtworkDir &&
+          fs.existsSync(existingArtwork)
+        const hasCurrentFolderArtwork = folderArtwork && existingArtwork === path.resolve(folderArtwork)
+        const noArtworkToUpdate = !existingArtwork && !folderArtwork
+        if (hasCachedArtwork || hasCurrentFolderArtwork || noArtworkToUpdate) {
+          scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue
+        }
       }
       const meta = await mm.parseFile(filePath, { duration: true, skipCovers: false })
       const c = meta.common
@@ -443,7 +465,7 @@ async function scanFolder(folderPath) {
       const minDuration = getMinDuration()
       if (duration < minDuration) { console.log(`[scanFolder] Skipped: ${filePath} - Too short (${duration}s)`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
       if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
-      const artwork = await extractArtwork(meta, trackId)
+      const artwork = await extractArtwork(meta, trackId, folderArtwork)
       const replaygain = c.replaygain_track_gain || null
       batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta) })
       if (batch.length >= BATCH) { await insertBatch(batch); batch = [] }
@@ -1157,6 +1179,7 @@ function registerScannerHandlers(ipcMain) {
   const { BrowserWindow } = require('electron')
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:status', () => scanStatus)
+  ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search) => getLibraryFolders(getDB(), relativePath, search))
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()
     const existing = db.prepare("SELECT * FROM tracks WHERE file_path = ?").get(filePath)
@@ -1934,7 +1957,7 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS }
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
 
 
 function registerExtraHandlers(ipcMain) {

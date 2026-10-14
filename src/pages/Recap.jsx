@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { BarChart3, CalendarRange, Clock3, Disc3, ListMusic, ListPlus, Play, Plus, RefreshCw, Sparkles, Share2 } from 'lucide-react'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useAppStore, usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
@@ -16,11 +17,12 @@ import { openShareCard, coversOf } from '../shareCard'
 
 
 function Metric({ label, value, icon: Icon }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-xl border border-border bg-elevated/80 p-4">
       <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted">
         <Icon size={12} />
-        {label}
+        {t(label)}
       </div>
       <div className="mt-3 text-2xl font-display text-white">{value}</div>
     </div>
@@ -128,30 +130,31 @@ function SessionCard({ session, onPlay, onSave }) {
  * this recap; its button saves them as a playlist.
  */
 function RankedList({ title, items, nameKey, emptyText, busyKey, onPlay, onSave }) {
+  const { t } = useTranslation()
   return (
     <section className="rounded-xl border border-border bg-elevated p-4">
-      <h2 className="text-xs font-display uppercase tracking-widest text-muted">{title}</h2>
+      <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t(title)}</h2>
       <div className="mt-4 space-y-2">
         {items.map((item, index) => {
           const name = item[nameKey]
           const busy = busyKey === `${nameKey}:${name}`
           return (
             <div key={name || index} className="group/row flex items-center gap-1 rounded-lg bg-card pr-1 transition-colors hover:bg-white/[0.06]">
-              <button onClick={() => onPlay(name)} disabled={busy} title={`Play ${name}`} aria-label={`Play ${name}`}
+              <button onClick={() => onPlay(name)} disabled={busy} title={`${t("Play")} ${name}`} aria-label={`${t("Play")} ${name}`}
                 className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left disabled:opacity-60">
                 <span className="w-4 flex-shrink-0 text-xs text-muted">{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-sm text-white">{name}</span>
                 <span className="flex-shrink-0 text-xs text-muted group-hover/row:hidden">{plural(item.plays, 'play')}</span>
                 <Play size={13} fill="currentColor" className="hidden flex-shrink-0 text-accent group-hover/row:block" />
               </button>
-              <button onClick={() => onSave(name)} disabled={busy} title={`Save ${name} as a playlist`} aria-label={`Save ${name} as a playlist`}
+              <button onClick={() => onSave(name)} disabled={busy} title={`${t("Save")} ${name} ${t("as a playlist")}`} aria-label={`${t("Save")} ${name} ${t("as a playlist")}`}
                 className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
                 {busy ? <RefreshCw size={13} className="animate-spin" /> : <ListPlus size={14} />}
               </button>
             </div>
           )
         })}
-        {!items.length && <p className="text-xs text-muted">{emptyText}</p>}
+        {!items.length && <p className="text-xs text-muted">{t(emptyText)}</p>}
       </div>
     </section>
   )
@@ -171,6 +174,7 @@ function PeriodChip({ active, context, dashed, onClick, onPrefetch, children, ti
 
 /** A row of period chips under the year row, opening and closing smoothly. */
 function ChipRow({ label, contentKey, reduceMotion, children }) {
+  const { t } = useTranslation()
   const ease = [0.22, 1, 0.36, 1]
   return (
     // Height only: framer draws it frame by frame. Its opacity animations
@@ -183,7 +187,7 @@ function ChipRow({ label, contentKey, reduceMotion, children }) {
       transition={{ duration: reduceMotion ? 0 : 0.22, ease }}
       className="chips-swap overflow-hidden">
       <div className="flex items-center gap-3 pt-3">
-        <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">{label}</span>
+        <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">{t(label)}</span>
         <div key={contentKey} className="chips-swap flex gap-2 overflow-x-auto pb-0.5">
           {children}
         </div>
@@ -213,12 +217,13 @@ export default function Recap() {
 }
 
 function SourcesFilter({ value, onChange }) {
+  const { t } = useTranslation()
   return (
-    <div role="group" aria-label="Songs counted" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">
+    <div role="group" aria-label={t("Songs counted")} className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card/70 p-0.5">
       {RECAP_SOURCES.map(([id, label, title]) => (
         <button key={id} type="button" aria-pressed={value === id} title={title} onClick={() => onChange(id)}
           className={`rounded-md px-2.5 py-1 !text-[11px] transition-colors ${value === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
-          {label}
+          {t(label)}
         </button>
       ))}
     </div>
@@ -226,6 +231,7 @@ function SourcesFilter({ value, onChange }) {
 }
 
 function RecapContent({ user, sources = 'all', onSourcesChange }) {
+  const { t } = useTranslation()
   // Kept across visits (per user and filter): coming back shows the recap as
   // it was while the periods refresh quietly, instead of rebuilding it on screen.
   const k = `recap:${user?.id || 'guest'}${sources === 'all' ? '' : `:${sources}`}`
@@ -550,38 +556,38 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-accent">
             <Sparkles size={13} />
-            Listening Recaps
-            {(checkingPeriods || loading) && <RefreshCw size={11} className="animate-spin text-muted" aria-label="Checking for new recaps" />}
+            {t("Listening Recaps")}
+            {(checkingPeriods || loading) && <RefreshCw size={11} className="animate-spin text-muted" aria-label={t("Checking for new recaps")} />}
           </div>
-          <h1 className="mt-2 text-3xl font-display text-white">Your listening eras</h1>
-          <p className="mt-1 text-sm text-muted">A recap for every finished week (Monday to Sunday), month and year, built from your listening sessions. Click a month or year again to see it so far.</p>
+          <h1 className="mt-2 text-3xl font-display text-white">{t("Your listening eras")}</h1>
+          <p className="mt-1 text-sm text-muted">{t("A recap for every finished week (Monday to Sunday), month and year, built from your listening sessions. Click a month or year again to see it so far.")}</p>
           <div className="mt-3"><SourcesFilter value={sources} onChange={onSourcesChange} /></div>
         </div>
         {/* One row, always: short labels that never wrap, and on a narrow
             page the icons alone (named on hover and for screen readers). */}
         <div className="flex flex-shrink-0 flex-nowrap gap-2">
-          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} title="Replay this era" aria-label="Replay this era" className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50 @md:px-4">
+          <button onClick={() => replayQueue.length && playQueue(replayQueue, 0)} disabled={loading || !replayQueue.length} title={t("Replay this era")} aria-label={t("Replay this era")} className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 py-2 text-sm font-medium text-base transition-colors hover:bg-accent/85 disabled:opacity-50 @md:px-4">
             <Play size={14} fill="currentColor" />
-            <span className="hidden @sm:inline">Replay</span>
+            <span className="hidden @sm:inline">{t("Replay")}</span>
           </button>
-          <button onClick={savePlaylist} disabled={loading || !replayQueue.length} title="Save as a playlist" aria-label="Save as a playlist" className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-accent/40 bg-accent/15 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50 @md:px-4">
+          <button onClick={savePlaylist} disabled={loading || !replayQueue.length} title={t("Save as a playlist")} aria-label={t("Save as a playlist")} className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-accent/40 bg-accent/15 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50 @md:px-4">
             <Plus size={14} />
-            <span className="hidden @sm:inline">Save as playlist</span>
+            <span className="hidden @sm:inline">{t("Save as playlist")}</span>
           </button>
-          <button onClick={() => setStoryOpen(true)} disabled={loading || !recap || recap.totalPlays === 0} title="Show the story" aria-label="Show the story" className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-border bg-elevated px-3 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50 @md:px-4">
+          <button onClick={() => setStoryOpen(true)} disabled={loading || !recap || recap.totalPlays === 0} title={t("Show the story")} aria-label={t("Show the story")} className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-border bg-elevated px-3 py-2 text-sm text-white transition-colors hover:border-accent/40 disabled:opacity-50 @md:px-4">
             <Sparkles size={14} />
-            <span className="hidden @sm:inline">Story</span>
+            <span className="hidden @sm:inline">{t("Story")}</span>
           </button>
         </div>
       </div>
 
       {checkingPeriods && !tree.length ? (
-        <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">Looking for finished recaps with listening data...</div>
+        <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">{t("Looking for finished recaps with listening data...")}</div>
       ) : periods.length > 0 ? (
         // Year, then month, then week: only periods with plays are listed.
         <div className="rounded-xl border border-border bg-elevated/60 p-4">
           <div className="flex items-center gap-3">
-            <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">Year</span>
+            <span className="w-14 flex-shrink-0 text-[10px] font-display uppercase tracking-widest text-muted">{t("Year")}</span>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               {tree.map(entry => (
                 <PeriodChip key={entry.year} active={selectedId === wholeOf(entry)?.id} context={navYear === entry.year && selectedId !== wholeOf(entry)?.id} onClick={() => pickYear(entry)} onPrefetch={() => prefetch(yearTarget(entry))}
@@ -596,7 +602,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
               another month's weeks fade in rather than popping. */}
           <AnimatePresence initial={false}>
             {yearEntry && (
-              <ChipRow key="month" label="Month" contentKey={yearEntry.year} reduceMotion={reduceMotion}>
+              <ChipRow key="month" label={t("Month")} contentKey={yearEntry.year} reduceMotion={reduceMotion}>
                 {yearEntry.months.map(entry => (
                   <PeriodChip key={entry.key} active={selectedId === wholeOf(entry)?.id} context={navMonth === entry.key && selectedId !== wholeOf(entry)?.id}
                     dashed={!entry.period} title={entry.period ? undefined : navMonth === entry.key ? 'This month so far' : 'Still going: click again for the month so far'} onClick={() => pickMonth(entry)} onPrefetch={() => prefetch(monthTarget(entry))}>
@@ -606,7 +612,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
               </ChipRow>
             )}
             {monthEntry && monthEntry.weeks.length > 0 && (
-              <ChipRow key="week" label="Week" contentKey={monthEntry.key} reduceMotion={reduceMotion}>
+              <ChipRow key="week" label={t("Week")} contentKey={monthEntry.key} reduceMotion={reduceMotion}>
                 {monthEntry.weeks.map(period => (
                   <PeriodChip key={period.id} active={selectedId === period.id} onClick={() => setSelectedId(period.id)} onPrefetch={() => prefetch(period)}>
                     {period.label}
@@ -619,21 +625,21 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
       ) : periodsError ? (
         <div className="flex items-center gap-3 rounded-xl border border-border bg-elevated p-6 text-sm text-muted">
           Couldn't load your listening days ({periodsError}).
-          <button onClick={loadPeriodList} className="rounded-lg border border-border px-3 py-1 text-xs hover:text-white">Retry</button>
+          <button onClick={loadPeriodList} className="rounded-lg border border-border px-3 py-1 text-xs hover:text-white">{t("Retry")}</button>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">No finished recap periods with listening data yet.</div>
+        <div className="rounded-xl border border-border bg-elevated p-6 text-sm text-muted">{t("No finished recap periods with listening data yet.")}</div>
       )}
 
       {status && <div className="rounded-xl border border-border bg-elevated px-4 py-3 text-sm text-muted">{status}</div>}
 
       {loading && !recap ? (
-        <div className="rounded-xl border border-border bg-elevated p-10 text-center text-sm text-muted">Building recap...</div>
+        <div className="rounded-xl border border-border bg-elevated p-10 text-center text-sm text-muted">{t("Building recap...")}</div>
       ) : !recap || recap.totalPlays === 0 ? (
         <div className="rounded-xl border border-border bg-elevated p-10 text-center">
           <Disc3 size={36} className="mx-auto text-muted/40" />
-          <p className="mt-3 text-sm text-white">No finished recap selected yet.</p>
-          <p className="mt-1 text-xs text-muted">Once a completed period has enough listening data, it will show up here.</p>
+          <p className="mt-3 text-sm text-white">{t("No finished recap selected yet.")}</p>
+          <p className="mt-1 text-xs text-muted">{t("Once a completed period has enough listening data, it will show up here.")}</p>
         </div>
       ) : (
         // Switching period keeps the current recap until the next is built:
@@ -648,7 +654,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
                 <div className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted">
                   <CalendarRange size={12} />
                   {fmtDate(recap.from)} - {fmtDate(recap.to)}
-                  <button onClick={shareRecap} title="Share as a picture"
+                  <button onClick={shareRecap} title={t("Share as a picture")}
                     className="ml-auto flex items-center gap-1.5 rounded-full border border-border bg-black/20 px-3 py-1 text-[10px] font-display uppercase tracking-widest text-muted transition-colors hover:border-accent/30 hover:text-white">
                     <Share2 size={11} /> Share
                   </button>
@@ -677,17 +683,17 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
           <div className="grid grid-cols-[minmax(0,1fr)] gap-6 @lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
             <section className="min-w-0 space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-display uppercase tracking-widest text-muted">Top Tracks</h2>
-                <button onClick={() => playQueue(topTracks, 0)} className="text-xs font-display uppercase tracking-wider text-accent hover:text-accent/70">Play Top 50</button>
+                <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Top Tracks")}</h2>
+                <button onClick={() => playQueue(topTracks, 0)} className="text-xs font-display uppercase tracking-wider text-accent hover:text-accent/70">{t("Play Top 50")}</button>
               </div>
               <TrackList tracks={topTracks.slice(0, 20)} reduceMotion />
             </section>
 
             <aside className="min-w-0 space-y-4">
-              <RankedList title="Top Artists" items={(recap.topArtists || []).slice(0, 5)} nameKey="artist"
+              <RankedList title={t("Top Artists")} items={(recap.topArtists || []).slice(0, 5)} nameKey="artist"
                 emptyText="No artist stood out yet." busyKey={busySubject}
                 onPlay={(name) => playSubject('artist', name)} onSave={(name) => saveSubject('artist', name)} />
-              <RankedList title="Genres" items={topGenres.slice(0, 5)} nameKey="genre"
+              <RankedList title={t("Genres")} items={topGenres.slice(0, 5)} nameKey="genre"
                 emptyText="No specific genre stood out yet." busyKey={busySubject}
                 onPlay={(name) => playSubject('genre', name)} onSave={(name) => saveSubject('genre', name)} />
             </aside>
@@ -697,10 +703,10 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
             <section className="space-y-3">
               <div className="flex flex-col gap-1 @sm:flex-row @sm:items-end @sm:justify-between">
                 <div>
-                  <h2 className="text-xs font-display uppercase tracking-widest text-muted">Listening Sessions</h2>
-                  <p className="mt-1 text-sm text-muted">Your strongest runs from this recap, grouped by listening shape.</p>
+                  <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Listening Sessions")}</h2>
+                  <p className="mt-1 text-sm text-muted">{t("Your strongest runs from this recap, grouped by listening shape.")}</p>
                 </div>
-                <span className="text-xs text-muted">{recap.sessions.length} named sessions</span>
+                <span className="text-xs text-muted">{recap.sessions.length} {t("named sessions")}</span>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)] gap-4 @lg:grid-cols-2">
                 {recap.sessions.slice(0, 8).map((session, index) => (

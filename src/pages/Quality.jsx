@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { useLocation } from 'react-router-dom'
 import { AudioWaveform, Gem, Loader2, Play, RefreshCw, ScanLine, Square } from 'lucide-react'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCache'
 import AnimatedNumber from '../components/AnimatedNumber'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
@@ -27,19 +28,21 @@ const PAGE = 200
 // Every tile has the same rows, each one line high (badge, number, share,
 // description), so the badges, numbers and texts line up across the row.
 function StatTile({ tier, count, share, active, onClick, rollFrom }) {
+  const { t } = useTranslation()
   const info = TIERS[tier]
   return (
-    <button onClick={onClick} title={info.hint}
+    <button onClick={onClick} title={t(info.hint)}
       className={`flex h-full min-w-0 flex-col items-start justify-start gap-1.5 rounded-2xl border p-3 text-left transition-colors ${active ? 'border-accent/50 bg-accent/10' : 'border-border bg-card/50 hover:bg-card'}`}>
-      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide ${info.className}`}>{info.label}</span>
+      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide ${info.className}`}>{t(info.label)}</span>
       <AnimatedNumber value={count} from={rollFrom} className="mt-1 font-display text-2xl leading-8 tabular-nums text-white" />
       <span className="w-full truncate text-[11px] leading-4 text-muted/80 tabular-nums">{share}</span>
-      <span className="w-full truncate text-[11px] leading-4 text-muted">{info.desc}</span>
+      <span className="w-full truncate text-[11px] leading-4 text-muted">{t(info.desc)}</span>
     </button>
   )
 }
 
 export default function Quality() {
+  const { t } = useTranslation()
   // Kept across visits: coming back shows the numbers as they were (and they
   // roll to any new value); the first visit counts them up from zero.
   const [summary, setSummary, summaryWasCached] = useCachedState('quality:summary', null)
@@ -174,30 +177,30 @@ export default function Quality() {
       <section className="rounded-[24px] border border-border bg-card/60 p-5">
         <div className="flex flex-wrap items-center gap-3">
           <AudioWaveform size={18} className="text-accent" />
-          <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">Audio quality</h1>
-          <span className="text-xs text-muted tabular-nums"><AnimatedNumber value={total} from={rollFrom(total)} /> tracks</span>
+          <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">{t("Audio quality")}</h1>
+          <span className="text-xs text-muted tabular-nums"><AnimatedNumber value={total} from={rollFrom(total)} /> {t("tracks")}</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {running ? (
               <>
                 <span className="flex items-center gap-2 text-xs text-muted">
                   <Loader2 size={13} className="animate-spin" />
-                  {job.kind === 'check' ? 'Checking spectra' : 'Reading file details'} · {job.done.toLocaleString()} / {job.total.toLocaleString()}
+                  {job.kind === 'check' ? t('Checking spectra') : t('Reading file details')} · {job.done.toLocaleString()} / {job.total.toLocaleString()}
                 </span>
                 <button onClick={() => start(api.qualityCancel)} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
-                  <Square size={11} /> Stop
+                  <Square size={11} /> {t("Stop")}
                 </button>
               </>
             ) : (
               <>
                 <button onClick={() => start(() => api.qualityRead({ all: !unread }))}
-                  title={unread ? 'Read codec, bitrate, sample rate, bit depth and ISRC of the tracks indexed before Lokal kept them' : 'Read every file again'}
+                  title={unread ? t('Read codec, bitrate, sample rate, bit depth and ISRC of the tracks indexed before Lokal kept them') : t('Read every file again')}
                   className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted hover:text-white">
-                  <RefreshCw size={12} /> {unread ? `Read details of ${unread.toLocaleString()} tracks` : 'Read all again'}
+                  <RefreshCw size={12} /> {unread ? `${t("Read details of")} ${unread.toLocaleString()} ${t("tracks")}` : t("Read all again")}
                 </button>
                 <button onClick={() => start(() => api.qualityCheck({}))} disabled={!summary?.unchecked}
-                  title="Look at the spectrum of lossless files to spot ones made from MP3/AAC (needs ffmpeg, about 1.5 s a file)"
+                  title={t("Look at the spectrum of lossless files to spot ones made from MP3/AAC (needs ffmpeg, about 1.5 s a file)")}
                   className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-[rgb(var(--bg-rgb))] hover:bg-accent/80 disabled:opacity-40">
-                  <ScanLine size={12} /> {summary?.unchecked ? `Check ${summary.unchecked.toLocaleString()} lossless files` : 'All lossless files checked'}
+                  <ScanLine size={12} /> {summary?.unchecked ? `${t("Check")} ${summary.unchecked.toLocaleString()} ${t("lossless files")}` : t("All lossless files checked")}
                 </button>
               </>
             )}
@@ -205,7 +208,7 @@ export default function Quality() {
         </div>
         {message && <p className="mt-3 rounded-xl border border-red/25 bg-red/10 px-3 py-2 text-xs text-red">{message}</p>}
         {unread > 0 && !running && (
-          <p className="mt-3 text-xs text-muted">{unread.toLocaleString()} tracks were added before Lokal kept their format: read their details to see them here.</p>
+          <p className="mt-3 text-xs text-muted">{unread.toLocaleString()} {t("tracks were added before Lokal kept their format: read their details to see them here.")}</p>
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 @sm:grid-cols-3 @lg:grid-cols-5">
@@ -220,13 +223,13 @@ export default function Quality() {
           {FILTERS.map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)}
               className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${filter === id ? 'bg-accent/15 text-accent border border-accent/30' : 'border border-border text-muted hover:text-white'}`}>
-              {label}{id === 'upgradable' && tiers.upgradable ? ` · ${tiers.upgradable.toLocaleString()}` : ''}
+              {t(label)}{id === 'upgradable' && tiers.upgradable ? ` · ${tiers.upgradable.toLocaleString()}` : ''}
             </button>
           ))}
           {rows.length > 0 && rowsFor === filter && (
             <button onClick={() => playQueue(rows, 0, { type: 'quality', id: filter, name: `Audio quality: ${FILTERS.find(f => f[0] === filter)?.[1]}` })}
               className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted hover:text-white">
-              <Play size={11} fill="currentColor" /> Play these
+              <Play size={11} fill="currentColor" /> {t("Play these")}
             </button>
           )}
         </div>
@@ -234,16 +237,16 @@ export default function Quality() {
             previous filter's rows, then "Loading…", then the new ones). */}
         <SectionSwap id={filter} gated>
         <ReadyWhen ready={rowsFor === filter || !!rowsError} />
-        {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.</p>}
+        {filter === 'upgradable' && <p className="mb-3 text-xs text-muted">{t("Lossy files, and lossless files the spectrum check found were made from lossy ones. Lowest quality first.")}</p>}
 
         {loading && rowsFor !== filter && <p className="flex items-center gap-2 py-6 text-xs text-muted"><Loader2 size={13} className="animate-spin" /> Loading…</p>}
         {rowsError && (
           <p className="flex items-center gap-2 py-3 text-xs text-red">
-            Couldn't load this list ({rowsError}).
-            <button onClick={loadRows} className="rounded-full border border-border px-2.5 py-0.5 text-muted hover:text-white">Retry</button>
+            {t("Couldn't load this list")} ({rowsError}).
+            <button onClick={loadRows} className="rounded-full border border-border px-2.5 py-0.5 text-muted hover:text-white">{t("Retry")}</button>
           </p>
         )}
-        {rowsFor === filter && !loading && !rowsError && !rows.length && <p className="py-6 text-center text-xs text-muted">Nothing here.</p>}
+        {rowsFor === filter && !loading && !rowsError && !rows.length && <p className="py-6 text-center text-xs text-muted">{t("Nothing here.")}</p>}
 
         <div className="space-y-0.5">
           {rowsFor === filter && rows.map((track, i) => {
@@ -267,7 +270,7 @@ export default function Quality() {
                 <div className="grid grid-cols-[4.75rem_auto] items-center gap-2.5 @sm:grid-cols-[10rem_4.75rem_auto]">
                   <span className="hidden truncate text-right text-[11px] text-muted tabular-nums @sm:block" title={formatLabel(track)}>{formatLabel(track)}</span>
                   <span className={`justify-self-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
-                  <button onClick={() => openLossless(track)} title="Get it in lossless"
+                  <button onClick={() => openLossless(track)} title={t("Get it in lossless")}
                     className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted opacity-70 transition-all hover:text-accent group-hover:opacity-100">
                     <Gem size={12} /> Lossless
                   </button>
@@ -276,7 +279,7 @@ export default function Quality() {
             )
           })}
         </div>
-        {rowsFor === filter && rows.length === PAGE && <p className="mt-3 text-center text-[11px] text-muted">Showing the first {PAGE}.</p>}
+        {rowsFor === filter && rows.length === PAGE && <p className="mt-3 text-center text-[11px] text-muted">{t("Showing the first")} {PAGE}.</p>}
         </SectionSwap>
       </section>
     </div>

@@ -12,6 +12,7 @@ import ContextMenu, { useContextMenu } from '../components/ContextMenu'
 import { openRadio } from '../radioActions'
 import { showToast } from '../components/Toaster'
 import { discoveryArtistKey, loadDiscoveryArtists, setArtistFollowed, useDiscoveryArtists } from '../discoveryArtists'
+import { useTranslation } from '../i18n'
 
 const PAGE_SIZE = 60
 const TOP_ARTISTS_LIMIT = 8
@@ -145,6 +146,7 @@ const VIEWS = [
 ]
 
 export default function Artists() {
+  const { t } = useTranslation()
   const [sort, setSort] = useState(() => localStorage.getItem('lokal-artists-sort') || 'name')
   // All artists, or only the ones you follow (their releases fill Home → Releases).
   const [followedOnly, setFollowedOnly] = useState(() => { try { return localStorage.getItem('lokal-artists-followed') === '1' } catch { return false } })
@@ -334,12 +336,12 @@ export default function Artists() {
       <div className="mx-auto max-w-7xl space-y-8">
         <div className="flex flex-col gap-4 @md:flex-row @md:flex-wrap @md:items-end @md:justify-between">
           <div>
-            <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">Collection</p>
+            <p className="text-[11px] font-display uppercase tracking-[0.32em] text-muted">{t("Collection")}</p>
             <div className="mt-2 flex items-center gap-2.5">
-              <h1 className="font-display text-3xl uppercase tracking-[0.14em] text-white">Artists</h1>
+              <h1 className="font-display text-3xl uppercase tracking-[0.14em] text-white">{t("Artists")}</h1>
               <button
                 onClick={() => navigate('/home/history')}
-                title="Listening history"
+                title={t("Listening history")}
                 className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 transition-colors hover:border-white/25 hover:text-white"
               >
                 <Clock size={13} />
@@ -347,7 +349,7 @@ export default function Artists() {
               <button
                 onClick={() => setRefreshOpen(true)}
                 title={refreshStatus?.running ? `Refreshing artist info: ${refreshStatus.done}/${refreshStatus.total}` : 'Refresh artist info (pictures and bios)'}
-                aria-label="Refresh artist info"
+                aria-label={t("Refresh artist info")}
                 className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 transition-colors hover:border-white/25 hover:text-white"
               >
                 <RefreshCw size={13} className={refreshStatus?.running ? 'animate-spin' : ''} />
@@ -359,7 +361,7 @@ export default function Artists() {
           </div>
 
           <div className="flex w-full flex-col gap-3 @sm:flex-row @sm:flex-wrap @sm:items-center @sm:justify-end @md:w-auto">
-            <div role="radiogroup" aria-label="Which artists" className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+            <div role="radiogroup" aria-label={t("Which artists")} className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
               {[[false, 'All'], [true, 'Followed']].map(([value, label]) => (
                 <button key={label} role="radio" aria-checked={followedOnly === value} onClick={() => changeFollowedOnly(value)}
                   title={value ? 'Only the artists you follow' : 'Every artist in your library'}
@@ -373,10 +375,10 @@ export default function Artists() {
               onChange={(event) => changeSort(event.target.value)}
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-accent/50"
             >
-              <option value="name">Name (A–Z)</option>
-              <option value="tracks">Most Tracks</option>
+              <option value="name">{t("Name (A–Z)")}</option>
+              <option value="tracks">{t("Most Tracks")}</option>
             </select>
-            <div role="radiogroup" aria-label="Artists view" className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+            <div role="radiogroup" aria-label={t("Artists view")} className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
               {VIEWS.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -396,7 +398,7 @@ export default function Artists() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search artists..."
+                placeholder={t("Search artists...")}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-accent/50 placeholder:text-muted"
               />
             </div>
@@ -407,7 +409,7 @@ export default function Artists() {
           <section className="space-y-4">
             <div className="flex items-center gap-2">
               <Sparkles size={14} className="text-accent" />
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest">Top Artists</h2>
+              <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Top Artists")}</h2>
             </div>
             <div className="grid grid-cols-2 gap-4 @sm:grid-cols-3 @md:grid-cols-4 @lg:grid-cols-8">
               {topArtists.map((artist, index) => (

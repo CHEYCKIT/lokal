@@ -5,6 +5,7 @@ import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { navigateToTrackArtist } from '../artistLink'
 import Waveform from './Waveform'
@@ -22,6 +23,7 @@ import { useCastStore } from '../cast/castStore'
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
 export default function PlayerBar() {
+  const { t } = useTranslation()
   const glass = useAppearanceFlag('glass_player_bar')
   const showWaveform = useAppearanceFlag('player_waveform')
   const nav = useNavigate()
@@ -255,7 +257,7 @@ export default function PlayerBar() {
           </div>
         )}
         {currentTrack && (
-          <button onClick={() => openAddToPlaylist(currentTrack)} title="Add to playlist"
+          <button onClick={() => openAddToPlaylist(currentTrack)} title={t("Add to playlist")}
             className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
             <Plus size={14} />
           </button>
@@ -267,14 +269,14 @@ export default function PlayerBar() {
         <div className="relative flex items-center gap-4">
           {/* Beside the buttons (not over the seek bar), without moving them. */}
           <MixingMark className="absolute left-full top-1/2 ml-4 -translate-y-1/2 whitespace-nowrap pointer-events-none" />
-          <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={shuffle ? "Shuffle on" : "Shuffle off"}><Shuffle size={15} /></button>
-          <button onClick={prev} className="text-text/90 hover:text-text transition-colors" title="Previous"><SkipBack size={18} fill="currentColor" /></button>
+          <button onClick={toggleShuffle} className={`transition-colors ${shuffle ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={shuffle ? t("Shuffle on") : t("Shuffle off")}><Shuffle size={15} /></button>
+          <button onClick={prev} className="text-text/90 hover:text-text transition-colors" title={t("Previous")}><SkipBack size={18} fill="currentColor" /></button>
           <motion.button onClick={togglePlay} disabled={!currentTrack} whileTap={{ scale: 0.88 }}
             className={`w-9 h-9 rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 ${flowPlaying ? 'flow-play' : 'bg-accent text-base'}`}>
             {isPlaying ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" className="translate-x-0.5" />}
           </motion.button>
-          <button onClick={next} className="text-text/90 hover:text-text transition-colors" title="Next"><SkipForward size={18} fill="currentColor" /></button>
-          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={`Repeat: ${repeat}`}><RepeatIcon size={15} /></button>
+          <button onClick={next} className="text-text/90 hover:text-text transition-colors" title={t("Next")}><SkipForward size={18} fill="currentColor" /></button>
+          <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={t(repeat === 'none' ? 'Repeat off' : repeat === 'one' ? 'Repeat one' : 'Repeat all')}><RepeatIcon size={15} /></button>
         </div>
         <div className="relative flex items-center gap-2 w-full max-w-md">
           <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
@@ -287,7 +289,7 @@ export default function PlayerBar() {
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             {isBuffering && streamed && (
-              <div role="progressbar" aria-label="Loading track" className="absolute inset-0 overflow-hidden rounded-full bg-elevated">
+              <div role="progressbar" aria-label={t("Loading track")} className="absolute inset-0 overflow-hidden rounded-full bg-elevated">
                 <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
               </div>
             )}
@@ -303,17 +305,17 @@ export default function PlayerBar() {
             </div>
           )}
           {!castDevice && <AudioOutputPicker />}
-          <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-text/90 hover:text-accent'}`} title="Lyrics"><Mic2 size={16} /></button>
-          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Queue"><ListMusic size={16} /></button>
-          <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-text/90 hover:text-text'}`} title="Now Playing">< PanelRight size={16} /></button>
-          <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-text/90 hover:text-accent transition-colors disabled:opacity-30" title="Mini Player"><Radio size={15} /></button>
-          <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-text/90 hover:text-text transition-colors disabled:opacity-30" title="Fullscreen"><Maximize2 size={15} /></button>
+          <button onClick={toggleLyricsButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'lyrics') : showLyricsPanel) ? 'text-accent' : 'text-text/90 hover:text-accent'}`} title={t("Lyrics")}><Mic2 size={16} /></button>
+          <button onClick={toggleQueueButton} className={`transition-colors ${(exclusiveSidePanels ? (showRightSidebar && sidePanelView === 'queue') : showQueue) ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={t("Queue")}><ListMusic size={16} /></button>
+          <button onClick={toggleRightSidebar} className={`transition-colors ${showRightSidebar ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={t("Now Playing")}>< PanelRight size={16} /></button>
+          <button onClick={toggleMiniPlayer} disabled={!currentTrack} className="text-text/90 hover:text-accent transition-colors disabled:opacity-30" title={t("Mini Player")}><Radio size={15} /></button>
+          <button onClick={toggleFullscreen} disabled={!currentTrack} className="text-text/90 hover:text-text transition-colors disabled:opacity-30" title={t("Fullscreen")}><Maximize2 size={15} /></button>
           
           <div className="relative flex items-center justify-center">
             <button 
               onClick={() => setShowSleepTimer(!showSleepTimer)} 
               className={`flex items-center justify-center transition-colors ${sleepTimerEndTime ? 'text-accent' : 'text-text/90 hover:text-text'}`} 
-              title={sleepTimerEndTime ? `Sleep timer: ${sleepTimerDisplay}` : "Sleep Timer"}
+              title={sleepTimerEndTime ? `${t("Sleep Timer")}: ${sleepTimerDisplay}` : t("Sleep Timer")}
             >
               <Moon size={16} />
             </button>
@@ -335,7 +337,7 @@ export default function PlayerBar() {
         </div>
       </div>
 
-      <Modal open={showSleepTimer} onClose={() => setShowSleepTimer(false)} title="Sleep Timer" width="max-w-xs">
+      <Modal open={showSleepTimer} onClose={() => setShowSleepTimer(false)} title={t("Sleep Timer")} width="max-w-xs">
         <div className="space-y-3">
           <p className="text-xs text-muted">
             Music will stop after the selected time. Use this if you would like the app to stop while you are sleeping. 

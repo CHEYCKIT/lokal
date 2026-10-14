@@ -22,6 +22,7 @@ import { FLOW_MOODS } from '../flow/engine'
 import { MOOD_ICONS } from '../flow/moodIcons'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { api } from '../api'
+import { useTranslation } from '../i18n'
 import {
   HISTORY_EVENT, clearRecentSearches, getRecentSearches, matchRecentSearches, removeRecentSearch, saveRecentSearch,
 } from '../searchHistory'
@@ -60,6 +61,7 @@ function Highlighted({ text, typed }) {
 
 /** The header's Home button, search box, history dropdown and Flow button. */
 export default function HeaderSearch() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const loc = useLocation()
   const query = useSearchStore(s => s.query)
@@ -207,8 +209,8 @@ export default function HeaderSearch() {
     <div className="flex items-center gap-1.5 min-w-0 w-full justify-center" style={{ WebkitAppRegion: 'no-drag' }}>
       <button
         onClick={() => nav('/')}
-        title="Home"
-        aria-label="Home"
+        title={t("Home")}
+        aria-label={t("Home")}
         className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors bg-elevated hover:bg-card ${onHome ? 'text-text' : 'text-muted hover:text-text'}`}
       >
         <Home size={15} strokeWidth={onHome ? 2.4 : 1.8} />
@@ -227,9 +229,9 @@ export default function HeaderSearch() {
             onFocus={() => { setFocused(true); setDropdownOpen(true); openSearchPage() }}
             onBlur={() => { setFocused(false); setDropdownOpen(false); if (query.trim().length >= 2 && onSearchPage && !isLink) saveRecentSearch(query) }}
             onKeyDown={onKeyDown}
-            placeholder="What do you want to play? Or paste a link"
+            placeholder={t("What do you want to play? Or paste a link")}
             spellCheck={false}
-            aria-label="Search, or paste a link to download"
+            aria-label={t("Search, or paste a link to download")}
             aria-expanded={showDropdown}
             aria-controls="header-search-history"
             aria-activedescendant={active >= 0 ? `header-search-history-${active}` : undefined}
@@ -239,8 +241,8 @@ export default function HeaderSearch() {
             <button
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { setQuery(''); inputRef.current?.focus() }}
-              title="Clear search"
-              aria-label="Clear search"
+              title={t("Clear search")}
+              aria-label={t("Clear search")}
               className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-muted hover:text-text"
             >
               <X size={14} />
@@ -260,8 +262,8 @@ export default function HeaderSearch() {
               })))
             }}
             disabled={randomLoading}
-            title="Play Flow (right-click for a mood)"
-            aria-label="Play Flow"
+            title={t("Play Flow (right-click for a mood)")}
+            aria-label={t("Play Flow")}
             className="flex-shrink-0 w-7 h-7 mr-0.5 rounded-full flex items-center justify-center text-muted hover:text-text disabled:opacity-60 transition-colors"
           >
             {randomLoading
@@ -308,7 +310,7 @@ export default function HeaderSearch() {
                     <span className="flex-1 min-w-0 truncate text-sm"><Highlighted text={entry.query} typed={query} /></span>
                     <button
                       onClick={(e) => { e.stopPropagation(); removeRecentSearch(entry.query) }}
-                      title="Remove from history"
+                      title={t("Remove from history")}
                       aria-label={`Remove ${entry.query} from history`}
                       className="opacity-0 group-hover/row:opacity-100 w-6 h-6 rounded-full flex items-center justify-center text-muted hover:text-text"
                     >

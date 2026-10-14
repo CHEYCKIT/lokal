@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { RefreshCw, ScanLine } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { plural } from '../plural'
+import { useTranslation } from '../i18n'
 
 const refreshLibrary = () => window.dispatchEvent(new Event('lokal:refresh'))
 // The desktop app reports the scan's end (progress `complete`), which
@@ -13,6 +14,7 @@ const refreshLibrary = () => window.dispatchEvent(new Event('lokal:refresh'))
 const refreshAfterRequest = () => { if (!api.isElectron) refreshLibrary() }
 
 export default function ScanBanner() {
+  const { t } = useTranslation()
   // From the settings already read, so the folder doesn't show "Not set" first.
   const [folder, setFolder] = useState(() => peekSettings()?.music_folder || '')
   const [folderKnown, setFolderKnown] = useState(() => !!peekSettings())
@@ -41,8 +43,8 @@ export default function ScanBanner() {
   return (
     <div className="bg-elevated border border-border rounded-xl p-4 flex items-center justify-between gap-4">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-white">Music Folder</p>
-        <p className="text-xs text-muted mt-0.5 font-display truncate">{folder || (folderKnown ? 'Not set' : '\u00a0')}</p>
+        <p className="text-sm font-medium text-white">{t("Music Folder")}</p>
+        <p className="text-xs text-muted mt-0.5 font-display truncate">{folder || (folderKnown ? t('Not set') : '\u00a0')}</p>
         {progress && !progress.complete && (
           <div className="mt-2 space-y-1">
             <p className="text-xs text-accent">Scanning… {progress.done}/{progress.total} · {progress.skipped || 0} skipped</p>
@@ -60,7 +62,7 @@ export default function ScanBanner() {
           </button>
         )}
         <button onClick={scan} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-base text-xs font-medium hover:bg-accent/80 transition-colors">
-          <ScanLine size={12} /> {folder ? 'Change' : 'Select Folder'}
+          <ScanLine size={12} /> {folder ? t('Change') : t('Select Folder')}
         </button>
       </div>
     </div>
