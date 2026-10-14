@@ -194,6 +194,14 @@ function NativeHistoryNavigation() {
     const navigateOnce = (source, direction) => {
       if (isCrossSourceDuplicate(source, direction)) return
       lastNativeNavigationAtRef.current = { at: performance.now(), source, direction }
+
+      const navEvent = new CustomEvent('lokal:history-navigate', {
+        cancelable: true,
+        detail: { direction, source },
+      })
+      const handled = !window.dispatchEvent(navEvent)
+      if (handled) return
+
       navigate(direction)
     }
 
@@ -1719,7 +1727,7 @@ export default function App() {
     if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
   }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
-  // Fewer than 3 songs left (and not a discovery mix): related songs are added.
+  // Top up ordinary queues when fewer than 3 tracks remain.
   // Flow never ends: more of its own songs instead (src/flow/session.js).
   const topUpRelated = useCallback(() => {
     const state = usePlayerStore.getState()
@@ -1728,7 +1736,7 @@ export default function App() {
       return
     }
     const { queue, queueIndex, _fetchingRelated } = state
-    if (state.playbackContext?.type === 'discovery' || state.playbackContext?.type === 'mix' || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
+    if (['discovery', 'mix', 'library-folder'].includes(state.playbackContext?.type) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
     const generation = state.playbackGeneration
     state.setFetchingRelated(true)
     api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {

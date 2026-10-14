@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { LayoutGrid, List, Music, Disc3 } from 'lucide-react'
+import { LayoutGrid, List, Music, Disc3, Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
@@ -31,6 +31,7 @@ export default function Library() {
   const [view, setView] = useCachedState('library:view', 'list')
   const [libraryMode, setLibraryMode] = useCachedState('library:mode', 'simple')
   const [folderPath, setFolderPath] = useCachedState('library:folderPath', '')
+  const [folderSearch, setFolderSearch] = useState('')
   const [folderData, setFolderData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
@@ -44,7 +45,9 @@ export default function Library() {
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
-  const playAllTracks = libraryMode === 'simple' ? tracks : (folderData?.tracks || [])
+  const playAllTracks = libraryMode === 'simple'
+    ? tracks
+    : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
 
   const load = async (append = false) => {
     // Synchronous in-flight check: the observer's `loading` can be stale, and a
@@ -160,6 +163,30 @@ export default function Library() {
           </select>
             </>
           )}
+          {libraryMode === 'advanced' && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
+              <Search size={14} className="flex-shrink-0 text-muted" />
+              <input
+                type="text"
+                value={folderSearch}
+                onChange={e => setFolderSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') setFolderSearch('') }}
+                placeholder={t("Search folders & tracks…")}
+                aria-label={t("Search folders and tracks")}
+                className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
+              />
+              {folderSearch && (
+                <button
+                  type="button"
+                  onClick={() => setFolderSearch('')}
+                  aria-label={t("Clear search")}
+                  className="flex-shrink-0 text-muted transition-colors hover:text-white"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex bg-elevated border border-border rounded-lg overflow-hidden">
             <button onClick={() => setView('list')} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
@@ -174,12 +201,14 @@ export default function Library() {
           {libraryMode === 'simple'
             ? tracks.length + ' ' + t('loaded tracks')
             : folderData?.available
-              ? (folderData.tracks?.length || 0) + ' tracks · ' + (folderData.relativePath || folderData.rootName)
+              ? (folderSearch.trim() && folderData.matchCount != null
+                  ? `${folderData.matchCount} ${folderData.matchCount === 1 ? t('match') : t('matches')} · ${folderData.relativePath || folderData.rootName}`
+                  : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
         <div className="flex flex-shrink-0 items-center gap-3">
           {playAllTracks.length > 0 && (
-            <button onClick={() => playQueue(playAllTracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
+            <button onClick={() => playQueue(playAllTracks, 0, libraryMode === 'advanced' ? { type: 'library-folder' } : null)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
           )}
           <button
             type="button"
@@ -200,6 +229,8 @@ export default function Library() {
           view={view}
           playQueue={playQueue}
           artSrc={artSrc}
+          searchQuery={folderSearch}
+          onSearchQueryChange={setFolderSearch}
         />
       )}
 
