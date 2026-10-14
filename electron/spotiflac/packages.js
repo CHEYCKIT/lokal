@@ -50,6 +50,11 @@ function readArchive(buffer) {
   if(Buffer.byteLength(code)>8*1024*1024)throw new Error('Addon script exceeds 8 MB')
   return {zip,manifest,code}
 }
+function isPlaceholderAlbum(value) {
+  const album = typeof value === 'string' ? value.trim() : ''
+  return !album || /^(?:unknown(?:\\s+album)?|untitled(?:\\s+album)?|n\\/?a|none|null|undefined)$/i.test(album)
+}
+
 function albumNameOf(track) {
   const album = track?.album
   const candidates = [
@@ -60,7 +65,16 @@ function albumNameOf(track) {
     typeof album === 'string' ? album : null,
     album && typeof album === 'object' ? album.name || album.title || album.album_name || album.albumName : null,
   ]
-  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || null
+  return candidates.find(value => typeof value === 'string' && !isPlaceholderAlbum(value))?.trim() || null
+}
+
+function albumIdOf(track) {
+  const direct = track?.album_id || track?.albumId
+  if (direct != null && String(direct).trim()) return String(direct).trim()
+  const url = String(track?.album_url || track?.albumUrl || '')
+  const match = url.match(/\\/albums?\\/([^/?#]+)/i)
+  if (!match) return null
+  try { return decodeURIComponent(match[1]) } catch { return match[1] }
 }
 
 /** Keep album metadata string-valued before passing it into file taggers. */
@@ -68,9 +82,11 @@ function normalizeTrackMetadata(track) {
   if (!track || typeof track !== 'object') return track
   const album = albumNameOf(track)
   if (album) return { ...track, album, album_name: album }
-  // Never leak an album object to downstream taggers, which accept strings.
-  if (track.album && typeof track.album === 'object') return { ...track, album: null }
-  return track
+  // Never leak album objects or generic placeholders to downstream taggers.
+  const normalized = { ...track }
+  if (track.album && typeof track.album === 'object' || typeof track.album === 'string' && isPlaceholderAlbum(track.album)) normalized.album = null
+  if (typeof track.album_name === 'string' && isPlaceholderAlbum(track.album_name)) normalized.album_name = null
+  return normalized
 }
 
 function trackOf(track, provider) {
@@ -369,6 +385,33 @@ class PackageService {
         }
       }
       const providerName=addon.name.replace(/-web$/,'')
+      // Amazon search can provide an album ID without a usable album title.
+      // If enrichTrack() still couldn't identify the release, fetch that album
+      // directly before checking availability or preparing download metadata.
+      if(providerName==='amazon'&&!albumNameOf(track)&&runtime.methods.includes('getAlbum')) {
+        const albumId=albumIdOf(track)
+        if(albumId) {
+          try {
+            const album=await runtime.invoke('getAlbum',[albumId],{timeoutMs:60000,signal:combined})
+            const name=albumNameOf({album_name:album?.name||album?.title||album?.album_name||album?.albumName})
+            if(name) {
+              const albumFields={
+                album:name,album_name:name,
+                album_artist:track.album_artist||album.album_artist||album.artist||album.artists,
+                cover_url:track.cover_url||album.cover_url||album.cover_art,
+                release_date:track.release_date||album.release_date||album.year,
+                total_tracks:track.total_tracks||album.total_tracks||album.track_count,
+                total_discs:track.total_discs||album.total_discs,
+              }
+              track={...track,...Object.fromEntries(Object.entries(albumFields).filter(([,value])=>value!==undefined&&value!==null&&value!==''))}
+            }
+          } catch(error) {
+            // Keep downloads usable when album lookup is unavailable; never
+            // swallow an aborted operation or a retired runtime.
+            if(combined.aborted || runtime.closed) throw error
+          }
+        }
+      }
       const options={track,duration_ms:track.duration_ms || 0}
       const directFields={qobuz:'qobuz_id',tidal:'tidal_id',deezer:'deezer_id',soundcloud:'spotify_id',amazon:'spotify_id'}
       const directField=directFields[providerName]
