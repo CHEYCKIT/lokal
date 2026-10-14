@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3'),AdmZip=require('adm-zip')
 const {PackageService,readArchive,validateManifest,trackOf}=require('../electron/spotiflac/packages')
+const {mergePackageDownloadTags}=require('../electron/download/manager')
 const {rangeOf,fileResponse}=require('../electron/spotiflac/media')
 const {resolveKnownAlbum}=require('../electron/download/postprocess')
 const {isPlaceholderAlbum}=require('../electron/download/tagger')
@@ -16,6 +17,13 @@ const {isPlaceholderAlbum}=require('../electron/download/tagger')
 const manifest={name:'fixture-provider',displayName:'Fixture',version:'1.0.0',type:['metadata_provider','download_provider'],permissions:{network:[],storage:true,file:true},requiredRuntimeFeatures:['preparedContext@1'],settings:[{key:'token',type:'string',secret:true},{key:'country',type:'string',default:'US'}]}
 function archive(m=manifest,code=`registerExtension({initialize(s){settings=s;},searchTracks(query){return {tracks:[{id:'source-id',name:query,artists:'Artist',album_name:'Album',duration_ms:180000,isrc:'USAAA2600001'}]};},download(){return {success:false,error:'Fixture does not download'};}})`){const zip=new AdmZip();zip.addFile('manifest.json',Buffer.from(JSON.stringify(m)));zip.addFile('index.js',Buffer.from(code));return zip.toBuffer()}
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-packages-')),db=new Database(':memory:');db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT)');const service=new PackageService(db,{root,tools:()=>({})});t.after(async()=>{for(const runtime of service.runtimes.values())runtime.close();db.close();await fs.rm(root,{recursive:true,force:true})});return {service,db,root}}
+
+test('resolved addon album metadata wins over blank or placeholder queue tags',()=>{
+  assert.equal(mergePackageDownloadTags({album:'Amazon Album'},{album:undefined}).album,'Amazon Album')
+  assert.equal(mergePackageDownloadTags({album_name:'Amazon Album'},{album:'Unknown album'}).album,'Amazon Album')
+  assert.equal(mergePackageDownloadTags({album:'Unknown album'},{album:'Spotify Album'}).album,'Spotify Album')
+  assert.equal(mergePackageDownloadTags({album:'Unknown album'},{album:'Unknown album'}).album,undefined)
+})
 
 test('album metadata ignores placeholder names when a real album field is available',()=>{
   assert.equal(trackOf({id:'plain',name:'Song',artists:'Artist',album:'Plain Album'},'a-1234567890').album,'Plain Album')
