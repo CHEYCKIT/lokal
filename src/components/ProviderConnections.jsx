@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { AudioLines, CheckCircle2, Gamepad2, LogIn, Music2, RefreshCw } from 'lucide-react'
 import { YoutubeIcon } from './SourceIcon'
@@ -7,10 +8,12 @@ import { discordClientId } from '../discord'
 import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
 
 function StatusDot({ connected }) {
+  const { t } = useTranslation()
   return <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-green-400' : 'bg-border'}`} aria-hidden="true" />
 }
 
 function ActionButton({ children, onClick, disabled = false, muted = false }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -28,6 +31,7 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
 }
 
 function AccountCard({ icon: Icon, tint, name, connected, status, note, children }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -52,6 +56,7 @@ function AccountCard({ icon: Icon, tint, name, connected, status, note, children
  * Desktop YouTube Music sign-in owns a persistent, automatically refreshed session.
  */
 export default function ProviderConnections({ compact = false, settingsOverride = null, onSettingsChanged, onListenBrainzChanged }) {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState(() => settingsOverride || {})
   const [loading, setLoading] = useState(!settingsOverride)
   const [refreshing, setRefreshing] = useState(false)
@@ -188,7 +193,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-white">Account connections</p>
+          <p className="text-sm font-medium text-white">{t("Account connections")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
             {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
           </p>
