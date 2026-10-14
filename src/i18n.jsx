@@ -695,6 +695,16 @@ const ROWS = {
   "Library jobs": ["Tâches de la bibliothèque","Bibliotheksaufgaben","Tareas de la biblioteca","Attività libreria","Tarefas da biblioteca","Bibliotheektaken","Zadania biblioteki","Biblioteksjobb"],
   "Drag disabled in shuffle mode": ["Le glisser-déposer est désactivé en mode aléatoire","Ziehen ist im Zufallsmodus deaktiviert","Arrastrar está desactivado en modo aleatorio","Il trascinamento è disattivato in modalità casuale","Arrastar está desativado no modo aleatório","Slepen is uitgeschakeld in willekeurige modus","Przeciąganie jest wyłączone w trybie losowym","Dra är inaktiverat i blandningsläget"],
   "Queue is empty": ["La file d’attente est vide","Warteschlange ist leer","La cola está vacía","La coda è vuota","A fila está vazia","De wachtrij is leeg","Kolejka jest pusta","Kön är tom"],
+  "Quick Tour": ["Visite rapide","Kurzer Rundgang","Visita rápida","Tour rapido","Visita rápida","Snelle rondleiding","Szybki samouczek","Snabbtur"],
+  "Expand lyrics": ["Développer les paroles","Songtexte erweitern","Ampliar letras","Espandi testi","Expandir letras","Songteksten uitklappen","Rozwiń tekst","Expandera låttext"],
+  "Close the music video (Esc)": ["Fermer le clip musical (Échap)","Musikvideo schließen (Esc)","Cerrar el vídeo musical (Esc)","Chiudi il video musicale (Esc)","Fechar o vídeo musical (Esc)","Muziekvideo sluiten (Esc)","Zamknij teledysk (Esc)","Stäng musikvideon (Esc)"],
+  "Apply": ["Appliquer","Anwenden","Aplicar","Applica","Aplicar","Toepassen","Zastosuj","Tillämpa"],
+  "Fresh finds from": ["Nouvelles découvertes de","Neue Entdeckungen von","Nuevos descubrimientos de","Nuove scoperte da","Novas descobertas de","Nieuwe ontdekkingen van","Nowe odkrycia od","Nya fynd från"],
+  "Reading your library…": ["Lecture de votre bibliothèque…","Bibliothek wird gelesen…","Leyendo tu biblioteca…","Lettura della libreria…","A ler a biblioteca…","Bibliotheek lezen…","Odczytywanie biblioteki…","Läser biblioteket…"],
+  "Coming up in Flow": ["À venir dans Flow","Als Nächstes in Flow","A continuación en Flow","In arrivo in Flow","A seguir no Flow","Binnenkort in Flow","Nadchodzące w Flow","På gång i Flow"],
+  "Downloaded playlists": ["Playlists téléchargées","Heruntergeladene Playlists","Listas descargadas","Playlist scaricate","Playlists descarregadas","Gedownloade afspeellijsten","Pobrane playlisty","Nedladdade spellistor"],
+  "Cancel all": ["Tout annuler","Alle abbrechen","Cancelar todo","Annulla tutto","Cancelar tudo","Alles annuleren","Anuluj wszystko","Avbryt alla"],
+  "Nothing downloading.": ["Aucun téléchargement en cours.","Keine Downloads laufen.","No hay descargas en curso.","Nessun download in corso.","Não há downloads em curso.","Er wordt niets gedownload.","Nic nie jest pobierane.","Inget laddas ned."],
 }
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
   phrase, Object.fromEntries(LOCALES.map((locale, index) => [locale, values[index]])),
