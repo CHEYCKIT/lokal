@@ -59,9 +59,9 @@ function relativeAge(timestamp, t) {
   return t('{count} weeks ago', { count: Math.floor(seconds / 604800) })
 }
 
-function dateLabel(timestamp) {
+function dateLabel(timestamp, t) {
   const value = Number(timestamp) || 0
-  if (!value) return 'Unknown date'
+  if (!value) return t('Unknown date')
   return new Date(value * 1000).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
@@ -145,7 +145,7 @@ function ScrobbleHistory({ entries, resolveTracks }) {
   const byDate = new Map()
   for (const entry of Array.isArray(entries) ? entries : []) {
     const timestamp = Number(entry?.scrobbledAt || entry?.played_at) || 0
-    const date = dateLabel(timestamp)
+    const date = dateLabel(timestamp, t)
     if (!byDate.has(date)) { const group = { date, entries: [] }; byDate.set(date, group); groups.push(group) }
     byDate.get(date).entries.push(entry)
   }

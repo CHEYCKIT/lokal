@@ -801,7 +801,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         <span className="sr-only">{t("Actions")}</span>
         <span aria-hidden="true" />
       </div>
-      {onSortChange && <span className="sr-only" role="status">Sorted by {sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'}, {sort?.direction === 'desc' ? 'descending' : 'ascending'}</span>}
+      {onSortChange && <span className="sr-only" role="status">{t('Sorted by {column}, {direction}', { column: t(sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'), direction: t(sort?.direction === 'desc' ? 'descending' : 'ascending') })}</span>}
 
       <div ref={rowsRef}>
       {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: topSpacerHeight }} />}
@@ -897,7 +897,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
                   {!layout.album && <>
                     {columns.artist && track.artist && <span className="mx-1 shrink-0">·</span>}
-                    <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || 'Unknown album'}>{track.album || 'Unknown album'}</span>
+                    <span data-inline-album className="min-w-0 flex-1 truncate" title={track.album || t('Unknown album')}>{track.album || t('Unknown album')}</span>
                   </>}
                 </div>
                 {extraColumns.filter(column => !layout[column.key]).map(column => <span key={column.key} className="mr-2 text-[10px] text-muted">{column.label}: {column.render(track)}</span>)}
