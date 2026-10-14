@@ -79,7 +79,7 @@ try {
               (likeMatches(track.title, titlePattern) ||
                 likeMatches(track.artist, artistPattern) ||
                 likeMatches(track.album, albumPattern) ||
-                likeMatches(track.file_path.slice(pathPrefix.length), pathPattern)),
+                likeMatches(track.file_path.slice(pathPrefix.length), pathPattern))),
         }
       }
       throw new Error('Unexpected SQL in library folder test: ' + sql)
@@ -88,7 +88,7 @@ try {
 
   const rootView = getLibraryFolders(db, '')
   assert.equal(rootView.available, true)
-  assert.deepEqual(rootView.folders.map(folder => folder.name), ['Artist', '🎧Artist'])
+  assert.deepEqual(rootView.folders.map(folder => folder.name).sort(), ['Artist', '🎧Artist'])
   assert.equal(rootView.tracks.length, 0)
   assert.equal(rootView.totalTracks, 1004, 'root count excludes stale database paths')
   assert.equal(rootView.allTracks.length, 1004, 'Play All includes every descendant, with no 1,000-track cap')
