@@ -341,7 +341,7 @@ export default function LibraryFolderBrowser({
                 showQuality
                 reduceMotion
                 context={{ type: 'library-folder' }}
-                extraColumns={[{ key: 'subfolderPath', label: t('Folder'), width: 10, render: track => track.subfolderPath || '' }]}
+                extraColumns={[{ key: 'subfolderPath', label: t('Music folder'), width: 10, render: track => track.subfolderPath || '' }]}
               />
             </div>
           )}
