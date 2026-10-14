@@ -238,6 +238,7 @@ function withSettingDefaults(s) {
 export default function Settings() {
   const location = useLocation()
   const { t, language, setLanguage } = useTranslation()
+  const replayGainMode = usePlayerStore(s => s.replayGainMode)
   // Seeded from the settings already read (and the version / tools found on
   // the last visit), so the first frame already has the real values: rows
   // used to appear, change text and push everything below them down.
@@ -620,6 +621,7 @@ export default function Settings() {
     setSettings(s => ({ ...s, [k]: v }))
     queueSettings({ [k]: v })
     if (k.startsWith('crossfade_') || k === 'song_transitions' || k === 'automix_same_album') usePlayerStore.getState().setCrossfadeOptions(readCrossfadeSettings({ ...settings, [k]: v }))
+    if (k === 'replaygain_mode') usePlayerStore.getState().setReplayGainMode(v)
   }
   const crossfade = readCrossfadeSettings(settings)
 
@@ -1431,6 +1433,14 @@ activeCategory === 'data' ? usersTried
       {inCategory('playback') && (
       <Section title="Playback">
         <OutputPrecisionSettings />
+        <Row label="ReplayGain" desc="Use embedded ReplayGain tags to bring tracks closer in loudness. Peak tags limit boosts; tracks without tags are unchanged.">
+          <select aria-label="ReplayGain mode" value={settings.replaygain_mode ?? replayGainMode ?? 'off'} onChange={e => set('replaygain_mode', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="off">{t('Off')}</option>
+            <option value="track">{t('Track gain')}</option>
+            <option value="album">{t('Album gain')}</option>
+          </select>
+        </Row>
         <Row label="Song Transitions" desc={crossfade.mode === 'automix'
           ? 'AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.'
           : crossfade.mode === 'crossfade' ? 'The next song starts before the current one ends, by the amounts below.' : 'Each song plays to its end, then the next starts.'}>
