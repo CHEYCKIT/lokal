@@ -25,7 +25,6 @@ const ANIMATE_UP_TO = 150
 
 export function QueueContent({ onClose, variant = 'panel' }) {
   const { t } = useTranslation()
-  const { t } = useTranslation()
   const {
     queue, queueIndex, playQueue, playbackContext, isBuffering,
     shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
