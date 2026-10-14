@@ -180,6 +180,7 @@ export const api = {
   streamURL: (t) => `${BASE}/stream/${encodeURIComponent(t.id)}`,
   avatarURL: (id) => `${BASE}/avatar/${id}`,
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
+  getLibraryFolders: (relativePath = '') => isE() ? el().getLibraryFolders(relativePath) : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath)),
   // A song that couldn't be played (Library → Songs with errors), or played again fine.
   reportTrackError: (id, message) => isE() ? el().reportTrackError(id, message) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'POST', body: { message } }),
   clearTrackError: (id) => isE() ? el().clearTrackError(id) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'DELETE' }),

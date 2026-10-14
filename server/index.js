@@ -84,9 +84,19 @@ app.get('/api/artwork/:trackId', (req, res) => {
   // one found online, one shared from the same album): the track's own
   // artwork_path, as long as it's in the artwork folder.
   try {
-    const stored = getDB().prepare('SELECT artwork_path FROM tracks WHERE id = ?').get(req.params.trackId)?.artwork_path
+    const db = getDB()
+    const stored = db.prepare('SELECT artwork_path FROM tracks WHERE id = ?').get(req.params.trackId)?.artwork_path
     const resolved = stored ? path.resolve(stored) : null
-    if (resolved && resolved.startsWith(dir + path.sep) && fs.existsSync(resolved)) return res.sendFile(resolved)
+    const musicFolder = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+    const root = musicFolder ? path.resolve(musicFolder) : null
+    const isWithin = (base, candidate) => {
+      const relative = path.relative(base, candidate)
+      return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+    }
+    if (resolved && fs.existsSync(resolved) &&
+        (isWithin(dir, resolved) || (root && isWithin(root, resolved)))) {
+      return res.sendFile(resolved)
+    }
   } catch {}
   res.status(404).send('No artwork')
 })

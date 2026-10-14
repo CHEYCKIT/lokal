@@ -6,6 +6,7 @@ import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
 import ScanBanner from '../components/ScanBanner'
+import LibraryFolderBrowser from '../components/LibraryFolderBrowser'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 
@@ -26,6 +27,9 @@ export default function Library() {
   const [quality, setQuality] = useCachedState('library:quality', '')
   const [problemsOnly, setProblemsOnly] = useCachedState('library:problemsOnly', false)
   const [view, setView] = useCachedState('library:view', 'list')
+  const [libraryMode, setLibraryMode] = useCachedState('library:mode', 'simple')
+  const [folderPath, setFolderPath] = useCachedState('library:folderPath', '')
+  const [folderData, setFolderData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
   // The empty state waits for the first answer instead of showing meanwhile.
@@ -38,6 +42,7 @@ export default function Library() {
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
+  const playAllTracks = libraryMode === 'simple' ? tracks : (folderData?.tracks || [])
 
   const load = async (append = false) => {
     // Synchronous in-flight check: the observer's `loading` can be stale, and a
@@ -114,6 +119,8 @@ export default function Library() {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-elevated border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">
             <Disc3 size={13} /> Albums
           </button>
+          {libraryMode === 'simple' && (
+            <>
           <select value={source} onChange={e => setSource(e.target.value)} aria-label="Source"
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="all">All sources</option>
@@ -149,6 +156,8 @@ export default function Library() {
             <option value="play_count DESC">Most Played</option>
             <option value="duration DESC">Longest</option>
           </select>
+            </>
+          )}
           <div className="flex bg-elevated border border-border rounded-lg overflow-hidden">
             <button onClick={() => setView('list')} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
@@ -158,19 +167,49 @@ export default function Library() {
 
       <ScanBanner />
 
-      {tracks.length > 0 && view === 'list' && (
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-xs text-muted font-display">
+          {libraryMode === 'simple'
+            ? tracks.length + ' loaded tracks'
+            : folderData?.available
+              ? (folderData.tracks?.length || 0) + ' tracks · ' + (folderData.relativePath || folderData.rootName)
+              : 'Browse your music folders'}
+        </p>
+        <div className="flex flex-shrink-0 items-center gap-3">
+          {playAllTracks.length > 0 && (
+            <button onClick={() => playQueue(playAllTracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
+          )}
+          <button
+            type="button"
+            onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
+            aria-pressed={libraryMode === 'advanced'}
+            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
+          >
+            {libraryMode === 'simple' ? 'Advanced' : 'Simple'}
+          </button>
+        </div>
+      </div>
+
+      {libraryMode === 'advanced' && (
+        <LibraryFolderBrowser
+          folderPath={folderPath}
+          onFolderChange={setFolderPath}
+          onDataChange={setFolderData}
+          view={view}
+          playQueue={playQueue}
+          artSrc={artSrc}
+        />
+      )}
+
+      {libraryMode === 'simple' && tracks.length > 0 && view === 'list' && (
         <>
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted font-display">{tracks.length} loaded tracks</p>
-            <button onClick={() => playQueue(tracks, 0)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">Play All</button>
-          </div>
           {/* No per-row entrance: the page fades in as a whole, and 50 row
               animations in the same frames made that fade stutter. */}
           <TrackList tracks={tracks} showQuality reduceMotion />
         </>
       )}
 
-      {tracks.length > 0 && view === 'grid' && (
+      {libraryMode === 'simple' && tracks.length > 0 && view === 'grid' && (
         <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
           {tracks.map((t, i) => {
             const src = artSrc(t)
@@ -195,13 +234,13 @@ export default function Library() {
         </div>
       )}
 
-      {(hasMore || loading) && (
+      {libraryMode === 'simple' && (hasMore || loading) && (
         <div ref={loadMoreRef} className="flex justify-center pt-2 min-h-10">
           {loading && tracks.length > 0 && <p className="text-xs text-muted">Loading more tracks...</p>}
         </div>
       )}
 
-      {loaded && !loading && !tracks.length && (
+      {libraryMode === 'simple' && loaded && !loading && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
           <p>{problemsOnly ? 'No songs with errors: everything here can be played.' : source === 'all' && !genre && !quality ? 'No tracks yet — pick your music folder above.' : quality ? 'No songs of this quality with these filters.' : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : 'No songs from this source.'}</p>
