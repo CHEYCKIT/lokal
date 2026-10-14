@@ -1,14 +1,15 @@
-// "Save to library" for a streamed song. Click: download it from where it
-// streams (YouTube or SoundCloud). Right-click: choose, including "Find on
-// Soulseek…", which opens Search on Soulseek, searched for the song; the file
-// picked there replaces the stream. The button follows the download:
-// saving → saved (or failed, click to try again).
+// "Save to library" for a streamed song. Click to save from the current
+// provider; right-click to search the same song on any built-in source or an
+// installed addon. Saving a result can replace the stream that opened Search.
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Check, Download, AlertCircle, Search, ArrowUpCircle } from 'lucide-react'
+import { Check, Download, AlertCircle, ArrowUpCircle } from 'lucide-react'
 import { useDownloads } from '../store/downloads'
+import { api } from '../api'
+import SourceIcon from './SourceIcon'
+import { DEFAULT_FIND_ON_SOURCES, orderedFindOnSources, buildFindOnRequest } from '../findOnSources'
 import { downloadUrlFor, isGhostTrack, providerLabel as labelOf, saveToLibrary, streamRef, sourceRefKey } from '../onlineTracks'
 import { libraryCopy, useLibraryIndex } from '../libraryIndex'
 
@@ -24,7 +25,7 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
  * @param offerUpgrade a low-quality copy in the library can be replaced by this
  *                  version (Search); elsewhere it's just "In your library"
  */
-export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false }) {
+export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false, replaceTrackId = null }) {
   const nav = useNavigate()
   const ref = streamRef(track) || source
   const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
@@ -54,6 +55,8 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   const [requested, setRequested] = useState(false)
   const [error, setError] = useState(null)
   const [menu, setMenu] = useState(null) // { x, y }
+  const [menuPosition, setMenuPosition] = useState(null)
+  const [findSources, setFindSources] = useState(DEFAULT_FIND_ON_SOURCES)
   const menuRef = useRef(null)
   // Another song in the same place (a reused row, the player's next song):
   // nothing of the previous one's state carries over, not even a late answer.
@@ -73,16 +76,37 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
 
   useEffect(() => {
     if (!menu) return undefined
-    const close = (e) => { if (!menuRef.current?.contains(e.target)) setMenu(null) }
-    const onKey = (e) => { if (e.key === 'Escape') setMenu(null) }
+    let live = true
+    Promise.resolve(api.onlineProviders?.())
+      .then(list => { if (live && Array.isArray(list)) setFindSources(orderedFindOnSources(list)) })
+      .catch(() => {})
+    const close = (event) => { if (!menuRef.current?.contains(event.target)) setMenu(null) }
+    const onKey = (event) => { if (event.key === 'Escape') setMenu(null) }
+    const onBlur = () => setMenu(null)
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', onKey)
-    window.addEventListener('blur', () => setMenu(null), { once: true })
-    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey) }
+    window.addEventListener('blur', onBlur)
+    return () => {
+      live = false
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [menu])
 
+  // Keep the expanded source list inside the app window, including when its
+  // height changes after the installed addon list arrives.
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return
+    const rect = menuRef.current.getBoundingClientRect()
+    setMenuPosition({
+      left: Math.max(8, Math.min(menu.x, window.innerWidth - rect.width - 8)),
+      top: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)),
+    })
+  }, [menu, findSources])
+
   if (!ref && !getTrack) return null
-  const providerLabel = ref ? labelOf(ref.provider) : 'your playback sources'
+  const providerLabel = ref ? (findSources.find(source => source.id === ref.provider)?.label || labelOf(ref.provider)) : 'your playback sources'
 
   const resolveTrack = async () => getTrack ? await getTrack() : track
 
@@ -99,7 +123,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     const clickedKey = refKey
     const target = await resolveTrack().catch(() => null)
     const result = target?.file_path && !isGhostTrack(target) ? { alreadyInLibrary: true }
-      : target ? await saveToLibrary(target).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
+      : target ? await saveToLibrary(target, { replaceTrackId: replaceTrackId || undefined }).catch(e => ({ error: e.message })) : { error: 'Could not save this song' }
     if (keyRef.current !== clickedKey) return
     if (result?.alreadyInLibrary) {
       // Nothing to download: the song is in the library, and this streamed
@@ -114,13 +138,13 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     useDownloads.getState().load?.()
   }
 
-  /** Open Search on Soulseek for this song; the picked file replaces the stream. */
-  const findOnSoulseek = async () => {
+  /** Open Search on the selected source, keeping the original stream as the replacement target. */
+  const findOnSource = async (provider) => {
     setMenu(null)
     const target = await resolveTrack().catch(() => null)
-    const title = target?.title || meta?.title || ''
-    const artist = target?.artist || meta?.artist || ''
-    nav('/search', { state: { soulseek: { query: [artist, title].filter(Boolean).join(' ').replace(/\s*\((?:feat|ft)\.?[^)]*\)/i, ''), replaceTrackId: target?.id, title, artist } } })
+    const request = buildFindOnRequest(provider.id, target, meta)
+    if (replaceTrackId) request.replaceTrackId = replaceTrackId
+    nav('/search', { state: { findOn: request } })
   }
 
   const label = state === 'upgrade' ? 'In your library in low quality: click to download this version (it replaces the file if it\'s better)'
@@ -128,7 +152,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     : state === 'saved' ? 'Saved to library'
     : state === 'saving' ? 'Saving to your library…'
       : state === 'failed' ? `Couldn't save${error ? `: ${error}` : ''}. Click to try again`
-        : `Save to library (right-click for Soulseek)`
+        : `Save to library (right-click to find on another source)`
   const Icon = state === 'saved' ? Check : state === 'failed' ? AlertCircle : state === 'upgrade' ? ArrowUpCircle : Download
   const color = state === 'upgrade' ? 'text-amber-300/80 hover:text-accent'
     : state === 'saved' ? 'text-accent' : state === 'saving' ? 'text-accent animate-pulse' : state === 'failed' ? 'text-red' : 'text-muted hover:text-accent'
@@ -137,7 +161,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     <>
       <button
         onClick={(e) => { e.stopPropagation(); saveFromSource() }}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }) }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuPosition(null); setMenu({ x: e.clientX, y: e.clientY }) }}
         disabled={state === 'saving' || (state === 'saved' && !ownedOnly)}
         title={label}
         aria-label={label}
@@ -149,18 +173,32 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
         <div
           ref={menuRef}
           role="menu"
-          style={{ position: 'fixed', left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 100), zIndex: 200 }}
-          className="w-56 rounded-xl border border-border bg-elevated py-1 shadow-2xl"
+          style={{
+            position: 'fixed',
+            left: menuPosition?.left ?? menu.x,
+            top: menuPosition?.top ?? menu.y,
+            visibility: menuPosition ? 'visible' : 'hidden',
+            zIndex: 200,
+            maxHeight: 'calc(100vh - 16px)',
+            overflowY: 'auto',
+          }}
+          className="w-60 rounded-xl border border-border bg-elevated py-1 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <button role="menuitem" onClick={() => saveFromSource({ force: true })} disabled={state === 'saving' || (state === 'saved' && !ownedOnly)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm text-text hover:bg-card disabled:opacity-50">
             <Download size={14} className="text-muted" /> Download from {providerLabel}
           </button>
-          <button role="menuitem" onClick={findOnSoulseek}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm text-text hover:bg-card">
-            <Search size={14} className="text-muted" /> Find on Soulseek…
-          </button>
+          <div role="separator" className="my-1 h-px bg-border" />
+          {findSources.map(source => (
+            <button key={source.id} role="menuitem" onClick={() => findOnSource(source)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm text-text hover:bg-card">
+              {source.addon && source.icon
+                ? <img src={source.icon} alt="" className="h-3.5 w-3.5 shrink-0 rounded-sm object-cover" referrerPolicy="no-referrer" />
+                : <SourceIcon source={source.id} size={14} colored />}
+              <span className="truncate">Find on {source.label}…</span>
+            </button>
+          ))}
         </div>,
         document.body,
       )}

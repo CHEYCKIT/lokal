@@ -150,7 +150,7 @@ export async function saveToLibrary(track, extra = {}) {
     title: [track.artist, track.title].filter(Boolean).join(' - ') || undefined,
     thumbnail: track.artwork_url || undefined,
     from: ref && isAddonProvider(ref.provider) ? 'Addon' : 'Streaming',
-    replaceTrackId: isGhostTrack(track) ? track.id : undefined,
+    replaceTrackId: extra.replaceTrackId || (isGhostTrack(track) ? track.id : undefined),
     upgradeTrackId: extra.upgradeTrackId,
     allowUpgradeDurationMismatch: extra.allowUpgradeDurationMismatch === true,
     // Songs of an imported playlist the file takes the place of (ghostDownloads.js).
