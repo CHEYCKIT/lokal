@@ -21,17 +21,12 @@ import DownloadNotices from './DownloadNotices'
 import SourceIcon from './SourceIcon'
 import AddonCollections from './AddonCollections'
 import AddonSetupNotice from './AddonSetupNotice'
+import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
 // Built-in sources; installed addons are added from the backend (online:providers).
-const BUILT_IN = [
-  { id: 'yt', label: 'YouTube Music' },
-  { id: 'sc', label: 'SoundCloud' },
-]
-// After the built-in sources, before addons: files people share, downloaded
-// through slskd (not streamed).
-const SOULSEEK = { id: 'slsk', label: 'Soulseek' }
+const BUILT_IN = DEFAULT_SEARCH_SOURCES
 
 function fmtDuration(seconds) {
   const s = Math.round(Number(seconds) || 0)
@@ -69,16 +64,19 @@ function useProviders() {
  *                     in lossless"): Soulseek is shown, and the file picked
  *                     there replaces the stream / the track's file
  */
-export default function OnlineResults({ query, soulseekFor = null }) {
+export default function OnlineResults({ query, soulseekFor = null, findOn = null }) {
   // YouTube Music and SoundCloud, then Soulseek, then installed addons.
   const loaded = useProviders()
-  const providers = [...loaded.filter(p => !p.addon), SOULSEEK, ...loaded.filter(p => p.addon)]
+  const providers = orderedFindOnSources(loaded)
   const [chosen, setProvider] = useState(storedProvider)
-  // Asked to find a song on Soulseek: shown until another source is picked.
-  const [forSoulseek, setForSoulseek] = useState(!!soulseekFor)
-  useEffect(() => { if (soulseekFor) setForSoulseek(true) }, [soulseekFor])
+  const sourceRequest = findOn || (soulseekFor ? { ...soulseekFor, provider: 'slsk' } : null)
+  const [requestedProvider, setRequestedProvider] = useState(() => sourceRequest?.provider || null)
+  useEffect(() => {
+    setRequestedProvider(sourceRequest?.provider || null)
+  }, [sourceRequest?.provider, sourceRequest?.replaceTrackId, sourceRequest?.upgradeTrackId])
   // A removed / turned-off addon falls back to YouTube Music.
-  const provider = forSoulseek ? 'slsk' : providers.some(p => p.id === chosen) ? chosen : 'yt'
+  const provider = providers.some(p => p.id === requestedProvider) ? requestedProvider
+    : providers.some(p => p.id === chosen) ? chosen : 'yt'
   const soulseek = provider === 'slsk'
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -90,7 +88,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
   const providerLabel = providers.find(p => p.id === provider)?.label || 'YouTube Music'
 
   const choose = (id) => {
-    setForSoulseek(false)
+    setRequestedProvider(null)
     setProvider(id)
     try { localStorage.setItem(PROVIDER_KEY, id) } catch {}
   }
@@ -168,10 +166,10 @@ export default function OnlineResults({ query, soulseekFor = null }) {
       {soulseek ? (
         <SoulseekSearch
           query={q}
-          key={soulseekFor?.replaceTrackId || soulseekFor?.upgradeTrackId || 'soulseek'}
-          initialLosslessOnly={!!soulseekFor?.losslessOnly}
-          replaceTrack={soulseekFor?.replaceTrackId ? soulseekFor : null}
-          upgradeTrack={soulseekFor?.upgradeTrackId ? soulseekFor : null}
+          key={sourceRequest?.replaceTrackId || sourceRequest?.upgradeTrackId || 'soulseek'}
+          initialLosslessOnly={!!sourceRequest?.losslessOnly}
+          replaceTrack={sourceRequest?.replaceTrackId ? sourceRequest : null}
+          upgradeTrack={sourceRequest?.upgradeTrackId ? sourceRequest : null}
         />
       ) : (
         <>
@@ -217,6 +215,7 @@ export default function OnlineResults({ query, soulseekFor = null }) {
                   <SaveToLibraryButton
                     source={{ provider: item.provider, id: String(item.id) }}
                     meta={{ title: item.title, artist: item.artist, artists: item.artists }}
+                    replaceTrackId={sourceRequest?.replaceTrackId}
                     getTrack={async () => (await asTracks([item]))[0]}
                     size={15}
                     offerUpgrade

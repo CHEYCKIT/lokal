@@ -24,15 +24,17 @@ export default function Search() {
   const { t } = useTranslation()
   const query = useSearchStore(s => s.query)
   const setQuery = useSearchStore(s => s.setQuery)
-  // "Find on Soulseek…" (a streamed song) or "Get it in lossless" (a library
-  // track): the song searched, on Soulseek, the file picked there replacing it.
+  // A source search from a streamed song or a lossless request. The selected
+  // source receives the same query and can replace the original ghost track.
   const location = useLocation()
   const [soulseekFor, setSoulseekFor] = useState(null)
+  const [findOnRequest, setFindOnRequest] = useState(null)
   useEffect(() => {
-    const request = location.state?.soulseek
-    if (!request) return
-    setSoulseekFor(request)
-    setQuery(request.query || '')
+    const legacySoulseek = location.state?.soulseek
+    const request = location.state?.findOn || (legacySoulseek ? { ...legacySoulseek, provider: 'slsk' } : null)
+    setFindOnRequest(request)
+    setSoulseekFor(request?.provider === 'slsk' ? request : null)
+    if (request) setQuery(request.query || '')
   }, [location.key]) // eslint-disable-line react-hooks/exhaustive-deps
   const [tracks, setTracks] = useState([])
   const [artists, setArtists] = useState([])
@@ -379,7 +381,7 @@ export default function Search() {
             </div>
           )}
 
-          <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} />
+          <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} />
         </>
       )}
     </div>
