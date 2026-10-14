@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { loadAddonAlbum, loadAddonArtist, loadOnlineAlbum } from '../src/onlineBrowse.js'
+import { loadAddonAlbum, loadAddonArtist, loadOnlineAlbum, trackAlbumPath } from '../src/onlineBrowse.js'
 import { resolveRecommendationTracks } from '../src/recommendations.js'
 
 const require = createRequire(import.meta.url)
@@ -64,6 +64,23 @@ test("addon albums come in disc and track order, artists with their ids", async 
 })
 
 const ADDON = 'a-0123456789'
+test('Amazon-style addon album objects keep a clickable album name and source id while streaming', () => {
+  const result = addons.trackOf({
+    id: 'amz-track-1',
+    title: 'Song',
+    artist: 'Artist',
+    album: { id: 'B012345678', name: 'Amazon Album' },
+  }, ADDON)
+
+  assert.equal(result.album, 'Amazon Album')
+  assert.equal(result.albumId, 'B012345678')
+  const path = trackAlbumPath({ ...result, file_path: 'ghost://addon/0123456789/amz-track-1' })
+  const params = new URLSearchParams(path.split('?')[1])
+  assert.equal(params.get('source'), ADDON)
+  assert.equal(params.get('sourceAlbum'), 'B012345678')
+  assert.equal(params.get('album'), 'Amazon Album')
+})
+
 const iAm = { id: 'alb1', title: 'I Am', artist: 'Earth, Wind & Fire', artwork_url: 'https://img.example/iam.jpg', tracks: [
   { provider: ADDON, id: '1', title: 'In the Stone', artist: 'Earth, Wind & Fire', thumbnail: 'https://img.example/iam.jpg' },
   { provider: ADDON, id: '2', title: "Can't Let Go", artist: 'Earth, Wind & Fire' },
