@@ -387,40 +387,63 @@ class PackageService {
         }
       }
       const providerName=addon.name.replace(/-web$/,'')
-      // Amazon search can provide an album ID without a usable album title.
-      // If enrichTrack() still couldn't identify the release, fetch that album
-      // directly before checking availability or preparing download metadata.
-      if(providerName==='amazon'&&!albumNameOf(track)&&runtime.methods.includes('getAlbum')) {
+      // A source track may not have an Amazon album ID until checkAvailability()
+      // resolves it to an Amazon ASIN. Reuse this fallback before and after matching.
+      const resolveAmazonAlbum = async () => {
+        if(providerName!=='amazon'||albumNameOf(track)||!runtime.methods.includes('getAlbum')) return
         const albumId=albumIdOf(track)
-        if(albumId) {
-          try {
-            const album=await runtime.invoke('getAlbum',[albumId],{timeoutMs:60000,signal:combined})
-            const name=albumNameOf({album_name:album?.name||album?.title||album?.album_name||album?.albumName})
-            if(name) {
-              const albumFields={
-                album:name,album_name:name,
-                album_artist:(typeof track.album_artist === 'string' && !track.album_artist.trim() ? null : track.album_artist)||album.album_artist||album.artist||album.artists,
-                cover_url:track.cover_url||album.cover_url||album.cover_art,
-                release_date:track.release_date||album.release_date||album.year,
-                total_tracks:track.total_tracks||album.total_tracks||album.track_count,
-                total_discs:track.total_discs||album.total_discs,
-              }
-              track={...track,...Object.fromEntries(Object.entries(albumFields).filter(([,value])=>value!==undefined&&value!==null&&value!==''))}
-            }
-          } catch(error) {
-            // Keep downloads usable when album lookup is unavailable; never
-            // swallow an aborted operation or a retired runtime.
-            if(combined.aborted || runtime.closed) throw error
+        if(!albumId) return
+        try {
+          const album=await runtime.invoke('getAlbum',[albumId],{timeoutMs:60000,signal:combined})
+          const name=albumNameOf({album_name:album?.name||album?.title||album?.album_name||album?.albumName})
+          if(!name) return
+          const albumFields={
+            album:name,album_name:name,
+            album_artist:(typeof track.album_artist === 'string' && !track.album_artist.trim() ? null : track.album_artist)||album.album_artist||album.artist||album.artists,
+            cover_url:track.cover_url||album.cover_url||album.cover_art,
+            release_date:track.release_date||album.release_date||album.year,
+            total_tracks:track.total_tracks||album.total_tracks||album.track_count,
+            total_discs:track.total_discs||album.total_discs,
           }
+          track={...track,...Object.fromEntries(Object.entries(albumFields).filter(([,value])=>value!==undefined&&value!==null&&value!==''))}
+        } catch(error) {
+          // Keep downloads usable when metadata lookup fails, but never swallow cancellation.
+          if(combined.aborted || runtime.closed) throw error
+          console.warn('[SpotiFLAC] Amazon album lookup failed:', error.message || error)
         }
       }
+      await resolveAmazonAlbum()
       const options={track,duration_ms:track.duration_ms || 0}
       const directFields={qobuz:'qobuz_id',tidal:'tidal_id',deezer:'deezer_id',soundcloud:'spotify_id',amazon:'spotify_id'}
       const directField=directFields[providerName]
       if(directField) options[directField]=String(track[directField] || (providerName === 'amazon' || providerName === 'soundcloud' ? track.id : id))
       const available=runtime.methods.includes('checkAvailability')?await runtime.invoke('checkAvailability',[track.isrc || '',track.name || '',track.artists || '',options],{signal:combined}):{available:true,track_id:String(id)}
       if(!available?.available)throw new Error(available?.reason || 'The addon cannot download this track')
+      const matchedTrackId=available.track_id || available.trackId
+      // Cross-provider matches often start with only Spotify metadata. Once Amazon
+      // returns its ASIN, load Amazon's canonical track before the addon downloads.
+      if(providerName==='amazon'&&matchedTrackId&&!albumNameOf(track)&&runtime.methods.includes('getTrack')) {
+        try {
+          const amazonTrack=await runtime.invoke('getTrack',[String(matchedTrackId)],{timeoutMs:60000,signal:combined})
+          if(amazonTrack&&typeof amazonTrack==='object'&&!Array.isArray(amazonTrack)) {
+            const values=Object.fromEntries(Object.entries(amazonTrack).filter(([field,value])=>{
+              if(value===undefined||value===null||value===''||value===0||(typeof value==='string'&&!value.trim())||(Array.isArray(value)&&value.length===0)) return false
+              if((field==='album_name'||field==='album')&&typeof value==='string'&&isPlaceholderAlbum(value)) return false
+              if(field==='album_artist'&&typeof value==='string'&&!value.trim()) return false
+              return true
+            }))
+            track={...track,...values}
+          }
+        } catch(error) {
+          if(combined.aborted || runtime.closed) throw error
+          console.warn('[SpotiFLAC] Amazon track metadata lookup failed:', error.message || error)
+        }
+        await resolveAmazonAlbum()
+      }
       const prepared={...(available.prepared_context || available.preparedContext || {}),host_track:track}
+      // The Amazon extension prefers web_metadata over host_track, so keep both
+      // in sync with the resolved Amazon metadata instead of the original track.
+      if(providerName==='amazon') prepared.web_metadata=track
       const chosen=quality || this.settings(addon).downloadQuality || addon.manifest.qualityOptions?.find(q=>q.kind==='lossless')?.id || addon.manifest.qualityOptions?.[0]?.id || 'default'
       const result=await runtime.invoke('download',[available.track_id || available.trackId || String(id),chosen,path.join(staged,'audio.flac'),{preparedContext:prepared,resolutionTimeoutMs:60000}],{timeoutMs:24*3600000,signal:combined})
       if(!result?.success)throw Object.assign(new Error(result?.error_message || result?.error || 'Addon download failed'),{authUrl:result?.auth_url,errorType:result?.error_type})
