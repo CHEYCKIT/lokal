@@ -80,6 +80,7 @@ function fmtAddedAt(ts) {
 }
 
 function SortableHeader({ column, label, children, sort, onSortChange, className = '' }) {
+  const { t } = useTranslation()
   if (!onSortChange) return <span className={className}>{children}</span>
   const active = sort?.column === column
   const next = nextPlaylistSort(sort, column)
@@ -791,13 +792,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
         {layout.grip && <span />}
         {layout.number && <SortableHeader column="number" label="playlist number" sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{layout.album ? 'Title' : 'Title / Album'}</span>
-        {layout.album && <span className="truncate">Album</span>}
+        {layout.album && <span className="truncate">{t("Album")}</span>}
         {layout.source && <span className="flex justify-center" title={t("Source")}><Globe size={12} aria-hidden="true" /><span className="sr-only">{t("Source")}</span></span>}
-        {layout.quality && <span className="text-center">Quality</span>}
+        {layout.quality && <span className="text-center">{t("Quality")}</span>}
         {extraColumns.map(column => layout[column.key] && <span key={column.key} className="truncate text-right tracking-normal">{column.label}</span>)}
         {layout.added && <SortableHeader column="added" label="date added" sort={sort} onSortChange={onSortChange} className="justify-end truncate text-right tracking-normal">Date added</SortableHeader>}
         {layout.time && <SortableHeader column="time" label="duration" sort={sort} onSortChange={onSortChange} className="justify-end text-right">Time</SortableHeader>}
-        <span className="sr-only">Actions</span>
+        <span className="sr-only">{t("Actions")}</span>
         <span aria-hidden="true" />
       </div>
       {onSortChange && <span className="sr-only" role="status">Sorted by {sort?.column === 'added' ? 'date added' : sort?.column === 'time' ? 'duration' : 'playlist number'}, {sort?.direction === 'desc' ? 'descending' : 'ascending'}</span>}
