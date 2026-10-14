@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Check, Music, Heart } from 'lucide-react'
@@ -8,6 +9,7 @@ import PlaylistCover from './PlaylistCover'
 import { plural } from '../plural'
 
 export default function AddToPlaylistModal() {
+  const { t } = useTranslation()
   const { addToPlaylistTrack, addToPlaylistTrackIds, closeAddToPlaylist, user } = useAppStore()
   const { likedIds, setLiked } = usePlayerStore(useShallow(({ likedIds, setLiked }) => ({ likedIds, setLiked })))
   const [playlists, setPlaylists] = useState([])
@@ -86,7 +88,7 @@ export default function AddToPlaylistModal() {
 
               <div className="flex items-center justify-between p-5 border-b border-border">
                 <div className="min-w-0">
-                  <p className="text-xs font-display text-muted uppercase tracking-widest">Add to Playlist</p>
+                  <p className="text-xs font-display text-muted uppercase tracking-widest">{t("Add to Playlist")}</p>
                   {trackCount > 1 ? (
                     <p className="text-sm text-white mt-0.5 truncate font-medium">{plural(trackCount, 'track')} selected</p>
                   ) : (
@@ -106,7 +108,7 @@ export default function AddToPlaylistModal() {
                 <div className="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center flex-shrink-0">
                   <Heart size={15} className={track && likedIds.has(track?.id) ? 'text-accent' : 'text-muted'} fill={track && likedIds.has(track?.id) ? 'currentColor' : 'none'} />
                 </div>
-                <span className="text-sm text-white">Liked Songs</span>
+                <span className="text-sm text-white">{t("Liked Songs")}</span>
                 {track && likedIds.has(track?.id) && <Check size={14} className="text-accent ml-auto" />}
               </button>
 
@@ -126,7 +128,7 @@ export default function AddToPlaylistModal() {
 
               <div className="max-h-56 overflow-y-auto p-2">
                 {!playlists.length && (
-                  <p className="text-center text-muted text-xs py-5">No playlists yet. Create one above.</p>
+                  <p className="text-center text-muted text-xs py-5">{t("No playlists yet. Create one above.")}</p>
                 )}
                 {playlists.map(pl => {
                   const done = added.has(pl.id)
@@ -148,7 +150,7 @@ export default function AddToPlaylistModal() {
               </div>
 
               <div className="p-3 pt-1">
-                <button onClick={closeAddToPlaylist} className="w-full py-2 text-sm text-muted hover:text-white transition-colors">Done</button>
+                <button onClick={closeAddToPlaylist} className="w-full py-2 text-sm text-muted hover:text-white transition-colors">{t("Done")}</button>
               </div>
             </motion.div>
           </motion.div>
