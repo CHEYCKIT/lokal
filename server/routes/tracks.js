@@ -2,6 +2,7 @@ const { mergeDuplicates, mergeAllDuplicates } = require('../../electron/ipc/merg
 const router = require('express').Router()
 const { removeTrackFiles, forgetDownloads } = require('../../electron/ipc/trackFiles')
 const { getDB } = require('../../electron/ipc/db')
+const { getLibraryFolders } = require('../../electron/libraryFolder')
 const { recordListeningEvent } = require('../../electron/ipc/recaps')
 const path = require('path')
 const fs = require('fs')
@@ -529,6 +530,15 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 
   return patch().map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
 }
+
+router.get('/library-folders', (req, res) => {
+  try {
+    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : ''))
+  } catch (error) {
+    console.error('[library-folders] Could not read library folder:', error.message)
+    res.status(500).json({ available: false, error: 'Could not read the selected music folder', folders: [], tracks: [] })
+  }
+})
 
 router.get('/missing', (req, res) => {
   try {
