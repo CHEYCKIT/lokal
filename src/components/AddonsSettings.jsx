@@ -1,5 +1,6 @@
 // Settings → Addons: SpotiFLAC repositories/packages and HTTP sources.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AlertTriangle, Blocks, CheckCircle2, Loader2, ShieldAlert, Trash2, RefreshCw, Upload } from 'lucide-react'
@@ -10,10 +11,11 @@ const changed = () => window.dispatchEvent(new Event('lokal:addons-changed'))
 
 /** One field from an addon's manifest "settings". */
 function SettingField({ field, value, onChange, onAction }) {
+  const { t } = useTranslation()
   const id = `addon-setting-${field.key}`
-  const label = <label htmlFor={id} className="text-xs font-medium text-text">{field.label || field.key}</label>
+  const label = <label htmlFor={id} className="text-xs font-medium text-text">{t(field.label || field.key)}</label>
   const help = field.help ? <p className="text-[11px] leading-relaxed text-muted">{field.help}</p> : null
-  if (field.type === 'button') return <div><button className="rounded-lg border border-border px-3 py-2 text-xs text-accent" onClick={() => onAction?.(field.action)}>{field.label || field.key}</button>{help}</div>
+  if (field.type === 'button') return <div><button className="rounded-lg border border-border px-3 py-2 text-xs text-accent" onClick={() => onAction?.(field.action)}>{t(field.label || field.key)}</button>{help}</div>
   if (field.type === 'toggle') {
     const on = value === true || value === 'true'
     return (
@@ -51,6 +53,7 @@ function SettingField({ field, value, onChange, onAction }) {
 
 /** An installed addon: header, on/off, remove, and its settings. */
 function AddonCard({ addon, onChanged, focused = false }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(focused)
   const cardRef = useRef(null)
   const [values, setValues] = useState(addon.settings || {})
@@ -80,7 +83,7 @@ function AddonCard({ addon, onChanged, focused = false }) {
     catch (error) { setMessage(error.message); return null }
     finally { setBusy(false) }
   }
-  const save = () => run(async () => { const result = await api.addonsSetSettings(addon.key, values); if (!result?.error) { setMessage('Settings saved'); onChanged() } return result })
+  const save = () => run(async () => { const result = await api.addonsSetSettings(addon.key, values); if (!result?.error) { setMessage(t("Settings saved")); onChanged() } return result })
   const toggle = async () => {
     if (await run(() => api.addonsSetEnabled(addon.key, !addon.enabled))) onChanged()
   }
@@ -103,8 +106,8 @@ function AddonCard({ addon, onChanged, focused = false }) {
   const verify = () => run(async () => {
     const result = await api.addonsPackages({ action: 'package.verify', key: addon.key })
     setAuth(result)
-    if (result?.opened) setMessage('Complete the verification in the window that opened. Access is checked when it closes.')
-    else if (result?.authenticated) { setMessage('Access verified.'); onChanged() }
+    if (result?.opened) setMessage(t("Complete the verification in the window that opened. Access is checked when it closes."))
+    else if (result?.authenticated) { setMessage(t("Access verified.")); onChanged() }
     return result
   })
 
@@ -126,15 +129,15 @@ function AddonCard({ addon, onChanged, focused = false }) {
             {addon.enabled ? 'On' : 'Off'}
           </button>
           {confirmRemove ? (
-            <button onClick={remove} disabled={busy} className="rounded-lg border border-red/40 px-2.5 py-1 text-[11px] text-red hover:bg-red/10">Remove?</button>
+            <button onClick={remove} disabled={busy} className="rounded-lg border border-red/40 px-2.5 py-1 text-[11px] text-red hover:bg-red/10">{t("Remove?")}</button>
           ) : (
-            <button onClick={() => setConfirmRemove(true)} title="Remove addon" aria-label={`Remove ${addon.name}`} className="p-1 text-muted hover:text-red"><Trash2 size={14} /></button>
+            <button onClick={() => setConfirmRemove(true)} title={t("Remove addon")} aria-label={`Remove ${addon.name}`} className="p-1 text-muted hover:text-red"><Trash2 size={14} /></button>
           )}
         </div>
       </div>
       {(addon.settingsSchema.length > 0 || addon.kind === 'spotiflac') && (
         <div className="mt-3">
-          <button onClick={() => setOpen(v => !v)} className="text-xs text-accent hover:underline">{open ? 'Hide settings' : 'Settings & access'}</button>
+          <button onClick={() => setOpen(v => !v)} className="text-xs text-accent hover:underline">{open ? t('Hide settings') : t('Settings & access')}</button>
           {open && (
             <div className="mt-3 space-y-3 border-t border-border pt-3">
               {addon.settingsSchema.filter(f => f?.key).map(field => (
@@ -142,22 +145,22 @@ function AddonCard({ addon, onChanged, focused = false }) {
               ))}
               {addon.qualityOptions?.length > 0 && <SettingField field={{ key: 'downloadQuality', label: 'Download quality', type: 'select', options: addon.qualityOptions.map(q => ({ value: q.id, label: q.label })) }} value={values.downloadQuality || addon.qualityOptions.find(q => q.kind === 'lossless')?.id || addon.qualityOptions[0].id} onChange={v => update('downloadQuality', v)} />}
               {(addon.qualityOptions || []).map(quality => (quality.settings || []).map(field => <SettingField key={`${quality.id}:${field.key}`} field={{ ...field, label: `${quality.label}: ${field.label}`, help: field.description, type: field.type === 'boolean' ? 'toggle' : field.type, options: field.options?.map(o => typeof o === 'object' ? o : { value: o, label: o }) }} value={values.qualitySettings?.[quality.id]?.[field.key] ?? field.default} onChange={v => update('qualitySettings', { ...values.qualitySettings, [quality.id]: { ...values.qualitySettings?.[quality.id], [field.key]: v } })} />))}
-              <button disabled={busy} onClick={save} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Save settings</button>
-              {(addon.actions || []).map(item => <button key={item.action} disabled={busy} onClick={() => action(item.action)} className="ml-2 rounded-lg border border-border px-3 py-2 text-xs text-text">{item.label || item.action}</button>)}
+              <button disabled={busy} onClick={save} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">{t("Save settings")}</button>
+              {(addon.actions || []).map(item => <button key={item.action} disabled={busy} onClick={() => action(item.action)} className="ml-2 rounded-lg border border-border px-3 py-2 text-xs text-text">{t(item.label || item.action)}</button>)}
               {(addon.signedSession || addon.access?.kind === 'login') && <div className="space-y-2 border-t border-border pt-3">
                 <p className="flex items-center gap-1.5 text-xs text-muted">{verified
                   ? <><CheckCircle2 size={13} className="text-accent" />Verified access is active.</>
                   : addon.signedSession
                     ? 'This source needs a one-time browser verification before it can stream or download. A window opens; access is checked automatically when it closes.'
                     : 'Log in with the button above to stream and download from this source. Access is checked automatically when the login window closes.'}</p>
-                {addon.signedSession && !verified && <button disabled={busy || !addon.enabled} onClick={verify} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Verify access</button>}
-                {verified && <button disabled={busy} onClick={() => run(async () => { const result = await api.addonsPackages({ action: 'package.logout', key: addon.key }); setAuth({ authenticated: false }); onChanged(); return result })} className="text-xs text-muted hover:text-text">Disconnect</button>}
+                {addon.signedSession && !verified && <button disabled={busy || !addon.enabled} onClick={verify} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">{t("Verify access")}</button>}
+                {verified && <button disabled={busy} onClick={() => run(async () => { const result = await api.addonsPackages({ action: 'package.logout', key: addon.key }); setAuth({ authenticated: false }); onChanged(); return result })} className="text-xs text-muted hover:text-text">{t("Disconnect")}</button>}
               </div>}
-              {!api.isElectron && auth?.open_auth_url && /^https:\/\//i.test(auth.open_auth_url) && <button onClick={() => api.openExternal(auth.open_auth_url)} className="text-xs text-accent underline">Open verification / login page</button>}
+              {!api.isElectron && auth?.open_auth_url && /^https:\/\//i.test(auth.open_auth_url) && <button onClick={() => api.openExternal(auth.open_auth_url)} className="text-xs text-accent underline">{t("Open verification / login page")}</button>}
               {form && <form onSubmit={e => { e.preventDefault(); action(form.submit_action, formInput, form.token) }} className="space-y-3 rounded-lg border border-border p-3">
                 <p className="text-sm text-text">{form.title || 'Account details'}</p>{form.description && <p className="text-xs text-muted">{form.description}</p>}
                 {form.fields.map(field => <SettingField key={field.key} field={{ ...field, secret: ['password', 'otp'].includes(field.type), options: field.options?.map(o => ({ value: o, label: o })) }} value={formInput[field.key] ?? field.default} onChange={v => setFormInput(current => ({ ...current, [field.key]: v }))} />)}
-                <button disabled={busy} type="submit" className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent">Continue</button><button type="button" onClick={() => { setForm(null); setFormInput({}) }} className="ml-3 text-xs text-muted">Cancel</button>
+                <button disabled={busy} type="submit" className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent">{t("Continue")}</button><button type="button" onClick={() => { setForm(null); setFormInput({}) }} className="ml-3 text-xs text-muted">{t("Cancel")}</button>
               </form>}
             </div>
           )}
@@ -186,6 +189,7 @@ export function repositoryLabel(repo) {
 }
 
 function RepositoryBrowser({ onChanged }) {
+  const { t } = useTranslation()
   // Empty: the official repository is already listed below.
   const [url, setUrl] = useState('')
   const [repos, setRepos] = useState([])
@@ -215,18 +219,19 @@ function RepositoryBrowser({ onChanged }) {
     })
   }
   return <div className="space-y-3">
-    <p className="text-sm font-medium text-text">SpotiFLAC repositories</p>
-    <p className="text-xs leading-relaxed text-muted">Add a repository to browse its downloadable sources, or install a .sflx / .spotiflac-ext package. Installed sources appear in search and can play or save songs to your library.</p>
-    <div className="flex gap-2"><input aria-label="Repository registry URL" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…/registry.json" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !url.trim()} onClick={() => run(async () => { const result = await request({ action: 'repository.add', url: url.trim() }); if (!result?.error) setUrl(''); return result })} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">Add repository</button></div>
+    <p className="text-sm font-medium text-text">{t("SpotiFLAC repositories")}</p>
+    <p className="text-xs leading-relaxed text-muted">{t("Add a repository to browse its downloadable sources, or install a .sflx / .spotiflac-ext package. Installed sources appear in search and can play or save songs to your library.")}</p>
+    <div className="flex gap-2"><input aria-label={t("Repository registry URL")} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…/registry.json" className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text" /><button disabled={busy || !url.trim()} onClick={() => run(async () => { const result = await request({ action: 'repository.add', url: url.trim() }); if (!result?.error) setUrl(''); return result })} className="rounded-lg bg-accent/20 px-3 py-2 text-xs text-accent disabled:opacity-40">{t("Add repository")}</button></div>
     <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted ${busy ? 'pointer-events-none opacity-40' : ''}`}><Upload size={13} />Install package file<input type="file" accept=".sflx,.spotiflac-ext" disabled={busy} onChange={upload} className="hidden" /></label>
-    {repos.map(repo => <div key={repo.id} className="flex items-start gap-3 rounded-lg border border-border p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm text-text" title={repo.url}>{repositoryLabel(repo)}</p><p className="mt-0.5 truncate text-[10px] text-muted/70" title={repo.url}>{repo.url}</p><p className="mt-1 text-[11px] text-muted">{repo.error || (repo.refreshed_at ? `Refreshed ${new Date(repo.refreshed_at).toLocaleString()}` : 'Not refreshed')}</p></div><button disabled={busy} title="Refresh repository" aria-label="Refresh repository" onClick={() => run(() => request({ action: 'repository.refresh', id: repo.id }))} className="text-muted hover:text-accent"><RefreshCw size={14} /></button><button disabled={busy} title="Remove repository" aria-label="Remove repository" onClick={() => run(() => request({ action: 'repository.remove', id: repo.id }))} className="text-muted hover:text-red"><Trash2 size={14} /></button></div>)}
-    {entries.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{entries.map(entry => <div key={`${entry.repositoryId}:${entry.id}`} className="rounded-xl border border-border bg-card/60 p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm text-text">{entry.display_name || entry.id}<span className="ml-2 text-[11px] text-muted">v{entry.version}</span></p><button disabled={busy || !entry.compatible || entry.installed && !entry.updateAvailable} onClick={() => run(() => request({ action: 'package.install', repositoryId: entry.repositoryId, id: entry.id }))} className="rounded-lg bg-accent/20 px-3 py-1 text-xs text-accent disabled:opacity-40">{entry.updateAvailable ? 'Update' : entry.installed ? 'Installed' : 'Install'}</button></div>{entry.category === 'integration' && <p className="mt-1 text-[10px] uppercase tracking-wider text-accent/80">Reads playlist links · for playlist sync</p>}<p className="mt-2 text-[11px] leading-relaxed text-muted">{entry.description}</p>{!entry.compatible && <p className="mt-1 text-xs text-muted">Requires SpotiFLAC compatibility {entry.min_app_version}</p>}</div>)}</div>}
-    {busy && <p className="flex items-center gap-2 text-xs text-muted"><Loader2 size={13} className="animate-spin" />Working…</p>}{message && <p role="alert" className="text-xs text-red">{message}</p>}
+    {repos.map(repo => <div key={repo.id} className="flex items-start gap-3 rounded-lg border border-border p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm text-text" title={repo.url}>{repositoryLabel(repo)}</p><p className="mt-0.5 truncate text-[10px] text-muted/70" title={repo.url}>{repo.url}</p><p className="mt-1 text-[11px] text-muted">{repo.error || (repo.refreshed_at ? `Refreshed ${new Date(repo.refreshed_at).toLocaleString()}` : 'Not refreshed')}</p></div><button disabled={busy} title={t("Refresh repository")} aria-label={t("Refresh repository")} onClick={() => run(() => request({ action: 'repository.refresh', id: repo.id }))} className="text-muted hover:text-accent"><RefreshCw size={14} /></button><button disabled={busy} title={t("Remove repository")} aria-label={t("Remove repository")} onClick={() => run(() => request({ action: 'repository.remove', id: repo.id }))} className="text-muted hover:text-red"><Trash2 size={14} /></button></div>)}
+    {entries.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{entries.map(entry => <div key={`${entry.repositoryId}:${entry.id}`} className="rounded-xl border border-border bg-card/60 p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm text-text">{entry.display_name || entry.id}<span className="ml-2 text-[11px] text-muted">v{entry.version}</span></p><button disabled={busy || !entry.compatible || entry.installed && !entry.updateAvailable} onClick={() => run(() => request({ action: 'package.install', repositoryId: entry.repositoryId, id: entry.id }))} className="rounded-lg bg-accent/20 px-3 py-1 text-xs text-accent disabled:opacity-40">{entry.updateAvailable ? 'Update' : entry.installed ? 'Installed' : 'Install'}</button></div>{entry.category === 'integration' && <p className="mt-1 text-[10px] uppercase tracking-wider text-accent/80">{t("Reads playlist links · for playlist sync")}</p>}<p className="mt-2 text-[11px] leading-relaxed text-muted">{entry.description}</p>{!entry.compatible && <p className="mt-1 text-xs text-muted">Requires SpotiFLAC compatibility {entry.min_app_version}</p>}</div>)}</div>}
+    {busy && <p className="flex items-center gap-2 text-xs text-muted"><Loader2 size={13} className="animate-spin" />{t("Working…")}</p>}{message && <p role="alert" className="text-xs text-red">{message}</p>}
   </div>
 }
 
 /** The Addons section. */
 export default function AddonsSettings() {
+  const { t } = useTranslation()
   const focusKey = useLocation().state?.addon || null
   // Last visit's list shows at once; the Settings category fades in once
   // the list is in (it used to appear empty for a frame first).
@@ -266,7 +271,7 @@ export default function AddonsSettings() {
   return (
     <div className="space-y-4">
       <RepositoryBrowser onChanged={onChanged} />
-      <div className="space-y-3 border-t border-border pt-4"><p className="text-sm font-medium text-text">HTTP addons</p>
+      <div className="space-y-3 border-t border-border pt-4"><p className="text-sm font-medium text-text">{t("HTTP addons")}</p>
       <p className="!mt-1.5 text-xs leading-relaxed text-muted">
         Add online sources by pasting an addon's manifest URL (addons made for Eclipse Music work). An addon's results show up as a source next to YouTube Music and SoundCloud in search, and its songs can be played, added to playlists and saved to your library.
       </p>
@@ -288,7 +293,7 @@ export default function AddonsSettings() {
       {message && <p className={`text-xs ${message.error ? 'text-red' : 'text-accent'}`}>{message.text}</p>}
       </div>
       {addons === null ? null : addons.length === 0 ? (
-        <p className="text-xs text-muted">No addons installed.</p>
+        <p className="text-xs text-muted">{t("No addons installed.")}</p>
       ) : (
         <div className="space-y-3">
           {addons.map(addon => <AddonCard key={addon.key} addon={addon} onChanged={onChanged} focused={addon.key === focusKey} />)}

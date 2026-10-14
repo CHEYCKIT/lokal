@@ -2,6 +2,7 @@
 // first, as a list of albums with their details. Checked when you refresh
 // (every artist's catalogue); the last check is kept for the next visit.
 
+import { useTranslation } from '../i18n'
 import React, { useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
@@ -35,6 +36,7 @@ function dateLabel(release) {
 }
 
 function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
+  const { t } = useTranslation()
   const type = TYPE_LABEL[release.release_type] || 'Release'
   return (
     <div role="listitem" onContextMenu={event => onMenu?.(event, release)}
@@ -46,7 +48,7 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={() => onOpen(release)} className="truncate text-left text-sm font-semibold text-white hover:underline">{release.title}</button>
-          {isNewRelease(release) && <span title="Out less than a week ago" className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">New</span>}
+          {isNewRelease(release) && <span title={t("Out less than a week ago")} className="flex-shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">{t("New")}</span>}
         </div>
         <button type="button" onClick={() => onArtist(release)} className="block max-w-full truncate text-left text-xs text-white/75 hover:text-white hover:underline">{release.artist}</button>
         <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
@@ -56,7 +58,7 @@ function ReleaseRow({ release, index, onPlay, onOpen, onMenu, onArtist }) {
       </div>
       <div className="flex items-center gap-1">
         <button type="button" onClick={() => onPlay(release)} title={`Play ${release.title}`} aria-label={`Play ${release.title}`} className="flex h-9 w-9 items-center justify-center text-white/80 transition hover:scale-110 hover:text-accent"><Play size={20} fill="currentColor" strokeWidth={0} /></button>
-        <button type="button" onClick={event => onMenu?.(event, release)} title="More" aria-label={`More for ${release.title}`} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"><MoreHorizontal size={16} /></button>
+        <button type="button" onClick={event => onMenu?.(event, release)} title={t("More")} aria-label={`More for ${release.title}`} className="rounded-full p-2 text-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"><MoreHorizontal size={16} /></button>
       </div>
     </div>
   )
@@ -86,6 +88,7 @@ export const useReleaseCheck = create((set, get) => ({
 
 /** `artists`: the followed ones (checked); `libraryArtists`: the checklist's. */
 export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, onOpen, onMenu, onArtist }) {
+  const { t } = useTranslation()
   const { saved, checking, start, stop } = useReleaseCheck(useShallow(state => ({ saved: state.saved, checking: state.checking, start: state.start, stop: state.stop })))
   const refresh = () => start(artists)
   const [choosing, setChoosing] = useState(false)
@@ -98,8 +101,8 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">Releases</p>
-          <h2 className="mt-1 text-xl font-medium text-white">New from your artists</h2>
+          <p className="text-[11px] font-display uppercase tracking-[0.25em] text-accent">{t("Releases")}</p>
+          <h2 className="mt-1 text-xl font-medium text-white">{t("New from your artists")}</h2>
           <p className="mt-1 text-xs text-muted">
             {checking ? `Checking ${checking.done}/${checking.total} artists for new releases…${checking.added ? ` · ${checking.added} added` : ''}`
               : saved?.checkedAt ? `The latest ${plural(items.length, 'release')} by ${plural(artists.length, 'followed artist')}, newest first · checked ${ago(saved.checkedAt)}${saved.added ? ` (${saved.added} added)` : ''}${newCount ? ` · ${newCount} new` : ''}${saved.failures ? ` · ${plural(saved.failures, 'artist')} couldn't be checked` : ''}`
@@ -107,7 +110,7 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
           </p>
         </div>
         <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setChoosing(true)} title="Choose the artists whose releases show here"
+        <button type="button" onClick={() => setChoosing(true)} title={t("Choose the artists whose releases show here")}
           className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Users size={13} />Followed artists<span className="tabular-nums text-muted">{artists.length}</span></button>
         {checking
           ? <button type="button" onClick={stop} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs text-text hover:border-accent/40"><Loader2 size={13} className="animate-spin text-accent" />Stop<X size={12} className="text-muted" /></button>
@@ -117,7 +120,7 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
       <FollowedArtistsModal open={choosing} onClose={() => setChoosing(false)} libraryArtists={libraryArtists} />
       {checking && <div className="h-1 overflow-hidden rounded-full bg-elevated"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${checking.total ? (checking.done / checking.total) * 100 : 0}%` }} /></div>}
       {items.length ? (
-        <div role="list" aria-label="New releases" className="space-y-0.5">
+        <div role="list" aria-label={t("New releases")} className="space-y-0.5">
           {items.map((release, index) => <ReleaseRow key={`${release.artist}\u0000${release.title}`} release={release} index={index} onPlay={onPlay} onOpen={onOpen} onMenu={onMenu} onArtist={onArtist} />)}
         </div>
       ) : !checking && (
@@ -125,8 +128,8 @@ export default function ReleasesPanel({ artists, libraryArtists = [], onPlay, on
           <CalendarDays size={30} className="mx-auto mb-3 text-muted/60" />
           <p className="text-sm text-text">{artists.length ? (saved?.checkedAt ? 'No dated releases were found.' : 'See what your artists released lately.') : 'Follow artists to see their new releases here.'}</p>
           {artists.length > 0
-            ? <p className="mt-1 text-xs text-muted">Refresh checks each followed artist’s catalogue on YouTube Music.</p>
-            : <button type="button" onClick={() => setChoosing(true)} className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))]"><Users size={13} />Choose artists to follow</button>}
+            ? <p className="mt-1 text-xs text-muted">{t("Refresh checks each followed artist’s catalogue on YouTube Music.")}</p>
+            : <button type="button" onClick={() => setChoosing(true)} className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-[rgb(var(--bg-rgb))]"><Users size={13} />{t("Choose artists to follow")}</button>}
         </div>
       )}
     </section>

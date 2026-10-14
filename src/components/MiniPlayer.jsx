@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard } from 'lucide-react'
@@ -14,6 +15,7 @@ import VideoOffsetControl from './VideoOffsetControl'
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
 export default function MiniPlayer({ windowed = false }) {
+  const { t } = useTranslation()
   const showWaveform = useAppearanceFlag('player_waveform')
   const {
     currentTrack, isPlaying, progress, duration, volume,
@@ -283,7 +285,7 @@ export default function MiniPlayer({ windowed = false }) {
           {musicVideo?.videoId && <VideoOffsetControl compact videoId={musicVideo.videoId} className="absolute left-2 top-2 opacity-0 transition-opacity duration-200 group-hover/video:opacity-100 has-[:focus-visible]:opacity-100" />}
           {lyricLine && <p className={`pointer-events-none absolute inset-x-3 bottom-2.5 text-center text-[13px] font-medium leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] transition-transform duration-200 group-hover/video:-translate-y-[4.25rem] group-has-[:focus-visible]/video:-translate-y-[4.25rem]`}>{lyricLine}</p>}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-2 pt-6 opacity-0 transition-opacity duration-200 group-hover/video:opacity-100 has-[:focus-visible]:opacity-100">
-            <div className="h-1 cursor-pointer rounded-full bg-white/25 outline-none focus-visible:ring-2 focus-visible:ring-accent/70" onClick={handleScrub} role="slider" tabIndex={0} aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)} aria-valuetext={`${fmt(progress)} of ${fmt(duration)}`}
+            <div className="h-1 cursor-pointer rounded-full bg-white/25 outline-none focus-visible:ring-2 focus-visible:ring-accent/70" onClick={handleScrub} role="slider" tabIndex={0} aria-label={t("Seek")} aria-valuemin={0} aria-valuemax={Math.round(duration || 0)} aria-valuenow={Math.round(progress || 0)} aria-valuetext={`${fmt(progress)} of ${fmt(duration)}`}
               onKeyDown={event => {
                 // Arrows step five seconds, like the main player's keys.
                 if (!duration || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
@@ -295,9 +297,9 @@ export default function MiniPlayer({ windowed = false }) {
             <div className="mt-1.5 flex items-center justify-between">
               <span className="w-20 text-[10px] tabular-nums text-white/70">{fmt(progress)} / {fmt(duration)}</span>
               <div className="flex items-center gap-1">
-                <button onClick={prev} aria-label="Previous" className="p-1.5 text-white/80 hover:text-white"><SkipBack size={15} fill="currentColor" /></button>
+                <button onClick={prev} aria-label={t("Previous")} className="p-1.5 text-white/80 hover:text-white"><SkipBack size={15} fill="currentColor" /></button>
                 <button onClick={togglePlay} disabled={!currentTrack} aria-label={isPlaying ? 'Pause' : 'Play'} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-black transition-transform hover:scale-105 disabled:opacity-40">{isPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" className="translate-x-px" />}</button>
-                <button onClick={next} aria-label="Next" className="p-1.5 text-white/80 hover:text-white"><SkipForward size={15} fill="currentColor" /></button>
+                <button onClick={next} aria-label={t("Next")} className="p-1.5 text-white/80 hover:text-white"><SkipForward size={15} fill="currentColor" /></button>
               </div>
               <div className="flex w-20 items-center justify-end gap-0.5">
                 <button onClick={toggleLike} disabled={!currentTrack} aria-label={isLiked ? 'Unlike' : 'Like'} className={`p-1.5 disabled:opacity-40 ${isLiked ? 'text-accent' : 'text-white/80 hover:text-white'}`}><Heart size={14} fill={isLiked ? 'currentColor' : 'none'} /></button>
@@ -310,7 +312,7 @@ export default function MiniPlayer({ windowed = false }) {
       <div className={`flex items-center gap-3 ${windowed ? 'p-4' : 'p-3'}`}>
         {!videoMode && <div className={`${windowed ? 'w-20 h-20' : 'w-16 h-16'} rounded-lg overflow-hidden flex-shrink-0 bg-card`}>
           {artSrc ? (
-            <img src={artSrc} alt="Artwork" className="w-full h-full object-cover" />
+            <img src={artSrc} alt={t("Artwork")} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-subtle text-2xl">-</div>
           )}

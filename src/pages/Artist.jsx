@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -22,6 +23,7 @@ import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTyp
 import FollowArtistButton from '../components/FollowArtistButton'
 
 export default function Artist() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const nav = useNavigate()
   const location = useLocation()
@@ -184,7 +186,7 @@ export default function Artist() {
   }, [releaseList, connected, onlineData.albums.items])
 
   if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]?.name} anchor={onlineNames.current[id]?.anchor} />
-  if (!artist) return <div className="p-6 text-muted text-sm">Loading...</div>
+  if (!artist) return <div className="p-6 text-muted text-sm">{t("Loading...")}</div>
 
   // Web mode previously hardcoded this to null, so the artist detail page
   // never showed an image outside Electron even when one existed — see
@@ -240,14 +242,14 @@ export default function Artist() {
               {imgSrc ? <img src={imgSrc} alt={artist.name} className="h-full w-full object-cover" /> : <Music size={36} className="text-muted" />}
             </button>
             {api.isElectron && imgSrc && (
-              <button onClick={pickArtistImage} title="Change the picture" aria-label="Change the picture" className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-elevated text-muted opacity-0 shadow-lg transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100">
+              <button onClick={pickArtistImage} title={t("Change the picture")} aria-label={t("Change the picture")} className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-elevated text-muted opacity-0 shadow-lg transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100">
                 <Camera size={14} />
               </button>
             )}
             <ImageZoom src={imgSrc} alt={artist.name} open={zoom} onClose={() => setZoom(false)} />
           </div>
           <div>
-            <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Artist</p>
+            <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Artist")}</p>
             <h1 className="text-3xl font-display text-white">{artist.name}</h1>
             <p className="mt-1 text-xs text-muted">{plural(artist.tracks?.length, 'track')}</p>
           </div>
@@ -266,7 +268,7 @@ export default function Artist() {
           <button onClick={() => openRadio(nav, { artist: artist.name, type: 'artist' }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Radio size={14} /> Radio
           </button>
-          <button onClick={shareArtist} title="Share as a picture"
+          <button onClick={shareArtist} title={t("Share as a picture")}
             className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Share2 size={14} /> Share
           </button>
@@ -279,21 +281,21 @@ export default function Artist() {
 
         {artist.bio && (
           <div>
-            <h2 className="mb-2 text-xs font-display uppercase tracking-widest text-muted">About</h2>
+            <h2 className="mb-2 text-xs font-display uppercase tracking-widest text-muted">{t("About")}</h2>
             <p className="max-w-2xl text-sm leading-relaxed text-muted">{artist.bio}</p>
           </div>
         )}
 
         {artist.topTracks?.length > 0 && (
           <section>
-            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Popular</h2>
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{t("Popular")}</h2>
             <TrackList tracks={artist.topTracks} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
 
         {standaloneTrack && (
           <section>
-            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">Track</h2>
+            <h2 className="mb-3 text-xs font-display uppercase tracking-widest text-muted">{t("Track")}</h2>
             <TrackList tracks={[standaloneTrack]} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
           </section>
         )}
@@ -301,7 +303,7 @@ export default function Artist() {
         {artist.albums?.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-xs font-display uppercase tracking-widest text-muted">Releases</h2>
+              <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Releases")}</h2>
               <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
             </div>
             <SelectionBar
@@ -310,7 +312,7 @@ export default function Artist() {
               onClear={releaseSelection.clear}
               actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
             />
-            {releaseGroups.length === 0 && <p className="text-sm text-muted">No releases of the types chosen.</p>}
+            {releaseGroups.length === 0 && <p className="text-sm text-muted">{t("No releases of the types chosen.")}</p>}
             <div className="space-y-6">
               {releaseGroups.map(group => (
                 <div key={group.type}>
@@ -378,6 +380,7 @@ export default function Artist() {
 }
 
 function AlbumTracks({ album, artistName = null, highlightTrackId = null, highlightRequestKey = null }) {
+  const { t } = useTranslation()
   const [tracks, setTracks] = useState([])
   const playQueue = usePlayerStore(s => s.playQueue)
   // album now carries its own album_artist (see the two setSelectedAlbum
@@ -404,7 +407,7 @@ function AlbumTracks({ album, artistName = null, highlightTrackId = null, highli
     <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-white">{album.title}</h3>
-        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">Play Album</button>
+        <button onClick={() => playQueue(tracks, 0, albumContext)} className="text-xs text-accent hover:text-accent-dim">{t("Play Album")}</button>
       </div>
       <TrackList tracks={tracks} context={albumContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
     </motion.div>

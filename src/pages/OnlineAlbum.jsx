@@ -3,6 +3,7 @@
 // downloaded from the playback sources. When the library does have the
 // album, its own page opens instead.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Disc3, Download, ListPlus, Play, Shuffle } from 'lucide-react'
@@ -29,6 +30,7 @@ const shuffled = list => {
 }
 
 export default function OnlineAlbum() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const location = useLocation()
   const params = new URLSearchParams(location.search)
@@ -125,13 +127,13 @@ export default function OnlineAlbum() {
           <DiscoveryImage item={{ title: album, artist }} type="album" src={cover} lookup={!state.loading} className="h-full w-full object-cover" fallback={<div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={52} /></div>} />
         </div>
         <div className="min-w-0">
-          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">Album · Online</p>
+          <p className="mb-1 text-xs font-display uppercase tracking-widest text-muted">{t("Album · Online")}</p>
           <h1 className="truncate text-3xl font-display text-white">{album}</h1>
           <button onClick={() => nav(artistPath(artist), { state: { name: artist, anchor: tracks[0] ? { title: tracks[0].title, album } : null } })} className="mt-1 text-sm text-muted transition-colors hover:text-accent hover:underline">{artist}</button>
           {!state.loading && tracks.length > 0 && <p className="mt-1 text-xs text-subtle">{plural(tracks.length, 'song')}{duration ? ` · ${Math.round(duration / 60)} min` : ''}{owned ? ` · ${owned === tracks.length ? 'all' : `${owned} of ${tracks.length}`} in your library` : ''}</p>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button onClick={() => play(tracks[0])} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> Play</button>
-            <button onClick={() => { const list = shuffled(tracks); play(list[0], list) }} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> Shuffle</button>
+            <button onClick={() => play(tracks[0])} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t("Play")}</button>
+            <button onClick={() => { const list = shuffled(tracks); play(list[0], list) }} disabled={!tracks.length} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> {t("Shuffle")}</button>
             {missing.length > 0 && <button onClick={download} disabled={!!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy === 'download' ? 'Finding songs…' : owned ? `Download missing (${missing.length})` : 'Download album'}</button>}
             <button onClick={savePlaylist} disabled={!tracks.length || !!busy} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-40"><ListPlus size={15} /> {busy === 'playlist' ? 'Saving…' : 'Save as playlist'}</button>
             <RefreshButton onClick={() => setReload(n => n + 1)} loading={state.loading} loadedAt={state.loadedAt} />

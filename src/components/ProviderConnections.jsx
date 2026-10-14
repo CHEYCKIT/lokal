@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { AudioLines, CheckCircle2, Gamepad2, LogIn, Music2, RefreshCw } from 'lucide-react'
 import { YoutubeIcon } from './SourceIcon'
@@ -7,10 +8,12 @@ import { discordClientId } from '../discord'
 import { getYoutubeAccountStatus, subscribeYoutubeAccountStatus } from '../youtubeAccountStatus'
 
 function StatusDot({ connected }) {
+  const { t } = useTranslation()
   return <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-green-400' : 'bg-border'}`} aria-hidden="true" />
 }
 
 function ActionButton({ children, onClick, disabled = false, muted = false }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -28,6 +31,7 @@ function ActionButton({ children, onClick, disabled = false, muted = false }) {
 }
 
 function AccountCard({ icon: Icon, tint, name, connected, status, note, children }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -52,6 +56,7 @@ function AccountCard({ icon: Icon, tint, name, connected, status, note, children
  * Desktop YouTube Music sign-in owns a persistent, automatically refreshed session.
  */
 export default function ProviderConnections({ compact = false, settingsOverride = null, onSettingsChanged, onListenBrainzChanged }) {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState(() => settingsOverride || {})
   const [loading, setLoading] = useState(!settingsOverride)
   const [refreshing, setRefreshing] = useState(false)
@@ -154,7 +159,7 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   const disconnectLastfm = async () => {
-    if (!window.confirm('Disconnect Last.fm?')) return
+    if (!window.confirm(t("Disconnect Last.fm?"))) return
     const patch = { lastfm_session_key: '', lastfm_auth_token: '', lastfm_username: '' }
     const saved = await Promise.resolve(api.saveSettings(patch)).catch(error => ({ error: error.message }))
     if (saved?.error) { setSettingsError(saved.error); return }
@@ -162,13 +167,13 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   const disconnectListenBrainz = async () => {
-    if (!window.confirm('Disconnect ListenBrainz?')) return
+    if (!window.confirm(t("Disconnect ListenBrainz?"))) return
     await Promise.resolve(api.listenbrainzDisconnect()).catch(() => {})
     refreshListenBrainz()
   }
 
   const disconnectYouTube = async () => {
-    if (!window.confirm('Disconnect YouTube Music and sign out of its saved session?')) return
+    if (!window.confirm(t("Disconnect YouTube Music and sign out of its saved session?"))) return
     setYoutubeAuthorizing(true)
     try {
       const result = await api.youtubeDisconnect()
@@ -181,25 +186,25 @@ export default function ProviderConnections({ compact = false, settingsOverride 
   }
 
   if (loading) {
-    return <div className="rounded-xl border border-border bg-card/40 p-4 text-xs text-muted">Loading account connections…</div>
+    return <div className="rounded-xl border border-border bg-card/40 p-4 text-xs text-muted">{t("Loading account connections…")}</div>
   }
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-white">Account connections</p>
+          <p className="text-sm font-medium text-white">{t("Account connections")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
             {api.isElectron ? 'Lokal keeps provider credentials on this device and uses them only for the selected integration.' : 'Web mode sends provider credentials to the Lokal server, where they remain under that server’s control and are used only for the selected integration.'}
           </p>
-          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">Retry</button></p>}
+          {settingsError && <p className="mt-1 text-xs text-red-400">{settingsError} <button type="button" onClick={() => loadSettings(true)} className="text-accent hover:underline">{t("Retry")}</button></p>}
         </div>
         <button
           type="button"
           onClick={() => loadSettings(true)}
           disabled={refreshing}
-          title="Refresh account status"
-          aria-label="Refresh account status"
+          title={t("Refresh account status")}
+          aria-label={t("Refresh account status")}
           className="rounded-lg p-1.5 text-muted transition-colors hover:bg-card hover:text-white disabled:opacity-50"
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />

@@ -6,6 +6,7 @@
 // A playlist can also be saved as one of your playlists without downloading
 // (Import playlist, from a link, with this link filled in).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Disc3, Download, Library, Link2, ListMusic, ListPlus } from 'lucide-react'
@@ -44,6 +45,7 @@ function choicesFor(link) {
 }
 
 export default function LinkDownload({ link }) {
+  const { t } = useTranslation()
   const source = sourceOf(link)
   const kind = linkKind(link)
   const choices = choicesFor(link)
@@ -99,9 +101,9 @@ export default function LinkDownload({ link }) {
   const fromList = kind === 'both' ? info[listUrl]?.title : null
 
   return (
-    <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label="Download a link">
+    <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label={t("Download a link")}>
       <h2 className="text-xs font-display text-muted uppercase tracking-widest flex items-center gap-2">
-        <Link2 size={12} /> Link
+        <Link2 size={12} /> {t("Link")}
       </h2>
       <div className="rounded-2xl border border-border bg-elevated/60 p-4">
         <div className="flex items-center gap-4">
@@ -113,12 +115,12 @@ export default function LinkDownload({ link }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-text">{titleOf(choices[0])}</p>
             <p className="mt-0.5 truncate text-xs text-muted">
-              <span className="text-accent/90">{what}</span>
+              <span className="text-accent/90">{t(what)}</span>
               {main?.author ? ` · ${main.author}` : ''}
-              {main?.count && kind !== 'single' ? ` · ${main.count.toLocaleString()} ${main.count === 1 ? 'song' : 'songs'}` : ''}
+              {main?.count && kind !== 'single' ? ` · ${main.count.toLocaleString()} ${t(main.count === 1 ? 'song' : 'songs')}` : ''}
               {` · ${source.label}`}
             </p>
-            <p className="mt-0.5 truncate text-[11px] text-subtle">{fromList ? `From ${fromList}` : link}</p>
+            <p className="mt-0.5 truncate text-[11px] text-subtle">{fromList ? `${t('From')} ${fromList}` : link}</p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
             {choices.map((choice, i) => {
@@ -129,22 +131,22 @@ export default function LinkDownload({ link }) {
                   key={choice.id}
                   onClick={() => start(choice)}
                   disabled={!!job || !!pending}
-                  title={i === 0 ? 'Enter in the search box does this too' : undefined}
+                  title={i === 0 ? t('Enter in the search box does this too') : undefined}
                   className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors disabled:cursor-default ${i === 0 ? 'bg-accent text-[rgb(var(--bg-rgb))] hover:bg-accent/85 disabled:bg-accent/30' : 'border border-border text-text hover:border-accent/50 disabled:opacity-40'}`}
                 >
                   {pending === choice.id ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon size={13} />}
-                  {choice.label}
+                  {t(choice.label)}
                 </button>
               )
             })}
             {listUrl && (
               <button
                 onClick={saveAsPlaylist}
-                title="Add it to your playlists without downloading; songs you don't have stream"
+                title={t("Add it to your playlists without downloading; songs you don't have stream")}
                 className="flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2 text-xs font-semibold text-text transition-colors hover:border-accent/50"
               >
                 <ListPlus size={13} />
-                Save as playlist
+                {t("Save as playlist")}
               </button>
             )}
           </div>
@@ -157,7 +159,7 @@ export default function LinkDownload({ link }) {
         )}
         {!started.length && (
           <p className="mt-3 text-[11px] text-muted">
-            Saved to your music folder and added to the library, with lyrics and a square cover.{main ? '' : ` The real ${kind === 'single' ? 'title' : 'name'} is filled in from ${source.label} once it starts.`}
+            {t("Saved to your music folder and added to the library, with lyrics and a square cover.")}{main ? '' : ` The real ${kind === 'single' ? 'title' : 'name'} is filled in from ${source.label} once it starts.`}
           </p>
         )}
       </div>

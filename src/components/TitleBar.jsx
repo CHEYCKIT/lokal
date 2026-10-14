@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Minus, Settings, Square, X } from 'lucide-react'
@@ -14,6 +15,7 @@ import { DownloadManagerPanel, DownloadsButton } from './DownloadManager'
  * the same bar without the window controls.
  */
 export default function TitleBar() {
+  const { t } = useTranslation()
   const desktop = api.isElectron
   const nav = useNavigate()
   const onSettings = useLocation().pathname === '/settings'
@@ -24,13 +26,13 @@ export default function TitleBar() {
     >
       <div className="flex min-w-0 items-center gap-1">
         {/* A narrow window keeps the buttons, not the name. */}
-        <span className="mr-2 hidden min-w-0 truncate font-display text-xs text-muted tracking-widest uppercase sm:inline">Lokal Music</span>
+        <span className="mr-2 hidden min-w-0 truncate font-display text-xs text-muted tracking-widest uppercase sm:inline">{t("Lokal Music")}</span>
         <button
           type="button"
           data-tour="settings"
           onClick={() => nav('/settings')}
-          title="Settings"
-          aria-label="Settings"
+          title={t("Settings")}
+          aria-label={t("Settings")}
           aria-current={onSettings ? 'page' : undefined}
           className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${onSettings ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-elevated hover:text-text'}`}
         >

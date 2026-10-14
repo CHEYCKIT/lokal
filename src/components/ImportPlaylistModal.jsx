@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState } from 'react'
 import { FileUp, Link2, ListMusic, Loader2 } from 'lucide-react'
 import Modal from './Modal'
@@ -15,6 +16,7 @@ const primary = 'py-2.5 px-4 bg-accent text-base rounded-xl text-sm font-medium 
 const secondary = 'py-2.5 px-4 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-40'
 
 function Tab({ active, icon: Icon, children, onClick }) {
+  const { t } = useTranslation()
   return (
     <button type="button" onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-accent/60 bg-accent/10 text-accent' : 'border-border text-muted hover:text-white'}`}>
@@ -24,6 +26,7 @@ function Tab({ active, icon: Icon, children, onClick }) {
 }
 
 function LinkImport({ onDone, initialUrl = '' }) {
+  const { t } = useTranslation()
   const user = useAppStore(s => s.user)
   const [url, setUrl] = useState(initialUrl)
   const [reading, setReading] = useState(false)
@@ -61,8 +64,8 @@ function LinkImport({ onDone, initialUrl = '' }) {
   })
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!chosen.length) { setError('Pick at least one track'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!chosen.length) { setError(t("Pick at least one track")); return }
     setImporting(true)
     setError('')
     const result = await api.importLinkPlaylist({
@@ -79,7 +82,7 @@ function LinkImport({ onDone, initialUrl = '' }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className={label}>Playlist link</label>
+        <label className={label}>{t("Playlist link")}</label>
         <div className="flex gap-2">
           <input autoFocus value={url} onChange={e => setUrl(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') read() }}
@@ -88,22 +91,22 @@ function LinkImport({ onDone, initialUrl = '' }) {
             {reading && <Loader2 size={14} className="animate-spin" />} Read
           </button>
         </div>
-        {reading && <p className="mt-1.5 text-[11px] text-muted">Reading the playlist… big ones (thousands of songs) can take a minute.</p>}
-        <p className="mt-1.5 text-[11px] text-muted">YouTube, YouTube Music, SoundCloud and Bandcamp playlists and albums. Nothing is downloaded; songs you don't own are added as streamable ghost songs.</p>
+        {reading && <p className="mt-1.5 text-[11px] text-muted">{t("Reading the playlist… big ones (thousands of songs) can take a minute.")}</p>}
+        <p className="mt-1.5 text-[11px] text-muted">{t("YouTube, YouTube Music, SoundCloud and Bandcamp playlists and albums. Nothing is downloaded; songs you don't own are added as streamable ghost songs.")}</p>
       </div>
 
       {preview && (
         <>
           <div>
-            <label className={label}>Playlist name</label>
+            <label className={label}>{t("Playlist name")}</label>
             <input value={name} onChange={e => setName(e.target.value)} className={input} />
           </div>
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={`${label} mb-0`}>{plural(preview.total, 'track')} · {preview.matched} in library</span>
               <span className="flex gap-3 text-[11px] text-muted">
-                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set(preview.entries.map(e => e.key)))}>All</button>
-                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set())}>None</button>
+                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set(preview.entries.map(e => e.key)))}>{t("All")}</button>
+                <button type="button" className="hover:text-white" onClick={() => setSelected(new Set())}>{t("None")}</button>
               </span>
             </div>
             <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-card/60 divide-y divide-border/60">
@@ -149,6 +152,7 @@ function LinkImport({ onDone, initialUrl = '' }) {
 // The songs a file or list import couldn't match become ghost songs; this
 // downloads them from the playback sources once the playlist is made.
 function DownloadGhostsOption({ count, checked, onChange }) {
+  const { t } = useTranslation()
   if (!count) return null
   return (
     <label className="flex cursor-pointer items-start gap-2.5 text-xs text-muted">
@@ -159,6 +163,7 @@ function DownloadGhostsOption({ count, checked, onChange }) {
 }
 
 function FileImport({ onDone }) {
+  const { t } = useTranslation()
   const user = useAppStore(s => s.user)
   const [platform, setPlatform] = useState('spotify')
   const [downloadGhosts, setDownloadGhosts] = useState(false)
@@ -194,8 +199,8 @@ function FileImport({ onDone }) {
   }
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!files.length) { setError('Choose one or more CSV, JSON, or M3U files'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!files.length) { setError(t("Choose one or more CSV, JSON, or M3U files")); return }
     setImporting(true)
     setError('')
     const result = await api.importExternalPlaylist({
@@ -212,22 +217,22 @@ function FileImport({ onDone }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className={label}>Exported from</label>
+        <label className={label}>{t("Exported from")}</label>
         <select value={platform} onChange={e => setPlatform(e.target.value)} className={input}>
           {FILE_PLATFORMS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
       </div>
       <div>
-        <label className={label}>Files</label>
+        <label className={label}>{t("Files")}</label>
         <button type="button" onClick={choose} className={`${secondary} w-full flex items-center justify-center gap-2`}>
           <FileUp size={14} /> {files.length ? (files.length === 1 ? files[0].fileName : `${files.length} files selected`) : 'Choose CSV, JSON, M3U or TXT files'}
         </button>
-        <p className="mt-1.5 text-[11px] text-muted">Songs in your library are matched and their missing details filled in from the file. The rest become ghost songs.</p>
+        <p className="mt-1.5 text-[11px] text-muted">{t("Songs in your library are matched and their missing details filled in from the file. The rest become ghost songs.")}</p>
       </div>
       {preview && (
         <>
           <div>
-            <label className={label}>Playlist name</label>
+            <label className={label}>{t("Playlist name")}</label>
             <input value={name} onChange={e => setName(e.target.value)} className={input} />
           </div>
           <p className="text-xs text-muted">{plural(preview.total, 'track')} found · {preview.matched} already in your library · {preview.ghostable} will be ghost songs</p>
@@ -248,6 +253,7 @@ function FileImport({ onDone }) {
 // a file (fileType 'txt'), so songs not in the library become ghost songs
 // instead of being dropped.
 function ListImport({ onDone }) {
+  const { t } = useTranslation()
   const user = useAppStore(s => s.user)
   const [name, setName] = useState('')
   const [list, setList] = useState('')
@@ -275,8 +281,8 @@ function ListImport({ onDone }) {
   }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter a playlist name'); return }
-    if (!preview?.total) { setError('Add at least one song'); return }
+    if (!name.trim()) { setError(t("Please enter a playlist name")); return }
+    if (!preview?.total) { setError(t("Add at least one song")); return }
     setImporting(true)
     setError('')
     const result = await api.importExternalPlaylist({ name: name.trim(), userId: user?.id || 'guest', files: files(), sourcePlatform: 'generic' }).catch(e => ({ error: e.message }))
@@ -288,15 +294,15 @@ function ListImport({ onDone }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className={label}>Playlist name</label>
-        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="My playlist" className={input} />
+        <label className={label}>{t("Playlist name")}</label>
+        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder={t("My playlist")} className={input} />
       </div>
       <div>
-        <label className={label}>Songs, one per line</label>
+        <label className={label}>{t("Songs, one per line")}</label>
         <textarea value={list} onChange={e => setList(e.target.value)} rows={8}
           placeholder={'The Beatles - Hey Jude\nPink Floyd - Comfortably Numb\nStairway to Heaven'}
           className={`${input} resize-none font-mono text-xs leading-relaxed`} />
-        <p className="mt-1.5 text-[11px] text-muted">"Artist - Title", or just the title. Songs in your library are matched; the rest become ghost songs you can stream or download later.</p>
+        <p className="mt-1.5 text-[11px] text-muted">{t("\"Artist - Title\", or just the title. Songs in your library are matched; the rest become ghost songs you can stream or download later.")}</p>
       </div>
       {(preview || reading) && (
         <p className="flex items-center gap-2 text-xs text-muted">
@@ -327,6 +333,7 @@ async function downloadPlaylistGhosts(playlistId) {
 }
 
 export default function ImportPlaylistModal() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState('link')
   const [session, setSession] = useState(0)
@@ -351,7 +358,7 @@ export default function ImportPlaylistModal() {
   }
 
   return (
-    <Modal open={open} onClose={() => setOpen(false)} title="Import playlist" width="max-w-lg">
+    <Modal open={open} onClose={() => setOpen(false)} title={t("Import playlist")} width="max-w-lg">
       <div className="space-y-4">
         <div className="flex gap-2">
           <Tab active={source === 'link'} icon={Link2} onClick={() => setSource('link')}>From a link</Tab>

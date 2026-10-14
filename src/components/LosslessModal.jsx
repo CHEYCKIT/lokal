@@ -5,6 +5,7 @@
 // of your addon sources for a higher-quality copy that replaces the file.
 // Opened from anywhere with openLossless(track) (src/quality.js).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Search, Activity, ShoppingBag, Gift, Loader2, BookOpen, Blocks, Download, Check } from 'lucide-react'
@@ -18,6 +19,7 @@ import AddonSetupNotice from './AddonSetupNotice'
 const fmtTime = s => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`
 
 function LinkRow({ link }) {
+  const { t } = useTranslation()
   const Icon = link.kind === 'free' ? Gift : link.kind === 'search' ? Search : link.kind === 'info' ? BookOpen : ShoppingBag
   return (
     <button
@@ -38,6 +40,7 @@ function LinkRow({ link }) {
 }
 
 export default function LosslessModal() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const [track, setTrack] = useState(null)
   const [links, setLinks] = useState(null) // null: loading
@@ -113,7 +116,7 @@ export default function LosslessModal() {
   }
 
   return (
-    <Modal open={!!track} onClose={close} title="Get it in lossless" width="max-w-lg">
+    <Modal open={!!track} onClose={close} title={t("Get it in lossless")} width="max-w-lg">
       <div className="space-y-5 overflow-y-auto px-5 pb-5 pt-4 sm:px-6">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
@@ -140,10 +143,10 @@ export default function LosslessModal() {
         )}
 
         <div className="space-y-2">
-          <p className="text-[11px] font-display uppercase tracking-widest text-muted">Buy in lossless</p>
+          <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Buy in lossless")}</p>
           {links?.exact?.map(link => <LinkRow key={link.url} link={link} />)}
           {storeSearches(track).map(link => <LinkRow key={link.url} link={link} />)}
-          {!links && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> Looking for the exact release on MusicBrainz (a few seconds)…</p>}
+          {!links && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> {t("Looking for the exact release on MusicBrainz (a few seconds)…")}</p>}
           {links && !links.exact?.length && (
             <p className="text-[11px] text-muted">
               {links.identified ? 'MusicBrainz knows this recording but lists no lossless store for it.' : "MusicBrainz doesn't list a store for this song."}
@@ -152,10 +155,10 @@ export default function LosslessModal() {
         </div>
 
         <div className="space-y-2">
-          <p className="text-[11px] font-display uppercase tracking-widest text-muted">From your addon sources</p>
+          <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("From your addon sources")}</p>
           {setup.map(source => <AddonSetupNotice key={source.id} source={source} />)}
-          {online === null && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> Searching your addon sources…</p>}
-          {online?.length === 0 && !setup.length && <p className="text-[11px] text-muted">No addon sources installed. Add one in Settings → Addons to download a lossless copy from it.</p>}
+          {online === null && <p className="flex items-center gap-2 text-[11px] text-muted"><Loader2 size={11} className="animate-spin" /> {t("Searching your addon sources…")}</p>}
+          {online?.length === 0 && !setup.length && <p className="text-[11px] text-muted">{t("No addon sources installed. Add one in Settings → Addons to download a lossless copy from it.")}</p>}
           {online?.map(({ source, items, error }) => (
             <div key={source.id} className="space-y-1.5">
               {items.map(item => {
@@ -168,8 +171,8 @@ export default function LosslessModal() {
                       <span className="block truncate text-[11px] text-muted">{[source.label, item.album, item.quality, item.duration ? fmtTime(item.duration) : ''].filter(Boolean).join(' · ')}</span>
                     </span>
                     {replaced === key
-                      ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />Downloading</span>
-                      : <button onClick={() => replaceWith(item, source)} disabled={!!replacing || !!replaced} title="Download this copy; it replaces your file, keeping its playlists, likes and plays"
+                      ? <span className="inline-flex flex-shrink-0 items-center gap-1 text-[11px] text-accent"><Check size={12} />{t("Downloading")}</span>
+                      : <button onClick={() => replaceWith(item, source)} disabled={!!replacing || !!replaced} title={t("Download this copy; it replaces your file, keeping its playlists, likes and plays")}
                           className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] text-text hover:border-accent/40 disabled:opacity-40">
                           {replacing === key ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}Replace
                         </button>}
@@ -182,13 +185,13 @@ export default function LosslessModal() {
         </div>
 
         <div className="space-y-2">
-          <p className="text-[11px] font-display uppercase tracking-widest text-muted">Soulseek</p>
+          <p className="text-[11px] font-display uppercase tracking-widest text-muted">{t("Soulseek")}</p>
           <button onClick={findOnSoulseek}
             className="w-full flex items-center gap-3 rounded-xl border border-border bg-card/60 px-3 py-2 text-left transition-colors hover:border-accent/40 hover:bg-card">
             <Search size={14} className="text-accent" />
             <span className="min-w-0 flex-1">
-              <span className="block text-sm text-white">Find a lossless file on Soulseek…</span>
-              <span className="block text-[11px] text-muted">The file you pick replaces this one, keeping its playlists, likes and plays.</span>
+              <span className="block text-sm text-white">{t("Find a lossless file on Soulseek…")}</span>
+              <span className="block text-[11px] text-muted">{t("The file you pick replaces this one, keeping its playlists, likes and plays.")}</span>
             </span>
           </button>
         </div>

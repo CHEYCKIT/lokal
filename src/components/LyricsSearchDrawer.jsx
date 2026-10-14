@@ -6,6 +6,7 @@
 // variant="side": a 20rem drawer from the right edge (fullscreen views)
 // variant="fill": covers the whole panel (the narrow sidebar)
 
+import { useTranslation } from '../i18n'
 import React, { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Search } from 'lucide-react'
@@ -16,6 +17,7 @@ function formatDuration(d) {
 }
 
 export default function LyricsSearchDrawer({ track, session: outerSession, onSessionChange: outerChange, onClose, onSelect, variant = 'side' }) {
+  const { t } = useTranslation()
   const [innerSession, setInnerSession] = useState(() => ({ title: track?.title || '', artist: track?.artist || '', results: [], loading: false, error: null }))
   const session = outerSession || innerSession
   const onSessionChange = outerChange || ((patch) => setInnerSession(s => ({ ...s, ...patch })))
@@ -67,10 +69,10 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
         : 'absolute top-0 right-0 h-full w-80 bg-black/95 backdrop-blur-xl border-l border-white/10 z-20 flex flex-col'}
     >
       <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <button onClick={onClose} className="p-1 text-white/40 hover:text-white transition-colors" title="Close">
+        <button onClick={onClose} className="p-1 text-white/40 hover:text-white transition-colors" title={t("Close")}>
           <X size={18} />
         </button>
-        <h3 className="text-sm font-medium text-white">Search Lyrics</h3>
+        <h3 className="text-sm font-medium text-white">{t("Search Lyrics")}</h3>
         <div className="w-5" />
       </div>
 
@@ -79,22 +81,22 @@ export default function LyricsSearchDrawer({ track, session: outerSession, onSes
         className="p-4 space-y-3 border-b border-white/10"
       >
         <div>
-          <label className="text-xs text-white/40 uppercase tracking-wider">Title</label>
+          <label className="text-xs text-white/40 uppercase tracking-wider">{t("Title")}</label>
           <input
             type="text"
             value={title}
             onChange={(e) => onSessionChange({ title: e.target.value })}
-            placeholder="Track title"
+            placeholder={t("Track title")}
             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent/50"
           />
         </div>
         <div>
-          <label className="text-xs text-white/40 uppercase tracking-wider">Artist</label>
+          <label className="text-xs text-white/40 uppercase tracking-wider">{t("Artist")}</label>
           <input
             type="text"
             value={artist}
             onChange={(e) => onSessionChange({ artist: e.target.value })}
-            placeholder="Artist name"
+            placeholder={t("Artist name")}
             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent/50"
           />
         </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Download, RotateCcw, Search, Disc3, Expand, Minimize } from 'lucide-react'
@@ -24,6 +25,7 @@ export const FULLSCREEN_IN = { duration: 0.34, delay: 0.1, ease: [0.22, 1, 0.36,
 // seconds without the mouse moving, this header and the lyrics' buttons fade
 // out and the cursor hides, as in the player.
 export default function LyricsFullscreen({ idle = false, onChromeHover = null, screenFull = false, onToggleScreen = null }) {
+  const { t } = useTranslation()
   const { showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress } = usePlayerStore(useShallow(({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress }) => ({ showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView, currentTrack, progress })))
   const [refreshKey, setRefreshKey] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
@@ -139,35 +141,35 @@ export default function LyricsFullscreen({ idle = false, onChromeHover = null, s
                 // The player's big cover flies into this one (and back), and
                 // clicking it goes back to the player, like the Player button.
                 <button type="button" onClick={() => switchFullscreenView('player')}
-                  title="Switch to the full-screen player" aria-label="Back to the full-screen player"
+                  title={t("Switch to the full-screen player")} aria-label={t("Back to the full-screen player")}
                   className="flex-shrink-0 rounded-lg transition-transform hover:scale-105 active:scale-95">
                   <img data-fullscreen-thumb src={artSrc} alt=""
                     className="w-10 h-10 rounded-lg object-cover border border-white/10" />
                 </button>
               )}
               <div>
-                <p className="text-xs font-display text-white/30 uppercase tracking-widest">Lyrics</p>
+                <p className="text-xs font-display text-white/30 uppercase tracking-widest">{t("Lyrics")}</p>
                 {currentTrack && <p className="text-sm text-white/60 mt-0.5 truncate max-w-sm">{currentTrack.title} — {currentTrack.artist}</p>}
               </div>
             </div>
             <div className="flex items-center gap-2">
               {currentTrack && (
-                <button onClick={() => switchFullscreenView('player')} title="Switch to the full-screen player"
+                <button onClick={() => switchFullscreenView('player')} title={t("Switch to the full-screen player")}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                  <Disc3 size={12} /> Player
+                  <Disc3 size={12} /> {t("Player")}
                 </button>
               )}
               {currentTrack && (
                 <button onClick={() => setShowSearch(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                  <Search size={12} /> Search
+                  <Search size={12} /> {t("Search")}
                 </button>
               )}
               {api.isElectron && currentTrack && (
                 <>
                   <button onClick={importLyrics}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/30 rounded-lg transition-colors">
-                    <Download size={12} /> Import .lrc / .ttml
+                    <Download size={12} /> {t("Import .lrc / .ttml")}
                   </button>
                   <button onClick={() => { api.clearLyricsCache(currentTrack.id); setRefreshKey(k => k + 1) }}
                     className="p-1.5 text-white/30 hover:text-white transition-colors rounded-lg hover:bg-white/8">

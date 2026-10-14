@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, User, Lock, Sparkles } from 'lucide-react'
@@ -6,6 +7,7 @@ import { useAppStore } from '../store/player'
 import { api } from '../api'
 
 function Field({ label, type = 'text', value, onChange, placeholder, icon: Icon, rightSlot }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-display text-muted uppercase tracking-widest">{label}</label>
@@ -25,6 +27,7 @@ function Field({ label, type = 'text', value, onChange, placeholder, icon: Icon,
 }
 
 export default function AuthModal() {
+  const { t } = useTranslation()
   const { showAuthModal, authMode, closeAuth, setUser, openAuth } = useAppStore()
   const [form, setForm] = useState({ username: '', displayName: '', password: '' })
   const [showPass, setShowPass] = useState(false)
@@ -83,15 +86,15 @@ export default function AuthModal() {
             <p className="text-xs text-muted mt-1">{authMode === 'login' ? 'Sign in to your profile' : 'Set up your local profile'}</p>
           </div>
 
-          <Field label="Username" value={form.username} onChange={set('username')} placeholder="sipbuu" icon={User} />
+          <Field label={t("Username")} value={form.username} onChange={set('username')} placeholder={t("sipbuu")} icon={User} />
 
           {authMode === 'register' && (
-            <Field label="Display Name" value={form.displayName} onChange={set('displayName')} placeholder="Your name" />
+            <Field label={t("Display Name")} value={form.displayName} onChange={set('displayName')} placeholder={t("Your name")} />
           )}
 
           <Field
-            label="Password" type={showPass ? 'text' : 'password'}
-            value={form.password} onChange={set('password')} placeholder="••••••••" icon={Lock}
+            label={t("Password")} type={showPass ? 'text' : 'password'}
+            value={form.password} onChange={set('password')} placeholder={t("••••••••")} icon={Lock}
             rightSlot={
               <button type="button" onClick={() => setShowPass(v => !v)} className="text-muted hover:text-white transition-colors">
                 {showPass ? <EyeOff size={13} /> : <Eye size={13} />}
@@ -119,7 +122,7 @@ export default function AuthModal() {
               {authMode === 'login' ? 'Create one' : 'Sign in'}
             </button>
             .<br />
-            <span className="text-muted/70">Your account is stored locally and not sent anywhere.</span>
+            <span className="text-muted/70">{t("Your account is stored locally and not sent anywhere.")}</span>
           </p>
           
         </motion.form>

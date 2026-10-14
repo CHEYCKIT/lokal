@@ -4,6 +4,7 @@
 // Opened with openSmartPlaylistEditor() (src/smartPlaylists.js), for a new
 // smart playlist or to edit one.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkles, Plus, X, FolderOpen, Loader2 } from 'lucide-react'
@@ -22,6 +23,7 @@ function fmtLength(seconds) {
 }
 
 function RuleRow({ rule, genres, onChange, onRemove }) {
+  const { t } = useTranslation()
   const spec = SMART_FIELDS[rule.field]
   const set = (patch) => onChange({ ...rule, ...patch })
   const pickFolder = async () => {
@@ -30,41 +32,41 @@ function RuleRow({ rule, genres, onChange, onRemove }) {
   }
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <select aria-label="Field" value={rule.field} onChange={(e) => onChange(newRule(e.target.value))} className={`${field} w-32`}>
+      <select aria-label={t("Field")} value={rule.field} onChange={(e) => onChange(newRule(e.target.value))} className={`${field} w-32`}>
         {Object.entries(SMART_FIELDS).map(([id, f]) => <option key={id} value={id}>{f.label}</option>)}
       </select>
-      <select aria-label="Condition" value={rule.op} onChange={(e) => set({ op: e.target.value })} className={`${field} w-36`}>
+      <select aria-label={t("Condition")} value={rule.op} onChange={(e) => set({ op: e.target.value })} className={`${field} w-36`}>
         {spec.ops.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
       </select>
       {spec.input === 'select' && (
-        <select aria-label="Value" value={rule.value} onChange={(e) => set({ value: e.target.value })} className={`${field} min-w-0 flex-1`}>
+        <select aria-label={t("Value")} value={rule.value} onChange={(e) => set({ value: e.target.value })} className={`${field} min-w-0 flex-1`}>
           {spec.options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
       )}
       {(spec.input === 'text' || spec.input === 'genre') && (
-        <input aria-label="Value" value={rule.value} onChange={(e) => set({ value: e.target.value })}
+        <input aria-label={t("Value")} value={rule.value} onChange={(e) => set({ value: e.target.value })}
           list={spec.input === 'genre' ? 'smart-genres' : undefined}
           placeholder={spec.input === 'genre' ? (genres[0] || 'Jazz') : ''} className={`${field} min-w-0 flex-1`} />
       )}
       {(spec.input === 'number' || (spec.input === 'days' && rule.op !== 'never')) && (
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <input aria-label="Value" type="number" min="0" value={rule.value} onChange={(e) => set({ value: e.target.value })}
+          <input aria-label={t("Value")} type="number" min="0" value={rule.value} onChange={(e) => set({ value: e.target.value })}
             placeholder={spec.placeholder || '30'} className={`${field} w-24`} />
           <span className="text-xs text-muted">{spec.unit || spec.suffix?.[rule.op] || ''}</span>
         </span>
       )}
       {spec.input === 'folder' && (
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <input aria-label="Folder" value={rule.value} onChange={(e) => set({ value: e.target.value })}
+          <input aria-label={t("Folder")} value={rule.value} onChange={(e) => set({ value: e.target.value })}
             placeholder={api.isElectron ? 'Choose a folder…' : '/music/Live'} className={`${field} min-w-0 flex-1`} />
           {api.isElectron && (
-            <button onClick={pickFolder} title="Choose a folder" aria-label="Choose a folder"
+            <button onClick={pickFolder} title={t("Choose a folder")} aria-label={t("Choose a folder")}
               className="rounded-lg border border-border p-1.5 text-muted hover:text-white"><FolderOpen size={13} /></button>
           )}
         </span>
       )}
       {(spec.input === 'none' || (spec.input === 'days' && rule.op === 'never')) && <span className="flex-1" />}
-      <button onClick={onRemove} title="Remove this rule" aria-label="Remove this rule" className="rounded p-1 text-muted hover:bg-card hover:text-white">
+      <button onClick={onRemove} title={t("Remove this rule")} aria-label={t("Remove this rule")} className="rounded p-1 text-muted hover:bg-card hover:text-white">
         <X size={13} />
       </button>
     </div>
@@ -72,6 +74,7 @@ function RuleRow({ rule, genres, onChange, onRemove }) {
 }
 
 export default function SmartPlaylistModal() {
+  const { t } = useTranslation()
   const nav = useNavigate()
   const user = useAppStore(s => s.user)
   const [open, setOpen] = useState(false)
@@ -155,8 +158,8 @@ export default function SmartPlaylistModal() {
     <Modal open={open} onClose={close} title={editing ? 'Edit smart playlist' : 'New smart playlist'} width="max-w-2xl">
       <div className="space-y-5">
         <div>
-          <label htmlFor="smart-name" className="mb-1.5 block text-[11px] font-display uppercase tracking-widest text-muted">Name</label>
-          <input id="smart-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Jazz I haven't heard lately"
+          <label htmlFor="smart-name" className="mb-1.5 block text-[11px] font-display uppercase tracking-widest text-muted">{t("Name")}</label>
+          <input id="smart-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Jazz I haven't heard lately")}
             onKeyDown={(e) => { if (e.key === 'Enter') save() }}
             className="w-full rounded-xl border border-border bg-card px-3.5 py-2 text-sm text-white outline-none placeholder:text-subtle focus:border-accent/60" />
         </div>
@@ -164,9 +167,9 @@ export default function SmartPlaylistModal() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-muted">
             Songs that match
-            <select aria-label="Match" value={rules.match} onChange={(e) => setRules(r => ({ ...r, match: e.target.value }))} className={field}>
-              <option value="all">all</option>
-              <option value="any">any</option>
+            <select aria-label={t("Match")} value={rules.match} onChange={(e) => setRules(r => ({ ...r, match: e.target.value }))} className={field}>
+              <option value="all">{t("all")}</option>
+              <option value="any">{t("any")}</option>
             </select>
             of these rules
           </div>
@@ -183,14 +186,14 @@ export default function SmartPlaylistModal() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
           <label className="flex items-center gap-2">
             Order
-            <select aria-label="Order" value={rules.sort} onChange={(e) => setRules(r => ({ ...r, sort: e.target.value }))} className={field}>
+            <select aria-label={t("Order")} value={rules.sort} onChange={(e) => setRules(r => ({ ...r, sort: e.target.value }))} className={field}>
               {SMART_SORTS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={limitOn} onChange={(e) => { setLimitOn(e.target.checked); if (e.target.checked && !rules.limit) setRules(r => ({ ...r, limit: 50 })) }} className="accent-accent" />
             Only the first
-            <input aria-label="Limit" type="number" min="1" value={rules.limit || ''} disabled={!limitOn}
+            <input aria-label={t("Limit")} type="number" min="1" value={rules.limit || ''} disabled={!limitOn}
               onChange={(e) => setRules(r => ({ ...r, limit: e.target.value }))} className={`${field} w-20 disabled:opacity-40`} />
             songs
           </label>
@@ -200,11 +203,11 @@ export default function SmartPlaylistModal() {
           <p className="flex min-w-0 items-center gap-2 text-xs text-muted">
             <Sparkles size={13} className="flex-shrink-0 text-accent" />
             {preview?.error ? <span className="text-red-400">{preview.error}</span>
-              : preview?.count === undefined ? <span className="flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Counting…</span>
+              : preview?.count === undefined ? <span className="flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> {t("Counting…")}</span>
                 : <span className={preview.loading ? 'opacity-60' : ''}>{plural(preview.count, 'song')}{preview.count ? ` · ${fmtLength(preview.duration)}` : ''} · updates as your library changes</span>}
           </p>
           <div className="flex flex-shrink-0 gap-2">
-            <button onClick={close} className="rounded-xl border border-border bg-card px-4 py-2 text-sm text-muted hover:text-white">Cancel</button>
+            <button onClick={close} className="rounded-xl border border-border bg-card px-4 py-2 text-sm text-muted hover:text-white">{t("Cancel")}</button>
             <button onClick={save} disabled={!name.trim() || saving}
               className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-base hover:bg-accent-dim disabled:opacity-40">
               {editing ? 'Save' : 'Create'}

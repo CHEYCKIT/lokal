@@ -226,7 +226,7 @@ export default function PlayerBar() {
                     </span>
                   )}
                 </div>
-              ) : <p className="text-xs text-muted">No track playing</p>}
+              ) : <p className="text-xs text-muted">{t("No track playing")}</p>}
               {quality && (
                 // The Audio Quality page's pill (same colours), what it means on hover.
                 <button onClick={() => nav('/quality', { state: { tier: qualityTier } })}

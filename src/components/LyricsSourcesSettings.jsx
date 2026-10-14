@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useRef, useState } from 'react'
 import { GripVertical, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react'
 import { api } from '../api'
@@ -11,6 +12,7 @@ import { api } from '../api'
 //                              for a syllable-synced one
 
 export default function LyricsSourcesSettings({ onPersist } = {}) {
+  const { t } = useTranslation()
   const [providers, setProviders] = useState([])
   const [order, setOrder] = useState([])
   const [enabled, setEnabled] = useState([])
@@ -90,8 +92,8 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
   return (
     <div className="py-3">
       <div className="flex items-baseline justify-between gap-4 mb-1">
-        <p className="text-sm text-white">Lyrics sources</p>
-        <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-accent' : 'opacity-0'}`}>Saved</span>
+        <p className="text-sm text-white">{t("Lyrics sources")}</p>
+        <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-accent' : 'opacity-0'}`}>{t("Saved")}</span>
       </div>
       <p className="text-xs text-muted mb-3">
         Sources are tried in this order. Drag to reorder them. The first source with lyrics wins unless syllable lyrics are prioritized.
@@ -115,7 +117,7 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
               <div className="flex-1 min-w-0">
                 <p className={`text-sm truncate ${on ? 'text-white' : 'text-muted'}`}>
                   {p.label}
-                  {p.wordSynced && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent/70">Syllable</span>}
+                  {p.wordSynced && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent/70">{t("Syllable")}</span>}
                 </p>
                 <p className="text-xs text-muted truncate">{p.detail}</p>
               </div>
@@ -141,8 +143,8 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
 
       <div className="flex items-center justify-between gap-4 mt-4">
         <div>
-          <p className="text-sm text-white">Prioritize syllable lyrics</p>
-          <p className="text-xs text-muted">Keep searching past a line-synced match for word-by-word lyrics</p>
+          <p className="text-sm text-white">{t("Prioritize syllable lyrics")}</p>
+          <p className="text-xs text-muted">{t("Keep searching past a line-synced match for word-by-word lyrics")}</p>
         </div>
         <button
           onClick={() => { const v = !prioritize; setPrioritize(v); persist({ lyrics_prioritize_syllable: v ? '1' : '0' }) }}
@@ -154,15 +156,15 @@ export default function LyricsSourcesSettings({ onPersist } = {}) {
 
       <div className="mt-5 space-y-2">
         <div>
-          <p className="text-sm text-white">Spicy Lyrics secret key <span className="text-muted">(optional)</span></p>
-          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>. It stays in Lokal's backend; a Spotify account isn't required.</p>
+          <p className="text-sm text-white">Spicy Lyrics secret key <span className="text-muted">{t("(optional)")}</span></p>
+          <p className="text-xs text-muted">Create a secret key at <a href="https://developers.spicylyrics.org/dashboard/applications" target="_blank" rel="noreferrer" className="text-accent hover:underline">developers.spicylyrics.org</a>{t(". It stays in Lokal's backend; a Spotify account isn't required.")}</p>
         </div>
         <input
           type="password"
           value={spicyKey}
           onChange={event => setSpicyKey(event.target.value)}
           onBlur={() => persist({ spicylyrics_api_key: spicyKey.trim() })}
-          placeholder="SpicyLyrics API key"
+          placeholder={t("SpicyLyrics API key")}
           autoComplete="off"
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
         />

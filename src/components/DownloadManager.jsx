@@ -7,6 +7,7 @@
 // Settings button next to it, nearer the edge, stays in reach. Downloads
 // start from Search.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -27,6 +28,7 @@ import { useDiscoveryArtists, loadDiscoveryArtists } from '../discoveryArtists'
 // ------------------------------------------------------------------ ring
 
 export function ProgressRing({ value = 0, size = 18, stroke = 2.25, settled = false, failed = false }) {
+  const { t } = useTranslation()
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
   const pct = Math.max(0, Math.min(100, value))
@@ -50,6 +52,7 @@ export function ProgressRing({ value = 0, size = 18, stroke = 2.25, settled = fa
  * its progress ring with how many are left (a check or "!" once it's over).
  */
 export function DownloadsButton() {
+  const { t } = useTranslation()
   const jobs = useDownloads(s => s.jobs)
   const panelOpen = useDownloads(s => s.panelOpen)
   const togglePanel = useDownloads(s => s.togglePanel)
@@ -98,6 +101,7 @@ function statusText(job) {
 }
 
 function Artwork({ job, size = 40 }) {
+  const { t } = useTranslation()
   const [broken, setBroken] = useState(false)
   const Icon = job.kind === 'music-video' ? Clapperboard : job.kind === 'playlist' ? Library : Disc3
   const width = job.kind === 'music-video' ? Math.round(size * 16 / 9) : size
@@ -116,6 +120,7 @@ function Artwork({ job, size = 40 }) {
 }
 
 export function DownloadRow({ job, detailed = false }) {
+  const { t } = useTranslation()
   const { cancel, retry, remove } = useDownloads.getState()
   const [open, setOpen] = useState(false)
   const active = isActive(job)
@@ -150,15 +155,15 @@ export function DownloadRow({ job, detailed = false }) {
               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Info size={13} /></button>
           )}
           {canRetry && (
-            <button onClick={() => retry(job.id)} title="Retry" className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><RotateCcw size={13} /></button>
+            <button onClick={() => retry(job.id)} title={t("Retry")} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><RotateCcw size={13} /></button>
           )}
           {active ? (
-            <button onClick={() => cancel(job.id)} title="Cancel" className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Square size={11} fill="currentColor" /></button>
+            <button onClick={() => cancel(job.id)} title={t("Cancel")} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white"><Square size={11} fill="currentColor" /></button>
           ) : (
-            <button onClick={() => remove(job.id)} title="Remove from list" className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white"><X size={13} /></button>
+            <button onClick={() => remove(job.id)} title={t("Remove from list")} className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white"><X size={13} /></button>
           )}
           {detailed && (files.length > 0 || job.output) && (
-            <button onClick={() => setOpen(o => !o)} title="Details" className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white">
+            <button onClick={() => setOpen(o => !o)} title={t("Details")} className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-white">
               <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
           )}
@@ -192,7 +197,7 @@ export function DownloadRow({ job, detailed = false }) {
           )}
           {job.output && (
             <details>
-              <summary className="cursor-pointer text-xs text-muted">Log</summary>
+              <summary className="cursor-pointer text-xs text-muted">{t("Log")}</summary>
               <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-black/20 p-2 text-[11px] text-muted">{job.output}</pre>
             </details>
           )}
@@ -203,6 +208,7 @@ export function DownloadRow({ job, detailed = false }) {
 }
 
 export function DownloadList({ jobs, detailed = false, empty = null }) {
+  const { t } = useTranslation()
   if (!jobs.length) return empty
   return (
     <div className={detailed ? 'space-y-2' : 'space-y-0.5'}>
@@ -215,6 +221,7 @@ export function DownloadList({ jobs, detailed = false, empty = null }) {
 
 /** The playlists downloaded so far: download again (for what's new) or remove. */
 function DownloadedPlaylists() {
+  const { t } = useTranslation()
   const jobs = useDownloads(s => s.jobs)
   const [list, setList] = useState(() => peekCache('dl:playlists') || [])
   const [loaded, setLoaded] = useState(() => peekCache('dl:playlists') !== undefined)
@@ -270,8 +277,8 @@ function DownloadedPlaylists() {
             </div>
             {confirming === playlist.id ? (
               <div className="flex flex-shrink-0 items-center gap-1">
-                <button onClick={() => remove(playlist.id)} className="rounded-lg bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25">Remove</button>
-                <button onClick={() => setConfirming(null)} className="rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:text-white">Keep</button>
+                <button onClick={() => remove(playlist.id)} className="rounded-lg bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25">{t("Remove")}</button>
+                <button onClick={() => setConfirming(null)} className="rounded-lg px-2 py-1 text-[11px] text-muted transition-colors hover:text-white">{t("Keep")}</button>
               </div>
             ) : (
               <div className="flex flex-shrink-0 items-center gap-1">
@@ -281,7 +288,7 @@ function DownloadedPlaylists() {
                   className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
                   <RotateCcw size={13} className={downloading ? 'animate-spin' : ''} />
                 </button>
-                <button onClick={() => setConfirming(playlist.id)} title="Remove from this list" aria-label={`Remove ${title}`}
+                <button onClick={() => setConfirming(playlist.id)} title={t("Remove from this list")} aria-label={`Remove ${title}`}
                   className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-white/10 hover:text-red-300">
                   <Trash2 size={13} />
                 </button>
@@ -296,6 +303,7 @@ function DownloadedPlaylists() {
 
 /** A job running outside the download queue: its progress, or how it last ended, and a button to run it. */
 function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onStop, onOpen, onRun, runLabel = 'Run', runDisabled = false, runTitle }) {
+  const { t } = useTranslation()
   const [starting, setStarting] = useState(false)
   const run = async () => {
     if (starting) return
@@ -320,7 +328,7 @@ function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onSt
         ) : <p className="mt-0.5 truncate text-[11px] text-muted" title={detail}>{detail || 'Not running'}</p>}
       </button>
       {running && onStop && (
-        <button onClick={onStop} title="Stop" aria-label={`Stop ${label.toLowerCase()}`}
+        <button onClick={onStop} title={t("Stop")} aria-label={`Stop ${label.toLowerCase()}`}
           className="flex-shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white">
           <Square size={12} />
         </button>
@@ -370,6 +378,7 @@ function useArtistRefreshStatus(enabled) {
 
 /** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
 function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
+  const { t } = useTranslation()
   const releases = useReleaseCheck(s => s.checking)
   const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
   const stopReleases = useReleaseCheck(s => s.stop)
@@ -402,32 +411,32 @@ function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
   return (
     <div className="space-y-3">
       <section>
-        <p className="px-2 pb-1 pt-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">Library jobs</p>
+        <p className="px-2 pb-1 pt-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">{t("Library jobs")}</p>
         <div className="space-y-0.5">
-          <TaskRow icon={CalendarDays} label="Artist releases" running={!!releases} done={releases?.done} total={releases?.total}
+          <TaskRow icon={CalendarDays} label={t("Artist releases")} running={!!releases} done={releases?.done} total={releases?.total}
             detail={releases ? 'Checking for new releases' : releasesCheckedAt ? `Checked ${ago(releasesCheckedAt)}` : 'Not checked yet'}
             onStop={stopReleases} onOpen={() => onNavigate('/home/releases')}
             onRun={checkReleases} runLabel="Check" runDisabled={!followed.size} runTitle={followed.size ? `Check ${plural(followed.size, 'followed artist')} for new releases` : 'Follow artists first (Home → Releases)'} />
-          <TaskRow icon={UserRound} label="Artist info" running={!!artists?.running} done={artists?.done} total={artists?.total}
+          <TaskRow icon={UserRound} label={t("Artist info")} running={!!artists?.running} done={artists?.done} total={artists?.total}
             detail={artistsDetail} onStop={cancelArtists} onOpen={() => onNavigate('/artists')}
             onRun={startArtists} runLabel="Refresh" runTitle="Refresh every artist's bio and picture" />
           {api.isElectron && (
-            <TaskRow icon={ScanSearch} label="Music videos" running={!!videos?.running} done={videos?.done} total={videos?.total}
+            <TaskRow icon={ScanSearch} label={t("Music videos")} running={!!videos?.running} done={videos?.done} total={videos?.total}
               detail={videosDetail} onStop={cancelVideoIndex} onOpen={() => onNavigate('/videos')}
               onRun={startVideoIndex} runLabel="Find" runTitle="Find the music video of every library song" />
           )}
           {api.isElectron && (
-            <TaskRow icon={Mic2} label="Lyrics" running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
+            <TaskRow icon={Mic2} label={t("Lyrics")} running={!!lyrics?.running} done={lyrics?.done} total={lyrics?.total}
               detail={lyricsDetail} onStop={cancelLyricsIndex} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
               onRun={startLyricsIndex} runLabel="Index" runTitle="Fetch and keep the lyrics of every library song" />
           )}
-          <TaskRow icon={Tags} label="Genres" running={!!genres?.running} done={genres?.done} total={genres?.total}
+          <TaskRow icon={Tags} label={t("Genres")} running={!!genres?.running} done={genres?.done} total={genres?.total}
             detail={genresDetail} onOpen={() => onNavigate('/settings', { state: { category: 'library' } })}
             onRun={startGenres} runLabel="Fill in" runTitle="Look up a genre for every song that has none" />
         </div>
       </section>
       <section>
-        <p className="px-2 pb-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">Downloaded playlists</p>
+        <p className="px-2 pb-1 text-[10px] font-display uppercase tracking-[0.2em] text-subtle">{t("Downloaded playlists")}</p>
         <DownloadedPlaylists />
       </section>
     </div>
@@ -439,6 +448,7 @@ const OPENERS = '[data-downloads-toggle]'
 const PANEL_WIDTH = 380
 
 export function DownloadManagerPanel() {
+  const { t } = useTranslation()
   const panelOpen = useDownloads(s => s.panelOpen)
   const jobs = useDownloads(s => s.jobs)
   const { closePanel, cancelAll, clearFinished } = useDownloads.getState()
@@ -502,7 +512,7 @@ export function DownloadManagerPanel() {
         <motion.div
           ref={panelRef}
           role="dialog"
-          aria-label="Downloads"
+          aria-label={t("Downloads")}
           initial={{ opacity: 0, y: -6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.98 }}
@@ -511,7 +521,7 @@ export function DownloadManagerPanel() {
           className="fixed z-[80] flex flex-col overflow-hidden rounded-2xl border border-border shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         >
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-            <div role="tablist" aria-label="Downloads" className="flex min-w-0 flex-1 items-center gap-1">
+            <div role="tablist" aria-label={t("Downloads")} className="flex min-w-0 flex-1 items-center gap-1">
               {[['queue', 'Queue'], ['others', 'Others']].map(([id, label]) => (
                 <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                   className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
@@ -523,15 +533,15 @@ export function DownloadManagerPanel() {
               ))}
             </div>
             {tab === 'queue' && active.length > 0 && (
-              <button onClick={cancelAll} className="whitespace-nowrap text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">Cancel all</button>
+              <button onClick={cancelAll} className="whitespace-nowrap text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white">{t("Cancel all")}</button>
             )}
             {tab === 'queue' && finished.length > 0 && (
-              <button onClick={clearFinished} className="flex flex-shrink-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />Clear</button>
+              <button onClick={clearFinished} className="flex flex-shrink-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"><Trash2 size={11} />{t("Clear")}</button>
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {tab === 'queue'
-              ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">Nothing downloading.</p>} />
+              ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">{t("Nothing downloading.")}</p>} />
               : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={(path, options) => { closePanel(); nav(path, options) }} />}
           </div>
           <button

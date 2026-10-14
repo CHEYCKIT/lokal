@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Search, Play, Pause, Disc3, Loader2 } from 'lucide-react'
@@ -11,6 +12,7 @@ import { plural } from '../plural'
 const PAGE_SIZE = 40
 
 function AlbumCard({ album, onClick }) {
+  const { t } = useTranslation()
   const [imgLoaded, setImgLoaded] = useState(false)
   const artSrc = api.albumArtURL(album)
     : null
@@ -53,6 +55,7 @@ function AlbumCard({ album, onClick }) {
 }
 
 function AlbumDetail({ album, onClose }) {
+  const { t } = useTranslation()
   const [tracks, setTracks] = useState([])
   const [hoveredTrack, setHoveredTrack] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -76,7 +79,7 @@ function AlbumDetail({ album, onClose }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-4 p-6 border-b border-border flex-shrink-0 overflow-hidden">
-        <button onClick={onClose} className="text-muted hover:text-white transition-colors">← Back</button>
+        <button onClick={onClose} className="text-muted hover:text-white transition-colors">{t("← Back")}</button>
         <div className="w-16 h-16 rounded-xl overflow-hidden bg-card flex items-center justify-center flex-shrink-0">
           {api.albumArtURL(album)
             ? <img src={api.albumArtURL(album)} className="w-full h-full object-cover" />
@@ -100,7 +103,7 @@ function AlbumDetail({ album, onClose }) {
             <Loader2 size={24} className="text-muted animate-spin" />
           </div>
         ) : tracks.length === 0 ? (
-          <p className="text-center text-muted text-sm py-10">No tracks found for this album.</p>
+          <p className="text-center text-muted text-sm py-10">{t("No tracks found for this album.")}</p>
         ) : (
           tracks.map((t, i) => {
             const isCurrent = currentTrack?.id === t.id
@@ -141,6 +144,7 @@ function AlbumDetail({ album, onClose }) {
 }
 
 export default function AlbumsModal() {
+  const { t } = useTranslation()
   const { showAlbumsModal, closeAlbums, selectedAlbum } = useAppStore()
   const [albums, setAlbums] = useState([])
   const [displayedAlbums, setDisplayedAlbums] = useState([])
@@ -266,12 +270,12 @@ export default function AlbumsModal() {
             ) : (
               <>
                 <div className="flex items-center gap-4 p-5 border-b border-border flex-shrink-0">
-                  <h2 className="font-display text-base text-white uppercase tracking-widest flex-1">Albums</h2>
+                  <h2 className="font-display text-base text-white uppercase tracking-widest flex-1">{t("Albums")}</h2>
                   <div className="relative w-56">
                     <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                     <input
                       value={q} onChange={e => setQ(e.target.value)}
-                      placeholder="Search albums…"
+                      placeholder={t("Search albums…")}
                       className="w-full bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-accent/50 placeholder-muted"
                     />
                   </div>
@@ -306,12 +310,12 @@ export default function AlbumsModal() {
                           {loadingMore ? (
                             <Loader2 size={20} className="text-muted animate-spin" />
                           ) : (
-                            <p className="text-xs text-muted/50">Scroll for more</p>
+                            <p className="text-xs text-muted/50">{t("Scroll for more")}</p>
                           )}
                         </div>
                       )}
                       {!hasMore && !loadingMore && displayedAlbums.length > 0 && (
-                        <p className="text-center text-xs text-muted/50 mt-4 pb-4">All albums loaded</p>
+                        <p className="text-center text-xs text-muted/50 mt-4 pb-4">{t("All albums loaded")}</p>
                       )}
                     </>
                   )}

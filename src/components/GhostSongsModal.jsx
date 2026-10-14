@@ -4,6 +4,7 @@
 // finishing, a refresh) doesn't search again or blank what's shown; and each
 // song shows its download's progress.
 
+import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, AlertTriangle, Check, Download, Loader2, Search } from 'lucide-react'
 import Modal from './Modal'
@@ -25,15 +26,17 @@ function jobFor(jobs, ghostId) {
 }
 
 function JobChip({ job }) {
+  const { t } = useTranslation()
   if (!job) return null
-  if (job.status === 'queued') return <span className="inline-flex items-center gap-1 text-[10px] text-muted"><Loader2 size={10} className="animate-spin" />Queued</span>
+  if (job.status === 'queued') return <span className="inline-flex items-center gap-1 text-[10px] text-muted"><Loader2 size={10} className="animate-spin" />{t("Queued")}</span>
   if (isActive(job)) return <span className="inline-flex items-center gap-1 text-[10px] tabular-nums text-accent"><Loader2 size={10} className="animate-spin" />{Math.round(job.progress || 0)}%</span>
-  if (job.status === 'error') return <span className="inline-flex items-center gap-1 text-[10px] text-red" title={job.error || ''}><AlertTriangle size={10} />Failed</span>
+  if (job.status === 'error') return <span className="inline-flex items-center gap-1 text-[10px] text-red" title={job.error || ''}><AlertTriangle size={10} />{t("Failed")}</span>
   return null
 }
 
 // A fixed number of rows, so a short list is as tall as a full one.
 function ResultList({ loading, stale, items, empty, render }) {
+  const { t } = useTranslation()
   if (loading && !items.length) {
     return Array.from({ length: RESULT_ROWS }, (_, index) => (
       <div key={index} className="flex h-14 items-center gap-3 px-4">
@@ -46,6 +49,7 @@ function ResultList({ loading, stale, items, empty, render }) {
 }
 
 export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId, onChanged }) {
+  const { t } = useTranslation()
   const { confirmDuration, durationChoice, isCurrent } = useGhostDurationConfirmation(open)
   const { source, sourceChoice } = useGhostDownloadSources(open)
   const jobs = useDownloads(s => s.jobs)
@@ -120,7 +124,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
   }, [open, selectedKey, search])
 
   const assign = async (ghost, item) => {
-    setStatus('Assigning…')
+    setStatus(t("Assigning…"))
     try {
       const result = await api.resolveGhostTrack(ghost.id, item.id)
       if (result?.error) { setStatus('Assign failed: ' + result.error); return }
@@ -140,7 +144,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
       if (result?.cancelled) return
       if (result?.error) { setStatus('Download failed: ' + result.error); return }
       useDownloads.getState().load?.()
-      if (result?.alreadyInLibrary) { setStatus('Replaced with your library copy.'); onChanged?.() }
+      if (result?.alreadyInLibrary) { setStatus(t("Replaced with your library copy.")); onChanged?.() }
     } catch (e) { setStatus('Download failed: ' + e.message) }
     finally { setStartingId('') }
   }
@@ -166,14 +170,14 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
   const stale = loading && shown.local.length + shown.online.length > 0
 
   return (
-    <Modal open={open} onClose={onClose} title="Ghost Songs" width="max-w-5xl">
+    <Modal open={open} onClose={onClose} title={t("Ghost Songs")} width="max-w-5xl">
       {/* One height whatever the lists hold; the lists scroll inside it. */}
       <div className="grid h-[min(38rem,calc(100vh-11rem))] gap-4 md:grid-cols-[260px_1fr]">
         <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/40">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <p className="min-w-0 truncate whitespace-nowrap text-xs font-display uppercase tracking-[0.18em] text-muted">Unresolved · {ghostTracks.length}</p>
             <button type="button" onClick={downloadAll} disabled={downloadingAll || !ghostTracks.length}
-              title="Find and download every unresolved song" aria-label="Download all unresolved songs"
+              title={t("Find and download every unresolved song")} aria-label={t("Download all unresolved songs")}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/15 px-2.5 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25 disabled:cursor-wait disabled:opacity-50">
               {downloadingAll ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} {downloadingAll ? 'Finding…' : 'Download all'}
             </button>
@@ -193,7 +197,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
                 </button>
               )
             })}
-            {!ghostTracks.length && <p className="px-4 py-8 text-center text-sm text-muted">Every song is resolved.</p>}
+            {!ghostTracks.length && <p className="px-4 py-8 text-center text-sm text-muted">{t("Every song is resolved.")}</p>}
           </div>
         </div>
 
@@ -223,7 +227,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
                   ) : status ? (
                     <p className="truncate text-[11px] text-muted">{status}</p>
                   ) : (
-                    <p className="truncate text-[11px] text-muted">Assign a copy from your library, or download a match: it replaces this entry when it finishes.</p>
+                    <p className="truncate text-[11px] text-muted">{t("Assign a copy from your library, or download a match: it replaces this entry when it finishes.")}</p>
                   )}
                 </div>
               </div>
@@ -231,7 +235,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
               <div className="flex gap-2">
                 <input value={query} onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') search(selected, e.currentTarget.value) }}
-                  placeholder="Search manually for a better match"
+                  placeholder={t("Search manually for a better match")}
                   className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-white outline-none focus:border-accent/50" />
                 <button type="button" onClick={() => search(selected, query)}
                   className="flex items-center gap-2 rounded-xl border border-accent/25 bg-accent/15 px-3 py-2.5 text-sm text-accent transition-colors hover:bg-accent/25">
@@ -242,7 +246,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
               <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/30">
                   <div className="flex h-[3.25rem] items-center border-b border-border px-4">
-                    <p className="text-xs font-display uppercase tracking-[0.22em] text-muted">Nearest Local Matches</p>
+                    <p className="text-xs font-display uppercase tracking-[0.22em] text-muted">{t("Nearest Local Matches")}</p>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto">
                     <ResultList loading={loading} stale={stale} items={shown.local} empty="No close match in your library."
@@ -253,7 +257,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
                             <p className="truncate text-xs text-muted">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
                           </div>
                           <button type="button" onClick={() => assign(selected, item)}
-                            className="rounded-lg border border-accent/25 bg-accent/15 px-3 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25">Assign</button>
+                            className="rounded-lg border border-accent/25 bg-accent/15 px-3 py-1.5 text-xs text-accent transition-colors hover:bg-accent/25">{t("Assign")}</button>
                         </div>
                       )} />
                   </div>
@@ -261,7 +265,7 @@ export default function GhostSongsModal({ open, onClose, ghostTracks, playlistId
 
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/30">
                   <div className="flex h-[3.25rem] items-center gap-3 border-b border-border px-4">
-                    <p className="flex-shrink-0 text-xs font-display uppercase tracking-[0.22em] text-muted">Download</p>
+                    <p className="flex-shrink-0 text-xs font-display uppercase tracking-[0.22em] text-muted">{t("Download")}</p>
                     <div className="min-w-0 flex-1">{sourceChoice}</div>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto">

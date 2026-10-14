@@ -1,5 +1,6 @@
 // "Delete from library?" for one song, several, or whole releases.
 
+import { useTranslation } from '../i18n'
 import React, { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import Modal from './Modal'
@@ -14,6 +15,7 @@ import { plural } from '../plural'
  * @param onDone   called with the deleted ids once they're gone
  */
 export default function DeleteTracksDialog({ request, onClose, onDone }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const tracks = request?.tracks || []
   const deleteFiles = peekSettings()?.delete_files_from_disk === '1'
@@ -38,7 +40,7 @@ export default function DeleteTracksDialog({ request, onClose, onDone }) {
   }
 
   return (
-    <Modal open={!!request} onClose={busy ? () => {} : onClose} title="Delete from Library?" width="max-w-sm">
+    <Modal open={!!request} onClose={busy ? () => {} : onClose} title={t("Delete from Library?")} width="max-w-sm">
       <div className="space-y-4">
         <div className="flex gap-3">
           <div className="p-3 bg-red-500/10 rounded-full h-fit flex-shrink-0">
@@ -60,7 +62,7 @@ export default function DeleteTracksDialog({ request, onClose, onDone }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={onClose} disabled={busy} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={onClose} disabled={busy} className="flex-1 py-2.5 bg-card border border-border rounded-xl text-sm text-muted hover:text-white transition-colors disabled:opacity-50">{t("Cancel")}</button>
           <button onClick={confirm} disabled={busy || !tracks.length} autoFocus
             className="flex-1 py-2.5 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50">
             {busy ? 'Deleting…' : tracks.length > 1 ? `Delete ${tracks.length}` : 'Delete'}

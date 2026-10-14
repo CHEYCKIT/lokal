@@ -1,5 +1,6 @@
 // The share card dialog: the picture (src/shareCard.js), to copy or save.
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { Copy, Download, Check, Loader2 } from 'lucide-react'
 import Modal from './Modal'
@@ -8,6 +9,7 @@ import { renderShareCard } from '../shareCard'
 const safeName = (name) => String(name || 'lokal').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'lokal'
 
 export default function ShareCardModal() {
+  const { t } = useTranslation()
   const [spec, setSpec] = useState(null)
   const [card, setCard] = useState(null) // { url, blob } | { error }
   const [copied, setCopied] = useState(false)

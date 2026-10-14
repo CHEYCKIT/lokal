@@ -32,6 +32,7 @@ import { losslessMenuItem } from '../quality'
 const isPlaceholderGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
 
 function InfoRow({ label, value, onClick = null, title = null, fx = true }) {
+  const { t } = useTranslation()
   if (!value) return null
   return (
     <div className={`flex items-start gap-3 py-1.5 border-b last:border-0 ${fx ? 'border-white/10' : 'border-border/30'}`}>
@@ -430,19 +431,19 @@ export default function RightSidebar() {
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
                       <InfoRow
                         fx={fx}
-                        label="Album"
+                        label={t("Album")}
                         value={currentTrack.album}
                         title={currentTrack.album ? `Go to album: ${currentTrack.album}` : null}
                         onClick={currentTrack.album ? () => navigateToTrackAlbum(nav, currentTrack) : null}
                       />
-                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label="Alb. Artist" value={currentTrack.album_artist} />}
-                      <InfoRow fx={fx} label="Year" value={currentTrack.year} />
-                      <InfoRow fx={fx} label="Genre" value={genre} />
-                      <InfoRow fx={fx} label="Track #" value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
-                      <InfoRow fx={fx} label="Bitrate" value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
+                      {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
+                      <InfoRow fx={fx} label={t("Year")} value={currentTrack.year} />
+                      <InfoRow fx={fx} label={t("Genre")} value={genre} />
+                      <InfoRow fx={fx} label={t("Track #")} value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
+                      <InfoRow fx={fx} label={t("Bitrate")} value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
-                      {!currentTrack.bitrate && <InfoRow fx={fx} label="Quality" value={streamQualityLabel(currentTrack)} />}
-                      <InfoRow fx={fx} label="Plays" value={plays > 0 ? plays.toLocaleString() : null} />
+                      {!currentTrack.bitrate && <InfoRow fx={fx} label={t("Quality")} value={streamQualityLabel(currentTrack)} />}
+                      <InfoRow fx={fx} label={t("Plays")} value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
                   )}
                 </div>
@@ -469,7 +470,7 @@ export default function RightSidebar() {
                     {currentTrack ? (
                       <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-muted text-xs">No track playing</div>
+                      <div className="flex items-center justify-center h-full text-muted text-xs">{t("No track playing")}</div>
                     )}
                   </div>
                   <div className="p-3 border-t border-border flex-shrink-0">
