@@ -13,6 +13,7 @@ const genres = require('../online/genres')
 const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
 const { spelling } = require('../online/spelling')
+const { netFetch } = require('../online/netFetch')
 const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
 let accountSession
 
@@ -781,7 +782,12 @@ function registerStreamProtocol(protocol, net) {
       // waits forever, and songs stop playing until Lokal restarts.
       upstream = new AbortController()
       request.signal?.addEventListener?.('abort', () => upstream.abort(), { once: true })
-      const fetchImpl = (u, init) => net.fetch(u, init)
+      // net.fetch cannot return manual redirect responses (it rejects with
+      // "Redirect was cancelled"). Addons must be fetched one hop at a time so
+      // fetchChecked can validate every redirect target before requesting it.
+      const fetchImpl = sources.addons.keyOfProvider(provider)
+        ? (u, init) => netFetch(net, u, init)
+        : (u, init) => net.fetch(u, init)
       const range = request.headers.get('Range')
       logAddonStream(diagnostic, 'request', { method: request.method, range: range || null })
       const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
