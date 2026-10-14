@@ -4,6 +4,7 @@ import FollowArtistButton from './FollowArtistButton'
 
 /** The artists you unfollowed, kept out of Discovery: follow them again from here. */
 export default function UnfollowedArtists({ artists = [] }) {
+  const { t } = useTranslation()
   const hidden = useDiscoveryArtists(s => s.hidden)
   if (!hidden.size) return null
   const names = new Map(artists.map(artist => [discoveryArtistKey(artist.name), artist.name]))
