@@ -6,6 +6,7 @@
 // A playlist can also be saved as one of your playlists without downloading
 // (Import playlist, from a link, with this link filled in).
 
+import { useTranslation } from '../i18n'
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Disc3, Download, Library, Link2, ListMusic, ListPlus } from 'lucide-react'
@@ -44,6 +45,7 @@ function choicesFor(link) {
 }
 
 export default function LinkDownload({ link }) {
+  const { t } = useTranslation()
   const source = sourceOf(link)
   const kind = linkKind(link)
   const choices = choicesFor(link)
@@ -99,7 +101,7 @@ export default function LinkDownload({ link }) {
   const fromList = kind === 'both' ? info[listUrl]?.title : null
 
   return (
-    <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label="Download a link">
+    <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-3" aria-label={t("Download a link")}>
       <h2 className="text-xs font-display text-muted uppercase tracking-widest flex items-center gap-2">
         <Link2 size={12} /> Link
       </h2>
@@ -140,7 +142,7 @@ export default function LinkDownload({ link }) {
             {listUrl && (
               <button
                 onClick={saveAsPlaylist}
-                title="Add it to your playlists without downloading; songs you don't have stream"
+                title={t("Add it to your playlists without downloading; songs you don't have stream")}
                 className="flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2 text-xs font-semibold text-text transition-colors hover:border-accent/50"
               >
                 <ListPlus size={13} />
