@@ -1,9 +1,9 @@
 import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
 import { APP_LANGUAGES, useTranslation } from '../i18n'
-﻿import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useLayoutEffect, useState, useRef, createContext, useContext } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
-import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks } from 'lucide-react'
+import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks, Search } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
@@ -54,16 +54,27 @@ const TRANSLATION_LANGUAGES = [
   ['zh-CN', '中文（简体）'], ['zh-TW', '中文（繁體）'], ['sv', 'Svenska'], ['el', 'Ελληνικά'], ['he', 'עברית'], ['sw', 'Kiswahili'],
 ]
 
+// The search box in the header: while it has text, every category shows,
+// cut down to the rows (or whole sections, by title) that match it.
+const SettingsSearchContext = createContext({ query: '' })
+const searchText = (...parts) => parts.filter(part => typeof part === 'string').join(' ').toLowerCase()
+
 // Each section (heading + card) keeps a readable width and sits centred in
 // the page, so on a wide or full-screen window the cards don't stretch edge
 // to edge. The page header and category tabs above still span the width.
 function Section({ title, children }) {
   const { t } = useTranslation()
+  const { query } = useContext(SettingsSearchContext)
+  const titleMatches = !!query && searchText(title, t(title)).includes(query)
+  const filtering = !!query && !titleMatches
   return (
-    <div className="space-y-3 w-full max-w-2xl mx-auto">
-      <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t(title)}</h2>
-      <div className="bg-elevated border border-border rounded-xl p-5 space-y-5">{children}</div>
-    </div>
+    <SettingsSearchContext.Provider value={filtering ? { query } : { query: '' }}>
+      <div data-settings-match={titleMatches ? '' : undefined}
+        className={`space-y-3 w-full max-w-2xl mx-auto ${filtering ? '[&:not(:has([data-settings-match]))]:hidden' : ''}`}>
+        <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t(title)}</h2>
+        <div className={`bg-elevated border border-border rounded-xl p-5 space-y-5 ${filtering ? '[&>*:not([data-settings-match]):not(:has([data-settings-match]))]:hidden' : ''}`}>{children}</div>
+      </div>
+    </SettingsSearchContext.Provider>
   )
 }
 /** 1536 -> "1.5 KB" */
@@ -81,8 +92,10 @@ function fmtBytes(bytes) {
 // beside it would squeeze the description into a narrow column).
 function Row({ label, desc, children, stacked = false }) {
   const { t } = useTranslation()
+  const { query } = useContext(SettingsSearchContext)
+  const matches = !query || searchText(label, t(label), desc, t(desc)).includes(query)
   return (
-    <div className={stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'}>
+    <div data-settings-match={query && matches ? '' : undefined} className={`${stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'} ${matches ? '' : 'hidden'}`}>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{t(label)}</p>
         {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{t(desc)}</p>}
@@ -249,6 +262,13 @@ export default function Settings() {
   const [settingsLoaded, setSettingsLoaded] = useState(() => !!peekSettings())
   const touchedSettingsRef = useRef(new Set())
   const [settingsLoadError, setSettingsLoadError] = useState('')
+  const [settingsQuery, setSettingsQuery] = useState('')
+  const [noSettingsMatch, setNoSettingsMatch] = useState(false)
+  useEffect(() => {
+    if (!settingsQuery.trim()) { setNoSettingsMatch(false); return }
+    const timer = setTimeout(() => setNoSettingsMatch(!rootRef.current?.querySelector('[data-settings-match]')), 80)
+    return () => clearTimeout(timer)
+  }, [settingsQuery])
   // null | 'saving' | 'saved' | { error }
   const [saveState, setSaveState] = useState(null)
   useEffect(() => {
@@ -1059,7 +1079,8 @@ export default function Settings() {
     { label: 'Export as JSON', icon: <Download size={14} />, onClick: () => handleHistoryExport('json') },
     { label: 'Export as CSV', icon: <Download size={14} />, onClick: () => handleHistoryExport('csv') },
   ]
-  const inCategory = (key) => activeCategory === key
+  const searchQuery = settingsQuery.trim().toLowerCase()
+  const inCategory = (key) => !!searchQuery || activeCategory === key
   const lastfmConnected = Boolean(settings.lastfm_session_key && settings.lastfm_username)
   const usingDefaultDiscordId = settings.discord_use_default_app_id !== '0'
 
@@ -1070,7 +1091,14 @@ export default function Settings() {
           Section); the category buttons use the full width, centred. */}
       <div className="space-y-3 sticky top-0 z-10 bg-bg/80 backdrop-blur-sm py-2">
         <div className="w-full max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <h1 className="font-display text-lg uppercase tracking-widest text-white">{t("Settings")}</h1>
+          <h1 className="font-display text-lg uppercase tracking-widest text-white flex-shrink-0">{t("Settings")}</h1>
+          <label className="relative flex-1 min-w-0 max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input type="search" value={settingsQuery} onChange={e => setSettingsQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') setSettingsQuery('') }}
+              placeholder={t('Search settings')} aria-label={t('Search settings')}
+              className="w-full bg-card border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-muted focus:outline-none focus:border-accent/50" />
+          </label>
           <div className="flex items-center gap-3">
             {settingsLoadError && (
               <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {t("Couldn't load settings")} ({t(settingsLoadError)})</span>
@@ -1101,11 +1129,11 @@ export default function Settings() {
         <div className="flex flex-wrap justify-center gap-2">
           {SETTINGS_CATEGORIES.filter(item => item.key !== 'about' || api.isElectron).map((item) => {
             const Icon = item.icon
-            const active = activeCategory === item.key
+            const active = !searchQuery && activeCategory === item.key
             return (
               <button
                 key={item.key}
-                onClick={() => setActiveCategory(item.key)}
+                onClick={() => { setSettingsQuery(''); setActiveCategory(item.key) }}
                 className={`px-3 py-1.5 rounded-lg border text-xs font-display uppercase tracking-wider transition-colors flex items-center gap-1.5 ${
                   active ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white hover:border-accent/30'
                 }`}
@@ -1120,7 +1148,11 @@ export default function Settings() {
 
       {/* Switching category: the new one fades in once its data is in, not
           through "Loading…" / "No … yet" first. */}
-      <SectionSwap id={activeCategory} gated={['data', 'addons'].includes(activeCategory)} className="space-y-6">
+      {searchQuery && noSettingsMatch && (
+        <p className="text-sm text-muted text-center py-6">{t('No settings match your search.')}</p>
+      )}
+      <SettingsSearchContext.Provider value={{ query: searchQuery }}>
+      <SectionSwap id={searchQuery ? 'search' : activeCategory} gated={!searchQuery && ['data', 'addons'].includes(activeCategory)} className="space-y-6">
       <ReadyWhen ready={
 activeCategory === 'data' ? usersTried
           : activeCategory !== 'addons'
@@ -1169,6 +1201,13 @@ activeCategory === 'data' ? usersTried
                 {perfSettings.hardwareAcceleration ? t('On') : t('Off')}
               </button>
             </div>
+          </Row>
+          <Row label={t("Close to Tray")} desc={t("The close button hides Lokal in the system tray instead of quitting: its taskbar icon goes away and the tray icon brings it back. Quit from the tray icon's menu.")}>
+            <button
+              onClick={() => set('close_to_tray', settings.close_to_tray === '1' ? '0' : '1')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.close_to_tray === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+              {settings.close_to_tray === '1' ? t('On') : t('Off')}
+            </button>
           </Row>
         </Section>
       )}
@@ -1667,6 +1706,13 @@ activeCategory === 'data' ? usersTried
             {settings.discord_auto_connect === '1' ? t('On') : t('Off')}
           </button>
         </Row>
+        <Row label={t("Hide When Paused")} desc={t("Clear your Discord status while the music is paused.")}>
+          <button
+            onClick={() => set('discord_hide_paused', settings.discord_hide_paused === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_hide_paused === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.discord_hide_paused === '1' ? t('On') : t('Off')}
+          </button>
+        </Row>
       </Section>
       )}
 
@@ -2026,7 +2072,7 @@ activeCategory === 'data' ? usersTried
           </button>
         </Row>
         {settings.motion_covers !== '0' && (() => {
-          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['m8tec', 'm8tec Artwork', 'Apple Music animated covers found by artwork.m8tec.top'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
           let chosen = ['apple', 'tidal', 'community']
           try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
@@ -2325,6 +2371,7 @@ activeCategory === 'data' ? usersTried
       )}
 
       </SectionSwap>
+      </SettingsSearchContext.Provider>
 
       <Modal open={showClearModal} onClose={() => setShowClearModal(false)} title={t("Clear All Library Data?")} width="max-w-sm">
         <div className="space-y-4">

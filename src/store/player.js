@@ -135,6 +135,29 @@ function readAutoOpenSidePanelSetting() {
   }
 }
 
+// Which panels were open (and what the side panel showed) when the app was
+// last closed, reopened as they were. Only what the side panel mode can show:
+// the standalone Queue/Lyrics panels exist only in independent mode, the
+// side panel's Queue/Lyrics views only in merged mode.
+const LAYOUT_KEY = 'lokal-layout'
+const LAYOUT_FIELDS = ['showRightSidebar', 'sidePanelView', 'showQueue', 'showLyricsPanel']
+function readLayoutSetting() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null')
+    if (!saved || typeof saved !== 'object') return {}
+    const exclusive = readExclusiveSidePanelsSetting()
+    const view = ['info', 'lyrics', 'queue'].includes(saved.sidePanelView) ? saved.sidePanelView : 'info'
+    return {
+      showRightSidebar: saved.showRightSidebar === true,
+      sidePanelView: exclusive ? view : 'info',
+      showQueue: !exclusive && saved.showQueue === true,
+      showLyricsPanel: !exclusive && saved.showLyricsPanel === true,
+    }
+  } catch {
+    return {}
+  }
+}
+
 function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
 }
@@ -224,6 +247,8 @@ export function getOutputRoute() { return outputRoute }
 
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
+  // Songs added with Play Next that haven't started yet (Queue > Clear Play Next).
+  playNextIds: [],
   playbackContext: null,
   isPlaying: false, isBuffering: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
@@ -239,6 +264,7 @@ export const usePlayerStore = create((set, get) => ({
   // the setting changes, without needing a reload. Initialized from
   // localStorage so the choice persists across sessions.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
+  ...readLayoutSetting(),
   autoOpenSidePanel: readAutoOpenSidePanelSetting(),
   // True once the switch was clicked this session, so a settings load that
   // resolves later (even from a Settings page since closed) can't undo it.
@@ -709,6 +735,7 @@ export const usePlayerStore = create((set, get) => ({
       newQueue.splice(queueIndex + 1, 0, playableTrack)
       set({ queue: newQueue })
     }
+    set(state => ({ playNextIds: [...state.playNextIds.filter(id => id !== playableTrack.id), playableTrack.id] }))
   },
 
   // The song playing becomes the start of a new queue (a radio started from
@@ -792,6 +819,29 @@ export const usePlayerStore = create((set, get) => ({
       queue, queueIndex: queue.findIndex(track => track.id === state.currentTrack?.id),
       ...(shuffled ? { shuffleQueue: state.shuffleQueue.slice(drop), shuffleIndex: state.shuffleIndex - drop } : {}),
       ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(track => !gone.has(track.id)) } : {}),
+    })
+  },
+
+  // Queue > Clear Play Next: the songs added with Play Next that haven't
+  // played yet go; the rest of the queue stays as it was.
+  clearUpcoming: () => {
+    const state = get()
+    const currentId = state.currentTrack?.id
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const order = shuffled ? state.shuffleQueue : state.queue
+    const index = Math.max(-1, shuffled ? state.shuffleIndex : state.queueIndex)
+    const marked = new Set(state.playNextIds)
+    const gone = new Set(order.slice(index + 1).map(track => track.id).filter(id => marked.has(id) && id !== currentId))
+    if (!gone.size) { set({ playNextIds: [] }); return }
+    const keep = track => !gone.has(track.id)
+    const trimmed = [...order.slice(0, index + 1), ...order.slice(index + 1).filter(keep)]
+    const queue = shuffled ? state.queue.filter(keep) : trimmed
+    set({
+      queue,
+      queueIndex: queue.findIndex(track => track.id === currentId),
+      ...(shuffled ? { shuffleQueue: trimmed } : {}),
+      ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(keep) } : {}),
+      playNextIds: [],
     })
   },
 
@@ -1178,7 +1228,24 @@ usePlayerStore.subscribe((state) => {
   lastSavedQueue = current
   if (!queueSaveTimer) queueSaveTimer = setTimeout(saveQueueNow, 800)
 })
+let lastSavedLayout = LAYOUT_FIELDS.map(key => usePlayerStore.getState()[key])
+usePlayerStore.subscribe((state) => {
+  const current = LAYOUT_FIELDS.map(key => state[key])
+  if (current.every((value, i) => value === lastSavedLayout[i])) return
+  lastSavedLayout = current
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(Object.fromEntries(LAYOUT_FIELDS.map((key, i) => [key, current[i]])))) } catch {}
+})
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => { if (queueSaveTimer) saveQueueNow() })
   window.addEventListener('beforeunload', () => { if (queueSaveTimer) saveQueueNow() })
 }
+
+// A Play Next song that has started, or left the queue, isn't one for
+// Clear Play Next to remove any more.
+usePlayerStore.subscribe((state, prev) => {
+  if (!state.playNextIds.length) return
+  if (state.currentTrack === prev.currentTrack && state.queue === prev.queue && state.shuffleQueue === prev.shuffleQueue) return
+  const present = new Set([...state.queue, ...state.shuffleQueue].map(track => track.id))
+  const ids = state.playNextIds.filter(id => id !== state.currentTrack?.id && present.has(id))
+  if (ids.length !== state.playNextIds.length) usePlayerStore.setState({ playNextIds: ids })
+})

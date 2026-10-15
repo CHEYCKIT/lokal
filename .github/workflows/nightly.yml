@@ -100,7 +100,11 @@ jobs:
         # ubuntu-24.04-arm: the Linux AppImage/deb for ARM64 (Raspberry Pi 5,
         # ARM laptops), built natively there; its files carry "arm64" and the
         # updater reads latest-linux-arm64.yml, so nothing clashes with x64.
-        os: [windows-latest, macos-latest, ubuntu-24.04, ubuntu-24.04-arm]
+        # macos-latest builds for Apple silicon (arm64), macos-15-intel for
+        # Intel Macs (x64): each natively, so native modules match. Their
+        # files don't clash (the arm64 ones carry "arm64"); the updater files
+        # are merged into one latest-mac.yml (scripts/merge-latest-mac.mjs).
+        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -140,6 +144,19 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # npm skips an optional package whose download fails (it happens on a
+      # cold npm cache) and carries on, which left Windows without
+      # lightningcss-win32-x64-msvc and failed the vite build. A second
+      # install fetches whatever is missing; the check fails the job early
+      # if that didn't help.
+      - name: Check the build tools' native parts
+        shell: bash
+        run: |
+          node scripts/check-build-natives.cjs && exit 0
+          echo "::warning::A native build package is missing after npm install; installing again."
+          npm install --ignore-scripts --no-audit --no-fund
+          node scripts/check-build-natives.cjs
+
       - name: Mark this build as a nightly version
         # The version was worked out once, in the "version" job, so every
         # runner builds the same one. Only this build's copy of package.json
@@ -153,7 +170,7 @@ jobs:
         if: runner.os != 'macOS'
         run: npm run build -- --publish never
 
-      # macOS: one runner (macos-latest, Apple silicon). Signing only happens
+      # macOS: two runners (Apple silicon and Intel). Signing only happens
       # when the certificate secrets exist: an empty CSC_LINK makes
       # electron-builder read the project folder as the certificate ("not a
       # file") and fail, which is what broke the mac build in #277. Without
@@ -204,14 +221,24 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           for f in "${dmgs[@]}"; do hdiutil verify "$f"; done
           # The native modules must be built for the app's architecture.
+          want=$(uname -m)
           while IFS= read -r -d '' module; do
             # Prebuilt binaries for other systems ride along in some packages
-            # (prebuilds/, skipped); the ones loaded must be arm64.
+            # (prebuilds/, skipped); the ones loaded must be this runner's
+            # architecture (arm64 on Apple silicon, x86_64 on Intel).
             file -b "$module" | grep -q Mach-O || continue
             archs=$(lipo -archs "$module" 2>/dev/null || echo unknown)
             echo "$module: $archs"
-            case " $archs " in *" arm64 "*) ;; *) echo "::error::$module isn't built for arm64."; exit 1 ;; esac
+            case " $archs " in *" $want "*) ;; *) echo "::error::$module isn't built for $want."; exit 1 ;; esac
           done < <(find "$app" -name '*.node' -not -path '*/prebuilds/*' -print0)
+
+      # Both Mac runners write latest-mac.yml: the Intel one is renamed here
+      # and merged into the Apple silicon one when the release is put
+      # together, so the artifacts don't overwrite each other.
+      - name: Keep the Intel Mac's updater file apart
+        if: runner.os == 'macOS' && runner.arch == 'X64'
+        shell: bash
+        run: mv release/latest-mac.yml release/latest-mac-x64.yml
 
       - name: Rename release files for this runner
         shell: bash
@@ -316,6 +343,10 @@ jobs:
             mkdir -p release_all
             touch release_all/.no_files
           fi
+
+      - name: Merge the macOS updater files
+        shell: bash
+        run: node scripts/merge-latest-mac.mjs release_all
 
       - name: Generate checksums for all artifacts
         id: checksums

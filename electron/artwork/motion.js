@@ -27,8 +27,12 @@ const { spawn } = require('child_process')
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 const TIDAL_TOKEN = 'vNVdglQOjFJJGG2U'
 const COMMUNITY_URL = 'https://vivimusicanvas.mkmdevilmi.workers.dev/canvas.json'
-const SOURCES = ['apple', 'tidal', 'community', 'spotify']
-const DEFAULT_SOURCES = ['apple', 'tidal', 'community'] // Spotify needs a cookie, so it's opt-in
+const M8TEC_URL = 'https://artwork.m8tec.top/api/v1/artwork/search'
+const SOURCES = ['apple', 'tidal', 'community', 'm8tec', 'spotify']
+// Spotify needs a cookie, so it's opt-in. m8tec looks up the same Apple Music
+// covers as 'apple' through someone else's server, so it's opt-in too: a
+// fallback for when Apple's own lookup fails, not a new default destination.
+const DEFAULT_SOURCES = ['apple', 'tidal', 'community']
 const HIT_TTL = 30 * 24 * 3600 * 1000
 const MISS_TTL = 3 * 24 * 3600 * 1000
 
@@ -226,6 +230,28 @@ async function fromCommunity({ title, artist, album }) {
   return null
 }
 
+// artwork.m8tec.top: finds a song's Apple Music animated cover by artist,
+// album and title. Its answer names the artist and album it matched, which
+// have to be this song's, as for the community list.
+async function fromM8tec({ title, artist, album }) {
+  const params = new URLSearchParams({ artist: firstArtist(artist) || artist, title: cleanTitle(title) })
+  if (album) params.set('album', album)
+  let data
+  try {
+    data = await getJson(`${M8TEC_URL}?${params}`, {}, 15000)
+  } catch (e) {
+    if (e?.status === 404) return null
+    const err = e instanceof Error ? e : new Error(String(e))
+    err.transient = true
+    throw err
+  }
+  const url = data?.url || data?.url_tall
+  if (!url) return null
+  if (data.artist && !artistsMatch(artist, data.artist) && !artistsMatch(data.artist, artist)) return null
+  if (album && data.album && norm(data.album) !== norm(album)) return null
+  return { url, kind: /\.m3u8(?:[?#]|$)/i.test(url) ? 'hls' : 'mp4', source: 'm8tec', tall: !data.url }
+}
+
 function firstArtist(s) {
   return String(s || '').split(/\s*(?:,|&|×|\bx\b|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b|;|\/)\s*/i)[0].trim()
 }
@@ -247,6 +273,7 @@ const PROVIDERS = {
   apple: (track) => fromApple(track),
   tidal: (track) => fromTidal(track),
   community: (track) => fromCommunity(track),
+  m8tec: (track) => fromM8tec(track),
   spotify: fromSpotifyCanvas,
 }
 
@@ -403,4 +430,4 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   return file ? { file, source: found.source, tall: !!found.tall } : null
 }
 
-module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }
+module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, fromM8tec, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }

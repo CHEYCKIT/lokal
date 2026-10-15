@@ -1,5 +1,5 @@
 const { registerNativeOutput, closeNativeOutput } = require('./audio/output')
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, screen, protocol, net, powerSaveBlocker, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 // Keep the renderer at normal priority on Windows while minimized so the
 // AudioWorklet/native output path is not starved by backgrounding.
@@ -302,6 +302,42 @@ function loadWindowState() {
   } catch { return null }
 }
 
+function closesToTray() {
+  try {
+    return getDB().prepare("SELECT value FROM settings WHERE key = 'close_to_tray'").get()?.value === '1'
+  } catch {
+    return false
+  }
+}
+
+// Settings > About > "Close to Tray": the close button hides the window
+// (its taskbar icon goes too) and leaves this tray icon to bring it back.
+let tray = null
+function showFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+function hideToTray() {
+  if (!tray || tray.isDestroyed()) {
+    const image = nativeImage.createFromPath(path.join(__dirname, process.platform === 'win32' ? '../public/lokal-icon.ico' : '../public/lokal-icon.png'))
+    tray = new Tray(process.platform === 'win32' ? image : image.resize({ width: 16, height: 16 }))
+    tray.setToolTip('Lokal')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Show Lokal', click: showFromTray },
+      { type: 'separator' },
+      { label: 'Quit Lokal', click: () => app.quit() },
+    ]))
+    tray.on('click', showFromTray)
+  }
+  mainWindow.hide()
+}
+function removeTray() {
+  if (tray && !tray.isDestroyed()) tray.destroy()
+  tray = null
+}
+
 function saveWindowState() {
   if (!mainWindow || mainWindow.isDestroyed() || miniModeEnabled) return
   const bounds = validWindowBounds(typeof mainWindow.getNormalBounds === 'function' ? mainWindow.getNormalBounds() : mainWindow.getBounds())
@@ -393,7 +429,16 @@ function createWindow() {
   mainWindow.on('move', saveWindowState)
   mainWindow.on('maximize', saveWindowState)
   mainWindow.on('unmaximize', saveWindowState)
-  mainWindow.on('close', saveWindowState)
+  // Settings > "Close to Tray": the window's close button (or Ctrl+W) hides
+  // it to the tray. Quitting (Cmd+Q, the tray menu, an update) sets
+  // `quitting` in before-quit first, so it still quits.
+  mainWindow.on('close', (event) => {
+    saveWindowState()
+    if (quitting || isUpdating || !closesToTray()) return
+    event.preventDefault()
+    hideToTray()
+  })
+  mainWindow.on('show', removeTray)
   if (saved?.maximized) mainWindow.maximize()
 
   
@@ -801,6 +846,7 @@ app.on('will-quit', () => {
 let discordCleared = false
 app.on('before-quit', (event) => {
   quitting = true
+  removeTray()
   if (isUpdating) {
     if (mainWindow) {
       mainWindow.destroy();
