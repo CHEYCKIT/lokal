@@ -243,6 +243,19 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # npm skips an optional package whose download fails (it happens on a
+      # cold npm cache) and carries on, which left Windows without
+      # lightningcss-win32-x64-msvc and failed the vite build. A second
+      # install fetches whatever is missing; the check fails the job early
+      # if that didn't help.
+      - name: Check the build tools' native parts
+        shell: bash
+        run: |
+          node scripts/check-build-natives.cjs && exit 0
+          echo "::warning::A native build package is missing after npm install; installing again."
+          npm install --ignore-scripts --no-audit --no-fund
+          node scripts/check-build-natives.cjs
+
       - name: Build Application
         if: runner.os != 'macOS'
         run: npm run build -- --publish never
