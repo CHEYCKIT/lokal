@@ -129,13 +129,16 @@ export default function RightSidebar() {
   // FullscreenPlayer/LyricsFullscreen's did -- refetch whenever the Lyrics
   // overlay is opened so a change made in Settings takes effect right away.
   const [settings, setSettings] = useState({})
+  // The cover's Lyrics button swaps only the lower metadata card; it must not
+  // open the full-height Lyrics overlay controlled by sidePanelView.
+  const [infoCardView, setInfoCardView] = useState('info')
   // Guards against an in-flight getSettings() from an earlier call
   // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
   // 'lokal:settings-saved' fires again, while the first request is still
   // pending) and overwriting the newer settings with stale ones.
   const settingsSeqRef = useRef(0)
   useEffect(() => {
-    if (sidePanelView !== 'lyrics') return
+    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics') return
     const loadSettings = () => {
       const seq = ++settingsSeqRef.current
       api.getSettings()
@@ -148,7 +151,7 @@ export default function RightSidebar() {
     // the effect above wouldn't otherwise refire.
     window.addEventListener('lokal:settings-saved', loadSettings)
     return () => window.removeEventListener('lokal:settings-saved', loadSettings)
-  }, [sidePanelView])
+  }, [sidePanelView, infoCardView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
 
   // The cover's top-left corner shows a Lyrics button when the song has
@@ -393,8 +396,13 @@ export default function RightSidebar() {
                   {currentTrack && (
                     <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={lookUpLyrics} onDoubleClick={e => e.stopPropagation()}>
                       {songHasLyrics && (
-                        <button type="button" onClick={() => setSidePanelView('lyrics')} aria-label={t('Show lyrics')} title={t('Show lyrics')}
-                          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover/lyrics:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => setInfoCardView(view => view === 'lyrics' ? 'info' : 'lyrics')}
+                          aria-label={t(infoCardView === 'lyrics' ? 'Show details' : 'Show lyrics')}
+                          aria-pressed={infoCardView === 'lyrics'}
+                          title={t(infoCardView === 'lyrics' ? 'Show details' : 'Show lyrics')}
+                          className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView === 'lyrics' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
                           <Mic2 size={15} />
                         </button>
                       )}
@@ -460,6 +468,11 @@ export default function RightSidebar() {
                   })()}
 
                   {currentTrack && (
+                    infoCardView === 'lyrics' ? (
+                      <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                        <LyricsPanel track={currentTrack} progress={progress} wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar />
+                      </div>
+                    ) : (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
                       <InfoRow
                         fx={fx}
@@ -477,6 +490,7 @@ export default function RightSidebar() {
                       {!currentTrack.bitrate && <InfoRow fx={fx} label={t("Quality")} value={streamQualityLabel(currentTrack)} />}
                       <InfoRow fx={fx} label={t("Plays")} value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
+                    )
                   )}
                 </div>
               </div>
