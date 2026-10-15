@@ -126,12 +126,13 @@ export default function RightSidebar() {
   // localStorage key here that's never written left this permanently false
   // regardless of the actual saved choice. RightSidebar stays mounted for
   // the whole session, so a mount-once fetch would go stale the same way
-  // FullscreenPlayer/LyricsFullscreen's did -- refetch whenever the Lyrics
-  // overlay is opened so a change made in Settings takes effect right away.
+  // FullscreenPlayer/LyricsFullscreen's did -- refetch whenever the full Lyrics
+  // overlay or compact lyrics card is opened so settings changes take effect.
   const [settings, setSettings] = useState({})
   // The cover's Lyrics button swaps only the lower metadata card; it must not
   // open the full-height Lyrics overlay controlled by sidePanelView.
   const [infoCardView, setInfoCardView] = useState('info')
+  useEffect(() => setInfoCardView('info'), [currentTrack?.id])
   // Guards against an in-flight getSettings() from an earlier call
   // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
   // 'lokal:settings-saved' fires again, while the first request is still
