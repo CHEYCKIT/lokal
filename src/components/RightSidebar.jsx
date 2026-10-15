@@ -132,6 +132,7 @@ export default function RightSidebar() {
   // The cover's Lyrics button swaps only the lower metadata card; it must not
   // open the full-height Lyrics overlay controlled by sidePanelView.
   const [infoCardView, setInfoCardView] = useState('info')
+  const autoSelectLyricsRef = useRef(null)
   useEffect(() => setInfoCardView('info'), [currentTrack?.id])
   // Guards against an in-flight getSettings() from an earlier call
   // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
@@ -163,11 +164,13 @@ export default function RightSidebar() {
   const songHasLyrics = cachedLyrics !== undefined ? hasLyricLines(cachedLyrics) : lyricsLookup.trackId === currentTrack?.id && lyricsLookup.has
   const lookUpLyrics = useCallback((track = currentTrack, autoSelect = false) => {
     if (!track?.id) return Promise.resolve(null)
+    if (autoSelect) autoSelectLyricsRef.current = track.id
     const cached = peekLyrics(track.id)
     if (cached !== undefined) {
       const has = hasLyricLines(cached)
       setLyricsLookup({ trackId: track.id, has })
-      if (autoSelect && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+      if ((autoSelect || autoSelectLyricsRef.current === track.id) && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+      if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
       return Promise.resolve(cached)
     }
     if (lyricsLookup.trackId === track.id) return Promise.resolve(null)
@@ -179,7 +182,8 @@ export default function RightSidebar() {
         const has = hasLyricLines(result)
         setLyricsLookup(known => known.trackId === track.id ? { trackId: track.id, has } : known)
         // Select the lyrics card only if this is still the track being played.
-        if (autoSelect && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+        if ((autoSelect || autoSelectLyricsRef.current === track.id) && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+        if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
         return result
       })
       .catch(() => null)
