@@ -395,6 +395,7 @@ function Loading() {
 
 export default function LyricsPanel({
   track, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
+  hideToolbar = false,
   // The full screen player hides the buttons along with its own after a few
   // seconds without the mouse moving.
   toolbarHidden = false,
@@ -685,7 +686,7 @@ export default function LyricsPanel({
   const sourceLabel = sources.find(s => s.id === result?.source)?.label || result?.source
   const attribution = result?.attribution
   const hasContributors = !!(attribution?.uploader || attribution?.maker)
-  const showToolbar = lines.length > 0
+  const showToolbar = !hideToolbar && lines.length > 0
 
   return (
     <div className="relative w-full h-full">
