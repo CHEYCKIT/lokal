@@ -27,13 +27,13 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const { t } = useTranslation()
   const {
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming, playNextIds,
   } = usePlayerStore(useShallow(({
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming, playNextIds,
   }) => ({
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming, playNextIds,
   })))
   const { openAddToPlaylist } = useAppStore()
 
@@ -45,10 +45,11 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const [extra, setExtra] = useState({ before: 0, after: 0 })
   useEffect(() => { setExtra({ before: 0, after: 0 }) }, [displayQueue, shuffle])
   const at = Math.max(0, displayIndex)
-  const upcomingCount = Math.max(0, displayQueue.length - Math.max(-1, displayIndex) - 1)
-  const clearButton = (className) => upcomingCount > 0 && (
-    <button onClick={clearUpcoming} title={t('Remove every song after the one playing')} className={className}>
-      {t('Clear')}
+  const playNextSet = new Set(playNextIds)
+  const playNextCount = displayQueue.slice(Math.max(-1, displayIndex) + 1).filter(track => playNextSet.has(track.id)).length
+  const clearButton = (className) => playNextCount > 0 && (
+    <button onClick={clearUpcoming} title={t('Remove the songs added with Play Next')} className={className}>
+      {t('Clear Play Next')} ({playNextCount})
     </button>
   )
   const start = Math.max(0, at - BEFORE - extra.before)
