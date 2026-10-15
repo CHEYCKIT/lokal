@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -161,18 +161,36 @@ export default function RightSidebar() {
   const [lyricsLookup, setLyricsLookup] = useState({ trackId: null, has: false })
   const cachedLyrics = currentTrack?.id ? peekLyrics(currentTrack.id) : undefined
   const songHasLyrics = cachedLyrics !== undefined ? hasLyricLines(cachedLyrics) : lyricsLookup.trackId === currentTrack?.id && lyricsLookup.has
-  const lookUpLyrics = () => {
-    const track = currentTrack
-    if (!track?.id || peekLyrics(track.id) !== undefined || lyricsLookup.trackId === track.id) return
+  const lookUpLyrics = useCallback((track = currentTrack, autoSelect = false) => {
+    if (!track?.id) return Promise.resolve(null)
+    const cached = peekLyrics(track.id)
+    if (cached !== undefined) {
+      const has = hasLyricLines(cached)
+      setLyricsLookup({ trackId: track.id, has })
+      if (autoSelect && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+      return Promise.resolve(cached)
+    }
+    if (lyricsLookup.trackId === track.id) return Promise.resolve(null)
     setLyricsLookup({ trackId: track.id, has: false })
-    Promise.resolve(api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path))
+    return Promise.resolve(api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path))
       .then(r => {
         const result = r && (r.lines?.length || r.instrumental) ? r : null
         cacheLyrics(track.id, result)
-        setLyricsLookup(known => known.trackId === track.id ? { trackId: track.id, has: hasLyricLines(result) } : known)
+        const has = hasLyricLines(result)
+        setLyricsLookup(known => known.trackId === track.id ? { trackId: track.id, has } : known)
+        // Select the lyrics card only if this is still the track being played.
+        if (autoSelect && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+        return result
       })
-      .catch(() => {})
-  }
+      .catch(() => null)
+  }, [currentTrack, lyricsLookup.trackId])
+
+  // Lyrics are the default lower card whenever the current track has them.
+  // Look up on track changes so users do not need to reveal the cover button
+  // and click it again for every song. Tracks without lyrics keep their details.
+  useEffect(() => {
+    if (currentTrack?.id) void lookUpLyrics(currentTrack, true)
+  }, [currentTrack?.id, lookUpLyrics])
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
   // Settings -- without this, navigateToTrackArtist falls back to its
@@ -395,7 +413,7 @@ export default function RightSidebar() {
                   )}
                   {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
                   {currentTrack && (
-                    <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={lookUpLyrics} onDoubleClick={e => e.stopPropagation()}>
+                    <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={() => lookUpLyrics()} onDoubleClick={e => e.stopPropagation()}>
                       {songHasLyrics && (
                         <button
                           type="button"
@@ -471,7 +489,7 @@ export default function RightSidebar() {
                   {currentTrack && (
                     infoCardView === 'lyrics' ? (
                       <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
-                        <LyricsPanel track={currentTrack} progress={progress} wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar />
+                        <LyricsPanel track={currentTrack} progress={progress} wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
                       </div>
                     ) : (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
