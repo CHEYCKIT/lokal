@@ -7,7 +7,6 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
-import { navigateToTrackArtist } from '../artistLink'
 import { isOnlineTrack } from '../onlineBrowse'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
@@ -20,6 +19,9 @@ import MixingMark from './MixingMark'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
 import { useCastStore } from '../cast/castStore'
+import MarqueeText from './MarqueeText'
+import TrackArtistLinks from './TrackArtistLinks'
+import { useVolumeWheel } from '../volumeWheel'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -56,6 +58,7 @@ export default function PlayerBar() {
   const { user, openAddToPlaylist } = useAppStore()
   const [likeAnim, setLikeAnim] = useState(false)
   const [keepCommaArtists, setKeepCommaArtists] = useState([])
+  const volumeWheelRef = useVolumeWheel(volume, setVolume)
   const scrubbing = useRef(false)
   const [localProg, setLocalProg] = useState(null)
   const [showSleepTimer, setShowSleepTimer] = useState(false)
@@ -128,11 +131,6 @@ export default function PlayerBar() {
   // An online song (YouTube, SoundCloud): label, and a button to save it.
   const streamed = isStreamed(currentTrack)
 
-  const handleArtistClick = () => {
-    if (!currentTrack) return
-    navigateToTrackArtist(nav, currentTrack, keepCommaArtists)
-  }
-
   const hasAlbum = !!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
   const handleTitleClick = () => {
     if (!hasAlbum) return
@@ -189,17 +187,19 @@ export default function PlayerBar() {
           {/* The new song's title in at once (fading in), never waiting on the old one's way out. */}
             <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
               <div className="flex items-center gap-2 min-w-0">
-                {hasAlbum ? (
-                  <button
-                    onClick={handleTitleClick}
-                    onContextMenu={openTrackMenu}
-                    title={`Go to album: ${currentTrack.album || t('Album · Online')}`}
-                    className="text-sm font-medium truncate text-text hover:text-accent hover:underline transition-colors text-left min-w-0">
-                    {currentTrack.title}
-                  </button>
-                ) : (
-                   <p onContextMenu={openTrackMenu} className="text-sm font-medium truncate text-text">{currentTrack?.title || '—'}</p>
-                )}
+                <MarqueeText className="flex-1 min-w-0">
+                  {hasAlbum ? (
+                    <button
+                      onClick={handleTitleClick}
+                      onContextMenu={openTrackMenu}
+                      title={`Go to album: ${currentTrack.album || t('Album · Online')}`}
+                      className="text-sm font-medium text-text hover:text-accent hover:underline transition-colors text-left">
+                      {currentTrack.title}
+                    </button>
+                  ) : (
+                    <span onContextMenu={openTrackMenu} className="text-sm font-medium text-text">{currentTrack?.title || '—'}</span>
+                  )}
+                </MarqueeText>
                 {!!currentTrack?.explicit && (
                   <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] font-display uppercase tracking-wide text-muted flex-shrink-0">
                     E
@@ -208,10 +208,10 @@ export default function PlayerBar() {
               </div>
               {currentTrack ? (
                 <div className="min-w-0">
-                  <button onClick={handleArtistClick} onContextMenu={openTrackMenu}
-                    className="text-xs text-muted hover:text-accent transition-colors truncate max-w-full block text-left">
-                    {currentTrack.artist}
-                  </button>
+                  <MarqueeText className="text-xs text-muted">
+                    <TrackArtistLinks track={currentTrack} nav={nav} keepCommaArtists={keepCommaArtists} onContextMenu={openTrackMenu}
+                      linkClassName="text-xs text-muted hover:text-accent transition-colors text-left" />
+                  </MarqueeText>
                   {castDevice && (
                     // Casting: where it plays; a click opens the Cast menu.
                     <button onClick={() => window.dispatchEvent(new Event('lokal:open-cast-menu'))}
@@ -331,7 +331,7 @@ export default function PlayerBar() {
             <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} className="text-text/90 hover:text-text transition-colors">
               {volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
-            <input type="range" min={0} max={1} step={0.01} value={volume}
+            <input ref={volumeWheelRef} type="range" min={0} max={1} step={0.01} value={volume}
               onChange={e => setVolume(parseFloat(e.target.value))}
               className="w-18 accent-accent cursor-pointer h-1" style={{ width: 72 }} />
           </div>

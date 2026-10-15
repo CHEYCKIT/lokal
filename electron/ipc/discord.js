@@ -123,7 +123,8 @@ async function publishActivity() {
   const playback = latestPlayback
   if (!client?.user || !playback) return
   try {
-    if (!playback.track) {
+    // Settings > "Hide When Paused": nothing shown while paused.
+    if (!playback.track || (!playback.isPlaying && hideWhenPaused())) {
       await client.clearActivity()
       return
     }
@@ -136,6 +137,14 @@ async function publishActivity() {
     await client.request('SET_ACTIVITY', { pid: process.pid, activity })
   } catch (error) {
     console.error('Discord RPC Error:', error)
+  }
+}
+
+function hideWhenPaused() {
+  try {
+    return require('./db').getDB().prepare("SELECT value FROM settings WHERE key = 'discord_hide_paused'").get()?.value === '1'
+  } catch {
+    return false
   }
 }
 

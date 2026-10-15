@@ -19,7 +19,8 @@ import {
   navigateToContext,
   navigateToTrackAlbum,
 } from '../playbackContext'
-import { navigateToTrackArtist } from '../artistLink'
+import TrackArtistLinks from './TrackArtistLinks'
+import { cacheLyrics, peekLyrics, hasLyricLines } from '../lyrics/lyricsCache'
 import { isOnlineTrack } from '../onlineBrowse'
 import { isStreamed, trackArtURL } from '../onlineTracks'
 
@@ -149,6 +150,25 @@ export default function RightSidebar() {
     return () => window.removeEventListener('lokal:settings-saved', loadSettings)
   }, [sidePanelView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
+
+  // The cover's top-left corner shows a Lyrics button when the song has
+  // lyrics: looked up the first time the pointer gets there (or already
+  // known from the lyrics cache), never for every song that plays.
+  const [lyricsLookup, setLyricsLookup] = useState({ trackId: null, has: false })
+  const cachedLyrics = currentTrack?.id ? peekLyrics(currentTrack.id) : undefined
+  const songHasLyrics = cachedLyrics !== undefined ? hasLyricLines(cachedLyrics) : lyricsLookup.trackId === currentTrack?.id && lyricsLookup.has
+  const lookUpLyrics = () => {
+    const track = currentTrack
+    if (!track?.id || peekLyrics(track.id) !== undefined || lyricsLookup.trackId === track.id) return
+    setLyricsLookup({ trackId: track.id, has: false })
+    Promise.resolve(api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path))
+      .then(r => {
+        const result = r && (r.lines?.length || r.instrumental) ? r : null
+        cacheLyrics(track.id, result)
+        setLyricsLookup(known => known.trackId === track.id ? { trackId: track.id, has: hasLyricLines(result) } : known)
+      })
+      .catch(() => {})
+  }
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
   // Settings -- without this, navigateToTrackArtist falls back to its
@@ -321,7 +341,7 @@ export default function RightSidebar() {
             <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
               {[['info', 'Details'], ['lyrics', 'Lyrics'], ['queue', 'Queue']].map(([id, label]) => (
                 <button key={id} onClick={() => (id === 'queue' ? (tab === 'queue' ? null : toggleQueueButton()) : setSidePanelView(id))} aria-pressed={tab === id} className={`px-3 py-1 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>
@@ -370,6 +390,16 @@ export default function RightSidebar() {
                     <div className={`absolute inset-0 flex items-center justify-center ${fx ? 'text-white/25' : 'text-subtle'}`}><Music size={52} /></div>
                   )}
                   {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
+                  {currentTrack && (
+                    <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={lookUpLyrics} onDoubleClick={e => e.stopPropagation()}>
+                      {songHasLyrics && (
+                        <button type="button" onClick={() => setSidePanelView('lyrics')} aria-label={t('Show lyrics')} title={t('Show lyrics')}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover/lyrics:opacity-100">
+                          <Mic2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
 
                 <div className={fx ? 'relative -mt-16 px-4 pb-4 space-y-4' : 'mt-4 space-y-4'}>
@@ -389,13 +419,13 @@ export default function RightSidebar() {
                         <p onContextMenu={openTrackMenu} className={fx ? 'text-lg font-semibold text-white leading-tight drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight'}>{currentTrack?.title || 'Nothing playing'}</p>
                       )}
                       {currentTrack?.artist ? (
-                        <button
-                          onClick={() => navigateToTrackArtist(nav, currentTrack, keepCommaArtists)}
+                        <TrackArtistLinks
+                          track={currentTrack}
+                          nav={nav}
+                          keepCommaArtists={keepCommaArtists}
                           onContextMenu={openTrackMenu}
-                          title={`Go to artist: ${currentTrack.artist}`}
-                          className={fx ? 'text-sm text-white/70 mt-0.5 text-left hover:text-white hover:underline transition-colors truncate max-w-full block' : 'text-xs text-muted mt-0.5 text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
-                          {currentTrack.artist}
-                        </button>
+                          className={fx ? 'text-sm text-white/70 mt-0.5 text-left max-w-full block' : 'text-xs text-muted mt-0.5 text-left truncate max-w-full block'}
+                          linkClassName={fx ? 'text-left hover:text-white hover:underline transition-colors' : 'text-left hover:text-accent hover:underline transition-colors'} />
                       ) : (
                         <p className={fx ? 'text-sm text-white/70 mt-0.5' : 'text-xs text-muted mt-0.5'}>{currentTrack?.artist}</p>
                       )}

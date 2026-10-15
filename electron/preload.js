@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('electron', {
   artistApplyMetadataSelection: (id, selection, mode) => invoke('artist:applyMetadataSelection', id, selection, mode),
   artistClearImageOverride: (id) => invoke('artist:clearImageOverride', id),
   artistRename: (id, n) => invoke('artist:rename', id, n),
+  artistsForTrack: (trackId) => invoke('artist:forTrack', trackId),
   artistMerge: (s, t) => invoke('artist:merge', s, t),
   artistDelete: (id) => invoke('artist:delete', id),
   trackSetArtwork: (id, d) => invoke('track:setArtwork', id, d),

@@ -27,13 +27,13 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const { t } = useTranslation()
   const {
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
   } = usePlayerStore(useShallow(({
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
   }) => ({
     queue, queueIndex, playQueue, playbackContext, isBuffering,
-    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue,
+    shuffle, shuffleQueue, shuffleIndex, playNext, addToQueue, reorderQueue, removeFromQueue, clearUpcoming,
   })))
   const { openAddToPlaylist } = useAppStore()
 
@@ -45,6 +45,12 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const [extra, setExtra] = useState({ before: 0, after: 0 })
   useEffect(() => { setExtra({ before: 0, after: 0 }) }, [displayQueue, shuffle])
   const at = Math.max(0, displayIndex)
+  const upcomingCount = Math.max(0, displayQueue.length - Math.max(-1, displayIndex) - 1)
+  const clearButton = (className) => upcomingCount > 0 && (
+    <button onClick={clearUpcoming} title={t('Remove every song after the one playing')} className={className}>
+      {t('Clear')}
+    </button>
+  )
   const start = Math.max(0, at - BEFORE - extra.before)
   const end = Math.min(displayQueue.length, at + AFTER + extra.after)
   const shown = displayQueue.slice(start, end)
@@ -115,6 +121,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
               {shuffle ? ' · drag disabled' : ''}
             </p>
           </div>
+          {clearButton('text-xs font-display uppercase tracking-wider text-white/40 hover:text-white transition-colors')}
         </div>
       ) : (
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
@@ -126,11 +133,14 @@ export function QueueContent({ onClose, variant = 'panel' }) {
               <p className="text-[10px] text-accent/70">{t("Drag disabled in shuffle mode")}</p>
             )}
           </div>
-          {onClose && (
-            <button onClick={onClose} className="text-muted hover:text-white transition-colors">
-              <X size={14} />
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {clearButton('text-[10px] font-display uppercase tracking-wider text-muted hover:text-white transition-colors')}
+            {onClose && (
+              <button onClick={onClose} className="text-muted hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 

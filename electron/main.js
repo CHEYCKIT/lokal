@@ -302,6 +302,14 @@ function loadWindowState() {
   } catch { return null }
 }
 
+function closeMinimizesWindow() {
+  try {
+    return getDB().prepare("SELECT value FROM settings WHERE key IN ('close_minimizes', 'close_to_tray')").all().some(row => row.value === '1')
+  } catch {
+    return false
+  }
+}
+
 function saveWindowState() {
   if (!mainWindow || mainWindow.isDestroyed() || miniModeEnabled) return
   const bounds = validWindowBounds(typeof mainWindow.getNormalBounds === 'function' ? mainWindow.getNormalBounds() : mainWindow.getBounds())
@@ -393,7 +401,15 @@ function createWindow() {
   mainWindow.on('move', saveWindowState)
   mainWindow.on('maximize', saveWindowState)
   mainWindow.on('unmaximize', saveWindowState)
-  mainWindow.on('close', saveWindowState)
+  // Settings > "Close Button Minimizes": the window's close button (or
+  // Ctrl+W) only minimizes it. Quitting (Cmd+Q, the menu, an update) sets
+  // `quitting` in before-quit first, so it still quits.
+  mainWindow.on('close', (event) => {
+    saveWindowState()
+    if (quitting || isUpdating || !closeMinimizesWindow()) return
+    event.preventDefault()
+    mainWindow.minimize()
+  })
   if (saved?.maximized) mainWindow.maximize()
 
   

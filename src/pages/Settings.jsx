@@ -1667,6 +1667,13 @@ activeCategory === 'data' ? usersTried
             {settings.discord_auto_connect === '1' ? t('On') : t('Off')}
           </button>
         </Row>
+        <Row label={t("Hide When Paused")} desc={t("Clear your Discord status while the music is paused.")}>
+          <button
+            onClick={() => set('discord_hide_paused', settings.discord_hide_paused === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.discord_hide_paused === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.discord_hide_paused === '1' ? t('On') : t('Off')}
+          </button>
+        </Row>
       </Section>
       )}
 
@@ -2026,7 +2033,7 @@ activeCategory === 'data' ? usersTried
           </button>
         </Row>
         {settings.motion_covers !== '0' && (() => {
-          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['m8tec', 'm8tec Artwork', 'Apple Music animated covers found by artwork.m8tec.top'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
           let chosen = ['apple', 'tidal', 'community']
           try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
@@ -2172,6 +2179,15 @@ activeCategory === 'data' ? usersTried
             {autoOpenSidePanel ? t('On') : t('Off')}
           </button>
         </Row>
+        {window.electron && (
+          <Row label={t("Close Button Minimizes")} desc={t("The window's close button minimizes Lokal instead of quitting it. Quit from the menu or with Cmd+Q / Alt+F4 as usual.")}>
+            <button
+              onClick={() => set('close_minimizes', settings.close_minimizes === '1' ? '0' : '1')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.close_minimizes === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+              {settings.close_minimizes === '1' ? t('On') : t('Off')}
+            </button>
+          </Row>
+        )}
       </Section>
       )}
 

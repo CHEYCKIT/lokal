@@ -2,6 +2,11 @@ import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from 
 import { replayGainMultiplier } from './audio/replayGain.mjs'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
+
+// handleTimeUpdate's AutoMix: a pair whose plan failed crossfades this long.
+const AUTOMIX_FALLBACK = Object.freeze({ fallback: true })
+const AUTOMIX_FALLBACK_S = 6
+const AUTOMIX_PLAN_BUDGET_MS = 40
 import { prefetchUpcoming } from './queuePrefetch'
 import React, { Activity, useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
@@ -1905,6 +1910,37 @@ export default function App() {
     return undefined
   }, [])
 
+  // AutoMix's plan for a song pair, worked out again only when one of the
+  // two analyses arrives instead of on every timeupdate (several a second,
+  // which made playback stutter on slower machines). A plan that throws,
+  // takes too long or makes no sense becomes AUTOMIX_FALLBACK: that pair
+  // gets an ordinary crossfade.
+  const automixPlanFor = useCallback((outTrack, nextTrack, outDuration, out, next, sameAlbum) => {
+    const plans = automixRef.current.plans || (automixRef.current.plans = new Map())
+    const key = `${outTrack.id}>${nextTrack.id}|${sameAlbum ? 1 : 0}|${Math.round(outDuration)}`
+    const known = (analysis) => (analysis === undefined ? '?' : analysis ? 'a' : '-')
+    const inputs = known(out) + known(next)
+    const cached = plans.get(key)
+    if (cached && (cached.inputs === inputs || cached.plan === AUTOMIX_FALLBACK)) return cached.plan
+    let plan
+    const began = performance.now()
+    try {
+      plan = planTransition({ out: out || null, outTrack, outDuration, next: next || null, nextTrack, sameAlbum })
+      if (plan && !(Number.isFinite(plan.start) && Number.isFinite(plan.length) && plan.length > 0)) plan = AUTOMIX_FALLBACK
+    } catch (error) {
+      console.warn('[automix] planning failed, crossfading instead:', error)
+      plan = AUTOMIX_FALLBACK
+    }
+    const took = performance.now() - began
+    if (took > AUTOMIX_PLAN_BUDGET_MS) {
+      console.warn(`[automix] planning took ${Math.round(took)} ms, crossfading instead`)
+      plan = AUTOMIX_FALLBACK
+    }
+    plans.set(key, { inputs, plan })
+    if (plans.size > 50) plans.delete(plans.keys().next().value)
+    return plan
+  }, [])
+
   const triggerCrossfade = useCallback((nextTrack, plan = null) => {
     if (isCrossfadingRef.current) return
     if (!cfAudioRef.current || !audioRef.current || !nextTrack || !audioCtxRef.current) return
@@ -2105,11 +2141,14 @@ export default function App() {
           clearInterval(rateGlideRef.current)
           const from = fadeInEl.playbackRate
           const began = Date.now()
+          // Every playbackRate change makes the media pipeline re-time its
+          // audio (costly on Linux): a few coarse steps, not 80 tiny ones.
           rateGlideRef.current = setInterval(() => {
             const part = Math.min(1, (Date.now() - began) / 8000)
-            try { fadeInEl.playbackRate = from + (1 - from) * part } catch {}
-            if (part >= 1) clearInterval(rateGlideRef.current)
-          }, 100)
+            const rate = from + (1 - from) * part
+            try { fadeInEl.playbackRate = Math.abs(rate - 1) < 0.004 ? 1 : Math.round(rate * 1000) / 1000 } catch {}
+            if (part >= 1 || fadeInEl.playbackRate === 1) clearInterval(rateGlideRef.current)
+          }, 500)
         }
 
         pauseSuppressRef.current = true
@@ -2320,8 +2359,11 @@ export default function App() {
         // The next song is analysed a while ahead (an online one is downloaded to be).
         const next = remaining < 150 ? automixAnalysis(nextTrack) : undefined
         if (remaining < 90) {
-          const plan = planTransition({ out: out || null, outTrack: current, outDuration: dur, next: next || null, nextTrack, sameAlbum: !!state.crossfade.automixSameAlbum })
-          if (plan && cur >= plan.start - AUTOMIX_PRELOAD_S) triggerCrossfade(nextTrack, plan)
+          const plan = automixPlanFor(current, nextTrack, dur, out, next, !!state.crossfade.automixSameAlbum)
+          if (plan === AUTOMIX_FALLBACK) {
+            // Planning failed or was too slow: an ordinary crossfade instead.
+            if (remaining <= Math.max(CROSSFADE_MIN_S, state.crossfade?.fadeOut || cf || AUTOMIX_FALLBACK_S)) triggerCrossfade(nextTrack)
+          } else if (plan && cur >= plan.start - AUTOMIX_PRELOAD_S) triggerCrossfade(nextTrack, plan)
         }
       }
     } else if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
@@ -2338,7 +2380,7 @@ export default function App() {
     }
 
     topUpRelated()
-  }, [triggerCrossfade, isEventFromActive, topUpRelated, automixAnalysis])
+  }, [triggerCrossfade, isEventFromActive, topUpRelated, automixAnalysis, automixPlanFor])
 
   const handlePrimaryDurationChange = useCallback((e) => {
     if (isEventFromActive(e)) setDuration(e.target.duration)
