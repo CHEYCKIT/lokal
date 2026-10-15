@@ -247,6 +247,8 @@ export function getOutputRoute() { return outputRoute }
 
 export const usePlayerStore = create((set, get) => ({
   queue: [], queueIndex: -1, currentTrack: null,
+  // Songs added with Play Next that haven't started yet (Queue > Clear Play Next).
+  playNextIds: [],
   playbackContext: null,
   isPlaying: false, isBuffering: false, progress: 0, duration: 0,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
@@ -733,6 +735,7 @@ export const usePlayerStore = create((set, get) => ({
       newQueue.splice(queueIndex + 1, 0, playableTrack)
       set({ queue: newQueue })
     }
+    set(state => ({ playNextIds: [...state.playNextIds.filter(id => id !== playableTrack.id), playableTrack.id] }))
   },
 
   // The song playing becomes the start of a new queue (a radio started from
@@ -819,24 +822,26 @@ export const usePlayerStore = create((set, get) => ({
     })
   },
 
-  // Queue > Clear: every song after the one playing goes; the one playing
-  // (and those already played) stay.
+  // Queue > Clear Play Next: the songs added with Play Next that haven't
+  // played yet go; the rest of the queue stays as it was.
   clearUpcoming: () => {
     const state = get()
+    const currentId = state.currentTrack?.id
     const shuffled = state.shuffle && state.shuffleQueue.length > 0
     const order = shuffled ? state.shuffleQueue : state.queue
-    const index = shuffled ? state.shuffleIndex : state.queueIndex
-    const upcoming = order.slice(Math.max(-1, index) + 1)
-    if (!upcoming.length) return
-    const currentId = state.currentTrack?.id
-    const gone = new Set(upcoming.map(track => track.id).filter(id => id !== currentId))
+    const index = Math.max(-1, shuffled ? state.shuffleIndex : state.queueIndex)
+    const marked = new Set(state.playNextIds)
+    const gone = new Set(order.slice(index + 1).map(track => track.id).filter(id => marked.has(id) && id !== currentId))
+    if (!gone.size) { set({ playNextIds: [] }); return }
     const keep = track => !gone.has(track.id)
-    const queue = shuffled ? state.queue.filter(keep) : state.queue.slice(0, Math.max(-1, index) + 1)
+    const trimmed = [...order.slice(0, index + 1), ...order.slice(index + 1).filter(keep)]
+    const queue = shuffled ? state.queue.filter(keep) : trimmed
     set({
       queue,
       queueIndex: queue.findIndex(track => track.id === currentId),
-      shuffleQueue: shuffled ? state.shuffleQueue.slice(0, index + 1) : state.shuffleQueue.filter(keep),
+      ...(shuffled ? { shuffleQueue: trimmed } : {}),
       ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(keep) } : {}),
+      playNextIds: [],
     })
   },
 
@@ -1234,3 +1239,13 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => { if (queueSaveTimer) saveQueueNow() })
   window.addEventListener('beforeunload', () => { if (queueSaveTimer) saveQueueNow() })
 }
+
+// A Play Next song that has started, or left the queue, isn't one for
+// Clear Play Next to remove any more.
+usePlayerStore.subscribe((state, prev) => {
+  if (!state.playNextIds.length) return
+  if (state.currentTrack === prev.currentTrack && state.queue === prev.queue && state.shuffleQueue === prev.shuffleQueue) return
+  const present = new Set([...state.queue, ...state.shuffleQueue].map(track => track.id))
+  const ids = state.playNextIds.filter(id => id !== state.currentTrack?.id && present.has(id))
+  if (ids.length !== state.playNextIds.length) usePlayerStore.setState({ playNextIds: ids })
+})
