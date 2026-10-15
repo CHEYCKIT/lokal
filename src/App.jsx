@@ -2366,7 +2366,7 @@ export default function App() {
           } else if (plan && cur >= plan.start - AUTOMIX_PRELOAD_S) triggerCrossfade(nextTrack, plan)
         }
       }
-    } else if (cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
+    } else if (state.repeat !== 'one' && cf > CROSSFADE_MIN_S && remaining <= cf && remaining > 0.3) {
       const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = state
       let nextTrack = null
       
