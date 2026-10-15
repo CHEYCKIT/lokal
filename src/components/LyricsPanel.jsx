@@ -395,7 +395,7 @@ function Loading() {
 
 export default function LyricsPanel({
   track, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
-  hideToolbar = false,
+  hideToolbar = false, compact = false,
   // The full screen player hides the buttons along with its own after a few
   // seconds without the mouse moving.
   toolbarHidden = false,
@@ -591,7 +591,9 @@ export default function LyricsPanel({
   }, [lines, synced, wordSync, focusIdx, subLines, now])
 
   // ---- scrolling: native scroll for browsing, a staggered glide for following
-  const anchorFraction = fullscreen ? 0.22 : 0.26
+  // In the compact card, pin the focused line near the top so a Canvas above it
+  // cannot make the preceding, dimmed line look like the main lyric.
+  const anchorFraction = compact ? 0.03 : fullscreen ? 0.22 : 0.26
   // Full screen, the lyrics start at the top (clear of the buttons and the
   // edge fade) rather than a third of the way down; the line being sung
   // settles at anchorFraction once the song gets there.
@@ -757,8 +759,8 @@ export default function LyricsPanel({
           // The sidebar has no empty space after the last line, so its closing
           // lines light up near the bottom edge -- keep the fade there short
           // enough not to dim them.
-          maskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
-          WebkitMaskImage: `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
+          maskImage: compact ? 'linear-gradient(to bottom, black 0, black 94%, transparent 100%)' : `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
+          WebkitMaskImage: compact ? 'linear-gradient(to bottom, black 0, black 94%, transparent 100%)' : `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
         }}
       >
         <div className={`w-full ${fullscreen ? 'max-w-3xl mx-auto px-6' : 'px-3'}`}>
@@ -790,7 +792,7 @@ export default function LyricsPanel({
 
           {!loading && lines.length > 0 && (
             <>
-              <div style={fullscreen ? FULLSCREEN_TOP : { height: synced || isAutoSynced ? `${anchorFraction * 100}%` : '3.5rem', minHeight: synced ? '5rem' : undefined }} />
+              <div style={fullscreen ? FULLSCREEN_TOP : compact ? { height: '1rem' } : { height: synced || isAutoSynced ? `${anchorFraction * 100}%` : '3.5rem', minHeight: synced ? '5rem' : undefined }} />
               {!synced && (
                 <p className="px-3 pb-3 text-[11px] text-white/35">These lyrics aren't time-synced{isAutoSynced ? ' — following along roughly' : ''}.</p>
               )}
