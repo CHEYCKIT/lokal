@@ -314,3 +314,16 @@ html[data-theme="light"] .on-media .text-white\/40 { color: rgb(255 255 255 / 0.
 html[data-theme="light"] .on-media .text-white\/30 { color: rgb(255 255 255 / 0.3) !important; }
 html[data-theme="light"] .on-media .text-white\/20 { color: rgb(255 255 255 / 0.2) !important; }
 html[data-theme="light"] .on-media .text-white\/10 { color: rgb(255 255 255 / 0.1) !important; }
+
+/* MarqueeText: a player title or artist line that doesn't fit scrolls back and forth. */
+.marquee-text { overflow: hidden; white-space: nowrap; }
+.marquee-text-inner { display: inline-block; }
+.marquee-text[data-scrolling] > .marquee-text-inner {
+  animation: hover-title-scroll var(--title-scroll-duration) linear infinite alternate;
+}
+.marquee-text:hover > .marquee-text-inner { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .marquee-text { overflow-x: auto; scrollbar-width: none; }
+  .marquee-text::-webkit-scrollbar { display: none; }
+  .marquee-text[data-scrolling] > .marquee-text-inner { animation: none; }
+}

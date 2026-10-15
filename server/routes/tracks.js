@@ -2,6 +2,7 @@ const { mergeDuplicates, mergeAllDuplicates } = require('../../electron/ipc/merg
 const router = require('express').Router()
 const { removeTrackFiles, forgetDownloads } = require('../../electron/ipc/trackFiles')
 const { getDB } = require('../../electron/ipc/db')
+const { resolveArtistId } = require('../../electron/artistId')
 const { getLibraryFolders } = require('../../electron/libraryFolder')
 const { recordListeningEvent } = require('../../electron/ipc/recaps')
 const path = require('path')
@@ -254,10 +255,6 @@ function buildPossibleDuplicateGroups(tracks = []) {
       }
     })
     .sort((left, right) => right.confidence - left.confidence)
-}
-
-function slugify(str) {
-  return (str || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'
 }
 
 function getKeepCommaArtists() {
@@ -517,9 +514,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
         db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(track.id)
         const artistNames = splitArtists(nextValues.artist)
         for (const name of artistNames) {
-          const artistId = 'a-' + slugify(name)
-          db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
-          db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
+          const artistId = resolveArtistId(db, name)
           db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, track.id)
         }
       }
@@ -774,9 +769,7 @@ router.put('/:id', (req, res) => {
   if (artist !== undefined) {
     db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(req.params.id)
     for (const name of splitArtists(artist)) {
-      const artistId = 'a-' + slugify(name)
-      db.prepare('INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)').run(artistId, name)
-      db.prepare('UPDATE artists SET name = ? WHERE id = ?').run(name, artistId)
+      const artistId = resolveArtistId(db, name)
       db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, req.params.id)
     }
     db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()

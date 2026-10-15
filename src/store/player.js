@@ -135,6 +135,29 @@ function readAutoOpenSidePanelSetting() {
   }
 }
 
+// Which panels were open (and what the side panel showed) when the app was
+// last closed, reopened as they were. Only what the side panel mode can show:
+// the standalone Queue/Lyrics panels exist only in independent mode, the
+// side panel's Queue/Lyrics views only in merged mode.
+const LAYOUT_KEY = 'lokal-layout'
+const LAYOUT_FIELDS = ['showRightSidebar', 'sidePanelView', 'showQueue', 'showLyricsPanel']
+function readLayoutSetting() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null')
+    if (!saved || typeof saved !== 'object') return {}
+    const exclusive = readExclusiveSidePanelsSetting()
+    const view = ['info', 'lyrics', 'queue'].includes(saved.sidePanelView) ? saved.sidePanelView : 'info'
+    return {
+      showRightSidebar: saved.showRightSidebar === true,
+      sidePanelView: exclusive ? view : 'info',
+      showQueue: !exclusive && saved.showQueue === true,
+      showLyricsPanel: !exclusive && saved.showLyricsPanel === true,
+    }
+  } catch {
+    return {}
+  }
+}
+
 function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
 }
@@ -239,6 +262,7 @@ export const usePlayerStore = create((set, get) => ({
   // the setting changes, without needing a reload. Initialized from
   // localStorage so the choice persists across sessions.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
+  ...readLayoutSetting(),
   autoOpenSidePanel: readAutoOpenSidePanelSetting(),
   // True once the switch was clicked this session, so a settings load that
   // resolves later (even from a Settings page since closed) can't undo it.
@@ -795,6 +819,27 @@ export const usePlayerStore = create((set, get) => ({
     })
   },
 
+  // Queue > Clear: every song after the one playing goes; the one playing
+  // (and those already played) stay.
+  clearUpcoming: () => {
+    const state = get()
+    const shuffled = state.shuffle && state.shuffleQueue.length > 0
+    const order = shuffled ? state.shuffleQueue : state.queue
+    const index = shuffled ? state.shuffleIndex : state.queueIndex
+    const upcoming = order.slice(Math.max(-1, index) + 1)
+    if (!upcoming.length) return
+    const currentId = state.currentTrack?.id
+    const gone = new Set(upcoming.map(track => track.id).filter(id => id !== currentId))
+    const keep = track => !gone.has(track.id)
+    const queue = shuffled ? state.queue.filter(keep) : state.queue.slice(0, Math.max(-1, index) + 1)
+    set({
+      queue,
+      queueIndex: queue.findIndex(track => track.id === currentId),
+      shuffleQueue: shuffled ? state.shuffleQueue.slice(0, index + 1) : state.shuffleQueue.filter(keep),
+      ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(keep) } : {}),
+    })
+  },
+
   // More songs at the end of the queue that's playing (a radio still being
   // built), only while that queue is still the one playing: its context's id
   // has to match. Songs already in it aren't added twice.
@@ -1177,6 +1222,13 @@ usePlayerStore.subscribe((state) => {
   if (lastSavedQueue && current.every((value, i) => value === lastSavedQueue[i])) return
   lastSavedQueue = current
   if (!queueSaveTimer) queueSaveTimer = setTimeout(saveQueueNow, 800)
+})
+let lastSavedLayout = LAYOUT_FIELDS.map(key => usePlayerStore.getState()[key])
+usePlayerStore.subscribe((state) => {
+  const current = LAYOUT_FIELDS.map(key => state[key])
+  if (current.every((value, i) => value === lastSavedLayout[i])) return
+  lastSavedLayout = current
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(Object.fromEntries(LAYOUT_FIELDS.map((key, i) => [key, current[i]])))) } catch {}
 })
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => { if (queueSaveTimer) saveQueueNow() })

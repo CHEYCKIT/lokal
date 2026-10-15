@@ -2,6 +2,7 @@ const router = require('express').Router()
 const fs = require('fs-extra')
 const path = require('path')
 const { getDB } = require('../../electron/ipc/db')
+const { findArtistById, trackArtistLinks } = require('../../electron/artistId')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('../../electron/ipc/artistMetadata')
 
 function classifyAlbumRow(row) {
@@ -28,16 +29,6 @@ function addArtistFallback(db, artist) {
     ORDER BY t.play_count DESC LIMIT 1
   `).get(artist.id)
   return { ...artist, image_path: firstTrack?.artwork_path || null }
-}
-
-function findArtistById(db, id) {
-  let artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(id)
-  if (!artist) {
-    const slug = id.replace(/^a-/, '')
-    const name = slug.replace(/-/g, ' ')
-    artist = db.prepare('SELECT * FROM artists WHERE LOWER(name) = LOWER(?)').get(name)
-  }
-  return artist || null
 }
 
 async function saveArtistImageFromData(artistId, imageData) {
@@ -135,6 +126,8 @@ router.get('/metadata/search', async (req, res) => {
 router.post('/refresh-all', (req, res) => res.json(startRefreshAll(getDB(), { source: req.body?.source })))
 router.get('/refresh-all', (req, res) => res.json(refreshAllStatus()))
 router.delete('/refresh-all', (req, res) => res.json(cancelRefreshAll()))
+
+router.get('/for-track/:trackId', (req, res) => res.json(trackArtistLinks(getDB(), req.params.trackId)))
 
 router.get('/:id', (req, res) => {
   const db = getDB()

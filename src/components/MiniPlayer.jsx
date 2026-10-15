@@ -11,6 +11,7 @@ import { trackArtURL } from '../onlineTracks'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import MusicVideoPlayer from './MusicVideoPlayer'
 import VideoOffsetControl from './VideoOffsetControl'
+import { useVolumeWheel } from '../volumeWheel'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -31,6 +32,7 @@ export default function MiniPlayer({ windowed = false }) {
     toggleMiniPlayer, likedIds, setLiked
   })))
   const { user } = useAppStore()
+  const volumeWheelRef = useVolumeWheel(volume, setVolume)
   const { video: musicVideo } = useMusicVideo(currentTrack)
   const videoMode = useMusicVideoView(s => s.mini)
   const toggleVideo = useMusicVideoView(s => s.toggleMini)
@@ -425,6 +427,7 @@ export default function MiniPlayer({ windowed = false }) {
             </div>
           )}
           <input
+            ref={volumeWheelRef}
             type="range"
             min={0}
             max={1}

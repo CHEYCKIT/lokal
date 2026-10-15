@@ -269,6 +269,7 @@ export const api = {
     ? el().artistApplyMetadataSelection(id, selection, mode)
     : apiFetch(`/artists/${id}/metadata-selection`, { method:'POST', body:{ selection, mode } }),
   artistClearImageOverride: (id) => isE() ? el().artistClearImageOverride(id) : apiFetch(`/artists/${id}/image/fallback`, { method:'POST' }),
+  artistsForTrack: (trackId) => isE() ? el().artistsForTrack(trackId) : apiFetch(`/artists/for-track/${encodeURIComponent(trackId)}`),
   artistRename: (id, n) => isE() ? el().artistRename(id, n) : apiFetch(`/artists/${id}/rename`, { method:'PUT', body:{name:n} }),
   artistMerge: (s, t) => isE() ? el().artistMerge(s, t) : apiFetch('/artists/merge', { method:'POST', body:{sourceId:s,targetId:t} }),
   artistDelete: (id) => isE() ? el().artistDelete(id) : apiFetch(`/artists/${id}`, { method:'DELETE' }),
