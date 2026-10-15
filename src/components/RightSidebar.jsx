@@ -186,7 +186,10 @@ export default function RightSidebar() {
         if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
         return result
       })
-      .catch(() => null)
+      .catch(() => {
+        if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
+        return null
+      })
   }, [currentTrack, lyricsLookup.trackId])
 
   // Lyrics are the default lower card whenever the current track has them.
