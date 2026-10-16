@@ -1,5 +1,5 @@
 import { api } from './api.js'
-import { buildRecommendationMix, loadRecommendationPage, mapLimited, resolveRecommendationTracks, sourceName } from './recommendations.js'
+import { buildRecommendationMix, dispatchAddonVerificationRequired, isAddonVerificationRequiredError, loadRecommendationPage, mapLimited, resolveRecommendationTracks, sourceName } from './recommendations.js'
 
 // Discovery shelves are session-local; a manually generated Mix is durable.
 const sessions = new Map()
@@ -117,7 +117,13 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
     update({ generating: true, mixError: '' })
     const job = (async () => {
       try {
-        const tracks = await buildRecommendationMix({ size, previous: state.mix.tracks, loadPage: () => loadRecommendationPage(source, ++mixPage, client), resolve: rows => resolveRecommendationTracks(rows, client, { isCurrent }), isCurrent })
+        const tracks = await buildRecommendationMix({
+          size, previous: state.mix.tracks,
+          loadPage: () => loadRecommendationPage(source, ++mixPage, client),
+          resolve: (rows, options = {}) => resolveRecommendationTracks(rows, client, { ...options, isCurrent }),
+          isCurrent,
+          onAddonVerificationRequired: error => dispatchAddonVerificationRequired(error, () => generate(size)),
+        })
         if (isCurrent()) {
           update({ mix: { size: tracks.length, tracks, source } })
           saveMix()
@@ -125,6 +131,9 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
         }
         return tracks
       } catch (error) {
+        // The verification popup owns the retry for this interrupted mix build.
+        // Do not report it as a failed generation or overwrite the current mix.
+        if (isAddonVerificationRequiredError(error)) return null
         if (isCurrent()) update({ mixError: error.message || 'Could not build a mix.' })
         return null
       } finally {
