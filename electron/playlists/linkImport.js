@@ -5,7 +5,7 @@
 const { spawn } = require('child_process')
 const { cookieArgs } = require('../ipc/ytCookies')
 const { jsRuntime } = require('../online/jsRuntime')
-const { isYouTube, isSoundCloud } = require('../download/args')
+const { isYouTube, isSoundCloud, youtubeMusicPlaylistId } = require('../download/args')
 const { sourceIdentity } = require('../online/sources')
 const { artistAndTitle, preferKnownArtist } = require('../download/postprocess')
 const { stripArtistPrefix } = require('../download/tagger')
@@ -184,19 +184,78 @@ function parsePlaylistJson(stdout, stderr, { url, limit = MAX_ENTRIES, settings 
   }
 }
 
-/** Reads a playlist's tracks with yt-dlp, without downloading anything. */
-function fetchPlaylist({ ytdlp, url, settings = {}, db = null, limit = MAX_ENTRIES, track = p => p, timeoutMs = FETCH_TIMEOUT_MS }) {
+/** Reads a playlist's tracks with YouTube Music or yt-dlp, without downloading anything. */
+async function fetchPlaylist({ ytdlp, url, settings = {}, db = null, limit = MAX_ENTRIES, track = p => p, timeoutMs = FETCH_TIMEOUT_MS, fetchImpl = fetch, youtubeMusicCredentials = null } = {}) {
   const problem = playlistLinkProblem(url)
-  if (problem) return Promise.resolve({ error: problem })
-  if (!ytdlp) return Promise.resolve({ error: 'yt-dlp not found. Go to Settings -> External Tools to download it or set a custom path.' })
+  if (problem) return { error: problem }
   const link = String(url).trim()
-  const cookies = cookieArgs(settings, { url: link })
-  const runtime = isYouTube(link) ? jsRuntime() : { args: [], options: {} }
+  const musicPlaylistId = youtubeMusicPlaylistId(link)
+  if (musicPlaylistId) {
+    let credentials = youtubeMusicCredentials
+    if (!credentials && fetchImpl === fetch) {
+      try { credentials = await require('../ipc/online').getYouTubeMusicCredentials() } catch {}
+    }
+    let cookies = credentials?.cookies || ''
+    if (!cookies && settings.yt_cookies === '1') cookies = settings.yt_cookie_header || ''
+    const musicFetch = typeof credentials?.fetchImpl === 'function' ? credentials.fetchImpl : fetchImpl
+    const resolved = await require('../online/youtube').fetchMusicPlaylist(musicPlaylistId, cookies, musicFetch, { limit, timeoutMs }).catch(error => ({ error: error?.message || 'Could not read that YouTube Music playlist.' }))
+    if (!resolved.error && Array.isArray(resolved.tracks) && resolved.tracks.length && !resolved.truncated) {
+      const context = {
+        fallbackArtist: '',
+        playlistIsYouTube: true,
+        catalogue: true,
+        cleanTitles: settings.clean_download_metadata !== '0',
+        soundcloud: false,
+        db,
+      }
+      const seen = new Set()
+      const entries = []
+      let skipped = 0
+      for (const item of resolved.tracks.slice(0, limit)) {
+        const entry = normalizeEntry({
+          id: item.videoId || item.id,
+          videoId: item.videoId || item.id,
+          title: item.title,
+          artist: item.artist,
+          artists: item.artists,
+          album: item.album,
+          duration: item.duration,
+          thumbnail: item.thumbnail,
+          webpage_url: item.url || item.source_url,
+          url: item.url || item.source_url,
+          ie_key: 'Youtube',
+        }, context)
+        if (!entry || seen.has(entry.key)) { skipped++; continue }
+        seen.add(entry.key)
+        entries.push(entry)
+      }
+      if (entries.length) {
+        return {
+          title: resolved.title || null,
+          owner: resolved.author || null,
+          platform: 'youtube',
+          entries,
+          skipped,
+          truncated: !!resolved.truncated || resolved.tracks.length > limit,
+          limit,
+          thumbnail: resolved.thumbnail || null,
+        }
+      }
+    }
+  }
+  if (!ytdlp) return { error: 'yt-dlp not found. Go to Settings -> External Tools to download it or set a custom path.' }
+  // The YouTube Music extractor redirects these URLs to YouTube playlists.
+  // On resolver failure, use the canonical YouTube playlist URL explicitly.
+  const downloadLink = musicPlaylistId
+    ? 'https://www.youtube.com/playlist?list=' + encodeURIComponent(musicPlaylistId)
+    : link
+  const cookies = cookieArgs(settings, { url: downloadLink })
+  const runtime = isYouTube(downloadLink) ? jsRuntime() : { args: [], options: {} }
   const args = [
     '--flat-playlist', '--dump-single-json', '--yes-playlist', '--ignore-errors', '--no-warnings',
     '--playlist-end', String(limit + 1),
     ...cookies.args, ...runtime.args,
-    '--', link,
+    '--', downloadLink,
   ]
   return new Promise((resolve) => {
     let proc
