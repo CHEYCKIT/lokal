@@ -27,7 +27,9 @@ test('verification automatically retries and starts the selected Discovery song'
     constructor(type, init = {}) { this.type = type; this.detail = init.detail }
   }
   try {
+    const resolverStarts = []
     const resolve = async (rows, options) => {
+      resolverStarts.push(options.startFromProvider || null)
       if (!authenticated) {
         const error = new Error('VERIFY_REQUIRED')
         error.code = 'ADDON_VERIFICATION_REQUIRED'
@@ -48,6 +50,7 @@ test('verification automatically retries and starts the selected Discovery song'
     assert.ok(pending, 'the existing verification popup should receive a retry callback')
     authenticated = true
     assert.equal(await pending.retry(), true)
+    assert.deepEqual(resolverStarts.slice(0, 2), [null, 'a-0123456789'], 'retry starts at the provider that required verification')
     assert.equal(store.getState().currentTrack.title, pool[2].title)
     assert.equal(store.getState().currentTrack.provider, 'a-0123456789')
     assert.equal(store.getState().isPlaying, true, 'the selected song starts without another Play click')
