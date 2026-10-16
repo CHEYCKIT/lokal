@@ -135,28 +135,6 @@ function readAutoOpenSidePanelSetting() {
   }
 }
 
-// Which panels were open (and what the side panel showed) when the app was
-// last closed, reopened as they were. Only what the side panel mode can show:
-// the standalone Queue/Lyrics panels exist only in independent mode, the
-// side panel's Queue/Lyrics views only in merged mode.
-const LAYOUT_KEY = 'lokal-layout'
-const LAYOUT_FIELDS = ['showRightSidebar', 'sidePanelView', 'showQueue', 'showLyricsPanel']
-function readLayoutSetting() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null')
-    if (!saved || typeof saved !== 'object') return {}
-    const exclusive = readExclusiveSidePanelsSetting()
-    const view = ['info', 'lyrics', 'queue'].includes(saved.sidePanelView) ? saved.sidePanelView : 'info'
-    return {
-      showRightSidebar: saved.showRightSidebar === true,
-      sidePanelView: exclusive ? view : 'info',
-      showQueue: !exclusive && saved.showQueue === true,
-      showLyricsPanel: !exclusive && saved.showLyricsPanel === true,
-    }
-  } catch {
-    return {}
-  }
-}
 
 function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
@@ -259,12 +237,9 @@ export const usePlayerStore = create((set, get) => ({
   // mode -- independent mode's Queue lives in its own separate panel and
   // never touches this.
   sidePanelView: 'info',
-  // Settings > Appearance > Layout > Side Panels. Store state (not just a
-  // localStorage read inside actions) so components can react live when
-  // the setting changes, without needing a reload. Initialized from
-  // localStorage so the choice persists across sessions.
+  // Settings > Appearance > Layout > Side Panels. Store state so components
+  // can react live when the setting changes, without needing a reload.
   exclusiveSidePanels: readExclusiveSidePanelsSetting(),
-  ...readLayoutSetting(),
   autoOpenSidePanel: readAutoOpenSidePanelSetting(),
   // True once the switch was clicked this session, so a settings load that
   // resolves later (even from a Settings page since closed) can't undo it.
@@ -1227,13 +1202,6 @@ usePlayerStore.subscribe((state) => {
   if (lastSavedQueue && current.every((value, i) => value === lastSavedQueue[i])) return
   lastSavedQueue = current
   if (!queueSaveTimer) queueSaveTimer = setTimeout(saveQueueNow, 800)
-})
-let lastSavedLayout = LAYOUT_FIELDS.map(key => usePlayerStore.getState()[key])
-usePlayerStore.subscribe((state) => {
-  const current = LAYOUT_FIELDS.map(key => state[key])
-  if (current.every((value, i) => value === lastSavedLayout[i])) return
-  lastSavedLayout = current
-  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(Object.fromEntries(LAYOUT_FIELDS.map((key, i) => [key, current[i]])))) } catch {}
 })
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => { if (queueSaveTimer) saveQueueNow() })
