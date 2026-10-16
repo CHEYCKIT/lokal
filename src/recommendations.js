@@ -397,21 +397,20 @@ export async function buildRecommendationMix({ size, previous = [], loadPage, re
       const batch = candidates.slice(at, at + 8)
       batch.forEach(track => tried.add(songKey(track)))
       let verificationRequested = false
-      const onAddonVerificationRequired = error => {
-        verificationRequested = true
-        if (typeof onVerificationRequired === 'function') onVerificationRequired(error)
-        else dispatchAddonVerificationRequired(
-          error,
-          () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }),
-        )
-      }
+      const onAddonVerificationRequired = typeof onVerificationRequired === 'function'
+        ? error => { verificationRequested = true; onVerificationRequired(error) }
+        : undefined
       let resolved
       try {
+        const resolveOptions = onAddonVerificationRequired ? { onAddonVerificationRequired } : {}
         resolved = resolve === resolveRecommendationTracks
-          ? await resolve(batch, api, { onAddonVerificationRequired })
-          : await resolve(batch, { onAddonVerificationRequired })
+          ? await resolve(batch, api, resolveOptions)
+          : await resolve(batch, resolveOptions)
       } catch (error) {
-        if (isAddonVerificationRequiredError(error) && !verificationRequested) onAddonVerificationRequired(error)
+        if (isAddonVerificationRequiredError(error) && !verificationRequested) {
+          if (typeof onVerificationRequired === 'function') onVerificationRequired(error)
+          else dispatchAddonVerificationRequired(error, () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }))
+        }
         throw error
       }
       if (!isCurrent()) throw new Error('Mix request superseded')
