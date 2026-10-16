@@ -23,8 +23,8 @@ function metadata() {
 }
 
 /** Codecs Chromium can't play, by music-metadata's codec name. */
-const UNPLAYABLE = /^(?:ALAC|Apple\\s+Lossless(?:\\s+Audio\\s+Codec)?|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
-const LOSSLESS = /^(?:ALAC|Apple\\s+Lossless(?:\\s+Audio\\s+Codec)?|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
+const UNPLAYABLE = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
+const LOSSLESS = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
 
 // music-metadata versions and container parsers don't always spell the ALAC
 // codec identically: some report `ALAC`, others `Apple Lossless`. Both mean
