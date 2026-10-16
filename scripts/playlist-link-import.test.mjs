@@ -175,9 +175,9 @@ test('YouTube Music playlist import reads Music catalogue entries and its own co
   } })
   const root = {
     contents: [
-      { musicDetailHeaderRenderer: {
+      { musicResponsiveHeaderRenderer: {
         title: { simpleText: 'Music Picks' },
-        subtitle: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '2 songs' }] },
+        straplineTextOne: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '2 songs' }] },
         thumbnail: { croppedThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/music-picks=w226-h226', width: 226, height: 226 }] } } },
       } },
       { musicPlaylistShelfRenderer: { contents: [row('abcdefghijk', 'Song One'), row('bcdefghijkl', 'Song Two')], continuations: [] } },
