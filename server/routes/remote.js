@@ -4,7 +4,7 @@ const { getRemoteState, sendRemoteCommand, getRemoteConnectionInfo } = require('
 const router = express.Router()
 
 function authorized(req) {
-  const token = process.env.REMOTE_TOKEN
+  const token = String(process.env.REMOTE_TOKEN || '').trim()
   if (!token) return true
   const provided = req.headers['x-remote-token'] || req.query.token || req.body?.token
   return provided === token
