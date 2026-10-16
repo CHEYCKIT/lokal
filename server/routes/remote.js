@@ -82,7 +82,7 @@ router.get('/library/tracks', (req, res) => {
   const db = getDB()
   const q = queryText(req.query.q)
   const { limit, offset } = pagination(req)
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
+  const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   const where = ["t.file_path NOT LIKE 'ghost://%'"]
   const params = []
   if (q) {
@@ -136,7 +136,7 @@ router.get('/library/album-tracks', (req, res) => {
   const artist = queryText(req.query.artist)
   if (!title) return res.status(400).json({ error: 'Album title is required' })
   const rows = getDB().prepare(`
-    SELECT t.*, CASE WHEN ${userTrackQuery(String(req.query.userId || 'guest').slice(0, 200))} THEN 1 ELSE 0 END AS user_liked
+    SELECT t.*, CASE WHEN ${userTrackQuery(String(getRemoteState().userId || 'guest').slice(0, 200))} THEN 1 ELSE 0 END AS user_liked
     FROM tracks t
     WHERE LOWER(t.album) = LOWER(?) AND LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist)) = LOWER(?)
       AND t.file_path NOT LIKE 'ghost://%'
@@ -172,7 +172,7 @@ router.get('/library/artists', (req, res) => {
 
 router.get('/library/artist-tracks', (req, res) => {
   const artistId = queryText(req.query.id)
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
+  const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   if (!artistId) return res.status(400).json({ error: 'Artist id is required' })
   const rows = getDB().prepare(`
     SELECT t.*, CASE WHEN ${userTrackQuery(uid)} THEN 1 ELSE 0 END AS user_liked
@@ -185,7 +185,7 @@ router.get('/library/artist-tracks', (req, res) => {
 
 router.get('/library/playlists', (req, res) => {
   const db = getDB()
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
+  const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   const q = queryText(req.query.q)
   const { limit, offset } = pagination(req)
   const where = ['p.user_id = ?']
@@ -207,7 +207,7 @@ router.get('/library/playlists', (req, res) => {
 router.get('/library/playlist-tracks', (req, res) => {
   const db = getDB()
   const playlistId = queryText(req.query.id)
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
+  const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   if (!playlistId) return res.status(400).json({ error: 'Playlist id is required' })
   const playlist = db.prepare('SELECT id, user_id, smart_rules FROM playlists WHERE id = ? AND user_id = ?').get(playlistId, uid)
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' })
@@ -231,7 +231,7 @@ router.get('/library/playlist-tracks', (req, res) => {
 
 router.get('/library/liked', (req, res) => {
   const db = getDB()
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
+  const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   const { limit, offset } = pagination(req)
   const q = queryText(req.query.q)
   const where = ['ul.user_id = ?', "t.file_path NOT LIKE 'ghost://%'"]
