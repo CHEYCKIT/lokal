@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, AudioWaveform, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
@@ -11,6 +11,7 @@ import { isOnlineTrack } from '../onlineBrowse'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
+import AudioPipelineModal from './AudioPipelineModal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../quality'
@@ -57,6 +58,7 @@ export default function PlayerBar() {
   })))
   const { user, openAddToPlaylist } = useAppStore()
   const [likeAnim, setLikeAnim] = useState(false)
+  const [showAudioPipeline, setShowAudioPipeline] = useState(false)
   const [keepCommaArtists, setKeepCommaArtists] = useState([])
   const volumeWheelRef = useVolumeWheel(volume, setVolume)
   const scrubbing = useRef(false)
@@ -240,30 +242,40 @@ export default function PlayerBar() {
             </motion.div>
         </div>
 
-        {currentTrack && (
-          <div className="relative flex-shrink-0">
-            <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
-              className={`w-5 h-5 flex items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}>
-              <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
-            </motion.button>
-            <AnimatePresence>
-              {likeAnim && (
-                <motion.div initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 2.8, opacity: 0 }} exit={{}}
-                  transition={{ duration: 0.5 }}
-                  className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <Heart size={16} className="text-accent" fill="currentColor" />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-        {currentTrack && (
-          <button onClick={() => openAddToPlaylist(currentTrack)} title={t("Add to playlist")}
-            className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
-            <Plus size={14} />
-          </button>
-        )}
-        {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-text/90" />}
+        <div className="flex flex-shrink-0 -translate-x-3 items-center gap-3">
+          {currentTrack && (
+            <div className="relative flex-shrink-0">
+              <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
+                className={`flex h-5 w-5 items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}
+                title={isLiked ? t("Unlike") : t("Like")} aria-label={isLiked ? t("Unlike") : t("Like")}>
+                <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
+              </motion.button>
+              <AnimatePresence>
+                {likeAnim && (
+                  <motion.div initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 2.8, opacity: 0 }} exit={{}}
+                    transition={{ duration: 0.5 }}
+                    className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <Heart size={16} className="text-accent" fill="currentColor" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+          {currentTrack && (
+            <button onClick={() => openAddToPlaylist(currentTrack)} title={t("Add to playlist")} aria-label={t("Add to playlist")}
+              className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
+              <Plus size={14} />
+            </button>
+          )}
+          {currentTrack && (
+            <button type="button" onClick={() => setShowAudioPipeline(true)} title={t("Audio Pipeline")}
+              aria-label={t("Audio Pipeline")} aria-haspopup="dialog"
+              className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
+              <AudioWaveform size={15} />
+            </button>
+          )}
+          {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-text/90" />}
+        </div>
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
@@ -382,6 +394,7 @@ export default function PlayerBar() {
           </button>
         </div>
       </Modal>
+      <AudioPipelineModal open={showAudioPipeline} onClose={() => setShowAudioPipeline(false)} track={currentTrack} />
       <ContextMenu menu={menu} />
     </>
   )
