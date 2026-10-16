@@ -596,7 +596,6 @@ export default function App() {
   const miniSwitching = usePlayerStore(s => s.miniSwitching)
   // Casting: the TV plays, and this computer's audio is parked (src/cast).
   const castActive = usePlayerStore(s => s.castActive)
-  const playbackGeneration = usePlayerStore(s => s.playbackGeneration)
   const replayGainMode = usePlayerStore(s => s.replayGainMode)
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
@@ -1637,6 +1636,7 @@ export default function App() {
   const [addonVerificationPrompt, setAddonVerificationPrompt] = useState(null)
   const [addonVerificationBusy, setAddonVerificationBusy] = useState(false)
   const [addonVerificationMessage, setAddonVerificationMessage] = useState('')
+  const [playbackRetryNonce, setPlaybackRetryNonce] = useState(0)
   const addonVerificationRetryRef = useRef(null)
 
   const completeAddonVerification = useCallback((key) => {
@@ -1658,7 +1658,8 @@ export default function App() {
     // VERIFY_REQUIRED. Replaying the same queue entry with a new generation
     // makes the source effect prepare it again after access is granted.
     if (state.currentTrack && state.currentTrack.id === pending.trackId) {
-      state.playTrack(state.currentTrack, state.queue, state.playbackContext)
+      setPlaybackRetryNonce(value => value + 1)
+      setIsPlaying(true)
     }
   }, [setIsPlaying])
 
@@ -2400,7 +2401,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, playbackGeneration, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
+  }, [currentTrack?.id, currentTrack?.file_path, playbackRetryNonce, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
 
   useEffect(() => {
     if (!api.isElectron) return
