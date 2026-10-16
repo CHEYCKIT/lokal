@@ -61,7 +61,8 @@ async function evaluate(data) {
   const win = await sandbox()
   scheduleEvalWindowDestroy(win)
   try {
-    return await win.webContents.executeJavaScript(`(function () {\\n${data.output}\\n})()`, true)
+    const script = '(function () {\n' + data.output + '\n})()'
+    return await win.webContents.executeJavaScript(script, true)
   } finally {
     if (evalWindow === win && !win.isDestroyed()) scheduleEvalWindowDestroy(win)
   }
