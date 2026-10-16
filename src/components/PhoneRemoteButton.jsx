@@ -19,6 +19,7 @@ export default function PhoneRemoteButton() {
   const [linkStatus, setLinkStatus] = useState('')
 
   useEffect(() => {
+    if (!api.isElectron) return undefined
     let alive = true
     const version = settingChangeSeq.current
     Promise.resolve(api.getSettings()).then(settings => {
