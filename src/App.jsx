@@ -596,6 +596,7 @@ export default function App() {
   const miniSwitching = usePlayerStore(s => s.miniSwitching)
   // Casting: the TV plays, and this computer's audio is parked (src/cast).
   const castActive = usePlayerStore(s => s.castActive)
+  const playbackGeneration = usePlayerStore(s => s.playbackGeneration)
   const replayGainMode = usePlayerStore(s => s.replayGainMode)
   const volumeRef = useRef(volume)
   const [audioOutputReady, setAudioOutputReady] = useState(0)
@@ -1631,28 +1632,71 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [])
 
-  // An addon's login / verification window closed: sources refresh, and a
-  // successful verification is confirmed wherever the person is.
-  useEffect(() => api.onAddonAuthChanged(status => {
-    window.dispatchEvent(new Event('lokal:addons-changed'))
-    if (status?.authenticated) showToast('Addon access verified. It can now stream and download.')
-    if (status?.authenticated) {
-      setAddonVerificationPrompt(current => {
-        if (!current || current.key !== status.key) return current
-        setAddonVerificationMessage('')
-        setIsPlaying(true)
-        return null
-      })
-    } else if (status?.key) {
-      setAddonVerificationPrompt(current => current?.key === status.key ? { ...current, message: status.error || "Verification wasn't completed. Try again when you're ready." } : current)
-    }
-  }), [])
-
   // An online song that couldn't be streamed (shown as a small notice).
   const [streamError, setStreamError] = useState(null)
   const [addonVerificationPrompt, setAddonVerificationPrompt] = useState(null)
   const [addonVerificationBusy, setAddonVerificationBusy] = useState(false)
   const [addonVerificationMessage, setAddonVerificationMessage] = useState('')
+  const addonVerificationRetryRef = useRef(null)
+
+  const completeAddonVerification = useCallback((key) => {
+    const pending = addonVerificationRetryRef.current
+    if (!pending || pending.key !== key) return
+    addonVerificationRetryRef.current = null
+    setAddonVerificationPrompt(current => current?.key === key ? null : current)
+    setAddonVerificationMessage('')
+    if (typeof pending.retry === 'function') {
+      Promise.resolve().then(() => pending.retry()).then(result => {
+        if (result !== false && result !== null) setIsPlaying(true)
+      }).catch(error => {
+        setAddonVerificationMessage(error?.message || "Verification succeeded, but playback couldn't be resumed. Try playing the song again.")
+      })
+      return
+    }
+    const state = usePlayerStore.getState()
+    // The actual stream-preparation path hasn't assigned a src when it detects
+    // VERIFY_REQUIRED. Replaying the same queue entry with a new generation
+    // makes the source effect prepare it again after access is granted.
+    if (state.currentTrack && state.currentTrack.id === pending.trackId) {
+      state.playTrack(state.currentTrack, state.queue, state.playbackContext)
+    }
+  }, [setIsPlaying])
+
+  useEffect(() => {
+    const onAddonVerificationRequired = event => {
+      const detail = event?.detail || {}
+      const provider = String(detail.provider || '')
+      const key = String(detail.key || (provider.startsWith('a-') ? provider.slice(2) : ''))
+      if (!key) return
+      const state = usePlayerStore.getState()
+      const title = detail.title || state.currentTrack?.title || 'this song'
+      addonVerificationRetryRef.current = {
+        key, provider: provider || 'a-' + key, title,
+        trackId: state.currentTrack?.id ?? null,
+        retry: typeof detail.retry === 'function' ? detail.retry : null,
+      }
+      setAddonVerificationMessage('')
+      setAddonVerificationPrompt({ key, provider: provider || 'a-' + key, title })
+      setIsPlaying(false)
+      setIsBuffering(false)
+    }
+    window.addEventListener('lokal:addon-verification-required', onAddonVerificationRequired)
+    return () => window.removeEventListener('lokal:addon-verification-required', onAddonVerificationRequired)
+  }, [setIsPlaying, setIsBuffering])
+
+  // A verified add-on is retried at the point that was interrupted: either the
+  // selected Discovery candidate/batch, or the current track's stream request.
+  useEffect(() => api.onAddonAuthChanged(status => {
+    window.dispatchEvent(new Event('lokal:addons-changed'))
+    if (status?.authenticated) {
+      showToast('Addon access verified. It can now stream and download.')
+      completeAddonVerification(status.key)
+    } else if (status?.key) {
+      setAddonVerificationPrompt(current => current?.key === status.key
+        ? { ...current, message: status.error || "Verification wasn't completed. Try again when you're ready." }
+        : current)
+    }
+  }), [completeAddonVerification])
   useEffect(() => {
     if (!streamError) return undefined
     const t = setTimeout(() => setStreamError(null), 9000)
@@ -2333,9 +2377,14 @@ export default function App() {
           el.dataset.fallbackPending = ''
           setIsPlaying(false)
           setIsBuffering(false)
+          const key = ref.provider.slice(2)
+          addonVerificationRetryRef.current = {
+            key, provider: ref.provider, title: live.currentTrack.title || 'this song',
+            trackId: live.currentTrack.id, retry: null,
+          }
           setAddonVerificationMessage('')
           setAddonVerificationPrompt({
-            key: ref.provider.slice(2),
+            key,
             provider: ref.provider,
             title: live.currentTrack.title || 'this song',
           })
@@ -2351,7 +2400,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
+  }, [currentTrack?.id, currentTrack?.file_path, playbackGeneration, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
 
   useEffect(() => {
     if (!api.isElectron) return
@@ -2890,7 +2939,7 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  onClick={event => { if (event.target === event.currentTarget && !addonVerificationBusy) setAddonVerificationPrompt(null) }}
+                  onClick={event => { if (event.target === event.currentTarget && !addonVerificationBusy) { addonVerificationRetryRef.current = null; setAddonVerificationPrompt(null); setAddonVerificationMessage('') } }}
                 >
                   <motion.div
                     role="dialog"
@@ -2907,7 +2956,7 @@ export default function App() {
                     <div className="mt-5 flex justify-end gap-2">
                       <button
                         disabled={addonVerificationBusy}
-                        onClick={() => { setAddonVerificationPrompt(null); setAddonVerificationMessage('') }}
+                        onClick={() => { addonVerificationRetryRef.current = null; setAddonVerificationPrompt(null); setAddonVerificationMessage('') }}
                         className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
                       >{t('Not now')}</button>
                       <button
@@ -2919,8 +2968,7 @@ export default function App() {
                             const result = await api.addonsPackages({ action: 'package.verify', key: addonVerificationPrompt.key })
                             if (result?.authenticated) {
                               window.dispatchEvent(new Event('lokal:addons-changed'))
-                              setAddonVerificationPrompt(null)
-                              setIsPlaying(true)
+                              completeAddonVerification(addonVerificationPrompt.key)
                             } else if (result?.opened) {
                               setAddonVerificationMessage('Complete verification in the browser window that opened. Playback will remain paused until access is confirmed.')
                             } else {
