@@ -381,6 +381,7 @@ function AddonsTab({ addons, loading, error, onNavigate }) {
   const { t } = useTranslation()
   const [busyKey, setBusyKey] = useState(null)
   const [messages, setMessages] = useState({})
+  const [verificationUrls, setVerificationUrls] = useState({})
 
   const openSettings = addon => onNavigate('/settings', { state: { category: 'addons', addon: addon.key } })
   const verify = async addon => {
@@ -390,10 +391,17 @@ function AddonsTab({ addons, loading, error, onNavigate }) {
       const result = await api.addonsPackages({ action: 'package.verify', key: addon.key })
       if (result?.error) throw new Error(result.error)
       if (result?.opened) {
+        setVerificationUrls(current => ({ ...current, [addon.key]: '' }))
         setMessages(current => ({ ...current, [addon.key]: t('Complete the verification in the window that opened. Access is checked when it closes.') }))
       } else if (result?.authenticated) {
+        setVerificationUrls(current => ({ ...current, [addon.key]: '' }))
         setMessages(current => ({ ...current, [addon.key]: t('Access verified.') }))
         window.dispatchEvent(new Event('lokal:addons-changed'))
+      } else if (result?.open_auth_url && /^https:\/\//i.test(result.open_auth_url)) {
+        // On the web, show the returned verification URL as a direct action.
+        // Opening Settings first would add an unnecessary navigation step.
+        setVerificationUrls(current => ({ ...current, [addon.key]: result.open_auth_url }))
+        setMessages(current => ({ ...current, [addon.key]: t('Open the verification page to continue.') }))
       } else {
         setMessages(current => ({ ...current, [addon.key]: t(result?.error || "Verification wasn't completed. Try again when you're ready.") }))
       }
@@ -412,7 +420,9 @@ function AddonsTab({ addons, loading, error, onNavigate }) {
     if (addon.access?.kind === 'verification') return t('Needs verification before this addon can stream or download.')
     return t('Required addon settings are missing.')
   }
-  const verificationAvailable = addon => api.isElectron && addon.signedSession && !(addon.access?.missing || []).length
+  // Match Settings → Addons: an unverified signed session gets a direct
+  // Verify action even if other required capabilities are also missing.
+  const verificationAvailable = addon => addon.signedSession && !addon.access?.verified
 
   return (
     <div className="space-y-2">
@@ -440,10 +450,18 @@ function AddonsTab({ addons, loading, error, onNavigate }) {
           </div>
           <div className="flex flex-shrink-0 flex-col items-end gap-2">
             {verificationAvailable(addon) ? (
-              <button disabled={busyKey !== null} onClick={() => verify(addon)}
-                className="rounded-lg bg-yellow-500/20 px-2.5 py-1.5 text-[11px] font-medium text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:opacity-50">
-                {busyKey === addon.key ? <Loader2 size={12} className="inline animate-spin" /> : null} {t('Verify access')}
-              </button>
+              <>
+                <button disabled={busyKey !== null} onClick={() => verify(addon)}
+                  className="rounded-lg bg-yellow-500/20 px-2.5 py-1.5 text-[11px] font-medium text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:opacity-50">
+                  {busyKey === addon.key ? <Loader2 size={12} className="inline animate-spin" /> : null} {t('Verify access')}
+                </button>
+                {verificationUrls[addon.key] && (
+                  <button onClick={() => api.openExternal(verificationUrls[addon.key])}
+                    className="max-w-28 text-right text-[10px] text-yellow-100 underline-offset-2 hover:underline">
+                    {t('Open verification page')}
+                  </button>
+                )}
+              </>
             ) : (
               <button onClick={() => openSettings(addon)}
                 className="rounded-lg bg-accent/15 px-2.5 py-1.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25">
