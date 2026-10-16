@@ -1661,6 +1661,14 @@ export default function App() {
     }
   }, [setIsPlaying])
 
+  const dismissAddonVerificationPrompt = useCallback(() => {
+    const pending = addonVerificationRetryRef.current
+    addonVerificationRetryRef.current = null
+    try { pending?.cancel?.() } catch {}
+    setAddonVerificationPrompt(null)
+    setAddonVerificationMessage('')
+  }, [])
+
   useEffect(() => {
     const onAddonVerificationRequired = event => {
       const detail = event?.detail || {}
@@ -1673,6 +1681,7 @@ export default function App() {
         key, provider: provider || 'a-' + key, title,
         trackId: state.currentTrack?.id ?? null,
         retry: typeof detail.retry === 'function' ? detail.retry : null,
+        cancel: typeof detail.cancel === 'function' ? detail.cancel : null,
         isCurrentPlayback: false,
       }
       setAddonVerificationMessage('')
@@ -2939,7 +2948,7 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  onClick={event => { if (event.target === event.currentTarget && !addonVerificationBusy) { addonVerificationRetryRef.current = null; setAddonVerificationPrompt(null); setAddonVerificationMessage('') } }}
+                  onClick={event => { if (event.target === event.currentTarget && !addonVerificationBusy) dismissAddonVerificationPrompt() }}
                 >
                   <motion.div
                     role="dialog"
@@ -2958,7 +2967,7 @@ export default function App() {
                     <div className="mt-5 flex justify-end gap-2">
                       <button
                         disabled={addonVerificationBusy}
-                        onClick={() => { addonVerificationRetryRef.current = null; setAddonVerificationPrompt(null); setAddonVerificationMessage('') }}
+                        onClick={dismissAddonVerificationPrompt}
                         className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
                       >{t('Not now')}</button>
                       <button
