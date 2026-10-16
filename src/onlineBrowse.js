@@ -323,7 +323,15 @@ const cacheKeyOf = (kind, parts) => `${kind}:${parts.map(part => recommendationK
 /** The key an online album is cached under. */
 export const albumCacheKey = ({ artist, album, albumId, provider, sourceAlbumId } = {}) => cacheKeyOf('album', [artist, album, albumId, provider, sourceAlbumId])
 /** The key an online artist is cached under. */
-export const artistCacheKey = (name, anchor = null) => cacheKeyOf('artist', anchor?.artistId && anchor?.provider ? [name, anchor.provider, anchor.artistId] : [name])
+export const artistCacheKey = (name, anchor = null) => {
+  const normalizedName = recommendationKey(name) || String(name || '')
+  // Provider artist IDs are opaque identifiers, not names. Preserve their
+  // exact spelling and case so distinct IDs cannot share a profile cache entry.
+  if (anchor?.artistId != null && anchor?.provider) {
+    return JSON.stringify(['artist-source', normalizedName, String(anchor.provider), String(anchor.artistId)])
+  }
+  return cacheKeyOf('artist', [name])
+}
 
 /** What's cached under `key` (and when), or null. */
 export function peekOnline(key) {
