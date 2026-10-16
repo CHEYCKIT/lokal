@@ -1210,6 +1210,10 @@ function registerScannerHandlers(ipcMain) {
     if (genre) { where.push(genre.sql); params.push(...genre.params) }
     const quality = opts.quality ? require('../quality').tierFilter(db, opts.quality) : null
     if (quality) { where.push(quality.sql); params.push(...quality.params) }
+    if (opts.format) {
+      const match = String(opts.format).match(/^(16|24|32)-(\d{5,6})$/)
+      if (match) { where.push('bit_depth = ? AND sample_rate = ?'); params.push(Number(match[1]), Number(match[2])) }
+    }
     return require('../trackErrors').listTracks(db, opts, { where, params, exists: fs.existsSync })
   })
   ipcMain.handle('tracks:reportError', (_, trackId, message) => { try { return require('../trackErrors').recordTrackError(getDB(), trackId, message) } catch { return false } })

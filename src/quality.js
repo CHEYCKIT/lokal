@@ -1,6 +1,8 @@
 // Audio quality of a track, for display (the backend keeps the same tiers,
 // electron/quality/index.js).
 
+import { peekSettings } from './api'
+
 const OPUS_LIKE = /^(?:opus|vorbis)/i
 
 /** Short codec name: MP3, AAC, FLAC, ALAC, Opus... */
@@ -117,6 +119,7 @@ export function storeSearches({ artist, title }) {
 export function canGetLossless(track) {
   const path = String(track?.file_path || '')
   if (!track?.id || !path || path.startsWith('ghost://') || track.missing) return false
+  if (peekSettings()?.get_lossless_any_song === '1') return true
   return Number(track.lossless) !== 1 || isSuspect(track)
 }
 
