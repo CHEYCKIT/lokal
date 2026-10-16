@@ -378,7 +378,14 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     // so the outer caller continues instead of receiving a rejected promise.
     return await new Promise((resolve, reject) => {
       const retryAndResolve = async () => {
-        try { resolve(await retry()) } catch (retryError) { reject(retryError) }
+        try {
+          const rows = await retry()
+          resolve(rows)
+          return rows
+        } catch (retryError) {
+          reject(retryError)
+          throw retryError
+        }
       }
       const cancel = () => resolve([])
       if (!dispatchAddonVerificationRequired(error, retryAndResolve, cancel)) reject(error)
