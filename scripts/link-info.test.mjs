@@ -29,9 +29,9 @@ test('a YouTube Music playlist link uses the playlist cover from Music itself', 
   const asked = []
   const root = {
     contents: {
-      musicDetailHeaderRenderer: {
+      musicResponsiveHeaderRenderer: {
         title: { simpleText: 'Night Drive' },
-        subtitle: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '18 songs' }] },
+        straplineTextOne: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '18 songs' }] },
         thumbnail: { croppedThumbnailRenderer: { thumbnail: { thumbnails: [
           { url: 'https://lh3.googleusercontent.com/night-drive-cover=w120-h120', width: 120, height: 120 },
           { url: 'https://lh3.googleusercontent.com/night-drive-cover=w226-h226', width: 226, height: 226 },
