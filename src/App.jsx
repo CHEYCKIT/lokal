@@ -1352,7 +1352,6 @@ export default function App() {
     if (!api.isElectron || !window.electron?.reportRemoteState) return
     let interval = null
     const publish = () => {
-      if (isWindowHidden()) return
       const state = usePlayerStore.getState()
       const payload = {
         isPlaying: state.isPlaying,
@@ -1380,13 +1379,14 @@ export default function App() {
       if (interval !== null) clearInterval(interval)
       interval = null
     }
-    const start = () => {
-      if (interval !== null || isWindowHidden()) return
+    const schedule = hidden => {
+      stop()
+      // Keep remotes current during background playback, but poll less often.
       publish()
-      interval = setInterval(publish, 1000)
+      interval = setInterval(publish, hidden ? 5000 : 1000)
     }
-    const unsubscribe = onWindowVisibility(hidden => { if (hidden) stop(); else start() })
-    if (!isWindowHidden()) start()
+    const unsubscribe = onWindowVisibility(schedule)
+    schedule(isWindowHidden())
     return () => { stop(); unsubscribe() }
   }, [currentTrack?.id, isPlaying, duration, volume])
 
