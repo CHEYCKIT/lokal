@@ -1413,9 +1413,12 @@ export default function App() {
         }
         const byId = new Map(tracks.filter(track => track?.id).map(track => [String(track.id), track]))
         const ordered = ids.map(id => byId.get(id)).filter(Boolean)
+        if (action === 'playLibraryTrack' && !byId.has(targetId)) {
+          return { error: 'The selected track is no longer available in the library' }
+        }
         if (!ordered.length) return { error: 'No playable tracks were found' }
         if (action === 'playLibraryTrack') {
-          const selected = byId.get(targetId) || ordered[0]
+          const selected = byId.get(targetId)
           state.playTrack(selected, ordered)
           return { ok: true, trackId: selected.id }
         }
