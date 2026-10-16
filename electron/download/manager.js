@@ -954,7 +954,7 @@ class DownloadManager {
     }
 
     const downloadUrl = job.musicPlaylistFallbackUrl || job.url
-    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: downloadUrl, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [], addonSource: job.opts?.addonSource, batchFile: job.musicPlaylistBatchFile || null, playlistTitle: musicPlaylistId ? job.musicPlaylistTitle || job.title : null })
+    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: downloadUrl, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [], addonSource: job.opts?.addonSource, batchFile: job.musicPlaylistBatchFile || null, playlistTitle: musicPlaylistId && !job.musicPlaylistFallback ? job.musicPlaylistTitle || job.title : null })
     job.cookies = cookies
     job.errorLines = []
     job.outputLines.push(...cookies.notes)
@@ -1675,7 +1675,8 @@ class DownloadManager {
           try { fs.unlinkSync(full) } catch {}
         }
       }
-    }    this.clearMusicPlaylistBatch(job)
+    }
+    this.clearMusicPlaylistBatch(job)
   }
 
   /** Updates yt-dlp once for everything that's waiting on it, then lets them run. */
