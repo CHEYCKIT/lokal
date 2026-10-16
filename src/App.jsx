@@ -1646,9 +1646,7 @@ export default function App() {
     setAddonVerificationPrompt(current => current?.key === key ? null : current)
     setAddonVerificationMessage('')
     if (typeof pending.retry === 'function') {
-      Promise.resolve().then(() => pending.retry()).then(result => {
-        if (result !== false && result !== null) setIsPlaying(true)
-      }).catch(error => {
+      Promise.resolve().then(() => pending.retry()).catch(error => {
         setAddonVerificationMessage(error?.message || "Verification succeeded, but playback couldn't be resumed. Try playing the song again.")
       })
       return
@@ -1678,12 +1676,13 @@ export default function App() {
       }
       setAddonVerificationMessage('')
       setAddonVerificationPrompt({ key, provider: provider || 'a-' + key, title })
-      setIsPlaying(false)
-      setIsBuffering(false)
+      // This event is raised during recommendation resolution, before its
+      // candidate is installed in the queue. Keep the current song untouched;
+      // the actual stream-preparation path owns its own pause/resume handling.
     }
     window.addEventListener('lokal:addon-verification-required', onAddonVerificationRequired)
     return () => window.removeEventListener('lokal:addon-verification-required', onAddonVerificationRequired)
-  }, [setIsPlaying, setIsBuffering])
+  }, [])
 
   // A verified add-on is retried at the point that was interrupted: either the
   // selected Discovery candidate/batch, or the current track's stream request.
