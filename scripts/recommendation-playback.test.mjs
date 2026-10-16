@@ -9,6 +9,56 @@ const playable = track => ({ ...track, id: track.title, file_path: '/music/song.
 const tick = () => new Promise(resolve => setImmediate(resolve))
 beforeEach(() => store.setState({ currentTrack: null, queue: [], originalQueue: [], shuffleQueue: [], queueIndex: -1, shuffleIndex: -1, shuffle: false, repeat: 'off', playHistory: [], futureHistory: [], playbackGeneration: store.getState().playbackGeneration + 1, recommendationLoading: 0, progress: 0 }))
 
+test('verification automatically retries and starts the selected Discovery song', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let authenticated = false
+  const fakeWindow = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.window = fakeWindow
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const resolve = async (rows, options) => {
+      if (!authenticated) {
+        const error = new Error('VERIFY_REQUIRED')
+        error.code = 'ADDON_VERIFICATION_REQUIRED'
+        error.provider = 'a-0123456789'
+        error.key = '0123456789'
+        error.title = rows[0].title
+        options.onAddonVerificationRequired(error)
+        throw error
+      }
+      return rows.map(track => ({ ...playable(track), provider: 'a-0123456789' }))
+    }
+    const started = await playRecommendationPool(pool, {
+      selected: pool[2],
+      context: { type: 'discovery', name: 'Fresh Finds' },
+      resolve,
+    })
+    assert.equal(started, null, 'the first attempt pauses at verification')
+    assert.ok(pending, 'the existing verification popup should receive a retry callback')
+    authenticated = true
+    assert.equal(await pending.retry(), true)
+    assert.equal(store.getState().currentTrack.title, pool[2].title)
+    assert.equal(store.getState().currentTrack.provider, 'a-0123456789')
+    assert.equal(store.getState().isPlaying, true, 'the selected song starts without another Play click')
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
 test('selected playback starts before slow background resolution and retains full list order, position, and context', async () => {
   let release
   const options = []
