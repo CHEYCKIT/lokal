@@ -206,26 +206,72 @@ export async function playbackAvailability(match, provider, client = api, timeou
   if (typeof client.onlinePrepare !== 'function') return null
   const controller = new AbortController()
   let prepared
-  try { prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.') }
-  finally { controller.abort() }
+  try {
+    prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.')
+  } catch (error) {
+    onError(error?.message || error)
+    return 'unavailable'
+  } finally { controller.abort() }
   if (prepared?.preview) return 'preview'
-  if (prepared?.error) onError(prepared.error)
+  if (prepared?.error) onError(addonErrorText(prepared.error))
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = {}) {
+const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
+
+export const isAddonVerificationRequiredError = error => error?.code === 'ADDON_VERIFICATION_REQUIRED'
+
+export function dispatchAddonVerificationRequired(error, retry, cancel) {
+  if (!isAddonVerificationRequiredError(error) || typeof window === 'undefined') return false
+  window.dispatchEvent(new CustomEvent('lokal:addon-verification-required', {
+    detail: {
+      key: error.key || String(error.provider || '').slice(2),
+      provider: error.provider,
+      title: error.title || 'this song',
+      retry,
+      cancel,
+    },
+  }))
+  return true
+}
+
+function addonErrorText(value) {
+  if (typeof value === 'string') return value
+  return String(value?.message || value?.error || value?.detail || value?.code || '')
+}
+
+function requiresAddonVerification(provider, value) {
+  return /^a-/.test(String(provider || '')) && ADDON_ACCESS_ERROR.test(addonErrorText(value))
+}
+
+function addonVerificationError(provider, value, candidate) {
+  const error = new Error(addonErrorText(value) || 'This add-on needs verification.')
+  error.code = 'ADDON_VERIFICATION_REQUIRED'
+  error.provider = String(provider || '')
+  error.key = error.provider.slice(2)
+  error.title = candidate?.title || 'this song'
+  return error
+}
+
+export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
+  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
   const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
-  return (await mapLimited(uniqueSongs(candidates), async candidate => {
+  try {
+    return (await mapLimited(uniqueSongs(candidates), async candidate => {
     if (!isCurrent()) return null
     if (reusePlayable && playableRecommendation(candidate)) return candidate
     const videoId = recommendationVideoId(candidate)
     try {
       // A song from an addon's own album or artist page: that very song, no search.
       if (candidate.exact && /^a-/.test(String(candidate.provider || '')) && candidate.id != null) {
-        const saved = await timed(() => client.onlineSave([candidate]), timeoutMs).catch(() => null)
+        const saved = await timed(() => client.onlineSave([candidate]), timeoutMs).catch(error => {
+          if (requiresAddonVerification(candidate.provider, error)) throw addonVerificationError(candidate.provider, error, candidate)
+          return null
+        })
+        if (saved?.error && requiresAddonVerification(candidate.provider, saved.error)) throw addonVerificationError(candidate.provider, saved.error, candidate)
         const row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
         if (row && isCurrent()) return { ...row, title: candidate.title, artist: candidate.artist, album: candidate.album || row.album, artwork_url: candidate.artwork_url || row.artwork_url, source: candidate.source || 'addon' }
       }
@@ -272,20 +318,33 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
                 match = recommendationMatch(candidate, videos, { provider: 'yt' })
               }
             }
-            if (searchError) { failed('unavailable', searchError); continue }
+            if (searchError) {
+              if (requiresAddonVerification(source.id, searchError)) throw addonVerificationError(source.id, searchError, candidate)
+              failed('unavailable', searchError)
+              continue
+            }
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
             let detail
             const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
-            if (unavailable) { failed(unavailable, detail); continue }
+            if (unavailable) {
+              if (requiresAddonVerification(source.id, detail)) throw addonVerificationError(source.id, detail, candidate)
+              failed(unavailable, detail)
+              continue
+            }
             const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id, thumbnail: matchCover(candidate, match) || undefined }]), timeoutMs)
+            if (saved?.error && requiresAddonVerification(source.id, saved.error)) throw addonVerificationError(source.id, saved.error, candidate)
             // saveOnlineTracks preserves order, including nulls, for all
             // providers (addon row IDs are hashed by the backend).
             row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
             if (row) break
             failed('unavailable')
-          } catch (error) { failed('unavailable', error?.message) }
+          } catch (error) {
+            if (isAddonVerificationRequiredError(error)) throw error
+            if (requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
+            failed('unavailable', error?.message)
+          }
         }
       }
       return row && isCurrent() ? {
@@ -299,14 +358,35 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
         source: candidate.source || 'lastfm', reason: candidate.reason,
         scrobbledAt: candidate.scrobbledAt, scrobbleCount: candidate.scrobbleCount,
       } : null
-    } catch { return null }
-  })).filter(Boolean)
+    } catch (error) {
+      if (isAddonVerificationRequiredError(error)) throw error
+      return null
+    }
+    })).filter(Boolean)
+  } catch (error) {
+    if (!isAddonVerificationRequiredError(error)) throw error
+    const retry = () => resolveRecommendationTracks(candidates, client, options)
+    if (typeof onAddonVerificationRequired === 'function') {
+      onAddonVerificationRequired(error, retry)
+      throw error
+    }
+    // Direct callers (mix generation, downloads, playlist resolution) await the
+    // same operation while the popup is open. Its retry resolves this promise,
+    // so the outer caller continues instead of receiving a rejected promise.
+    return await new Promise((resolve, reject) => {
+      const retryAndResolve = async () => {
+        try { resolve(await retry()) } catch (retryError) { reject(retryError) }
+      }
+      const cancel = () => resolve([])
+      if (!dispatchAddonVerificationRequired(error, retryAndResolve, cancel)) reject(error)
+    })
+  }
 }
 
 // Build until the requested count, trying additional provider pages and
 // skipping failed playback matches. Previous songs are considered only after
 // new recommendations; there is no shuffle of the previous eight-song shelf.
-export async function buildRecommendationMix({ size, previous = [], loadPage, resolve = resolveRecommendationTracks, isCurrent = () => true }) {
+export async function buildRecommendationMix({ size, previous = [], loadPage, resolve = resolveRecommendationTracks, isCurrent = () => true, onAddonVerificationRequired: onVerificationRequired }) {
   const target = [24, 32, 40].includes(Number(size)) ? Number(size) : 32
   const previousKeys = new Set(previous.map(songKey))
   const tried = new Set()
@@ -318,7 +398,23 @@ export async function buildRecommendationMix({ size, previous = [], loadPage, re
     for (let at = 0; at < candidates.length && tracks.length < target && isCurrent(); at += 8) {
       const batch = candidates.slice(at, at + 8)
       batch.forEach(track => tried.add(songKey(track)))
-      const resolved = await resolve(batch)
+      let verificationRequested = false
+      const onAddonVerificationRequired = typeof onVerificationRequired === 'function'
+        ? error => { verificationRequested = true; onVerificationRequired(error) }
+        : undefined
+      let resolved
+      try {
+        const resolveOptions = onAddonVerificationRequired ? { onAddonVerificationRequired } : {}
+        resolved = resolve === resolveRecommendationTracks
+          ? await resolve(batch, api, resolveOptions)
+          : await resolve(batch, resolveOptions)
+      } catch (error) {
+        if (isAddonVerificationRequiredError(error) && !verificationRequested) {
+          if (typeof onVerificationRequired === 'function') onVerificationRequired(error)
+          else dispatchAddonVerificationRequired(error, () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }))
+        }
+        throw error
+      }
       if (!isCurrent()) throw new Error('Mix request superseded')
       for (const track of resolved) {
         if (!track?.id || ids.has(track.id) || tracks.length >= target) continue
