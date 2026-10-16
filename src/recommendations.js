@@ -213,7 +213,7 @@ export async function playbackAvailability(match, provider, client = api, timeou
     return 'unavailable'
   } finally { controller.abort() }
   if (prepared?.preview) return 'preview'
-  if (prepared?.error) onError(prepared.error)
+  if (prepared?.error) onError(addonErrorText(prepared.error))
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
@@ -223,7 +223,7 @@ export const isAddonVerificationRequiredError = error => error?.code === 'ADDON_
 
 function addonErrorText(value) {
   if (typeof value === 'string') return value
-  return String(value?.message || value?.error || value?.detail || '')
+  return String(value?.message || value?.error || value?.detail || value?.code || '')
 }
 
 function requiresAddonVerification(provider, value) {
