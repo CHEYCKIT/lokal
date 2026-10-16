@@ -66,6 +66,8 @@ import { skipUnavailableRecommendation } from './recommendationPlayback'
 import { useTranslation } from './i18n'
 import { THEMES, applyTheme } from './theme'
 import { useAppearanceFlag } from './appearanceFlags'
+import { usePerformanceMode } from './performanceMode'
+import { isWindowHidden, onWindowVisibility } from './windowVisibility'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
@@ -343,10 +345,16 @@ export default function App() {
   const { t } = useTranslation()
   // The glass player bar floats over the pages, which keep room for it.
   const glassPlayerBar = useAppearanceFlag('glass_player_bar')
+  const performanceMode = usePerformanceMode()
+  useEffect(() => {
+    document.documentElement.classList.toggle('performance-mode', performanceMode)
+    return () => document.documentElement.classList.remove('performance-mode')
+  }, [performanceMode])
   // Pages lay out by the space they get between the sidebars (pageWidth.js).
   const pageWidthRef = usePageWidth()
   const audioRef = useRef(null)
   const cfAudioRef = useRef(null)
+  const lastRemoteStateRef = useRef('')
   const streamRecoveryRef = useRef({ track: null, pending: false, failed: [] })
   // Library → Songs with errors: a song that failed to play is noted, and
   // the note goes once it plays again.
@@ -1342,9 +1350,10 @@ export default function App() {
 
   useEffect(() => {
     if (!api.isElectron || !window.electron?.reportRemoteState) return
+    let interval = null
     const publish = () => {
       const state = usePlayerStore.getState()
-      window.electron.reportRemoteState({
+      const payload = {
         isPlaying: state.isPlaying,
         progress: state.progress || 0,
         duration: state.duration || 0,
@@ -1360,11 +1369,25 @@ export default function App() {
               artwork_path: state.currentTrack.artwork_path,
             }
           : null,
-      })
+      }
+      const serialized = JSON.stringify(payload)
+      if (serialized === lastRemoteStateRef.current) return
+      lastRemoteStateRef.current = serialized
+      window.electron.reportRemoteState(payload)
     }
-    publish()
-    const interval = setInterval(publish, 1000)
-    return () => clearInterval(interval)
+    const stop = () => {
+      if (interval !== null) clearInterval(interval)
+      interval = null
+    }
+    const schedule = hidden => {
+      stop()
+      // Keep remotes current during background playback, but poll less often.
+      publish()
+      interval = setInterval(publish, hidden ? 5000 : 1000)
+    }
+    const unsubscribe = onWindowVisibility(schedule)
+    schedule(isWindowHidden())
+    return () => { stop(); unsubscribe() }
   }, [currentTrack?.id, isPlaying, duration, volume])
 
   useEffect(() => {

@@ -15,15 +15,30 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const cache = new Map()
+const MAX_PAGE_CACHE_ENTRIES = 32
+
+function readCache(key) {
+  if (!cache.has(key)) return undefined
+  const value = cache.get(key)
+  cache.delete(key)
+  cache.set(key, value)
+  return value
+}
+
+function storeCache(key, value) {
+  cache.delete(key)
+  cache.set(key, value)
+  while (cache.size > MAX_PAGE_CACHE_ENTRIES) cache.delete(cache.keys().next().value)
+}
 
 /** The value a page last stored under `key`, or undefined. */
 export function peekCache(key) {
-  return cache.get(key)
+  return readCache(key)
 }
 
 /** Store a value for the next visit of a page. */
 export function writeCache(key, value) {
-  cache.set(key, value)
+  storeCache(key, value)
 }
 
 /**
@@ -35,7 +50,7 @@ export function writeCache(key, value) {
  */
 export function useCachedState(key, initial) {
   const wasCached = useRef(cache.has(key)).current
-  const [value, setValue] = useState(() => (cache.has(key) ? cache.get(key) : (typeof initial === 'function' ? initial() : initial)))
+  const [value, setValue] = useState(() => (cache.has(key) ? readCache(key) : (typeof initial === 'function' ? initial() : initial)))
   const keyRef = useRef(key)
   keyRef.current = key
   // Only values set through `set` are stored (not the initial one), and only
@@ -46,7 +61,7 @@ export function useCachedState(key, initial) {
     setValue(next)
   }, [])
   useEffect(() => {
-    if (dirty.current) cache.set(keyRef.current, value)
+    if (dirty.current) storeCache(keyRef.current, value)
   }, [value])
   return [value, set, wasCached]
 }

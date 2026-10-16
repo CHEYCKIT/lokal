@@ -365,6 +365,15 @@ async function scanFolder(folderPath) {
   } catch (e) { console.warn('[scanFolder] Artist re-link skipped:', e.message) }
   const files = walkDir(folderPath)
   scanStatus.total = files.length
+  const PROGRESS_INTERVAL_MS = 100
+  const PROGRESS_EVERY_FILES = 20
+  let lastProgressAt = 0
+  const emitProgress = (force = false, complete = false) => {
+    const now = Date.now()
+    if (!force && scanStatus.done % PROGRESS_EVERY_FILES !== 0 && now - lastProgressAt < PROGRESS_INTERVAL_MS) return
+    lastProgressAt = now
+    emit('scanner:progress', { ...scanStatus, ...(complete ? { complete: true } : {}) })
+  }
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
 
   const linkArtist = db.prepare(`INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)`)
@@ -409,17 +418,17 @@ async function scanFolder(folderPath) {
   })
   const insertBatch = async (items) => {
     insertBatchTransaction(items)
-    for (const item of items) {
-      await emitPluginHook('onTrackIndexed', {
-        id: item.id,
-        title: item.title,
-        artist: item.artist,
-        album: item.album,
-        genre: item.genre,
-        duration: item.duration,
-        filePath: item.file_path,
-      })
-    }
+    // Run hook calls together for this bounded DB batch, rather than making
+    // each indexed track wait for the previous plugin round-trip.
+    await Promise.all(items.map(item => emitPluginHook('onTrackIndexed', {
+      id: item.id,
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      genre: item.genre,
+      duration: item.duration,
+      filePath: item.file_path,
+    })))
   }
 
   const BATCH = 20
@@ -446,7 +455,7 @@ async function scanFolder(folderPath) {
         const hasCurrentFolderArtwork = folderArtwork && existingArtwork === path.resolve(folderArtwork)
         const noArtworkToUpdate = !existingArtwork && !folderArtwork
         if (hasCachedArtwork || hasCurrentFolderArtwork || noArtworkToUpdate) {
-          scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue
+          scanStatus.done++; emitProgress(); continue
         }
       }
       const meta = await mm.parseFile(filePath, { duration: true, skipCovers: false })
@@ -456,21 +465,21 @@ async function scanFolder(folderPath) {
       const title = rawTitle || extractTitleFromFilename(filePath)
       const artist = rawArtist || extractArtistFromFolder(filePath)
       const duration = meta.format.duration || 0
-      if (!title && !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive title or artist`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
+      if (!title || !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive both title and artist`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       if (!rawTitle && title) console.log(`[scanFolder] Fallback title from filename: ${filePath} -> "${title}"`)
       if (!rawArtist && artist) console.log(`[scanFolder] Fallback artist from folder: ${filePath} -> "${artist}"`)
       const minDuration = getMinDuration()
-      if (duration < minDuration) { console.log(`[scanFolder] Skipped: ${filePath} - Too short (${duration}s)`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
-      if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emit('scanner:progress', { ...scanStatus }); continue }
+      if (duration < minDuration) { console.log(`[scanFolder] Skipped: ${filePath} - Too short (${duration}s)`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
+      if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       const artwork = await extractArtwork(meta, trackId, folderArtwork)
       const replaygain = c.replaygain_track_gain || null
       batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta) })
       if (batch.length >= BATCH) { await insertBatch(batch); batch = [] }
     } catch { scanStatus.errors++ }
-    scanStatus.done++; emit('scanner:progress', { ...scanStatus })
+    scanStatus.done++; emitProgress()
   }
   if (batch.length > 0) await insertBatch(batch)
-  scanStatus.scanning = false; emit('scanner:progress', { ...scanStatus, complete: true })
+  scanStatus.scanning = false; emitProgress(true, true)
   return scanStatus
 }
 
@@ -1751,13 +1760,43 @@ function downloadImageWithTimeout(url, dest, timeoutMs) {
   })
 }
 
+const ARTIST_CLEANUP_INTERVAL_MS = 60_000
+let lastUnusedArtistCleanupAt = 0
+let unusedArtistCleanupTimer = null
+
+function cleanupUnusedArtistsPeriodically(db) {
+  const now = Date.now()
+  const remaining = ARTIST_CLEANUP_INTERVAL_MS - (now - lastUnusedArtistCleanupAt)
+  if (remaining > 0) {
+    // A cleanup skipped due to the interval is still owed: schedule it for
+    // the first allowed instant, even if no further track is relinked.
+    if (unusedArtistCleanupTimer === null) {
+      unusedArtistCleanupTimer = setTimeout(() => {
+        unusedArtistCleanupTimer = null
+        try {
+          cleanupUnusedArtistsPeriodically(db)
+        } catch (error) {
+          console.warn('[scanner] Deferred unused-artist cleanup failed:', error.message)
+        }
+      }, remaining)
+      unusedArtistCleanupTimer.unref?.()
+    }
+    return
+  }
+
+  db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+  lastUnusedArtistCleanupAt = Date.now()
+  if (unusedArtistCleanupTimer !== null) clearTimeout(unusedArtistCleanupTimer)
+  unusedArtistCleanupTimer = null
+}
+
 function updateTrackArtistLinks(db, trackId, artist) {
   db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
   for (const name of splitArtists(artist)) {
     const artistId = resolveArtistId(db, name)
     db.prepare('INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)').run(artistId, trackId)
   }
-  db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
+  cleanupUnusedArtistsPeriodically(db)
 }
 
 async function indexSingleFile(filePath, opts = {}) {

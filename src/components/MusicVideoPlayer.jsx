@@ -12,6 +12,8 @@ import VideoOffsetControl from './VideoOffsetControl'
 import { syncVideo, seekVideo } from '../musicVideoPlayback'
 import { useLyricLines } from '../lyricLine'
 import { useLyricSubline } from '../lyrics/useLyricSubline'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
+import { usePerformanceMode } from '../performanceMode'
 import LyricSubtitles from './LyricSubtitles'
 
 // Further apart than this and the video jumps to the song; closer, it catches
@@ -160,7 +162,7 @@ export default function MusicVideoPlayer({ compact = false }) {
   const sync = useCallback(() => {
     const result = syncVideo(videoRef.current, {
       time: songTime(), segments, duration: video?.duration,
-      isPlaying: usePlayerStore.getState().isPlaying, hidden: document.hidden,
+      isPlaying: usePlayerStore.getState().isPlaying, hidden: isWindowHidden(),
     })
     if (result) setOutside(result.outside)
   }, [video, segments])
@@ -169,10 +171,19 @@ export default function MusicVideoPlayer({ compact = false }) {
   // periodic drift correction. Buffering the muted picture never pauses music.
   useEffect(() => {
     if (!open || !video?.src) return undefined
-    sync()
-    const id = setInterval(sync, 200)
-    document.addEventListener('visibilitychange', sync)
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', sync) }
+    let interval = null
+    const updateVisibility = hidden => {
+      if (interval !== null) clearInterval(interval)
+      interval = null
+      sync()
+      if (!hidden) interval = setInterval(sync, 200)
+    }
+    const unsubscribe = onWindowVisibility(updateVisibility)
+    updateVisibility(isWindowHidden())
+    return () => {
+      if (interval !== null) clearInterval(interval)
+      unsubscribe()
+    }
   }, [open, video?.src, isPlaying, sync])
 
   const onVideoError = useCallback(() => {
@@ -185,7 +196,7 @@ export default function MusicVideoPlayer({ compact = false }) {
         el.addEventListener('loadeddata', () => {
           const target = videoTimeFor(segments, songTime())
           if (target != null && target >= 0) el.currentTime = target
-          if (usePlayerStore.getState().isPlaying && !document.hidden) el.play().catch(() => {})
+          if (usePlayerStore.getState().isPlaying && !isWindowHidden()) el.play().catch(() => {})
         }, { once: true })
         return
       } catch {}
@@ -533,9 +544,10 @@ function leadCopy(video) {
 
 export function VideoGlow({ videoRef, active }) {
   const canvasRef = useRef(null)
+  const performanceMode = usePerformanceMode()
   const [drawn, setDrawn] = useState(false)
   useEffect(() => {
-    if (!active) { setDrawn(false); return undefined }
+    if (!active || performanceMode) { setDrawn(false); return undefined }
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d', { alpha: false })
     if (!context) return undefined
@@ -545,9 +557,15 @@ export function VideoGlow({ videoRef, active }) {
     let last = null
     let first = true
     let lead = null
+    let hidden = isWindowHidden()
+    let timer = null
+    const stopLead = () => {
+      lead?.stop()
+      lead = null
+    }
     const draw = () => {
       const video = videoRef.current
-      if (document.hidden || !video || video.readyState < 2 || !video.videoWidth) return
+      if (hidden || isWindowHidden() || !video || video.readyState < 2 || !video.videoWidth) return
       const src = video.currentSrc || video.src || ''
       if (!lead && src) lead = leadCopy(video)
       if (video.paused && last === video.currentTime) return
@@ -565,10 +583,31 @@ export function VideoGlow({ videoRef, active }) {
         setDrawn(true)
       } catch {}
     }
-    draw()
-    const timer = setInterval(draw, AMBIENT_EVERY_MS)
-    return () => { clearInterval(timer); lead?.stop() }
-  }, [active, videoRef])
+    const start = () => {
+      if (hidden || timer !== null) return
+      draw()
+      timer = setInterval(draw, AMBIENT_EVERY_MS)
+    }
+    const stop = () => {
+      if (timer !== null) clearInterval(timer)
+      timer = null
+      stopLead()
+    }
+    const unsubscribeVisibility = onWindowVisibility(nextHidden => {
+      hidden = nextHidden
+      if (hidden) {
+        stop()
+        setDrawn(false)
+      } else {
+        last = null
+        first = true
+        start()
+      }
+    })
+    if (!hidden) start()
+    return () => { unsubscribeVisibility(); stop() }
+  }, [active, videoRef, performanceMode])
+  if (performanceMode) return null
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-1000 ${active && drawn ? 'opacity-95' : 'opacity-0'}`}>
       <canvas ref={canvasRef} width={AMBIENT_WIDTH} height={54} className="absolute inset-0 h-full w-full" />

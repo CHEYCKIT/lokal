@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
+import { usePerformanceMode } from '../performanceMode'
 
 export default function Waveform({
   isPlaying,
@@ -23,6 +25,7 @@ export default function Waveform({
   // observing the canvas's own resulting box size instead of the parent's.
   const sizeRef = useRef({ w: defaultWidth, h: defaultHeight })
   const [analyserVersion, setAnalyserVersion] = useState(0)
+  const performanceMode = usePerformanceMode()
 
   useEffect(() => {
     const onAnalyserReady = () => setAnalyserVersion(v => v + 1)
@@ -31,9 +34,11 @@ export default function Waveform({
   }, [])
 
   useEffect(() => {
+    if (performanceMode) return undefined
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
+    let hidden = isWindowHidden()
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
@@ -143,6 +148,7 @@ export default function Waveform({
     let gradient = null
     let gradientWidth = 0
     const draw = (now = performance.now()) => {
+      if (hidden) { animationRef.current = null; return }
       if (now - last < FRAME_MS - 1) { animationRef.current = requestAnimationFrame(draw); return }
       last = now
       const { w: cssW, h: cssH } = sizeRef.current
@@ -202,18 +208,37 @@ export default function Waveform({
       animationRef.current = requestAnimationFrame(draw)
     }
 
-    draw()
+    const stopFrame = () => {
+      if (animationRef.current !== null) cancelAnimationFrame(animationRef.current)
+      animationRef.current = null
+    }
+    const unsubscribeVisibility = onWindowVisibility(nextHidden => {
+      hidden = nextHidden
+      if (hidden) {
+        stopFrame()
+        return
+      }
+      idleFrames = 0
+      last = 0
+      if (!animationRef.current) animationRef.current = requestAnimationFrame(draw)
+    })
+    if (!hidden) draw()
+
     // A resize clears the canvas: draw again, even if a pause had stopped it.
-    const kick = () => { if (!animationRef.current) { idleFrames = 50; last = 0; draw() } }
+    const kick = () => { if (!hidden && !performanceMode && !animationRef.current) { idleFrames = 50; last = 0; draw() } }
     canvas.addEventListener('lokal:waveform-resize', kick)
 
     return () => {
       canvas.removeEventListener('lokal:waveform-resize', kick)
+      unsubscribeVisibility()
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
+      animationRef.current = null
       if (resizeObserverRef.current) resizeObserverRef.current.disconnect()
       else window.removeEventListener('resize', resize)
     }
-  }, [isPlaying, barCount, defaultWidth, defaultHeight, analyserVersion])
+  }, [isPlaying, barCount, defaultWidth, defaultHeight, analyserVersion, performanceMode])
+
+  if (performanceMode) return null
 
   return (
     <canvas
