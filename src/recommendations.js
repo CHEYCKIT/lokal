@@ -221,6 +221,19 @@ const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[s
 
 export const isAddonVerificationRequiredError = error => error?.code === 'ADDON_VERIFICATION_REQUIRED'
 
+export function dispatchAddonVerificationRequired(error, retry) {
+  if (!isAddonVerificationRequiredError(error) || typeof window === 'undefined') return false
+  window.dispatchEvent(new CustomEvent('lokal:addon-verification-required', {
+    detail: {
+      key: error.key || String(error.provider || '').slice(2),
+      provider: error.provider,
+      title: error.title || 'this song',
+      retry,
+    },
+  }))
+  return true
+}
+
 function addonErrorText(value) {
   if (typeof value === 'string') return value
   return String(value?.message || value?.error || value?.detail || value?.code || '')
@@ -239,7 +252,16 @@ function addonVerificationError(provider, value, candidate) {
   return error
 }
 
-export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = {}) {
+export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
+  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
+  let verificationRequested = false
+  const requestVerification = error => {
+    if (verificationRequested) return
+    verificationRequested = true
+    const retry = () => resolveRecommendationTracks(candidates, client, options)
+    if (typeof onAddonVerificationRequired === 'function') onAddonVerificationRequired(error, retry)
+    else dispatchAddonVerificationRequired(error, retry)
+  }
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
@@ -343,7 +365,10 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
         scrobbledAt: candidate.scrobbledAt, scrobbleCount: candidate.scrobbleCount,
       } : null
     } catch (error) {
-      if (isAddonVerificationRequiredError(error)) throw error
+      if (isAddonVerificationRequiredError(error)) {
+        requestVerification(error)
+        throw error
+      }
       return null
     }
   })).filter(Boolean)
@@ -364,7 +389,13 @@ export async function buildRecommendationMix({ size, previous = [], loadPage, re
     for (let at = 0; at < candidates.length && tracks.length < target && isCurrent(); at += 8) {
       const batch = candidates.slice(at, at + 8)
       batch.forEach(track => tried.add(songKey(track)))
-      const resolved = await resolve(batch)
+      const onAddonVerificationRequired = error => dispatchAddonVerificationRequired(
+        error,
+        () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }),
+      )
+      const resolved = resolve === resolveRecommendationTracks
+        ? await resolve(batch, api, { onAddonVerificationRequired })
+        : await resolve(batch, { onAddonVerificationRequired })
       if (!isCurrent()) throw new Error('Mix request superseded')
       for (const track of resolved) {
         if (!track?.id || ids.has(track.id) || tracks.length >= target) continue
