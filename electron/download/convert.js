@@ -31,7 +31,7 @@ const LOSSLESS = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavP
 // Chromium needs the same lossless-to-FLAC fallback. Keep classification in
 // one place so those aliases can't be marked playable by accident.
 function classifyCodec(codecValue, formatLossless = false, containerValue = '') {
-  const codec = String(codecValue || containerValue || '').trim()
+  const codec = String(codecValue || '').trim() || String(containerValue || '').trim()
   return {
     codec,
     lossless: !!formatLossless || LOSSLESS.test(codec),
