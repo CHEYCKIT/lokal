@@ -29,7 +29,7 @@ test('saved priority excludes removed addons and includes newly available provid
   assert.deepEqual(orderedPlaybackSources('bad json').map(p => p.id), ['yt', 'sc'])
 })
 
-test('addon verification during recommendation resolution is surfaced and stops provider fallback', async () => {
+test('search verification errors do not prompt until an addon match exists', async () => {
   const tried = []
   const requested = []
   const { client } = clientMock({
@@ -40,22 +40,17 @@ test('addon verification during recommendation resolution is surfaced and stops 
         : { results: [{ ...song(7), id: 'abcdefghijk', provider }] }
     },
   })
-  await assert.rejects(
-    resolveRecommendationTracks([song(7)], client, {
-      searchLocal: false,
-      sources: [{ id: addon, label: 'Addon' }, { id: 'yt', label: 'YouTube' }],
-      onAddonVerificationRequired: error => requested.push(error),
-    }),
-    error => error?.code === 'ADDON_VERIFICATION_REQUIRED',
-  )
-  assert.deepEqual(tried, [addon], 'must not silently fall through to YouTube')
-  assert.equal(requested.length, 1)
-  assert.equal(requested[0].provider, addon)
-  assert.equal(requested[0].key, addon.slice(2))
-  assert.equal(requested[0].title, 'Song 7')
+  const [resolved] = await resolveRecommendationTracks([song(7)], client, {
+    searchLocal: false,
+    sources: [{ id: addon, label: 'Addon' }, { id: 'yt', label: 'YouTube' }],
+    onAddonVerificationRequired: error => requested.push(error),
+  })
+  assert.deepEqual(tried, [addon, 'yt'], 'search failure should continue to another source')
+  assert.equal(resolved.provider, 'yt')
+  assert.deepEqual(requested, [], 'verification must not be requested without an addon match')
 })
 
-test('direct resolver callers resume after addon verification instead of rejecting', async () => {
+test('direct resolver callers resume automatically after a matched addon needs verification', async () => {
   const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
   const oldWindow = globalThis.window
   const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
@@ -73,21 +68,76 @@ test('direct resolver callers resume after addon verification instead of rejecti
     constructor(type, init = {}) { this.type = type; this.detail = init.detail }
   }
   try {
+    const attempts = []
     const { client } = clientMock({
-      onlineSearch: async (_query, provider) => provider === addon && !authenticated
-        ? { error: 'VERIFY_REQUIRED: complete addon verification' }
-        : { results: [{ ...song(8), id: 'abcdefghijk', provider }] },
+      onlineSearch: async (_query, provider) => {
+        attempts.push(provider)
+        return { results: provider === addon ? [{ ...song(8), id: 'abcdefghijk', provider }] : [] }
+      },
+      onlinePrepare: async () => authenticated
+        ? { ok: true, preview: false }
+        : { ok: false, error: 'VERIFY_REQUIRED: complete addon verification' },
     })
     const resultPromise = resolveRecommendationTracks([song(8)], client, {
       searchLocal: false,
-      sources: [{ id: addon, label: 'Addon' }, { id: 'yt', label: 'YouTube' }],
+      sources: [{ id: 'yt', label: 'YouTube' }, { id: addon, label: 'Addon' }],
     })
     for (let attempt = 0; attempt < 10 && !pending; attempt++) await new Promise(resolve => setImmediate(resolve))
-    assert.ok(pending, 'direct callers should receive the verification event')
+    assert.ok(pending, 'a matched addon stream that needs verification should open the prompt')
+    assert.equal(pending.provider, addon)
+    assert.deepEqual(attempts, ['yt', addon], 'the first provider has no match; the addon is the matched provider')
     authenticated = true
     await pending.retry()
+    assert.deepEqual(attempts, ['yt', addon, addon], 'retry should resume at the matched addon, not search YouTube again')
     const rows = await resultPromise
-    assert.equal(rows.length, 1, 'the original resolver promise should resume with the resolved track')
+    assert.equal(rows.length, 1, 'the original resolution should resume with the playable match')
+    assert.equal(rows[0].provider, addon)
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
+test('direct verification retry hands the original promise to a second prompt', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let prepares = 0
+  const fakeWindow = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.window = fakeWindow
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const { client } = clientMock({
+      onlineSearch: async (_query, provider) => ({ results: [{ ...song(9), id: 'abcdefghijk', provider }] }),
+      onlinePrepare: async () => ++prepares < 3
+        ? { ok: false, error: 'VERIFY_REQUIRED: complete addon verification' }
+        : { ok: true, preview: false },
+    })
+    const resultPromise = resolveRecommendationTracks([song(9)], client, {
+      searchLocal: false,
+      sources: [{ id: addon, label: 'Addon' }],
+    })
+    for (let attempt = 0; attempt < 10 && !pending; attempt++) await new Promise(resolve => setImmediate(resolve))
+    const firstPrompt = pending
+    assert.ok(firstPrompt, 'first verification should open the prompt')
+    assert.equal(await firstPrompt.retry(), null, 'the first retry should yield when a replacement prompt takes ownership')
+    assert.notEqual(pending, firstPrompt, 'a second verification should replace the prompt')
+    assert.equal(prepares, 2)
+    const rows = await pending.retry()
+    assert.equal(rows.length, 1)
+    assert.equal((await resultPromise).length, 1, 'the original caller should resolve after the later verification succeeds')
+    assert.equal(prepares, 3)
   } finally {
     if (hadWindow) globalThis.window = oldWindow
     else delete globalThis.window

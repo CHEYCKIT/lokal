@@ -16,7 +16,7 @@ function requestAddonVerification(error, retry) {
 
 /** Start one song promptly, then fill the same ordered queue in bounded batches. */
 export async function playRecommendationPool(candidates, options = {}) {
-  const { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, store = usePlayerStore } = options
+  const { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, startFromProvider, returnAfterStart = false, store = usePlayerStore } = options
   let { resolve } = options
   const pool = uniqueSongs(candidates)
   let index = selected ? pool.findIndex(track => songKey(track) === songKey(selected)) : 0
@@ -28,6 +28,10 @@ export async function playRecommendationPool(candidates, options = {}) {
   store.setState({ playbackGeneration: version, recommendationLoading: version })
   onReserved?.(version)
   const current = () => isCurrent() && store.getState().playbackGeneration === version
+  let backgroundResolutionOwnsLoading = false
+  const clearLoading = () => {
+    if (store.getState().recommendationLoading === version) store.setState({ recommendationLoading: 0 })
+  }
   try {
     if (!resolve) {
       const sources = await playbackSources()
@@ -42,18 +46,25 @@ export async function playRecommendationPool(candidates, options = {}) {
       index = (start + attempt) % pool.length
       let rows
       let verificationPrompted = false
-      const retryCandidate = () => playRecommendationPool(candidates, { ...options, selected: pool[index] })
+      const retryCandidate = provider => {
+        // Another play action can supersede this candidate while the prompt is open.
+        if (!current()) return undefined
+        return playRecommendationPool(candidates, {
+          ...options, resolve, selected: pool[index], startFromProvider: provider, returnAfterStart: true,
+        })
+      }
       try {
         rows = await resolve([pool[index]], {
           isCurrent: current, prepareStreams: true, onProviderFailure, onProgress,
+          ...(startFromProvider ? { startFromProvider } : {}),
           onAddonVerificationRequired: error => {
             verificationPrompted = true
-            if (current()) requestAddonVerification(error, retryCandidate)
+            if (current()) requestAddonVerification(error, () => retryCandidate(error.provider))
           },
         })
       } catch (error) {
         if (isAddonVerificationRequiredError(error)) {
-          if (current() && !verificationPrompted) requestAddonVerification(error, retryCandidate)
+          if (current() && !verificationPrompted) requestAddonVerification(error, () => retryCandidate(error.provider))
           return null
         }
         rows = []
@@ -98,10 +109,17 @@ export async function playRecommendationPool(candidates, options = {}) {
       }
       return current()
     }
+    if (returnAfterStart) {
+      // Resolving the rest of Discovery is background work; don't keep the
+      // verification dialog blocking controls after the selected song starts.
+      backgroundResolutionOwnsLoading = true
+      void resolveRemaining(0).catch(() => {}).finally(clearLoading)
+      return true
+    }
     const remainingResolved = await resolveRemaining(0)
     return remainingResolved === false ? null : true
   } finally {
-    if (store.getState().recommendationLoading === version) store.setState({ recommendationLoading: 0 })
+    if (!backgroundResolutionOwnsLoading) clearLoading()
   }
 }
 
