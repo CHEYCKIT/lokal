@@ -4,7 +4,7 @@ import youtube from '../electron/online/youtube.js'
 
 const cookies = 'Cookie: __Secure-3PAPISID=test-session-value; __Secure-3PSID=test-login-value'
 const musicConfig = { INNERTUBE_CLIENT_VERSION: '1.test.client', VISITOR_DATA: 'test-visitor', SESSION_INDEX: '2', DELEGATED_SESSION_ID: 'test-channel' }
-const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '1' }] }] }, contents: { musicTwoRowItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk' } }, title: { runs: [{ text: 'Song' }] }, straplineTextOne: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: 'Album' }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://images.example/cover.jpg' }] } } } } } }
+const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ key: 'logged_in', value: '1' }] }] }, contents: { musicTwoRowItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'abcdefghijk' } }, title: { runs: [{ text: 'Song' }] }, subtitle: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: 'Album' }] }, thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://images.example/cover.jpg' }] } } } } } }
 const column = runs => ({ musicResponsiveListItemFlexColumnRenderer: { text: { runs } } })
 const linked = (text, browseId, type) => ({ text, navigationEndpoint: { browseEndpoint: { browseId, ...(type ? { browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: `MUSIC_PAGE_TYPE_${type}` } } } : {}) } } })
 
@@ -66,11 +66,11 @@ test('history rows read separate album and duration columns, including album end
   assert.equal(track.duration, 222)
   assert.equal(youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'Song' }]), column([{ text: 'Artist' }]), column([{ text: 'Plain Album' }])] }).album, 'Plain Album')
   assert.equal(youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'Song' }]), column([{ text: 'Artist' }]), column([{ text: '1989' }])] }).album, '1989')
-  assert.equal(youtube.parseAccountTracks({ musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, straplineTextOne: { runs: [{ text: 'Artist • Album' }] } } })[0].album, 'Album')
+  assert.equal(youtube.parseAccountTracks({ musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, subtitle: { runs: [{ text: 'Artist • Album' }] } } })[0].album, 'Album')
 })
 
 test('account tracks preserve provider order across renderer types and do not mistake video views for albums', () => {
-  const card = { musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, straplineTextOne: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: '2.3M views' }] } } }
+  const card = { musicTwoRowItemRenderer: { ...accountRoot.contents.musicTwoRowItemRenderer, subtitle: { runs: [{ text: 'Artist' }, { text: ' • ' }, { text: '2.3M views' }] } } }
   const panel = { playlistPanelVideoRenderer: { videoId: 'bcdefghijkl', title: { simpleText: 'Panel Song' }, longBylineText: { runs: [linked('Artist', 'UCartist', 'ARTIST'), { text: ' • ' }, linked('Panel Album', 'MPREpanel', 'ALBUM')] } } }
   const row = { musicResponsiveListItemRenderer: { playlistItemData: { videoId: 'cdefghijklm' }, flexColumns: [column([{ text: 'Row Song' }]), column([{ text: 'Artist' }, { text: ' • ' }, { text: 'Row Album' }])] } }
   const tracks = youtube.parseAccountTracks([card, panel, row, card])
@@ -268,7 +268,7 @@ const artistPage = (name, songs, albums, singles = []) => ({
     ...[['Albums', albums], ['Singles', singles]].map(([title, list]) => ({ musicCarouselShelfRenderer: {
       header: { musicCarouselShelfBasicHeaderRenderer: { title: { runs: [{ text: title }] } } },
       contents: list.map(([albumTitle, id, year]) => ({ musicTwoRowItemRenderer: {
-        title: { runs: [linked(albumTitle, id, 'ALBUM')] }, straplineTextOne: { runs: [{ text: String(year) }] },
+        title: { runs: [linked(albumTitle, id, 'ALBUM')] }, subtitle: { runs: [{ text: String(year) }] },
         navigationEndpoint: { browseEndpoint: { browseId: id, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ALBUM' } } } },
       } })),
     } })),
