@@ -1,3 +1,26 @@
+const os = require('os')
+
+function getRemoteConnectionInfo() {
+  const port = Number(process.env.PORT) || 3421
+  const urls = []
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const info of entries || []) {
+      if (!info || info.internal || info.family !== 'IPv4' || String(info.address).startsWith('169.254.')) continue
+      urls.push(`http://${info.address}:${port}/remote`)
+    }
+  }
+  const token = String(process.env.REMOTE_TOKEN || '').trim()
+  const linkedUrls = [...new Set(urls)].map(url => token ? `${url}#token=${encodeURIComponent(token)}` : url)
+  const primary = linkedUrls[0] || null
+  return {
+    sameWifiRequired: true,
+    primary,
+    urls: linkedUrls,
+    qrUrl: primary ? `https://quickchart.io/qr?text=${encodeURIComponent(primary)}&size=256` : null,
+    tokenRequired: !!token,
+  }
+}
+
 let remoteState = {
   connected: false,
   isPlaying: false,
@@ -40,6 +63,7 @@ async function sendRemoteCommand(command) {
 }
 
 module.exports = {
+  getRemoteConnectionInfo,
   setRemoteState,
   getRemoteState,
   setRemoteCommandHandler,
