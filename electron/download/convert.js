@@ -173,4 +173,4 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   return job
 }
 
-module.exports = { probe, makePlayable, playableCopy, convertArgs }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs }
