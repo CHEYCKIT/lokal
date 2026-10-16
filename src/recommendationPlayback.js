@@ -83,7 +83,7 @@ export async function playRecommendationPool(candidates, options = {}) {
       return current()
     }
     const remainingResolved = await resolveRemaining(0)
-    return remainingResolved !== false
+    return remainingResolved === false ? null : true
   } finally {
     if (store.getState().recommendationLoading === version) store.setState({ recommendationLoading: 0 })
   }
