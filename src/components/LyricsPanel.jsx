@@ -5,6 +5,7 @@ import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 
 import LyricsSearchDrawer from './LyricsSearchDrawer'
 import LyricBreakDots from './LyricBreakDots'
 import { api } from '../api'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { useLyricSubline } from '../lyrics/useLyricSubline'
 import { announceLyricsChanged } from '../lyricLine'
 import { usePlayerStore } from '../store/player'
@@ -547,9 +548,11 @@ export default function LyricsPanel({
 
   useEffect(() => {
     if (!synced || !lines.length) return
-    let raf
+    let raf = null
+    let hidden = isWindowHidden()
     const tick = () => {
-      raf = requestAnimationFrame(tick)
+      raf = null
+      if (hidden) return
       const t = now()
       const live = new Set(activeRows(lines, t))
       // Lines that just stopped being sung get settled into their final state once.
@@ -574,9 +577,22 @@ export default function LyricsPanel({
         if (sub?.words?.length && refs.subEl) paintVoice(refs.subEl.querySelector('[data-voice="timed"]'), sub.words, t, true)
       }
       paintedRows.current = live
+      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const unsubscribeVisibility = onWindowVisibility(nextHidden => {
+      hidden = nextHidden
+      if (hidden) {
+        if (raf !== null) cancelAnimationFrame(raf)
+        raf = null
+      } else if (raf === null) {
+        raf = requestAnimationFrame(tick)
+      }
+    })
+    if (!hidden) raf = requestAnimationFrame(tick)
+    return () => {
+      unsubscribeVisibility()
+      if (raf !== null) cancelAnimationFrame(raf)
+    }
   }, [synced, lines, nextTimes, now, wordSync, subLines])
 
   // When the list re-renders, bring every timed line to its correct resting state.

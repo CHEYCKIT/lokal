@@ -14,6 +14,7 @@ import { streamRef } from './onlineTracks.js'
 export const LOOKAHEAD = 4
 export const STAGGER_MS = 2000
 const PREPARED_TTL_MS = 20 * 60 * 1000 // a stream looked up this recently still plays
+const MAX_PREPARED_KEYS = 100
 
 const prepared = new Map() // provider:id -> when it was ready
 const running = new Map() // provider:id -> AbortController
@@ -37,6 +38,13 @@ export function upcomingTracks(state, count = LOOKAHEAD) {
 
 const keyOf = ref => `${ref.provider}:${ref.id}`
 
+function prunePrepared(now = Date.now()) {
+  for (const [key, at] of prepared) {
+    if (now - at >= PREPARED_TTL_MS) prepared.delete(key)
+  }
+  while (prepared.size > MAX_PREPARED_KEYS) prepared.delete(prepared.keys().next().value)
+}
+
 /** Forget what was looked up (tests; another account). */
 export function resetPrefetch() {
   for (const timer of timers) clearTimeout(timer)
@@ -52,6 +60,7 @@ export function resetPrefetch() {
  * @returns the keys asked for, in order (for the tests)
  */
 export function prefetchUpcoming(state, { prepare = (provider, id, options) => api.onlinePrepare(provider, id, false, options), now = Date.now, schedule = setTimeout, cancel = clearTimeout, count = LOOKAHEAD, stagger = STAGGER_MS, getState = () => state } = {}) {
+  prunePrepared(now())
   for (const timer of timers) cancel(timer)
   timers = []
   const refs = []
@@ -69,7 +78,7 @@ export function prefetchUpcoming(state, { prepare = (provider, id, options) => a
   for (const ref of refs) {
     const key = keyOf(ref)
     const at = prepared.get(key)
-    if ((at && now() - at < PREPARED_TTL_MS) || running.has(key)) continue
+    if ((at != null && now() - at < PREPARED_TTL_MS) || running.has(key)) continue
     asked.push(key)
     const start = () => {
       if (running.has(key)) return
@@ -78,7 +87,13 @@ export function prefetchUpcoming(state, { prepare = (provider, id, options) => a
       const controller = new AbortController()
       running.set(key, controller)
       Promise.resolve(prepare(ref.provider, ref.id, { signal: controller.signal }))
-        .then(result => { if (result && !result.error && !controller.signal.aborted) prepared.set(key, now()) })
+        .then(result => {
+          if (result && !result.error && !controller.signal.aborted) {
+            prepared.delete(key)
+            prepared.set(key, now())
+            prunePrepared(now())
+          }
+        })
         .catch(() => {})
         .finally(() => { if (running.get(key) === controller) running.delete(key) })
     }

@@ -16,6 +16,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'framer-motion'
 import { usePlayerStore } from '../store/player'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
+import { usePerformanceMode } from '../performanceMode'
 import { blobBlur, blobMask, clamp01, coverTransitionMode, makeBlobs } from '../coverMix'
 
 const MIX_MS = 2400
@@ -34,9 +36,23 @@ function Layer({ layer, children, onDone }) {
       return undefined
     }
     const duration = layer.mode === 'mix' ? MIX_MS : FADE_MS
-    const started = performance.now()
+    let started = performance.now()
+    let hidden = isWindowHidden()
     let frame = 0
+    let timer = null
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      if (frame) cancelAnimationFrame(frame)
+      frame = 0
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      onDone()
+    }
     const paint = now => {
+      frame = 0
+      if (hidden || finished) return
       const p = clamp01((now - started) / duration)
       if (layer.mode === 'mix') {
         const mask = blobMask(layer.blobs, p)
@@ -48,11 +64,24 @@ function Layer({ layer, children, onDone }) {
         el.style.opacity = String(p)
       }
       if (p < 1) frame = requestAnimationFrame(paint)
+      else finish()
     }
-    paint(started)
-    // Done on a timer too: no animation frames while the window is minimized.
-    const timer = setTimeout(onDone, duration + 60)
-    return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
+    const unsubscribeVisibility = onWindowVisibility(nextHidden => {
+      hidden = nextHidden
+      // There's no value in animating a hidden cover; settle to the new layer.
+      if (hidden) finish()
+      else { started = performance.now(); paint(started) }
+    })
+    if (hidden) finish()
+    else {
+      paint(started)
+      timer = setTimeout(finish, duration + 60)
+    }
+    return () => {
+      unsubscribeVisibility()
+      if (frame) cancelAnimationFrame(frame)
+      if (timer !== null) clearTimeout(timer)
+    }
     // The layer's own transition: the song's details updating (new artwork) don't restart it.
   }, [layer.key, layer.mode]) // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={ref} className="absolute inset-0" style={layer.mode === 'fade' ? { opacity: 0 } : layer.mode === 'mix' ? { WebkitMaskImage: blobMask(layer.blobs, 0), maskImage: blobMask(layer.blobs, 0) } : undefined}>{children}</div>
@@ -64,11 +93,20 @@ function Layer({ layer, children, onDone }) {
  */
 export default function MixCovers({ track, render }) {
   const reduceMotion = useReducedMotion()
+  const performanceMode = usePerformanceMode()
   const id = track?.id ?? null
   const [layers, setLayers] = useState(() => [{ key: ++nextKey, id, track, mode: 'base' }])
   const shown = layers[layers.length - 1]
 
   useEffect(() => {
+    if (performanceMode) {
+      setLayers(list => {
+        const top = list[list.length - 1]
+        if (list.length === 1 && top.mode === 'base' && top.id === id && top.track === track) return list
+        return [{ ...top, id, track, mode: 'base', blobs: null }]
+      })
+      return
+    }
     if (id === shown.id) {
       // The same song, updated (new artwork, say): the top layer follows.
       if (track !== shown.track) setLayers(list => list.map((layer, i) => (i === list.length - 1 ? { ...layer, track } : layer)))
@@ -84,7 +122,7 @@ export default function MixCovers({ track, render }) {
     // At most the one on its way out stays under the new one, settled (a skip
     // mid-transition: all of it shows, not what had faded or dissolved in).
     setLayers(list => (mode === 'base' ? [layer] : [{ ...list[list.length - 1], mode: 'base' }, layer]))
-  }, [id, track]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, track, performanceMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const settle = key => setLayers(list => {
     const at = list.findIndex(layer => layer.key === key)

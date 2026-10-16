@@ -12,16 +12,32 @@
 const MUSIC_HOME = 'https://music.youtube.com/'
 const CLIENT_TTL_MS = 6 * 60 * 60 * 1000
 const EVAL_PARTITION = 'lokal-youtube-player' // in memory: nothing kept
+const EVAL_WINDOW_IDLE_MS = 10 * 60 * 1000
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 
 let clientJob = null // Promise<{ yt, at }>
 let evalWindow = null
+let evalWindowIdleTimer = null
 let queue = Promise.resolve()
 
 // ------------------------------------------------------------ the player script, sandboxed
 
+function scheduleEvalWindowDestroy(win) {
+  if (evalWindowIdleTimer) clearTimeout(evalWindowIdleTimer)
+  evalWindowIdleTimer = setTimeout(() => {
+    if (evalWindow !== win || win.isDestroyed()) return
+    evalWindow = null
+    evalWindowIdleTimer = null
+    win.destroy()
+  }, EVAL_WINDOW_IDLE_MS)
+  evalWindowIdleTimer.unref?.()
+}
+
 function sandbox() {
-  if (evalWindow && !evalWindow.isDestroyed()) return evalWindow.ready
+  if (evalWindow && !evalWindow.isDestroyed()) {
+    scheduleEvalWindowDestroy(evalWindow)
+    return evalWindow.ready
+  }
   const { BrowserWindow } = require('electron')
   const win = new BrowserWindow({
     show: false, width: 100, height: 100, skipTaskbar: true,
@@ -29,8 +45,13 @@ function sandbox() {
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', event => event.preventDefault())
-  win.on('closed', () => { if (evalWindow === win) evalWindow = null })
-  win.ready = win.loadURL('about:blank').then(() => win)
+  win.on('closed', () => {
+    if (evalWindow !== win) return
+    evalWindow = null
+    if (evalWindowIdleTimer) clearTimeout(evalWindowIdleTimer)
+    evalWindowIdleTimer = null
+  })
+  win.ready = win.loadURL('about:blank').then(() => { scheduleEvalWindowDestroy(win); return win })
   evalWindow = win
   return win.ready
 }
@@ -38,7 +59,13 @@ function sandbox() {
 /** youtubei.js's evaluator: the decoding script, run in the sandbox; plain data back. */
 async function evaluate(data) {
   const win = await sandbox()
-  return win.webContents.executeJavaScript(`(function () {\n${data.output}\n})()`, true)
+  scheduleEvalWindowDestroy(win)
+  try {
+    const script = '(function () {\n' + data.output + '\n})()'
+    return await win.webContents.executeJavaScript(script, true)
+  } finally {
+    if (evalWindow === win && !win.isDestroyed()) scheduleEvalWindowDestroy(win)
+  }
 }
 
 // ------------------------------------------------------------ the YouTube Music client
@@ -264,13 +291,15 @@ const VIDEO_CLIENTS = [null, 'MWEB']
 /** Set up the client and the attestation ahead of the first song. */
 function warm({ fetchImpl = (...args) => fetch(...args) } = {}) {
   client(fetchImpl).catch(() => {})
-  require('./poToken').warm()
+  // Proof-of-origin windows are created on demand during token mint.
 }
 
 function forget() {
   clientJob = null
   signedJob = null
   queue = Promise.resolve()
+  if (evalWindowIdleTimer) clearTimeout(evalWindowIdleTimer)
+  evalWindowIdleTimer = null
   if (evalWindow && !evalWindow.isDestroyed()) evalWindow.destroy()
   evalWindow = null
 }

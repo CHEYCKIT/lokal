@@ -293,6 +293,7 @@ function cacheEntries() {
       if (entry && Date.now() - entry.at < CACHE_TTL_MS) memory.set(key, entry)
     }
   } catch {}
+  while (memory.size > CACHE_MAX) memory.delete(memory.keys().next().value)
   return memory
 }
 
@@ -309,8 +310,16 @@ export const artistCacheKey = name => cacheKeyOf('artist', [name])
 
 /** What's cached under `key` (and when), or null. */
 export function peekOnline(key) {
-  const entry = cacheEntries().get(key)
-  if (!entry || Date.now() - entry.at >= CACHE_TTL_MS) return null
+  const entries = cacheEntries()
+  const entry = entries.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.at >= CACHE_TTL_MS) {
+    entries.delete(key)
+    return null
+  }
+  // Touch the entry so eviction remains least-recently-used.
+  entries.delete(key)
+  entries.set(key, entry)
   return entry
 }
 
