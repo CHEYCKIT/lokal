@@ -9,6 +9,159 @@ const playable = track => ({ ...track, id: track.title, file_path: '/music/song.
 const tick = () => new Promise(resolve => setImmediate(resolve))
 beforeEach(() => store.setState({ currentTrack: null, queue: [], originalQueue: [], shuffleQueue: [], queueIndex: -1, shuffleIndex: -1, shuffle: false, repeat: 'off', playHistory: [], futureHistory: [], playbackGeneration: store.getState().playbackGeneration + 1, recommendationLoading: 0, progress: 0 }))
 
+test('verification automatically retries and starts the selected Discovery song', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let authenticated = false
+  const fakeWindow = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.window = fakeWindow
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const resolverStarts = []
+    const resolve = async (rows, options) => {
+      resolverStarts.push(options.startFromProvider || null)
+      if (!authenticated) {
+        const error = new Error('VERIFY_REQUIRED')
+        error.code = 'ADDON_VERIFICATION_REQUIRED'
+        error.provider = 'a-0123456789'
+        error.key = '0123456789'
+        error.title = rows[0].title
+        options.onAddonVerificationRequired(error)
+        throw error
+      }
+      return rows.map(track => ({ ...playable(track), provider: 'a-0123456789' }))
+    }
+    const started = await playRecommendationPool(pool, {
+      selected: pool[2],
+      context: { type: 'discovery', name: 'Fresh Finds' },
+      resolve,
+    })
+    assert.equal(started, null, 'the first attempt pauses at verification')
+    assert.ok(pending, 'the existing verification popup should receive a retry callback')
+    authenticated = true
+    assert.equal(await pending.retry(), true)
+    assert.deepEqual(resolverStarts.slice(0, 2), [null, 'a-0123456789'], 'retry starts at the provider that required verification')
+    assert.equal(store.getState().currentTrack.title, pool[2].title)
+    assert.equal(store.getState().currentTrack.provider, 'a-0123456789')
+    assert.equal(store.getState().isPlaying, true, 'the selected song starts without another Play click')
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
+test('verification retry returns once the selected song starts, not after Discovery fills the queue', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let authenticated = false
+  let releaseBackground
+  let finishBackground
+  let backgroundBatches = 0
+  const backgroundDone = new Promise(resolve => { finishBackground = resolve })
+  globalThis.window = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const resolve = async (rows, options) => {
+      if (!authenticated) {
+        const error = new Error('VERIFY_REQUIRED')
+        error.code = 'ADDON_VERIFICATION_REQUIRED'
+        error.provider = 'a-0123456789'
+        error.key = '0123456789'
+        options.onAddonVerificationRequired(error)
+        throw error
+      }
+      if (!options.prepareStreams) {
+        backgroundBatches++
+        if (backgroundBatches === 1) return new Promise(done => { releaseBackground = () => done(rows.map(playable)) })
+        if (backgroundBatches === 2) finishBackground()
+      }
+      return rows.map(playable)
+    }
+    assert.equal(await playRecommendationPool(pool, {
+      selected: pool[2], context: { type: 'discovery', name: 'Fresh Finds' }, resolve,
+    }), null)
+    assert.ok(pending)
+    authenticated = true
+    assert.equal(await pending.retry(), true, 'verification should finish when the selected song starts')
+    assert.equal(store.getState().currentTrack.title, pool[2].title)
+    assert.equal(typeof releaseBackground, 'function', 'remaining Discovery lookup should still be running')
+    releaseBackground()
+    await backgroundDone
+    await tick()
+    assert.equal(store.getState().queue.length, pool.length, 'background resolution should still fill the queue')
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
+test('verification retry does not replace a newer playback selection', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let resolveCalls = 0
+  globalThis.window = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const resolve = async (rows, options) => {
+      resolveCalls++
+      const error = new Error('VERIFY_REQUIRED')
+      error.code = 'ADDON_VERIFICATION_REQUIRED'
+      error.provider = 'a-0123456789'
+      error.key = '0123456789'
+      options.onAddonVerificationRequired(error)
+      throw error
+    }
+    assert.equal(await playRecommendationPool([pool[2]], {
+      selected: pool[2], context: { type: 'discovery' }, resolve,
+    }), null)
+    assert.ok(pending)
+    const newer = playable({ title: 'New selection', artist: 'Other artist' })
+    store.getState().playQueue([newer], 0, { type: 'manual' })
+    assert.equal(await pending.retry(), undefined, 'a superseded retry should be discarded')
+    assert.equal(resolveCalls, 1, 'the stale callback must not start another resolution')
+    assert.equal(store.getState().currentTrack.title, 'New selection')
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
 test('selected playback starts before slow background resolution and retains full list order, position, and context', async () => {
   let release
   const options = []

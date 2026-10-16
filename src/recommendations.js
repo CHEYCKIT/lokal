@@ -254,11 +254,12 @@ function addonVerificationError(provider, value, candidate) {
 }
 
 export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
-  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
+  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, startFromProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
-  const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
-  const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
+  const requestedStart = startFromProvider ? ordered.findIndex(source => source.id === startFromProvider) : -1
+  const start = requestedStart >= 0 ? requestedStart : afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
+  const sources = ordered.slice(start).filter(source => (requestedStart >= 0 || source.id !== afterProvider) && !skipProviders.includes(source.id))
   try {
     return (await mapLimited(uniqueSongs(candidates), async candidate => {
     if (!isCurrent()) return null
@@ -284,6 +285,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
         for (const [index, source] of sources.entries()) {
           if (!isCurrent()) return null
           const failed = (reason, detail) => { if (isCurrent()) onProviderFailure?.({ candidate, source, nextSource: sources[index + 1], reason, ...(detail ? { detail } : {}) }) }
+          let matchFound = false
           try {
             const direct = source.id === 'yt' && videoId
             if (isCurrent()) onProgress?.(`${direct ? 'Loading' : 'Searching'} ${source.label || providerLabel(source.id)} ${direct ? 'track' : 'for'} ${candidate.artist} — “${candidate.title}”…`)
@@ -319,12 +321,14 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
               }
             }
             if (searchError) {
-              if (requiresAddonVerification(source.id, searchError)) throw addonVerificationError(source.id, searchError, candidate)
+              // A verification error from search does not prove this provider
+              // has a match for the candidate. Keep looking without prompting.
               failed('unavailable', searchError)
               continue
             }
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
+            matchFound = true
             let detail
             const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
@@ -341,8 +345,8 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
             if (row) break
             failed('unavailable')
           } catch (error) {
-            if (isAddonVerificationRequiredError(error)) throw error
-            if (requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
+            if (matchFound && isAddonVerificationRequiredError(error)) throw error
+            if (matchFound && requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
             failed('unavailable', error?.message)
           }
         }
@@ -365,7 +369,10 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     })).filter(Boolean)
   } catch (error) {
     if (!isAddonVerificationRequiredError(error)) throw error
-    const retry = () => resolveRecommendationTracks(candidates, client, options)
+    const retry = () => resolveRecommendationTracks(candidates, client, {
+      ...options,
+      ...(error.provider ? { startFromProvider: error.provider } : {}),
+    })
     if (typeof onAddonVerificationRequired === 'function') {
       onAddonVerificationRequired(error, retry)
       throw error
@@ -374,10 +381,36 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     // same operation while the popup is open. Its retry resolves this promise,
     // so the outer caller continues instead of receiving a rejected promise.
     return await new Promise((resolve, reject) => {
-      const retryAndResolve = async () => {
-        try { resolve(await retry()) } catch (retryError) { reject(retryError) }
-      }
       const cancel = () => resolve([])
+      const retryAndResolve = async () => {
+        try {
+          const rows = await resolveRecommendationTracks(candidates, client, {
+            ...options,
+            ...(error.provider ? { startFromProvider: error.provider } : {}),
+            onAddonVerificationRequired: (nextError, nextRetry) => {
+              const handedOff = dispatchAddonVerificationRequired(nextError, async () => {
+                try {
+                  const next = await nextRetry()
+                  resolve(next)
+                  return next
+                } catch (nestedError) {
+                  if (!isAddonVerificationRequiredError(nestedError)) reject(nestedError)
+                  throw nestedError
+                }
+              }, cancel)
+              if (!handedOff) reject(nextError)
+            },
+          })
+          resolve(rows)
+          return rows
+        } catch (retryError) {
+          // A subsequent prompt now owns this promise; let the current verify
+          // attempt finish so the UI can re-enable its controls.
+          if (isAddonVerificationRequiredError(retryError)) return null
+          reject(retryError)
+          throw retryError
+        }
+      }
       if (!dispatchAddonVerificationRequired(error, retryAndResolve, cancel)) reject(error)
     })
   }

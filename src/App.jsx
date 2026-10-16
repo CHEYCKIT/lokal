@@ -1641,16 +1641,49 @@ export default function App() {
 
   const completeAddonVerification = useCallback((key) => {
     const pending = addonVerificationRetryRef.current
-    if (!pending || pending.key !== key) return
+    if (!pending || pending.key !== key || pending.retrying) return
+    if (typeof pending.retry === 'function') {
+      // The popup may be completed both by its immediate response and by the
+      // auth-window event. Guard the retry and close only once it has started.
+      pending.retrying = true
+      setAddonVerificationBusy(true)
+      setAddonVerificationMessage('Access verified. Starting the selected song…')
+      return Promise.resolve().then(async () => {
+        let result = await pending.retry()
+        if (addonVerificationRetryRef.current !== pending) return
+        // An auth-window close event can arrive a fraction before the provider
+        // runtime reports the fresh session. Recheck and retry once automatically
+        // rather than requiring the listener to click Play again.
+        if (result === false) {
+          const status = await api.addonsPackages({ action: 'package.auth', key }).catch(() => null)
+          if (status?.authenticated) result = await pending.retry()
+        }
+        if (addonVerificationRetryRef.current !== pending) return
+        if (result === true || result === undefined || (Array.isArray(result) && result.length > 0)) {
+          addonVerificationRetryRef.current = null
+          setAddonVerificationPrompt(current => current?.key === key ? null : current)
+          setAddonVerificationMessage('')
+          if (result === true) setIsPlaying(true)
+        } else if (result === false || Array.isArray(result)) {
+          addonVerificationRetryRef.current = null
+          setAddonVerificationPrompt(current => current?.key === key ? null : current)
+          setAddonVerificationMessage('')
+          showToast('Access was verified, but no playable match could be resolved for this song.')
+        } else if (result === null) {
+          setAddonVerificationMessage('Access was verified, but playback could not resume automatically. Lokal will keep the selected song ready to retry.')
+        }
+      }).catch(error => {
+        if (addonVerificationRetryRef.current === pending) {
+          setAddonVerificationMessage(error?.message || "Verification succeeded, but playback couldn't be resumed automatically.")
+        }
+      }).finally(() => {
+        if (addonVerificationRetryRef.current === pending) pending.retrying = false
+        setAddonVerificationBusy(false)
+      })
+    }
     addonVerificationRetryRef.current = null
     setAddonVerificationPrompt(current => current?.key === key ? null : current)
     setAddonVerificationMessage('')
-    if (typeof pending.retry === 'function') {
-      Promise.resolve().then(() => pending.retry()).catch(error => {
-        setAddonVerificationMessage(error?.message || "Verification succeeded, but playback couldn't be resumed. Try playing the song again.")
-      })
-      return
-    }
     const state = usePlayerStore.getState()
     // The actual stream-preparation path hasn't assigned a src when it detects
     // VERIFY_REQUIRED. Replaying the same queue entry with a new generation
@@ -2979,9 +3012,9 @@ export default function App() {
                             const result = await api.addonsPackages({ action: 'package.verify', key: addonVerificationPrompt.key })
                             if (result?.authenticated) {
                               window.dispatchEvent(new Event('lokal:addons-changed'))
-                              completeAddonVerification(addonVerificationPrompt.key)
+                              await completeAddonVerification(addonVerificationPrompt.key)
                             } else if (result?.opened) {
-                              setAddonVerificationMessage('Complete verification in the browser window that opened. Playback will remain paused until access is confirmed.')
+                              setAddonVerificationMessage('Complete verification in the browser window that opened. Lokal will start the selected song automatically when access is confirmed.')
                             } else {
                               setAddonVerificationMessage(result?.error || "Verification couldn't be started. Open Settings → Addons to verify this provider.")
                             }
