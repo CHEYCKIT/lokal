@@ -68,21 +68,27 @@ test('direct resolver callers resume automatically after a matched addon needs v
     constructor(type, init = {}) { this.type = type; this.detail = init.detail }
   }
   try {
+    const attempts = []
     const { client } = clientMock({
-      onlineSearch: async (_query, provider) => ({ results: [{ ...song(8), id: 'abcdefghijk', provider }] }),
+      onlineSearch: async (_query, provider) => {
+        attempts.push(provider)
+        return { results: provider === addon ? [{ ...song(8), id: 'abcdefghijk', provider }] : [] }
+      },
       onlinePrepare: async () => authenticated
         ? { ok: true, preview: false }
         : { ok: false, error: 'VERIFY_REQUIRED: complete addon verification' },
     })
     const resultPromise = resolveRecommendationTracks([song(8)], client, {
       searchLocal: false,
-      sources: [{ id: addon, label: 'Addon' }],
+      sources: [{ id: 'yt', label: 'YouTube' }, { id: addon, label: 'Addon' }],
     })
     for (let attempt = 0; attempt < 10 && !pending; attempt++) await new Promise(resolve => setImmediate(resolve))
     assert.ok(pending, 'a matched addon stream that needs verification should open the prompt')
     assert.equal(pending.provider, addon)
+    assert.deepEqual(attempts, ['yt', addon], 'the first provider has no match; the addon is the matched provider')
     authenticated = true
     await pending.retry()
+    assert.deepEqual(attempts, ['yt', addon, addon], 'retry should resume at the matched addon, not search YouTube again')
     const rows = await resultPromise
     assert.equal(rows.length, 1, 'the original resolution should resume with the playable match')
     assert.equal(rows[0].provider, addon)
