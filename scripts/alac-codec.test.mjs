@@ -15,6 +15,16 @@ test('ALAC codec names are recognized as unplayable lossless audio', () => {
   }
 })
 
+test('container metadata identifies unsupported ALAC when codec is missing', () => {
+  for (const container of ['ALAC', 'Apple Lossless', 'Apple Lossless Audio Codec']) {
+    assert.deepEqual(classifyCodec('', false, container), {
+      codec: container,
+      lossless: true,
+      unplayable: true,
+    }, container)
+  }
+})
+
 test('existing unsupported lossless codecs still use the lossless fallback', () => {
   for (const codec of ['FLAC', 'APE', 'WavPack', 'DSD']) {
     const result = classifyCodec(codec)
