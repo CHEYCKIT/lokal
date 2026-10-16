@@ -375,6 +375,21 @@ function saveWindowState() {
   } catch {}
 }
 
+let saveWindowStateTimer = null
+function scheduleSaveWindowState() {
+  if (saveWindowStateTimer) clearTimeout(saveWindowStateTimer)
+  saveWindowStateTimer = setTimeout(() => {
+    saveWindowStateTimer = null
+    saveWindowState()
+  }, 250)
+  saveWindowStateTimer.unref?.()
+}
+function flushSaveWindowState() {
+  if (saveWindowStateTimer) clearTimeout(saveWindowStateTimer)
+  saveWindowStateTimer = null
+  saveWindowState()
+}
+
 function emitPlayerCommand(action) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainWindow.webContents.send('remote:command', { action })
@@ -451,15 +466,15 @@ function createWindow() {
   mainWindow.on('hide', () => sendVisibility(true))
   mainWindow.on('restore', () => sendVisibility(false))
   mainWindow.on('show', () => sendVisibility(false))
-  mainWindow.on('resize', saveWindowState)
-  mainWindow.on('move', saveWindowState)
-  mainWindow.on('maximize', saveWindowState)
-  mainWindow.on('unmaximize', saveWindowState)
+  mainWindow.on('resize', scheduleSaveWindowState)
+  mainWindow.on('move', scheduleSaveWindowState)
+  mainWindow.on('maximize', scheduleSaveWindowState)
+  mainWindow.on('unmaximize', scheduleSaveWindowState)
   // Settings > "Close to Tray": the window's close button (or Ctrl+W) hides
   // it to the tray. Quitting (Cmd+Q, the tray menu, an update) sets
   // `quitting` in before-quit first, so it still quits.
   mainWindow.on('close', (event) => {
-    saveWindowState()
+    flushSaveWindowState()
     if (quitting || isUpdating || !closesToTray()) return
     if (hideToTray()) event.preventDefault()
   })
@@ -471,7 +486,9 @@ function createWindow() {
   // Electron 35+ passes one details object (level as 'info' | 'warning' |
   // 'error' | 'debug'); the old positional arguments are gone.
   mainWindow.webContents.on('console-message', (event) => {
-    const logLevel = { debug: 'debug', info: 'info', warning: 'warn', error: 'error' }[event.level] || 'info'
+    const level = event.level
+    if (!['warning', 'error'].includes(level) && process.env.LOKAL_DEBUG_CONSOLE !== '1') return
+    const logLevel = { debug: 'debug', info: 'info', warning: 'warn', error: 'error' }[level] || 'info'
     log[logLevel](`[Renderer:${event.sourceId}:${event.lineNumber}] ${event.message}`)
   })
   
@@ -585,6 +602,8 @@ app.whenReady().then(() => {
       if (typeof newSettings?.performanceMode === 'boolean') next.performanceMode = newSettings.performanceMode
       delete next.graphicsBackend
       writePerformanceSettings(next)
+      // Performance Mode is live; hardware acceleration still takes effect on restart.
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('perf-settings', next)
       return { success: true }
     } catch (e) {
       return { error: e.message }
