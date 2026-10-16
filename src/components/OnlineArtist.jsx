@@ -55,7 +55,7 @@ export const nameFromSlug = id => String(id || '').replace(/^a-/, '').split('-')
  * it up again.
  */
 export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, hints = [] } = {}) {
-  const cacheKey = artistCacheKey(fallbackName)
+  const cacheKey = artistCacheKey(fallbackName, anchor)
   const fromCache = () => peekOnline(cacheKey)
   const [songs, setSongs] = useState(() => fromCache()?.value.songs || { loading: true, tracks: [], error: '' })
   const [albums, setAlbums] = useState(() => fromCache()?.value.albums || { loading: true, items: [] })
@@ -89,6 +89,18 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
       if (nextSongs.tracks.length || nextAlbums.items.length) keepOnline(cacheKey, { songs: nextSongs, albums: nextAlbums })
     }
     ;(async () => {
+      // A click from an add-on's Artists tab already identifies the source and
+      // artist ID. Load that exact artist before any name-based lookup, which
+      // could otherwise open a namesake from YouTube Music or another source.
+      if (anchor?.artistId && anchor?.provider) {
+        const direct = await loadAddonArtist(fallbackName, { anchor, hints }).catch(() => null)
+        if (!isCurrent()) return
+        if (direct) {
+          done({ loading: false, tracks: direct.tracks, error: '', name: direct.name, image: direct.image }, { loading: false, items: direct.albums })
+          return
+        }
+      }
+
       // YouTube Music's channel of this very artist first, then the
       // catalogues by name (YouTube Music, Last.fm), then an addon with artist
       // pages, then a search of the playback sources.
@@ -125,7 +137,7 @@ export function useOnlineArtist(fallbackName, enabled = true, { anchor = null, h
       done(nextSongs, { loading: false, items })
     })()
     return () => { request.current++ }
-  }, [fallbackName, enabled, reload]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fallbackName, enabled, reload, anchor?.provider, anchor?.artistId, anchor?.title]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = useCallback(() => setReload(n => n + 1), [])
   return { songs, albums, name, refresh, loadedAt, loading: songs.loading || albums.loading }
