@@ -254,10 +254,11 @@ function addonVerificationError(provider, value, candidate) {
 }
 
 export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
-  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
+  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, startFromProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
-  const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
+  const requestedStart = startFromProvider ? ordered.findIndex(source => source.id === startFromProvider) : -1
+  const start = requestedStart >= 0 ? requestedStart : afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
   const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
   try {
     return (await mapLimited(uniqueSongs(candidates), async candidate => {
@@ -368,7 +369,10 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     })).filter(Boolean)
   } catch (error) {
     if (!isAddonVerificationRequiredError(error)) throw error
-    const retry = () => resolveRecommendationTracks(candidates, client, options)
+    const retry = () => resolveRecommendationTracks(candidates, client, {
+      ...options,
+      ...(error.provider ? { startFromProvider: error.provider } : {}),
+    })
     if (typeof onAddonVerificationRequired === 'function') {
       onAddonVerificationRequired(error, retry)
       throw error
