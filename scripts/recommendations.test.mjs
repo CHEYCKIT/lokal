@@ -55,6 +55,47 @@ test('addon verification during recommendation resolution is surfaced and stops 
   assert.equal(requested[0].title, 'Song 7')
 })
 
+test('direct resolver callers resume after addon verification instead of rejecting', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let authenticated = false
+  const fakeWindow = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.window = fakeWindow
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const { client } = clientMock({
+      onlineSearch: async (_query, provider) => provider === addon && !authenticated
+        ? { error: 'VERIFY_REQUIRED: complete addon verification' }
+        : { results: [{ ...song(8), id: 'abcdefghijk', provider }] },
+    })
+    const resultPromise = resolveRecommendationTracks([song(8)], client, {
+      searchLocal: false,
+      sources: [{ id: addon, label: 'Addon' }, { id: 'yt', label: 'YouTube' }],
+    })
+    for (let attempt = 0; attempt < 10 && !pending; attempt++) await new Promise(resolve => setImmediate(resolve))
+    assert.ok(pending, 'direct callers should receive the verification event')
+    authenticated = true
+    await pending.retry()
+    const rows = await resultPromise
+    assert.equal(rows.length, 1, 'the original resolver promise should resume with the resolved track')
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
 test('matching requires the exact title and artist and preserves version differences', () => {
   const target = { title: 'Song', artist: 'Artist' }
   for (const result of [{ title: 'Song', artist: 'Cover Artist' }, { title: 'Song (Live)', artist: 'Artist' }, { title: 'Other Song', artist: 'Artist' }]) {
