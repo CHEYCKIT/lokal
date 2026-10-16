@@ -376,39 +376,6 @@ function useArtistRefreshStatus(enabled) {
   return [status, cancel, start]
 }
 
-/** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
-function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
-  const { t } = useTranslation()
-  const releases = useReleaseCheck(s => s.checking)
-  const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
-  const stopReleases = useReleaseCheck(s => s.stop)
-  const videos = useVideoIndex(s => s.progress)
-  const lyrics = useLibraryJobs(s => s.lyrics)
-  const genres = useLibraryJobs(s => s.genres)
-  const followed = useDiscoveryArtists(s => s.followed)
-  const followedLoaded = useDiscoveryArtists(s => s.loaded)
-  useEffect(() => {
-    if (!followedLoaded) loadDiscoveryArtists().catch(() => {})
-    readGenresStatus()
-  }, [followedLoaded])
-  const checkReleases = () => useReleaseCheck.getState().start([...followed.values()].map(name => ({ name })))
-
-  const lyricsDetail = lyrics?.running
-    ? `${plural(lyrics.found || 0, 'lyric')} found${lyrics.title ? ` · ${lyrics.title}` : ''}`
-    : lyrics ? `${lyrics.cancelled ? 'Stopped' : 'Done'} · lyrics for ${lyrics.found || 0} of ${plural(lyrics.done || 0, 'song')}` : 'Keeps every song\'s lyrics, so they open at once'
-  const genresDetail = genres?.error ? genres.error
-    : genres?.running ? `${plural(genres.updated || 0, 'song')} filled in`
-      : genres?.total ? `Done · ${genres.updated || 0} of ${plural(genres.songs || 0, 'song')} filled in`
-        : genres?.started ? 'Every song already has a genre' : 'Looks up a genre for songs with none'
-
-  const artistsDetail = artists?.running
-    ? `${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')}${artists.failed ? ` · ${artists.failed} failed` : ''}`
-    : artists?.finishedAt ? `${artists.done < artists.total ? 'Stopped' : 'Done'} ${ago(artists.finishedAt)} · ${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')} updated` : ''
-  const videosDetail = videos?.running
-    ? `${plural(videos.found || 0, 'video')} found${videos.title ? ` · ${videos.title}` : ''}`
-    : videos ? `${videos.cancelled ? 'Stopped' : 'Done'} · ${plural(videos.found || 0, 'video')} found for ${plural(videos.total || 0, 'song')}` : ''
-
-
 /** Addons needing attention: mirrors the warning state shown in Settings → Addons. */
 function AddonsTab({ addons, loading, error, onNavigate }) {
   const { t } = useTranslation()
@@ -489,6 +456,41 @@ function AddonsTab({ addons, loading, error, onNavigate }) {
     </div>
   )
 }
+
+
+/** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
+function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
+  const { t } = useTranslation()
+  const releases = useReleaseCheck(s => s.checking)
+  const releasesCheckedAt = useReleaseCheck(s => s.saved?.checkedAt)
+  const stopReleases = useReleaseCheck(s => s.stop)
+  const videos = useVideoIndex(s => s.progress)
+  const lyrics = useLibraryJobs(s => s.lyrics)
+  const genres = useLibraryJobs(s => s.genres)
+  const followed = useDiscoveryArtists(s => s.followed)
+  const followedLoaded = useDiscoveryArtists(s => s.loaded)
+  useEffect(() => {
+    if (!followedLoaded) loadDiscoveryArtists().catch(() => {})
+    readGenresStatus()
+  }, [followedLoaded])
+  const checkReleases = () => useReleaseCheck.getState().start([...followed.values()].map(name => ({ name })))
+
+  const lyricsDetail = lyrics?.running
+    ? `${plural(lyrics.found || 0, 'lyric')} found${lyrics.title ? ` · ${lyrics.title}` : ''}`
+    : lyrics ? `${lyrics.cancelled ? 'Stopped' : 'Done'} · lyrics for ${lyrics.found || 0} of ${plural(lyrics.done || 0, 'song')}` : 'Keeps every song\'s lyrics, so they open at once'
+  const genresDetail = genres?.error ? genres.error
+    : genres?.running ? `${plural(genres.updated || 0, 'song')} filled in`
+      : genres?.total ? `Done · ${genres.updated || 0} of ${plural(genres.songs || 0, 'song')} filled in`
+        : genres?.started ? 'Every song already has a genre' : 'Looks up a genre for songs with none'
+
+  const artistsDetail = artists?.running
+    ? `${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')}${artists.failed ? ` · ${artists.failed} failed` : ''}`
+    : artists?.finishedAt ? `${artists.done < artists.total ? 'Stopped' : 'Done'} ${ago(artists.finishedAt)} · ${plural(artists.bios || 0, 'bio')}, ${plural(artists.images || 0, 'picture')} updated` : ''
+  const videosDetail = videos?.running
+    ? `${plural(videos.found || 0, 'video')} found${videos.title ? ` · ${videos.title}` : ''}`
+    : videos ? `${videos.cancelled ? 'Stopped' : 'Done'} · ${plural(videos.found || 0, 'video')} found for ${plural(videos.total || 0, 'song')}` : ''
+
+
 
   return (
     <div className="space-y-3">
