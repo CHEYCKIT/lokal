@@ -42,18 +42,23 @@ export async function playRecommendationPool(candidates, options = {}) {
       index = (start + attempt) % pool.length
       let rows
       let verificationPrompted = false
-      const retryCandidate = () => playRecommendationPool(candidates, { ...options, resolve, selected: pool[index] })
+      const retryCandidate = provider => {
+        const retryResolve = provider
+          ? (rows, resolveOptions) => resolve(rows, { ...resolveOptions, startFromProvider: provider })
+          : resolve
+        return playRecommendationPool(candidates, { ...options, resolve: retryResolve, selected: pool[index] })
+      }
       try {
         rows = await resolve([pool[index]], {
           isCurrent: current, prepareStreams: true, onProviderFailure, onProgress,
           onAddonVerificationRequired: error => {
             verificationPrompted = true
-            if (current()) requestAddonVerification(error, retryCandidate)
+            if (current()) requestAddonVerification(error, () => retryCandidate(error.provider))
           },
         })
       } catch (error) {
         if (isAddonVerificationRequiredError(error)) {
-          if (current() && !verificationPrompted) requestAddonVerification(error, retryCandidate)
+          if (current() && !verificationPrompted) requestAddonVerification(error, () => retryCandidate(error.provider))
           return null
         }
         rows = []
