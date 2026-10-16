@@ -377,7 +377,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
 // Build until the requested count, trying additional provider pages and
 // skipping failed playback matches. Previous songs are considered only after
 // new recommendations; there is no shuffle of the previous eight-song shelf.
-export async function buildRecommendationMix({ size, previous = [], loadPage, resolve = resolveRecommendationTracks, isCurrent = () => true }) {
+export async function buildRecommendationMix({ size, previous = [], loadPage, resolve = resolveRecommendationTracks, isCurrent = () => true, onAddonVerificationRequired: onVerificationRequired }) {
   const target = [24, 32, 40].includes(Number(size)) ? Number(size) : 32
   const previousKeys = new Set(previous.map(songKey))
   const tried = new Set()
@@ -389,13 +389,24 @@ export async function buildRecommendationMix({ size, previous = [], loadPage, re
     for (let at = 0; at < candidates.length && tracks.length < target && isCurrent(); at += 8) {
       const batch = candidates.slice(at, at + 8)
       batch.forEach(track => tried.add(songKey(track)))
-      const onAddonVerificationRequired = error => dispatchAddonVerificationRequired(
-        error,
-        () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }),
-      )
-      const resolved = resolve === resolveRecommendationTracks
-        ? await resolve(batch, api, { onAddonVerificationRequired })
-        : await resolve(batch, { onAddonVerificationRequired })
+      let verificationRequested = false
+      const onAddonVerificationRequired = error => {
+        verificationRequested = true
+        if (typeof onVerificationRequired === 'function') onVerificationRequired(error)
+        else dispatchAddonVerificationRequired(
+          error,
+          () => buildRecommendationMix({ size, previous, loadPage, resolve, isCurrent }),
+        )
+      }
+      let resolved
+      try {
+        resolved = resolve === resolveRecommendationTracks
+          ? await resolve(batch, api, { onAddonVerificationRequired })
+          : await resolve(batch, { onAddonVerificationRequired })
+      } catch (error) {
+        if (isAddonVerificationRequiredError(error) && !verificationRequested) onAddonVerificationRequired(error)
+        throw error
+      }
       if (!isCurrent()) throw new Error('Mix request superseded')
       for (const track of resolved) {
         if (!track?.id || ids.has(track.id) || tracks.length >= target) continue
