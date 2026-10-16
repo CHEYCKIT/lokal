@@ -247,6 +247,8 @@
       ly2: document.getElementById('ly2')
     }
 
+    const remoteToken = new URLSearchParams(window.location.hash.slice(1)).get('token') || ''
+
     const store = {
       state: null,
       lyrics: [],
@@ -313,9 +315,11 @@
     }
 
     async function call(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json' }
+      if (remoteToken) headers['x-remote-token'] = remoteToken
       const res = await fetch(`/api/remote/${path}`, {
         method: opts.method || 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: opts.body ? JSON.stringify(opts.body) : undefined,
       })
       if (res.status === 401) {
