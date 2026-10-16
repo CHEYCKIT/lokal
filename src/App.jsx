@@ -1636,10 +1636,23 @@ export default function App() {
   useEffect(() => api.onAddonAuthChanged(status => {
     window.dispatchEvent(new Event('lokal:addons-changed'))
     if (status?.authenticated) showToast('Addon access verified. It can now stream and download.')
+    if (status?.authenticated) {
+      setAddonVerificationPrompt(current => {
+        if (!current || current.key !== status.key) return current
+        setAddonVerificationMessage('')
+        setIsPlaying(true)
+        return null
+      })
+    } else if (status?.key) {
+      setAddonVerificationPrompt(current => current?.key === status.key ? { ...current, message: status.error || "Verification wasn't completed. Try again when you're ready." } : current)
+    }
   }), [])
 
   // An online song that couldn't be streamed (shown as a small notice).
   const [streamError, setStreamError] = useState(null)
+  const [addonVerificationPrompt, setAddonVerificationPrompt] = useState(null)
+  const [addonVerificationBusy, setAddonVerificationBusy] = useState(false)
+  const [addonVerificationMessage, setAddonVerificationMessage] = useState('')
   useEffect(() => {
     if (!streamError) return undefined
     const t = setTimeout(() => setStreamError(null), 9000)
@@ -2311,7 +2324,23 @@ export default function App() {
       if (unavailable && isAddonProvider(ref.provider) && addonError) {
         const access = ADDON_ACCESS_ERROR.test(addonError)
         detail = access ? 'it needs verifying: Settings → Addons → Verify access' : addonError.slice(0, 160)
-        if (access) window.dispatchEvent(new Event('lokal:addons-changed'))
+        if (access) {
+          window.dispatchEvent(new Event('lokal:addons-changed'))
+          // A verification failure is actionable, not a missing match. Keep
+          // this song selected and paused instead of trying other providers or
+          // advancing Discovery/Flow to another song.
+          el.pause()
+          el.dataset.fallbackPending = ''
+          setIsPlaying(false)
+          setIsBuffering(false)
+          setAddonVerificationMessage('')
+          setAddonVerificationPrompt({
+            key: ref.provider.slice(2),
+            provider: ref.provider,
+            title: live.currentTrack.title || 'this song',
+          })
+          return
+        }
       }
       if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable, detail); return }
       el.dataset.fallbackPending = ''
@@ -2855,6 +2884,60 @@ export default function App() {
             {renderUpdateToast()}
             <Toaster />
             <AnimatePresence>
+              {addonVerificationPrompt && (
+                <motion.div
+                  className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={event => { if (event.target === event.currentTarget && !addonVerificationBusy) setAddonVerificationPrompt(null) }}
+                >
+                  <motion.div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="addon-verification-title"
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                    className="w-full max-w-md rounded-2xl border border-border bg-elevated p-5 shadow-2xl"
+                  >
+                    <p id="addon-verification-title" className="text-base font-semibold text-text">{t('Provider verification required')}</p>
+                    <p className="mt-2 text-sm text-muted">{t('Playback of “{title}” is paused because this provider needs verification. Verify access to continue; Lokal will not skip to another song.', { title: addonVerificationPrompt.title })}</p>
+                    {addonVerificationMessage && <p role="status" className="mt-3 text-xs text-muted">{t(addonVerificationMessage)}</p>}
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button
+                        disabled={addonVerificationBusy}
+                        onClick={() => { setAddonVerificationPrompt(null); setAddonVerificationMessage('') }}
+                        className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
+                      >{t('Not now')}</button>
+                      <button
+                        disabled={addonVerificationBusy}
+                        onClick={async () => {
+                          setAddonVerificationBusy(true)
+                          setAddonVerificationMessage('')
+                          try {
+                            const result = await api.addonsPackages({ action: 'package.verify', key: addonVerificationPrompt.key })
+                            if (result?.authenticated) {
+                              window.dispatchEvent(new Event('lokal:addons-changed'))
+                              setAddonVerificationPrompt(null)
+                              setIsPlaying(true)
+                            } else if (result?.opened) {
+                              setAddonVerificationMessage('Complete verification in the browser window that opened. Playback will remain paused until access is confirmed.')
+                            } else {
+                              setAddonVerificationMessage(result?.error || "Verification couldn't be started. Open Settings → Addons to verify this provider.")
+                            }
+                          } catch (error) {
+                            setAddonVerificationMessage(error?.message || "Verification couldn't be started. Open Settings → Addons to verify this provider.")
+                          } finally {
+                            setAddonVerificationBusy(false)
+                          }
+                        }}
+                        className="rounded-lg bg-accent px-3 py-2 text-sm text-base disabled:opacity-50"
+                      >{addonVerificationBusy ? t('Opening…') : t('Verify access')}</button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
               {streamError && (
                 <motion.div
                   role="status"
