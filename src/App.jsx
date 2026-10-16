@@ -1354,6 +1354,7 @@ export default function App() {
     const publish = () => {
       const state = usePlayerStore.getState()
       const payload = {
+        userId: userRef.current?.id || 'guest',
         isPlaying: state.isPlaying,
         progress: state.progress || 0,
         duration: state.duration || 0,
@@ -1396,6 +1397,29 @@ export default function App() {
       const action = command?.action
       if (!action) return
       const state = usePlayerStore.getState()
+      if (['playLibraryTrack', 'playNextTracks', 'queueTracks'].includes(action)) {
+        const value = command?.value && typeof command.value === 'object' ? command.value : {}
+        const targetId = String(value.trackId || '')
+        const requestedIds = Array.isArray(value.trackIds) ? value.trackIds : []
+        const ids = [...new Set([...requestedIds, targetId].map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
+        if (!ids.length) return { error: 'No library tracks were selected' }
+        const loaded = await api.getTracks({ ids, includeGhosts: '1', limit: 5000 })
+        const tracks = Array.isArray(loaded) ? loaded : Array.isArray(loaded?.items) ? loaded.items : []
+        const byId = new Map(tracks.filter(track => track?.id).map(track => [String(track.id), track]))
+        const ordered = ids.map(id => byId.get(id)).filter(Boolean)
+        if (!ordered.length) return { error: 'No playable tracks were found' }
+        if (action === 'playLibraryTrack') {
+          const selected = byId.get(targetId) || ordered[0]
+          state.playTrack(selected, ordered)
+          return { ok: true, trackId: selected.id }
+        }
+        if (action === 'playNextTracks') {
+          for (const track of [...ordered].reverse()) state.playNext(track)
+          return { ok: true, count: ordered.length }
+        }
+        for (const track of ordered) state.addToQueue(track)
+        return { ok: true, count: ordered.length }
+      }
       if (action === 'togglePlay') return state.togglePlay()
       if (action === 'play' && !state.isPlaying) return state.togglePlay()
       if (action === 'pause' && state.isPlaying) return state.togglePlay()
