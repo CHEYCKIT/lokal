@@ -381,17 +381,36 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     // same operation while the popup is open. Its retry resolves this promise,
     // so the outer caller continues instead of receiving a rejected promise.
     return await new Promise((resolve, reject) => {
+      const cancel = () => resolve([])
       const retryAndResolve = async () => {
         try {
-          const rows = await retry()
+          const rows = await resolveRecommendationTracks(candidates, client, {
+            ...options,
+            ...(error.provider ? { startFromProvider: error.provider } : {}),
+            onAddonVerificationRequired: (nextError, nextRetry) => {
+              const handedOff = dispatchAddonVerificationRequired(nextError, async () => {
+                try {
+                  const next = await nextRetry()
+                  resolve(next)
+                  return next
+                } catch (nestedError) {
+                  if (!isAddonVerificationRequiredError(nestedError)) reject(nestedError)
+                  throw nestedError
+                }
+              }, cancel)
+              if (!handedOff) reject(nextError)
+            },
+          })
           resolve(rows)
           return rows
         } catch (retryError) {
+          // A subsequent prompt now owns this promise; let the current verify
+          // attempt finish so the UI can re-enable its controls.
+          if (isAddonVerificationRequiredError(retryError)) return null
           reject(retryError)
           throw retryError
         }
       }
-      const cancel = () => resolve([])
       if (!dispatchAddonVerificationRequired(error, retryAndResolve, cancel)) reject(error)
     })
   }
