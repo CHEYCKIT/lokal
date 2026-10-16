@@ -10,7 +10,9 @@ function getRemoteConnectionInfo() {
     }
   }
   const token = String(process.env.REMOTE_TOKEN || '').trim()
-  const linkedUrls = [...new Set(urls)].map(url => token ? `${url}#token=${encodeURIComponent(token)}` : url)
+  // Never send the token to the external QR image provider. The remote page
+  // asks for it locally when its first state request is rejected.
+  const linkedUrls = [...new Set(urls)]
   const primary = linkedUrls[0] || null
   return {
     sameWifiRequired: true,
