@@ -244,7 +244,7 @@ router.get('/library/liked', (req, res) => {
   require('../../electron/online/sources').foldStreamedLikes(db, uid)
   const { limit, offset } = pagination(req)
   const q = queryText(req.query.q)
-  const where = ['ul.user_id = ?']
+  const where = ['ul.user_id = ?', "t.file_path NOT LIKE 'ghost://%'"]
   const params = [uid]
   if (q) {
     const like = safeLike(q)
