@@ -11,7 +11,7 @@ import { useTranslation } from '../i18n'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch, Play, Tags } from 'lucide-react'
+import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mic2, Trash2, Square, Search, Download, Clapperboard, CalendarDays, UserRound, ScanSearch, Play, Tags, Blocks, ShieldAlert, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
@@ -376,6 +376,106 @@ function useArtistRefreshStatus(enabled) {
   return [status, cancel, start]
 }
 
+/** Addons needing attention: mirrors the warning state shown in Settings → Addons. */
+function AddonsTab({ addons, loading, error, onNavigate }) {
+  const { t } = useTranslation()
+  const [busyKey, setBusyKey] = useState(null)
+  const [messages, setMessages] = useState({})
+  const [verificationUrls, setVerificationUrls] = useState({})
+
+  const openSettings = addon => onNavigate('/settings', { state: { category: 'addons', addon: addon.key } })
+  const verify = async addon => {
+    setBusyKey(addon.key)
+    setMessages(current => ({ ...current, [addon.key]: '' }))
+    try {
+      const result = await api.addonsPackages({ action: 'package.verify', key: addon.key })
+      if (result?.error) throw new Error(result.error)
+      if (result?.opened) {
+        setVerificationUrls(current => ({ ...current, [addon.key]: '' }))
+        setMessages(current => ({ ...current, [addon.key]: t('Complete the verification in the window that opened. Access is checked when it closes.') }))
+      } else if (result?.authenticated) {
+        setVerificationUrls(current => ({ ...current, [addon.key]: '' }))
+        setMessages(current => ({ ...current, [addon.key]: t('Access verified.') }))
+        window.dispatchEvent(new Event('lokal:addons-changed'))
+      } else if (result?.open_auth_url && /^https:\/\//i.test(result.open_auth_url)) {
+        // On the web, show the returned verification URL as a direct action.
+        // Opening Settings first would add an unnecessary navigation step.
+        setVerificationUrls(current => ({ ...current, [addon.key]: result.open_auth_url }))
+        setMessages(current => ({ ...current, [addon.key]: t('Open the verification page to continue.') }))
+      } else {
+        setMessages(current => ({ ...current, [addon.key]: t(result?.error || "Verification wasn't completed. Try again when you're ready.") }))
+      }
+    } catch (e) {
+      setMessages(current => ({ ...current, [addon.key]: t(e?.message || 'Could not verify addon access.') }))
+    } finally {
+      setBusyKey(current => current === addon.key ? null : current)
+      window.dispatchEvent(new Event('lokal:addons-changed'))
+    }
+  }
+
+  const warningText = addon => {
+    const missing = addon.access?.missing || []
+    if (missing.length) return t('Needs {capabilities}', { capabilities: missing.map(item => t(item)).join(', ') })
+    if (addon.access?.kind === 'login') return t('Needs login before this addon can stream or download.')
+    if (addon.access?.kind === 'verification') return t('Needs verification before this addon can stream or download.')
+    return t('Required addon settings are missing.')
+  }
+  // Match Settings → Addons: an unverified signed session gets a direct
+  // Verify action even if other required capabilities are also missing.
+  const verificationAvailable = addon => addon.signedSession && !addon.access?.verified
+
+  return (
+    <div className="space-y-2">
+      {error && <p role="alert" className="rounded-lg border border-red/20 bg-red/5 px-3 py-2 text-xs text-red">{t('Could not load addon status')}: {t(error)}</p>}
+      {loading && addons.length === 0 && (
+        <p className="flex items-center justify-center gap-2 px-3 py-8 text-xs text-muted"><Loader2 size={13} className="animate-spin" />{t('Checking addon status…')}</p>
+      )}
+      {!loading && !error && addons.length === 0 && (
+        <p className="px-3 py-8 text-center text-xs text-muted">{t('No addons need attention.')}</p>
+      )}
+      {addons.map(addon => (
+        <div key={addon.key} className="flex items-start gap-3 rounded-xl border border-yellow-500/25 bg-yellow-500/[0.06] p-3">
+          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg bg-elevated">
+            {addon.icon
+              ? <img src={addon.icon} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+              : <div className="flex h-full w-full items-center justify-center text-muted"><Blocks size={16} /></div>}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-text">{addon.name}</p>
+            <p className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-yellow-200/90">
+              <ShieldAlert size={12} className="mt-0.5 flex-shrink-0" />
+              <span>{warningText(addon)}</span>
+            </p>
+            {messages[addon.key] && <p role="status" className="mt-1 text-[11px] leading-relaxed text-muted">{messages[addon.key]}</p>}
+          </div>
+          <div className="flex flex-shrink-0 flex-col items-end gap-2">
+            {verificationAvailable(addon) ? (
+              <>
+                <button disabled={busyKey !== null} onClick={() => verify(addon)}
+                  className="rounded-lg bg-yellow-500/20 px-2.5 py-1.5 text-[11px] font-medium text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:opacity-50">
+                  {busyKey === addon.key ? <Loader2 size={12} className="inline animate-spin" /> : null} {t('Verify access')}
+                </button>
+                {verificationUrls[addon.key] && (
+                  <button onClick={() => api.openExternal(verificationUrls[addon.key])}
+                    className="max-w-28 text-right text-[10px] text-yellow-100 underline-offset-2 hover:underline">
+                    {t('Open verification page')}
+                  </button>
+                )}
+              </>
+            ) : (
+              <button onClick={() => openSettings(addon)}
+                className="rounded-lg bg-accent/15 px-2.5 py-1.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25">
+                {t('Fix settings')}
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
 /** The panel's Others tab: library jobs that aren't downloads, then the downloaded playlists. */
 function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
   const { t } = useTranslation()
@@ -407,6 +507,8 @@ function OthersTab({ artists, cancelArtists, startArtists, onNavigate }) {
   const videosDetail = videos?.running
     ? `${plural(videos.found || 0, 'video')} found${videos.title ? ` · ${videos.title}` : ''}`
     : videos ? `${videos.cancelled ? 'Stopped' : 'Done'} · ${plural(videos.found || 0, 'video')} found for ${plural(videos.total || 0, 'song')}` : ''
+
+
 
   return (
     <div className="space-y-3">
@@ -456,12 +558,46 @@ export function DownloadManagerPanel() {
   const nav = useNavigate()
   const [anchor, setAnchor] = useState({ top: 44, left: 12, width: PANEL_WIDTH, origin: 'top left' })
   const [tab, setTab] = useState('queue')
+  const [addonWarnings, setAddonWarnings] = useState([])
+  const [addonsLoaded, setAddonsLoaded] = useState(false)
+  const [addonsError, setAddonsError] = useState('')
   const releaseCheck = useReleaseCheck(s => !!s.checking)
   const videoIndex = useVideoIndex(s => !!s.progress?.running)
   const [artistRefresh, cancelArtistRefresh, startArtistRefresh] = useArtistRefreshStatus(panelOpen)
   const lyricsIndex = useLibraryJobs(s => !!s.lyrics?.running)
   const genresJob = useLibraryJobs(s => !!s.genres?.running)
   const panelRef = useRef(null)
+
+  // Match Settings → Addons' warning condition exactly. A provider only
+  // appears here while enabled and still missing access verification, login,
+  // or required configuration. Refresh as soon as auth/settings change.
+  useEffect(() => {
+    if (!panelOpen) return undefined
+    let current = true
+    const loadWarnings = async () => {
+      try {
+        const list = await Promise.resolve(api.addonsList?.())
+        if (!current) return
+        if (!Array.isArray(list)) throw new Error(list?.error || 'No addon status returned')
+        setAddonWarnings(list.filter(addon => addon?.enabled && addon?.access && !addon.access.ready))
+        setAddonsError('')
+        setAddonsLoaded(true)
+      } catch (e) {
+        if (!current) return
+        setAddonsError(e?.message || 'Could not load addon status')
+        setAddonsLoaded(true)
+      }
+    }
+    const onChanged = () => { loadWarnings() }
+    loadWarnings()
+    window.addEventListener('lokal:addons-changed', onChanged)
+    const unsubscribe = api.onAddonAuthChanged?.(onChanged)
+    return () => {
+      current = false
+      window.removeEventListener('lokal:addons-changed', onChanged)
+      unsubscribe?.()
+    }
+  }, [panelOpen])
 
   // Under the button, growing inwards: from a button on the left of the
   // window its left edge lines up with the button's (it grows rightwards),
@@ -522,12 +658,16 @@ export function DownloadManagerPanel() {
         >
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             <div role="tablist" aria-label={t("Downloads")} className="flex min-w-0 flex-1 items-center gap-1">
-              {[['queue', 'Queue'], ['others', 'Others']].map(([id, label]) => (
+              {[
+                ['queue', 'Queue', active.length],
+                ['others', 'Others', othersRunning],
+                ['addons', 'Addons', addonsLoaded ? addonWarnings.length : 0],
+              ].map(([id, label, count]) => (
                 <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                   className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-display uppercase tracking-[0.16em] transition-colors ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-white'}`}>
                   {t(label)}
-                  {(id === 'queue' ? active.length : othersRunning) > 0 && (
-                    <span className="rounded-full bg-accent/20 px-1.5 text-[10px] tracking-normal tabular-nums text-accent">{id === 'queue' ? active.length : othersRunning}</span>
+                  {count > 0 && (
+                    <span className={`rounded-full px-1.5 text-[10px] tracking-normal tabular-nums ${id === 'addons' ? 'bg-yellow-500/20 text-yellow-200' : 'bg-accent/20 text-accent'}`}>{count}</span>
                   )}
                 </button>
               ))}
@@ -540,9 +680,14 @@ export function DownloadManagerPanel() {
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {tab === 'queue'
-              ? <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">{t("Nothing downloading.")}</p>} />
-              : <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={(path, options) => { closePanel(); nav(path, options) }} />}
+            {tab === 'queue' ? (
+              <DownloadList jobs={jobs} empty={<p className="px-3 py-8 text-center text-xs text-muted">{t("Nothing downloading.")}</p>} />
+            ) : tab === 'others' ? (
+              <OthersTab artists={artistRefresh} cancelArtists={cancelArtistRefresh} startArtists={startArtistRefresh} onNavigate={(path, options) => { closePanel(); nav(path, options) }} />
+            ) : (
+              <AddonsTab addons={addonWarnings} loading={!addonsLoaded} error={addonsError}
+                onNavigate={(path, options) => { closePanel(); nav(path, options) }} />
+            )}
           </div>
           <button
             onClick={findMore}
