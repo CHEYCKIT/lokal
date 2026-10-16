@@ -196,7 +196,19 @@ router.get('/library/playlists', (req, res) => {
     ORDER BY p.name COLLATE NOCASE LIMIT ? OFFSET ?
   `).all(...params, limit, offset)
   const total = db.prepare(`SELECT COUNT(*) AS total FROM playlists p WHERE ${whereSql}`).get(...params)?.total || 0
-  return res.json({ items: rows.map(({ smart_rules, ...row }) => ({ ...row, track_count: Number(row.track_count) || 0, smart: !!smart_rules })), total, limit, offset, hasMore: offset + rows.length < total })
+  const items = rows.map(({ smart_rules, ...row }) => {
+    const rules = playlistRules({ smart_rules })
+    if (!rules) return { ...row, track_count: Number(row.track_count) || 0, smart: !!smart_rules }
+    const smartItems = smartTracks(db, smart_rules, row.user_id)
+    const coverTrack = smartItems.find(track => track?.artwork_path)
+    return {
+      ...row,
+      track_count: smartItems.length,
+      coverTrackId: coverTrack?.id || null,
+      smart: true,
+    }
+  })
+  return res.json({ items, total, limit, offset, hasMore: offset + rows.length < total })
 })
 
 router.get('/library/playlist-tracks', (req, res) => {
@@ -227,6 +239,9 @@ router.get('/library/playlist-tracks', (req, res) => {
 router.get('/library/liked', (req, res) => {
   const db = getDB()
   const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
+  // Move older streamed-song likes onto their local copies before listing;
+  // otherwise excluding the ghost hides a song the user has liked.
+  require('../../electron/online/sources').foldStreamedLikes(db, uid)
   const { limit, offset } = pagination(req)
   const q = queryText(req.query.q)
   const where = ['ul.user_id = ?']
