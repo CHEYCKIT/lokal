@@ -1659,18 +1659,18 @@ export default function App() {
           if (status?.authenticated) result = await pending.retry()
         }
         if (addonVerificationRetryRef.current !== pending) return
-        if (result === true) {
+        if (result === true || result === undefined || (Array.isArray(result) && result.length > 0)) {
           addonVerificationRetryRef.current = null
           setAddonVerificationPrompt(current => current?.key === key ? null : current)
           setAddonVerificationMessage('')
-          setIsPlaying(true)
-        } else if (result === false) {
+          if (result === true) setIsPlaying(true)
+        } else if (result === false || Array.isArray(result)) {
           addonVerificationRetryRef.current = null
           setAddonVerificationPrompt(current => current?.key === key ? null : current)
           setAddonVerificationMessage('')
           showToast('Access was verified, but no playable match could be resolved for this song.')
         } else if (result === null) {
-          setAddonVerificationMessage('Access was verified, but playback could not resume automatically. Try playing the song again.')
+          setAddonVerificationMessage('Access was verified, but playback could not resume automatically. Lokal will keep the selected song ready to retry.')
         }
       }).catch(error => {
         if (addonVerificationRetryRef.current === pending) {
