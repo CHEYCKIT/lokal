@@ -165,6 +165,41 @@ test('downloading afterwards is opt-in work done per ghost song', () => {
   assert.equal(calls[0].opts.tags.cover, 'https://i.ytimg.com/vi/a/hqdefault.jpg')
 })
 
+test('YouTube Music playlist import reads Music catalogue entries and its own cover without yt-dlp', async () => {
+  const column = runs => ({ musicResponsiveListItemFlexColumnRenderer: { text: { runs } } })
+  const linked = (text, browseId) => ({ text, navigationEndpoint: { browseEndpoint: { browseId, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ARTIST' } } } } })
+  const row = (id, title) => ({ musicResponsiveListItemRenderer: {
+    playlistItemData: { videoId: id },
+    flexColumns: [column([{ text: title }]), column([linked('Artist', 'UCartist000000000')])],
+    thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg', width: 480, height: 360 }] } } },
+  } })
+  const root = {
+    contents: [
+      { musicResponsiveHeaderRenderer: {
+        title: { simpleText: 'Music Picks' },
+        straplineTextOne: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '2 songs' }] },
+        thumbnail: { croppedThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/music-picks=w226-h226', width: 226, height: 226 }] } } },
+      } },
+      { musicPlaylistShelfRenderer: { contents: [row('abcdefghijk', 'Song One'), row('bcdefghijkl', 'Song Two')], continuations: [] } },
+    ],
+  }
+  const fetchImpl = async (url, init = {}) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => 'ytcfg.set({"INNERTUBE_CLIENT_VERSION":"1.test.client","VISITOR_DATA":"visitor"});' }
+    return { ok: true, json: async () => root }
+  }
+  const result = await linkImport.fetchPlaylist({
+    ytdlp: null,
+    url: 'https://music.youtube.com/playlist?list=PLmusicpicks',
+    fetchImpl,
+  })
+  assert.equal(result.title, 'Music Picks')
+  assert.equal(result.owner, 'Playlist Owner')
+  assert.equal(result.thumbnail, 'https://lh3.googleusercontent.com/music-picks=w544-h544-l90-rj')
+  assert.deepEqual(result.entries.map(entry => entry.title), ['Song One', 'Song Two'])
+  assert.ok(result.entries.every(entry => entry.source_url.startsWith('https://www.youtube.com/watch?v=')))
+  assert.ok(result.entries[0].thumbnail.includes('/abcdefghijk/'))
+})
+
 test('yt-dlp is asked to list the playlist, not download it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-link-'))
   const fake = path.join(dir, 'fake-ytdlp.js')

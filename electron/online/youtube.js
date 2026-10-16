@@ -311,8 +311,17 @@ function textOf(value) {
 }
 
 function thumbnailsOf(value) {
-  const thumbnails = value?.thumbnails || value?.musicThumbnailRenderer?.thumbnail?.thumbnails || []
-  return Array.isArray(thumbnails) && thumbnails.length ? largerThumbnail(thumbnails[thumbnails.length - 1].url) : null
+  const choices = [
+    value?.thumbnails,
+    value?.musicThumbnailRenderer?.thumbnail?.thumbnails,
+    value?.croppedThumbnailRenderer?.thumbnail?.thumbnails,
+    value?.thumbnail?.thumbnails,
+    value?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails,
+    value?.thumbnail?.croppedThumbnailRenderer?.thumbnail?.thumbnails,
+    value?.thumbnail?.thumbnail?.thumbnails,
+  ]
+  const thumbnails = choices.find(Array.isArray) || []
+  return thumbnails.length ? largerThumbnail(thumbnails[thumbnails.length - 1]?.url) : null
 }
 
 function walkObjects(root, visitor) {
@@ -598,6 +607,166 @@ function clearAccountCache() {
   accountCache.clear()
   contextCache.clear()
   streamCache.clear()
+}
+
+const PLAYLIST_CONTINUATION_TYPES = [
+  'musicPlaylistShelfRenderer', 'musicPlaylistShelfContinuation',
+  'musicShelfRenderer', 'musicShelfContinuation',
+  'gridRenderer', 'gridContinuation',
+  'sectionListRenderer', 'sectionListContinuation',
+  'appendContinuationItemsAction', 'reloadContinuationItemsCommand',
+]
+
+function parseMusicPlaylistMetadata(root, playlistId = '') {
+  const result = { id: String(playlistId || '').replace(/^VL/, ''), title: null, author: null, thumbnail: null, count: null }
+  walkObjects(root, node => {
+    const header = node.musicDetailHeaderRenderer
+      || node.musicEditablePlaylistDetailHeaderRenderer
+      || node.musicImmersiveHeaderRenderer
+      || node.musicResponsiveHeaderRenderer
+      || node.musicVisualHeaderRenderer
+    if (!header) return
+
+    const title = textOf(header.title || header.header?.title)
+    if (!result.title && title) result.title = title
+    const thumbnail = thumbnailsOf(header.thumbnail || header.thumbnailRenderer || header.image)
+    if (!result.thumbnail && thumbnail) result.thumbnail = thumbnail
+
+    const authorFields = [
+      header.subtitle, header.secondLine, header.strapline,
+      header.straplineTextOne, header.straplineTextTwo, header.straplineTextThree,
+      header.secondSubtitle, header.ownerText,
+    ]
+    const runs = authorFields.flatMap(field => field?.runs || [])
+    const ownerRun = runs.find(run => {
+      const browse = run.navigationEndpoint?.browseEndpoint
+      const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
+      return /^UC[\w-]{10,}$/.test(browse?.browseId || '') || /_(?:ARTIST|USER_CHANNEL)$/.test(pageType)
+    })
+    if (!result.author && ownerRun?.text) result.author = String(ownerRun.text).trim() || null
+
+    const authorLines = authorFields.map(textOf).filter(Boolean)
+    if (!result.author) {
+      for (const line of authorLines) {
+        const candidate = line.split(/[•·|]/)[0].replace(/^by\s+/i, '').trim()
+        if (candidate && !/^(?:public|private|unlisted|playlist|mix|radio)\b/i.test(candidate) && !/^\d/.test(candidate)) {
+          result.author = candidate
+          break
+        }
+      }
+    }
+    const countLines = [...authorLines, textOf(header.description)].filter(Boolean)
+    if (!result.count) {
+      for (const line of countLines) {
+        const match = line.match(/([\d,.]+)\s*([KMB]?)\s*(?:songs?|tracks?|videos?)\b/i)
+        if (!match) continue
+        const amount = Number(match[1].replace(/,/g, ''))
+        if (Number.isFinite(amount)) result.count = Math.round(amount * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2].toUpperCase()] || 1))
+        break
+      }
+    }
+  })
+  return result
+}
+
+function youtubeMusicPlaylistId(value) {
+  try {
+    const url = new URL(String(value || ''))
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'music.youtube.com' || url.pathname !== '/playlist') return null
+    const id = String(url.searchParams.get('list') || '').trim()
+    return id && /^[\w.-]{1,120}$/.test(id) && !id.startsWith('RD') ? id : null
+  } catch { return null }
+}
+
+async function openMusicPlaylist(playlistId, cookies = '', fetchImpl = fetch, timeoutMs = 15000) {
+  const id = String(playlistId || '').trim().replace(/^VL/, '')
+  if (!/^[\w.-]{1,120}$/.test(id) || id.startsWith('RD')) throw new Error('A finite YouTube Music playlist id is required.')
+  const config = await musicContext(cookies, fetchImpl)
+  const authenticated = !!accountHeaders(cookies, config)
+  const root = await accountBrowse(`VL${id}`, cookies, fetchImpl, config, {
+    anonymous: !authenticated,
+    timeoutMs,
+  })
+  return { id, cookies, fetchImpl, config, anonymous: !authenticated, root, metadata: parseMusicPlaylistMetadata(root, id) }
+}
+
+/** The playlist's own name, owner and artwork; no full track-list request is needed for a pasted-link card. */
+async function fetchMusicPlaylistInfo(playlistId, cookies = '', fetchImpl = fetch) {
+  try {
+    const opened = await openMusicPlaylist(playlistId, cookies, fetchImpl)
+    const [firstTrack] = parseAccountTracks(opened.root, 1)
+    if (!opened.metadata.title && !firstTrack) return { error: 'YouTube Music returned no playlist details.' }
+    return {
+      id: opened.id,
+      title: opened.metadata.title || `YouTube Music Playlist ${opened.id.slice(0, 8)}`,
+      author: opened.metadata.author || null,
+      // Prefer the playlist's own cover; the first track is only a fallback
+      // for playlist renderers that do not expose a separate thumbnail.
+      thumbnail: opened.metadata.thumbnail || firstTrack?.thumbnail || null,
+      count: opened.metadata.count || null,
+    }
+  } catch (error) {
+    return { error: error?.message || 'Could not read that YouTube Music playlist.' }
+  }
+}
+
+/** All available tracks in a YouTube Music playlist, preserving its order. */
+async function fetchMusicPlaylist(playlistId, cookies = '', fetchImpl = fetch, { limit = 10000, timeoutMs = 600000 } = {}) {
+  try {
+    const opened = await openMusicPlaylist(playlistId, cookies, fetchImpl)
+    const safeLimit = Math.max(1, Math.min(10000, Number.parseInt(limit, 10) || 10000))
+    const tracks = []
+    const seenTracks = new Set()
+    const addTracks = root => {
+      for (const track of parseAccountTracks(root, safeLimit)) {
+        const videoId = String(track.videoId || track.id || '')
+        if (!/^[\w-]{11}$/.test(videoId) || seenTracks.has(videoId)) continue
+        seenTracks.add(videoId)
+        tracks.push({
+          ...track,
+          videoId,
+          id: videoId,
+          url: `https://music.youtube.com/watch?v=${videoId}`,
+          source_url: `https://music.youtube.com/watch?v=${videoId}`,
+        })
+        if (tracks.length >= safeLimit) break
+      }
+    }
+    addTracks(opened.root)
+    const startedAt = Date.now()
+    const deadline = startedAt + Math.max(1000, Math.min(600000, Number(timeoutMs) || 600000))
+    const seenTokens = new Set()
+    const pending = continuationTokens(opened.root, PLAYLIST_CONTINUATION_TYPES)
+    let pages = 1
+    while (pending.length && tracks.length < safeLimit && pages < 300 && Date.now() < deadline) {
+      const continuation = pending.shift()
+      if (!continuation || seenTokens.has(continuation)) continue
+      seenTokens.add(continuation)
+      const page = await accountBrowse(`VL${opened.id}`, opened.cookies, opened.fetchImpl, opened.config, {
+        anonymous: opened.anonymous,
+        continuation,
+        timeoutMs: Math.max(1000, Math.min(15000, deadline - Date.now())),
+      })
+      pages++
+      addTracks(page)
+      for (const token of continuationTokens(page, PLAYLIST_CONTINUATION_TYPES)) {
+        if (!seenTokens.has(token) && !pending.includes(token)) pending.push(token)
+      }
+    }
+    if (!tracks.length) return { error: 'That YouTube Music playlist has no accessible tracks. It may be private or unavailable.' }
+    const [firstTrack] = tracks
+    return {
+      id: opened.id,
+      title: opened.metadata.title || `YouTube Music Playlist ${opened.id.slice(0, 8)}`,
+      author: opened.metadata.author || null,
+      thumbnail: opened.metadata.thumbnail || firstTrack?.thumbnail || null,
+      count: opened.metadata.count || tracks.length,
+      tracks,
+      truncated: pending.length > 0 || (opened.metadata.count ? opened.metadata.count > tracks.length : tracks.length >= safeLimit),
+    }
+  } catch (error) {
+    return { error: error?.message || 'Could not read that YouTube Music playlist.' }
+  }
 }
 
 async function fetchAccountPlaylist(playlistId, cookies, fetchImpl = fetch) {
@@ -1009,7 +1178,7 @@ function videoIdFromUrl(url) {
 
 module.exports = {
   searchSongs, innertubeSearch, spellCheck, parseSearch, parseItem, parseDuration,
-  fetchAccountData, fetchAccountPlaylist, setAccountLiked, fetchCatalogue, parseArtistPage,
+  fetchAccountData, fetchAccountPlaylist, fetchMusicPlaylistInfo, fetchMusicPlaylist, parseMusicPlaylistMetadata, youtubeMusicPlaylistId, setAccountLiked, fetchCatalogue, parseArtistPage,
   fetchRadio, parseAccountTracks, parseAccountMixes, clearAccountCache, accountHeaders, normalizeAccountCookies, parseMusicConfig, isLoggedOutResponse,
   resolveStream, fetchStream, streamError, videoIdFromUrl, fastFailure,
 }

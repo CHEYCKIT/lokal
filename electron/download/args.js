@@ -53,9 +53,14 @@ function metadataArgs(settings) {
   ]
 }
 
-function outputTemplate(kind, outputDir, addonSource) {
+function playlistFolderName(value) {
+  const name = String(value || '').replace(/[<>:"/\\|?*%\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 120)
+  return name && name !== '.' && name !== '..' ? name : 'YouTube Music Playlist'
+}
+
+function outputTemplate(kind, outputDir, addonSource, playlistTitle = null) {
   // No "NA" folders: a track without an album goes under "Singles".
-  if (kind === 'playlist') return path.join(outputDir, '%(playlist|Playlist)s', '%(artist,uploader|Unknown Artist)s', '%(title)s.%(ext)s')
+  if (kind === 'playlist') return path.join(outputDir, playlistTitle ? playlistFolderName(playlistTitle) : '%(playlist|Playlist)s', '%(artist,uploader|Unknown Artist)s', '%(title)s.%(ext)s')
   // Addon endpoints commonly all end in /file.flac. Isolate their temporary
   // filenames before tagging moves each download to its artist/album folder.
   const suffix = addonSource?.provider && addonSource?.id
@@ -78,10 +83,23 @@ function isYouTube(url) {
   } catch { return /youtu\.?be/i.test(String(url || '')) }
 }
 
+function youtubeMusicPlaylistId(value) {
+  try {
+    const url = new URL(String(value || ''))
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'music.youtube.com' || url.pathname !== '/playlist') return null
+    const id = String(url.searchParams.get('list') || '').trim()
+    return id && /^[\w.-]{1,120}$/.test(id) && !id.startsWith('RD') ? id : null
+  } catch { return null }
+}
+
+function isYouTubeMusicPlaylist(value) {
+  return !!youtubeMusicPlaylistId(value)
+}
+
 /**
  * @returns {{ args: string[], cookies: { args, notes, usedBrowser } }}
  */
-function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [], addonSource = false }) {
+function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies, extraArgs = [], addonSource = false, batchFile = null, playlistTitle = null }) {
   const cookies = cookieArgs(settings, { withoutCookies, url })
   const directAudio = !!addonSource && !isYouTube(url) && !isSoundCloud(url)
   const args = [
@@ -93,7 +111,7 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
     // metadata; --parse-metadata below only rewrites `artist`.)
     '--print', 'after_move:lokalmeta:%(.{channel,uploader,track,artist,artists,creator,title,fulltitle,album})j',
     '--print', 'after_move:filepath:%(filepath)s',
-    '--output', outputTemplate(kind, outputDir, addonSource),
+    '--output', outputTemplate(kind, outputDir, addonSource, playlistTitle),
     '--trim-filenames', '180',
     '--newline',
     '--progress',
@@ -101,7 +119,7 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
     '--retries', '5',
     '--fragment-retries', '5',
     ...(kind === 'playlist'
-      ? ['--yes-playlist', '--ignore-errors', ...(archivePath ? ['--download-archive', archivePath] : [])]
+      ? [...(batchFile ? ['--no-playlist'] : ['--yes-playlist']), '--ignore-errors', ...(archivePath ? ['--download-archive', archivePath] : [])]
       : ['--no-playlist']),
     ...cookies.args,
     ...(directAudio ? [] : metadataArgs(settings)),
@@ -112,10 +130,14 @@ function buildArgs({ kind, url, outputDir, settings, ffmpeg, format, archivePath
   if (isYouTube(url)) args.push('--convert-thumbnail', 'jpg')
   if (ffmpeg && (ffmpeg.includes('/') || ffmpeg.includes('\\'))) args.push('--ffmpeg-location', path.dirname(ffmpeg))
   args.push(...extraArgs)
-  // The URL goes last, after "--", so a "URL" that starts with "-" can never be
-  // read as a yt-dlp option (argument injection, CWE-88).
-  args.push('--', url)
+  if (batchFile) {
+    args.push('--batch-file', batchFile)
+  } else {
+    // The URL goes last, after "--", so a "URL" that starts with "-" can never be
+    // read as a yt-dlp option (argument injection, CWE-88).
+    args.push('--', url)
+  }
   return { args, cookies, spawnOptions: runtime.options }
 }
 
-module.exports = { buildArgs, resolveFormat, audioArgs, outputTemplate, isYouTube, isSoundCloud, FORMATS, MP3_BITRATES, TITLE_NOISE }
+module.exports = { buildArgs, resolveFormat, audioArgs, outputTemplate, isYouTube, isSoundCloud, youtubeMusicPlaylistId, isYouTubeMusicPlaylist, FORMATS, MP3_BITRATES, TITLE_NOISE }

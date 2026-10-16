@@ -8,6 +8,56 @@ const accountRoot = { responseContext: { serviceTrackingParams: [{ params: [{ ke
 const column = runs => ({ musicResponsiveListItemFlexColumnRenderer: { text: { runs } } })
 const linked = (text, browseId, type) => ({ text, navigationEndpoint: { browseEndpoint: { browseId, ...(type ? { browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: `MUSIC_PAGE_TYPE_${type}` } } } : {}) } } })
 
+const playlistHeader = {
+  musicResponsiveHeaderRenderer: {
+    title: { simpleText: 'Night Drive' },
+    straplineTextOne: { runs: [linked('Playlist Owner', 'UCplaylistowner000000', 'ARTIST'), { text: ' • ' }, { text: '3 songs' }] },
+    thumbnail: { croppedThumbnailRenderer: { thumbnail: { thumbnails: [
+      { url: 'https://lh3.googleusercontent.com/playlist-cover=w120-h120', width: 120, height: 120 },
+      { url: 'https://lh3.googleusercontent.com/playlist-cover=w226-h226', width: 226, height: 226 },
+    ] } } },
+  },
+}
+const playlistRow = (videoId, title) => ({ musicResponsiveListItemRenderer: {
+  playlistItemData: { videoId },
+  flexColumns: [column([{ text: title }]), column([linked('Artist', 'UCartist000000000', 'ARTIST')]), column([linked('Album', 'MPREalbum', 'ALBUM')])],
+  thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg', width: 480, height: 360 }] } } },
+} })
+
+test('YouTube Music playlist metadata uses the playlist cover and follows track continuation pages', async () => {
+  youtube.clearAccountCache()
+  const browseRequests = []
+  const firstRoot = {
+    contents: [
+      playlistHeader,
+      { musicPlaylistShelfRenderer: { contents: [playlistRow('abcdefghijk', 'First Song'), playlistRow('bcdefghijkl', 'Second Song')], continuations: [{ nextContinuationData: { continuation: 'playlist-page-2' } }] } },
+    ],
+  }
+  const secondPage = { continuationContents: { musicPlaylistShelfContinuation: { contents: [playlistRow('cdefghijklm', 'Third Song')], continuations: [] } } }
+  const fetchImpl = async (url, init = {}) => {
+    if (url.endsWith('/')) return { ok: true, text: async () => 'ytcfg.set({"INNERTUBE_CLIENT_VERSION":"1.test.client","VISITOR_DATA":"visitor"});' }
+    const body = JSON.parse(init.body)
+    browseRequests.push(body)
+    return { ok: true, json: async () => body.continuation ? secondPage : firstRoot }
+  }
+
+  const info = await youtube.fetchMusicPlaylistInfo('PLtest', '', fetchImpl)
+  assert.equal(info.title, 'Night Drive')
+  assert.equal(info.author, 'Playlist Owner')
+  assert.match(info.thumbnail, /playlist-cover=w544-h544/)
+  assert.equal(info.count, 3)
+
+  youtube.clearAccountCache()
+  browseRequests.length = 0
+  const playlist = await youtube.fetchMusicPlaylist('PLtest', '', fetchImpl, { limit: 20 })
+  assert.deepEqual(playlist.tracks.map(track => track.title), ['First Song', 'Second Song', 'Third Song'])
+  assert.deepEqual(playlist.tracks.map(track => track.videoId), ['abcdefghijk', 'bcdefghijkl', 'cdefghijklm'])
+  assert.ok(playlist.tracks.every(track => track.url.startsWith('https://music.youtube.com/watch?v=')))
+  assert.match(playlist.thumbnail, /playlist-cover=w544-h544/)
+  assert.equal(playlist.truncated, false)
+  assert.equal(browseRequests.filter(request => request.continuation === 'playlist-page-2').length, 1)
+})
+
 test('history rows read separate album and duration columns, including album endpoints without pageType', () => {
   const track = youtube.parseItem({ playlistItemData: { videoId: 'abcdefghijk' }, flexColumns: [column([{ text: 'History Song' }]), column([linked('Artist', 'UCartist', 'ARTIST')]), column([linked('History Album', 'MPREalbum')])], fixedColumns: [{ musicResponsiveListItemFixedColumnRenderer: { text: { runs: [{ text: '3:42' }] } } }] })
   assert.equal(track.album, 'History Album')

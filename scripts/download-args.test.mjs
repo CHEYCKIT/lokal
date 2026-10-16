@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { test } from 'node:test'
 
 const require = createRequire(import.meta.url)
-const { buildArgs } = require('../electron/download/args.js')
+const { buildArgs, youtubeMusicPlaylistId } = require('../electron/download/args.js')
 
 const base = {
   kind: 'single',
@@ -51,4 +51,27 @@ test('addon songs with identical media filenames get isolated, stable output pat
   assert.notEqual(output(first), output({ ...first, provider: 'a-9876543210' }))
   assert.ok(output({ ...first, id: '../../escape/%(title)s' }).replace(/\\/g, '/').startsWith('/music/'))
   assert.equal(output({ ...first, id: '../../escape/%(title)s' }).includes('escape'), false)
+})
+
+
+test('YouTube Music playlist downloads use a batch of direct song URLs and a safe playlist folder', () => {
+  const url = 'https://music.youtube.com/playlist?list=PLabc123'
+  const { args } = buildArgs({
+    ...base,
+    kind: 'playlist',
+    url,
+    archivePath: '/data/archive.txt',
+    batchFile: '/data/ytmusic-list.txt',
+    playlistTitle: 'Night / Drive',
+  })
+  const output = args[args.indexOf('--output') + 1].replace(/\\/g, '/')
+  assert.match(output, /^\/music\/Night _ Drive\//)
+  assert.ok(args.includes('--batch-file'))
+  assert.equal(args.at(-1), '/data/ytmusic-list.txt')
+  assert.ok(args.includes('--no-playlist'))
+  assert.equal(args.includes('--yes-playlist'), false)
+  assert.equal(args.includes('--'), false)
+  assert.equal(youtubeMusicPlaylistId(url), 'PLabc123')
+  assert.equal(youtubeMusicPlaylistId('https://music.youtube.com/playlist?list=RDmix123'), null)
+  assert.equal(youtubeMusicPlaylistId('https://youtube.com/playlist?list=PLabc123'), null)
 })

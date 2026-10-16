@@ -9,7 +9,7 @@
 const { spawn } = require('child_process')
 const { cookieArgs } = require('../ipc/ytCookies')
 const { jsRuntime } = require('../online/jsRuntime')
-const { isYouTube, isSoundCloud } = require('./args')
+const { isYouTube, isSoundCloud, youtubeMusicPlaylistId } = require('./args')
 
 const OEMBED_TIMEOUT_MS = 6000
 const YTDLP_TIMEOUT_MS = 45000
@@ -113,6 +113,32 @@ async function linkInfo(url, { ytdlp = null, settings = {}, fetchImpl = fetch, s
   const link = String(url).trim()
   if (cache.has(link)) return cache.get(link)
   const pending = (async () => {
+    const playlistId = youtubeMusicPlaylistId(link)
+    if (playlistId) {
+      // YouTube's oEmbed doesn't reliably return YouTube Music's playlist
+      // metadata or playlist-specific cover. Read that from Music's own browse
+      // response first, using the active account session where available.
+      let musicCookies = ''
+      let musicFetch = fetchImpl
+      if (fetchImpl === fetch) {
+        try {
+          const credentials = await require('../ipc/online').getYouTubeMusicCredentials()
+          musicCookies = credentials?.cookies || ''
+          if (!musicCookies && settings.yt_cookies === '1') musicCookies = settings.yt_cookie_header || ''
+          if (typeof credentials?.fetchImpl === 'function') musicFetch = credentials.fetchImpl
+        } catch {}
+      }
+      const musicInfo = await require('../online/youtube').fetchMusicPlaylistInfo(playlistId, musicCookies, musicFetch).catch(() => null)
+      if (musicInfo && !musicInfo.error && (musicInfo.title || musicInfo.thumbnail)) {
+        return {
+          ok: true,
+          title: musicInfo.title,
+          author: musicInfo.author || null,
+          thumbnail: musicInfo.thumbnail || null,
+          ...(musicInfo.count ? { count: musicInfo.count } : {}),
+        }
+      }
+    }
     const quick = await oembed(link, { fetchImpl, timeoutMs: oembedTimeoutMs }).catch(() => null)
     const info = quick || await ytdlpInfo(link, { ytdlp, settings, spawnImpl, timeoutMs: ytdlpTimeoutMs })
     return info ? { ok: true, ...info } : { error: "Couldn't read that link." }

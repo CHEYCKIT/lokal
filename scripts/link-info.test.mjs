@@ -5,6 +5,7 @@ import { test } from 'node:test'
 
 const require = createRequire(import.meta.url)
 const { linkInfo, parseYtdlp, _clear } = require('../electron/download/linkInfo.js')
+const youtube = require('../electron/online/youtube.js')
 
 const json = body => ({ ok: true, json: async () => body })
 const notFound = { ok: false, json: async () => null }
@@ -21,6 +22,40 @@ function fakeSpawn(out, calls = []) {
     return proc
   }
 }
+
+test('a YouTube Music playlist link uses the playlist cover from Music itself', async () => {
+  _clear()
+  youtube.clearAccountCache()
+  const asked = []
+  const root = {
+    contents: {
+      musicResponsiveHeaderRenderer: {
+        title: { simpleText: 'Night Drive' },
+        straplineTextOne: { runs: [{ text: 'Playlist Owner' }, { text: ' • ' }, { text: '18 songs' }] },
+        thumbnail: { croppedThumbnailRenderer: { thumbnail: { thumbnails: [
+          { url: 'https://lh3.googleusercontent.com/night-drive-cover=w120-h120', width: 120, height: 120 },
+          { url: 'https://lh3.googleusercontent.com/night-drive-cover=w226-h226', width: 226, height: 226 },
+        ] } } },
+      },
+    },
+  }
+  const info = await linkInfo('https://music.youtube.com/playlist?list=PLcover123', {
+    fetchImpl: async (url, init = {}) => {
+      asked.push({ url, init })
+      if (url.endsWith('/')) return { ok: true, text: async () => 'ytcfg.set({"INNERTUBE_CLIENT_VERSION":"1.test.client","VISITOR_DATA":"visitor"});' }
+      return { ok: true, json: async () => root }
+    },
+  })
+  assert.deepEqual(info, {
+    ok: true,
+    title: 'Night Drive',
+    author: 'Playlist Owner',
+    thumbnail: 'https://lh3.googleusercontent.com/night-drive-cover=w544-h544-l90-rj',
+    count: 18,
+  })
+  assert.equal(asked.filter(request => request.url.includes('/youtubei/v1/browse')).length, 1)
+  assert.ok(!asked.some(request => request.url.includes('/oembed')))
+})
 
 test('a YouTube playlist: its name, owner and a cover without black bars, from oEmbed', async () => {
   _clear()

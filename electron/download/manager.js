@@ -19,7 +19,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const os = require('os')
 const fs = require('fs-extra')
-const { buildArgs, resolveFormat, isYouTube } = require('./args')
+const { buildArgs, resolveFormat, isYouTube, youtubeMusicPlaylistId } = require('./args')
 const { finishFile } = require('./postprocess')
 const { isCookieError, markUnreadable, COOKIE_FAILURE_MESSAGE } = require('../ipc/ytCookies')
 const { jsRuntimeRefused } = require('../online/jsRuntime')
@@ -588,13 +588,13 @@ class DownloadManager {
     this.persist(job)
     this.emit(job, true)
     // Named after its link ("YouTube Track"): ask the source for the real name.
-    if (!packageSource && (kind === 'playlist' || kind === 'single') && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
+    if (!packageSource && !youtubeMusicPlaylistId(url) && (kind === 'playlist' || kind === 'single') && (!opts.title || GENERIC_TITLE.test(String(opts.title).trim()))) this.lookUpTitle(job, check.tools.ytdlp)
     this.pump()
     return { downloadId: job.id, playlistId: job.playlistId, queued: true }
   }
 
-  lookUpTitle(job, ytdlp) {
-    const proc = spawn(ytdlp, ['--dump-single-json', '--flat-playlist', '--playlist-items', '1', '--quiet', '--no-warnings', '--', job.url], { windowsHide: true })
+  lookUpTitle(job, ytdlp, url = job.url) {
+    const proc = spawn(ytdlp, ['--dump-single-json', '--flat-playlist', '--playlist-items', '1', '--quiet', '--no-warnings', '--', url], { windowsHide: true })
     this.looseProcs.add(proc)
     let stdout = ''
     proc.stdout.on('data', d => { stdout += d.toString() })
@@ -665,8 +665,8 @@ class DownloadManager {
       this.update(job, { message: 'Stopping…' }, { force: true })
       return Promise.resolve({ success: true, status: 'cancelled' })
     }
-    if (job.resolvingUrl) {
-      // Still asking the addon for a link: nothing is running yet.
+    if (job.resolvingUrl || job.resolvingPlaylist) {
+      // Still resolving an online source: nothing is running yet.
       job.stop = 'cancelled'
       this.update(job, { status: 'cancelled', message: 'Cancelled', finishedAt: Date.now() }, { persist: true })
       return Promise.resolve({ success: true, status: 'cancelled' })
@@ -789,6 +789,105 @@ class DownloadManager {
 
   // ------------------------------------------------------------- running
 
+  // Resolve YouTube Music playlists through Music's browse API, then give
+  // yt-dlp the exact song URLs. Its music.youtube.com playlist extractor
+  // redirects to YouTube's video playlist, which can lose music-catalogue entries.
+  prepareYouTubeMusicPlaylist(job, playlistId) {
+    const check = this.checkTools()
+    if (check.error) {
+      this.update(job, { status: 'error', error: check.error, message: check.error, finishedAt: Date.now() }, { persist: true })
+      return
+    }
+    this.clearMusicPlaylistBatch(job)
+    job.resolvingPlaylist = true
+    job.stop = null
+    this.running++
+    this.update(job, { status: 'downloading', message: 'Reading YouTube Music playlist…', progress: 0, speed: null, eta: null, error: null, seen: false }, { persist: true })
+    const current = () => this.jobs.get(job.id) === job && !job.stop && job.status === 'downloading'
+    const finish = () => {
+      job.resolvingPlaylist = false
+      this.running = Math.max(0, this.running - 1)
+    }
+
+    Promise.resolve().then(async () => {
+      let credentials = null
+      try { credentials = await require('../ipc/online').getYouTubeMusicCredentials() } catch {}
+      const settings = this.settings()
+      let cookies = credentials?.cookies || ''
+      if (!cookies && settings.yt_cookies === '1') cookies = settings.yt_cookie_header || ''
+      const fetchImpl = typeof credentials?.fetchImpl === 'function' ? credentials.fetchImpl : fetch
+      const playlist = await require('../online/youtube').fetchMusicPlaylist(playlistId, cookies, fetchImpl, { limit: 10000 })
+      if (!current()) return null
+      const validTracks = (playlist?.tracks || []).filter(track => /^[\w-]{11}$/.test(String(track.videoId || track.id || '')))
+      if (playlist?.error || !validTracks.length || playlist.truncated) {
+        const reason = playlist?.error || (playlist.truncated ? 'The playlist exceeds the direct import limit.' : 'No playable tracks were returned.')
+        job.outputLines.push('[Lokal] Could not read the complete YouTube Music playlist directly (' + reason + '); trying its YouTube playlist link instead.')
+        job.musicPlaylistFallback = true
+        job.musicPlaylistFallbackUrl = 'https://www.youtube.com/playlist?list=' + encodeURIComponent(playlistId)
+        job.musicPlaylistTitle = playlist?.title || (job.title !== job.url ? job.title : 'YouTube Music Playlist ' + playlistId)
+        if (!job.title || job.title === job.url) job.title = job.musicPlaylistTitle
+        return { fallback: true, playlist }
+      }
+
+      const storageDir = this.deps.getStorageDir?.() || os.tmpdir()
+      fs.ensureDirSync(storageDir)
+      const fileName = String(job.id || ('pl-' + Date.now())).replace(/[^\w.-]/g, '_')
+      const batchFile = path.join(storageDir, 'ytmusic-playlist-' + fileName + '.txt')
+      const urls = [...new Set(validTracks.map(track => 'https://music.youtube.com/watch?v=' + String(track.videoId || track.id)))]
+      if (!urls.length) throw new Error('No valid song URLs were returned.')
+      fs.writeFileSync(batchFile, urls.join('\n') + '\n', 'utf8')
+      job.musicPlaylistBatchFile = batchFile
+      return { fallback: false, playlist: { ...playlist, tracks: validTracks }, batchFile, urls }
+    }).then(result => {
+      finish()
+      if (!result || !current()) {
+        this.clearMusicPlaylistBatch(job)
+        this.pump()
+        return
+      }
+      const playlist = result.playlist || {}
+      job.musicPlaylistTitle = playlist.title || job.musicPlaylistTitle || (job.title !== job.url ? job.title : 'YouTube Music Playlist ' + playlistId)
+      job.title = job.musicPlaylistTitle
+      job.thumbnail = playlist.thumbnail || job.thumbnail
+      if (result.fallback) {
+        this.lookUpTitle(job, check.tools.ytdlp, job.musicPlaylistFallbackUrl)
+        this.update(job, {
+          title: job.title,
+          thumbnail: job.thumbnail,
+          message: 'Using the YouTube playlist fallback…',
+        }, { persist: true })
+      } else {
+        job.totalTracks = result.urls.length
+        job.currentTrack = 0
+        job.musicPlaylistFallback = false
+        this.update(job, {
+          title: job.title,
+          thumbnail: job.thumbnail,
+          totalTracks: result.urls.length,
+          currentTrack: 0,
+          progress: 0,
+          message: 'Ready to download ' + result.urls.length + ' tracks…',
+        }, { persist: true })
+      }
+      this.start(job)
+    }, error => {
+      finish()
+      this.clearMusicPlaylistBatch(job)
+      if (job.stop || job.status !== 'downloading') {
+        this.pump()
+        return
+      }
+      this.fail(job, 'Could not read YouTube Music playlist: ' + (error?.message || 'unknown error'))
+      this.pump()
+    })
+  }
+
+  clearMusicPlaylistBatch(job) {
+    const file = job?.musicPlaylistBatchFile
+    if (file) { try { fs.unlinkSync(file) } catch {} }
+    if (job) job.musicPlaylistBatchFile = null
+  }
+
   start(job) {
     if (job.kind === 'music-video') return this.startMusicVideo(job)
     if (this.isPackageSource(job.opts?.addonSource)) return this.startPackage(job)
@@ -821,9 +920,15 @@ class DownloadManager {
       })
       return
     }
+    const musicPlaylistId = job.kind === 'playlist' ? youtubeMusicPlaylistId(job.url) : null
+    if (musicPlaylistId && !job.musicPlaylistFallback && (!job.musicPlaylistBatchFile || !fs.existsSync(job.musicPlaylistBatchFile))) {
+      this.prepareYouTubeMusicPlaylist(job, musicPlaylistId)
+      return
+    }
     job.urlRefreshed = false // the next start (a retry) asks again
     const check = this.checkTools()
     if (check.error) {
+      this.clearMusicPlaylistBatch(job)
       this.update(job, { status: 'error', error: check.error, message: check.error, finishedAt: Date.now() }, { persist: true })
       return
     }
@@ -848,7 +953,8 @@ class DownloadManager {
       } catch {}
     }
 
-    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: job.url, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [], addonSource: job.opts?.addonSource })
+    const downloadUrl = job.musicPlaylistFallbackUrl || job.url
+    const { args, cookies, spawnOptions } = buildArgs({ kind: job.kind, url: downloadUrl, outputDir, settings, ffmpeg, format, archivePath, withoutCookies: job.withoutCookies, extraArgs: job.extraArgs || [], addonSource: job.opts?.addonSource, batchFile: job.musicPlaylistBatchFile || null, playlistTitle: musicPlaylistId && !job.musicPlaylistFallback ? job.musicPlaylistTitle || job.title : null })
     job.cookies = cookies
     job.errorLines = []
     job.outputLines.push(...cookies.notes)
@@ -873,6 +979,7 @@ class DownloadManager {
       proc.lokalGroup = OWN_GROUP
     } catch (err) {
       this.running--
+      this.clearMusicPlaylistBatch(job)
       this.fail(job, err.message)
       this.pump()
       return
@@ -1183,6 +1290,14 @@ class DownloadManager {
         finalPath = done.filePath
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
+        if (job.musicPlaylistBatchFile && job.totalTracks) {
+          const completed = Math.max(0, job.downloadedTracks.length - (job.tracksAtStart || 0))
+          if (completed) this.update(job, {
+            currentTrack: Math.min(job.totalTracks, completed),
+            progress: Math.min(99, Math.round(completed / job.totalTracks * 100)),
+            message: 'Track ' + Math.min(job.totalTracks, completed) + ' of ' + job.totalTracks,
+          })
+        }
         if (done.lyrics) job.lyricsCount = (job.lyricsCount || 0) + 1
         // The row's picture: the first finished file's own (square) cover.
         // Soulseek and playlist downloads have nothing else to show, and it
@@ -1561,6 +1676,7 @@ class DownloadManager {
         }
       }
     }
+    this.clearMusicPlaylistBatch(job)
   }
 
   /** Updates yt-dlp once for everything that's waiting on it, then lets them run. */
