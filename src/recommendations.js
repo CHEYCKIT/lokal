@@ -284,6 +284,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
         for (const [index, source] of sources.entries()) {
           if (!isCurrent()) return null
           const failed = (reason, detail) => { if (isCurrent()) onProviderFailure?.({ candidate, source, nextSource: sources[index + 1], reason, ...(detail ? { detail } : {}) }) }
+          let matchFound = false
           try {
             const direct = source.id === 'yt' && videoId
             if (isCurrent()) onProgress?.(`${direct ? 'Loading' : 'Searching'} ${source.label || providerLabel(source.id)} ${direct ? 'track' : 'for'} ${candidate.artist} — “${candidate.title}”…`)
@@ -319,12 +320,14 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
               }
             }
             if (searchError) {
-              if (requiresAddonVerification(source.id, searchError)) throw addonVerificationError(source.id, searchError, candidate)
+              // A verification error from search does not prove this provider
+              // has a match for the candidate. Keep looking without prompting.
               failed('unavailable', searchError)
               continue
             }
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
+            matchFound = true
             let detail
             const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
@@ -342,7 +345,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
             failed('unavailable')
           } catch (error) {
             if (isAddonVerificationRequiredError(error)) throw error
-            if (requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
+            if (matchFound && requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
             failed('unavailable', error?.message)
           }
         }
