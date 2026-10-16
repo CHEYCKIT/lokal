@@ -41,11 +41,19 @@ export async function playRecommendationPool(candidates, options = {}) {
     for (let attempt = 0; attempt < attempts && current(); attempt++) {
       index = (start + attempt) % pool.length
       let rows
+      let verificationPrompted = false
+      const retryCandidate = () => playRecommendationPool(candidates, { ...options, selected: pool[index] })
       try {
-        rows = await resolve([pool[index]], { isCurrent: current, prepareStreams: true, onProviderFailure, onProgress })
+        rows = await resolve([pool[index]], {
+          isCurrent: current, prepareStreams: true, onProviderFailure, onProgress,
+          onAddonVerificationRequired: error => {
+            verificationPrompted = true
+            if (current()) requestAddonVerification(error, retryCandidate)
+          },
+        })
       } catch (error) {
         if (isAddonVerificationRequiredError(error)) {
-          if (current()) requestAddonVerification(error, () => playRecommendationPool(candidates, { ...options, selected: pool[index] }))
+          if (current() && !verificationPrompted) requestAddonVerification(error, retryCandidate)
           return null
         }
         rows = []
@@ -69,11 +77,19 @@ export async function playRecommendationPool(candidates, options = {}) {
         // Future songs are prepared when they actually play. Known preview results
         // are still rejected here, and runtime preparation handles hidden previews.
         let rows
+        let verificationPrompted = false
+        const retryBatch = () => resolveRemaining(at)
         try {
-          rows = await resolve(rest.slice(at, at + 4), { isCurrent: current, prepareStreams: false, onProviderFailure, onProgress })
+          rows = await resolve(rest.slice(at, at + 4), {
+            isCurrent: current, prepareStreams: false, onProviderFailure, onProgress,
+            onAddonVerificationRequired: error => {
+              verificationPrompted = true
+              if (current()) requestAddonVerification(error, retryBatch)
+            },
+          })
         } catch (error) {
           if (isAddonVerificationRequiredError(error)) {
-            if (current()) requestAddonVerification(error, () => resolveRemaining(at))
+            if (current() && !verificationPrompted) requestAddonVerification(error, retryBatch)
             return false
           }
           continue
