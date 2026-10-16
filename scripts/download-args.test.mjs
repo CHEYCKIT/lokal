@@ -64,7 +64,7 @@ test('YouTube Music playlist downloads use a batch of direct song URLs and a saf
     batchFile: '/data/ytmusic-list.txt',
     playlistTitle: 'Night / Drive',
   })
-  const output = args[args.indexOf('--output') + 1]
+  const output = args[args.indexOf('--output') + 1].replace(/\\/g, '/')
   assert.match(output, /^\/music\/Night _ Drive\//)
   assert.ok(args.includes('--batch-file'))
   assert.equal(args.at(-1), '/data/ytmusic-list.txt')
