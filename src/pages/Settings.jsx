@@ -42,6 +42,7 @@ const SETTINGS_CATEGORIES = [
   { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
+  { key: 'remote', label: 'Phone Remote', icon: Link },
   { key: 'about', label: 'About', icon: Info },
 ]
 // Tabs that were folded into others: a link to one opens where it went.
@@ -657,7 +658,7 @@ export default function Settings() {
     }
   }
   useEffect(() => {
-    if (api.isElectron && activeCategory === 'about') refreshRemoteConnection()
+    if (api.isElectron && activeCategory === 'remote') refreshRemoteConnection()
   }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
 
@@ -1179,7 +1180,6 @@ activeCategory === 'data' ? usersTried
           : activeCategory !== 'addons'
       } />
       {api.isElectron && inCategory('about') && (
-        <>
         <Section title={t("About")}>
           <Row label={t("Version")} desc={t("The version you're running.")}>
             <span className="text-sm text-muted font-mono">{appVersion || '1.0.0'}</span>
@@ -1239,6 +1239,10 @@ activeCategory === 'data' ? usersTried
             </button>
           </Row>
         </Section>
+
+      )}
+
+      {api.isElectron && inCategory('remote') && (
         <Section title={t("Phone Remote")}>
           <Row label={t("Phone Remote")} desc={t('Let a phone on the same Wi-Fi network control playback in Lokal.')}>
             <button
@@ -1277,7 +1281,6 @@ activeCategory === 'data' ? usersTried
             </Row>
           )}
         </Section>
-        </>
       )}
 
       {inCategory('library') && (
