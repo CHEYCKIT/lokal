@@ -29,7 +29,7 @@ function pagination(req, fallback = 30) {
 }
 
 function safeLike(value) {
-  return `%${String(value || '').replace(/[\\\\%_]/g, char => `\\\\${char}`)}%`
+  return `%${String(value || '')}%`
 }
 
 function compactTrack(track) {
@@ -87,7 +87,7 @@ router.get('/library/tracks', (req, res) => {
   const params = []
   if (q) {
     const like = safeLike(q)
-    where.push("(t.title LIKE ? ESCAPE '\\\\' OR t.artist LIKE ? ESCAPE '\\\\' OR t.album LIKE ? ESCAPE '\\\\' OR t.album_artist LIKE ? ESCAPE '\\\\')")
+    where.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ? OR t.album_artist LIKE ?)")
     params.push(like, like, like, like)
   }
   const clause = where.join(' AND ')
@@ -108,7 +108,7 @@ router.get('/library/albums', (req, res) => {
   const params = []
   if (q) {
     const like = safeLike(q)
-    where.push("(t.album LIKE ? ESCAPE '\\\\' OR t.album_artist LIKE ? ESCAPE '\\\\' OR t.artist LIKE ? ESCAPE '\\\\')")
+    where.push("(t.album LIKE ? OR t.album_artist LIKE ? OR t.artist LIKE ?)")
     params.push(like, like, like)
   }
   const whereSql = where.join(' AND ')
@@ -151,7 +151,7 @@ router.get('/library/artists', (req, res) => {
   const { limit, offset } = pagination(req)
   const where = ["t.file_path NOT LIKE 'ghost://%'"]
   const params = []
-  if (q) { where.push("a.name LIKE ? ESCAPE '\\\\'"); params.push(safeLike(q)) }
+  if (q) { where.push("a.name LIKE ?"); params.push(safeLike(q)) }
   const whereSql = where.join(' AND ')
   const fromSql = `
     FROM artists a JOIN artist_track_links atl ON atl.artist_id = a.id
@@ -190,7 +190,7 @@ router.get('/library/playlists', (req, res) => {
   const { limit, offset } = pagination(req)
   const where = ['p.user_id = ?']
   const params = [uid]
-  if (q) { where.push("p.name LIKE ? ESCAPE '\\\\'"); params.push(safeLike(q)) }
+  if (q) { where.push("p.name LIKE ?"); params.push(safeLike(q)) }
   const whereSql = where.join(' AND ')
   const rows = db.prepare(`
     SELECT p.id, p.name, p.description, p.user_id, p.smart_rules,
@@ -238,7 +238,7 @@ router.get('/library/liked', (req, res) => {
   const params = [uid]
   if (q) {
     const like = safeLike(q)
-    where.push("(t.title LIKE ? ESCAPE '\\\\' OR t.artist LIKE ? ESCAPE '\\\\' OR t.album LIKE ? ESCAPE '\\\\')")
+    where.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ?)")
     params.push(like, like, like)
   }
   const clause = where.join(' AND ')
