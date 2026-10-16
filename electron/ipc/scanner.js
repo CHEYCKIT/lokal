@@ -1198,6 +1198,10 @@ function registerScannerHandlers(ipcMain) {
     const files = require('../trackErrors').truthy(opts.problems) ? null : require('../libraryTracks').trackFileFilter(opts.includeGhosts)
     if (files) where.push(files)
     if (opts.id) { where.push('id = ?'); params.push(opts.id) }
+    if (Array.isArray(opts.ids) && opts.ids.length) {
+      const ids = [...new Set(opts.ids.map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
+      if (ids.length) { where.push(`id IN (${ids.map(() => '?').join(',')})`); params.push(...ids) }
+    }
     if (opts.artistName) { where.push('artist = ?'); params.push(opts.artistName) }
     if (opts.artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(opts.artistId) }
     const source = sourceFilter(opts.source)

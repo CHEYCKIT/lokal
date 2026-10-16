@@ -174,6 +174,51 @@
       opacity: 0;
       cursor: pointer;
     }
+
+    .wrap { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
+    .library-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+    .library-tab { min-height: 38px; padding: 6px 2px; border-radius: 10px; font-size: 11px; background: rgba(255,255,255,.045); color: var(--muted); }
+    .library-tab[aria-pressed="true"] { background: rgba(215,255,90,.15); border-color: rgba(215,255,90,.38); color: var(--accent); }
+    .library-search { margin-top: 12px; }
+    .library-search input { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.24); color: var(--text); padding: 0 12px; outline: none; font-size: 14px; }
+    .library-search input:focus { border-color: rgba(215,255,90,.55); }
+    .library-list { display: grid; gap: 8px; margin-top: 12px; }
+    .library-item { display: grid; grid-template-columns: 48px minmax(0,1fr); align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: 12px; padding: 9px; background: rgba(255,255,255,.035); }
+    .library-cover { width: 48px; height: 48px; border-radius: 8px; background: #242424; display: grid; place-items: center; overflow: hidden; color: var(--dim); font-weight: 800; flex-shrink: 0; }
+    .library-cover img { width: 100%; height: 100%; object-fit: cover; }
+    .library-copy { min-width: 0; }
+    .library-name { color: var(--text); font-size: 13px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .library-sub { color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; margin-top: 2px; }
+    .library-item-actions { display: flex; justify-content: flex-end; gap: 6px; grid-column: 1 / -1; }
+    .library-action { min-height: 32px; border-radius: 9px; padding: 5px 10px; font-size: 11px; background: rgba(255,255,255,.065); }
+    .library-action.primary { color: #111; background: var(--accent); border-color: transparent; }
+    .library-collection-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .library-collection-actions .library-action { flex: 1; }
+    .library-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .library-back { min-height: 34px; width: 38px; border-radius: 10px; flex-shrink: 0; }
+    .library-count { font-size: 11px; color: var(--dim); white-space: nowrap; }
+    .library-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 22px 8px; }
+    .library-message { margin-top: 8px; min-height: 14px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .library-more { width: 100%; min-height: 38px; margin-top: 10px; border-radius: 10px; font-size: 12px; }
+    .mini-dock { position: fixed; z-index: 60; left: 0; right: 0; bottom: 0; padding: 9px 14px calc(9px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: rgba(12,12,12,.91); backdrop-filter: blur(18px); box-shadow: 0 -8px 28px rgba(0,0,0,.35); }
+    .mini-dock-inner { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; }
+    .mini-track { min-width: 0; }
+    .mini-title { font-size: 13px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-artist { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .mini-controls { display: flex; align-items: center; gap: 6px; }
+    .mini-button { width: 38px; min-height: 38px; height: 38px; border-radius: 999px; }
+    .mini-button svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+    .mini-button.main { background: var(--accent); color: #111; border-color: transparent; }
+    @media (min-width: 620px) {
+      .library-item { grid-template-columns: 48px minmax(0,1fr) auto; }
+      .library-item-actions { grid-column: auto; }
+      .library-action { min-height: 34px; padding: 5px 11px; }
+    }
+    @media (max-width: 360px) {
+      .library-tab { font-size: 10px; }
+      .library-action { padding: 5px 7px; }
+      .library-item { padding: 8px; gap: 7px; }
+    }
   </style>
 </head>
 <body>
@@ -225,8 +270,55 @@
         <input id="volume" type="range" min="0" max="100" value="80">
       </div>
     </section>
+
+    <section class="card" id="libraryCard">
+      <div class="row" style="justify-content:space-between; gap:8px;">
+        <div class="library-heading">
+          <button type="button" class="library-back" id="libraryBack" aria-label="Back" title="Back" hidden>←</button>
+          <div style="min-width:0">
+            <div class="title" id="libraryTitle" style="font-size:17px;">Your library</div>
+            <div id="libraryCount" class="tiny">Browse music on this computer</div>
+          </div>
+        </div>
+        <span class="pill">Library</span>
+      </div>
+      <nav class="library-nav" id="libraryTabs" aria-label="Library sections">
+        <button type="button" class="library-tab" data-library-tab="tracks" aria-pressed="true">Tracks</button>
+        <button type="button" class="library-tab" data-library-tab="albums" aria-pressed="false">Albums</button>
+        <button type="button" class="library-tab" data-library-tab="artists" aria-pressed="false">Artists</button>
+        <button type="button" class="library-tab" data-library-tab="playlists" aria-pressed="false">Playlists</button>
+        <button type="button" class="library-tab" data-library-tab="liked" aria-pressed="false">Liked</button>
+      </nav>
+      <div class="library-search">
+        <input id="librarySearch" type="search" placeholder="Search your library" aria-label="Search your library" autocomplete="off" enterkeyhint="search">
+      </div>
+      <div class="library-collection-actions" id="libraryCollectionActions" hidden>
+        <button type="button" class="library-action primary" data-collection-action="play">Play all</button>
+        <button type="button" class="library-action" data-collection-action="next">Play next</button>
+        <button type="button" class="library-action" data-collection-action="queue">Add all</button>
+      </div>
+      <div class="library-message" id="libraryMessage" role="status" aria-live="polite"></div>
+      <div class="library-list" id="libraryResults">
+        <div class="library-empty">Loading library…</div>
+      </div>
+      <button type="button" class="library-more" id="libraryLoadMore" hidden>Load more</button>
+    </section>
   </main>
 
+
+  <div class="mini-dock" role="region" aria-label="Current playback">
+    <div class="mini-dock-inner">
+      <div class="mini-track">
+        <div class="mini-title" id="miniTitle">No track playing</div>
+        <div class="mini-artist" id="miniArtist">Connect to Lokal</div>
+      </div>
+      <div class="mini-controls">
+        <button type="button" id="miniPrevBtn" class="mini-button" title="Previous" aria-label="Previous"></button>
+        <button type="button" id="miniPlayBtn" class="mini-button main" title="Play or pause" aria-label="Play or pause"></button>
+        <button type="button" id="miniNextBtn" class="mini-button" title="Next" aria-label="Next"></button>
+      </div>
+    </div>
+  </div>
   <script>
     const els = {
       bg: document.getElementById('bg'),
@@ -244,7 +336,21 @@
       timeCurrent: document.getElementById('timeCurrent'),
       timeTotal: document.getElementById('timeTotal'),
       ly1: document.getElementById('ly1'),
-      ly2: document.getElementById('ly2')
+      ly2: document.getElementById('ly2'),
+      miniTitle: document.getElementById('miniTitle'),
+      miniArtist: document.getElementById('miniArtist'),
+      miniPrev: document.getElementById('miniPrevBtn'),
+      miniPlay: document.getElementById('miniPlayBtn'),
+      miniNext: document.getElementById('miniNextBtn'),
+      libraryTitle: document.getElementById('libraryTitle'),
+      libraryCount: document.getElementById('libraryCount'),
+      libraryBack: document.getElementById('libraryBack'),
+      libraryTabs: document.getElementById('libraryTabs'),
+      librarySearch: document.getElementById('librarySearch'),
+      libraryResults: document.getElementById('libraryResults'),
+      libraryMessage: document.getElementById('libraryMessage'),
+      libraryLoadMore: document.getElementById('libraryLoadMore'),
+      libraryCollectionActions: document.getElementById('libraryCollectionActions')
     }
 
     let remoteToken = sessionStorage.getItem('lokal_remote_token') || new URLSearchParams(window.location.hash.slice(1)).get('token') || ''
@@ -277,6 +383,14 @@
       lyricsType: null,
       lastTrackId: null,
       seeking: false,
+      libraryView: { type: 'tracks' },
+      libraryStack: [],
+      libraryItems: [],
+      libraryTotal: 0,
+      libraryHasMore: false,
+      libraryLoading: false,
+      libraryRequest: 0,
+      libraryMessage: ''
     }
     const ICONS = {
       prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 20L9 12L19 4V20Z"></path><path d="M5 19V5"></path></svg>',
@@ -402,8 +516,212 @@
 
     async function command(action, value) {
       try {
-        await call('command', { method: 'POST', body: { action, value } })
-      } catch {}
+        return await call('command', { method: 'POST', body: { action, value } })
+      } catch (error) {
+        return { error: error?.message || 'Command failed' }
+      }
+    }
+
+    const sectionLabels = { tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists', liked: 'Liked songs' }
+    const trackView = type => type === 'tracks' || type === 'liked' || type.endsWith('Tracks')
+    const libraryQuery = () => String(els.librarySearch.value || '').trim()
+    const trackIds = () => store.libraryItems.map(item => String(item.id || '')).filter(Boolean)
+    const trackCover = (id, hasArtwork) => hasArtwork && id
+      ? `<div class="library-cover"><img src="/api/artwork/${encodeURIComponent(id)}" alt="" loading="lazy"></div>`
+      : '<div class="library-cover" aria-hidden="true">♫</div>'
+
+    function renderTrackItem(track) {
+      return `<article class="library-item">
+        ${trackCover(track.id, track.hasArtwork)}
+        <div class="library-copy">
+          <div class="library-name" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</div>
+          <div class="library-sub">${escapeHtml(track.artist)}${track.album ? ' · ' + escapeHtml(track.album) : ''}</div>
+          <div class="library-sub">${fmt(track.duration)}${track.year ? ' · ' + escapeHtml(String(track.year)) : ''}${track.liked ? ' · ♥' : ''}</div>
+        </div>
+        <div class="library-item-actions">
+          <button type="button" class="library-action primary" data-library-action="play" data-track-id="${escapeHtml(track.id)}">Play</button>
+          <button type="button" class="library-action" data-library-action="next" data-track-id="${escapeHtml(track.id)}">Next</button>
+          <button type="button" class="library-action" data-library-action="queue" data-track-id="${escapeHtml(track.id)}">Queue</button>
+        </div>
+      </article>`
+    }
+
+    function renderBrowseItem(item, type) {
+      const id = item.coverTrackId
+      const count = Number(item.track_count || 0)
+      const sub = type === 'albums'
+        ? `${item.artist || 'Unknown artist'} · ${count} track${count === 1 ? '' : 's'}${item.year ? ' · ' + item.year : ''}`
+        : type === 'artists'
+          ? `${count} track${count === 1 ? '' : 's'}`
+          : `${count} track${count === 1 ? '' : 's'}${item.smart ? ' · Smart playlist' : ''}`
+      const openType = type === 'albums' ? 'albumTracks' : type === 'artists' ? 'artistTracks' : 'playlistTracks'
+      const title = type === 'albums' ? item.title : type === 'artists' ? item.name : item.name
+      const dataTitle = type === 'albums' ? `data-title="${escapeHtml(item.title)}" data-artist="${escapeHtml(item.artist || '')}"` : ''
+      return `<article class="library-item">
+        ${trackCover(id, !!id)}
+        <div class="library-copy">
+          <div class="library-name" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+          <div class="library-sub">${escapeHtml(sub)}</div>
+        </div>
+        <div class="library-item-actions">
+          <button type="button" class="library-action primary" data-open-type="${openType}" data-open-id="${escapeHtml(item.id || '')}" ${dataTitle} data-open-name="${escapeHtml(title)}">Open</button>
+        </div>
+      </article>`
+    }
+
+    function currentLibraryTitle() {
+      const view = store.libraryView
+      if (view.type === 'albumTracks') return view.title || 'Album'
+      if (view.type === 'artistTracks') return view.name || 'Artist'
+      if (view.type === 'playlistTracks') return view.name || 'Playlist'
+      return sectionLabels[view.type] || 'Your library'
+    }
+
+    function renderLibrary() {
+      const view = store.libraryView
+      const items = store.libraryItems || []
+      const detail = view.type.endsWith('Tracks')
+      const rootType = detail ? view.parentType : view.type
+      els.libraryTitle.textContent = currentLibraryTitle()
+      els.libraryBack.hidden = store.libraryStack.length === 0
+      els.libraryCount.textContent = store.libraryLoading && !items.length
+        ? 'Loading…'
+        : detail
+          ? `${items.length} track${items.length === 1 ? '' : 's'}`
+          : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || 'items'}`
+      for (const button of els.libraryTabs.querySelectorAll('[data-library-tab]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.libraryTab === rootType))
+      }
+      const showCollection = trackView(view.type) && items.length > 0
+      els.libraryCollectionActions.hidden = !showCollection
+      const names = ['play', 'next', 'queue']
+      const labels = store.libraryHasMore ? ['Play shown', 'Next shown', 'Add shown'] : ['Play all', 'Play next', 'Add all']
+      els.libraryCollectionActions.querySelectorAll('[data-collection-action]').forEach((button, index) => {
+        button.textContent = labels[names.indexOf(button.dataset.collectionAction)] || labels[index]
+        button.disabled = store.libraryLoading
+      })
+      els.libraryLoadMore.hidden = !store.libraryHasMore || detail
+      els.libraryLoadMore.disabled = store.libraryLoading
+      els.libraryLoadMore.textContent = store.libraryLoading ? 'Loading…' : 'Load more'
+      els.libraryMessage.textContent = store.libraryMessage || ''
+      if (!items.length) {
+        els.libraryResults.innerHTML = `<div class="library-empty">${store.libraryLoading ? 'Loading library…' : (libraryQuery() ? 'No matches found.' : 'Nothing here yet.')}</div>`
+        return
+      }
+      const type = view.type
+      els.libraryResults.innerHTML = items.map(item => trackView(type)
+        ? renderTrackItem(item)
+        : renderBrowseItem(item, type)).join('')
+    }
+
+    function libraryEndpoint(view, params) {
+      if (view.type === 'tracks') return 'library/tracks'
+      if (view.type === 'liked') return 'library/liked'
+      if (view.type === 'albums') return 'library/albums'
+      if (view.type === 'artists') return 'library/artists'
+      if (view.type === 'playlists') return 'library/playlists'
+      if (view.type === 'albumTracks') {
+        params.set('title', view.title || '')
+        params.set('artist', view.artist || '')
+        return 'library/album-tracks'
+      }
+      if (view.type === 'artistTracks') {
+        params.set('id', view.id || '')
+        return 'library/artist-tracks'
+      }
+      if (view.type === 'playlistTracks') {
+        params.set('id', view.id || '')
+        return 'library/playlist-tracks'
+      }
+      return 'library/tracks'
+    }
+
+    async function loadLibrary(append = false) {
+      const view = { ...store.libraryView }
+      const request = ++store.libraryRequest
+      const q = libraryQuery()
+      const detail = view.type.endsWith('Tracks')
+      const params = new URLSearchParams()
+      params.set('userId', String(store.state?.userId || 'guest'))
+      params.set('limit', '30')
+      params.set('offset', String(append ? store.libraryItems.length : 0))
+      if (q && !detail) params.set('q', q)
+      store.libraryLoading = true
+      store.libraryMessage = ''
+      if (!append) {
+        store.libraryItems = []
+        store.libraryTotal = 0
+        store.libraryHasMore = false
+      }
+      renderLibrary()
+      try {
+        const data = await call(`${libraryEndpoint(view, params)}?${params.toString()}`)
+        if (request !== store.libraryRequest) return
+        let items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []
+        if (q && detail) {
+          const needle = q.toLowerCase()
+          items = items.filter(item => [item.title, item.artist, item.album].some(value => String(value || '').toLowerCase().includes(needle)))
+        }
+        store.libraryItems = append ? [...store.libraryItems, ...items] : items
+        store.libraryTotal = q && detail ? items.length : Number(data?.total ?? items.length)
+        store.libraryHasMore = !detail && !!data?.hasMore
+        store.libraryMessage = ''
+      } catch (error) {
+        if (request === store.libraryRequest) {
+          store.libraryMessage = error?.message || 'Could not load library.'
+          if (!append) store.libraryItems = []
+        }
+      } finally {
+        if (request === store.libraryRequest) {
+          store.libraryLoading = false
+          renderLibrary()
+        }
+      }
+    }
+
+    function switchLibraryTab(type) {
+      store.libraryStack = []
+      store.libraryView = { type }
+      store.libraryMessage = ''
+      loadLibrary()
+    }
+
+    function openLibraryItem(button) {
+      const type = button.dataset.openType
+      const id = button.dataset.openId || ''
+      const name = button.dataset.openName || ''
+      if (!type) return
+      const view = type === 'albumTracks'
+        ? { type, parentType: 'albums', title: button.dataset.title || name, artist: button.dataset.artist || '' }
+        : type === 'artistTracks'
+          ? { type, parentType: 'artists', id, name }
+          : { type, parentType: 'playlists', id, name }
+      store.libraryStack.push({ ...store.libraryView })
+      store.libraryView = view
+      loadLibrary()
+    }
+
+    async function sendLibraryAction(action, ids, targetId = '') {
+      const cleanIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
+      if (!cleanIds.length) return
+      store.libraryMessage = 'Sending to Lokal…'
+      renderLibrary()
+      let result
+      if (action === 'play') {
+        result = await command('playLibraryTrack', { trackId: targetId || cleanIds[0], trackIds: cleanIds })
+      } else if (action === 'next') {
+        result = await command('playNextTracks', { trackIds: cleanIds })
+      } else {
+        result = await command('queueTracks', { trackIds: cleanIds })
+      }
+      store.libraryMessage = result?.error
+        ? `Could not control playback: ${String(result.error).slice(0, 180)}`
+        : action === 'play'
+          ? 'Playing on this computer.'
+          : action === 'next'
+            ? `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} next.`
+            : `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} to the queue.`
+      renderLibrary()
     }
 
     function renderLyrics() {
@@ -445,6 +763,10 @@
       els.like.innerHTML = ICONS.heart
       els.status.textContent = store.state.connected ? 'online' : 'offline'
       els.like.disabled = !track.id
+      els.miniTitle.textContent = track.title || 'No track playing'
+      els.miniArtist.textContent = track.artist || 'Connect to Lokal'
+      els.miniPlay.innerHTML = store.state.isPlaying ? ICONS.pause : ICONS.play
+      els.miniPlay.setAttribute('aria-label', store.state.isPlaying ? 'Pause' : 'Play')
 
       const dur = Math.max(0, Number(store.state.duration || 0))
       const prog = Math.max(0, Math.min(dur, Number(store.state.progress || 0)))
@@ -490,8 +812,14 @@
 
     async function refreshState() {
       try {
+        const previousUserId = store.state?.userId
         const s = await call('state')
         renderState(s)
+        if (String(previousUserId || 'guest') !== String(s?.userId || 'guest')) {
+          // Invalidate pending loads and clear visible rows immediately so
+          // controls cannot submit track IDs from the previous account.
+          loadLibrary()
+        }
       } catch {
         els.status.textContent = 'offline'
       }
@@ -501,6 +829,42 @@
     document.getElementById('playBtn').onclick = () => command('togglePlay')
     document.getElementById('nextBtn').onclick = () => command('next')
     document.getElementById('likeBtn').onclick = () => command('toggleLike')
+    els.miniPrev.onclick = () => command('prev')
+    els.miniPlay.onclick = () => command('togglePlay')
+    els.miniNext.onclick = () => command('next')
+
+    els.libraryTabs.addEventListener('click', event => {
+      const button = event.target.closest('[data-library-tab]')
+      if (button) switchLibraryTab(button.dataset.libraryTab)
+    })
+    els.libraryBack.addEventListener('click', () => {
+      if (store.libraryStack.length) store.libraryView = store.libraryStack.pop()
+      else store.libraryView = { type: 'tracks' }
+      loadLibrary()
+    })
+    let librarySearchTimer = null
+    els.librarySearch.addEventListener('input', () => {
+      clearTimeout(librarySearchTimer)
+      librarySearchTimer = setTimeout(() => loadLibrary(), 180)
+    })
+    els.libraryLoadMore.addEventListener('click', () => loadLibrary(true))
+    els.libraryResults.addEventListener('click', event => {
+      const open = event.target.closest('[data-open-type]')
+      if (open) { openLibraryItem(open); return }
+      const button = event.target.closest('[data-library-action]')
+      if (!button) return
+      const id = button.dataset.trackId
+      const action = button.dataset.libraryAction
+      if (action === 'play') sendLibraryAction('play', trackIds(), id)
+      else if (action === 'next') sendLibraryAction('next', [id])
+      else sendLibraryAction('queue', [id])
+    })
+    els.libraryCollectionActions.addEventListener('click', event => {
+      const button = event.target.closest('[data-collection-action]')
+      if (!button) return
+      const action = button.dataset.collectionAction
+      sendLibraryAction(action, trackIds(), action === 'play' ? trackIds()[0] : '')
+    })
 
     els.seek.addEventListener('pointerdown', () => { store.seeking = true })
     els.seek.addEventListener('input', () => {
@@ -523,8 +887,12 @@
     })
 
     paintStaticIcons()
+    els.miniPrev.innerHTML = ICONS.prev
+    els.miniPlay.innerHTML = ICONS.play
+    els.miniNext.innerHTML = ICONS.next
     loadTheme()
     refreshState()
+    loadLibrary()
     setInterval(refreshState, 1200)
 
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/remote-sw.js').catch(() => {})
