@@ -29,6 +29,32 @@ test('saved priority excludes removed addons and includes newly available provid
   assert.deepEqual(orderedPlaybackSources('bad json').map(p => p.id), ['yt', 'sc'])
 })
 
+test('addon verification during recommendation resolution is surfaced and stops provider fallback', async () => {
+  const tried = []
+  const requested = []
+  const { client } = clientMock({
+    onlineSearch: async (_query, provider) => {
+      tried.push(provider)
+      return provider === addon
+        ? { error: 'VERIFY_REQUIRED: complete addon verification' }
+        : { results: [{ ...song(7), id: 'abcdefghijk', provider }] }
+    },
+  })
+  await assert.rejects(
+    resolveRecommendationTracks([song(7)], client, {
+      searchLocal: false,
+      sources: [{ id: addon, label: 'Addon' }, { id: 'yt', label: 'YouTube' }],
+      onAddonVerificationRequired: error => requested.push(error),
+    }),
+    error => error?.code === 'ADDON_VERIFICATION_REQUIRED',
+  )
+  assert.deepEqual(tried, [addon], 'must not silently fall through to YouTube')
+  assert.equal(requested.length, 1)
+  assert.equal(requested[0].provider, addon)
+  assert.equal(requested[0].key, addon.slice(2))
+  assert.equal(requested[0].title, 'Song 7')
+})
+
 test('matching requires the exact title and artist and preserves version differences', () => {
   const target = { title: 'Song', artist: 'Artist' }
   for (const result of [{ title: 'Song', artist: 'Cover Artist' }, { title: 'Song (Live)', artist: 'Artist' }, { title: 'Other Song', artist: 'Artist' }]) {
