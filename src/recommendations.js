@@ -344,7 +344,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
             if (row) break
             failed('unavailable')
           } catch (error) {
-            if (isAddonVerificationRequiredError(error)) throw error
+            if (matchFound && isAddonVerificationRequiredError(error)) throw error
             if (matchFound && requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
             failed('unavailable', error?.message)
           }
