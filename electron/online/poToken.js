@@ -44,7 +44,8 @@ function page() {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('render-process-gone', reset)
-  window.on('closed', () => { window = null; loaded = null; attested = null })
+  const win = window
+  win.on('closed', () => { if (window === win) { window = null; loaded = null; attested = null } })
   loaded = withTimeout(window.loadURL(PAGE), 'Opening YouTube').catch(error => { reset(); throw error })
   return loaded
 }
@@ -62,17 +63,24 @@ function attest() {
   return attested
 }
 
-/** Attest ahead of the first song, off the moment someone presses play. */
-function warm() { attest().catch(() => {}) }
+/** Hidden attestation windows are created on demand, never warmed in the background. */
+function warm() {}
 
 /** A token for `videoId`, or undefined (the song is then tried without one). */
+let activeMints = 0
+
 async function mint(videoId) {
+  activeMints++
   try {
     let expiresAt = await attest()
     if (Date.now() >= expiresAt) { attested = null; expiresAt = await attest() }
     return await run(`window.__lokalAttest.mint(${JSON.stringify(String(videoId))})`)
   } catch {
     return undefined
+  } finally {
+    activeMints--
+    // Concurrent requests may share a session; release it after the last mint.
+    if (activeMints === 0) reset()
   }
 }
 
