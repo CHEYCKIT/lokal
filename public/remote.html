@@ -345,15 +345,18 @@
       if (res.status === 401) {
         const body = await res.clone().json().catch(() => ({}))
         if (body.needsApiKey) askForApiKey()
-        else if (body.error === 'Unauthorized' && !remoteToken && await askForRemoteToken()) {
-          const retryHeaders = { 'Content-Type': 'application/json', 'x-remote-token': remoteToken }
-          const retry = await fetch(`/api/remote/${path}`, {
-            method: opts.method || 'GET',
-            headers: retryHeaders,
-            body: opts.body ? JSON.stringify(opts.body) : undefined,
-          })
-          if (!retry.ok) { remoteToken = ''; sessionStorage.removeItem('lokal_remote_token'); throw new Error(await retry.text()) }
-          return retry.json()
+        else if (body.error === 'Unauthorized') {
+          if (remoteToken) { remoteToken = ''; sessionStorage.removeItem('lokal_remote_token') }
+          if (await askForRemoteToken()) {
+            const retryHeaders = { 'Content-Type': 'application/json', 'x-remote-token': remoteToken }
+            const retry = await fetch(`/api/remote/${path}`, {
+              method: opts.method || 'GET',
+              headers: retryHeaders,
+              body: opts.body ? JSON.stringify(opts.body) : undefined,
+            })
+            if (!retry.ok) { remoteToken = ''; sessionStorage.removeItem('lokal_remote_token'); throw new Error(await retry.text()) }
+            return retry.json()
+          }
         }
       }
       if (!res.ok) throw new Error(await res.text())
