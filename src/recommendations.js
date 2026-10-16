@@ -213,6 +213,28 @@ export async function playbackAvailability(match, provider, client = api, timeou
   return prepared?.ok && !prepared.error ? null : 'unavailable'
 }
 
+const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
+
+export const isAddonVerificationRequiredError = error => error?.code === 'ADDON_VERIFICATION_REQUIRED'
+
+function addonErrorText(value) {
+  if (typeof value === 'string') return value
+  return String(value?.message || value?.error || value?.detail || '')
+}
+
+function requiresAddonVerification(provider, value) {
+  return /^a-/.test(String(provider || '')) && ADDON_ACCESS_ERROR.test(addonErrorText(value))
+}
+
+function addonVerificationError(provider, value, candidate) {
+  const error = new Error(addonErrorText(value) || 'This add-on needs verification.')
+  error.code = 'ADDON_VERIFICATION_REQUIRED'
+  error.provider = String(provider || '')
+  error.key = error.provider.slice(2)
+  error.title = candidate?.title || 'this song'
+  return error
+}
+
 export async function resolveRecommendationTracks(candidates, client = api, { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
@@ -225,7 +247,11 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
     try {
       // A song from an addon's own album or artist page: that very song, no search.
       if (candidate.exact && /^a-/.test(String(candidate.provider || '')) && candidate.id != null) {
-        const saved = await timed(() => client.onlineSave([candidate]), timeoutMs).catch(() => null)
+        const saved = await timed(() => client.onlineSave([candidate]), timeoutMs).catch(error => {
+          if (requiresAddonVerification(candidate.provider, error)) throw addonVerificationError(candidate.provider, error, candidate)
+          return null
+        })
+        if (saved?.error && requiresAddonVerification(candidate.provider, saved.error)) throw addonVerificationError(candidate.provider, saved.error, candidate)
         const row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
         if (row && isCurrent()) return { ...row, title: candidate.title, artist: candidate.artist, album: candidate.album || row.album, artwork_url: candidate.artwork_url || row.artwork_url, source: candidate.source || 'addon' }
       }
@@ -272,20 +298,33 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
                 match = recommendationMatch(candidate, videos, { provider: 'yt' })
               }
             }
-            if (searchError) { failed('unavailable', searchError); continue }
+            if (searchError) {
+              if (requiresAddonVerification(source.id, searchError)) throw addonVerificationError(source.id, searchError, candidate)
+              failed('unavailable', searchError)
+              continue
+            }
             if (!isCurrent()) return null
             if (!match) { failed('not-found'); continue }
             let detail
             const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
             if (!isCurrent()) return null
-            if (unavailable) { failed(unavailable, detail); continue }
+            if (unavailable) {
+              if (requiresAddonVerification(source.id, detail)) throw addonVerificationError(source.id, detail, candidate)
+              failed(unavailable, detail)
+              continue
+            }
             const saved = await timed(() => client.onlineSave([{ ...match, provider: source.id, thumbnail: matchCover(candidate, match) || undefined }]), timeoutMs)
+            if (saved?.error && requiresAddonVerification(source.id, saved.error)) throw addonVerificationError(source.id, saved.error, candidate)
             // saveOnlineTracks preserves order, including nulls, for all
             // providers (addon row IDs are hashed by the backend).
             row = Array.isArray(saved) && playableRecommendation(saved[0]) ? saved[0] : null
             if (row) break
             failed('unavailable')
-          } catch (error) { failed('unavailable', error?.message) }
+          } catch (error) {
+            if (isAddonVerificationRequiredError(error)) throw error
+            if (requiresAddonVerification(source.id, error)) throw addonVerificationError(source.id, error, candidate)
+            failed('unavailable', error?.message)
+          }
         }
       }
       return row && isCurrent() ? {
@@ -299,7 +338,10 @@ export async function resolveRecommendationTracks(candidates, client = api, { se
         source: candidate.source || 'lastfm', reason: candidate.reason,
         scrobbledAt: candidate.scrobbledAt, scrobbleCount: candidate.scrobbleCount,
       } : null
-    } catch { return null }
+    } catch (error) {
+      if (isAddonVerificationRequiredError(error)) throw error
+      return null
+    }
   })).filter(Boolean)
 }
 
