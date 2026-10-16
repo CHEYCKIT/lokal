@@ -11,21 +11,42 @@ const PARTITION = 'persist:lokal-youtube-attest'
 const PAGE = 'https://www.youtube.com/robots.txt'
 const MARGIN_MS = 5 * 60 * 1000 // attest again this long before it runs out
 const TIMEOUT_MS = 20000
+const WINDOW_IDLE_MS = 10 * 60 * 1000
 
 let window = null
 let loaded = null // Promise: the page is there
 let attested = null // Promise<expiresAt>
+let idleTimer = null
+let activeMints = 0
 
 function withTimeout(promise, what) {
   let timer
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} timed out.`)), TIMEOUT_MS) })]).finally(() => clearTimeout(timer))
 }
 
+function clearIdleTimer() {
+  if (idleTimer !== null) clearTimeout(idleTimer)
+  idleTimer = null
+}
+
 function reset() {
+  clearIdleTimer()
   attested = null
   loaded = null
   if (window && !window.isDestroyed()) window.destroy()
   window = null
+}
+
+function scheduleIdleReset() {
+  clearIdleTimer()
+  idleTimer = setTimeout(() => {
+    idleTimer = null
+    // A new mint may have started as the timeout was queued. Never destroy
+    // the attestation page while a token request is in flight.
+    if (activeMints === 0) reset()
+    else scheduleIdleReset()
+  }, WINDOW_IDLE_MS)
+  idleTimer.unref?.()
 }
 
 function page() {
@@ -67,9 +88,8 @@ function attest() {
 function warm() {}
 
 /** A token for `videoId`, or undefined (the song is then tried without one). */
-let activeMints = 0
-
 async function mint(videoId) {
+  clearIdleTimer()
   activeMints++
   try {
     let expiresAt = await attest()
@@ -79,8 +99,9 @@ async function mint(videoId) {
     return undefined
   } finally {
     activeMints--
-    // Concurrent requests may share a session; release it after the last mint.
-    if (activeMints === 0) reset()
+    // Retain the attestation for subsequent requests, but release Chromium
+    // if the token helper stays unused for a while.
+    if (activeMints === 0) scheduleIdleReset()
   }
 }
 
