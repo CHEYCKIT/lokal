@@ -547,7 +547,7 @@
     }
 
     function renderBrowseItem(item, type) {
-      const id = type === 'albums' ? item.coverTrackId : type === 'playlists' ? item.coverTrackId : item.coverTrackId
+      const id = item.coverTrackId
       const count = Number(item.track_count || 0)
       const sub = type === 'albums'
         ? `${item.artist || 'Unknown artist'} · ${count} track${count === 1 ? '' : 's'}${item.year ? ' · ' + item.year : ''}`
@@ -648,6 +648,11 @@
       if (q && !detail) params.set('q', q)
       store.libraryLoading = true
       store.libraryMessage = ''
+      if (!append) {
+        store.libraryItems = []
+        store.libraryTotal = 0
+        store.libraryHasMore = false
+      }
       renderLibrary()
       try {
         const data = await call(`${libraryEndpoint(view, params)}?${params.toString()}`)
@@ -807,8 +812,12 @@
 
     async function refreshState() {
       try {
+        const previousUserId = store.state?.userId
         const s = await call('state')
         renderState(s)
+        if (previousUserId !== undefined && String(previousUserId || 'guest') !== String(s?.userId || 'guest')) {
+          loadLibrary()
+        }
       } catch {
         els.status.textContent = 'offline'
       }
