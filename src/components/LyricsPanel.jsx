@@ -615,7 +615,7 @@ export default function LyricsPanel({
   // edge fade) rather than a third of the way down; the line being sung
   // settles at anchorFraction once the song gets there.
   const FULLSCREEN_TOP = { height: '10%', minHeight: '4.5rem' }
-  const scrollToFocus = useCallback((instant) => {
+  const scrollToFocus = useCallback((instant, distanceFraction = 1) => {
     const container = containerRef.current
     const refs = rowsRef.current.get(focusIdx)
     if (!container || !refs?.rowEl) return
@@ -624,8 +624,9 @@ export default function LyricsPanel({
     // clamp to how far it can actually go. The last lines then simply light up
     // lower down the panel instead of the list trying to move.
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-    const target = Math.min(maxScroll, Math.max(0, refs.rowEl.offsetTop - container.clientHeight * anchorFraction))
+    const fullTarget = Math.min(maxScroll, Math.max(0, refs.rowEl.offsetTop - container.clientHeight * anchorFraction))
     const before = container.scrollTop
+    const target = before + (fullTarget - before) * distanceFraction
     if (Math.abs(target - before) < 1) return
     if (instant || Math.abs(target - before) > container.clientHeight * 1.5) {
       container.scrollTop = target
@@ -661,7 +662,7 @@ export default function LyricsPanel({
   // line doesn't get clipped at the top of the scroll viewport.
   const handleGapCollapse = useCallback(() => {
     if (focusIdx < 0 || browsing) return
-    scrollToFocus(true)
+    scrollToFocus(true, 0.75)
   }, [focusIdx, browsing, scrollToFocus])
 
   useLayoutEffect(() => {
