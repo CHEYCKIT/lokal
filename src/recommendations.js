@@ -221,7 +221,7 @@ const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[s
 
 export const isAddonVerificationRequiredError = error => error?.code === 'ADDON_VERIFICATION_REQUIRED'
 
-export function dispatchAddonVerificationRequired(error, retry) {
+export function dispatchAddonVerificationRequired(error, retry, cancel) {
   if (!isAddonVerificationRequiredError(error) || typeof window === 'undefined') return false
   window.dispatchEvent(new CustomEvent('lokal:addon-verification-required', {
     detail: {
@@ -229,6 +229,7 @@ export function dispatchAddonVerificationRequired(error, retry) {
       provider: error.provider,
       title: error.title || 'this song',
       retry,
+      cancel,
     },
   }))
   return true
@@ -376,7 +377,8 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
       const retryAndResolve = async () => {
         try { resolve(await retry()) } catch (retryError) { reject(retryError) }
       }
-      if (!dispatchAddonVerificationRequired(error, retryAndResolve)) reject(error)
+      const cancel = () => resolve([])
+      if (!dispatchAddonVerificationRequired(error, retryAndResolve, cancel)) reject(error)
     })
   }
 }
