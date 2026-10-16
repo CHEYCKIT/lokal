@@ -124,6 +124,7 @@ async function linkInfo(url, { ytdlp = null, settings = {}, fetchImpl = fetch, s
         try {
           const credentials = await require('../ipc/online').getYouTubeMusicCredentials()
           musicCookies = credentials?.cookies || ''
+          if (!musicCookies && settings.yt_cookies === '1') musicCookies = settings.yt_cookie_header || ''
           if (typeof credentials?.fetchImpl === 'function') musicFetch = credentials.fetchImpl
         } catch {}
       }
