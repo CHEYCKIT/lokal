@@ -65,7 +65,7 @@ export async function playRecommendationPool(candidates, options = {}) {
     const order = pool.map(songKey)
     const resolveRemaining = async from => {
       for (let at = from; at < rest.length && current(); at += 4) {
-        onProgress?.(\`Loading remaining tracks… \${Math.min(at + 4, rest.length)} / \${rest.length}\`)
+        onProgress?.(`Loading remaining tracks… ${Math.min(at + 4, rest.length)} / ${rest.length}`)
         // Future songs are prepared when they actually play. Known preview results
         // are still rejected here, and runtime preparation handles hidden previews.
         let rows
