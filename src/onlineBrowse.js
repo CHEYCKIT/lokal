@@ -93,6 +93,23 @@ export async function loadAddonAlbum({ artist, album, provider, sourceAlbumId, a
 export async function loadAddonArtist(name, { anchor, hints = [] } = {}, client = api) {
   const want = plain(name)
   const hinted = new Set(hints.map(plain).filter(Boolean))
+  const fromResult = (result, addon) => ({
+    name: result.name || name,
+    image: result.image || '',
+    tracks: exactTracks(result.tracks),
+    albums: (result.albums || []).map(item => ({ ...item, provider: addon, sourceAlbumId: item.albumId, albumId: null })),
+  })
+
+  // An artist search result already has an exact ID from its source. Honour
+  // it before resolving by name; namesakes on YouTube or other addons must
+  // not replace the artist the user explicitly clicked.
+  if (anchor?.artistId && anchor?.provider) {
+    const direct = await timed(() => client.addonArtist(anchor.provider, anchor.artistId), 15000).catch(() => null)
+    if (direct && !direct.error && (direct.tracks?.length || direct.albums?.length)) {
+      return fromResult(direct, anchor.provider)
+    }
+  }
+
   for (const addon of await catalogueAddons('artist', client, anchor?.provider)) {
     let id = null
     if (anchor?.title) {
@@ -118,7 +135,7 @@ export async function loadAddonArtist(name, { anchor, hints = [] } = {}, client 
     if (!id) continue
     const result = await timed(() => client.addonArtist(addon, id), 15000).catch(() => null)
     if (!result || result.error || (!result.tracks?.length && !result.albums?.length)) continue
-    return { name: result.name || name, image: result.image || '', tracks: exactTracks(result.tracks), albums: result.albums.map(item => ({ ...item, provider: addon, sourceAlbumId: item.albumId, albumId: null })) }
+    return fromResult(result, addon)
   }
   return null
 }
@@ -306,7 +323,15 @@ const cacheKeyOf = (kind, parts) => `${kind}:${parts.map(part => recommendationK
 /** The key an online album is cached under. */
 export const albumCacheKey = ({ artist, album, albumId, provider, sourceAlbumId } = {}) => cacheKeyOf('album', [artist, album, albumId, provider, sourceAlbumId])
 /** The key an online artist is cached under. */
-export const artistCacheKey = name => cacheKeyOf('artist', [name])
+export const artistCacheKey = (name, anchor = null) => {
+  const normalizedName = recommendationKey(name) || String(name || '')
+  // Provider artist IDs are opaque identifiers, not names. Preserve their
+  // exact spelling and case so distinct IDs cannot share a profile cache entry.
+  if (anchor?.artistId != null && anchor?.provider) {
+    return JSON.stringify(['artist-source', normalizedName, String(anchor.provider), String(anchor.artistId)])
+  }
+  return cacheKeyOf('artist', [name])
+}
 
 /** What's cached under `key` (and when), or null. */
 export function peekOnline(key) {
