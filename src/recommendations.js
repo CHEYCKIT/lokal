@@ -259,7 +259,7 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const requestedStart = startFromProvider ? ordered.findIndex(source => source.id === startFromProvider) : -1
   const start = requestedStart >= 0 ? requestedStart : afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
-  const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
+  const sources = ordered.slice(start).filter(source => (requestedStart >= 0 || source.id !== afterProvider) && !skipProviders.includes(source.id))
   try {
     return (await mapLimited(uniqueSongs(candidates), async candidate => {
     if (!isCurrent()) return null
