@@ -639,19 +639,19 @@ function parseMusicPlaylistMetadata(root, playlistId = '') {
     const ownerRun = runs.find(run => {
       const browse = run.navigationEndpoint?.browseEndpoint
       const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
-      return /^UC[\\w-]{10,}$/.test(browse?.browseId || '') || /_(?:ARTIST|USER_CHANNEL)$/.test(pageType)
+      return /^UC[\w-]{10,}$/.test(browse?.browseId || '') || /_(?:ARTIST|USER_CHANNEL)$/.test(pageType)
     })
     if (!result.author && ownerRun?.text) result.author = String(ownerRun.text).trim() || null
 
     const lines = [header.subtitle, header.secondLine, header.strapline, header.description].map(textOf).filter(Boolean)
     if (!result.author) {
-      const byline = lines.find(line => /\\bby\\s+/i.test(line) || /[•·]/.test(line))
+      const byline = lines.find(line => /\bby\\s+/i.test(line) || /[•·]/.test(line))
       const candidate = byline?.split(/[•·]/)[0].replace(/^by\\s+/i, '').trim()
-      if (candidate && !/^(?:public|private|unlisted|playlist|mix|radio)\\b/i.test(candidate) && !/^\\d/.test(candidate)) result.author = candidate
+      if (candidate && !/^(?:public|private|unlisted|playlist|mix|radio)\b/i.test(candidate) && !/^\d/.test(candidate)) result.author = candidate
     }
     if (!result.count) {
       for (const line of lines) {
-        const match = line.match(/([\\d,.]+)\\s*([KMB]?)\\s*(?:songs?|tracks?|videos?)\\b/i)
+        const match = line.match(/([\d,.]+)\\s*([KMB]?)\\s*(?:songs?|tracks?|videos?)\b/i)
         if (!match) continue
         const amount = Number(match[1].replace(/,/g, ''))
         if (Number.isFinite(amount)) result.count = Math.round(amount * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2].toUpperCase()] || 1))
@@ -667,13 +667,13 @@ function youtubeMusicPlaylistId(value) {
     const url = new URL(String(value || ''))
     if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'music.youtube.com' || url.pathname !== '/playlist') return null
     const id = String(url.searchParams.get('list') || '').trim()
-    return id && /^[\\w.-]{1,120}$/.test(id) && !id.startsWith('RD') ? id : null
+    return id && /^[\w.-]{1,120}$/.test(id) && !id.startsWith('RD') ? id : null
   } catch { return null }
 }
 
 async function openMusicPlaylist(playlistId, cookies = '', fetchImpl = fetch, timeoutMs = 15000) {
   const id = String(playlistId || '').trim().replace(/^VL/, '')
-  if (!/^[\\w.-]{1,120}$/.test(id) || id.startsWith('RD')) throw new Error('A finite YouTube Music playlist id is required.')
+  if (!/^[\w.-]{1,120}$/.test(id) || id.startsWith('RD')) throw new Error('A finite YouTube Music playlist id is required.')
   const config = await musicContext(cookies, fetchImpl)
   const authenticated = !!accountHeaders(cookies, config)
   const root = await accountBrowse(`VL${id}`, cookies, fetchImpl, config, {
@@ -713,7 +713,7 @@ async function fetchMusicPlaylist(playlistId, cookies = '', fetchImpl = fetch, {
     const addTracks = root => {
       for (const track of parseAccountTracks(root, safeLimit)) {
         const videoId = String(track.videoId || track.id || '')
-        if (!/^[\\w-]{11}$/.test(videoId) || seenTracks.has(videoId)) continue
+        if (!/^[\w-]{11}$/.test(videoId) || seenTracks.has(videoId)) continue
         seenTracks.add(videoId)
         tracks.push({
           ...track,
