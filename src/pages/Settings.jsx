@@ -1270,7 +1270,7 @@ activeCategory === 'data' ? usersTried
                   <p className="text-sm text-muted">{t('No LAN address was found. Connect this computer to Wi-Fi or Ethernet, then refresh.')}</p>
                 )}
                 <p className="text-xs text-muted">{t('Your phone and computer must be connected to the same Wi-Fi network.')}</p>
-                {remoteConnectionInfo?.tokenRequired && <p className="text-xs text-muted">{t('REMOTE_TOKEN is enabled. The QR code and copied link include the access token; keep them private.')}</p>}
+                {remoteConnectionInfo?.tokenRequired && <p className="text-xs text-muted">{t('REMOTE_TOKEN is enabled. The phone remote will ask for the token when you connect; keep it private.')}</p>}
                 {remoteConnectionError && <p className="text-xs text-muted">{remoteConnectionError}{remoteConnectionInfo?.platform === 'win32' ? ` ${t('On Windows, allow Lokal or Electron through Windows Defender Firewall on Private networks, then refresh.')}` : ''}</p>}
                 {remoteLinkStatus && <p className="text-xs text-muted">{remoteLinkStatus}</p>}
               </div>
