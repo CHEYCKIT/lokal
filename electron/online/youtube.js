@@ -755,7 +755,7 @@ async function fetchMusicPlaylist(playlistId, cookies = '', fetchImpl = fetch, {
       thumbnail: opened.metadata.thumbnail || firstTrack?.thumbnail || null,
       count: opened.metadata.count || tracks.length,
       tracks,
-      truncated: pending.length > 0 || tracks.length >= safeLimit,
+      truncated: pending.length > 0 || (opened.metadata.count ? opened.metadata.count > tracks.length : tracks.length >= safeLimit),
     }
   } catch (error) {
     return { error: error?.message || 'Could not read that YouTube Music playlist.' }
