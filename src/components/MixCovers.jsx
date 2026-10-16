@@ -113,7 +113,7 @@ export default function MixCovers({ track, render }) {
       return
     }
     const state = usePlayerStore.getState()
-    const mode = performanceMode ? 'base' : coverTransitionMode({
+    const mode = coverTransitionMode({
       automix: !!state.crossfade?.automix,
       reduceMotion,
       hasPreviousCover: !!shown.id,
