@@ -1673,9 +1673,10 @@ export default function App() {
         key, provider: provider || 'a-' + key, title,
         trackId: state.currentTrack?.id ?? null,
         retry: typeof detail.retry === 'function' ? detail.retry : null,
+        isCurrentPlayback: false,
       }
       setAddonVerificationMessage('')
-      setAddonVerificationPrompt({ key, provider: provider || 'a-' + key, title })
+      setAddonVerificationPrompt({ key, provider: provider || 'a-' + key, title, isCurrentPlayback: false })
       // This event is raised during recommendation resolution, before its
       // candidate is installed in the queue. Keep the current song untouched;
       // the actual stream-preparation path owns its own pause/resume handling.
@@ -2378,13 +2379,14 @@ export default function App() {
           const key = ref.provider.slice(2)
           addonVerificationRetryRef.current = {
             key, provider: ref.provider, title: live.currentTrack.title || 'this song',
-            trackId: live.currentTrack.id, retry: null,
+            trackId: live.currentTrack.id, retry: null, isCurrentPlayback: true,
           }
           setAddonVerificationMessage('')
           setAddonVerificationPrompt({
             key,
             provider: ref.provider,
             title: live.currentTrack.title || 'this song',
+            isCurrentPlayback: true,
           })
           return
         }
@@ -2949,7 +2951,9 @@ export default function App() {
                     className="w-full max-w-md rounded-2xl border border-border bg-elevated p-5 shadow-2xl"
                   >
                     <p id="addon-verification-title" className="text-base font-semibold text-text">{t('Provider verification required')}</p>
-                    <p className="mt-2 text-sm text-muted">{t('Playback of “{title}” is paused because this provider needs verification. Verify access to continue; Lokal will not skip to another song.', { title: addonVerificationPrompt.title })}</p>
+                    <p className="mt-2 text-sm text-muted">{addonVerificationPrompt.isCurrentPlayback
+                      ? t('Playback of “{title}” is paused because this provider needs verification. Verify access to continue; Lokal will not skip to another song.', { title: addonVerificationPrompt.title })
+                      : t('The selected song “{title}” needs this provider to be verified before it can play. Current playback will continue until verification finishes.', { title: addonVerificationPrompt.title })}</p>
                     {addonVerificationMessage && <p role="status" className="mt-3 text-xs text-muted">{t(addonVerificationMessage)}</p>}
                     <div className="mt-5 flex justify-end gap-2">
                       <button
