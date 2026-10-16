@@ -122,13 +122,14 @@ export default function AudioPipelineModal({ open, onClose, track }) {
   const format = sourceFormat(track)
   const sourceName = stream
     ? (stream.provider?.startsWith('a-') ? addonNames[stream.provider] || 'Addon' : streamLabel(track))
-    : downloadSourceLabel(track?.download_source, addonNames) || (track?.file_path ? t('Local library') : UNKNOWN)
+    : downloadSourceLabel(track?.download_source, addonNames)
+      || (track?.file_path && !String(track.file_path).startsWith('ghost://') ? t('Local library') : UNKNOWN)
 
   const nativeActive = status.mode === 'native'
   const nativeRequested = preferences.precision !== 'auto'
   const contextRate = Number(status.sampleRate) || 0
-  const sourceRate = Number(track?.sample_rate) || contextRate
-  const decoderRate = Number(track?.sample_rate) || contextRate
+  const sourceRate = Number(track?.sample_rate) || 0
+  const decoderRate = sourceRate
   const decoderChannels = track?.channels ?? track?.channel_count ?? track?.channels_count
   const outputRate = contextRate
   const outputPrecision = nativeActive
