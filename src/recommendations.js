@@ -369,6 +369,10 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     })).filter(Boolean)
   } catch (error) {
     if (!isAddonVerificationRequiredError(error)) throw error
+    const retry = () => resolveRecommendationTracks(candidates, client, {
+      ...options,
+      ...(error.provider ? { startFromProvider: error.provider } : {}),
+    })
     if (typeof onAddonVerificationRequired === 'function') {
       onAddonVerificationRequired(error, retry)
       throw error
