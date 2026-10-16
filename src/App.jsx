@@ -1692,10 +1692,8 @@ export default function App() {
     if (status?.authenticated) {
       showToast('Addon access verified. It can now stream and download.')
       completeAddonVerification(status.key)
-    } else if (status?.key) {
-      setAddonVerificationPrompt(current => current?.key === status.key
-        ? { ...current, message: status.error || "Verification wasn't completed. Try again when you're ready." }
-        : current)
+    } else if (status?.key && addonVerificationRetryRef.current?.key === status.key) {
+      setAddonVerificationMessage(status.error || "Verification wasn't completed. Try again when you're ready.")
     }
   }), [completeAddonVerification])
   useEffect(() => {
