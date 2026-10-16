@@ -42,7 +42,6 @@ const SETTINGS_CATEGORIES = [
   { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
-  { key: 'remote', label: 'Phone Remote', icon: Link },
   { key: 'about', label: 'About', icon: Info },
 ]
 // Tabs that were folded into others: a link to one opens where it went.
@@ -393,10 +392,6 @@ export default function Settings() {
   // launch started with (main only applies it at startup).
   const [perfSettings, setPerfSettings] = useState({ hardwareAcceleration: true, performanceMode: false, platform: null, running: null })
   const [perfSaveError, setPerfSaveError] = useState(null) // { key, message }
-  const [remoteConnectionInfo, setRemoteConnectionInfo] = useState(null)
-  const [remoteConnectionLoading, setRemoteConnectionLoading] = useState(false)
-  const [remoteConnectionError, setRemoteConnectionError] = useState('')
-  const [remoteLinkStatus, setRemoteLinkStatus] = useState('')
   const [sidePanelsSaveError, setSidePanelsSaveError] = useState(false)
   // sidePanelsSaveChain/sidePanelsSaveSeq (module scope, below) serialize
   // the Side Panels toggle's saves -- see their declaration for why this
@@ -644,22 +639,6 @@ export default function Settings() {
   }
   const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
   const setPerformanceMode = (on) => savePerfField('performanceMode', on)
-  const refreshRemoteConnection = async () => {
-    setRemoteConnectionLoading(true)
-    setRemoteConnectionError('')
-    try {
-      const info = await api.getRemoteConnectionInfo()
-      setRemoteConnectionInfo(info || null)
-      setRemoteConnectionError(info?.serverReachable === false ? (info.error || t('The remote server could not be reached.')) : '')
-    } catch (e) {
-      setRemoteConnectionError(e?.message || t('The remote server could not be reached.'))
-    } finally {
-      setRemoteConnectionLoading(false)
-    }
-  }
-  useEffect(() => {
-    if (api.isElectron && activeCategory === 'remote') refreshRemoteConnection()
-  }, [activeCategory]) // eslint-disable-line react-hooks/exhaustive-deps
   const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
 
   // Every change saves itself (see queueSettings above).
@@ -1240,47 +1219,6 @@ activeCategory === 'data' ? usersTried
           </Row>
         </Section>
 
-      )}
-
-      {api.isElectron && inCategory('remote') && (
-        <Section title={t("Phone Remote")}>
-          <Row label={t("Phone Remote")} desc={t('Let a phone on the same Wi-Fi network control playback in Lokal.')}>
-            <button
-              onClick={() => { set('phone_remote_enabled', settings.phone_remote_enabled === '0' ? '1' : '0'); setRemoteLinkStatus('') }}
-              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.phone_remote_enabled !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-              {settings.phone_remote_enabled !== '0' ? t('On') : t('Off')}
-            </button>
-          </Row>
-          {settings.phone_remote_enabled !== '0' && (
-            <Row label={t('Connect a phone')} desc={t('Open the remote on your phone with the QR code or LAN link below.')} stacked>
-              <div className="space-y-3">
-                {remoteConnectionInfo?.primary ? (
-                  <div className="flex flex-wrap items-start gap-4">
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <a href={remoteConnectionInfo.primary} onClick={event => { event.preventDefault(); api.openExternal(remoteConnectionInfo.primary) }} className="block break-all text-sm text-accent underline underline-offset-2 hover:text-white">
-                        {remoteConnectionInfo.primary.split('#')[0]}
-                      </a>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={async () => { try { await navigator.clipboard.writeText(remoteConnectionInfo.primary); setRemoteLinkStatus(t('Link copied')) } catch { setRemoteLinkStatus(t('Could not copy the link')) } }} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white transition-colors">{t('Copy link')}</button>
-                        <button onClick={refreshRemoteConnection} disabled={remoteConnectionLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40 transition-colors">{remoteConnectionLoading ? t('Checking…') : t('Refresh')}</button>
-                      </div>
-                      {remoteConnectionInfo.urls?.filter(url => url !== remoteConnectionInfo.primary).map(url => (
-                        <a key={url} href={url} onClick={event => { event.preventDefault(); api.openExternal(url) }} className="block break-all text-xs text-muted underline underline-offset-2 hover:text-white">{url.split('#')[0]}</a>
-                      ))}
-                    </div>
-                    {remoteConnectionInfo.qrUrl && <img src={remoteConnectionInfo.qrUrl} alt={t('Phone Remote QR code')} className="h-40 w-40 rounded-lg bg-white p-2" />}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted">{t('No LAN address was found. Connect this computer to Wi-Fi or Ethernet, then refresh.')}</p>
-                )}
-                <p className="text-xs text-muted">{t('Your phone and computer must be connected to the same Wi-Fi network.')}</p>
-                {remoteConnectionInfo?.tokenRequired && <p className="text-xs text-muted">{t('REMOTE_TOKEN is enabled. The phone remote will ask for the token when you connect; keep it private.')}</p>}
-                {remoteConnectionError && <p className="text-xs text-muted">{remoteConnectionError}{remoteConnectionInfo?.platform === 'win32' ? ` ${t('On Windows, allow Lokal or Electron through Windows Defender Firewall on Private networks, then refresh.')}` : ''}</p>}
-                {remoteLinkStatus && <p className="text-xs text-muted">{remoteLinkStatus}</p>}
-              </div>
-            </Row>
-          )}
-        </Section>
       )}
 
       {inCategory('library') && (
