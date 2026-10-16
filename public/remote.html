@@ -815,7 +815,9 @@
         const previousUserId = store.state?.userId
         const s = await call('state')
         renderState(s)
-        if (previousUserId !== undefined && String(previousUserId || 'guest') !== String(s?.userId || 'guest')) {
+        if (String(previousUserId || 'guest') !== String(s?.userId || 'guest')) {
+          // Invalidate pending loads and clear visible rows immediately so
+          // controls cannot submit track IDs from the previous account.
           loadLibrary()
         }
       } catch {
