@@ -100,6 +100,52 @@ test('direct resolver callers resume automatically after a matched addon needs v
   }
 })
 
+test('direct verification retry hands the original promise to a second prompt', async () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window')
+  const oldWindow = globalThis.window
+  const hadCustomEvent = Object.prototype.hasOwnProperty.call(globalThis, 'CustomEvent')
+  const oldCustomEvent = globalThis.CustomEvent
+  let pending
+  let prepares = 0
+  const fakeWindow = {
+    dispatchEvent(event) {
+      if (event.type === 'lokal:addon-verification-required') pending = event.detail
+      return true
+    },
+  }
+  globalThis.window = fakeWindow
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail }
+  }
+  try {
+    const { client } = clientMock({
+      onlineSearch: async (_query, provider) => ({ results: [{ ...song(9), id: 'abcdefghijk', provider }] }),
+      onlinePrepare: async () => ++prepares < 3
+        ? { ok: false, error: 'VERIFY_REQUIRED: complete addon verification' }
+        : { ok: true, preview: false },
+    })
+    const resultPromise = resolveRecommendationTracks([song(9)], client, {
+      searchLocal: false,
+      sources: [{ id: addon, label: 'Addon' }],
+    })
+    for (let attempt = 0; attempt < 10 && !pending; attempt++) await new Promise(resolve => setImmediate(resolve))
+    const firstPrompt = pending
+    assert.ok(firstPrompt, 'first verification should open the prompt')
+    assert.equal(await firstPrompt.retry(), null, 'the first retry should yield when a replacement prompt takes ownership')
+    assert.notEqual(pending, firstPrompt, 'a second verification should replace the prompt')
+    assert.equal(prepares, 2)
+    const rows = await pending.retry()
+    assert.equal(rows.length, 1)
+    assert.equal((await resultPromise).length, 1, 'the original caller should resolve after the later verification succeeds')
+    assert.equal(prepares, 3)
+  } finally {
+    if (hadWindow) globalThis.window = oldWindow
+    else delete globalThis.window
+    if (hadCustomEvent) globalThis.CustomEvent = oldCustomEvent
+    else delete globalThis.CustomEvent
+  }
+})
+
 test('matching requires the exact title and artist and preserves version differences', () => {
   const target = { title: 'Song', artist: 'Artist' }
   for (const result of [{ title: 'Song', artist: 'Cover Artist' }, { title: 'Song (Live)', artist: 'Artist' }, { title: 'Other Song', artist: 'Artist' }]) {
