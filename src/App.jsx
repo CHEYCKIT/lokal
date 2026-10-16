@@ -1677,6 +1677,7 @@ export default function App() {
           setAddonVerificationMessage(error?.message || "Verification succeeded, but playback couldn't be resumed automatically.")
         }
       }).finally(() => {
+        if (addonVerificationRetryRef.current === pending) pending.retrying = false
         setAddonVerificationBusy(false)
       })
     }
