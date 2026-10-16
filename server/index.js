@@ -16,8 +16,21 @@ app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
 const distPath = path.join(__dirname, '../dist')
+const packagedElectron = !!(process.versions.electron && require('electron').app?.isPackaged)
+const publicPath = packagedElectron ? path.join(process.resourcesPath, 'public') : path.join(__dirname, '../public')
+function isPhoneRemoteEnabled() {
+  try {
+    const saved = getDB().prepare("SELECT value FROM settings WHERE key = 'phone_remote_enabled'").get()?.value
+    return saved !== '0'
+  } catch { return true }
+}
+app.use((req, res, next) => {
+  if (['/remote', '/remote.html', '/remote-manifest.json', '/remote-sw.js'].includes(req.path) && !isPhoneRemoteEnabled()) {
+    return res.status(403).send('Phone Remote is disabled in Lokal Settings.')
+  }
+  next()
+})
 if (fs.existsSync(distPath)) app.use(express.static(distPath))
-const publicPath = path.join(__dirname, '../public')
 if (fs.existsSync(publicPath)) app.use(express.static(publicPath))
 
 // API_KEY in .env: every /api route below needs it (see apiKey.js).
@@ -40,6 +53,10 @@ app.use('/api/albums', require('./routes/albums'))
 app.use('/api/lastfm', require('./routes/lastfm'))
 app.use('/api/listenbrainz', require('./routes/listenbrainz'))
 app.use('/api/online', require('./routes/online'))
+app.use('/api/remote', (req, res, next) => {
+  if (!isPhoneRemoteEnabled()) return res.status(403).json({ error: 'Phone remote is disabled in Lokal Settings.', disabled: true })
+  next()
+})
 app.use('/api/remote', require('./routes/remote'))
 app.use('/api/plugins', require('./routes/plugins'))
 app.use('/api/recaps', require('./routes/recaps'))
@@ -156,7 +173,7 @@ app.get('*', (req, res) => {
 })
 
 const PORT = process.env.PORT || 3421
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Lokal Music → http://localhost:${PORT}`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {

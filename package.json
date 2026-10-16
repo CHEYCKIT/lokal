@@ -23,7 +23,17 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "server/**/*"
+      "server/**/*",
+      "public/remote.html",
+      "public/remote-manifest.json",
+      "public/remote-sw.js",
+      "public/lokal-icon.png"
+    ],
+    "extraResources": [
+      { "from": "public/remote.html", "to": "public/remote.html" },
+      { "from": "public/remote-manifest.json", "to": "public/remote-manifest.json" },
+      { "from": "public/remote-sw.js", "to": "public/remote-sw.js" },
+      { "from": "public/lokal-icon.png", "to": "public/lokal-icon.png" }
     ],
     "asar": true,
     "asarUnpack": [

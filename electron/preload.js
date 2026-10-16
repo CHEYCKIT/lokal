@@ -303,6 +303,7 @@ contextBridge.exposeInMainWorld('electron', {
   setKeepCommaArtists: (artists) => invoke('settings:setKeepCommaArtists', artists),
   getTheme: () => invoke('settings:getTheme'),
   saveTheme: (theme, overrides) => invoke('settings:saveTheme', { theme, overrides }),
+  getRemoteConnectionInfo: () => invoke('remote:getConnectionInfo'),
   reportRemoteState: (state) => ipcRenderer.send('remote:stateUpdate', state),
   onRemoteCommand: (fn) => on('remote:command', (_, payload) => fn(payload)),
   onSmtcShuffleRequest: (fn) => on('smtc:shuffleRequested', (_, value) => fn(value)),
