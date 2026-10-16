@@ -96,7 +96,7 @@ export default function PhoneRemoteButton() {
       window.dispatchEvent(new Event('lokal:settings-saved'))
     } catch (error) {
       if (settingChangeSeq.current === version) {
-        setSettingError(error?.message || t("Couldn't save settings."))
+        setSettingError(error?.message || t("Couldn't save"))
       }
     } finally {
       if (settingChangeSeq.current === version) setSaving(false)
@@ -219,9 +219,7 @@ export default function PhoneRemoteButton() {
                 )}
                 {linkStatus && <p className="text-xs text-muted">{linkStatus}</p>}
               </div>
-            ) : (
-              <p className="mt-3 text-xs leading-relaxed text-muted">{t('Turn on Phone Remote to show the QR code and LAN link.')}</p>
-            )}
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
