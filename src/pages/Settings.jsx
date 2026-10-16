@@ -1295,6 +1295,13 @@ activeCategory === 'data' ? usersTried
             {settings.download_embed_lyrics !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
+        <Row label={t("Allow Get it in Lossless for Any Song")} desc={t("Allow trying to find a higher-quality lossless version even when the current song is already lossless. When off, the existing eligibility rules apply.")}>
+          <button
+            onClick={() => set('get_lossless_any_song', settings.get_lossless_any_song === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.get_lossless_any_song === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.get_lossless_any_song === '1' ? t('On') : t('Off')}
+          </button>
+        </Row>
         <Row label={t("Simpler Artist Names")} desc={t("Use the main artist for downloaded songs, not every name the file lists.")}>
           <button
             onClick={() => set('clean_download_metadata', settings.clean_download_metadata === '0' ? '1' : '0')}

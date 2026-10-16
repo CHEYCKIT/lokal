@@ -27,6 +27,7 @@ export default function Library() {
   const [genres, setGenres] = useCachedState('library:genres', [])
   // One audio quality tier, or '' for all (the Audio Quality page's tiers).
   const [quality, setQuality] = useCachedState('library:quality', '')
+  const [format, setFormat] = useCachedState('library:format', '')
   const [problemsOnly, setProblemsOnly] = useCachedState('library:problemsOnly', false)
   const [view, setView] = useCachedState('library:view', 'list')
   const [libraryMode, setLibraryMode] = useCachedState('library:mode', 'simple')
@@ -58,7 +59,7 @@ export default function Library() {
     loadingRef.current = true
     setLoading(true)
     try {
-      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}), ...(quality ? { quality } : {}), ...(problemsOnly ? { problems: true } : {}) })
+      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}), ...(quality ? { quality } : {}), ...(format ? { format } : {}), ...(problemsOnly ? { problems: true } : {}) })
       if (requestId !== requestIdRef.current) return
       // A failed request keeps the list already shown (and cached).
       if (!Array.isArray(result)) return
@@ -84,7 +85,7 @@ export default function Library() {
     offsetRef.current = 0
     setHasMore(false)
     load(false)
-  }, [sort, source, genre, quality, problemsOnly])
+  }, [sort, source, genre, quality, format, problemsOnly])
 
   useEffect(() => {
     const handleRefresh = () => { load(false); loadGenres() }
@@ -109,7 +110,7 @@ export default function Library() {
     }, { rootMargin: '300px 0px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, sort, source, genre, quality, problemsOnly, tracks.length])
+  }, [hasMore, loading, sort, source, genre, quality, format, problemsOnly, tracks.length])
 
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? api.fileURL(t.artwork_path) : api.artworkURL(t.id))
@@ -142,6 +143,26 @@ export default function Library() {
             {/* The one picked stays listed even if no song has it any more. */}
             {genre && !genres.some(g => g.toLowerCase() === genre.toLowerCase()) && <option value={genre}>{genre}</option>}
             {genres.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={format} onChange={e => setFormat(e.target.value)} aria-label={t("Format")}
+            className={`bg-elevated border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent/50 ${format ? 'border-accent/40 text-accent' : 'border-border text-muted'}`}>
+            <option value="">{t("All formats")}</option>
+            <option value="16-44100">16-bit / 44.1 kHz</option>
+            <option value="16-48000">16-bit / 48 kHz</option>
+            <option value="16-88200">16-bit / 88.2 kHz</option>
+            <option value="16-96000">16-bit / 96 kHz</option>
+            <option value="16-192000">16-bit / 192 kHz</option>
+            <option value="24-44100">24-bit / 44.1 kHz</option>
+            <option value="24-48000">24-bit / 48 kHz</option>
+            <option value="24-88200">24-bit / 88.2 kHz</option>
+            <option value="24-96000">24-bit / 96 kHz</option>
+            <option value="24-176400">24-bit / 176.4 kHz</option>
+            <option value="24-192000">24-bit / 192 kHz</option>
+            <option value="32-44100">32-bit / 44.1 kHz</option>
+            <option value="32-48000">32-bit / 48 kHz</option>
+            <option value="32-88200">32-bit / 88.2 kHz</option>
+            <option value="32-96000">32-bit / 96 kHz</option>
+            <option value="32-192000">32-bit / 192 kHz</option>
           </select>
           <select value={quality} onChange={e => setQuality(e.target.value)} aria-label={t("Quality")}
             className={`bg-elevated border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent/50 ${quality ? 'border-accent/40 text-accent' : 'border-border text-muted'}`}>
