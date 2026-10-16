@@ -6,6 +6,7 @@ const fs = require('fs-extra')
 try { require('dotenv').config() } catch {}
 
 const { initDB, getDB, getStorageDir } = require('../electron/ipc/db')
+const { httpsImageURL } = require('../electron/playlists/remoteCover')
 const { initPlugins } = require('../electron/ipc/plugins')
 initDB()
 initPlugins()
@@ -100,10 +101,12 @@ app.get('/api/artwork/:trackId', (req, res) => {
   // Covers not named after the track (a download's thumbnail "t-<id>.jpg",
   // one found online, one shared from the same album): the track's own
   // artwork_path, as long as it's in the artwork folder.
+  let remoteArtworkUrl = null
   try {
     const db = getDB()
-    const stored = db.prepare('SELECT artwork_path FROM tracks WHERE id = ?').get(req.params.trackId)?.artwork_path
-    const resolved = stored ? path.resolve(stored) : null
+    const stored = db.prepare('SELECT artwork_path, artwork_url FROM tracks WHERE id = ?').get(req.params.trackId)
+    remoteArtworkUrl = stored?.artwork_url || null
+    const resolved = stored?.artwork_path ? path.resolve(stored.artwork_path) : null
     const musicFolder = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
     const root = musicFolder ? path.resolve(musicFolder) : null
     const isWithin = (base, candidate) => {
@@ -119,6 +122,15 @@ app.get('/api/artwork/:trackId', (req, res) => {
       if (inCache || inMusicFolder) return res.sendFile(resolved)
     }
   } catch {}
+  // Streamed tracks keep their cover as an external artwork_url rather than
+  // an on-disk artwork_path. The phone remote (and other artwork consumers)
+  // still requests this same endpoint, so safely redirect to that HTTPS image
+  // when no local copy is available.
+  const externalArtwork = httpsImageURL(remoteArtworkUrl)
+  if (externalArtwork) {
+    res.set('Cache-Control', 'private, max-age=300')
+    return res.redirect(302, externalArtwork.href)
+  }
   res.status(404).send('No artwork')
 })
 
