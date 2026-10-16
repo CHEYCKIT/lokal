@@ -1231,7 +1231,7 @@ activeCategory === 'data' ? usersTried
               {perfSettings.performanceMode ? t('On') : t('Off')}
             </button>
           </Row>
-          <Row label={t("Close to Tray") desc={t("The close button hides Lokal in the system tray instead of quitting: its taskbar icon goes away and the tray icon brings it back. Quit from the tray icon's menu.")}>
+          <Row label={t("Close to Tray")} desc={t("The close button hides Lokal in the system tray instead of quitting: its taskbar icon goes away and the tray icon brings it back. Quit from the tray icon's menu.")}>
             <button
               onClick={() => set('close_to_tray', settings.close_to_tray === '1' ? '0' : '1')}
               className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.close_to_tray === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
