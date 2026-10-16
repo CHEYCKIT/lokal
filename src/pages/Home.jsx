@@ -18,7 +18,7 @@ import { artistPath } from '../releaseActions'
 import ProviderConnections from '../components/ProviderConnections'
 import { libraryDownloadMessage, saveTracksToLibrary, trackArtURL } from '../onlineTracks'
 import { openRadio } from '../radioActions'
-import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage } from '../recommendations'
+import { songKey, sourceName, resolveRecommendationTracks, playbackFallbackMessage, dispatchAddonVerificationRequired, isAddonVerificationRequiredError } from '../recommendations'
 import { recommendationSession, rememberHomePath } from '../recommendationSession'
 import { useTranslation } from '../i18n'
 import { playRecommendationPool } from '../recommendationPlayback'
@@ -454,7 +454,11 @@ function HomeContent({ user }) {
     const toast = showLoadingToast(`Loading ${mix.title}…`)
     try {
       const candidates = await loadProviderMix(mix)
-      const tracks = await resolveRecommendationTracks(candidates, api, { isCurrent, prepareStreams: false, onProgress: message => { if (isCurrent()) toast.update(message) } })
+      const tracks = await resolveRecommendationTracks(candidates, api, {
+        isCurrent, prepareStreams: false,
+        onProgress: message => { if (isCurrent()) toast.update(message) },
+        onAddonVerificationRequired: error => dispatchAddonVerificationRequired(error, () => saveProviderMix(mix, download)),
+      })
       if (!isCurrent()) { toast.close(); return }
       if (!tracks.length) { toast.close(`No matching songs were found in ${mix.title}.`); return }
       if (download) {
@@ -465,7 +469,7 @@ function HomeContent({ user }) {
         const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: 'Mixed for you on YouTube Music', coverURL: secureImage(mix.artwork_url || mix.thumbnail) })
         toast.close(playlist ? `Saved “${mix.title}” as a playlist.` : `Could not save “${mix.title}”.`)
       }
-    } catch (error) { toast.close(isCurrent() ? error.message || `Could not load ${mix.title}.` : '') }
+    } catch (error) { toast.close(isCurrent() && !isAddonVerificationRequiredError(error) ? error.message || `Could not load ${mix.title}.` : '') }
   }
   const openTrackMenu = (event, track, section = 'fresh') => {
     const isLiked = section === 'liked'
