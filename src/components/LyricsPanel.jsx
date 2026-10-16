@@ -148,7 +148,7 @@ export function paintVoice(voiceEl, units, t, live) {
 // ---------------------------------------------------------------- rows
 
 const Row = React.memo(function Row({
-  line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow,
+  line, index, until, clock, distance, isFocused, isLive, synced, browsing, wordSync, fullscreen, textScale, duet, sub, onSeek, registerRow, onGapCollapse,
 }) {
   const { t } = useTranslation()
   const rowRef = useRef(null)
@@ -181,6 +181,7 @@ const Row = React.memo(function Row({
     return (
       <div ref={rowRef} data-row={index} className="w-full" style={{ willChange: 'transform' }}>
         <div
+          onTransitionEnd={event => { if (event.propertyName === 'height' && !open) onGapCollapse?.() }}
           style={{
             height: open ? `${baseSize * 1.5}rem` : 0,
             opacity: open ? 1 : 0,
@@ -639,6 +640,14 @@ export default function LyricsPanel({
     })
   }, [focusIdx, anchorFraction])
 
+  // When a focused three-dot break collapses, its height changes throughout a
+  // CSS transition. Re-align after that final layout shift so the next lyric
+  // line doesn't get clipped at the top of the scroll viewport.
+  const handleGapCollapse = useCallback(() => {
+    if (focusIdx < 0 || browsing) return
+    scrollToFocus(true)
+  }, [focusIdx, browsing, scrollToFocus])
+
   useLayoutEffect(() => {
     if (focusIdx < 0 || browsing) return
     const first = lastScrollIdx.current < 0
@@ -815,9 +824,10 @@ export default function LyricsPanel({
                   sub={subLines?.[i] || null}
                   onSeek={seek}
                   registerRow={registerRow}
+                  onGapCollapse={line.gap ? handleGapCollapse : undefined}
                 />
               ))}
-              <div style={{ height: fullscreen ? '55vh' : 0 }} />
+              <div style={{ height: fullscreen ? '55vh' : compact ? '240px' : 0 }} />
               {sourceLabel && (
                 <p className="px-3 pb-10 text-[11px] text-white/30">
                   Lyrics via {sourceLabel}{result?.sync ? ` · ${SYNC_LABEL[result.sync] || ''}` : ''}

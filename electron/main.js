@@ -319,9 +319,34 @@ function showFromTray() {
   mainWindow.show()
   mainWindow.focus()
 }
+function loadTrayIcon() {
+  const filenames = process.platform === 'win32'
+    ? ['lokal-icon.ico', 'lokal-icon.png']
+    : ['lokal-icon.png', 'lokal-icon.ico']
+  const roots = app.isPackaged
+    ? [path.join(app.getAppPath(), 'dist'), path.join(process.resourcesPath, 'app.asar', 'dist')]
+    : [path.join(__dirname, '../public'), path.join(app.getAppPath(), 'dist')]
+
+  for (const root of roots) {
+    for (const filename of filenames) {
+      const iconPath = path.join(root, filename)
+      if (!fs.existsSync(iconPath)) continue
+      const image = nativeImage.createFromPath(iconPath)
+      if (!image.isEmpty()) return image
+    }
+  }
+  log.error('[tray] Could not load Lokal tray icon from packaged or development assets')
+  return nativeImage.createEmpty()
+}
+
 function hideToTray() {
   if (!tray || tray.isDestroyed()) {
-    const image = nativeImage.createFromPath(path.join(__dirname, process.platform === 'win32' ? '../public/lokal-icon.ico' : '../public/lokal-icon.png'))
+    const image = loadTrayIcon()
+    if (image.isEmpty()) {
+      // Don't silently hide the only window when the tray icon could not load.
+      log.error('[tray] Refusing to hide the window without a visible tray icon')
+      return false
+    }
     tray = new Tray(process.platform === 'win32' ? image : image.resize({ width: 16, height: 16 }))
     tray.setToolTip('Lokal')
     tray.setContextMenu(Menu.buildFromTemplate([
@@ -332,6 +357,7 @@ function hideToTray() {
     tray.on('click', showFromTray)
   }
   mainWindow.hide()
+  return true
 }
 function removeTray() {
   if (tray && !tray.isDestroyed()) tray.destroy()
@@ -435,8 +461,7 @@ function createWindow() {
   mainWindow.on('close', (event) => {
     saveWindowState()
     if (quitting || isUpdating || !closesToTray()) return
-    event.preventDefault()
-    hideToTray()
+    if (hideToTray()) event.preventDefault()
   })
   mainWindow.on('show', removeTray)
   if (saved?.maximized) mainWindow.maximize()
