@@ -28,6 +28,7 @@ import {
 } from '../searchHistory'
 import { asLink } from '../downloadLinks'
 import CastButton from './CastButton'
+import PhoneRemoteButton from './PhoneRemoteButton'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 
@@ -326,6 +327,7 @@ export default function HeaderSearch() {
       </div>
 
       <CastButton />
+      <PhoneRemoteButton />
     </div>
   )
 }
