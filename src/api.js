@@ -625,6 +625,8 @@ export const api = {
   openLogs: () => isE() ? el().openLogs() : Promise.resolve(),
   log: (level, message) => isE() ? el().log(level, message) : console.log(`[${level}] ${message}`),
   getPerfSettings: () => isE() ? el().getPerfSettings() : Promise.resolve({ hardwareAcceleration: true, performanceMode: false }),
+  getRemoteConnectionInfo: () => isE() && el()?.getRemoteConnectionInfo ? el().getRemoteConnectionInfo() : Promise.resolve({ error: 'Electron only' }),
+  openExternal: (url) => isE() && el()?.openExternal ? el().openExternal(url) : Promise.resolve(),
   savePerfSettings: (s) => isE() ? el().savePerfSettings(s) : Promise.resolve({}),
   setMediaKeyPreference: (enabled) => (isE() && typeof el().setMediaKeyPreference === 'function') ? el().setMediaKeyPreference(enabled) : Promise.resolve({ ok: false, enabled: false }),
   relaunchApp: () => isE() ? el().relaunchApp() : Promise.resolve(),

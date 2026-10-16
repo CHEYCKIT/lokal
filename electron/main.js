@@ -34,7 +34,7 @@ const { initPlugins, registerPluginHandlers } = require('./ipc/plugins')
 const { registerRecapHandlers } = require('./ipc/recaps')
 const { registerLibraryKeysHandlers } = require('./ipc/libraryKeys')
 const { registerQualityHandlers } = require('./ipc/quality')
-const { setRemoteState, setRemoteCommandHandler } = require('./ipc/remote')
+const { setRemoteState, setRemoteCommandHandler, getRemoteConnectionInfo } = require('./ipc/remote')
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
 const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
@@ -643,6 +643,24 @@ app.whenReady().then(() => {
   ipcMain.on('remote:stateUpdate', (_, state) => {
     setRemoteState(state)
     updateSmtcState(state || {})
+  })
+  ipcMain.handle('remote:getConnectionInfo', async () => {
+    const fallback = getRemoteConnectionInfo()
+    const port = Number(process.env.PORT) || 3421
+    const headers = {}
+    const remoteToken = String(process.env.REMOTE_TOKEN || '').trim()
+    const apiKey = String(process.env.API_KEY || '').trim()
+    if (remoteToken) headers['x-remote-token'] = remoteToken
+    if (apiKey) headers['x-api-key'] = apiKey
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/remote/connection`, { headers })
+      const data = await response.json().catch(() => ({}))
+      if (response.ok) return { ...data, serverReachable: true, platform: process.platform }
+      if (data.disabled) return { ...fallback, disabled: true, serverReachable: true, platform: process.platform }
+      return { ...fallback, serverReachable: false, error: data.error || `Remote server returned HTTP ${response.status}`, platform: process.platform }
+    } catch (e) {
+      return { ...fallback, serverReachable: false, error: e?.message || 'Could not reach the remote server', platform: process.platform }
+    }
   })
   setRemoteCommandHandler(async (command) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
