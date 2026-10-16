@@ -465,7 +465,7 @@ async function scanFolder(folderPath) {
       const title = rawTitle || extractTitleFromFilename(filePath)
       const artist = rawArtist || extractArtistFromFolder(filePath)
       const duration = meta.format.duration || 0
-      if (!title && !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive title or artist`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
+      if (!title || !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive both title and artist`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       if (!rawTitle && title) console.log(`[scanFolder] Fallback title from filename: ${filePath} -> "${title}"`)
       if (!rawArtist && artist) console.log(`[scanFolder] Fallback artist from folder: ${filePath} -> "${artist}"`)
       const minDuration = getMinDuration()
