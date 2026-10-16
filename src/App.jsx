@@ -1403,8 +1403,14 @@ export default function App() {
         const requestedIds = Array.isArray(value.trackIds) ? value.trackIds : []
         const ids = [...new Set([...requestedIds, targetId].map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
         if (!ids.length) return { error: 'No library tracks were selected' }
-        const loaded = await api.getTracks({ ids, includeGhosts: '1', limit: 5000 })
-        const tracks = Array.isArray(loaded) ? loaded : Array.isArray(loaded?.items) ? loaded.items : []
+        const tracks = []
+        // Keep each SQL IN-list under the parameter limit used by SQLite
+        // builds that ship with older Linux distributions.
+        for (let offset = 0; offset < ids.length; offset += 400) {
+          const loaded = await api.getTracks({ ids: ids.slice(offset, offset + 400), includeGhosts: '1', limit: 400 })
+          const batch = Array.isArray(loaded) ? loaded : Array.isArray(loaded?.items) ? loaded.items : []
+          tracks.push(...batch)
+        }
         const byId = new Map(tracks.filter(track => track?.id).map(track => [String(track.id), track]))
         const ordered = ids.map(id => byId.get(id)).filter(Boolean)
         if (!ordered.length) return { error: 'No playable tracks were found' }
