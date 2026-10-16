@@ -1,8 +1,23 @@
 import { usePlayerStore } from './store/player.js'
-import { playbackSources, resolveRecommendationTracks, songKey, uniqueSongs } from './recommendations.js'
+import { playbackSources, resolveRecommendationTracks, songKey, uniqueSongs, isAddonVerificationRequiredError } from './recommendations.js'
+
+function requestAddonVerification(error, retry) {
+  if (!isAddonVerificationRequiredError(error) || typeof window === 'undefined') return false
+  window.dispatchEvent(new CustomEvent('lokal:addon-verification-required', {
+    detail: {
+      key: error.key || String(error.provider || '').slice(2),
+      provider: error.provider,
+      title: error.title || 'this song',
+      retry,
+    },
+  }))
+  return true
+}
 
 /** Start one song promptly, then fill the same ordered queue in bounded batches. */
-export async function playRecommendationPool(candidates, { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, resolve, store = usePlayerStore } = {}) {
+export async function playRecommendationPool(candidates, options = {}) {
+  const { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, store = usePlayerStore } = options
+  let { resolve } = options
   const pool = uniqueSongs(candidates)
   let index = selected ? pool.findIndex(track => songKey(track) === songKey(selected)) : 0
   if (!isCurrent()) return null
@@ -25,7 +40,16 @@ export async function playRecommendationPool(candidates, { selected, context, fi
     const attempts = selected && skipUnavailable ? pool.length : pool.length - start
     for (let attempt = 0; attempt < attempts && current(); attempt++) {
       index = (start + attempt) % pool.length
-      const rows = await resolve([pool[index]], { isCurrent: current, prepareStreams: true, onProviderFailure, onProgress }).catch(() => [])
+      let rows
+      try {
+        rows = await resolve([pool[index]], { isCurrent: current, prepareStreams: true, onProviderFailure, onProgress })
+      } catch (error) {
+        if (isAddonVerificationRequiredError(error)) {
+          if (current()) requestAddonVerification(error, () => playRecommendationPool(candidates, { ...options, selected: pool[index] }))
+          return null
+        }
+        rows = []
+      }
       first = rows[0]
       if (first || !skipUnavailable) break
       failed.add(songKey(pool[index]))
@@ -39,13 +63,26 @@ export async function playRecommendationPool(candidates, { selected, context, fi
     onStarted?.(first)
     const rest = [...pool.slice(index + 1), ...(firstPlayable ? [] : pool.slice(0, index))].filter(track => !failed.has(songKey(track)))
     const order = pool.map(songKey)
-    for (let at = 0; at < rest.length && current(); at += 4) {
-      onProgress?.(`Loading remaining tracks… ${Math.min(at + 4, rest.length)} / ${rest.length}`)
-      // Future songs are prepared when they actually play. Known preview results
-      // are still rejected here, and runtime preparation handles hidden previews.
-      const rows = await resolve(rest.slice(at, at + 4), { isCurrent: current, prepareStreams: false }).catch(() => [])
-      if (current() && rows.length) store.getState().extendRecommendationQueue(rows, order, version)
+    const resolveRemaining = async from => {
+      for (let at = from; at < rest.length && current(); at += 4) {
+        onProgress?.(\`Loading remaining tracks… \${Math.min(at + 4, rest.length)} / \${rest.length}\`)
+        // Future songs are prepared when they actually play. Known preview results
+        // are still rejected here, and runtime preparation handles hidden previews.
+        let rows
+        try {
+          rows = await resolve(rest.slice(at, at + 4), { isCurrent: current, prepareStreams: false, onProviderFailure, onProgress })
+        } catch (error) {
+          if (isAddonVerificationRequiredError(error)) {
+            if (current()) requestAddonVerification(error, () => resolveRemaining(at))
+            return false
+          }
+          continue
+        }
+        if (current() && rows.length) store.getState().extendRecommendationQueue(rows, order, version)
+      }
+      return current()
     }
+    await resolveRemaining(0)
     return true
   } finally {
     if (store.getState().recommendationLoading === version) store.setState({ recommendationLoading: 0 })
