@@ -57,6 +57,12 @@ function settings() {
   try { return Object.fromEntries(getDB().prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value])) } catch { return {} }
 }
 
+/** Credentials for YouTube Music Innertube requests (including the signed-in desktop session when enabled). */
+async function getYouTubeMusicCredentials() {
+  try { return accountSession ? await accountSession.credentials() : { cookies: '', fetchImpl: fetch } }
+  catch { return { cookies: '', fetchImpl: fetch } }
+}
+
 /** yt-dlp and the user's YouTube cookie options, for resolving streams. */
 function streamOptions() {
   const all = settings()
@@ -825,4 +831,4 @@ function musicVideoStream(id, range) {
   return videoStream(id, range, (u, init) => require('electron').net.fetch(u, init))
 }
 
-module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio, listMusicVideos, prepareMusicVideoFor, musicVideoStream }
+module.exports = { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol, search, streamOptions, providers, songAudioFor, resolvedSourceAudio, listMusicVideos, prepareMusicVideoFor, musicVideoStream, getYouTubeMusicCredentials }
