@@ -1762,12 +1762,32 @@ function downloadImageWithTimeout(url, dest, timeoutMs) {
 
 const ARTIST_CLEANUP_INTERVAL_MS = 60_000
 let lastUnusedArtistCleanupAt = 0
+let unusedArtistCleanupTimer = null
 
 function cleanupUnusedArtistsPeriodically(db) {
   const now = Date.now()
-  if (now - lastUnusedArtistCleanupAt < ARTIST_CLEANUP_INTERVAL_MS) return
+  const remaining = ARTIST_CLEANUP_INTERVAL_MS - (now - lastUnusedArtistCleanupAt)
+  if (remaining > 0) {
+    // A cleanup skipped due to the interval is still owed: schedule it for
+    // the first allowed instant, even if no further track is relinked.
+    if (unusedArtistCleanupTimer === null) {
+      unusedArtistCleanupTimer = setTimeout(() => {
+        unusedArtistCleanupTimer = null
+        try {
+          cleanupUnusedArtistsPeriodically(db)
+        } catch (error) {
+          console.warn('[scanner] Deferred unused-artist cleanup failed:', error.message)
+        }
+      }, remaining)
+      unusedArtistCleanupTimer.unref?.()
+    }
+    return
+  }
+
   db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run()
-  lastUnusedArtistCleanupAt = now
+  lastUnusedArtistCleanupAt = Date.now()
+  if (unusedArtistCleanupTimer !== null) clearTimeout(unusedArtistCleanupTimer)
+  unusedArtistCleanupTimer = null
 }
 
 function updateTrackArtistLinks(db, trackId, artist) {
