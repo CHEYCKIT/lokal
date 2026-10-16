@@ -46,11 +46,6 @@ function compactTrack(track) {
     play_count: Number(track.play_count) || 0,
     liked: !!(track.user_liked ?? track.liked),
     hasArtwork: !!track.artwork_path,
-    source_ref: track.source_ref || null,
-    source_url: track.source_url || null,
-    // Preserve the stream reference needed by Electron to play online items,
-    // without exposing absolute local file paths to the phone.
-    isStreamed: String(track.file_path || '').startsWith('ghost://'),
   }
 }
 
@@ -234,7 +229,7 @@ router.get('/library/liked', (req, res) => {
   const uid = String(getRemoteState().userId || 'guest').slice(0, 200)
   const { limit, offset } = pagination(req)
   const q = queryText(req.query.q)
-  const where = ['ul.user_id = ?', "t.file_path NOT LIKE 'ghost://%'"]
+  const where = ['ul.user_id = ?']
   const params = [uid]
   if (q) {
     const like = safeLike(q)
