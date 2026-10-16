@@ -206,8 +206,12 @@ export async function playbackAvailability(match, provider, client = api, timeou
   if (typeof client.onlinePrepare !== 'function') return null
   const controller = new AbortController()
   let prepared
-  try { prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.') }
-  finally { controller.abort() }
+  try {
+    prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.')
+  } catch (error) {
+    onError(error?.message || error)
+    return 'unavailable'
+  } finally { controller.abort() }
   if (prepared?.preview) return 'preview'
   if (prepared?.error) onError(prepared.error)
   return prepared?.ok && !prepared.error ? null : 'unavailable'
