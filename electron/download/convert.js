@@ -23,16 +23,28 @@ function metadata() {
 }
 
 /** Codecs Chromium can't play, by music-metadata's codec name. */
-const UNPLAYABLE = /^(?:ALAC|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
-const LOSSLESS = /^(?:ALAC|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
+const UNPLAYABLE = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
+const LOSSLESS = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
+
+// music-metadata versions and container parsers don't always spell the ALAC
+// codec identically: some report `ALAC`, others `Apple Lossless`. Both mean
+// Chromium needs the same lossless-to-FLAC fallback. Keep classification in
+// one place so those aliases can't be marked playable by accident.
+function classifyCodec(codecValue, formatLossless = false, containerValue = '') {
+  const codec = String(codecValue || '').trim() || String(containerValue || '').trim()
+  return {
+    codec,
+    lossless: !!formatLossless || LOSSLESS.test(codec),
+    unplayable: UNPLAYABLE.test(codec),
+  }
+}
 
 async function probe(filePath) {
   const lib = metadata()
   if (!lib) return null
   try {
     const meta = await lib.parseFile(filePath, { duration: false, skipCovers: true })
-    const codec = String(meta?.format?.codec || '')
-    return { codec, lossless: !!meta?.format?.lossless || LOSSLESS.test(codec), unplayable: UNPLAYABLE.test(codec) }
+    return classifyCodec(meta?.format?.codec, meta?.format?.lossless, meta?.format?.container)
   } catch { return null }
 }
 
@@ -161,4 +173,4 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   return job
 }
 
-module.exports = { probe, makePlayable, playableCopy, convertArgs }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs }
