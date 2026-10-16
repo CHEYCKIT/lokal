@@ -59,7 +59,8 @@ function compactTracks(rows) {
 }
 
 function userTrackQuery(uid = 'guest') {
-  return `EXISTS (SELECT 1 FROM user_likes ul WHERE ul.user_id = ${JSON.stringify(String(uid))} AND ul.track_id = t.id)`
+  const quotedUid = `'${String(uid).replace(/'/g, "''")}'`
+  return `EXISTS (SELECT 1 FROM user_likes ul WHERE ul.user_id = ${quotedUid} AND ul.track_id = t.id)`
 }
 
 router.get('/state', (req, res) => res.json(getRemoteState()))
@@ -83,7 +84,7 @@ router.get('/library/tracks', (req, res) => {
   const { limit, offset } = pagination(req)
   const uid = String(req.query.userId || 'guest').slice(0, 200)
   const where = ["t.file_path NOT LIKE 'ghost://%'"]
-  const params = [uid]
+  const params = []
   if (q) {
     const like = safeLike(q)
     where.push("(t.title LIKE ? ESCAPE '\\\\' OR t.artist LIKE ? ESCAPE '\\\\' OR t.album LIKE ? ESCAPE '\\\\' OR t.album_artist LIKE ? ESCAPE '\\\\')")
@@ -95,32 +96,7 @@ router.get('/library/tracks', (req, res) => {
     FROM tracks t WHERE ${clause}
     ORDER BY t.title COLLATE NOCASE, t.artist COLLATE NOCASE LIMIT ? OFFSET ?
   `).all(...params, limit, offset)
-  const total = db.prepare(`SELECT COUNT(*) AS total FROM tracks t WHERE ${clause}`).get(...params.slice(1))?.total || 0
-  return res.json({ items: compactTracks(rows), total, limit, offset, hasMore: offset + rows.length < total })
-})
-
-router.get('/library/liked', (req, res) => {
-  const db = getDB()
-  const uid = String(req.query.userId || 'guest').slice(0, 200)
-  const { limit, offset } = pagination(req)
-  const q = queryText(req.query.q)
-  const where = ['ul.user_id = ?', "t.file_path NOT LIKE 'ghost://%'"]
-  const params = [uid]
-  if (q) {
-    const like = safeLike(q)
-    where.push("(t.title LIKE ? ESCAPE '\\\\' OR t.artist LIKE ? ESCAPE '\\\\' OR t.album LIKE ? ESCAPE '\\\\')")
-    params.push(like, like, like)
-  }
-  const clause = where.join(' AND ')
-  const rows = db.prepare(`
-    SELECT t.*, 1 AS user_liked FROM user_likes ul
-    JOIN tracks t ON t.id = ul.track_id
-    WHERE ${clause} ORDER BY ul.liked_at DESC LIMIT ? OFFSET ?
-  `).all(...params, limit, offset)
-  const total = db.prepare(`
-    SELECT COUNT(*) AS total FROM user_likes ul
-    JOIN tracks t ON t.id = ul.track_id WHERE ${clause}
-  `).get(...params)?.total || 0
+  const total = db.prepare(`SELECT COUNT(*) AS total FROM tracks t WHERE ${clause}`).get(...params)?.total || 0
   return res.json({ items: compactTracks(rows), total, limit, offset, hasMore: offset + rows.length < total })
 })
 
