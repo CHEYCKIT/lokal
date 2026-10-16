@@ -455,7 +455,7 @@ async function scanFolder(folderPath) {
         const hasCurrentFolderArtwork = folderArtwork && existingArtwork === path.resolve(folderArtwork)
         const noArtworkToUpdate = !existingArtwork && !folderArtwork
         if (hasCachedArtwork || hasCurrentFolderArtwork || noArtworkToUpdate) {
-          scanStatus.done++; emitProgress() continue
+          scanStatus.done++; emitProgress(); continue
         }
       }
       const meta = await mm.parseFile(filePath, { duration: true, skipCovers: false })
@@ -465,12 +465,12 @@ async function scanFolder(folderPath) {
       const title = rawTitle || extractTitleFromFilename(filePath)
       const artist = rawArtist || extractArtistFromFolder(filePath)
       const duration = meta.format.duration || 0
-      if (!title && !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive title or artist`); scanStatus.skipped++; scanStatus.done++; emitProgress() continue }
+      if (!title && !artist) { console.log(`[scanFolder] Skipped: ${filePath} - Could not derive title or artist`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       if (!rawTitle && title) console.log(`[scanFolder] Fallback title from filename: ${filePath} -> "${title}"`)
       if (!rawArtist && artist) console.log(`[scanFolder] Fallback artist from folder: ${filePath} -> "${artist}"`)
       const minDuration = getMinDuration()
-      if (duration < minDuration) { console.log(`[scanFolder] Skipped: ${filePath} - Too short (${duration}s)`); scanStatus.skipped++; scanStatus.done++; emitProgress() continue }
-      if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emitProgress() continue }
+      if (duration < minDuration) { console.log(`[scanFolder] Skipped: ${filePath} - Too short (${duration}s)`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
+      if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       const artwork = await extractArtwork(meta, trackId, folderArtwork)
       const replaygain = c.replaygain_track_gain || null
       batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta) })
