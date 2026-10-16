@@ -254,19 +254,12 @@ function addonVerificationError(provider, value, candidate) {
 
 export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
   const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
-  let verificationRequested = false
-  const requestVerification = error => {
-    if (verificationRequested) return
-    verificationRequested = true
-    const retry = () => resolveRecommendationTracks(candidates, client, options)
-    if (typeof onAddonVerificationRequired === 'function') onAddonVerificationRequired(error, retry)
-    else dispatchAddonVerificationRequired(error, retry)
-  }
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const start = afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
   const sources = ordered.slice(start).filter(source => source.id !== afterProvider && !skipProviders.includes(source.id))
-  return (await mapLimited(uniqueSongs(candidates), async candidate => {
+  try {
+    return (await mapLimited(uniqueSongs(candidates), async candidate => {
     if (!isCurrent()) return null
     if (reusePlayable && playableRecommendation(candidate)) return candidate
     const videoId = recommendationVideoId(candidate)
@@ -365,13 +358,27 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
         scrobbledAt: candidate.scrobbledAt, scrobbleCount: candidate.scrobbleCount,
       } : null
     } catch (error) {
-      if (isAddonVerificationRequiredError(error)) {
-        requestVerification(error)
-        throw error
-      }
+      if (isAddonVerificationRequiredError(error)) throw error
       return null
     }
-  })).filter(Boolean)
+    })).filter(Boolean)
+  } catch (error) {
+    if (!isAddonVerificationRequiredError(error)) throw error
+    const retry = () => resolveRecommendationTracks(candidates, client, options)
+    if (typeof onAddonVerificationRequired === 'function') {
+      onAddonVerificationRequired(error, retry)
+      throw error
+    }
+    // Direct callers (mix generation, downloads, playlist resolution) await the
+    // same operation while the popup is open. Its retry resolves this promise,
+    // so the outer caller continues instead of receiving a rejected promise.
+    return await new Promise((resolve, reject) => {
+      const retryAndResolve = async () => {
+        try { resolve(await retry()) } catch (retryError) { reject(retryError) }
+      }
+      if (!dispatchAddonVerificationRequired(error, retryAndResolve)) reject(error)
+    })
+  }
 }
 
 // Build until the requested count, trying additional provider pages and
