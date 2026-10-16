@@ -623,6 +623,8 @@ function parseMusicPlaylistMetadata(root, playlistId = '') {
     const header = node.musicDetailHeaderRenderer
       || node.musicEditablePlaylistDetailHeaderRenderer
       || node.musicImmersiveHeaderRenderer
+      || node.musicResponsiveHeaderRenderer
+      || node.musicVisualHeaderRenderer
     if (!header) return
 
     const title = textOf(header.title || header.header?.title)
@@ -630,12 +632,12 @@ function parseMusicPlaylistMetadata(root, playlistId = '') {
     const thumbnail = thumbnailsOf(header.thumbnail || header.thumbnailRenderer || header.image)
     if (!result.thumbnail && thumbnail) result.thumbnail = thumbnail
 
-    const runs = [
-      ...(header.subtitle?.runs || []),
-      ...(header.secondLine?.runs || []),
-      ...(header.strapline?.runs || []),
-      ...(header.description?.runs || []),
+    const authorFields = [
+      header.subtitle, header.secondLine, header.strapline,
+      header.straplineTextOne, header.straplineTextTwo, header.straplineTextThree,
+      header.secondSubtitle, header.ownerText,
     ]
+    const runs = authorFields.flatMap(field => field?.runs || [])
     const ownerRun = runs.find(run => {
       const browse = run.navigationEndpoint?.browseEndpoint
       const pageType = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || ''
@@ -643,15 +645,20 @@ function parseMusicPlaylistMetadata(root, playlistId = '') {
     })
     if (!result.author && ownerRun?.text) result.author = String(ownerRun.text).trim() || null
 
-    const lines = [header.subtitle, header.secondLine, header.strapline, header.description].map(textOf).filter(Boolean)
+    const authorLines = authorFields.map(textOf).filter(Boolean)
     if (!result.author) {
-      const byline = lines.find(line => /\bby\\s+/i.test(line) || /[•·]/.test(line))
-      const candidate = byline?.split(/[•·]/)[0].replace(/^by\\s+/i, '').trim()
-      if (candidate && !/^(?:public|private|unlisted|playlist|mix|radio)\b/i.test(candidate) && !/^\d/.test(candidate)) result.author = candidate
+      for (const line of authorLines) {
+        const candidate = line.split(/[•·|]/)[0].replace(/^by\s+/i, '').trim()
+        if (candidate && !/^(?:public|private|unlisted|playlist|mix|radio)\b/i.test(candidate) && !/^\d/.test(candidate)) {
+          result.author = candidate
+          break
+        }
+      }
     }
+    const countLines = [...authorLines, textOf(header.description)].filter(Boolean)
     if (!result.count) {
-      for (const line of lines) {
-        const match = line.match(/([\d,.]+)\\s*([KMB]?)\\s*(?:songs?|tracks?|videos?)\b/i)
+      for (const line of countLines) {
+        const match = line.match(/([\d,.]+)\s*([KMB]?)\s*(?:songs?|tracks?|videos?)\b/i)
         if (!match) continue
         const amount = Number(match[1].replace(/,/g, ''))
         if (Number.isFinite(amount)) result.count = Math.round(amount * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2].toUpperCase()] || 1))
