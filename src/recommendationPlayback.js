@@ -16,7 +16,7 @@ function requestAddonVerification(error, retry) {
 
 /** Start one song promptly, then fill the same ordered queue in bounded batches. */
 export async function playRecommendationPool(candidates, options = {}) {
-  const { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, store = usePlayerStore } = options
+  const { selected, context, firstPlayable = false, isCurrent = () => true, onProviderFailure, onProgress, onStarted, onReserved, startFromProvider, store = usePlayerStore } = options
   let { resolve } = options
   const pool = uniqueSongs(candidates)
   let index = selected ? pool.findIndex(track => songKey(track) === songKey(selected)) : 0
@@ -42,15 +42,13 @@ export async function playRecommendationPool(candidates, options = {}) {
       index = (start + attempt) % pool.length
       let rows
       let verificationPrompted = false
-      const retryCandidate = provider => {
-        const retryResolve = provider
-          ? (rows, resolveOptions) => resolve(rows, { ...resolveOptions, startFromProvider: provider })
-          : resolve
-        return playRecommendationPool(candidates, { ...options, resolve: retryResolve, selected: pool[index] })
-      }
+      const retryCandidate = provider => playRecommendationPool(candidates, {
+        ...options, resolve, selected: pool[index], startFromProvider: provider,
+      })
       try {
         rows = await resolve([pool[index]], {
           isCurrent: current, prepareStreams: true, onProviderFailure, onProgress,
+          ...(startFromProvider ? { startFromProvider } : {}),
           onAddonVerificationRequired: error => {
             verificationPrompted = true
             if (current()) requestAddonVerification(error, () => retryCandidate(error.provider))
