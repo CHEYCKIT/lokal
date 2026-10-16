@@ -42,7 +42,7 @@ export async function playRecommendationPool(candidates, options = {}) {
       index = (start + attempt) % pool.length
       let rows
       let verificationPrompted = false
-      const retryCandidate = () => playRecommendationPool(candidates, { ...options, selected: pool[index] })
+      const retryCandidate = () => playRecommendationPool(candidates, { ...options, resolve, selected: pool[index] })
       try {
         rows = await resolve([pool[index]], {
           isCurrent: current, prepareStreams: true, onProviderFailure, onProgress,
