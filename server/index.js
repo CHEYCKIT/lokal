@@ -16,7 +16,6 @@ app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
 const distPath = path.join(__dirname, '../dist')
-if (fs.existsSync(distPath)) app.use(express.static(distPath))
 const packagedElectron = !!(process.versions.electron && require('electron').app?.isPackaged)
 const publicPath = packagedElectron ? path.join(process.resourcesPath, 'public') : path.join(__dirname, '../public')
 function isPhoneRemoteEnabled() {
@@ -31,6 +30,7 @@ app.use((req, res, next) => {
   }
   next()
 })
+if (fs.existsSync(distPath)) app.use(express.static(distPath))
 if (fs.existsSync(publicPath)) app.use(express.static(publicPath))
 
 // API_KEY in .env: every /api route below needs it (see apiKey.js).
