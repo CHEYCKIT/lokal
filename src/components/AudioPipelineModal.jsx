@@ -5,7 +5,6 @@ import Modal from './Modal'
 import { codecName } from '../quality'
 import {
   downloadSourceLabel,
-  isStreamed,
   loadAddonNames,
   streamLabel,
   streamRef,
@@ -36,7 +35,9 @@ function sourceFormat(track) {
 
   const path = String(track?.file_path || '')
   if (!path || path.startsWith('ghost://')) return ''
-  const ext = path.replace(/[?#].*$/, '').split(/[\\/]/).pop()?.split('.').pop()?.toUpperCase()
+  const filename = path.replace(/[?#].*$/, '').split(/[\\/]/).pop() || ''
+  const ext = filename.match(/\.([^.]+)$/)?.[1]?.toUpperCase()
+  if (!ext) return ''
   const formats = {
     AAC: 'AAC', AIF: 'AIFF', AIFF: 'AIFF', ALAC: 'ALAC', FLAC: 'FLAC',
     M4A: 'AAC', MP3: 'MP3', OGG: 'Vorbis', OPUS: 'Opus', WAV: 'WAV',
@@ -85,7 +86,7 @@ export default function AudioPipelineModal({ open, onClose, track }) {
       setStatus(window.__lokalOutputStatus || { mode: 'auto' })
       setPreferences(readOutputPreferences())
       const [native, browser, names] = await Promise.all([
-        Promise.resolve(window.electron?.nativeAudio?.devices?.()).catch(() => null),
+        Promise.resolve().then(() => window.electron?.nativeAudio?.devices?.()).catch(() => null),
         listAudioOutputs().catch(() => []),
         loadAddonNames().catch(() => ({})),
       ])
