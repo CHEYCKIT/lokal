@@ -327,3 +327,12 @@ html[data-theme="light"] .on-media .text-white\/10 { color: rgb(255 255 255 / 0.
   .marquee-text::-webkit-scrollbar { display: none; }
   .marquee-text[data-scrolling] > .marquee-text-inner { animation: none; }
 }
+
+
+/* Performance Mode: avoid compositor-heavy glass across every surface. */
+html.performance-mode *,
+html.performance-mode *::before,
+html.performance-mode *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
