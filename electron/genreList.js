@@ -7,7 +7,7 @@ const OTHER = 'Other'
 const OTHER_KEY = 'other'
 const MIN_GENRE_TRACKS = 2
 
-const { groups: GROUPS, noise: NOISE_VALUES } = require('../src/genreTaxonomy.json')
+const { groups: GROUPS, noise: NOISE_VALUES } = require('./genreTaxonomy.json')
 const NOISE = new Set(NOISE_VALUES)
 
 function taxonomyKey(value) {
