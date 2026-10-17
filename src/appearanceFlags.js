@@ -61,6 +61,7 @@ const VALUE_KEYS = ['player_bar_gradient_strength', 'player_bar_gradient_speed',
 let values = Object.fromEntries(KEYS.map(key => [key, true]))
 let raw = {}
 let load = null
+let loadGeneration = 0
 const listeners = new Set()
 
 function apply(s) {
@@ -72,11 +73,22 @@ function apply(s) {
 function notify() { listeners.forEach(fn => fn()) }
 
 function refresh() {
-  load = Promise.resolve(api.getSettings?.())
-    .then(s => { if (s && !s.error) apply(s) })
-    .catch(() => {})
-    .then(notify)
-  return load
+  const generation = ++loadGeneration
+  let failed = false
+  const request = Promise.resolve(api.getSettings?.())
+    .then(s => {
+      if (generation !== loadGeneration) return
+      if (s && !s.error) apply(s)
+      else failed = true
+    })
+    .catch(() => { failed = true })
+    .then(() => {
+      if (generation !== loadGeneration) return
+      if (failed) load = null // Let a later-mounted consumer retry instead of caching a rejection forever.
+      notify()
+    })
+  load = request
+  return request
 }
 if (typeof window !== 'undefined') window.addEventListener('lokal:settings-saved', refresh)
 
