@@ -2064,21 +2064,31 @@ async function indexSingleFile(filePath, opts = {}) {
 
 async function applyFileChanges(changes = []) {
   const db = getDB()
-  const root = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-  if (!root || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
-  const rootPath = path.resolve(root)
+  const roots = configuredMusicFolders(db).filter(root => {
+    try { return fs.statSync(root).isDirectory() } catch { return false }
+  })
+  if (!roots.length || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
+
+  const rootFor = filePath => {
+    for (const root of roots) {
+      const relative = path.relative(root, filePath)
+      if (relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) return root
+    }
+    return null
+  }
   const files = new Set()
   const gone = []
   const seen = new Set()
+  const changedRoots = new Set()
 
   for (const change of changes) {
     const rawPath = change?.path
     if (!rawPath) continue
     const filePath = path.resolve(String(rawPath))
-    const relative = path.relative(rootPath, filePath)
-    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
-    if (seen.has(filePath)) continue
+    const owner = rootFor(filePath)
+    if (!owner || seen.has(filePath)) continue
     seen.add(filePath)
+    changedRoots.add(owner)
 
     let stat
     try { stat = fs.statSync(filePath) } catch {
@@ -2099,9 +2109,10 @@ async function applyFileChanges(changes = []) {
     before.set(filePath, db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath) || null)
   }
 
-  // scanFolder stats the full tree but reads tags only for new, changed, or
-  // artwork-stale files; doing it before pruning lets renamed copies be found.
-  await scanFolder(rootPath)
+  // Scan only affected roots before pruning exact missing paths. This picks up
+  // renamed files first, so the pruning code can transfer likes/history to the
+  // replacement row instead of treating a rename as a delete.
+  for (const root of changedRoots) await scanFolder(root, { saveRoot: false, watch: false })
 
   let removed = []
   if (gone.length) {
