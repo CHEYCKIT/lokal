@@ -355,7 +355,7 @@ export default function Library() {
                   : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2">
           {playAllTracks.length > 0 && (libraryMode === 'advanced' ? (
             <>
               <button onClick={() => playQueue(playAllTracks, 0, { type: 'library-folder' })} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play')}</button>
@@ -376,7 +376,7 @@ export default function Library() {
             type="button"
             onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
             aria-pressed={libraryMode === 'advanced'}
-            className={`inline-flex items-center rounded-full border px-4 py-2 text-sm transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
+            className={`ml-auto inline-flex items-center rounded-full border px-4 py-2 text-sm transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
           >
             {libraryMode === 'simple' ? t('Advanced') : t('Simple')}
           </button>
