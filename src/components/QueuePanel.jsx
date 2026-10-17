@@ -251,7 +251,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
                   {!isCurrent && (
                     <button
-                      onClick={(e) => handleRemove(track.id, i, e)
+                      onClick={(e) => handleRemove(track.id, i, e)}
                       title={t("Remove from queue")}
                       className="p-1 rounded hover:bg-red-500/20 text-muted hover:text-red-400 transition-colors"
                     >
