@@ -323,7 +323,7 @@ export default function Library() {
           <Music size={48} className="mx-auto mb-4 opacity-20" />
           <p>{debouncedSimpleSearch
             ? `${t('No tracks match')} “${debouncedSimpleSearch}”.`
-            : problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — pick your music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : t('No songs from this source.')}</p>
+            : problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — pick your music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? t(source === 'all' ? 'No {genre} songs.' : 'No {genre} songs from this source.', { genre }) : t('No songs from this source.')}</p>
           {debouncedSimpleSearch && (
             <button onClick={() => setSimpleSearch('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">{t("Clear search")}</button>
           )}
