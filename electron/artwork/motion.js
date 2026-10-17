@@ -374,16 +374,6 @@ function keyFor({ title, artist, album }) {
   return `${norm(cleanTitle(title))}|${norm(artist)}|${norm(album)}`
 }
 
-// Invalidate old negative results when the Canvas lookup path changes and when
-// the saved Spotify account changes. Persist only a short hash, never the cookie.
-function motionCacheKey(track, sources, settings = {}) {
-  const spotify = sources.includes('spotify')
-  const cookieKey = spotify
-    ? `|s4:${crypto.createHash('sha256').update(String(settings.spotify_sp_dc || '')).digest('hex').slice(0, 16)}`
-    : ''
-  return keyFor(track) + `|${sources.join(',')}|v4` + cookieKey
-}
-
 function enabledSources(settings) {
   let list = null
   try { list = JSON.parse(settings.motion_cover_sources || 'null') } catch {}
@@ -414,9 +404,11 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   const sources = enabledSources(settings)
   if (!sources.length) return null
   ensureTable(db)
-  // v4 invalidates earlier misses because Spotify GraphQL failures could be
-  // mistaken for a successful "no Canvas" response and then cached for 3 days.
-  const key = motionCacheKey(track, sources, settings)
+  // "|s3": Spotify lookups from before the canvas-query switch are ignored.
+  // "|v2": lookups from before the provider-call fix above are ignored (they
+  // were cached as "no moving cover" for days).
+  // "|v3": lookups made before "Unknown Album" was ignored are looked up again.
+  const key = keyFor(track) + `|${sources.join(',')}|v3` + (sources.includes('spotify') ? '|s3' : '')
   const row = db.prepare('SELECT data, fetched_at FROM motion_covers WHERE key = ?').get(key)
   let found
   if (row) {
@@ -438,4 +430,4 @@ async function motionCoverFor(db, track, { settings = {}, cacheDir, ffmpeg } = {
   return file ? { file, source: found.source, tall: !!found.tall } : null
 }
 
-module.exports = { motionCoverFor, motionCacheKey, enabledSources, fromApple, fromTidal, fromCommunity, fromM8tec, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }
+module.exports = { motionCoverFor, fromApple, fromTidal, fromCommunity, fromM8tec, artistsMatch, cleanTitle, norm, chooseVariant, SOURCES, DEFAULT_SOURCES }
