@@ -519,12 +519,19 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
 router.get('/folder-artwork', (req, res) => {
   try {
     const db = getDB()
-    const configuredRoot = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-    if (!configuredRoot || typeof req.query.path !== 'string' || !req.query.path) return res.status(404).end()
-    const root = fs.realpathSync(configuredRoot)
+    const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+    let configuredRoots = []
+    try { configuredRoots = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+    if (!configuredRoots.length) { const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value; if (legacy) configuredRoots = [legacy] }
+    if (!configuredRoots.length || typeof req.query.path !== 'string' || !req.query.path) return res.status(404).end()
     const requested = fs.realpathSync(path.resolve(req.query.path))
-    const relative = path.relative(root, requested)
-    const withinRoot = relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+    const withinRoot = configuredRoots.some(configuredRoot => {
+      try {
+        const root = fs.realpathSync(configuredRoot)
+        const relative = path.relative(root, requested)
+        return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+      } catch { return false }
+    })
     const allowed = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
     if (!withinRoot || !fs.statSync(requested).isFile() || !allowed.has(path.extname(requested).toLowerCase())) return res.status(404).end()
     res.set('Cache-Control', 'private, max-age=3600')
@@ -534,7 +541,7 @@ router.get('/folder-artwork', (req, res) => {
 
 router.get('/library-folders', (req, res) => {
   try {
-    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : ''))
+    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : '', typeof req.query.root === 'string' ? req.query.root : ''))
   } catch (error) {
     console.error('[library-folders] Could not read library folder:', error.message)
     res.status(500).json({ available: false, error: 'Could not read the selected music folder', folders: [], tracks: [] })
