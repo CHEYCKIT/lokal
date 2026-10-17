@@ -130,7 +130,8 @@ try {
   assert.equal(secondRootView.available, true, 'a configured secondary music root can be browsed')
   assert.equal(secondRootView.rootPath, secondRoot)
   assert.equal(secondRootView.rootName, path.basename(secondRoot))
-  assert.deepEqual(secondRootView.tracks.map(track => track.id), ['second-root-track'])
+  const secondAlbumView = getLibraryFolders(db, 'Second Artist/Second Album', '', secondRoot)
+  assert.deepEqual(secondAlbumView.tracks.map(track => track.id), ['second-root-track'])
   const invalidRootView = getLibraryFolders(db, '', '', path.join(os.tmpdir(), 'not-configured'))
   assert.equal(invalidRootView.available, false, 'root overrides cannot browse folders outside the configured root list')
 
