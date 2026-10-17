@@ -67,7 +67,7 @@ test('Genres summary merges aliases and folds singleton categories into Other', 
   assert.equal(byName.Rock.count, 3)
   assert.equal(byName.Electronic.count, 3)
   assert.equal(byName.Other.count, 3, 'two unrecognized tags plus one singleton classical tag')
-  assert.equal(byName.Barque, undefined)
+  assert.equal(byName.Classical, undefined, 'singleton classical category is folded into Other')
   assert.equal(summary.none, 2)
   assert.equal(summary.genres.some(item => item.count === 1), false, 'no one-track genre cards remain')
   assert.equal(db.hasGenre('VGM', '', 'Video Game Music'), 1)
