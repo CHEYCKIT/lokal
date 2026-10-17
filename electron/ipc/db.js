@@ -235,6 +235,7 @@ function initDB() {
     `ALTER TABLE tracks ADD COLUMN clip_url TEXT`,
     `ALTER TABLE tracks ADD COLUMN clip_start REAL`,
     `ALTER TABLE tracks ADD COLUMN clip_end REAL`,
+    `ALTER TABLE tracks ADD COLUMN clip_zoom REAL`,
     // Downloaded songs: where from ('yt', 'sc', an addon 'a-<key>', 'soulseek',
     // 'web') and which online song ("yt:<id>", "a-<key>:<id>"...), so the same
     // song isn't downloaded twice and versions from different places can be
@@ -286,6 +287,7 @@ function initDB() {
     `ALTER TABLE tracks ADD COLUMN clip_url TEXT`,
     `ALTER TABLE tracks ADD COLUMN clip_start REAL`,
     `ALTER TABLE tracks ADD COLUMN clip_end REAL`,
+    `ALTER TABLE tracks ADD COLUMN clip_zoom REAL`,
     `ALTER TABLE playlist_tracks ADD COLUMN added_by TEXT DEFAULT 'guest'`,
     `ALTER TABLE playlist_tracks ADD COLUMN added_at INTEGER`,
     
