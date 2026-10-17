@@ -1204,6 +1204,12 @@ function registerScannerHandlers(ipcMain) {
     }
     if (opts.artistName) { where.push('artist = ?'); params.push(opts.artistName) }
     if (opts.artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(opts.artistId) }
+    const search = String(opts.search || '').trim()
+    if (search) {
+      const { wordsMatch, TRACK_COLUMNS } = require('../librarySearch')
+      const match = wordsMatch(search, TRACK_COLUMNS)
+      if (match) { where.push(match.sql); params.push(...match.params) }
+    }
     const source = sourceFilter(opts.source)
     if (source) { where.push(source.sql); params.push(...source.params) }
     const genre = genreFilter(opts.genre)
