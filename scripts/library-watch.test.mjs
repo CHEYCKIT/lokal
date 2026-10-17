@@ -7,6 +7,7 @@ import { test } from 'node:test'
 const require = createRequire(import.meta.url)
 const { initDB, getDB } = require('../electron/ipc/db')
 const { scanFolder, applyFileChanges } = require('../electron/ipc/scanner')
+const { stopWatching } = require('../electron/libraryWatcher')
 const { noteFileWritten } = require('../electron/fileStamp')
 const mm = require('../electron/musicMetadata')
 
@@ -28,6 +29,9 @@ function fixture(t) {
     return { common: { title: own.title || path.basename(file, '.mp3'), artist: 'Band', track: { no: own.track ?? null } }, format: { duration: 200, bitrate: 320000 } }
   })
   t.after(() => {
+    // scanFolder starts the real fs.watch watcher; close it before removing
+    // the temp music folder so Node can exit cleanly on Windows as well.
+    stopWatching()
     db.close()
     if (previous === undefined) delete process.env.LOKAL_DATA_DIR
     else process.env.LOKAL_DATA_DIR = previous
