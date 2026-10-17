@@ -11,7 +11,7 @@ function artworkFingerprint(filePath) {
   try {
     const fullPath = path.resolve(filePath)
     const stat = fs.statSync(fullPath)
-    if (!stat.isFile() || stat.size > 8 * 1024 * 1024) return null
+    if (!stat.isFile() || stat.size > 512 * 1024) return null
     const cached = artworkFingerprintCache.get(fullPath)
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.fingerprint
     const fingerprint = crypto.createHash('sha256').update(fs.readFileSync(fullPath)).digest('hex')
@@ -54,7 +54,7 @@ function findFolderArtwork(folderPath) {
     let totalImageBytes = 0
     for (const name of images) {
       try { totalImageBytes += fs.statSync(path.join(folderPath, name)).size } catch { return null }
-      if (totalImageBytes > 16 * 1024 * 1024) return null
+      if (totalImageBytes > 4 * 1024 * 1024) return null
     }
     const fingerprints = images.map(name => artworkFingerprint(path.join(folderPath, name)))
     if (fingerprints.some(fingerprint => !fingerprint)) return null
