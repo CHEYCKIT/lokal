@@ -240,8 +240,11 @@ export default function LibraryFolderBrowser({
   }, [data?.deepTracks, visibleTracks, term, matchesFilters, sortTracks])
 
   const allVisibleTracks = useMemo(() => {
+    if (!term && !data?.tracks?.length && data?.allTracks?.length) {
+      return sortTracks(data.allTracks.filter(matchesFilters))
+    }
     return [...visibleTracks, ...matchingDeepTracks]
-  }, [visibleTracks, matchingDeepTracks])
+  }, [data?.tracks?.length, data?.allTracks, term, visibleTracks, matchingDeepTracks, sortTracks, matchesFilters])
 
   // Sync with parent for Play All and status header
   useEffect(() => {
@@ -251,7 +254,7 @@ export default function LibraryFolderBrowser({
     }
     onDataChange?.({
       ...data,
-      filteredTracks: term || filterActive ? allVisibleTracks : null,
+      filteredTracks: term || filterActive || !!data.tracks?.length || !!data.allTracks?.length ? allVisibleTracks : null,
       matchCount: term || filterActive ? (visibleFolders.length + allVisibleTracks.length) : null,
     })
   }, [data, term, filterActive, allVisibleTracks, visibleFolders.length, onDataChange])

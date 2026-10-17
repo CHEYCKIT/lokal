@@ -309,7 +309,7 @@ export default function Library() {
         </div>
       </div>
 
-            <ScanBanner />
+      <ScanBanner />
 
       <div className="flex flex-col items-start gap-3">
         <p className="min-w-0 truncate text-xs text-muted font-display">
@@ -325,7 +325,7 @@ export default function Library() {
                   : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
-        {(libraryMode === 'advanced' ? playAllTracks.length > 0 : playAllTracks.length > 0) && (
+        {playAllTracks.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {libraryMode === 'advanced' ? (
               <>
@@ -344,7 +344,7 @@ export default function Library() {
         )}
       </div>
 
-            {libraryMode === 'advanced' && (
+      {libraryMode === 'advanced' && (
         <>
           {musicRoots.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2">
