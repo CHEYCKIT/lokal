@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, ChevronRight, Folder, Music, Search } from 'lucide-react'
 import { api } from '../api'
@@ -179,7 +179,7 @@ export default function LibraryFolderBrowser({
   }, [folderPath, rootPath, refreshKey, searchQuery, onFolderChange])
 
   const term = (searchQuery || '').trim().toLowerCase()
-  const matchesFilters = track => {
+  const matchesFilters = useCallback(track => {
     const selectedSource = filters.source || 'all'
     const downloadSource = String(track.download_source || '')
     if (selectedSource === 'errors' && !errorTrackIds?.has(String(track.id))) return false
@@ -199,8 +199,8 @@ export default function LibraryFolderBrowser({
     }
     if (filters.format && `${track.bit_depth}-${track.sample_rate}` !== filters.format) return false
     return true
-  }
-  const sortTracks = list => {
+  }, [filters, errorTrackIds])
+  const sortTracks = useCallback(list => {
     const sorted = [...list]
     const cmpText = key => (a, b) => String(a[key] || '').localeCompare(String(b[key] || ''), undefined, { numeric: true, sensitivity: 'base' })
     if (filters.sort === 'title ASC') sorted.sort(cmpText('title'))
@@ -209,7 +209,7 @@ export default function LibraryFolderBrowser({
     else if (filters.sort === 'duration DESC') sorted.sort((a, b) => Number(b.duration || 0) - Number(a.duration || 0))
     else sorted.sort((a, b) => Number(b.added_at || b.created_at || 0) - Number(a.added_at || a.created_at || 0))
     return sorted
-  }
+  }, [filters.sort])
   const filterActive = (filters.source && filters.source !== 'all') || !!filters.genre || !!filters.quality || !!filters.format
   const visibleFolders = useMemo(() => {
     if (!data?.folders?.length) return []
@@ -226,7 +226,7 @@ export default function LibraryFolderBrowser({
         (track.album || '').toLowerCase().includes(term)) &&
       matchesFilters(track)
     )))
-  }, [data?.tracks, term, filters, errorTrackIds])
+  }, [data?.tracks, term, matchesFilters, sortTracks])
 
   const matchingDeepTracks = useMemo(() => {
     if (!term || !data?.deepTracks?.length) return []
@@ -237,7 +237,7 @@ export default function LibraryFolderBrowser({
        (track.artist || '').toLowerCase().includes(term) ||
        (track.album || '').toLowerCase().includes(term))
     ))
-  }, [data?.deepTracks, visibleTracks, term, filters, errorTrackIds])
+  }, [data?.deepTracks, visibleTracks, term, matchesFilters, sortTracks])
 
   const allVisibleTracks = useMemo(() => {
     return [...visibleTracks, ...matchingDeepTracks]

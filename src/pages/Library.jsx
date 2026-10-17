@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { LayoutGrid, List, Music, Search, X, Clock, Shuffle, Play, FolderPlus, Loader2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -119,6 +119,7 @@ export default function Library() {
   const playAllTracks = libraryMode === 'simple'
     ? (simpleSearch.trim() === debouncedSimpleSearch ? tracks : [])
     : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
+  const folderFilters = useMemo(() => ({ source, genre, format: quality ? '' : format, quality, sort }), [source, genre, format, quality, sort])
 
   useEffect(() => {
     if (typeof location.state?.openFolder !== 'string') return
@@ -370,7 +371,7 @@ export default function Library() {
             searchQuery={folderSearch}
             onSearchQueryChange={setFolderSearch}
             rootPath={activeMusicRoot}
-            filters={{ source, genre, format: quality ? '' : format, quality, sort }}
+            filters={folderFilters}
           />
         </>
       )}
