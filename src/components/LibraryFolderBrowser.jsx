@@ -37,6 +37,7 @@ export default function LibraryFolderBrowser({
   artSrc,
   searchQuery = '',
   onSearchQueryChange,
+  rootPath = '',
 }) {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
@@ -130,7 +131,7 @@ export default function LibraryFolderBrowser({
     onDataChange?.(null)
 
     const timer = setTimeout(() => {
-      Promise.resolve(api.getLibraryFolders(folderPath, searchQuery.trim())).then(result => {
+      Promise.resolve(api.getLibraryFolders(folderPath, searchQuery.trim(), rootPath)).then(result => {
         if (!active || requestId !== requestRef.current) return
         if (result?.notFound && folderPath) {
           setData(null)
@@ -160,7 +161,7 @@ export default function LibraryFolderBrowser({
       clearTimeout(timer)
       requestRef.current++
     }
-  }, [folderPath, refreshKey, searchQuery, onFolderChange])
+  }, [folderPath, rootPath, refreshKey, searchQuery, onFolderChange])
 
   const term = (searchQuery || '').trim().toLowerCase()
   const visibleFolders = useMemo(() => {
