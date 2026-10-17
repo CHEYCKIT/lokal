@@ -409,7 +409,8 @@ function musicVideoFile(video, track = {}) {
 
 function pruneDuplicateSavedMusicVideos() {
   const db = getDB()
-  const rows = db.prepare('SELECT track_id, added_at, video_json FROM saved_music_videos ORDER BY added_at ASC, track_id ASC').all()
+  // Keep a live library row in preference to an orphan left by a deleted track.
+  const rows = db.prepare("SELECT s.track_id, s.added_at, s.video_json FROM saved_music_videos s LEFT JOIN tracks t ON t.id = s.track_id ORDER BY CASE WHEN t.id IS NULL THEN 1 ELSE 0 END, s.added_at ASC, s.track_id ASC").all()
   const seen = new Set()
   const remove = []
   for (const row of rows) {
