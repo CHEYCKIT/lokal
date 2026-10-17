@@ -111,7 +111,7 @@ export default function Library() {
       await api.saveSettings({ music_folders: JSON.stringify(savedRoots), music_folder: savedRoots[0] || '' })
       window.dispatchEvent(new Event('lokal:refresh'))
     } catch (error) {
-      setMusicRootError(error?.message || t('Could not add this music folder'))
+      setMusicRootError(error?.message === 'Choose at least one existing music folder' ? t(error.message) : t('Could not add this music folder'))
     } finally {
       setAddingMusicFolder(false)
     }
