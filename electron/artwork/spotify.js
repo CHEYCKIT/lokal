@@ -183,7 +183,7 @@ async function mintTokensInner(cookie, state) {
       dbg.on('message', async (_e, method, params) => {
         // Keep client identity as a fallback in case the page doesn't finish
         // its own client-token request before the token-wait deadline.
-        if (method === 'Network.requestWillBeSent' && /clienttoken\\.spotify\\.com\\/v1\\/clienttoken/.test(params.request?.url || '') && params.request?.postData) {
+        if (method === 'Network.requestWillBeSent' && /clienttoken\.spotify\.com\/v1\/clienttoken/.test(params.request?.url || '') && params.request?.postData) {
           try {
             const data = JSON.parse(params.request.postData)?.client_data
             if (data) {
