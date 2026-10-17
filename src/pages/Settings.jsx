@@ -2,13 +2,11 @@ import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
 import SplitWordsSettings from '../components/SplitWordsSettings'
 import { collectLocalPrefs, restoreLocalPrefs } from '../localPrefsBackup'
 import AppTabsSettings from '../components/AppTabsSettings'
-import RadioCatalogSetup from '../components/RadioCatalogSetup'
-import { RADIO_BUFFER_MAX, radioBufferSeconds } from '../store/radio'
 import { APP_LANGUAGES, useTranslation } from '../i18n'
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef, createContext, useContext } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks, Search, Radio } from 'lucide-react'
+import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks, Search } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
 import { peekCache, writeCache, usePageReady } from '../pageCache'
@@ -44,7 +42,6 @@ const SETTINGS_CATEGORIES = [
   { key: 'integrations', label: 'Integrations', icon: Zap },
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'library', label: 'Library', icon: Music2 },
-  { key: 'radio', label: 'Online Radio', icon: Radio },
   { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
@@ -1443,19 +1440,6 @@ activeCategory === 'data' ? usersTried
             <span className="text-xs text-muted">{t("sec")}</span>
           </div>
         </Row>
-        <Row label={t("Music Folder")}>
-          <div className="flex items-center gap-2">
-            <input value={settings.music_folder || ''} onChange={e => set('music_folder', e.target.value)}
-              placeholder={t("Choose your music folder")}
-              className="w-52 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            {api.isElectron && (
-              <button onClick={async () => { const f = await api.openFolder(); if (f) set('music_folder', f) }}
-                className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
-                <FolderOpen size={14} />
-              </button>
-            )}
-          </div>
-        </Row>
       </Section>
       )}
 
@@ -1811,24 +1795,6 @@ activeCategory === 'data' ? usersTried
         </Section>
       )}
 
-      {inCategory('radio') && (
-      <Section title={t("Station catalogue")}>
-        <p className="text-xs text-muted">{t("Load the JSON file that lists your Internet radio stations. The station list is kept locally and can be refreshed from here.")}</p>
-        <RadioCatalogSetup showExample={false} />
-      </Section>
-      )}
-
-      {inCategory('radio') && (
-      <Section title={t("Playback")}>
-        <Row label={t("Radio buffer")} desc={t("Buffer a few seconds before playing to reduce dropouts. Larger values add more delay before the stream starts.")}>
-          <select aria-label={t("Radio buffer")} value={radioBufferSeconds(settings.radio_buffer_sec)} onChange={e => set('radio_buffer_sec', String(Math.max(0, Math.min(RADIO_BUFFER_MAX, Number(e.target.value) || 0))))}
-            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            {[0,1,2,3,4,5,6,8,10].map(seconds => <option key={seconds} value={seconds}>{t('{n} seconds', { n: seconds })}</option>)}
-          </select>
-        </Row>
-      </Section>
-      )}
-
       {inCategory('addons') && (
       <Section title={t("Addons")}>
         <AddonsSettings />
@@ -2102,17 +2068,6 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('appearance') && (
       <Section title={t("Now Playing")}>
-        <Row label={t("Side panel visualization")} desc={t("Choose the audio-reactive graphic shown above lyrics in the side panel.")}>
-          <select aria-label={t("Side panel visualization")} value={settings.side_panel_visual || 'power-circle'} onChange={e => set('side_panel_visual', e.target.value)}
-            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
-            <option value="power-circle">{t("Power circle")}</option>
-            <option value="anomaly">{t("Anomaly sphere")}</option>
-            <option value="spectrum">{t("Spectrum bars")}</option>
-            <option value="waves">{t("Waves")}</option>
-            <option value="lightning">{t("Lightning")}</option>
-            <option value="off">{t("Off")}</option>
-          </select>
-        </Row>
         <Row label={t("Colour Background")} desc={t("Colour the side panel and full screen player from the album cover. Off: a dark background.")}>
           <button
             onClick={() => set('artwork_backdrop', settings.artwork_backdrop === '0' ? '1' : '0')}
