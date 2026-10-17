@@ -9,7 +9,7 @@ const { findYtDlp, findFfmpeg, findFfprobe } = require('./tools')
 const { getDownloadManager } = require('../download/manager')
 const { runJsonSearch, mapSearchResult, mapArtistResult } = require('../download/search')
 const slskd = require('../download/slskd')
-const { playableCopy } = require('../download/convert')
+const { playableCopy, probe, playbackCopyFailure } = require('../download/convert')
 
 const searchProcesses = new Set()
 
@@ -197,7 +197,17 @@ function registerDownloaderHandlers(ipcMain) {
     let known = null
     try { known = getDB().prepare('SELECT file_path FROM tracks WHERE file_path = ? OR REPLACE(file_path, char(92), \'/\') = ?').get(filePath, filePath.replace(/\\/g, '/')) } catch {}
     if (!known || norm(known.file_path) !== norm(filePath)) return null
-    return playableCopy(known.file_path, { ffmpeg: findFfmpeg(), cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+    const ffmpeg = findFfmpeg()
+    const info = await probe(known.file_path)
+    const failure = playbackCopyFailure(info, ffmpeg)
+    if (failure) return { path: null, error: failure }
+
+    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+    // FFmpeg was available and the conversion was attempted. Only now should
+    // the UI fall back to its generic "Can't play" message.
+    return copy
+      ? { path: copy, error: null }
+      : { path: null, error: 'conversion-failed' }
   })
 
   // Soulseek, through the slskd Lokal runs (slskdManaged.js).

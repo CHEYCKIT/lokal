@@ -141,6 +141,9 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   // [start, end) slice of mergedTracks currently mounted (large lists only).
   const [windowRange, setWindowRange] = useState({ start: 0, end: LARGE_LIST_STEP })
   const [ghostTrack, setGhostTrack] = useState(null)
+  const [ffmpegPromptTrack, setFfmpegPromptTrack] = useState(null)
+  const [ffmpegPromptBusy, setFfmpegPromptBusy] = useState(false)
+  const [ffmpegPromptError, setFfmpegPromptError] = useState('')
   const { confirmDuration, durationChoice, isCurrent: ghostResolverOpen } = useGhostDurationConfirmation(!!ghostTrack)
   const { source: ghostSource, sourceChoice } = useGhostDownloadSources(!!ghostTrack)
   const ghostSearchSequence = useRef(0)
@@ -443,6 +446,32 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       toast.close(started === false && isCurrent() ? detail || 'No playable matches were found in this list.' : '')
     }).catch(() => { toast.close(isCurrent() ? 'Could not resolve the selected tracks.' : '') })
       .finally(() => { if (isCurrent()) resolvedToastRef.current = null })
+  }
+
+  const downloadFfmpegAndRetry = async () => {
+    const selected = ffmpegPromptTrack
+    if (!selected || ffmpegPromptBusy) return
+    setFfmpegPromptBusy(true)
+    setFfmpegPromptError('')
+    try {
+      const result = await api.downloadFfmpeg()
+      if (result?.error || !result?.success) {
+        setFfmpegPromptError(result?.error || t('FFmpeg could not be installed.'))
+        return
+      }
+      const retryTrack = { ...selected, playback_error: null }
+      const retryQueue = mergedTracks.map(item => item.id === retryTrack.id ? retryTrack : item)
+      setTrackOverrides(prev => ({ ...prev, [retryTrack.id]: { ...prev[retryTrack.id], playback_error: null } }))
+      setFfmpegPromptTrack(null)
+      showToast(t('FFmpeg installed. Retrying playback…'))
+      window.dispatchEvent(new CustomEvent('lokal:retry-track-playback', {
+        detail: { track: retryTrack, queue: retryQueue, context },
+      }))
+    } catch (error) {
+      setFfmpegPromptError(error?.message || t('FFmpeg could not be installed.'))
+    } finally {
+      setFfmpegPromptBusy(false)
+    }
   }
 
   const handlePlay = (track, e) => {
@@ -892,7 +921,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                   {!!track.explicit && <span className="px-1.5 py-0.5 rounded border border-border bg-card text-[10px] leading-[14px] font-display uppercase tracking-wide text-muted flex-shrink-0">E</span>}
                   {isMissing && <span className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">{t("Missing file")}</span>}
                   {!isMissing && isGhost && <span className="px-1.5 py-0.5 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-yellow-200 flex-shrink-0">{t("Ghost")}</span>}
-                  {!isMissing && track.playback_error && <span title={track.playback_error} className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">{t('Can\'t play')}</span>}
+                  {!isMissing && track.playback_error && (track.playback_error === 'FFMPEG_MISSING'
+                    ? <button type="button" onClick={e => { e.stopPropagation(); setFfmpegPromptTrack(track); setFfmpegPromptError('') }}
+                        title={t('Click to download FFmpeg and retry playback.')}
+                        className="px-1.5 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-amber-200 flex-shrink-0 hover:bg-amber-400/20">
+                        {t('FFmpeg not installed')}
+                      </button>
+                    : <span title={track.playback_error} className="px-1.5 py-0.5 rounded-full bg-red-400/10 border border-red-400/20 text-[10px] leading-[14px] uppercase tracking-wide text-red-200 flex-shrink-0">{t("Can't play")}</span>)}
                 </div>
                 <div className="flex min-w-0 items-center text-xs text-muted leading-4 h-4">
                   {columns.artist && <span className="min-w-0 flex-1 truncate" title={track.artist}>{track.artist}</span>}
@@ -1065,6 +1100,44 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
       <DeleteTracksDialog request={deleteRequest} onClose={() => setDeleteRequest(null)} onDone={() => selection.clear()} />
       <ContextMenu menu={menu} id={menuId} />
+
+      <Modal
+        open={!!ffmpegPromptTrack}
+        onClose={() => {
+          if (ffmpegPromptBusy) return
+          setFfmpegPromptTrack(null)
+          setFfmpegPromptError('')
+        }}
+        title={t('FFmpeg not installed')}
+        width="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                <AlertCircle size={18} className="text-amber-200" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white">{t('FFmpeg is required to convert this audio format for playback.')}</p>
+                <p className="text-xs text-muted mt-2">{ffmpegPromptTrack?.title}{ffmpegPromptTrack?.artist ? <span> · {ffmpegPromptTrack.artist}</span> : null}</p>
+                <p className="text-xs text-muted mt-2">{t('Download FFmpeg now? Lokal will install it in its app-managed tools folder.')}</p>
+              </div>
+            </div>
+          </div>
+          {ffmpegPromptError && <p role="alert" className="text-xs text-red-300">{ffmpegPromptError}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" disabled={ffmpegPromptBusy}
+              onClick={() => { setFfmpegPromptTrack(null); setFfmpegPromptError('') }}
+              className="px-3 py-2 rounded-lg bg-card border border-border text-sm text-muted hover:text-white disabled:opacity-40">
+              {t('Not now')}
+            </button>
+            <button type="button" disabled={ffmpegPromptBusy} onClick={downloadFfmpegAndRetry}
+              className="px-3 py-2 rounded-lg bg-accent/15 border border-accent/25 text-accent text-sm hover:bg-accent/25 disabled:opacity-40 flex items-center gap-2">
+              <Download size={14} /> {ffmpegPromptBusy ? t('Downloading FFmpeg…') : t('Download FFmpeg')}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={!!ghostTrack}

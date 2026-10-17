@@ -9,7 +9,7 @@
 //  - library files: when the player can't open one, a playable copy is made
 //    once in a cache and played instead (the original is left untouched).
 
-const { spawn } = require('child_process')
+const { spawn, execFileSync } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
@@ -37,6 +37,55 @@ function classifyCodec(codecValue, formatLossless = false, containerValue = '') 
     lossless: !!formatLossless || LOSSLESS.test(codec),
     unplayable: UNPLAYABLE.test(codec),
   }
+}
+
+/**
+ * Unsupported library codecs are converted with FFmpeg on every platform.
+ * macOS ALAC uses the same FFmpeg path, so its missing-dependency message and
+ * recovery flow are consistent with other unsupported codecs.
+ */
+function playbackCopyPlan(info) {
+  return { converter: 'ffmpeg', extension: info?.lossless ? '.flac' : '.m4a' }
+}
+
+// FFmpeg must be available before conversion can be attempted. Once present,
+// a conversion failure is reported as "Can't play" by the caller.
+function playbackCopyFailure(info, ffmpeg) {
+  if (!info?.unplayable) return null
+  return !ffmpeg ? 'ffmpeg-missing' : null
+}
+
+function discoverFfmpeg() {
+  // In Electron this finds app-managed, bundled and user-configured binaries.
+  try {
+    const executable = require('../ipc/tools').findFfmpeg()
+    if (executable) return executable
+  } catch {}
+
+  // The standalone web server may run outside Electron, where app.getPath()
+  // is unavailable. Still honor a system ffmpeg on PATH in that environment.
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 3000 })
+    return 'ffmpeg'
+  } catch {
+    return null
+  }
+}
+
+let defaultFfmpegResolved = false
+let defaultFfmpegPath = null
+
+function resolveFfmpeg(ffmpeg, discover = discoverFfmpeg) {
+  if (ffmpeg) return ffmpeg
+  // Injectable lookup makes the availability decision deterministic in tests.
+  if (discover !== discoverFfmpeg) {
+    try { return discover() || null } catch { return null }
+  }
+  if (!defaultFfmpegResolved) {
+    try { defaultFfmpegPath = discoverFfmpeg() || null } catch { defaultFfmpegPath = null }
+    defaultFfmpegResolved = true
+  }
+  return defaultFfmpegPath
 }
 
 async function probe(filePath) {
@@ -150,8 +199,10 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
     probed.set(memo, info)
   }
   if (!info?.unplayable) return null
+  ffmpeg = resolveFfmpeg(ffmpeg)
+  const plan = playbackCopyPlan(info)
   fs.mkdirSync(cacheDir, { recursive: true })
-  const dest = path.join(cacheDir, cacheKey(filePath, stat) + (info.lossless ? '.flac' : '.m4a'))
+  const dest = path.join(cacheDir, cacheKey(filePath, stat) + plan.extension)
   if (fs.existsSync(dest)) {
     try { const now = new Date(); fs.utimesSync(dest, now, now) } catch {}
     return dest
@@ -168,9 +219,10 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
       try { fs.unlinkSync(temp) } catch {}
       return null
     }
-  })().finally(() => inFlight.delete(dest))
+  })().finally(() => {
+    if (inFlight.get(dest) === job) inFlight.delete(dest)
+  })
   inFlight.set(dest, job)
   return job
 }
-
-module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg }

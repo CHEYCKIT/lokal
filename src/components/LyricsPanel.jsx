@@ -1,7 +1,7 @@
 import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2 } from 'lucide-react'
+import { Mic2, Search, Languages, RotateCcw, Check, ChevronDown, Loader2, Save } from 'lucide-react'
 import LyricsSearchDrawer from './LyricsSearchDrawer'
 import LyricBreakDots from './LyricBreakDots'
 import { api } from '../api'
@@ -757,15 +757,23 @@ export default function LyricsPanel({
           style={fullscreen ? undefined : { background: 'linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)' }}
         >
           <div className={`flex flex-shrink-0 items-center gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
-            <Pill active={wantTranslation} onClick={() => toggleSub('translation')} title={`Show translation (${translateTarget})`}>
-              {translationBusy ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
-              Translate
-            </Pill>
+            <button type="button" onClick={() => toggleSub('translation')} title={t(`Show translation (${translateTarget})`)} aria-label={t('Translate lyrics')}
+              aria-pressed={wantTranslation}
+              className={`rounded-full p-2 transition-colors ${wantTranslation ? 'bg-accent/25 text-accent' : 'bg-white/[0.08] text-white/70 hover:bg-white/[0.14] hover:text-white'} ${TOOLBAR_FADE}`}>
+              {translationBusy ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
+            </button>
             {canRomanize && (
               <Pill active={subline === 'romanization'} onClick={() => toggleSub('romanization')} title={t("Show pronunciation in Latin letters")}>
                 {romanizationBusy ? <Loader2 size={11} className="animate-spin" /> : <span className="font-semibold leading-none">Aa</span>}
                 Romanize
               </Pill>
+            )}
+            {sources.length > 0 && result?.source && api.isElectron && track?.file_path && !String(track.file_path).startsWith('ghost://') && (
+              <button type="button" onClick={embedCurrentLyrics} disabled={sourceBusy || loading}
+                title={t('Insert these lyrics into the audio file')} aria-label={t('Insert lyrics into track')}
+                className={`rounded-full p-2 text-white/65 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] disabled:opacity-40 ${TOOLBAR_FADE}`}>
+                <Save size={13} />
+              </button>
             )}
           </div>
           <div className="flex-1" />
@@ -782,13 +790,7 @@ export default function LyricsPanel({
                   onSearch={requestSearch}
                   hidden={toolbarHidden}
                 />
-                {api.isElectron && track?.file_path && !String(track.file_path).startsWith('ghost://') && (
-                  <button type="button" onClick={embedCurrentLyrics} disabled={sourceBusy || loading}
-                    title={t('Insert these lyrics into the audio file')}
-                    className={`rounded-full px-2.5 py-1 text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] disabled:opacity-40 ${TOOLBAR_FADE}`}>
-                    {t('Insert into track')}
-                  </button>
-                )}
+
               </>
             )}
           </div>
