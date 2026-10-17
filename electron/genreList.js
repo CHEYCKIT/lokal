@@ -133,7 +133,7 @@ const GROUPS = [
 
 const NOISE = new Set([
   'none', 'null', 'undefined', 'unknown', 'unk', 'na', 'notapplicable',
-  'notset', 'unspecified', 'nogenre', 'genre', 'genreid', 'unknown genre',
+  'notset', 'unspecified', 'nogenre', 'genre', 'genreid', 'unknowngenre',
   'karaoke', 'karaokeplain', 'instrumental', 'instrumentals', 'speech',
   'spokenword', 'audiobook', 'audiobooks', 'podcast', 'podcasts', 'soundeffect',
   'soundeffects', 'music', 'audio', 'nonmusic', 'notmusic', 'unclassified',
