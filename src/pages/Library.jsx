@@ -33,11 +33,17 @@ export default function Library() {
   const [libraryMode, setLibraryMode] = useCachedState('library:mode', 'simple')
   const [folderPath, setFolderPath] = useCachedState('library:folderPath', '')
   const [folderSearch, setFolderSearch] = useState('')
+  const [simpleSearch, setSimpleSearch] = useState('')
+  const [debouncedSimpleSearch, setDebouncedSimpleSearch] = useState('')
   const [folderData, setFolderData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
   // The empty state waits for the first answer instead of showing meanwhile.
   const [loaded, setLoaded] = useState(wasCached)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSimpleSearch(simpleSearch.trim()), 180)
+    return () => clearTimeout(timer)
+  }, [simpleSearch])
   usePageReady(loaded)
   const playQueue = usePlayerStore(s => s.playQueue)
   const navigate = useNavigate()
@@ -47,7 +53,7 @@ export default function Library() {
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
   const playAllTracks = libraryMode === 'simple'
-    ? tracks
+    ? (simpleSearch.trim() === debouncedSimpleSearch ? tracks : [])
     : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
 
   const load = async (append = false) => {
@@ -59,7 +65,7 @@ export default function Library() {
     loadingRef.current = true
     setLoading(true)
     try {
-      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}), ...(quality ? { quality } : {}), ...(format ? { format } : {}), ...(problemsOnly ? { problems: true } : {}) })
+      const result = await api.getTracks({ sort, limit: LIBRARY_PAGE_SIZE, offset: nextOffset, ...(source !== 'all' ? { source } : {}), ...(genre ? { genre } : {}), ...(quality ? { quality } : {}), ...(format ? { format } : {}), ...(problemsOnly ? { problems: true } : {}), ...(debouncedSimpleSearch ? { search: debouncedSimpleSearch } : {}) })
       if (requestId !== requestIdRef.current) return
       // A failed request keeps the list already shown (and cached).
       if (!Array.isArray(result)) return
@@ -85,13 +91,13 @@ export default function Library() {
     offsetRef.current = 0
     setHasMore(false)
     load(false)
-  }, [sort, source, genre, quality, format, problemsOnly])
+  }, [sort, source, genre, quality, format, problemsOnly, debouncedSimpleSearch])
 
   useEffect(() => {
     const handleRefresh = () => { load(false); loadGenres() }
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [sort, source, genre, quality, problemsOnly])
+  }, [sort, source, genre, quality, problemsOnly, debouncedSimpleSearch])
 
   // The genres to pick from: every one in the library, on opening and after a refresh.
   const loadGenres = () => Promise.resolve(api.getAllGenres())
@@ -100,7 +106,7 @@ export default function Library() {
   useEffect(() => { loadGenres() }, [])
 
   useEffect(() => {
-    if (!hasMore || loading) return
+    if (!hasMore || loading || simpleSearch.trim() !== debouncedSimpleSearch) return
     const node = loadMoreRef.current
     if (!node) return
     const observer = new IntersectionObserver((entries) => {
@@ -110,7 +116,7 @@ export default function Library() {
     }, { rootMargin: '300px 0px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, sort, source, genre, quality, format, problemsOnly, tracks.length])
+  }, [hasMore, loading, sort, source, genre, quality, format, problemsOnly, tracks.length, simpleSearch, debouncedSimpleSearch])
 
   const artSrc = (t) => t.artwork_path
     ? (api.isElectron ? api.fileURL(t.artwork_path) : api.artworkURL(t.id))
@@ -184,30 +190,6 @@ export default function Library() {
           </select>
             </>
           )}
-          {libraryMode === 'advanced' && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
-              <Search size={14} className="flex-shrink-0 text-muted" />
-              <input
-                type="text"
-                value={folderSearch}
-                onChange={e => setFolderSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') setFolderSearch('') }}
-                placeholder={t("Search folders & tracks…")}
-                aria-label={t("Search folders and tracks")}
-                className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
-              />
-              {folderSearch && (
-                <button
-                  type="button"
-                  onClick={() => setFolderSearch('')}
-                  aria-label={t("Clear search")}
-                  className="flex-shrink-0 text-muted transition-colors hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-          )}
           <div className="flex bg-elevated border border-border rounded-lg overflow-hidden">
             <button onClick={() => setView('list')} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
@@ -220,14 +202,40 @@ export default function Library() {
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 truncate text-xs text-muted font-display">
           {libraryMode === 'simple'
-            ? tracks.length + ' ' + t('loaded tracks')
+            ? (simpleSearch.trim() !== debouncedSimpleSearch || (loading && debouncedSimpleSearch)
+                ? t('Searching…')
+                : debouncedSimpleSearch
+                  ? tracks.length + ' ' + (tracks.length === 1 ? t('match') : t('matches'))
+                  : tracks.length + ' ' + t('loaded tracks'))
             : folderData?.available
               ? (folderSearch.trim() && folderData.matchCount != null
                   ? `${folderData.matchCount} ${folderData.matchCount === 1 ? t('match') : t('matches')} · ${folderData.relativePath || folderData.rootName}`
                   : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
-        <div className="flex flex-shrink-0 items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
+            <Search size={14} className="flex-shrink-0 text-muted" />
+            <input
+              type="text"
+              value={libraryMode === 'simple' ? simpleSearch : folderSearch}
+              onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
+              placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
+              aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
+              className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
+            />
+            {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
+              <button
+                type="button"
+                onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
+                aria-label={t("Clear search")}
+                className="flex-shrink-0 text-muted transition-colors hover:text-white"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
           {playAllTracks.length > 0 && (
             <button onClick={() => playQueue(playAllTracks, 0, libraryMode === 'advanced' ? { type: 'library-folder' } : null)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
           )}
@@ -288,16 +296,21 @@ export default function Library() {
         </div>
       )}
 
-      {libraryMode === 'simple' && (hasMore || loading) && (
+      {libraryMode === 'simple' && !simpleSearch.trim() && !debouncedSimpleSearch && (hasMore || loading) && (
         <div ref={loadMoreRef} className="flex justify-center pt-2 min-h-10">
           {loading && tracks.length > 0 && <p className="text-xs text-muted">{t("Loading more tracks...")}</p>}
         </div>
       )}
 
-      {libraryMode === 'simple' && loaded && !loading && !tracks.length && (
+      {libraryMode === 'simple' && loaded && !loading && simpleSearch.trim() === debouncedSimpleSearch && !tracks.length && (
         <div className="text-center py-24 text-muted">
           <Music size={48} className="mx-auto mb-4 opacity-20" />
-          <p>{problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — pick your music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : t('No songs from this source.')}</p>
+          <p>{debouncedSimpleSearch
+            ? `${t('No tracks match')} “${debouncedSimpleSearch}”.`
+            : problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — pick your music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? `No ${genre} songs${source === 'all' ? '' : ' from this source'}.` : t('No songs from this source.')}</p>
+          {debouncedSimpleSearch && (
+            <button onClick={() => setSimpleSearch('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">{t("Clear search")}</button>
+          )}
           {genre && (
             <button onClick={() => setGenre('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">{t("Show all genres")}</button>
           )}
