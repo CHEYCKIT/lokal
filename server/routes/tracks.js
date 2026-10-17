@@ -274,24 +274,14 @@ function getKeepCommaArtists() {
 }
 
 function splitArtists(raw) {
-  if (!raw) return []
-  const lower = raw.toLowerCase().trim()
-  const keepCommaArtists = getKeepCommaArtists()
-  for (const known of keepCommaArtists) {
-    if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
-  }
-  const commaLowerPattern = /,\s+[a-z]/
-  if (commaLowerPattern.test(raw)) return [raw.trim()]
-  let artists = [raw]
-  artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
-  artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => {
-    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
-    // A split that leaves one-letter pieces isn't a collaboration but one
-    // stylised name ("h x m x d" was becoming the artists h, m and d).
-    return parts.some(part => part.trim().length < 2) ? [a] : parts
-  })
-  return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+  const splitter = require('../../electron/artistSplit')
+  const db = getDB()
+  splitter.applySplitWordsFrom(db)
+  let userDefined = []
+  try {
+    userDefined = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]')
+  } catch {}
+  return splitter.splitArtists(raw, splitter.keepCommaSet(userDefined))
 }
 
 function applyBatchField(currentValue, operation) {
@@ -740,6 +730,10 @@ router.put('/:id', (req, res) => {
     record_label,
     explicit,
     instrumental,
+    clip_url,
+    clip_start,
+    clip_end,
+    clip_zoom,
     danceability,
     energy,
     track_key,
@@ -765,6 +759,10 @@ router.put('/:id', (req, res) => {
   if (record_label !== undefined) { updates.push('record_label = ?'); params.push(record_label) }
   if (explicit !== undefined) { updates.push('explicit = ?'); params.push(explicit ? 1 : 0) }
   if (instrumental !== undefined) { updates.push('instrumental = ?'); params.push(instrumental === null ? null : instrumental ? 1 : 0) }
+  if (clip_url !== undefined) { updates.push('clip_url = ?'); params.push(clip_url || null) }
+  if (clip_start !== undefined) { updates.push('clip_start = ?'); params.push(clip_start === '' ? null : clip_start) }
+  if (clip_end !== undefined) { updates.push('clip_end = ?'); params.push(clip_end === '' ? null : clip_end) }
+  if (clip_zoom !== undefined) { updates.push('clip_zoom = ?'); params.push(clip_zoom === '' ? null : clip_zoom) }
   if (danceability !== undefined) { updates.push('danceability = ?'); params.push(danceability) }
   if (energy !== undefined) { updates.push('energy = ?'); params.push(energy) }
   if (track_key !== undefined) { updates.push('track_key = ?'); params.push(track_key) }

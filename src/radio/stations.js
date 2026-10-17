@@ -39,7 +39,7 @@ export function parseStreamTitle(text, stationTitle = '') {
   return { artist: stationTitle, title: value }
 }
 
-const normPart = value => String(value ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const normPart = value => String(value ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/\s*[([]\s*(?:original|extended|radio|club|vip|album|single|instrumental|acoustic|live|remaster(?:ed)?|clean|explicit|slowed|sped up|speed up|remix|mix|edit|version|\d{4}\s+remaster(?:ed)?)(?:\s+(?:mix|edit|version|remaster(?:ed)?))?\s*[)\]]\s*$/i, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
 /** Same song, ignoring case, accents, punctuation and "(Original Mix)"-style suffixes. */
 export function sameSong(a, b) {

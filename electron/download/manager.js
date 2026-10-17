@@ -1023,7 +1023,23 @@ class DownloadManager {
         [error?.errorType, error?.code, error?.message].some(value => /\bVERIFY_REQUIRED\b|verification required/i.test(String(value || '')))
       if (!needsVerification || !this.deps.verifyAddonAccess) throw error
       onVerificationRequired?.()
-      const verification = await this.deps.verifyAddonAccess(key)
+      const signal = options?.signal
+      if (signal?.aborted) throw signal.reason || new Error('Download cancelled')
+      let onAbort
+      let verification
+      try {
+        const request = Promise.resolve(this.deps.verifyAddonAccess(key))
+        verification = await (signal ? Promise.race([
+          request,
+          new Promise((_, reject) => {
+            onAbort = () => reject(signal.reason || new Error('Download cancelled'))
+            signal.addEventListener('abort', onAbort, { once: true })
+          }),
+        ]) : request)
+      } finally {
+        if (onAbort) signal.removeEventListener('abort', onAbort)
+      }
+      if (signal?.aborted) throw signal.reason || new Error('Download cancelled')
       if (!verification?.authenticated) {
         throw new Error(verification?.error || 'Addon verification was not completed. The download was not retried.')
       }

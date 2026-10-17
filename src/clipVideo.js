@@ -9,7 +9,7 @@
 //   only the end    the 10 seconds before it;
 //   neither         the video's middle third (60-120 s of a 3-minute one).
 
-const LOCAL_PATH = /^(?:[a-z]:[\\/]|\\\\|file:\/\/)/i
+const LOCAL_PATH = /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\|file:\/\/)/i
 const SHORT_LOOP = 10
 
 /** The link or path when it can be a video, else null. */
@@ -28,7 +28,9 @@ export function clipOpenUrl(text) {
   const value = clipVideoLink(text)
   if (!value || /^(?:https?|file):/i.test(value)) return value
   const path = value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')
-  return path.startsWith('//') ? `file:${path}` : `file:///${path}`
+  if (path.startsWith('//')) return `file:${path}`
+  if (path.startsWith('/')) return `file://${path}`
+  return `file:///${path}`
 }
 
 /** A time field as typed: anything but a digit becomes ":" (one at a time). */
@@ -38,7 +40,9 @@ export function clipTimeInput(text) {
 
 /** "75", "1:15", "1:02:03" -> seconds; '' -> null; NaN when it can't be read. */
 export function parseClipTime(text) {
-  const value = clipTimeInput(text).replace(/^:+|:+$/g, '')
+  const raw = String(text || '').trim()
+  if (/(^|:)\s*-\s*\d/.test(raw)) return NaN
+  const value = clipTimeInput(raw).replace(/^:+|:+$/g, '')
   if (!value) return null
   const parts = value.split(':').map(Number)
   if (parts.length > 3 || parts.some(n => !Number.isFinite(n))) return NaN
@@ -101,8 +105,18 @@ export function trackClipLoop(track) {
 export function clipRange(start, end, duration) {
   const length = Number.isFinite(duration) && duration > 0 ? duration : null
   const cap = value => (length ? Math.min(value, length) : value)
-  if (start != null && end != null && end > start) return { start, end: cap(end) }
-  if (start != null) return { start: cap(start), end: cap(start + SHORT_LOOP) }
+  if (start != null && end != null && end > start) {
+    const boundedStart = cap(start)
+    const boundedEnd = cap(end)
+    if (boundedEnd > boundedStart) return { start: boundedStart, end: boundedEnd }
+    if (length) return { start: Math.max(0, length - SHORT_LOOP), end: length }
+    return { start: boundedStart, end: boundedStart + SHORT_LOOP }
+  }
+  if (start != null) {
+    const boundedStart = cap(start)
+    if (length && boundedStart >= length) return { start: Math.max(0, length - SHORT_LOOP), end: length }
+    return { start: boundedStart, end: cap(boundedStart + SHORT_LOOP) }
+  }
   if (end != null) return { start: Math.max(0, cap(end) - SHORT_LOOP), end: cap(end) }
   return length ? { start: length / 3, end: (length * 2) / 3 } : { start: 0, end: Infinity }
 }

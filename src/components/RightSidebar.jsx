@@ -112,6 +112,7 @@ export default function RightSidebar() {
     if (!showMiniPlayer) setReveal(n => n + 1)
   }
   const nav = useNavigate()
+  const fx = useArtworkBackdropEnabled()
   const menu = useContextMenu()
   const [genrePopover, setGenrePopover] = useState(null)
   const likeBusy = useRef(false)
@@ -282,7 +283,6 @@ export default function RightSidebar() {
   })
 
   // Colour background + full-bleed cover (default), or the classic dark panel.
-  const fx = useArtworkBackdropEnabled()
   // A tall (9:16) canvas gets a taller hero area -- about 60% of the panel's
   // height -- instead of being cropped into the square cover.
   const [canvasOn, setCanvasOn] = useState(false)
@@ -640,6 +640,7 @@ export default function RightSidebar() {
       )}
       {genrePopover && currentTrack && (
         <GenrePopover
+          key={currentTrack.id}
           track={currentTrack}
           anchor={genrePopover}
           onClose={() => setGenrePopover(null)}

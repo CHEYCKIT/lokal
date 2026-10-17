@@ -44,6 +44,13 @@ export function restoreLocalPrefs(prefs) {
   if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return 0
   let restored = 0
   try {
+    const backedUpKeys = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && isBackedUp(key)) backedUpKeys.push(key)
+    }
+    const supplied = new Set(Object.keys(prefs).filter(key => isBackedUp(key) && typeof prefs[key] === 'string'))
+    for (const key of backedUpKeys) if (!supplied.has(key)) localStorage.removeItem(key)
     for (const [key, value] of Object.entries(prefs)) {
       if (!isBackedUp(key) || typeof value !== 'string') continue
       localStorage.setItem(key, value)

@@ -9,23 +9,35 @@ import { useTranslation } from '../i18n'
 // and refreshed when Settings changes them.
 let keepCommaCache = null
 let keepCommaRequest = null
+let keepCommaGeneration = 0
 const keepCommaListeners = new Set()
 
 function loadKeepComma() {
+  if (keepCommaCache) return Promise.resolve(keepCommaCache)
   if (keepCommaRequest) return keepCommaRequest
-  keepCommaRequest = Promise.resolve(api.getKeepCommaArtists()).then(result => {
+  const generation = ++keepCommaGeneration
+  const request = Promise.resolve(api.getKeepCommaArtists()).then(result => {
+    if (generation !== keepCommaGeneration) return keepCommaCache || []
     let list = Array.isArray(result) ? result : []
     if (!Array.isArray(result) && result?.value) { try { list = JSON.parse(result.value) } catch {} }
     keepCommaCache = list
     keepCommaListeners.forEach(listener => listener(list))
     return list
-  }).catch(() => [])
-  return keepCommaRequest
+  }).catch(() => {
+    if (generation === keepCommaGeneration) keepCommaRequest = null
+    return keepCommaCache || []
+  }).finally(() => {
+    if (generation === keepCommaGeneration) keepCommaRequest = null
+  })
+  keepCommaRequest = request
+  return request
 }
 
 // The user's separator words (Settings > Separator Words): read once, then
 // every credit on screen is split again with them.
 let splitWordsRequest = null
+let splitWordsCache = null
+let splitWordsGeneration = 0
 function applySplitWords(words) {
   setSplitWords(words)
   // A new list (same names) so each credit reads itself again.
@@ -34,21 +46,40 @@ function applySplitWords(words) {
   keepCommaListeners.forEach(listener => listener(keepCommaCache))
 }
 function loadSplitWords() {
+  if (splitWordsCache !== null) return Promise.resolve(splitWordsCache)
   if (splitWordsRequest) return splitWordsRequest
-  splitWordsRequest = Promise.resolve(api.getArtistSplitWords?.()).then(result => {
-    if (Array.isArray(result?.words) && result.words.length) applySplitWords(result.words)
-  }).catch(() => {})
-  return splitWordsRequest
+  const generation = ++splitWordsGeneration
+  const request = Promise.resolve(api.getArtistSplitWords?.()).then(result => {
+    if (generation !== splitWordsGeneration) return splitWordsCache || []
+    const words = Array.isArray(result?.words) ? result.words : []
+    splitWordsCache = words
+    applySplitWords(words)
+    return words
+  }).catch(() => {
+    if (generation === splitWordsGeneration) splitWordsRequest = null
+    return splitWordsCache || []
+  }).finally(() => {
+    if (generation === splitWordsGeneration) splitWordsRequest = null
+  })
+  splitWordsRequest = request
+  return request
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('lokal:comma-artists-updated', (event) => {
     if (!Array.isArray(event.detail)) return
+    ++keepCommaGeneration
+    keepCommaRequest = null
     keepCommaCache = event.detail
     keepCommaListeners.forEach(listener => listener(event.detail))
   })
   window.addEventListener('lokal:split-words-updated', (event) => {
-    if (Array.isArray(event.detail)) applySplitWords(event.detail)
+    if (Array.isArray(event.detail)) {
+      ++splitWordsGeneration
+      splitWordsRequest = null
+      splitWordsCache = event.detail
+      applySplitWords(event.detail)
+    }
   })
 }
 

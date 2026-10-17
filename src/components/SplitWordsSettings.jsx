@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Plus, Minus, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import Modal from './Modal'
@@ -19,9 +19,12 @@ export default function SplitWordsSettings() {
   const [draft, setDraft] = useState([''])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const loadGeneration = useRef(0)
 
   useEffect(() => {
+    const request = ++loadGeneration.current
     Promise.resolve(api.getArtistSplitWords?.()).then(result => {
+      if (request !== loadGeneration.current) return
       setBuiltIn(Array.isArray(result?.builtIn) ? result.builtIn : [])
       setWords(Array.isArray(result?.words) ? result.words : [])
     }).catch(() => {})
@@ -37,6 +40,7 @@ export default function SplitWordsSettings() {
   const add = () => setDraft(list => [...list, ''])
 
   const save = async () => {
+    ++loadGeneration.current
     setSaving(true)
     setError(null)
     try {

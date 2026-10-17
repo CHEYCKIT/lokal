@@ -84,7 +84,8 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
     playTrack(list.find(item => item.id === station.id), list, { type: RADIO_CONTEXT, name: catalog?.title || t('Online Radio') })
   }
   const copyLink = (station) => {
-    Promise.resolve(navigator.clipboard?.writeText(station.url))
+    if (!navigator.clipboard?.writeText) { showToast(t('Could not copy to the clipboard')); return }
+    Promise.resolve(navigator.clipboard.writeText(station.url))
       .then(() => showToast(t('Copied: {text}', { text: station.url })))
       .catch(() => showToast(t('Could not copy to the clipboard')))
   }
@@ -203,7 +204,7 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
           return (
             <div key={station.id} role="listitem" data-track-row data-station-row tabIndex={0}
               onClick={e => play(station, e)}
-              onKeyDown={e => { if (e.key === 'Enter') play(station, e) }}
+              onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) play(station, e) }}
               onContextMenu={e => openMenu(e, station)}
               style={{ paddingBlock: rowPadding, '--tl-row-scale': columns.rowSize }}
               className={`relative grid grid-cols-[var(--st-columns)] gap-2 pl-1 pr-4 rounded-lg items-center cursor-default group transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${isCurrent ? 'bg-accent/8' : 'hover:bg-elevated'}`}>

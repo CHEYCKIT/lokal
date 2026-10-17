@@ -81,8 +81,64 @@ async function flush() {
     .finally(() => { running = null })
 }
 
-function scan(folder) {
-  require('./ipc/scanner').scanFolder(folder).catch(e => console.warn('[libraryWatcher] Catch-up scan failed:', e.message))
+function selectedRoot(folder) {
+  try {
+    const selected = require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+    return !!selected && path.resolve(selected).toLowerCase() === path.resolve(folder).toLowerCase()
+  } catch { return false }
+}
+
+function audioFiles(root) {
+  const { AUDIO_EXTS } = require('./ipc/scanner')
+  const files = []
+  const walk = dir => {
+    let entries = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.isFile() && AUDIO_EXTS.has(path.extname(entry.name).toLowerCase())) files.push(path.resolve(full))
+    }
+  }
+  walk(root)
+  return files
+}
+
+async function scan(folder) {
+  const target = path.resolve(folder)
+  if (!selectedRoot(target) || !fs.existsSync(target)) return
+  const db = require('./ipc/db').getDB()
+  const scanner = require('./ipc/scanner')
+  const before = db.prepare("SELECT id, file_path, last_modified FROM tracks WHERE file_path NOT LIKE 'ghost://%'").all()
+  await scanner.scanFolder(target)
+  // A queued recovery can outlive the old watch. Never prune or publish its
+  // results if another music folder was selected while the scan was running.
+  if (!selectedRoot(target)) return
+  const files = audioFiles(target)
+  const oldRows = db.prepare("SELECT id, file_path, last_modified FROM tracks WHERE file_path NOT LIKE 'ghost://%'").all()
+  const pruned = require('./libraryPrune').pruneMissingTracks(db, target, files)
+  const after = db.prepare("SELECT id, file_path, last_modified FROM tracks WHERE file_path NOT LIKE 'ghost://%'").all()
+  const afterIds = new Set(after.map(row => row.id))
+  const beforeByPath = new Map(before.map(row => [path.resolve(row.file_path).toLowerCase(), row]))
+  const oldById = new Map(oldRows.map(row => [row.id, row]))
+  const afterByPath = new Map(after.map(row => [path.resolve(row.file_path).toLowerCase(), row]))
+  const added = []
+  const updated = []
+  const removed = before.filter(row => !afterIds.has(row.id)).map(row => row.id)
+  for (const row of after) {
+    const prior = beforeByPath.get(path.resolve(row.file_path).toLowerCase())
+    if (!prior) added.push(row.id)
+    else if (prior.last_modified !== row.last_modified || prior.id !== row.id) updated.push(row.id)
+  }
+  // A move can replace an old row with a fresh ID while pruneMissingTracks
+  // hands the new row its likes, plays and playlist references.
+  if (added.length || updated.length || removed.length || pruned.removed || pruned.moved) {
+    broadcast('library:changed', {
+      added: [...new Set(added)],
+      updated: [...new Set(updated)],
+      removed: [...new Set(removed)],
+    })
+  }
 }
 
 /** Windows dropped events: a scan catches up once things are quiet. */
@@ -91,16 +147,17 @@ function catchUpLater(folder) {
   clearTimeout(timer)
   timer = null
   clearTimeout(catchUp)
-  catchUp = setTimeout(() => { catchUp = null; scan(folder) }, CATCH_UP_MS)
+  const target = path.resolve(folder)
+  catchUp = setTimeout(() => { catchUp = null; if (selectedRoot(target)) scan(target).catch(e => console.warn('[libraryWatcher] Catch-up scan failed:', e.message)) }, CATCH_UP_MS)
 }
 
 /** The watcher stopped: a scan catches up and watches the folder again. */
 function recover(folder) {
+  const next = path.resolve(folder)
   stopWatching()
-  if (recovering) return
   recovering = setTimeout(() => {
     recovering = null
-    scan(folder)
+    if (selectedRoot(next)) scan(next).catch(e => console.warn('[libraryWatcher] Recovery scan failed:', e.message))
   }, RECOVER_MS)
 }
 
@@ -137,6 +194,8 @@ function stopWatching() {
   timer = null
   clearTimeout(catchUp)
   catchUp = null
+  clearTimeout(recovering)
+  recovering = null
   pending.clear()
 }
 

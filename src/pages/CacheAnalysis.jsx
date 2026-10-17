@@ -130,7 +130,7 @@ export default function CacheAnalysis() {
     setCleaned(null)
     setError(null)
     try {
-      if (mode === 'full') await Promise.resolve(api.youtubeDisconnect?.()).catch(() => null)
+      if (mode === 'full' && api.isElectron) await Promise.resolve(api.youtubeDisconnect?.()).catch(() => null)
       const result = await api.cacheAnalysisClean(mode)
       if (result?.ok) setCleaned(result)
       else setError(result?.unsupported ? t('Cache analysis works in the desktop app.') : (result?.error || '?'))

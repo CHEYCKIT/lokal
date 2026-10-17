@@ -62,7 +62,8 @@ async function stationApiSong(stationApi, song, isCurrent) {
 
 async function searchCover(song) {
   if (!song.artist || !song.title || !api.discoveryArtwork) return null
-  const [found] = await api.discoveryArtwork([{ type: 'track', title: song.title, artist: song.artist }]).catch(() => [])
+  const results = await api.discoveryArtwork([{ type: 'track', title: song.title, artist: song.artist }]).catch(() => [])
+  const found = Array.isArray(results) ? results[0] : null
   return found?.image || null
 }
 
@@ -94,7 +95,10 @@ export async function handleStationTitle(trackId, text, audioTime) {
   // The same title again (a reconnect, a repeated block): nothing changed,
   // except that after a reconnect the place in the song isn't known any more.
   if (current.song_key && sameSong(song, current)) {
-    if (joinedMidSong) usePlayerStore.getState().patchStationTrack(trackId, { song_clock_known: false })
+    if (joinedMidSong) {
+      ++sequence // invalidate any older, still-running lookup for this song
+      usePlayerStore.getState().patchStationTrack(trackId, { song_clock_base: null, song_clock_known: false })
+    }
     return
   }
 

@@ -11,6 +11,7 @@ import IcecastMetadataPlayer from 'icecast-metadata-player'
 
 let session = null
 let generation = 0
+let releaseTail = Promise.resolve()
 
 /** The station playing (or set to play), or null. */
 export function radioTrackId() {
@@ -31,20 +32,32 @@ function codecName(info) {
  * Stop the station and give the element back: no source, not looping (the
  * player leaves a looping silent clip on it to keep the play button usable).
  */
-export async function releaseRadio() {
+export async function releaseRadio({ invalidate = true } = {}) {
   const current = session
-  if (!current) return
   session = null
-  generation++
-  try { await current.player.detachAudioElement() } catch {}
-  const el = current.el
-  try {
-    el.loop = false
-    el.pause()
-    el.removeAttribute('src')
-    el.srcObject = null
-    el.load()
-  } catch {}
+  if (invalidate) generation++
+  if (!current) {
+    await releaseTail.catch(() => {})
+    return
+  }
+  const releaseGeneration = generation
+  const detach = async () => {
+    try { await current.player.detachAudioElement() } catch {}
+    // A newer station request owns the shared audio element now. An older
+    // detach must never pause or clear its newly attached stream.
+    if (generation !== releaseGeneration) return
+    const el = current.el
+    try {
+      el.loop = false
+      el.pause()
+      el.removeAttribute('src')
+      el.srcObject = null
+      el.load()
+    } catch {}
+  }
+  const pending = releaseTail.catch(() => {}).then(detach)
+  releaseTail = pending
+  await pending
 }
 
 /**
@@ -55,8 +68,9 @@ export async function releaseRadio() {
  *                onBuffering(bool), onFailed(message), onLog(message, level) }
  */
 export async function startRadio(el, track, { bufferSec = 3, autoplay = true, handlers = {} } = {}) {
-  await releaseRadio()
   const mine = ++generation
+  await releaseRadio({ invalidate: false })
+  if (generation !== mine) return false
   const live = () => generation === mine && session?.trackId === track.id
   const log = (message, level = 'info') => handlers.onLog?.(`[radio] ${track.title}: ${message}`, level)
   el.loop = false

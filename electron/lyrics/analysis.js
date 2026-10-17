@@ -13,7 +13,6 @@ const fs = require('fs')
 const path = require('path')
 const mm = require('../musicMetadata')
 const { lyricsFromMeta, isSyncedText } = require('./fileLyrics')
-const { setFileLyrics } = require('../searchIndex')
 const { isEnhanced, isKaraoke } = require('./lrc')
 
 const INSTRUMENTAL_TRACK_TEXT = 'Instrumental track without lyrics'
@@ -81,7 +80,6 @@ async function runAnalysis(db, { exts, onProgress = () => {}, job = {} } = {}) {
     const { kind, fish } = classify(text, relDir)
     // The song list's Lyrics column gets the same answer while we're here.
     try { saveKind.run(kind === 'synced' || kind === 'syllable' ? 'sync' : require('./fileLyrics').lyricsKind(text), file) } catch {}
-    try { setFileLyrics(db, trackOf.get(file)?.id, text || '') } catch {}
     const folder = folders.get(relDir) || emptyCounts()
     for (const counts of [totals, folder]) {
       counts.total++
