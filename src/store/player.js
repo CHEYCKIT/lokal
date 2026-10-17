@@ -849,41 +849,76 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   reorderQueue: (fromIndex, toIndex) => {
-    const { shuffle, queue, queueIndex } = get()
-    if (shuffle) return
-    
-    const newQueue = [...queue]
-    const [removed] = newQueue.splice(fromIndex, 1)
-    newQueue.splice(toIndex, 0, removed)
-    
-    let newCurrentIndex = queueIndex
-    if (fromIndex === queueIndex) {
-      newCurrentIndex = toIndex
-    } else if (fromIndex < queueIndex && toIndex >= queueIndex) {
-      newCurrentIndex--
-    } else if (fromIndex > queueIndex && toIndex <= queueIndex) {
-      newCurrentIndex++
+    const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex } = get()
+    const list = shuffle && shuffleQueue.length ? shuffleQueue : queue
+    const currentIndex = shuffle && shuffleQueue.length ? shuffleIndex : queueIndex
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length || fromIndex === toIndex) return
+
+    const reordered = [...list]
+    const [removed] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, removed)
+
+    let nextCurrentIndex = currentIndex
+    if (fromIndex === currentIndex) {
+      nextCurrentIndex = toIndex
+    } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
+      nextCurrentIndex--
+    } else if (fromIndex > currentIndex && toIndex <= currentIndex) {
+      nextCurrentIndex++
     }
-    
-    set({ queue: newQueue, queueIndex: newCurrentIndex })
+
+    if (shuffle && shuffleQueue.length) set({ shuffleQueue: reordered, shuffleIndex: nextCurrentIndex })
+    else set({ queue: reordered, queueIndex: nextCurrentIndex })
   },
 
-  removeFromQueue: (trackId) => {
-    const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex, currentTrack } = get()
-    
+  removeFromQueue: (trackId, entryIndex) => {
+    const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex, originalQueue, currentTrack } = get()
+    const indexForEntry = list => Number.isInteger(entryIndex) && list[entryIndex]?.id === trackId
+      ? entryIndex
+      : list.findIndex(track => track.id === trackId)
+
     if (shuffle && shuffleQueue.length > 0) {
-      const idx = shuffleQueue.findIndex(t => t.id === trackId)
-      if (idx === shuffleIndex) return 
-      const newShuffleQueue = shuffleQueue.filter(t => t.id !== trackId)
-      const newShuffleIndex = idx < shuffleIndex ? shuffleIndex - 1 : shuffleIndex
-      set({ shuffleQueue: newShuffleQueue, shuffleIndex: newShuffleIndex })
-    } else {
-      const idx = queue.findIndex(t => t.id === trackId)
-      if (idx === queueIndex) return 
-      const newQueue = queue.filter(t => t.id !== trackId)
-      const newQueueIndex = idx < queueIndex ? queueIndex - 1 : queueIndex
-      set({ queue: newQueue, queueIndex: newQueueIndex })
+      // Queue rows are entries, not unique song IDs. Remove the requested
+      // shuffled occurrence, and keep the playing occurrence even for duplicates.
+      const idx = indexForEntry(shuffleQueue)
+      if (idx < 0 || idx === shuffleIndex) return
+
+      const currentCanonicalIndex = currentTrack?.id === trackId ? queueIndex : -1
+      let queueRemoveIndex = Number.isInteger(idx) && queue[idx]?.id === trackId && idx !== currentCanonicalIndex
+        ? idx
+        : queue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
+      if (queueRemoveIndex < 0) return
+
+      const newShuffleQueue = [...shuffleQueue]
+      newShuffleQueue.splice(idx, 1)
+      const newQueue = [...queue]
+      newQueue.splice(queueRemoveIndex, 1)
+      let newOriginalQueue = originalQueue
+      if (originalQueue.length) {
+        const originalRemoveIndex = originalQueue[queueRemoveIndex]?.id === trackId
+          ? queueRemoveIndex
+          : originalQueue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
+        if (originalRemoveIndex >= 0) {
+          newOriginalQueue = [...originalQueue]
+          newOriginalQueue.splice(originalRemoveIndex, 1)
+        }
+      }
+
+      set({
+        queue: newQueue,
+        queueIndex: queueRemoveIndex < queueIndex ? Math.max(0, queueIndex - 1) : queueIndex,
+        shuffleQueue: newShuffleQueue,
+        shuffleIndex: idx < shuffleIndex ? shuffleIndex - 1 : shuffleIndex,
+        ...(originalQueue.length ? { originalQueue: newOriginalQueue } : {}),
+      })
+      return
     }
+
+    const idx = indexForEntry(queue)
+    if (idx < 0 || idx === queueIndex) return
+    const newQueue = [...queue]
+    newQueue.splice(idx, 1)
+    set({ queue: newQueue, queueIndex: idx < queueIndex ? Math.max(0, queueIndex - 1) : queueIndex })
   },
 
   setProgress: (v) => set({ progress: v }),
