@@ -34,6 +34,7 @@ try {
   fs.mkdirSync(emojiAlbum, { recursive: true })
   fs.writeFileSync(path.join(album, 'a.png'), 'image')
   fs.writeFileSync(path.join(album, 'cover.jpg'), 'cover')
+  fs.writeFileSync(path.join(album, 'Album Art.jpg'), 'named album art')
   fs.writeFileSync(path.join(album, '01-track.flac'), 'audio')
   fs.writeFileSync(path.join(album, '02-percent.flac'), 'audio')
   fs.writeFileSync(path.join(album, '03-underscore.flac'), 'audio')
@@ -44,7 +45,14 @@ try {
 
   assert.equal(findFolderArtwork(album), path.join(album, 'cover.jpg'), 'named cover art takes priority over other images')
   fs.unlinkSync(path.join(album, 'cover.jpg'))
+  assert.equal(findFolderArtwork(album), path.join(album, 'Album Art.jpg'), 'spaced conventional cover names are recognized')
+  fs.unlinkSync(path.join(album, 'Album Art.jpg'))
   assert.equal(findFolderArtwork(album), path.join(album, 'a.png'), 'an image without a conventional name still works as fallback')
+  fs.renameSync(path.join(album, 'a.png'), path.join(album, 'covers.jpg'))
+  fs.writeFileSync(path.join(album, 'poster.png'), 'poster')
+  assert.equal(findFolderArtwork(album), null, 'plural covers is not treated as an explicit cover when images differ')
+  fs.renameSync(path.join(album, 'covers.jpg'), path.join(album, 'a.png'))
+  fs.unlinkSync(path.join(album, 'poster.png'))
 
   const indexedTracks = [
     { id: 'track-1', title: 'Track One', artist: 'Artist', album: 'Album', file_path: path.join(album, '01-track.flac'), artwork_path: trackCoverA },
