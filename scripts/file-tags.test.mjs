@@ -77,7 +77,7 @@ test('Edit Track saves the title, artist and other tags into the file', async (t
     energy: 0.8,
   }
   const edits = fileTagEdits(saved)
-  assert.deepEqual(Object.keys(edits).sort(), ['album', 'album_artist', 'artist', 'comment', 'genres', 'record_label', 'title', 'track_num', 'year'])
+  assert.deepEqual(Object.keys(edits).sort(), ['album', 'album_artist', 'artist', 'comment', 'genre', 'genres', 'record_label', 'title', 'track_num', 'year'])
   writeFileTags(file, edits)
 
   const tags = await scan(file)
