@@ -458,8 +458,8 @@ export default function RightSidebar() {
                     <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
                         <img src={trackArtURL(track)} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                        <MotionCover trackId={track?.id} only="square" off={coverOff} />
-                        <MotionCover trackId={track?.id} only="tall" onActive={top ? setCanvasOn : undefined} off={coverOff} />
+                        {top && <MotionCover trackId={track?.id} only="square" off={coverOff} />}
+                        {top && <MotionCover trackId={track?.id} only="tall" onActive={setCanvasOn} off={coverOff} />}
                       </>
                     )} />
                   ) : (
