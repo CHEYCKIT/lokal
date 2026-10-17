@@ -49,11 +49,15 @@ export default function PlayerBar() {
   const glass = useAppearanceFlag('glass_player_bar')
   const showWaveform = useAppearanceFlag('player_waveform')
   const [playerVisualizer, setPlayerVisualizer] = useState(() => peekSettings()?.player_visualizer || null)
+  const visualizerRequest = useRef(0)
   useEffect(() => {
     const refreshVisualizer = () => {
+      const request = ++visualizerRequest.current
       const cached = peekSettings()
       if (cached) { setPlayerVisualizer(cached.player_visualizer || null); return }
-      api.getSettings().then(value => setPlayerVisualizer(value?.player_visualizer || null)).catch(() => {})
+      api.getSettings().then(value => {
+        if (request === visualizerRequest.current) setPlayerVisualizer(value?.player_visualizer || null)
+      }).catch(() => {})
     }
     refreshVisualizer()
     window.addEventListener('lokal:settings-saved', refreshVisualizer)
@@ -359,7 +363,7 @@ export default function PlayerBar() {
         <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
           {currentTrack && visualizerMode !== 'off' && (
             <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden">
-              {visualizerMode === 'spectrum' ? <Spectrum isPlaying={isPlaying} bars={39} barWidth={2} height={24} strength={0.8} color="accent" opacity={0.8} className="max-w-full" /> :
+              {['spectrum', 'spectrumCenter'].includes(visualizerMode) ? <Spectrum isPlaying={isPlaying} bars={39} barWidth={2} height={24} strength={0.8} color="accent" opacity={0.8} className="max-w-full" /> :
                visualizerMode === 'waves' ? <Waves isPlaying={isPlaying} width={120} height={26} strength={1} colorBack="accent" colorFront="#ffffff" opacity={0.72} className="max-w-full" /> :
                visualizerMode === 'lightning' ? <Lightning isPlaying={isPlaying} strength={0.8} opacity={0.75} className="h-7 w-[120px]" /> :
                <Waveform isPlaying={isPlaying} className="w-full" />}
