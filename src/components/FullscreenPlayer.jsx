@@ -557,6 +557,10 @@ export default function FullscreenPlayer() {
   const chromeFade = `transition-[opacity,color,background-color] duration-300 ${chromeHidden ? 'opacity-0' : 'opacity-100'}`
   const [coverHover, setCoverHover] = useState(false)
   const controlsShown = coverHover && !chromeHidden
+  /**
+   * Tilt the fullscreen cover toward the pointer without adding a hover-light effect.
+   * @param {PointerEvent} event Pointer movement over the cover.
+   */
   const handleCoverPointerMove = (event) => {
     if (reduceMotion || event.pointerType !== 'mouse') return
     const cover = event.currentTarget
@@ -567,6 +571,10 @@ export default function FullscreenPlayer() {
     cover.style.setProperty('--cover-rotate-x', `${(0.5 - y) * 9}deg`)
     cover.style.setProperty('--cover-rotate-y', `${(x - 0.5) * 9}deg`)
   }
+  /**
+   * Restore the fullscreen cover's neutral tilt when the pointer leaves.
+   * @param {MouseEvent} event Pointer-leave event from the cover.
+   */
   const resetCoverPointer = (event) => {
     setCoverHover(false)
     const cover = event.currentTarget
