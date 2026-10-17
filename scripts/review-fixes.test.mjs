@@ -10,6 +10,7 @@ const main = require('../electron/artistSplit.js')
 
 test('clip URL parsing accepts POSIX paths as well as Windows paths', () => {
   assert.equal(clipVideo.clipVideoLink('/tmp/visualization.mp4'), '/tmp/visualization.mp4')
+  assert.equal(clipVideo.clipOpenUrl('/tmp/visualization.mp4'), 'file:///tmp/visualization.mp4')
   assert.equal(clipVideo.clipVideoLink('C:\\Music\\visualization.mp4'), 'C:\\Music\\visualization.mp4')
   assert.equal(clipVideo.clipVideoLink('https://example.com/clip.mp4'), 'https://example.com/clip.mp4')
 })
