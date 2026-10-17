@@ -129,7 +129,7 @@ function getLibraryFolders(db, relativePath = '', search = '', rootOverride = ''
     const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
     if (legacy) configuredRoots = [legacy]
   }
-  const allowedRoots = configuredRoots.map(value => path.resolve(String(value || ''))).filter(Boolean)
+  const allowedRoots = configuredRoots.filter(value => typeof value === 'string' && value.trim()).map(value => path.resolve(value.trim()) )
   const configuredRoot = rootOverride
     ? allowedRoots.find(value => value.toLowerCase() === path.resolve(String(rootOverride)).toLowerCase())
     : allowedRoots[0]
