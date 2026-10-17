@@ -229,8 +229,7 @@ function registerOnlineHandlers(ipcMain) {
       const video = await musicVideoFor(trackId)
       if (!video) throw new Error('No music video found for this song')
       ensureVideoLibrary()
-      if (saved) getDB().prepare('INSERT OR REPLACE INTO saved_music_videos (track_id, added_at, video_json) VALUES (?, ?, ?)').run(trackId, Date.now(), JSON.stringify(video))
-      else getDB().prepare('DELETE FROM saved_music_videos WHERE track_id = ?').run(trackId)
+      saveMusicVideoOncePerVideo(trackId, video, !!saved)
       return { saved: !!saved }
     } catch (e) { return { error: e.message } }
   })
@@ -408,8 +407,48 @@ function musicVideoFile(video, track = {}) {
   return null
 }
 
+function pruneDuplicateSavedMusicVideos() {
+  const db = getDB()
+  const rows = db.prepare('SELECT track_id, added_at, video_json FROM saved_music_videos ORDER BY added_at ASC, track_id ASC').all()
+  const seen = new Set()
+  const remove = []
+  for (const row of rows) {
+    try {
+      const videoId = String(JSON.parse(row.video_json)?.videoId || '')
+      if (!/^[\w-]{11}$/.test(videoId)) continue
+      if (seen.has(videoId)) remove.push(row.track_id)
+      else seen.add(videoId)
+    } catch {}
+  }
+  if (remove.length) {
+    const del = db.prepare('DELETE FROM saved_music_videos WHERE track_id = ?')
+    db.transaction(() => { for (const trackId of remove) del.run(trackId) })()
+  }
+}
+
+function saveMusicVideoOncePerVideo(trackId, video, saved) {
+  const db = getDB()
+  const rows = db.prepare('SELECT track_id, video_json FROM saved_music_videos').all()
+  const write = db.transaction(() => {
+    // A YouTube ID denotes one video, regardless of how many local track
+    // copies led to it. Saving/unsaving the card updates that video once.
+    for (const row of rows) {
+      try {
+        if (JSON.parse(row.video_json)?.videoId === video.videoId) {
+          db.prepare('DELETE FROM saved_music_videos WHERE track_id = ?').run(row.track_id)
+        }
+      } catch {}
+    }
+    if (saved) {
+      db.prepare('INSERT OR REPLACE INTO saved_music_videos (track_id, added_at, video_json) VALUES (?, ?, ?)').run(trackId, Date.now(), JSON.stringify(video))
+    }
+  })
+  write()
+}
+
 function listMusicVideos() {
   ensureVideoLibrary()
+  pruneDuplicateSavedMusicVideos()
   const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
   const saved = new Map(getDB().prepare('SELECT track_id, video_json FROM saved_music_videos').all().map(row => [row.track_id, row.video_json]))
   const known = new Map(require('../online/musicVideo').knownMusicVideos(tracks, { cacheFile: musicVideoMetadataFile(), findFile: musicVideoFile }).map(item => [item.track.id, item]))
@@ -429,13 +468,17 @@ function listMusicVideos() {
       if (/^[\w-]{11}$/.test(String(video?.videoId || ''))) known.set(track.id, { track, video })
     } catch {}
   }
-  return [...known.values()].sort((a, b) => String(a.track.artist || '').localeCompare(String(b.track.artist || '')) || String(a.track.title || '').localeCompare(String(b.track.title || ''))).map(({ track, video }) => {
-    const file = musicVideoFile(video, track)
-    return {
-      track, video: { ...video, file, thumbnail: `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg` },
-      saved: saved.has(track.id), downloaded: !!file,
-    }
-  })
+  const matcher = require('../online/musicVideo')
+  const items = [...known.values()]
+    .sort((a, b) => String(a.track.artist || '').localeCompare(String(b.track.artist || '')) || String(a.track.title || '').localeCompare(String(b.track.title || '')))
+    .map(({ track, video }) => {
+      const file = musicVideoFile(video, track)
+      return {
+        track, video: { ...video, file, thumbnail: `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg` },
+        saved: saved.has(track.id), downloaded: !!file,
+      }
+    })
+  return matcher.dedupeMusicVideoItems(items)
 }
 
 async function prepareMusicVideoFor(trackId, { wait = false, download = false } = {}) {
