@@ -1,10 +1,40 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
+import { readFileSync } from 'node:fs'
+import { fetchAllErrorTrackIds, fetchAllTrackPages, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
+import { sideCardViewAfterTrackChange } from '../src/sideCardView.js'
 
 const require = createRequire(import.meta.url)
 const { classifyCodec, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg } = require('../electron/download/convert.js')
+
+test('Play All fetches every page for the current library filters', async () => {
+  const total = 12003
+  const calls = []
+  const getTracks = async options => {
+    calls.push(options)
+    return Array.from({ length: Math.min(options.limit, total - options.offset) }, (_, i) => ({
+      id: options.offset + i,
+    }))
+  }
+  const tracks = await fetchAllTrackPages(getTracks, { search: 'kroi', genre: 'Rock', sort: 'title ASC' })
+
+  assert.equal(tracks.length, total)
+  assert.deepEqual(calls.map(call => call.offset), [0, 5000, 10000])
+  assert.ok(calls.every(call => call.search === 'kroi' && call.genre === 'Rock' && call.sort === 'title ASC' && call.limit === 5000))
+})
+
+test('only the standalone visualizer carries over to another track', () => {
+  assert.equal(sideCardViewAfterTrackChange('visualization'), 'visualization')
+  assert.equal(sideCardViewAfterTrackChange('lyrics'), 'info')
+  assert.equal(sideCardViewAfterTrackChange('info'), 'info')
+  assert.equal(sideCardViewAfterTrackChange(null), 'info')
+})
+
+test('RightSidebar wires card-view reset to track ID changes', () => {
+  const source = readFileSync(new URL('../src/components/RightSidebar.jsx', import.meta.url), 'utf8')
+  assert.match(source, /useEffect\(\(\) => \{\s*setInfoCardView\(sideCardViewAfterTrackChange\)\s*\}, \[currentTrack\?\.id\]\)/)
+})
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
   const total = 12003
@@ -102,25 +132,3 @@ test('reports missing FFmpeg only when an unsupported codec needs it', () => {
   assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
 })
 
-test('playback copy resolves FFmpeg without changing the macOS ALAC first attempt', () => {
-  const info = { codec: 'ALAC', lossless: true, unplayable: true }
-  const installed = resolveFfmpeg(null, () => '/usr/local/bin/ffmpeg')
-  const missing = resolveFfmpeg(null, () => null)
-  assert.equal(installed, '/usr/local/bin/ffmpeg')
-  assert.deepEqual(playbackCopyPlan(info, installed, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-  assert.equal(missing, null)
-  assert.deepEqual(playbackCopyPlan(info, missing, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-})
-
-test('reports missing FFmpeg only when no available converter can finish the job', () => {
-  const alac = { codec: 'ALAC', lossless: true, unplayable: true }
-  const wma = { codec: 'WMA', lossless: false, unplayable: true }
-  // Give native afconvert a chance before asking for FFmpeg on macOS ALAC.
-  assert.equal(playbackCopyFailure(alac, null, 'darwin'), null)
-  assert.equal(playbackCopyFailure(alac, null, 'darwin', true), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(alac, '/usr/local/bin/ffmpeg', 'darwin', true), null)
-  assert.equal(playbackCopyFailure(alac, null, 'win32'), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(wma, null, 'darwin'), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(wma, '/usr/local/bin/ffmpeg', 'linux'), null)
-  assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
-})

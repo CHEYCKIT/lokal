@@ -10,10 +10,12 @@ import LibraryFolderBrowser from '../components/LibraryFolderBrowser'
 import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useTranslation } from '../i18n'
+import { showToast } from '../components/Toaster'
 import { playNextMany } from '../trackActions'
-import { shuffledLibraryTracks } from '../libraryHelpers'
+import { fetchAllTrackPages, shuffledLibraryTracks } from '../libraryHelpers'
 
 const LIBRARY_PAGE_SIZE = 50
+const PLAYBACK_FETCH_PAGE_SIZE = 5000
 const HEAVY_GRID_THRESHOLD = 80
 
 function configuredRoots(settings) {
@@ -60,6 +62,7 @@ export default function Library() {
   const [addingMusicFolder, setAddingMusicFolder] = useState(false)
   const [musicRootError, setMusicRootError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingPlaybackTracks, setLoadingPlaybackTracks] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
   // The empty state waits for the first answer instead of showing meanwhile.
   const [loaded, setLoaded] = useState(wasCached)
@@ -84,6 +87,7 @@ export default function Library() {
   const location = useLocation()
   const offsetRef = useRef(tracks.length)
   const loadingRef = useRef(false)
+  const loadingPlaybackTracksRef = useRef(false)
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
@@ -120,6 +124,39 @@ export default function Library() {
   const playAllTracks = libraryMode === 'simple'
     ? (simpleSearch.trim() === debouncedSimpleSearch ? tracks : [])
     : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
+
+  /**
+   * Run a Simple-mode playback action against every track matching current filters.
+   * Fetching all pages avoids using only the rows currently rendered in the library.
+   * @param {'play'|'next'|'shuffle'} action Playback action to execute.
+   */
+  const runSimplePlaybackAction = async (action) => {
+    if (loadingPlaybackTracksRef.current || simpleSearch.trim() !== debouncedSimpleSearch) return
+    loadingPlaybackTracksRef.current = true
+    setLoadingPlaybackTracks(true)
+    try {
+      const filters = {
+        sort,
+        ...(source !== 'all' && source !== 'errors' ? { source } : {}),
+        ...(genre ? { genre } : {}),
+        ...(quality ? { quality } : format ? { format } : {}),
+        ...(problemsOnly ? { problems: true } : {}),
+        ...(debouncedSimpleSearch ? { search: debouncedSimpleSearch } : {}),
+      }
+      const results = await fetchAllTrackPages(options => api.getTracks(options), filters, PLAYBACK_FETCH_PAGE_SIZE)
+      const allTracks = problemsOnly ? results : results.filter(track => !String(track?.file_path || '').startsWith('ghost://'))
+      if (!allTracks.length) return
+      if (action === 'play') playQueue(allTracks, 0, null)
+      else if (action === 'next') playNextMany(allTracks)
+      else if (action === 'shuffle') playQueue(shuffledLibraryTracks(allTracks), 0, null)
+    } catch (error) {
+      console.error('[Library] Could not fetch every matching track for playback:', error)
+      showToast(t('Could not load all matching tracks. Please try again.'))
+    } finally {
+      loadingPlaybackTracksRef.current = false
+      setLoadingPlaybackTracks(false)
+    }
+  }
   const folderFilters = useMemo(() => ({ source, genre, format: quality ? '' : format, quality, sort }), [source, genre, format, quality, sort])
 
   useEffect(() => {
@@ -299,14 +336,6 @@ export default function Library() {
             <button onClick={() => setView('list')} aria-label={t("List view")} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} aria-label={t("Grid view")} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
           </div>
-          <button
-            type="button"
-            onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
-            aria-pressed={libraryMode === 'advanced'}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
-          >
-            {libraryMode === 'simple' ? t('Advanced') : t('Simple')}
-          </button>
         </div>
       </div>
 
@@ -326,23 +355,32 @@ export default function Library() {
                   : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
-        {playAllTracks.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            {libraryMode === 'advanced' ? (
-              <>
-                <button onClick={() => playQueue(playAllTracks, 0, { type: 'library-folder' })} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play')}</button>
-                <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
-                <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, { type: 'library-folder' }) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => playQueue(playAllTracks, 0, null)} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play All')}</button>
-                <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
-                <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, null) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
-              </>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {playAllTracks.length > 0 && (libraryMode === 'advanced' ? (
+            <>
+              <button onClick={() => playQueue(playAllTracks, 0, { type: 'library-folder' })} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play')}</button>
+              <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
+              <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, { type: 'library-folder' }) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => runSimplePlaybackAction('play')} disabled={loadingPlaybackTracks} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-50">
+                {loadingPlaybackTracks ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" />}
+                {loadingPlaybackTracks ? t('Loading…') : t('Play All')}
+              </button>
+              <button onClick={() => runSimplePlaybackAction('next')} disabled={loadingPlaybackTracks} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-50"><Clock size={15} /> {t('Play next')}</button>
+              <button onClick={() => runSimplePlaybackAction('shuffle')} disabled={loadingPlaybackTracks} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50 disabled:opacity-50"><Shuffle size={15} /> {t('Shuffle')}</button>
+            </>
+          ))}
+          <button
+            type="button"
+            onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
+            aria-pressed={libraryMode === 'advanced'}
+            className={`inline-flex items-center rounded-full border px-4 py-2 text-sm transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
+          >
+            {libraryMode === 'simple' ? t('Advanced') : t('Simple')}
+          </button>
+        </div>
       </div>
 
       {libraryMode === 'advanced' && (

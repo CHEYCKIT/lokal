@@ -557,6 +557,10 @@ export default function FullscreenPlayer() {
   const chromeFade = `transition-[opacity,color,background-color] duration-300 ${chromeHidden ? 'opacity-0' : 'opacity-100'}`
   const [coverHover, setCoverHover] = useState(false)
   const controlsShown = coverHover && !chromeHidden
+  /**
+   * Tilt the fullscreen cover toward the pointer without adding a hover-light effect.
+   * @param {PointerEvent} event Pointer movement over the cover.
+   */
   const handleCoverPointerMove = (event) => {
     if (reduceMotion || event.pointerType !== 'mouse') return
     const cover = event.currentTarget
@@ -566,16 +570,16 @@ export default function FullscreenPlayer() {
     const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
     cover.style.setProperty('--cover-rotate-x', `${(0.5 - y) * 9}deg`)
     cover.style.setProperty('--cover-rotate-y', `${(x - 0.5) * 9}deg`)
-    cover.style.setProperty('--cover-highlight-x', `${(0.5 - (x - 0.5) * 0.7) * 100}%`)
-    cover.style.setProperty('--cover-highlight-y', `${(0.5 - (y - 0.5) * 0.7) * 100}%`)
-    cover.style.setProperty('--cover-highlight-opacity', '0.28')
   }
+  /**
+   * Restore the fullscreen cover's neutral tilt when the pointer leaves.
+   * @param {MouseEvent} event Pointer-leave event from the cover.
+   */
   const resetCoverPointer = (event) => {
     setCoverHover(false)
     const cover = event.currentTarget
     cover.style.setProperty('--cover-rotate-x', '0deg')
     cover.style.setProperty('--cover-rotate-y', '0deg')
-    cover.style.setProperty('--cover-highlight-opacity', '0')
   }
 
   // The whole screen (the OS's full screen), on top of this view; left when
@@ -766,7 +770,6 @@ export default function FullscreenPlayer() {
                     )} />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
-                <div className="fullscreen-cover-highlight pointer-events-none absolute inset-0" />
 
                 {currentTrack && (
                   <div data-shown={controlsShown} className="group/controls absolute inset-0 z-10 flex flex-col justify-between">

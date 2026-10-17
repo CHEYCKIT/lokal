@@ -9,6 +9,24 @@ export function shuffledLibraryTracks(tracks) {
 }
 
 /**
+ * Fetch every page for a filtered library query without changing its filters.
+ */
+export async function fetchAllTrackPages(getTracks, filters = {}, pageSize = 5000) {
+  if (typeof getTracks !== 'function') throw new TypeError('getTracks must be a function')
+  if (!Number.isInteger(pageSize) || pageSize < 1) throw new RangeError('pageSize must be a positive integer')
+
+  const tracks = []
+  let offset = 0
+  while (true) {
+    const page = await getTracks({ ...filters, limit: pageSize, offset })
+    if (!Array.isArray(page)) throw new TypeError('Track query did not return an array')
+    tracks.push(...page)
+    if (page.length < pageSize) return tracks
+    offset += page.length
+  }
+}
+
+/**
  * Load every track flagged with an error. The main-process IPC clamps each
  * response to 5,000 rows, so walk offsets until the final partial page.
  */
