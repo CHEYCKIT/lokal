@@ -20,6 +20,7 @@ import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } fr
 import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL } from '../onlineTracks'
+import { useVolumeWheel } from '../volumeWheel'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(34rem, 54vh)'
@@ -62,6 +63,11 @@ function CoverIcon({ onClick, label, pressed, dim = false, children }) {
 function VolumePill({ volume, onChange }) {
   const { t } = useTranslation()
   const ref = useRef(null)
+  const volumeWheelRef = useVolumeWheel(volume, onChange)
+  const attachRef = useCallback(element => {
+    ref.current = element
+    volumeWheelRef(element)
+  }, [volumeWheelRef])
   const setFrom = (clientY) => {
     const r = ref.current?.getBoundingClientRect()
     if (!r) return
@@ -83,7 +89,7 @@ function VolumePill({ volume, onChange }) {
   // light over the glass.
   const covered = volume > 0.12
   return (
-    <div ref={ref} role="slider" tabIndex={0} aria-label={t("Volume")} aria-orientation="vertical"
+    <div ref={attachRef} role="slider" tabIndex={0} aria-label={t("Volume")} aria-orientation="vertical"
       aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} title={`Volume ${Math.round(volume * 100)}%`}
       onPointerDown={start} onKeyDown={keys}
       className={`relative h-44 w-7 cursor-pointer overflow-hidden rounded-full border border-white/[0.14] bg-white/[0.06] backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${COVER_FADE}`}>
