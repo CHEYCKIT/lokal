@@ -27,7 +27,7 @@ export default class RenderErrorBoundary extends React.Component {
           <p className="text-sm text-white/70">
             A renderer error stopped the interface from loading. The error is shown below and was also written to the app log.
           </p>
-          <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-black/40 p-4 text-xs text-red-200">{message}{stack && stack !== message ? '\\n\\n' + stack : ''}</pre>
+          <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-black/40 p-4 text-xs text-red-200">{message}{stack && stack !== message ? String.fromCharCode(10, 10) + stack : ""}</pre>
           <button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90">
             Reload Lokal
           </button>
