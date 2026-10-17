@@ -9,6 +9,7 @@ const {
   canvasGraphqlAnswer,
   buildClientTokenPayload,
   parseGrantedClientToken,
+  requestClientToken,
 } = require('../electron/artwork/spotify.js')
 
 test('Canvas cache keys invalidate old misses and change when the Spotify cookie changes', () => {
@@ -79,4 +80,40 @@ test('Spotify client-token parser rejects invalid responses and reads the grante
   )
   assert.equal(parseGrantedClientToken({ response_type: 'ERROR', granted_token: { token: 'no' } }), null)
   assert.equal(parseGrantedClientToken({ response_type: 'RESPONSE_GRANTED_TOKEN_RESPONSE', granted_token: {} }), null)
+})
+
+
+test('Spotify client-token fallback calls the client-token service with the Web Player payload', async () => {
+  const originalFetch = globalThis.fetch
+  let observed = null
+  globalThis.fetch = async (url, options) => {
+    observed = { url: String(url), options }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        response_type: 'RESPONSE_GRANTED_TOKEN_RESPONSE',
+        granted_token: { token: 'mock-client-token', expires_after_seconds: 900 },
+      }),
+    }
+  }
+  try {
+    const result = await requestClientToken({
+      clientVersion: '1.2.3',
+      clientId: 'web-client',
+      deviceId: 'device-123',
+    })
+    assert.equal(result.token, 'mock-client-token')
+    assert.equal(result.expires_after_seconds, 900)
+    assert.equal(observed.url, 'https://clienttoken.spotify.com/v1/clienttoken')
+    assert.equal(observed.options.method, 'POST')
+    assert.deepEqual(JSON.parse(observed.options.body), buildClientTokenPayload({
+      clientVersion: '1.2.3',
+      clientId: 'web-client',
+      deviceId: 'device-123',
+    }))
+    assert.equal(observed.options.headers.Origin, 'https://open.spotify.com')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
