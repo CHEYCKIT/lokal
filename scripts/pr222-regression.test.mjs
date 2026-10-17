@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
 
 const require = createRequire(import.meta.url)
-const { classifyCodec, playbackCopyPlan, playbackCopyPlans, playbackCopyFailure, afconvertArgs, resolveFfmpeg } = require('../electron/download/convert.js')
+const { classifyCodec, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg } = require('../electron/download/convert.js')
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
   const total = 12003
@@ -74,22 +74,32 @@ test('ALAC aliases are classified as unplayable lossless audio', () => {
   }
 })
 
-test('macOS tries afconvert first for ALAC and FFmpeg second when available', () => {
+test('FFmpeg is the primary converter for ALAC on every platform', () => {
   const info = { codec: 'ALAC', lossless: true, unplayable: true }
-  const ffmpeg = '/usr/local/bin/ffmpeg'
-  assert.deepEqual(playbackCopyPlan(info, null, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-  assert.deepEqual(playbackCopyPlan(info, ffmpeg, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-  assert.deepEqual(playbackCopyPlans(info, null, 'darwin'), [
-    { converter: 'afconvert', extension: '.wav' },
-  ])
-  assert.deepEqual(playbackCopyPlans(info, ffmpeg, 'darwin'), [
-    { converter: 'afconvert', extension: '.wav' },
-    { converter: 'ffmpeg', extension: '.flac' },
-  ])
-  assert.deepEqual(afconvertArgs('/Music/track.m4a', '/cache/track.wav'), [
-    '-f', 'WAVE', '-d', 'LEF32', '/Music/track.m4a', '/cache/track.wav',
-  ])
+  assert.deepEqual(playbackCopyPlan(info, null, 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
+  assert.deepEqual(playbackCopyPlan(info, '/usr/local/bin/ffmpeg', 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
   assert.deepEqual(playbackCopyPlan(info, null, 'win32'), { converter: 'ffmpeg', extension: '.flac' })
+  assert.deepEqual(playbackCopyPlan(info, null, 'linux'), { converter: 'ffmpeg', extension: '.flac' })
+})
+
+test('playback copy detects an installed or missing FFmpeg without platform-specific exceptions', () => {
+  const info = { codec: 'ALAC', lossless: true, unplayable: true }
+  const installed = resolveFfmpeg(null, () => '/usr/local/bin/ffmpeg')
+  const missing = resolveFfmpeg(null, () => null)
+  assert.equal(installed, '/usr/local/bin/ffmpeg')
+  assert.equal(missing, null)
+  assert.equal(playbackCopyFailure(info, installed, 'darwin'), null)
+  assert.equal(playbackCopyFailure(info, null, 'darwin'), 'ffmpeg-missing')
+})
+
+test('reports missing FFmpeg only when an unsupported codec needs it', () => {
+  const alac = { codec: 'ALAC', lossless: true, unplayable: true }
+  const wma = { codec: 'WMA', lossless: false, unplayable: true }
+  assert.equal(playbackCopyFailure(alac, null, 'darwin'), 'ffmpeg-missing')
+  assert.equal(playbackCopyFailure(alac, '/usr/local/bin/ffmpeg', 'darwin'), null)
+  assert.equal(playbackCopyFailure(wma, null, 'darwin'), 'ffmpeg-missing')
+  assert.equal(playbackCopyFailure(wma, '/usr/local/bin/ffmpeg', 'linux'), null)
+  assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
 })
 
 test('playback copy resolves FFmpeg without changing the macOS ALAC first attempt', () => {
