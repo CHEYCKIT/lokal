@@ -1014,10 +1014,13 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('lokal:analyser-ready'))
 
     if (isIOS) {
+      // iOS bypasses EQ/fade nodes, but still routes both decks through the
+      // analyser as a pass-through so every visualizer receives live audio.
       primarySource.connect(primaryReplayGain)
-      primaryReplayGain.connect(ctx.destination)
+      primaryReplayGain.connect(analyser)
+      analyser.connect(ctx.destination)
       cfSource.connect(cfReplayGain)
-      cfReplayGain.connect(ctx.destination)
+      cfReplayGain.connect(analyser)
     } else {
       let prev = primarySource
       for (const n of nodes) { prev.connect(n); prev = n }
