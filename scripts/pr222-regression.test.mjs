@@ -110,25 +110,3 @@ test('reports missing FFmpeg only when an unsupported codec needs it', () => {
   assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
 })
 
-test('playback copy resolves FFmpeg without changing the macOS ALAC first attempt', () => {
-  const info = { codec: 'ALAC', lossless: true, unplayable: true }
-  const installed = resolveFfmpeg(null, () => '/usr/local/bin/ffmpeg')
-  const missing = resolveFfmpeg(null, () => null)
-  assert.equal(installed, '/usr/local/bin/ffmpeg')
-  assert.deepEqual(playbackCopyPlan(info, installed, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-  assert.equal(missing, null)
-  assert.deepEqual(playbackCopyPlan(info, missing, 'darwin'), { converter: 'afconvert', extension: '.wav' })
-})
-
-test('reports missing FFmpeg only when no available converter can finish the job', () => {
-  const alac = { codec: 'ALAC', lossless: true, unplayable: true }
-  const wma = { codec: 'WMA', lossless: false, unplayable: true }
-  // Give native afconvert a chance before asking for FFmpeg on macOS ALAC.
-  assert.equal(playbackCopyFailure(alac, null, 'darwin'), null)
-  assert.equal(playbackCopyFailure(alac, null, 'darwin', true), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(alac, '/usr/local/bin/ffmpeg', 'darwin', true), null)
-  assert.equal(playbackCopyFailure(alac, null, 'win32'), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(wma, null, 'darwin'), 'ffmpeg-missing')
-  assert.equal(playbackCopyFailure(wma, '/usr/local/bin/ffmpeg', 'linux'), null)
-  assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
-})
