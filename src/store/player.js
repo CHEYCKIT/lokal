@@ -892,10 +892,22 @@ export const usePlayerStore = create((set, get) => ({
       let queueRemoveIndex = Number.isInteger(idx) && queue[idx]?.id === trackId && idx !== currentCanonicalIndex
         ? idx
         : queue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
-      if (queueRemoveIndex < 0) return
 
       const newShuffleQueue = [...shuffleQueue]
       newShuffleQueue.splice(idx, 1)
+      if (queueRemoveIndex < 0) {
+        // Support queues saved by older builds, where Add to Queue while
+        // shuffled updated only shuffleQueue.
+        const originalRemoveIndex = originalQueue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
+        const newOriginalQueue = [...originalQueue]
+        if (originalRemoveIndex >= 0) newOriginalQueue.splice(originalRemoveIndex, 1)
+        set({
+          shuffleQueue: newShuffleQueue,
+          shuffleIndex: idx < shuffleIndex ? shuffleIndex - 1 : shuffleIndex,
+          ...(originalQueue.length ? { originalQueue: newOriginalQueue } : {}),
+        })
+        return
+      }
       const newQueue = [...queue]
       newQueue.splice(queueRemoveIndex, 1)
       let newOriginalQueue = originalQueue
