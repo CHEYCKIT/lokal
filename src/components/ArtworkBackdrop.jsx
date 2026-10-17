@@ -14,6 +14,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { isStationTrack } from '../radio/stations'
 
 const meshCache = new Map() // trackId -> grid | null
 
@@ -60,11 +61,25 @@ if (typeof window !== 'undefined') {
   })
 }
 
+const URL_KEY = 'url:'
+
+/**
+ * What a player's colours are looked up by: the track's id, or for an online
+ * radio station (no library row) its current cover's URL -- so the colours
+ * change with each song's cover. null: no cover, no colours.
+ */
+export function meshKeyFor(track) {
+  if (!track) return null
+  if (isStationTrack(track)) return track.artwork_url ? `${URL_KEY}${track.artwork_url}` : null
+  return track.id ?? null
+}
+
 export function loadMesh(trackId) {
   if (!trackId) return Promise.resolve(null)
   if (meshCache.has(trackId)) return Promise.resolve(meshCache.get(trackId))
   const generation = meshGeneration.get(trackId) || 0
-  return Promise.resolve(api.artworkMesh?.(trackId))
+  const key = String(trackId)
+  return Promise.resolve(key.startsWith(URL_KEY) ? api.artworkMeshFromUrl?.(key.slice(URL_KEY.length)) : api.artworkMesh?.(trackId))
     .then(grid => {
       const value = Array.isArray(grid) && grid.length ? grid : null
       // Stale: the track changed while this was running. Don't cache it (the
