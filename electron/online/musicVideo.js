@@ -582,6 +582,43 @@ function knownMusicVideos(tracks, { cacheFile, now = Date.now, findFile } = {}) 
   })
 }
 
+// One YouTube video should produce one card, even if the same song exists in
+// several formats or duplicate library rows. Keep the best-associated row and
+// carry over save/download state and a usable local file from any duplicate.
+function musicVideoItemScore(item) {
+  return (item?.saved ? 1000 : 0)
+    + (item?.video?.check === 'audio' ? 100 : item?.video?.check === 'length' ? 50 : 0)
+    + (item?.video?.motion === 'verified' ? 20 : 0)
+    + (item?.downloaded ? 10 : 0)
+}
+
+function dedupeMusicVideoItems(items) {
+  const unique = new Map()
+  for (const item of items || []) {
+    const videoId = String(item?.video?.videoId || '')
+    // Keep malformed/legacy rows visible rather than accidentally merging them.
+    const key = /^[\w-]{11}$/.test(videoId) ? videoId : `track:${item?.track?.id ?? unique.size}`
+    const previous = unique.get(key)
+    if (!previous) {
+      unique.set(key, item)
+      continue
+    }
+    const winner = musicVideoItemScore(item) > musicVideoItemScore(previous) ? item : previous
+    const other = winner === item ? previous : item
+    unique.set(key, {
+      ...winner,
+      saved: !!(previous.saved || item.saved),
+      downloaded: !!(previous.downloaded || item.downloaded),
+      video: {
+        ...winner.video,
+        file: winner.video?.file || other.video?.file || null,
+        thumbnail: winner.video?.thumbnail || other.video?.thumbnail || null,
+      },
+    })
+  }
+  return [...unique.values()]
+}
+
 const pending = new Map()
 
 /**
@@ -694,6 +731,6 @@ function videoTimeFor(segments, time) {
 }
 
 module.exports = {
-  findMusicVideo, knownMusicVideos, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
+  findMusicVideo, knownMusicVideos, dedupeMusicVideoItems, discoveredVideos, databaseVideos, isMusicVideoFor, baseTitle, plainTitle, artistNames, audioFeatures, alignAudio, matchAudio, decodeMono, videoTimeFor,
   VIDEOS_PARAMS, FPS, visualMotionOf, hasVisualMotion, decodeVisualFrames, validateVisualMotion,
 }
