@@ -125,6 +125,11 @@ export default function Library() {
     ? (simpleSearch.trim() === debouncedSimpleSearch ? tracks : [])
     : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
 
+  /**
+   * Run a Simple-mode playback action against every track matching current filters.
+   * Fetching all pages avoids using only the rows currently rendered in the library.
+   * @param {'play'|'next'|'shuffle'} action Playback action to execute.
+   */
   const runSimplePlaybackAction = async (action) => {
     if (loadingPlaybackTracksRef.current || simpleSearch.trim() !== debouncedSimpleSearch) return
     loadingPlaybackTracksRef.current = true
