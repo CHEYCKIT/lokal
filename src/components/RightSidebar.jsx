@@ -156,16 +156,23 @@ export default function RightSidebar() {
   const [settings, setSettings] = useState({})
   // The cover's Lyrics button swaps only the lower metadata card; it must not
   // open the full-height Lyrics overlay controlled by sidePanelView.
-  const [infoCardView, setInfoCardView] = useState('info')
+  const [infoCardView, setInfoCardView] = useState(() => {
+    try {
+      const saved = localStorage.getItem('lokal-side-card-view')
+      return ['info', 'lyrics', 'visualization'].includes(saved) ? saved : 'info'
+    } catch { return 'info' }
+  })
   const autoSelectLyricsRef = useRef(null)
-  useEffect(() => setInfoCardView('info'), [currentTrack?.id])
+  useEffect(() => {
+    try { localStorage.setItem('lokal-side-card-view', infoCardView) } catch {}
+  }, [infoCardView])
   // Guards against an in-flight getSettings() from an earlier call
   // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
   // 'lokal:settings-saved' fires again, while the first request is still
   // pending) and overwriting the newer settings with stale ones.
   const settingsSeqRef = useRef(0)
   useEffect(() => {
-    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics') return
+    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics' && infoCardView !== 'visualization') return
     const loadSettings = () => {
       const seq = ++settingsSeqRef.current
       api.getSettings()
@@ -227,11 +234,9 @@ export default function RightSidebar() {
       })
   }, [currentTrack, lyricsLookup.trackId])
 
-  // Lyrics are the default lower card whenever the current track has them.
-  // Look up on track changes so users do not need to reveal the cover button
-  // and click it again for every song. Tracks without lyrics keep their details.
+  // Populate lyric availability on track changes, but never override the user's selected card mode.
   useEffect(() => {
-    if (currentTrack?.id) void lookUpLyrics(currentTrack, true)
+    if (currentTrack?.id) void lookUpLyrics(currentTrack)
   }, [currentTrack?.id, lookUpLyrics])
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
@@ -463,17 +468,15 @@ export default function RightSidebar() {
                   {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
                   {currentTrack && (
                     <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={() => lookUpLyrics()} onDoubleClick={e => e.stopPropagation()}>
-                      {songHasLyrics && (
-                        <button
-                          type="button"
-                          onClick={() => setInfoCardView(view => view === 'lyrics' ? 'info' : 'lyrics')}
-                          aria-label={t(infoCardView === 'lyrics' ? 'Show details' : 'Show lyrics')}
-                          aria-pressed={infoCardView === 'lyrics'}
-                          title={t(infoCardView === 'lyrics' ? 'Show details' : 'Show lyrics')}
-                          className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView === 'lyrics' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
-                          <Mic2 size={15} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setInfoCardView(view => view === 'info' ? 'lyrics' : view === 'lyrics' ? 'visualization' : 'info')}
+                        aria-label={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
+                        aria-pressed={infoCardView !== 'info'}
+                        title={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView !== 'info' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
+                        <Mic2 size={15} />
+                      </button>
                     </div>
                   )}
                 </motion.div>
@@ -548,6 +551,10 @@ export default function RightSidebar() {
                           textScale={1.4}
                           isAutoSynced={isAutoSynced}
                         />
+                      </div>
+                    ) : infoCardView === 'visualization' ? (
+                      <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                        {sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
                       </div>
                     ) : (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
