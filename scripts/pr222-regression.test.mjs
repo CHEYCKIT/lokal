@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { fetchAllErrorTrackIds, fetchAllTrackPages, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
 import { sideCardViewAfterTrackChange } from '../src/sideCardView.js'
 
@@ -28,6 +29,11 @@ test('only the standalone visualizer carries over to another track', () => {
   assert.equal(sideCardViewAfterTrackChange('lyrics'), 'info')
   assert.equal(sideCardViewAfterTrackChange('info'), 'info')
   assert.equal(sideCardViewAfterTrackChange(null), 'info')
+})
+
+test('RightSidebar wires card-view reset to track ID changes', () => {
+  const source = readFileSync(new URL('../src/components/RightSidebar.jsx', import.meta.url), 'utf8')
+  assert.match(source, /useEffect\(\(\) => \{\s*setInfoCardView\(sideCardViewAfterTrackChange\)\s*\}, \[currentTrack\?\.id\]\)/)
 })
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
