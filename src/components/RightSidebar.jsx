@@ -311,24 +311,10 @@ export default function RightSidebar() {
   const [coverClip, setCoverClip] = useState({ id: null, clip: null })
   useEffect(() => {
     const id = currentTrack?.id
-    if (!id) {
-      setCoverClip({ id: null, clip: null })
-      return undefined
-    }
+    if (!id) return undefined
     let current = true
-    const load = () => {
-      loadMotionCover(id).then(clip => {
-        if (current) setCoverClip({ id, clip: clip?.src ? clip : null })
-      })
-    }
-    load()
-    // Changing the Canvas source or cookie must refresh both the actual video
-    // and the button that offers to hide/show it, without changing tracks.
-    window.addEventListener('lokal:settings-saved', load)
-    return () => {
-      current = false
-      window.removeEventListener('lokal:settings-saved', load)
-    }
+    loadMotionCover(id).then(clip => { if (current) setCoverClip({ id, clip: clip?.src ? clip : null }) })
+    return () => { current = false }
   }, [currentTrack?.id])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
   // AutoMix turns the cover over into the next song's (when it's a still one).

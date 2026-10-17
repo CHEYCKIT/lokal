@@ -270,17 +270,8 @@ export default function FullscreenPlayer() {
     const id = currentTrack?.id
     if (!id || !(showFullscreen || showLyricsFullscreen)) return undefined
     let current = true
-    const load = () => {
-      loadMotionCover(id).then(clip => {
-        if (current) setCoverClip({ id, clip: clip?.src ? clip : null })
-      })
-    }
-    load()
-    window.addEventListener('lokal:settings-saved', load)
-    return () => {
-      current = false
-      window.removeEventListener('lokal:settings-saved', load)
-    }
+    loadMotionCover(id).then(clip => { if (current) setCoverClip({ id, clip: clip?.src ? clip : null }) })
+    return () => { current = false }
   }, [currentTrack?.id, showFullscreen, showLyricsFullscreen])
   const clipNow = coverClip.id === currentTrack?.id ? coverClip.clip : null
   const { video: musicVideo } = useMusicVideo(currentTrack, showFullscreen || showLyricsFullscreen)
