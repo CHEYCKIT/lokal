@@ -44,6 +44,7 @@ const SETTINGS_CATEGORIES = [
   { key: 'integrations', label: 'Integrations', icon: Zap },
   { key: 'playback', label: 'Playback', icon: Disc3 },
   { key: 'library', label: 'Library', icon: Music2 },
+  { key: 'radio', label: 'Online Radio', icon: Radio },
   { key: 'addons', label: 'Addons', icon: Blocks },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'data', label: 'Data', icon: Download },
