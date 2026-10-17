@@ -2011,6 +2011,7 @@ const ROWS = Object.assign({
   "Details not read yet": ["Détails pas encore lus","Details noch nicht ausgelesen","Detalles aún no leídos","Dettagli non ancora letti","Detalhes ainda não lidos","Details nog niet uitgelezen","Szczegóły nie zostały jeszcze odczytane","Detaljer har inte lästs in än"],
   "Get it in lossless…": ["Trouver la version sans perte…","Verlustfreie Version suchen…","Buscar versión sin pérdida…","Trova la versione lossless…","Encontrar versão sem perdas…","Lossless-versie zoeken…","Znajdź wersję bezstratną…","Hitta en förlustfri version…"],
   "Get {n} song in lossless…|Get {n} songs in lossless…": ["Trouver {n} morceau en sans perte…|Trouver {n} morceaux en sans perte…","{n} Titel verlustfrei suchen…|{n} Titel verlustfrei suchen…","Buscar {n} canción sin pérdida…|Buscar {n} canciones sin pérdida…","Trova {n} brano lossless…|Trova {n} brani lossless…","Encontrar {n} faixa sem perdas…|Encontrar {n} faixas sem perdas…","{n} nummer in lossless zoeken…|{n} nummers in lossless zoeken…","Znajdź {n} utwór bezstratnie…|Znajdź {n} utwory bezstratnie…","Hitta {n} låt förlustfritt…|Hitta {n} låtar förlustfritt…"],
+  "Icon": ["Icône","Symbol","Icono","Icona","Ícone","Pictogram","Ikona","Ikon"],
 })
 
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
