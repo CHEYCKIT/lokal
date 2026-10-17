@@ -35,6 +35,7 @@ const NOT_AN_ARTIST = new RegExp(`^${KIND_LIST}(?:\\s+(?:edit|mix|version))?$`, 
 // "(Dubstep Remix)", "(Live)" -- is left out of the artists altogether.
 const NOT_A_CREDIT = new RegExp(`^(?:(?:${KIND_LIST})\\s+)?(?:remix|cover|mix|edit|version|rework|flip)$|^${KIND_LIST}$`, 'i')
 const FEAT_BARE = /\s+(?:feat\.?|ft\.?|featuring)\s+/i
+const ROLE_BARE = /\s+(?:remixed\s+by|remix(?:ed)?|produced\s+by|prod\.?(?:\s+by)?|instr\.?(?:\s+by)?)\s+/i
 
 // The words above, as Settings > Library > Artists > Separator Words lists
 // them (the ones that always work); the user adds their own there.
@@ -97,7 +98,7 @@ function splitFeatured(raw) {
     if (names && !NOT_AN_ARTIST.test(names)) { featured.push(names); return ' ' }
     return NOT_A_CREDIT.test(inner) ? ' ' : whole
   })
-  const bare = main.split(FEAT_BARE).flatMap(part => (extraRoles ? part.split(extraRoles.bare) : [part]))
+  const bare = main.split(FEAT_BARE).flatMap(part => part.split(ROLE_BARE).flatMap(rolePart => (extraRoles ? rolePart.split(extraRoles.bare) : [rolePart])))
   return [...bare, ...featured].map(part => part.trim()).filter(Boolean)
 }
 
