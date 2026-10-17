@@ -9,7 +9,7 @@
 //  - library files: when the player can't open one, a playable copy is made
 //    once in a cache and played instead (the original is left untouched).
 
-const { spawn } = require('child_process')
+const { spawn, execFileSync } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
@@ -55,6 +55,39 @@ function playbackCopyPlan(info, ffmpeg, platform = process.platform) {
 
 function afconvertArgs(src, dest) {
   return ['-f', 'WAVE', '-d', 'LEF32', src, dest]
+}
+
+function discoverFfmpeg() {
+  // In Electron this finds app-managed, bundled and user-configured binaries.
+  try {
+    const executable = require('../ipc/tools').findFfmpeg()
+    if (executable) return executable
+  } catch {}
+
+  // The standalone web server may run outside Electron, where app.getPath()
+  // is unavailable. Still honor a system ffmpeg on PATH in that environment.
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 3000 })
+    return 'ffmpeg'
+  } catch {
+    return null
+  }
+}
+
+let defaultFfmpegResolved = false
+let defaultFfmpegPath = null
+
+function resolveFfmpeg(ffmpeg, discover = discoverFfmpeg) {
+  if (ffmpeg) return ffmpeg
+  // Injectable lookup makes the availability decision deterministic in tests.
+  if (discover !== discoverFfmpeg) {
+    try { return discover() || null } catch { return null }
+  }
+  if (!defaultFfmpegResolved) {
+    try { defaultFfmpegPath = discoverFfmpeg() || null } catch { defaultFfmpegPath = null }
+    defaultFfmpegResolved = true
+  }
+  return defaultFfmpegPath
 }
 
 async function probe(filePath) {
@@ -168,6 +201,7 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
     probed.set(memo, info)
   }
   if (!info?.unplayable) return null
+  ffmpeg = resolveFfmpeg(ffmpeg)
   const plan = playbackCopyPlan(info, ffmpeg)
   fs.mkdirSync(cacheDir, { recursive: true })
   const dest = path.join(cacheDir, cacheKey(filePath, stat) + plan.extension)
@@ -196,4 +230,4 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   return job
 }
 
-module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, afconvertArgs }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, afconvertArgs, resolveFfmpeg }

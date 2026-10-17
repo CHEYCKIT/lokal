@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
 
 const require = createRequire(import.meta.url)
-const { classifyCodec, playbackCopyPlan, afconvertArgs } = require('../electron/download/convert.js')
+const { classifyCodec, playbackCopyPlan, afconvertArgs, resolveFfmpeg } = require('../electron/download/convert.js')
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
   const total = 12003
@@ -45,6 +45,18 @@ test('folder playback includes filtered descendant tracks and globally sorts mix
     sortTracks: sorted,
   })
   assert.deepEqual(mixedSearch.map(track => track.id), ['a', 'z'])
+
+  // Direct tracks exist in the folder but the active filter removed all of
+  // them. Do not substitute a descendant-only fallback into the queue.
+  const hiddenDirectTracks = getFolderPlaybackTracks({
+    term: '',
+    directTracks: [],
+    hasDirectTracks: true,
+    allTracks: [{ id: 'hidden-descendant', title: 'Not visible' }],
+    matchesFilters: () => true,
+    sortTracks: sorted,
+  })
+  assert.deepEqual(hiddenDirectTracks, [])
 })
 
 test('Shuffle returns a permutation without mutating the source list', () => {
@@ -70,4 +82,14 @@ test('macOS uses built-in afconvert for ALAC when FFmpeg is unavailable', () => 
   ])
   assert.deepEqual(playbackCopyPlan(info, '/usr/local/bin/ffmpeg', 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
   assert.deepEqual(playbackCopyPlan(info, null, 'win32'), { converter: 'ffmpeg', extension: '.flac' })
+})
+
+test('playback copy resolves FFmpeg before choosing the macOS ALAC fallback', () => {
+  const info = { codec: 'ALAC', lossless: true, unplayable: true }
+  const installed = resolveFfmpeg(null, () => '/usr/local/bin/ffmpeg')
+  const missing = resolveFfmpeg(null, () => null)
+  assert.equal(installed, '/usr/local/bin/ffmpeg')
+  assert.deepEqual(playbackCopyPlan(info, installed, 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
+  assert.equal(missing, null)
+  assert.deepEqual(playbackCopyPlan(info, missing, 'darwin'), { converter: 'afconvert', extension: '.wav' })
 })

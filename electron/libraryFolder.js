@@ -183,12 +183,22 @@ function getTrackRowsUnderFolder(db, folderPath) {
   const { prefix, upperBound } = getPathPrefixBounds(path.resolve(folderPath))
   try {
     return (db.prepare(
-      "SELECT id, file_path FROM tracks WHERE file_path >= ? AND file_path < ? AND file_path NOT LIKE 'ghost://%' ORDER BY file_path ASC"
+      "SELECT id, file_path, artwork_path FROM tracks WHERE file_path >= ? AND file_path < ? AND file_path NOT LIKE 'ghost://%' ORDER BY file_path ASC"
     ).all(prefix, upperBound) || []).filter(row =>
       row?.id && typeof row.file_path === 'string' && isStrictlyInside(row.file_path, folderPath)
     )
   } catch {
     return []
+  }
+}
+
+function sameFilesystemEntry(left, right) {
+  try {
+    const a = fs.statSync(left)
+    const b = fs.statSync(right)
+    return a.dev === b.dev && a.ino === b.ino
+  } catch {
+    return false
   }
 }
 
@@ -240,7 +250,9 @@ function renameLibraryFolders(db, changes, rootOverride = '') {
 
   const selectedSourcePaths = new Set(plans.map(plan => pathKey(plan.sourcePath)))
   for (const plan of plans) {
-    if (fs.existsSync(plan.targetPath) && !selectedSourcePaths.has(pathKey(plan.targetPath))) {
+    const targetIsSelectedSource = selectedSourcePaths.has(pathKey(plan.targetPath)) ||
+      plans.some(other => sameFilesystemEntry(other.sourcePath, plan.targetPath))
+    if (fs.existsSync(plan.targetPath) && !targetIsSelectedSource) {
       throw new Error('A folder named "' + plan.newName + '" already exists')
     }
   }
@@ -266,21 +278,36 @@ function renameLibraryFolders(db, changes, rootOverride = '') {
       movedToTarget.add(plan)
     }
 
-    const updatePath = db.prepare('UPDATE tracks SET file_path = ? WHERE id = ?')
+    const updatePath = db.prepare('UPDATE tracks SET file_path = ?, artwork_path = ? WHERE id = ?')
     const updateRows = db.transaction(() => {
       for (const plan of changed) {
         for (const row of plan.trackRows) {
           const relativeFilePath = path.relative(plan.sourcePath, row.file_path)
-          updatePath.run(path.join(plan.targetPath, relativeFilePath), row.id)
+          const artworkPath = typeof row.artwork_path === 'string' && isStrictlyInside(row.artwork_path, plan.sourcePath)
+            ? path.join(plan.targetPath, path.relative(plan.sourcePath, row.artwork_path))
+            : (row.artwork_path ?? null)
+          updatePath.run(path.join(plan.targetPath, relativeFilePath), artworkPath, row.id)
         }
       }
     })
     updateRows()
   } catch (error) {
+    // Put every completed destination back into its temporary name first.
+    // Only after freeing those destinations restore every original source path.
+    for (const plan of changed) {
+      if (movedToTarget.has(plan)) {
+        try {
+          fs.renameSync(plan.targetPath, plan.tempPath)
+          movedToTarget.delete(plan)
+        } catch {}
+      }
+    }
     for (const plan of [...changed].reverse()) {
-      const currentPath = movedToTarget.has(plan) ? plan.targetPath : movedToTemp.has(plan) ? plan.tempPath : null
-      if (currentPath) {
-        try { fs.renameSync(currentPath, plan.sourcePath) } catch {}
+      if (movedToTemp.has(plan) && !movedToTarget.has(plan)) {
+        try {
+          fs.renameSync(plan.tempPath, plan.sourcePath)
+          movedToTemp.delete(plan)
+        } catch {}
       }
     }
     throw error

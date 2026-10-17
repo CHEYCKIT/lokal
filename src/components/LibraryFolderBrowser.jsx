@@ -349,11 +349,12 @@ export default function LibraryFolderBrowser({
   const allVisibleTracks = useMemo(() => getFolderPlaybackTracks({
     term,
     directTracks: visibleTracks,
+    hasDirectTracks: !!data?.tracks?.length,
     deepTracks: matchingDeepTracks,
     allTracks: data?.allTracks || [],
     matchesFilters,
     sortTracks,
-  }), [term, visibleTracks, matchingDeepTracks, data?.allTracks, matchesFilters, sortTracks])
+  }), [term, visibleTracks, data?.tracks, matchingDeepTracks, data?.allTracks, matchesFilters, sortTracks])
 
   // Sync with parent for Play All and status header
   useEffect(() => {

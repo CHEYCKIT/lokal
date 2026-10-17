@@ -38,12 +38,13 @@ export async function fetchAllErrorTrackIds(getTracks, pageSize = 5000) {
 export function getFolderPlaybackTracks({
   term = '',
   directTracks = [],
+  hasDirectTracks = false,
   deepTracks = [],
   allTracks = [],
   matchesFilters = () => true,
   sortTracks = tracks => tracks,
 } = {}) {
-  if (!term && directTracks.length === 0 && allTracks.length > 0) {
+  if (!term && !hasDirectTracks && directTracks.length === 0 && allTracks.length > 0) {
     return sortTracks(allTracks.filter(matchesFilters))
   }
   return sortTracks([...directTracks, ...deepTracks])

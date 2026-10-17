@@ -1211,16 +1211,16 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:status', () => scanStatus)
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search, rootPath) => getLibraryFolders(getDB(), relativePath, search, rootPath))
 
-  ipcMain.handle('scanner:renameLibraryFolders', (_, changes, rootPath) => {
+  ipcMain.handle('scanner:renameLibraryFolders', (e, changes, rootPath) => {
     try {
       const result = renameLibraryFolders(getDB(), changes, rootPath)
-      try { if (mainWindow?.webContents) mainWindow.webContents.send('library:changed', { operation: 'folders-renamed', changes: result.renamed }) } catch {}
+      try { e.sender.send('library:changed', { operation: 'folders-renamed', changes: result.renamed }) } catch {}
       return result
     } catch (error) {
       return { error: error?.message || 'Could not rename folders' }
     }
   })
-  ipcMain.handle('scanner:deleteLibraryFolders', async (_, relativePaths, rootPath) => {
+  ipcMain.handle('scanner:deleteLibraryFolders', async (e, relativePaths, rootPath) => {
     const db = getDB()
     if (!Array.isArray(relativePaths) || relativePaths.length < 1 || relativePaths.length > 300) {
       return { error: 'Select between 1 and 300 folders to delete', deleted: [], failed: [] }
@@ -1277,7 +1277,7 @@ function registerScannerHandlers(ipcMain) {
       }
     }
     try {
-      if (mainWindow?.webContents) mainWindow.webContents.send('library:changed', { operation: 'folders-deleted', paths: deleted.map(item => item.target.relativePath) })
+      e.sender.send('library:changed', { operation: 'folders-deleted', paths: deleted.map(item => item.target.relativePath) })
     } catch {}
     return { success: failed.length === 0, deleted: deleted.map(item => item.target.relativePath), failed }
   })
