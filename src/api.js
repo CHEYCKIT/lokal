@@ -181,9 +181,9 @@ export const api = {
   streamURL: (t) => `${BASE}/stream/${encodeURIComponent(t.id)}`,
   avatarURL: (id) => `${BASE}/avatar/${id}`,
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
-  getLibraryFolders: (relativePath = '', search = '') => isE()
-    ? el().getLibraryFolders(relativePath, search)
-    : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath) + (search ? '&search=' + encodeURIComponent(search) : '')),
+  getLibraryFolders: (relativePath = '', search = '', root = '') => isE()
+    ? el().getLibraryFolders(relativePath, search, root)
+    : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath) + (search ? '&search=' + encodeURIComponent(search) : '') + (root ? '&root=' + encodeURIComponent(root) : '')),
   onLibraryChanged: (fn) => isE() && el().onLibraryChanged ? el().onLibraryChanged(fn) : () => {},
   // A song that couldn't be played (Library → Songs with errors), or played again fine.
   reportTrackError: (id, message) => isE() ? el().reportTrackError(id, message) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'POST', body: { message } }),
@@ -357,6 +357,12 @@ export const api = {
   getTheme: () => isE() ? el().getTheme() : apiFetch('/settings/theme'),
   saveTheme: (theme, overrides) => isE() ? el().saveTheme(theme, overrides) : apiFetch('/settings/theme', { method:'PUT', body:{theme, overrides} }),
   scanFolder: (f, o = {}) => isE() ? el().scanFolder(f, o) : apiFetch('/settings/scan', { method:'POST', body:{folder:f, full:!!o.full} }),
+  scanFolders: async (folders) => {
+    const list = [...new Set((Array.isArray(folders) ? folders : []).filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()))]
+    if (isE()) return el().scanFolders(list)
+    for (const folder of list) await api.scanFolder(folder)
+    return api.saveSettings({ music_folders: JSON.stringify(list), music_folder: list[0] || '' })
+  },
   resolveFileToPlay: (f) => isE() ? el().resolveFileToPlay(f) : Promise.resolve({ success: false, error: 'Electron only' }),
   onOpenFileRequest: (fn) => { if (isE() && typeof el().onOpenFileRequest === 'function') return el().onOpenFileRequest(fn); return () => {} },
   updateThumbarState: (state) => (isE() && typeof el().updateThumbarState === 'function') ? el().updateThumbarState(state) : Promise.resolve(),
