@@ -201,13 +201,13 @@ function registerDownloaderHandlers(ipcMain) {
     const info = await probe(known.file_path)
     const failure = playbackCopyFailure(info, ffmpeg)
     if (failure) return { path: null, error: failure }
-    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
-    if (copy) return { path: copy, error: null }
 
-    // macOS ALAC tries afconvert first. If that attempt fails and FFmpeg is
-    // absent, explain how to recover instead of prematurely saying "Can't play".
-    const fallbackFailure = playbackCopyFailure(info, ffmpeg, process.platform, true)
-    return { path: null, error: fallbackFailure || 'conversion-failed' }
+    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+    // FFmpeg was available and the conversion was attempted. Only now should
+    // the UI fall back to its generic "Can't play" message.
+    return copy
+      ? { path: copy, error: null }
+      : { path: null, error: 'conversion-failed' }
   })
 
   // Soulseek, through the slskd Lokal runs (slskdManaged.js).
