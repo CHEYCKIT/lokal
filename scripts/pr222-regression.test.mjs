@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
 
 const require = createRequire(import.meta.url)
-const { classifyCodec, playbackCopyPlan, afconvertArgs, resolveFfmpeg } = require('../electron/download/convert.js')
+const { classifyCodec, playbackCopyPlan, playbackCopyFailure, afconvertArgs, resolveFfmpeg } = require('../electron/download/convert.js')
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
   const total = 12003
@@ -92,4 +92,14 @@ test('playback copy resolves FFmpeg before choosing the macOS ALAC fallback', ()
   assert.deepEqual(playbackCopyPlan(info, installed, 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
   assert.equal(missing, null)
   assert.deepEqual(playbackCopyPlan(info, missing, 'darwin'), { converter: 'afconvert', extension: '.wav' })
+})
+
+test('reports missing FFmpeg only when the required converter is unavailable', () => {
+  const alac = { codec: 'ALAC', lossless: true, unplayable: true }
+  const wma = { codec: 'WMA', lossless: false, unplayable: true }
+  assert.equal(playbackCopyFailure(alac, null, 'darwin'), null)
+  assert.equal(playbackCopyFailure(alac, null, 'win32'), 'ffmpeg-missing')
+  assert.equal(playbackCopyFailure(wma, null, 'darwin'), 'ffmpeg-missing')
+  assert.equal(playbackCopyFailure(wma, '/usr/local/bin/ffmpeg', 'linux'), null)
+  assert.equal(playbackCopyFailure({ codec: 'AAC', lossless: false, unplayable: false }, null, 'linux'), null)
 })
