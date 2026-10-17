@@ -24,16 +24,31 @@ test('Play All fetches every page for the current library filters', async () => 
   assert.ok(calls.every(call => call.search === 'kroi' && call.genre === 'Rock' && call.sort === 'title ASC' && call.limit === 5000))
 })
 
-test('only the standalone visualizer carries over to another track', () => {
+test('only the standalone visualizer persists; other tracks default to lyrics when available', () => {
   assert.equal(sideCardViewAfterTrackChange('visualization'), 'visualization')
-  assert.equal(sideCardViewAfterTrackChange('lyrics'), 'info')
-  assert.equal(sideCardViewAfterTrackChange('info'), 'info')
+  assert.equal(sideCardViewAfterTrackChange('lyrics', true), 'lyrics')
+  assert.equal(sideCardViewAfterTrackChange('info', true), 'lyrics')
+  assert.equal(sideCardViewAfterTrackChange('lyrics', false), 'info')
+  assert.equal(sideCardViewAfterTrackChange('info', false), 'info')
   assert.equal(sideCardViewAfterTrackChange(null), 'info')
 })
 
-test('RightSidebar wires card-view reset to track ID changes', () => {
+test('RightSidebar resets track view and auto-selects available lyrics unless visualizer persists', () => {
   const source = readFileSync(new URL('../src/components/RightSidebar.jsx', import.meta.url), 'utf8')
   assert.match(source, /useEffect\(\(\) => \{\s*setInfoCardView\(sideCardViewAfterTrackChange\)\s*\}, \[currentTrack\?\.id\]\)/)
+  assert.match(source, /lookUpLyrics\(currentTrack, infoCardViewRef\.current !== 'visualization'\)/)
+  assert.match(source, /setInfoCardView\(view => sideCardViewAfterTrackChange\(view, has\)\)/)
+})
+
+test('Library search is on the right of the track-count row in both modes', () => {
+  const source = readFileSync(new URL('../src/pages/Library.jsx', import.meta.url), 'utf8')
+  const scanBanner = source.indexOf('<ScanBanner />')
+  const statusRow = source.indexOf('className="flex w-full flex-wrap items-center justify-between gap-3"', scanBanner)
+  const trackCount = source.indexOf("t('loaded tracks')", statusRow)
+  const search = source.indexOf('aria-label={libraryMode === \'simple\' ? t("Search tracks")', statusRow)
+  const playbackRow = source.indexOf('className="flex w-full flex-wrap items-center gap-2"', statusRow)
+  assert.ok(scanBanner >= 0 && statusRow > scanBanner && trackCount > statusRow && search > trackCount && playbackRow > search)
+  assert.match(source.slice(statusRow, playbackRow), /className="ml-auto flex min-w-0 items-center gap-2/)
 })
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
