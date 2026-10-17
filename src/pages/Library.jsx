@@ -97,7 +97,7 @@ export default function Library() {
     const handleRefresh = () => { load(false); loadGenres() }
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [sort, source, genre, quality, problemsOnly, debouncedSimpleSearch])
+  }, [sort, source, genre, quality, format, problemsOnly, debouncedSimpleSearch])
 
   // The genres to pick from: every one in the library, on opening and after a refresh.
   const loadGenres = () => Promise.resolve(api.getAllGenres())
