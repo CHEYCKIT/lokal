@@ -1402,7 +1402,7 @@ export default function App() {
         const targetId = String(value.trackId || '')
         const requestedIds = Array.isArray(value.trackIds) ? value.trackIds : []
         const ids = [...new Set([...requestedIds, targetId].map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
-        if (!ids.length) return { error: 'No library tracks were selected' }
+        if (!ids.length) return { error: t('No library tracks were selected') }
         const tracks = []
         // Keep each SQL IN-list under the parameter limit used by SQLite
         // builds that ship with older Linux distributions.
@@ -1414,9 +1414,9 @@ export default function App() {
         const byId = new Map(tracks.filter(track => track?.id).map(track => [String(track.id), track]))
         const ordered = ids.map(id => byId.get(id)).filter(Boolean)
         if (action === 'playLibraryTrack' && !byId.has(targetId)) {
-          return { error: 'The selected track is no longer available in the library' }
+          return { error: t('The selected track is no longer available in the library') }
         }
-        if (!ordered.length) return { error: 'No playable tracks were found' }
+        if (!ordered.length) return { error: t('No playable tracks were found') }
         if (action === 'playLibraryTrack') {
           const selected = byId.get(targetId)
           state.playTrack(selected, ordered)
