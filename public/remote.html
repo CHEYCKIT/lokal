@@ -562,9 +562,9 @@
           <div class="library-sub">${fmt(track.duration)}${track.year ? ' · ' + escapeHtml(String(track.year)) : ''}${track.liked ? ' · ♥' : ''}</div>
         </div>
         <div class="library-item-actions">
-          <button type="button" class="library-action primary" data-library-action="play" data-track-id="${escapeHtml(track.id)}">Play</button>
-          <button type="button" class="library-action" data-library-action="next" data-track-id="${escapeHtml(track.id)}">Next</button>
-          <button type="button" class="library-action" data-library-action="queue" data-track-id="${escapeHtml(track.id)}">Queue</button>
+          <button type="button" class="library-action primary" data-library-action="play" data-track-id="${escapeHtml(track.id)}">${rt('Play')}</button>
+          <button type="button" class="library-action" data-library-action="next" data-track-id="${escapeHtml(track.id)}">${rt('Next')}</button>
+          <button type="button" class="library-action" data-library-action="queue" data-track-id="${escapeHtml(track.id)}">${rt('Queue')}</button>
         </div>
       </article>`
     }
@@ -573,10 +573,10 @@
       const id = item.coverTrackId
       const count = Number(item.track_count || 0)
       const sub = type === 'albums'
-        ? `${item.artist || 'Unknown artist'} · ${count} track${count === 1 ? '' : 's'}${item.year ? ' · ' + item.year : ''}`
+        ? `${item.artist || rt('Unknown artist')} · ${count} ${rt(count === 1 ? 'track' : 'tracks')}${item.year ? ' · ' + item.year : ''}`
         : type === 'artists'
-          ? `${count} track${count === 1 ? '' : 's'}`
-          : `${count} track${count === 1 ? '' : 's'}${item.smart ? ' · Smart playlist' : ''}`
+          ? `${count} ${rt(count === 1 ? 'track' : 'tracks')}`
+          : `${count} ${rt(count === 1 ? 'track' : 'tracks')}${item.smart ? ' · ' + rt('Smart playlist') : ''}`
       const openType = type === 'albums' ? 'albumTracks' : type === 'artists' ? 'artistTracks' : 'playlistTracks'
       const title = type === 'albums' ? item.title : type === 'artists' ? item.name : item.name
       const dataTitle = type === 'albums' ? `data-title="${escapeHtml(item.title)}" data-artist="${escapeHtml(item.artist || '')}"` : ''
@@ -587,17 +587,17 @@
           <div class="library-sub">${escapeHtml(sub)}</div>
         </div>
         <div class="library-item-actions">
-          <button type="button" class="library-action primary" data-open-type="${openType}" data-open-id="${escapeHtml(item.id || '')}" ${dataTitle} data-open-name="${escapeHtml(title)}">Open</button>
+          <button type="button" class="library-action primary" data-open-type="${openType}" data-open-id="${escapeHtml(item.id || '')}" ${dataTitle} data-open-name="${escapeHtml(title)}">${rt('Open')}</button>
         </div>
       </article>`
     }
 
     function currentLibraryTitle() {
       const view = store.libraryView
-      if (view.type === 'albumTracks') return view.title || 'Album'
-      if (view.type === 'artistTracks') return view.name || 'Artist'
-      if (view.type === 'playlistTracks') return view.name || 'Playlist'
-      return sectionLabels[view.type] || 'Your library'
+      if (view.type === 'albumTracks') return view.title || rt('Album')
+      if (view.type === 'artistTracks') return view.name || rt('Artist')
+      if (view.type === 'playlistTracks') return view.name || rt('Playlist')
+      return sectionLabels[view.type] || rt('Your library')
     }
 
     function renderLibrary() {
@@ -608,27 +608,27 @@
       els.libraryTitle.textContent = currentLibraryTitle()
       els.libraryBack.hidden = store.libraryStack.length === 0
       els.libraryCount.textContent = store.libraryLoading && !items.length
-        ? 'Loading…'
+        ? rt('Loading…')
         : detail
           ? `${items.length} track${items.length === 1 ? '' : 's'}`
-          : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || 'items'}`
+          : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || rt('items')}`
       for (const button of els.libraryTabs.querySelectorAll('[data-library-tab]')) {
         button.setAttribute('aria-pressed', String(button.dataset.libraryTab === rootType))
       }
       const showCollection = trackView(view.type) && items.length > 0
       els.libraryCollectionActions.hidden = !showCollection
       const names = ['play', 'next', 'queue']
-      const labels = store.libraryHasMore ? ['Play shown', 'Next shown', 'Add shown'] : ['Play all', 'Play next', 'Add all']
+      const labels = store.libraryHasMore ? [rt('Play shown'), rt('Next shown'), rt('Add shown')] : [rt('Play all'), rt('Play next'), rt('Add all')]
       els.libraryCollectionActions.querySelectorAll('[data-collection-action]').forEach((button, index) => {
         button.textContent = labels[names.indexOf(button.dataset.collectionAction)] || labels[index]
         button.disabled = store.libraryLoading
       })
       els.libraryLoadMore.hidden = !store.libraryHasMore || detail
       els.libraryLoadMore.disabled = store.libraryLoading
-      els.libraryLoadMore.textContent = store.libraryLoading ? 'Loading…' : 'Load more'
+      els.libraryLoadMore.textContent = store.libraryLoading ? rt('Loading…') : rt('Load more')
       els.libraryMessage.textContent = store.libraryMessage || ''
       if (!items.length) {
-        els.libraryResults.innerHTML = `<div class="library-empty">${store.libraryLoading ? 'Loading library…' : (libraryQuery() ? 'No matches found.' : 'Nothing here yet.')}</div>`
+        els.libraryResults.innerHTML = `<div class="library-empty">${store.libraryLoading ? rt('Loading library…') : (libraryQuery() ? rt('No matches found.') : rt('Nothing here yet.'))}</div>`
         return
       }
       const type = view.type
@@ -691,7 +691,7 @@
         store.libraryMessage = ''
       } catch (error) {
         if (request === store.libraryRequest) {
-          store.libraryMessage = error?.message || 'Could not load library.'
+          store.libraryMessage = error?.message || rt('Could not load library.')
           if (!append) store.libraryItems = []
         }
       } finally {
@@ -727,7 +727,7 @@
     async function sendLibraryAction(action, ids, targetId = '') {
       const cleanIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
       if (!cleanIds.length) return
-      store.libraryMessage = 'Sending to Lokal…'
+      store.libraryMessage = rt('Sending to Lokal…')
       renderLibrary()
       let result
       if (action === 'play') {
@@ -738,12 +738,12 @@
         result = await command('queueTracks', { trackIds: cleanIds })
       }
       store.libraryMessage = result?.error
-        ? `Could not control playback: ${String(result.error).slice(0, 180)}`
+        ? rt('Could not control playback: {error}', { error: String(result.error).slice(0, 180) })
         : action === 'play'
-          ? 'Playing on this computer.'
+          ? rt('Playing on this computer.')
           : action === 'next'
-            ? `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} next.`
-            : `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} to the queue.`
+            ? rt('Added {count} track(s) next.', { count: cleanIds.length })
+            : rt('Added {count} track(s) to the queue.', { count: cleanIds.length })
       renderLibrary()
     }
 
@@ -780,16 +780,16 @@
     function renderState(s) {
       store.state = s || {}
       const track = store.state.currentTrack || {}
-      els.title.textContent = track.title || 'No track'
-      els.artist.textContent = track.artist || 'Open this from your phone on same Wi-Fi'
+      els.title.textContent = track.title || rt('No track')
+      els.artist.textContent = track.artist || rt('Open this from your phone on same Wi-Fi')
       els.play.innerHTML = store.state.isPlaying ? ICONS.pause : ICONS.play
       els.like.innerHTML = ICONS.heart
-      els.status.textContent = store.state.connected ? 'online' : 'offline'
+      els.status.textContent = store.state.connected ? rt('online') : rt('offline')
       els.like.disabled = !track.id
-      els.miniTitle.textContent = track.title || 'No track playing'
-      els.miniArtist.textContent = track.artist || 'Connect to Lokal'
+      els.miniTitle.textContent = track.title || rt('No track playing')
+      els.miniArtist.textContent = track.artist || rt('Connect to Lokal')
       els.miniPlay.innerHTML = store.state.isPlaying ? ICONS.pause : ICONS.play
-      els.miniPlay.setAttribute('aria-label', store.state.isPlaying ? 'Pause' : 'Play')
+      els.miniPlay.setAttribute('aria-label', store.state.isPlaying ? rt('Pause') : rt('Play'))
 
       const dur = Math.max(0, Number(store.state.duration || 0))
       const prog = Math.max(0, Math.min(dur, Number(store.state.progress || 0)))
@@ -844,7 +844,7 @@
           loadLibrary()
         }
       } catch {
-        els.status.textContent = 'offline'
+        els.status.textContent = rt('offline')
       }
     }
 
