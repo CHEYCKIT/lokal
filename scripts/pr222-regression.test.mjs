@@ -1,11 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
+import { fetchAllErrorTrackIds, fetchAllTrackPages, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
 import { sideCardViewAfterTrackChange } from '../src/sideCardView.js'
 
 const require = createRequire(import.meta.url)
 const { classifyCodec, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg } = require('../electron/download/convert.js')
+
+test('Play All fetches every page for the current library filters', async () => {
+  const total = 12003
+  const calls = []
+  const getTracks = async options => {
+    calls.push(options)
+    return Array.from({ length: Math.min(options.limit, total - options.offset) }, (_, i) => ({
+      id: options.offset + i,
+    }))
+  }
+  const tracks = await fetchAllTrackPages(getTracks, { search: 'kroi', genre: 'Rock', sort: 'title ASC' })
+
+  assert.equal(tracks.length, total)
+  assert.deepEqual(calls.map(call => call.offset), [0, 5000, 10000])
+  assert.ok(calls.every(call => call.search === 'kroi' && call.genre === 'Rock' && call.sort === 'title ASC' && call.limit === 5000))
+})
 
 test('only the standalone visualizer carries over to another track', () => {
   assert.equal(sideCardViewAfterTrackChange('visualization'), 'visualization')
