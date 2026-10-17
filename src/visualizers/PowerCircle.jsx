@@ -255,7 +255,11 @@ export default function PowerCircle({ className = '', background = '#000000' }) 
   const canvasRef = useRef(null)
   // Read each frame, so a new colour applies without restarting the scene.
   const backgroundRef = useRef(background)
-  backgroundRef.current = /^#[0-9a-f]{6}$/i.test(background) ? background : '#000000'
+  if (/^#[0-9a-f]{6}$/i.test(background)) backgroundRef.current = background
+  else if (String(background).includes('--surface-rgb')) {
+    const rgb = getComputedStyle(document.documentElement).getPropertyValue('--surface-rgb').match(/\d+(?:\.\d+)?/g) || []
+    backgroundRef.current = rgb.length >= 3 ? `rgb(${rgb.slice(0, 3).join(', ')})` : '#000000'
+  } else backgroundRef.current = '#000000'
 
   useEffect(() => {
     const wrap = wrapRef.current
