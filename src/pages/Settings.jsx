@@ -676,10 +676,15 @@ export default function Settings() {
   }
 
   const rescan = async () => {
-    if (!settings.music_folder) return
+    let roots = []
+    try {
+      const parsed = JSON.parse(settings.music_folders || 'null')
+      if (Array.isArray(parsed)) roots = parsed.filter(folder => typeof folder === 'string' && folder.trim())
+    } catch {}
+    if (!roots.length && settings.music_folder) roots = [settings.music_folder]
+    if (!roots.length) return
     setScanning(true)
-    await api.scanFolder(settings.music_folder)
-    setScanning(false)
+    try { await api.scanFolders(roots) } finally { setScanning(false) }
   }
 
   const checkDuplicates = async () => {
@@ -1239,7 +1244,7 @@ activeCategory === 'data' ? usersTried
            </button>
          </Row>
         <Row label={t("Rescan Library")}>
-          <button onClick={rescan} disabled={scanning || !settings.music_folder}
+          <button onClick={rescan} disabled={scanning || (!settings.music_folder && !settings.music_folders)}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">
             <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? t('Scanning…') : t('Rescan')}
           </button>
