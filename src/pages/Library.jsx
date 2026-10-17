@@ -336,7 +336,7 @@ export default function Library() {
               </button>
             )}
             <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
-                <Search size={14} className="flex-shrink-0 text-muted" />
+              <Search size={14} className="flex-shrink-0 text-muted" />
               <input
                 type="text"
                 value={libraryMode === 'simple' ? simpleSearch : folderSearch}
@@ -356,7 +356,7 @@ export default function Library() {
                   <X size={13} />
                 </button>
               )}
-              </div>
+            </div>
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2">
