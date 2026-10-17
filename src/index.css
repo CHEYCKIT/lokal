@@ -307,21 +307,8 @@ input, button, select, textarea { -webkit-app-region: no-drag; }
   transition: transform 180ms cubic-bezier(0.2, 0.75, 0.25, 1);
   will-change: transform;
 }
-.fullscreen-cover-highlight {
-  z-index: 1;
-  opacity: var(--cover-highlight-opacity, 0);
-  background: radial-gradient(
-    circle at var(--cover-highlight-x, 50%) var(--cover-highlight-y, 50%),
-    rgb(255 255 255 / 0.28),
-    rgb(255 255 255 / 0.08) 14%,
-    transparent 48%
-  );
-  mix-blend-mode: screen;
-  transition: opacity 180ms ease;
-}
 @media (prefers-reduced-motion: reduce) {
   .fullscreen-cover-stage { transform: none !important; transition: none; }
-  .fullscreen-cover-highlight { transition: none; }
 }
 
 /* Mini player: its window's dimming is for the dark themes; a light one stays light. */
