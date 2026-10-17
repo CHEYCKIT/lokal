@@ -2064,7 +2064,11 @@ export function LanguageProvider({ children }) {
 
   const t = useCallback((phrase, values = null) => {
     if (typeof phrase !== 'string') return phrase
-    const translated = language === 'en' ? phrase : (TRANSLATIONS[phrase]?.[language] || phrase)
+    let translated = language === 'en' ? phrase : (TRANSLATIONS[phrase]?.[language] || phrase)
+    if (values && typeof values === 'object' && phrase.includes('|')) {
+      const forms = translated.split('|')
+      translated = Number(values.n ?? values.count ?? 0) === 1 ? forms[0] : (forms[1] || forms[0])
+    }
     if (!values || typeof values !== 'object') return translated
     return translated.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match)
   }, [language])
