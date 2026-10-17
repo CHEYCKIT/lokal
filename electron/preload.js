@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electron', {
   openLogs: () => ipcRenderer.send('open-logs'),
   updaterDownload: () => invoke('updater:download'),
   scanFolder: (f) => invoke('scanner:scan', f),
+  scanFolders: (folders) => invoke('scanner:scanFolders', folders),
   resolveFileToPlay: (f) => invoke('scanner:resolveFileToPlay', f),
   getReplayGain: (trackId) => invoke('player:getReplayGain', trackId),
   onOpenFileRequest: (fn) => on('player:openFile', (_, filePath) => fn(filePath)),
@@ -60,7 +61,7 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { for (const [channel, cb] of Object.entries(bound)) ipcRenderer.removeListener(channel, cb) }
   },
   getTracks: (o) => invoke('scanner:getTracks', o),
-  getLibraryFolders: (p, s) => invoke('scanner:getLibraryFolders', p, s),
+  getLibraryFolders: (p, s, root) => invoke('scanner:getLibraryFolders', p, s, root),
   onLibraryChanged: (fn) => on('library:changed', (_, data) => fn(data)),
   reportTrackError: (id, message) => invoke('tracks:reportError', id, message),
   clearTrackError: (id) => invoke('tracks:clearError', id),
