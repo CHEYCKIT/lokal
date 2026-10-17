@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ported-features-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-and-build:
     name: Tests and package (${{ matrix.os }})
@@ -30,7 +34,7 @@ jobs:
       - name: Run ported-feature regression tests
         run: npm run test:ported
       - name: Build and package Lokal
-        run: npm run build
+        run: npm run build -- --publish never
       - name: Upload package artifacts
         if: success()
         uses: actions/upload-artifact@v4
