@@ -383,13 +383,13 @@
       if (askingForRemoteToken || remoteTokenPromptDismissed) return false
       askingForRemoteToken = true
       try {
-        const token = window.prompt('This Lokal phone remote is protected. Enter REMOTE_TOKEN:')
+        const token = window.prompt(rt('This Lokal phone remote is protected. Enter REMOTE_TOKEN:'))
         if (!token?.trim()) { remoteTokenPromptDismissed = true; return false }
         const candidate = token.trim()
         const response = await fetch('/api/remote/state', { headers: { 'x-remote-token': candidate } }).catch(() => null)
         if (!response?.ok) {
           remoteTokenPromptDismissed = true
-          alert('That remote token was not accepted. Reload the remote page to try again.')
+          alert(rt('That remote token was not accepted. Reload the remote page to try again.'))
           return false
         }
         remoteToken = candidate
@@ -450,7 +450,7 @@
       if (askingForKey) return
       askingForKey = true
       try {
-        let message = 'This Lokal server is protected. Enter its API key:'
+        let message = rt('This Lokal server is protected. Enter its API key:')
         for (;;) {
           const key = window.prompt(message)
           if (!key) return
@@ -462,10 +462,10 @@
           if (res?.ok) { location.reload(); return }
           if (res?.status === 403) {
             // Plain HTTP from outside the local network: retrying won't help.
-            alert((await res.json().catch(() => ({}))).error || 'This server refused the key.')
+            alert((await res.json().catch(() => ({}))).error || rt('This server refused the key.'))
             return
           }
-          message = 'That key was not accepted. Enter the API key:'
+          message = rt('That key was not accepted. Enter the API key:')
         }
       } finally {
         // Cancelled or refused: a later 401 can ask again.
@@ -541,11 +541,11 @@
       try {
         return await call('command', { method: 'POST', body: { action, value } })
       } catch (error) {
-        return { error: error?.message || 'Command failed' }
+        return { error: error?.message || rt('Command failed') }
       }
     }
 
-    const sectionLabels = { tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists', liked: 'Liked songs' }
+    const sectionLabels = { tracks: rt('Tracks'), albums: rt('Albums'), artists: rt('Artists'), playlists: rt('Playlists'), liked: rt('Liked songs') }
     const trackView = type => type === 'tracks' || type === 'liked' || type.endsWith('Tracks')
     const libraryQuery = () => String(els.librarySearch.value || '').trim()
     const trackIds = () => store.libraryItems.map(item => String(item.id || '')).filter(Boolean)
