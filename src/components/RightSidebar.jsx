@@ -188,7 +188,7 @@ export default function RightSidebar() {
   }, [sidePanelView, infoCardView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
   const sideVisualizer = (() => {
-    const mode = settings.side_panel_visual || 'power-circle'
+    const mode = settings.side_panel_visual && settings.side_panel_visual !== 'off' ? settings.side_panel_visual : 'power-circle'
     const className = 'absolute inset-0 h-full w-full'
     if (mode === 'off') return null
     if (mode === 'spectrum') return <Spectrum isPlaying={isPlaying} bars={90} barWidth={3} height={150} strength={0.8} opacity={0.65} radius={1} className={className} />
@@ -544,7 +544,7 @@ export default function RightSidebar() {
                         <SideVisualLyrics
                           track={currentTrack}
                           progress={progress}
-                          visual={sideVisualizer}
+                          visual={null}
                           visualBg={fx ? '#050505' : 'rgb(var(--surface-rgb))'}
                           coverOff={coverOff}
                           wordSync={wordSync}
