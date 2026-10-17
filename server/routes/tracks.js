@@ -730,6 +730,10 @@ router.put('/:id', (req, res) => {
     record_label,
     explicit,
     instrumental,
+    clip_url,
+    clip_start,
+    clip_end,
+    clip_zoom,
     danceability,
     energy,
     track_key,
@@ -755,6 +759,10 @@ router.put('/:id', (req, res) => {
   if (record_label !== undefined) { updates.push('record_label = ?'); params.push(record_label) }
   if (explicit !== undefined) { updates.push('explicit = ?'); params.push(explicit ? 1 : 0) }
   if (instrumental !== undefined) { updates.push('instrumental = ?'); params.push(instrumental === null ? null : instrumental ? 1 : 0) }
+  if (clip_url !== undefined) { updates.push('clip_url = ?'); params.push(clip_url || null) }
+  if (clip_start !== undefined) { updates.push('clip_start = ?'); params.push(clip_start === '' ? null : clip_start) }
+  if (clip_end !== undefined) { updates.push('clip_end = ?'); params.push(clip_end === '' ? null : clip_end) }
+  if (clip_zoom !== undefined) { updates.push('clip_zoom = ?'); params.push(clip_zoom === '' ? null : clip_zoom) }
   if (danceability !== undefined) { updates.push('danceability = ?'); params.push(danceability) }
   if (energy !== undefined) { updates.push('energy = ?'); params.push(energy) }
   if (track_key !== undefined) { updates.push('track_key = ?'); params.push(track_key) }
