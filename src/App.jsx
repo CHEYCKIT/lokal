@@ -29,7 +29,7 @@ import Onboarding, { useOnboarding } from './components/Onboarding'
 import PostOnboardingTour from './components/PostOnboardingTour'
 import Home from './pages/Home'
 import Albums from './pages/Albums'
-import Genres from './pages/Genres'
+import Genres, { GenreTracks } from './pages/Genres'
 import Stations from './pages/Stations'
 import CacheAnalysis from './pages/CacheAnalysis'
 import OnlineAlbum from './pages/OnlineAlbum'
@@ -330,6 +330,7 @@ function AnimatedRoutes() {
         <Route path="/home/:tab/*" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />
         <Route path="/genres" element={<PageTransition gated><Genres /></PageTransition>} />
+        <Route path="/genre/:name" element={<PageTransition gated><GenreTracks /></PageTransition>} />
         <Route path="/stations" element={<PageTransition gated><Stations /></PageTransition>} />
         <Route path="/cache-analysis" element={<PageTransition gated><CacheAnalysis /></PageTransition>} />
         <Route path="/artists" element={<PageTransition gated><Artists /></PageTransition>} />
