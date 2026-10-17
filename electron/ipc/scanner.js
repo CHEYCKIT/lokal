@@ -1049,22 +1049,9 @@ function clearLyricsStateForTrack(db, trackId, filePath = null) {
 }
 
 function collectAllGenres(db) {
-  const rows = db.prepare(`
-    SELECT genre, genres
-    FROM tracks
-    WHERE file_path NOT LIKE 'ghost://%'
-      AND (genre IS NOT NULL OR genres IS NOT NULL)
-  `).all()
-  const values = new Map()
-  for (const row of rows) {
-    for (const source of [row.genre, row.genres]) {
-      for (const genre of String(source || '').split(',').map(part => part.trim()).filter(Boolean)) {
-        const key = genre.toLowerCase()
-        if (!values.has(key)) values.set(key, genre)
-      }
-    }
-  }
-  return [...values.values()].sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
+  // Match desktop suggestions to the cleaned Genres page and filters.
+  const { genres } = require('../genreList').genreSummary(db)
+  return genres.map(item => item.name).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
 }
 
 async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
