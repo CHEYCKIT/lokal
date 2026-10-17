@@ -121,10 +121,20 @@ function escapeLike(value) {
   return String(value).replace(/[\\%_]/g, character => '\\' + character)
 }
 
-function getLibraryFolders(db, relativePath = '', search = '') {
-  const configuredRoot = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+function getLibraryFolders(db, relativePath = '', search = '', rootOverride = '') {
+  const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+  let configuredRoots = []
+  try { configuredRoots = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+  if (!configuredRoots.length) {
+    const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+    if (legacy) configuredRoots = [legacy]
+  }
+  const allowedRoots = configuredRoots.map(value => path.resolve(String(value || ''))).filter(Boolean)
+  const configuredRoot = rootOverride
+    ? allowedRoots.find(value => value.toLowerCase() === path.resolve(String(rootOverride)).toLowerCase())
+    : allowedRoots[0]
   if (!configuredRoot) {
-    return { available: false, error: 'No music folder selected', rootName: '', relativePath: '', folders: [], tracks: [], trackCount: 0, totalTracks: 0 }
+    return { available: false, error: allowedRoots.length ? 'Choose a configured music folder' : 'No music folder selected', rootName: '', rootPath: '', rootPaths: allowedRoots, relativePath: '', folders: [], tracks: [], trackCount: 0, totalTracks: 0 }
   }
 
   const rootPath = path.resolve(String(configuredRoot))
@@ -134,7 +144,7 @@ function getLibraryFolders(db, relativePath = '', search = '') {
   const normalizedRelative = relative && relative !== '.' ? relative.split(path.sep).join('/') : ''
   const rootName = path.basename(rootPath) || rootPath
   const empty = (error, notFound = false) => ({
-    available: true, error, notFound, rootName, relativePath: normalizedRelative, folders: [], tracks: [], trackCount: 0, totalTracks: 0,
+    available: true, error, notFound, rootName, rootPath, rootPaths: allowedRoots, relativePath: normalizedRelative, folders: [], tracks: [], trackCount: 0, totalTracks: 0,
   })
 
   if (isOutside(rootPath, targetPath)) return empty('Folder is outside the selected music folder', true)
@@ -274,6 +284,8 @@ function getLibraryFolders(db, relativePath = '', search = '') {
   return {
     available: true,
     rootName,
+    rootPath,
+    rootPaths: allowedRoots,
     relativePath: normalizedRelative,
     folders,
     tracks,
