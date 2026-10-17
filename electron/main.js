@@ -869,8 +869,15 @@ ipcMain.handle('updater:install', () => {
   app.on('activate', () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow()
     try {
-      const folder = require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-      if (folder) require('./libraryWatcher').watchLibrary(folder)
+      const db = require('./ipc/db').getDB()
+      const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+      let folders = []
+      try { folders = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+      if (!folders.length) {
+        const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+        if (legacy) folders = [legacy]
+      }
+      if (folders.length) require('./libraryWatcher').watchLibraryRoots(folders)
     } catch (error) { console.warn('[libraryWatcher] Could not resume watching on activate:', error.message) }
   })
   app.on('open-url', (event, url) => {
