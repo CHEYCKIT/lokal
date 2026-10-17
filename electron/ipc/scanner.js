@@ -7,12 +7,12 @@ const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
 const artistSplit = require('../artistSplit')
-const { findFolderArtwork, getLibraryFolders } = require('../libraryFolder')
+const { findFolderArtwork, getLibraryFolders, resolveLibraryFolderTarget, getTrackRowsUnderFolder, renameLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
 const { emitPluginHook } = require('./plugins')
 const { applyPendingImportedMetadataToTrack, resolveGhostsByIsrc } = require('./playlists')
-const { removeTrackFiles, forgetDownloads } = require('./trackFiles')
+const { moveToTrash, removeTrackFiles, forgetDownloads } = require('./trackFiles')
 const { smartTracks, smartPreview, normalizeRules, playlistRules } = require('../playlists/smart')
 const { deduplicatePlaylist } = require('../playlists/deduplicate')
 const { fetchCoverData } = require('../playlists/remoteCover')
@@ -1210,6 +1210,77 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:scanFolders', async (e, folders) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolders(folders) })
   ipcMain.handle('scanner:status', () => scanStatus)
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search, rootPath) => getLibraryFolders(getDB(), relativePath, search, rootPath))
+
+  ipcMain.handle('scanner:renameLibraryFolders', (_, changes, rootPath) => {
+    try {
+      const result = renameLibraryFolders(getDB(), changes, rootPath)
+      try { if (mainWindow?.webContents) mainWindow.webContents.send('library:changed', { operation: 'folders-renamed', changes: result.renamed }) } catch {}
+      return result
+    } catch (error) {
+      return { error: error?.message || 'Could not rename folders' }
+    }
+  })
+  ipcMain.handle('scanner:deleteLibraryFolders', async (_, relativePaths, rootPath) => {
+    const db = getDB()
+    if (!Array.isArray(relativePaths) || relativePaths.length < 1 || relativePaths.length > 300) {
+      return { error: 'Select between 1 and 300 folders to delete', deleted: [], failed: [] }
+    }
+    let targets
+    try {
+      targets = relativePaths.map(relativePath => resolveLibraryFolderTarget(db, relativePath, rootPath))
+      const pathKey = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
+      if (new Set(targets.map(target => pathKey(target.targetPath))).size !== targets.length) {
+        throw new Error('A folder was selected more than once')
+      }
+      if (new Set(targets.map(target => pathKey(target.parentPath))).size !== 1) {
+        throw new Error('Select folders from the same directory')
+      }
+    } catch (error) {
+      return { error: error?.message || 'Could not validate folders', deleted: [], failed: [] }
+    }
+
+    const prepared = targets.map(target => ({ target, rows: getTrackRowsUnderFolder(db, target.targetPath) }))
+    const deleted = []
+    const failed = []
+    for (const item of prepared) {
+      try {
+        await moveToTrash(item.target.targetPath)
+        deleted.push(item)
+      } catch (error) {
+        failed.push({ path: item.target.relativePath, error: error?.message || 'Could not move folder to Trash' })
+      }
+    }
+
+    const ids = [...new Set(deleted.flatMap(item => item.rows.map(row => row.id)).filter(Boolean))]
+    if (ids.length) {
+      try {
+        const removeRows = db.transaction(trackIds => {
+          for (const trackId of trackIds) {
+            db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
+            db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId)
+            db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId)
+            db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId)
+            try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}
+            db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId)
+            try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}
+            db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
+          }
+        })
+        removeRows(ids)
+        forgetDownloads(ids)
+      } catch (error) {
+        return {
+          success: false,
+          deleted: deleted.map(item => item.target.relativePath),
+          failed: [...failed, { path: '', error: 'Folder moved to Trash, but library cleanup failed: ' + (error?.message || 'unknown error') }],
+        }
+      }
+    }
+    try {
+      if (mainWindow?.webContents) mainWindow.webContents.send('library:changed', { operation: 'folders-deleted', paths: deleted.map(item => item.target.relativePath) })
+    } catch {}
+    return { success: failed.length === 0, deleted: deleted.map(item => item.target.relativePath), failed }
+  })
   ipcMain.handle('scanner:getGenreSummary', () => { const db = getDB(); require('../genreList').registerGenreFunctions(db); return require('../genreList').genreSummary(db) })
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()

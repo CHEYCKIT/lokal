@@ -184,6 +184,12 @@ export const api = {
   getLibraryFolders: (relativePath = '', search = '', root = '') => isE()
     ? el().getLibraryFolders(relativePath, search, root)
     : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath) + (search ? '&search=' + encodeURIComponent(search) : '') + (root ? '&root=' + encodeURIComponent(root) : '')),
+  renameLibraryFolders: (changes, root = '') => isE()
+    ? el().renameLibraryFolders(changes, root)
+    : Promise.resolve({ error: 'Folder management is only available in the desktop app' }),
+  deleteLibraryFolders: (paths, root = '') => isE()
+    ? el().deleteLibraryFolders(paths, root)
+    : Promise.resolve({ error: 'Folder management is only available in the desktop app' }),
   onLibraryChanged: (fn) => isE() && el().onLibraryChanged ? el().onLibraryChanged(fn) : () => {},
   // A song that couldn't be played (Library → Songs with errors), or played again fine.
   reportTrackError: (id, message) => isE() ? el().reportTrackError(id, message) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'POST', body: { message } }),
