@@ -205,7 +205,7 @@ export default function Library() {
             ? (simpleSearch.trim() !== debouncedSimpleSearch || (loading && debouncedSimpleSearch)
                 ? t('Searching…')
                 : debouncedSimpleSearch
-                  ? tracks.length + ' ' + (tracks.length === 1 ? t('match') : t('matches'))
+                  ? tracks.length + (hasMore ? '+' : '') + ' ' + (tracks.length === 1 ? t('match') : t('matches'))
                   : tracks.length + ' ' + t('loaded tracks'))
             : folderData?.available
               ? (folderSearch.trim() && folderData.matchCount != null
@@ -296,7 +296,7 @@ export default function Library() {
         </div>
       )}
 
-      {libraryMode === 'simple' && !simpleSearch.trim() && !debouncedSimpleSearch && (hasMore || loading) && (
+      {libraryMode === 'simple' && (hasMore || loading) && (
         <div ref={loadMoreRef} className="flex justify-center pt-2 min-h-10">
           {loading && tracks.length > 0 && <p className="text-xs text-muted">{t("Loading more tracks...")}</p>}
         </div>
