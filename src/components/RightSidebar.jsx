@@ -206,9 +206,8 @@ export default function RightSidebar() {
     return <PowerCircle className={className} background={fx ? '#050505' : 'rgb(var(--surface-rgb))'} />
   })()
 
-  // The cover's top-left corner shows a Lyrics button when the song has
-  // lyrics: looked up the first time the pointer gets there (or already
-  // known from the lyrics cache), never for every song that plays.
+  // The cover's Lyrics button is shown when lyrics are available. The lookup
+  // also selects the default card for each new track unless Visualization is selected.
   const [lyricsLookup, setLyricsLookup] = useState({ trackId: null, has: false })
   const cachedLyrics = currentTrack?.id ? peekLyrics(currentTrack.id) : undefined
   const songHasLyrics = cachedLyrics !== undefined ? hasLyricLines(cachedLyrics) : lyricsLookup.trackId === currentTrack?.id && lyricsLookup.has
