@@ -1,5 +1,9 @@
-// Keep only the standalone visualizer selected when tracks change.
-// Lyrics belong to the current song, and the info card is the fallback.
+/**
+ * Choose the sidebar card to display after the current track changes.
+ * Only the standalone visualizer persists; lyrics and other views return to info.
+ * @param {string|null|undefined} view Previously selected card view.
+ * @returns {'visualization'|'info'} The view to use for the new track.
+ */
 export function sideCardViewAfterTrackChange(view) {
   return view === 'visualization' ? 'visualization' : 'info'
 }
