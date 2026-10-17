@@ -98,8 +98,8 @@ function configuredRoots() {
       if (legacy) values = [legacy]
     }
     const seen = new Set()
-    return values.map(value => path.resolve(String(value || ''))).filter(value => {
-      if (!value || seen.has(value.toLowerCase())) return false
+    return values.filter(value => typeof value === 'string' && value.trim()).map(value => path.resolve(value.trim())).filter(value => {
+      if (seen.has(value.toLowerCase())) return false
       seen.add(value.toLowerCase())
       return true
     })
