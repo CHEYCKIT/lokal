@@ -62,6 +62,30 @@ test('removing one duplicate queue entry leaves the other occurrence intact', ()
   assert.equal(store.getState().currentTrack, samePlaying)
 })
 
+test('removing a duplicate from a reordered shuffle removes the matching canonical occurrence', () => {
+  const playing = track('same', 'Playing copy')
+  const firstDuplicate = track('same', 'First queued copy')
+  const other = track('other', 'Other')
+  const targetDuplicate = track('same', 'Target queued copy')
+  const queue = [playing, firstDuplicate, other, targetDuplicate]
+  const shuffleQueue = [playing, targetDuplicate, other, firstDuplicate]
+  reset({
+    queue, originalQueue: [...queue], queueIndex: 0, currentTrack: playing,
+    shuffle: true, shuffleQueue, shuffleIndex: 0,
+  })
+
+  store.getState().removeFromQueue('same', 1)
+
+  let state = store.getState()
+  assert.deepEqual(state.shuffleQueue.map(item => item.title), ['Playing copy', 'Other', 'First queued copy'])
+  assert.deepEqual(state.queue.map(item => item.title), ['Playing copy', 'First queued copy', 'Other'])
+  assert.deepEqual(state.originalQueue.map(item => item.title), ['Playing copy', 'First queued copy', 'Other'])
+
+  store.getState().disableShuffle()
+  state = store.getState()
+  assert.deepEqual(state.queue.map(item => item.title), ['Playing copy', 'First queued copy', 'Other'])
+})
+
 test('removing a legacy shuffled-only entry still removes its row', () => {
   const existing = track('existing')
   const orphan = track('orphan')
