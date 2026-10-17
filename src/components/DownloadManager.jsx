@@ -258,7 +258,7 @@ function DownloadedPlaylists() {
   const problemLine = problem ? <p role="alert" className="px-2 pb-1 text-[11px] text-red-400">{problem}</p> : null
 
   if (!list.length) {
-    return <>{problemLine}<p className="px-3 py-8 text-center text-xs text-muted">{loaded ? 'No playlists downloaded yet. Search for one, or paste its link.' : 'Loading…'}</p></>
+    return <>{problemLine}<p className="px-3 py-8 text-center text-xs text-muted">{loaded ? t('No playlists downloaded yet. Search for one, or paste its link.') : t('Loading…')}</p></>
   }
   return (
     <div className="space-y-0.5">
@@ -283,7 +283,7 @@ function DownloadedPlaylists() {
             ) : (
               <div className="flex flex-shrink-0 items-center gap-1">
                 <button onClick={() => redownload(playlist.id)} disabled={downloading}
-                  title={downloading ? 'Downloading' : 'Download again (gets what was added since)'}
+                  title={downloading ? t('Downloading') : t('Download again (gets what was added since)')}
                   aria-label={`Download ${title} again`}
                   className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">
                   <RotateCcw size={13} className={downloading ? 'animate-spin' : ''} />
@@ -323,9 +323,9 @@ function TaskRow({ icon: Icon, label, running, done = 0, total = 0, detail, onSt
             <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
               <div className={`h-full bg-accent transition-[width] duration-300 ${total ? '' : 'w-1/3 animate-pulse'}`} style={total ? { width: `${percent}%` } : undefined} />
             </div>
-            <p className="mt-1 truncate text-[11px] tabular-nums text-muted" title={detail}>{total ? `${done}/${total}` : 'Starting…'}{detail ? ` · ${detail}` : ''}</p>
+            <p className="mt-1 truncate text-[11px] tabular-nums text-muted" title={detail}>{total ? `${done}/${total}` : t('Starting…')}{detail ? ` · ${detail}` : ''}</p>
           </>
-        ) : <p className="mt-0.5 truncate text-[11px] text-muted" title={detail}>{detail || 'Not running'}</p>}
+        ) : <p className="mt-0.5 truncate text-[11px] text-muted" title={detail}>{detail || t('Not running')}</p>}
       </button>
       {running && onStop && (
         <button onClick={onStop} title={t("Stop")} aria-label={`Stop ${label.toLowerCase()}`}
