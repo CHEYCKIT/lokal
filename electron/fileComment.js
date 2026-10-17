@@ -103,6 +103,7 @@ const TAG_FIELDS = {
   track_num: (tag, value) => { tag.track = number(value) },
   year: (tag, value) => { tag.year = number(value) },
   record_label: (tag, value) => { tag.publisher = text(value) || undefined },
+  genre: (tag, value) => { tag.genres = text(value) ? [text(value)] : [] },
   genres: (tag, value) => {
     tag.genres = (Array.isArray(value) ? value : String(value ?? '').split(',')).map(text).filter(Boolean)
   },
