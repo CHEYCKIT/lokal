@@ -889,9 +889,13 @@ export const usePlayerStore = create((set, get) => ({
       if (idx < 0 || idx === shuffleIndex) return
 
       const currentCanonicalIndex = currentTrack?.id === trackId ? queueIndex : -1
-      let queueRemoveIndex = Number.isInteger(idx) && queue[idx]?.id === trackId && idx !== currentCanonicalIndex
-        ? idx
-        : queue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
+      const removedEntry = shuffleQueue[idx]
+      // shuffleQueue's row index is not a canonical queue index. Match the
+      // actual entry reference first so another duplicate ID isn't removed.
+      let queueRemoveIndex = queue.findIndex((track, i) => track === removedEntry && i !== currentCanonicalIndex)
+      if (queueRemoveIndex < 0) {
+        queueRemoveIndex = queue.findIndex((track, i) => track.id === trackId && i !== currentCanonicalIndex)
+      }
 
       const newShuffleQueue = [...shuffleQueue]
       newShuffleQueue.splice(idx, 1)
