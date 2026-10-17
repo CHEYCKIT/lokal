@@ -1,4 +1,4 @@
-import taxonomy from './genreTaxonomy.json' with { type: 'json' }
+import taxonomy from '../electron/genreTaxonomy.json' with { type: 'json' }
 
 // Identity keys keep an existing alias (e.g. VGM) from appearing again as a
 // separate suggestion (e.g. Video Game Music) while preserving the stored text.
