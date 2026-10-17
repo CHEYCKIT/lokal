@@ -6,6 +6,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
+const folderFs = require('fs-extra')
 const { renameLibraryFolders, resolveLibraryFolderTarget } = require('../electron/libraryFolder.js')
 
 function fakeDb(root, initialTracks = []) {
@@ -90,16 +91,16 @@ test('supports folder renames that only change letter case', t => {
 
 test('rolls back every folder if a later phase of a swap fails', t => {
   const { root, db } = setup(t)
-  const originalRename = fs.renameSync
+  const originalRename = folderFs.renameSync
   let injected = false
-  fs.renameSync = function (from, to) {
+  folderFs.renameSync = function (from, to) {
     if (!injected && String(from).includes('.lokal-rename-') && path.resolve(to) === path.join(root, 'Artist', 'A')) {
       injected = true
       const error = new Error('simulated rename failure')
       error.code = 'EIO'
       throw error
     }
-    return originalRename.call(fs, from, to)
+    return originalRename.call(folderFs, from, to)
   }
   try {
     assert.throws(() => renameLibraryFolders(db, [
@@ -107,7 +108,7 @@ test('rolls back every folder if a later phase of a swap fails', t => {
       { path: 'Artist/B', newName: 'A' },
     ], root), /simulated rename failure/)
   } finally {
-    fs.renameSync = originalRename
+    folderFs.renameSync = originalRename
   }
   assert.equal(injected, true)
   assert.equal(fs.existsSync(path.join(root, 'Artist', 'A', 'a.flac')), true)
