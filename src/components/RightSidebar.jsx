@@ -543,7 +543,7 @@ export default function RightSidebar() {
                         <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
                       </div>
                     ) : infoCardView === 'visualization' ? (
-                      <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                      <div className={`relative h-[clamp(140px,24vh,210px)] min-h-[140px] max-h-[210px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
                         {sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
                       </div>
                     ) : (
