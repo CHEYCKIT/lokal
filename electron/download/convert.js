@@ -23,7 +23,6 @@ function metadata() {
 }
 
 /** Codecs Chromium can't play, by music-metadata's codec name. */
-const ALAC_CODEC = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?)/i
 const UNPLAYABLE = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
 const LOSSLESS = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
 
@@ -41,36 +40,19 @@ function classifyCodec(codecValue, formatLossless = false, containerValue = '') 
 }
 
 /**
- * On macOS, try Core Audio first for ALAC. If that fails, FFmpeg is the
- * fallback when installed. Other unsupported codecs require FFmpeg directly.
+ * Unsupported library codecs are converted with FFmpeg on every platform.
+ * macOS ALAC uses the same FFmpeg path, so its missing-dependency message and
+ * recovery flow are consistent with other unsupported codecs.
  */
-function playbackCopyPlans(info, ffmpeg, platform = process.platform) {
-  const ffmpegPlan = { converter: 'ffmpeg', extension: info?.lossless ? '.flac' : '.m4a' }
-  if (platform === 'darwin' && ALAC_CODEC.test(String(info?.codec || ''))) {
-    return [
-      { converter: 'afconvert', extension: '.wav' },
-      ...(ffmpeg ? [ffmpegPlan] : []),
-    ]
-  }
-  return [ffmpegPlan]
+function playbackCopyPlan(info) {
+  return { converter: 'ffmpeg', extension: info?.lossless ? '.flac' : '.m4a' }
 }
 
-function playbackCopyPlan(info, ffmpeg, platform = process.platform) {
-  return playbackCopyPlans(info, ffmpeg, platform)[0]
-}
-
-function afconvertArgs(src, dest) {
-  return ['-f', 'WAVE', '-d', 'LEF32', src, dest]
-}
-
-// Before conversion, report a missing required dependency. For macOS ALAC,
-// afconvert must get a chance first; only report missing FFmpeg after it fails.
-function playbackCopyFailure(info, ffmpeg, platform = process.platform, afconvertFailed = false) {
+// FFmpeg must be available before conversion can be attempted. Once present,
+// a conversion failure is reported as "Can't play" by the caller.
+function playbackCopyFailure(info, ffmpeg) {
   if (!info?.unplayable) return null
-  const plan = playbackCopyPlan(info, ffmpeg, platform)
-  if (!ffmpeg && plan.converter === 'ffmpeg') return 'ffmpeg-missing'
-  if (!ffmpeg && plan.converter === 'afconvert' && afconvertFailed) return 'ffmpeg-missing'
-  return null
+  return !ffmpeg ? 'ffmpeg-missing' : null
 }
 
 function discoverFfmpeg() {
@@ -218,45 +200,29 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   }
   if (!info?.unplayable) return null
   ffmpeg = resolveFfmpeg(ffmpeg)
-  const plans = playbackCopyPlans(info, ffmpeg)
+  const plan = playbackCopyPlan(info)
   fs.mkdirSync(cacheDir, { recursive: true })
-
-  // Each converter gets its own output extension and cache entry. A failed
-  // afconvert attempt must not prevent the FFmpeg fallback from being tried.
-  for (const plan of plans) {
-    const dest = path.join(cacheDir, cacheKey(filePath, stat) + plan.extension)
-    if (fs.existsSync(dest)) {
-      try { const now = new Date(); fs.utimesSync(dest, now, now) } catch {}
-      return dest
-    }
-
-    let job = inFlight.get(dest)
-    if (!job) {
-      const temp = `${dest}.part${path.extname(dest)}`
-      job = (async () => {
-        try {
-          if (plan.converter === 'afconvert') {
-            await run('/usr/bin/afconvert', afconvertArgs(filePath, temp))
-          } else {
-            await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
-          }
-          fs.renameSync(temp, dest)
-          trimCache(cacheDir, dest)
-          return dest
-        } catch {
-          try { fs.unlinkSync(temp) } catch {}
-          return null
-        }
-      })().finally(() => {
-        if (inFlight.get(dest) === job) inFlight.delete(dest)
-      })
-      inFlight.set(dest, job)
-    }
-
-    const copy = await job
-    if (copy) return copy
+  const dest = path.join(cacheDir, cacheKey(filePath, stat) + plan.extension)
+  if (fs.existsSync(dest)) {
+    try { const now = new Date(); fs.utimesSync(dest, now, now) } catch {}
+    return dest
   }
-  return null
+  if (inFlight.has(dest)) return inFlight.get(dest)
+  const job = (async () => {
+    const temp = `${dest}.part${path.extname(dest)}`
+    try {
+      await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
+      fs.renameSync(temp, dest)
+      trimCache(cacheDir, dest)
+      return dest
+    } catch {
+      try { fs.unlinkSync(temp) } catch {}
+      return null
+    }
+  })().finally(() => {
+    if (inFlight.get(dest) === job) inFlight.delete(dest)
+  })
+  inFlight.set(dest, job)
+  return job
 }
-
-module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, playbackCopyPlans, playbackCopyFailure, afconvertArgs, resolveFfmpeg }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg }
