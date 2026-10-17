@@ -11,6 +11,7 @@ import IcecastMetadataPlayer from 'icecast-metadata-player'
 
 let session = null
 let generation = 0
+let releaseTail = Promise.resolve()
 
 /** The station playing (or set to play), or null. */
 export function radioTrackId() {
@@ -35,16 +36,28 @@ export async function releaseRadio({ invalidate = true } = {}) {
   const current = session
   session = null
   if (invalidate) generation++
-  if (!current) return
-  try { await current.player.detachAudioElement() } catch {}
-  const el = current.el
-  try {
-    el.loop = false
-    el.pause()
-    el.removeAttribute('src')
-    el.srcObject = null
-    el.load()
-  } catch {}
+  if (!current) {
+    await releaseTail.catch(() => {})
+    return
+  }
+  const releaseGeneration = generation
+  const detach = async () => {
+    try { await current.player.detachAudioElement() } catch {}
+    // A newer station request owns the shared audio element now. An older
+    // detach must never pause or clear its newly attached stream.
+    if (generation !== releaseGeneration) return
+    const el = current.el
+    try {
+      el.loop = false
+      el.pause()
+      el.removeAttribute('src')
+      el.srcObject = null
+      el.load()
+    } catch {}
+  }
+  const pending = releaseTail.catch(() => {}).then(detach)
+  releaseTail = pending
+  await pending
 }
 
 /**
