@@ -177,7 +177,7 @@ export default function Quality() {
       <section className="rounded-[24px] border border-border bg-card/60 p-5">
         <div className="flex flex-wrap items-center gap-3">
           <AudioWaveform size={18} className="text-accent" />
-          <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">{t("Audio quality")}</h1>
+          <h1 className="font-display text-lg uppercase tracking-[0.28em] text-white">{t("Quality")}</h1>
           <span className="text-xs text-muted tabular-nums"><AnimatedNumber value={total} from={rollFrom(total)} /> {t("tracks")}</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {running ? (

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { LayoutGrid, List, Music, Disc3, Search, X, Clock, Shuffle, Play } from 'lucide-react'
+import { LayoutGrid, List, Music, Disc3, Search, X, Clock, Shuffle, Play, FolderPlus, Loader2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import TrackList from '../components/TrackList'
@@ -14,6 +14,23 @@ import { playNextMany } from '../trackActions'
 
 const LIBRARY_PAGE_SIZE = 50
 const HEAVY_GRID_THRESHOLD = 80
+
+function configuredRoots(settings) {
+  let roots = []
+  try {
+    const parsed = JSON.parse(settings?.music_folders || 'null')
+    if (Array.isArray(parsed)) roots = parsed
+  } catch {}
+  if (!roots.length && typeof settings?.music_folder === 'string' && settings.music_folder.trim()) roots = [settings.music_folder]
+  const seen = new Set()
+  return roots.filter(value => {
+    if (typeof value !== 'string' || !value.trim()) return false
+    const key = value.trim().toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).map(value => value.trim())
+}
 
 export default function Library() {
   const { t } = useTranslation()
@@ -37,6 +54,10 @@ export default function Library() {
   const [simpleSearch, setSimpleSearch] = useCachedState('library:simpleSearch', '')
   const [debouncedSimpleSearch, setDebouncedSimpleSearch] = useState(() => simpleSearch.trim())
   const [folderData, setFolderData] = useState(null)
+  const [musicRoots, setMusicRoots] = useState([])
+  const [activeMusicRoot, setActiveMusicRoot] = useCachedState('library:activeMusicRoot', '')
+  const [addingMusicFolder, setAddingMusicFolder] = useState(false)
+  const [musicRootError, setMusicRootError] = useState('')
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useCachedState('library:hasMore', true)
   // The empty state waits for the first answer instead of showing meanwhile.
@@ -45,6 +66,17 @@ export default function Library() {
     const timer = setTimeout(() => setDebouncedSimpleSearch(simpleSearch.trim()), 180)
     return () => clearTimeout(timer)
   }, [simpleSearch])
+
+  useEffect(() => {
+    let live = true
+    api.getSettings().then(settings => {
+      if (!live) return
+      const roots = configuredRoots(settings || {})
+      setMusicRoots(roots)
+      setActiveMusicRoot(current => roots.includes(current) ? current : (roots[0] || ''))
+    }).catch(() => {})
+    return () => { live = false }
+  }, [])
   usePageReady(loaded)
   const playQueue = usePlayerStore(s => s.playQueue)
   const navigate = useNavigate()
@@ -54,6 +86,36 @@ export default function Library() {
   const loadMoreRef = useRef(null)
   const requestIdRef = useRef(0)
   const shouldAnimateGrid = tracks.length <= HEAVY_GRID_THRESHOLD
+
+  const addMusicFolder = async () => {
+    if (!api.isElectron || addingMusicFolder) return
+    setMusicRootError('')
+    const selected = await api.openFolder()
+    if (!selected || typeof selected !== 'string') return
+    if (musicRoots.some(root => root.toLowerCase() === selected.toLowerCase())) {
+      setActiveMusicRoot(selected)
+      setLibraryMode('advanced')
+      return
+    }
+    const nextRoots = [...musicRoots, selected]
+    setAddingMusicFolder(true)
+    try {
+      const result = await api.scanFolders(nextRoots)
+      if (result?.error) throw new Error(result.error)
+      const savedRoots = Array.isArray(result?.folders) && result.folders.length ? result.folders : nextRoots
+      setMusicRoots(savedRoots)
+      setActiveMusicRoot(selected)
+      setLibraryMode('advanced')
+      setFolderPath('')
+      setFolderData(null)
+      await api.saveSettings({ music_folders: JSON.stringify(savedRoots), music_folder: savedRoots[0] || '' })
+      window.dispatchEvent(new Event('lokal:refresh'))
+    } catch (error) {
+      setMusicRootError(error?.message === 'Choose at least one existing music folder' ? t(error.message) : t('Could not add this music folder'))
+    } finally {
+      setAddingMusicFolder(false)
+    }
+  }
   const playAllTracks = libraryMode === 'simple'
     ? (simpleSearch.trim() === debouncedSimpleSearch ? tracks : [])
     : (folderData?.filteredTracks || (folderData?.tracks?.length ? folderData.tracks : folderData?.allTracks) || [])
@@ -255,6 +317,13 @@ export default function Library() {
           ) : libraryMode === 'simple' && playAllTracks.length > 0 ? (
             <button onClick={() => playQueue(playAllTracks, 0, null)} className="text-xs text-accent hover:text-accent/70 font-display uppercase tracking-wider transition-colors">{t("Play All")}</button>
           ) : null}
+          {api.isElectron && (
+            <button type="button" onClick={addMusicFolder} disabled={addingMusicFolder}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:text-white disabled:opacity-50">
+              {addingMusicFolder ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
+              {addingMusicFolder ? t('Adding folder…') : t('Add music folder')}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
@@ -267,16 +336,34 @@ export default function Library() {
       </div>
 
       {libraryMode === 'advanced' && (
-        <LibraryFolderBrowser
-          folderPath={folderPath}
-          onFolderChange={setFolderPath}
-          onDataChange={setFolderData}
-          view={view}
-          playQueue={playQueue}
-          artSrc={artSrc}
-          searchQuery={folderSearch}
-          onSearchQueryChange={setFolderSearch}
-        />
+        <>
+          {musicRoots.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2">
+              <label htmlFor="library-root-select" className="text-xs text-muted">{t('Music folder')}</label>
+              <select id="library-root-select" value={activeMusicRoot} onChange={event => {
+                setActiveMusicRoot(event.target.value)
+                setFolderPath('')
+                setFolderData(null)
+                setFolderSearch('')
+              }} className="min-w-0 max-w-full rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-white">
+                {musicRoots.map(root => <option key={root} value={root}>{root.split(/[\\/]/).filter(Boolean).pop() || root}</option>)}
+              </select>
+              <span className="text-xs text-muted">{t('{n} folders', { n: musicRoots.length })}</span>
+            </div>
+          )}
+          {musicRootError && <p className="text-xs text-red-400" role="alert">{musicRootError}</p>}
+          <LibraryFolderBrowser
+            folderPath={folderPath}
+            onFolderChange={setFolderPath}
+            onDataChange={setFolderData}
+            view={view}
+            playQueue={playQueue}
+            artSrc={artSrc}
+            searchQuery={folderSearch}
+            onSearchQueryChange={setFolderSearch}
+            rootPath={activeMusicRoot}
+          />
+        </>
       )}
 
       {libraryMode === 'simple' && tracks.length > 0 && view === 'list' && (
@@ -323,7 +410,7 @@ export default function Library() {
           <Music size={48} className="mx-auto mb-4 opacity-20" />
           <p>{debouncedSimpleSearch
             ? `${t('No tracks match')} “${debouncedSimpleSearch}”.`
-            : problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — pick your music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? t(source === 'all' ? 'No {genre} songs.' : 'No {genre} songs from this source.', { genre }) : t('No songs from this source.')}</p>
+            : problemsOnly ? t('No songs with errors: everything here can be played.') : source === 'all' && !genre && !quality ? t('No tracks yet — add a music folder above.') : quality ? t('No songs of this quality with these filters.') : genre ? t(source === 'all' ? 'No {genre} songs.' : 'No {genre} songs from this source.', { genre }) : t('No songs from this source.')}</p>
           {debouncedSimpleSearch && (
             <button onClick={() => setSimpleSearch('')} className="mt-3 text-xs text-accent transition-colors hover:text-accent/70">{t("Clear search")}</button>
           )}

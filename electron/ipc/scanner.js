@@ -343,7 +343,49 @@ function trackParams(item, trackId = item?.id) {
   }
 }
 
-async function scanFolder(folderPath) {
+function configuredMusicFolders(db = getDB()) {
+  const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+  let values = []
+  try { values = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+  if (!values.length) {
+    const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+    if (legacy) values = [legacy]
+  }
+  const seen = new Set()
+  return values.filter(value => typeof value === 'string' && value.trim()).map(value => path.resolve(value.trim())).filter(value => {
+    if (seen.has(value.toLowerCase())) return false
+    seen.add(value.toLowerCase())
+    return true
+  })
+}
+
+async function scanFolders(folderPaths = []) {
+  const db = getDB()
+  const folders = []
+  const seen = new Set()
+  for (const value of Array.isArray(folderPaths) ? folderPaths : []) {
+    if (typeof value !== 'string' || !value.trim()) continue
+    const full = path.resolve(value.trim())
+    try { if (!fs.statSync(full).isDirectory()) continue } catch { continue }
+    if (seen.has(full.toLowerCase())) continue
+    seen.add(full.toLowerCase())
+    folders.push(full)
+  }
+  if (!folders.length) return { error: 'Choose at least one existing music folder', folders: configuredMusicFolders(db) }
+
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folders[0])
+  const results = []
+  for (const folder of folders) results.push(await scanFolder(folder, { saveRoot: false, watch: false }))
+  // Scanning a folder must not replace the selected root list or leave only
+  // the last folder watched.
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folders[0])
+  try { require('../libraryWatcher').watchLibraryRoots(folders) } catch (error) { console.warn('[scanner] Library watchers not started:', error.message) }
+  return { folders, results, status: scanStatus }
+}
+
+async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
   const db = getDB()
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
@@ -362,8 +404,14 @@ async function scanFolder(folderPath) {
     lastProgressAt = now
     emit('scanner:progress', { ...scanStatus, ...(complete ? { complete: true } : {}) })
   }
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
-  try { require('../libraryWatcher').watchLibrary(folderPath) } catch (e) { console.warn('[scanner] Library watcher not started:', e.message) }
+  if (saveRoot) {
+    const folder = path.resolve(folderPath)
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folder)
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify([folder]))
+  }
+  if (watch && saveRoot) {
+    try { require('../libraryWatcher').watchLibraryRoots(configuredMusicFolders(db)) } catch (e) { console.warn('[scanner] Library watcher not started:', e.message) }
+  }
 
   const linkArtist = db.prepare(`INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)`)
   const findExistingTrackByPath = db.prepare('SELECT id FROM tracks WHERE file_path = ?')
@@ -1159,8 +1207,9 @@ function registerScannerHandlers(ipcMain) {
   const { BrowserWindow } = require('electron')
   try { require('../genreList').registerGenreFunctions(getDB()) } catch (error) { console.warn('[scanner] Genre filters unavailable:', error.message) }
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
+  ipcMain.handle('scanner:scanFolders', async (e, folders) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolders(folders) })
   ipcMain.handle('scanner:status', () => scanStatus)
-  ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search) => getLibraryFolders(getDB(), relativePath, search))
+  ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search, rootPath) => getLibraryFolders(getDB(), relativePath, search, rootPath))
   ipcMain.handle('scanner:getGenreSummary', () => { const db = getDB(); require('../genreList').registerGenreFunctions(db); return require('../genreList').genreSummary(db) })
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()
@@ -2015,21 +2064,31 @@ async function indexSingleFile(filePath, opts = {}) {
 
 async function applyFileChanges(changes = []) {
   const db = getDB()
-  const root = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-  if (!root || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
-  const rootPath = path.resolve(root)
+  const roots = configuredMusicFolders(db).filter(root => {
+    try { return fs.statSync(root).isDirectory() } catch { return false }
+  })
+  if (!roots.length || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
+
+  const rootFor = filePath => {
+    for (const root of roots) {
+      const relative = path.relative(root, filePath)
+      if (relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) return root
+    }
+    return null
+  }
   const files = new Set()
   const gone = []
   const seen = new Set()
+  const changedRoots = new Set()
 
   for (const change of changes) {
     const rawPath = change?.path
     if (!rawPath) continue
     const filePath = path.resolve(String(rawPath))
-    const relative = path.relative(rootPath, filePath)
-    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
-    if (seen.has(filePath)) continue
+    const owner = rootFor(filePath)
+    if (!owner || seen.has(filePath)) continue
     seen.add(filePath)
+    changedRoots.add(owner)
 
     let stat
     try { stat = fs.statSync(filePath) } catch {
@@ -2050,9 +2109,10 @@ async function applyFileChanges(changes = []) {
     before.set(filePath, db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath) || null)
   }
 
-  // scanFolder stats the full tree but reads tags only for new, changed, or
-  // artwork-stale files; doing it before pruning lets renamed copies be found.
-  await scanFolder(rootPath)
+  // Scan only affected roots before pruning exact missing paths. This picks up
+  // renamed files first, so the pruning code can transfer likes/history to the
+  // replacement row instead of treating a rename as a delete.
+  for (const root of changedRoots) await scanFolder(root, { saveRoot: false, watch: false })
 
   let removed = []
   if (gone.length) {
@@ -2080,7 +2140,7 @@ async function applyFileChanges(changes = []) {
   }
 }
 
-module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, applyFileChanges, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, scanFolders, configuredMusicFolders, applyFileChanges, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
 
 
 function registerExtraHandlers(ipcMain) {
