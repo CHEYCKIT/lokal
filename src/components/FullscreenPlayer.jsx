@@ -23,7 +23,7 @@ import { trackArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
-const COVER_SIZE = 'min(34rem, 54vh)'
+const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
 const PANEL_WIDTH = 'min(52vw, 780px)'
 const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
@@ -557,6 +557,30 @@ export default function FullscreenPlayer() {
   const chromeFade = `transition-[opacity,color,background-color] duration-300 ${chromeHidden ? 'opacity-0' : 'opacity-100'}`
   const [coverHover, setCoverHover] = useState(false)
   const controlsShown = coverHover && !chromeHidden
+  /**
+   * Tilt the fullscreen cover toward the pointer without adding a hover-light effect.
+   * @param {PointerEvent} event Pointer movement over the cover.
+   */
+  const handleCoverPointerMove = (event) => {
+    if (reduceMotion || event.pointerType !== 'mouse') return
+    const cover = event.currentTarget
+    const bounds = cover.getBoundingClientRect()
+    if (!bounds.width || !bounds.height) return
+    const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+    const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
+    cover.style.setProperty('--cover-rotate-x', `${(0.5 - y) * 9}deg`)
+    cover.style.setProperty('--cover-rotate-y', `${(x - 0.5) * 9}deg`)
+  }
+  /**
+   * Restore the fullscreen cover's neutral tilt when the pointer leaves.
+   * @param {MouseEvent} event Pointer-leave event from the cover.
+   */
+  const resetCoverPointer = (event) => {
+    setCoverHover(false)
+    const cover = event.currentTarget
+    cover.style.setProperty('--cover-rotate-x', '0deg')
+    cover.style.setProperty('--cover-rotate-y', '0deg')
+  }
 
   // The whole screen (the OS's full screen), on top of this view; left when
   // the view closes.
@@ -724,9 +748,10 @@ export default function FullscreenPlayer() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 26 }}
                 onMouseEnter={() => setCoverHover(true)}
-                onMouseLeave={() => setCoverHover(false)}
+                onMouseLeave={resetCoverPointer}
+                onPointerMove={handleCoverPointerMove}
                 onDoubleClick={doubleClickLike}
-                className="group/cover relative select-none rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
+                className="fullscreen-cover-stage group/cover relative select-none rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
                 // A tall (9:16) canvas plays in the card itself, which grows to
                 // its shape. (It used to fill the whole screen behind the
                 // lyrics panel, whose blur then had to be redone every video
@@ -739,8 +764,8 @@ export default function FullscreenPlayer() {
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
                         <img src={trackArtURL(track)} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                        <MotionCover trackId={track?.id} only="square" off={coverOff} />
-                        <MotionCover trackId={track?.id} only="tall" onActive={top ? setFsCanvas : undefined} off={coverOff} />
+                        {top && <MotionCover trackId={track?.id} only="square" off={coverOff} />}
+                        {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>
                     )} />
                   : <span className="text-white/10 text-7xl">♪</span>

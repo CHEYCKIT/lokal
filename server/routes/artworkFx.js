@@ -3,10 +3,15 @@
 const router = require('express').Router()
 const path = require('path')
 const fs = require('fs')
-const { meshForTrack, motionForTrack, motionCacheDir, spotifyCheck } = require('../../electron/ipc/artworkFx')
+const { meshForTrack, meshFromRemoteURL, motionForTrack, motionCacheDir, spotifyCheck } = require('../../electron/ipc/artworkFx')
+const { httpsImageURL } = require('../../electron/playlists/remoteCover')
 
 router.get('/mesh/:trackId', async (req, res) => {
   res.json((await meshForTrack(req.params.trackId).catch(() => null)) || null)
+})
+
+router.get('/mesh-url', async (req, res) => {
+  res.json((await meshFromRemoteURL(httpsImageURL(req.query.url)).catch(() => null)) || null)
 })
 
 router.get('/motion/:trackId', async (req, res) => {

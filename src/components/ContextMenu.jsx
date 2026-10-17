@@ -110,7 +110,7 @@ export default function ContextMenu({ menu, id }) {
           className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-40 ${active === index ? (item.danger ? 'bg-red-500/15 text-red-300' : 'bg-white/10 text-white') : item.danger ? 'text-red-400' : 'text-white/85'}`}
         >
           {item.icon && <item.icon size={14} className="flex-shrink-0 opacity-80" />}
-          <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
+          <span className="min-w-0 flex-1 truncate">{t(item.label, item.labelValues)}</span>
           {item.hint && <span className="flex-shrink-0 text-[11px] text-muted">{t(item.hint)}</span>}
         </button>
       ))}

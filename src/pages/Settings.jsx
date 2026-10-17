@@ -1,8 +1,11 @@
 import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
+import SplitWordsSettings from '../components/SplitWordsSettings'
+import { collectLocalPrefs, restoreLocalPrefs } from '../localPrefsBackup'
+import AppTabsSettings from '../components/AppTabsSettings'
 import { APP_LANGUAGES, useTranslation } from '../i18n'
 ﻿import React, { useEffect, useLayoutEffect, useState, useRef, createContext, useContext } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Info, Tags, FolderOpen, RefreshCw, Trash2, AlertTriangle, Link, CheckCircle, Disc3, Zap, Download, Music2, X, MoreHorizontal, ListMusic, Palette, ChevronDown, ChevronUp, RefreshCcw, Image as ImageIcon, Blocks, Search } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { FORMATS, MP3_BITRATES, savedFormat } from '../downloadLinks'
@@ -253,6 +256,7 @@ function withSettingDefaults(s) {
 
 export default function Settings() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { t, language, setLanguage } = useTranslation()
   const replayGainMode = usePlayerStore(s => s.replayGainMode)
   // Seeded from the settings already read (and the version / tools found on
@@ -672,10 +676,15 @@ export default function Settings() {
   }
 
   const rescan = async () => {
-    if (!settings.music_folder) return
+    let roots = []
+    try {
+      const parsed = JSON.parse(settings.music_folders || 'null')
+      if (Array.isArray(parsed)) roots = parsed.filter(folder => typeof folder === 'string' && folder.trim())
+    } catch {}
+    if (!roots.length && settings.music_folder) roots = [settings.music_folder]
+    if (!roots.length) return
     setScanning(true)
-    await api.scanFolder(settings.music_folder)
-    setScanning(false)
+    try { await api.scanFolders(roots) } finally { setScanning(false) }
   }
 
   const checkDuplicates = async () => {
@@ -832,6 +841,7 @@ export default function Settings() {
     try {
       const data = await api.exportAllData()
       if (!data || data.error) throw new Error(t(data?.error || 'Export failed'))
+      data.localPrefs = collectLocalPrefs()
       triggerDownload(
         JSON.stringify(data, null, 2),
         `lokal-app-data-${new Date().toISOString().split('T')[0]}.json`,
@@ -907,6 +917,7 @@ export default function Settings() {
     try {
       const result = await api.importAllData(importPreview.data)
       if (!result || result.error) throw new Error(t(result?.error || 'Import failed'))
+      restoreLocalPrefs(importPreview.data.localPrefs)
       setShowImportModal(false)
       setImportPreview(null)
       await reloadAfterDataReplace()
@@ -1233,7 +1244,7 @@ activeCategory === 'data' ? usersTried
            </button>
          </Row>
         <Row label={t("Rescan Library")}>
-          <button onClick={rescan} disabled={scanning || !settings.music_folder}
+          <button onClick={rescan} disabled={scanning || (!settings.music_folder && !settings.music_folders)}
             className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-white hover:border-accent/30 disabled:opacity-40 transition-colors">
             <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />{scanning ? t('Scanning…') : t('Rescan')}
           </button>
@@ -1358,6 +1369,7 @@ activeCategory === 'data' ? usersTried
             {t('Configure ({count})', { count: keepCommaArtists.length })}
           </button>
         </Row>
+        <Row stacked label={t('Artist separator words')} desc={t('Extra words used to separate featured artists and credits, including in brackets.')}><SplitWordsSettings /></Row>
         <Row label={t("Fill In Artist Pages")} desc={t("When you open an artist, look up their bio and picture if they're missing.")}>
           <button
             onClick={() => set('auto_fetch_artist_metadata', settings.auto_fetch_artist_metadata === '1' ? '0' : '1')}
@@ -1433,19 +1445,6 @@ activeCategory === 'data' ? usersTried
             <span className="text-xs text-muted">{t("sec")}</span>
           </div>
         </Row>
-        <Row label={t("Music Folder")}>
-          <div className="flex items-center gap-2">
-            <input value={settings.music_folder || ''} onChange={e => set('music_folder', e.target.value)}
-              placeholder={t("Choose your music folder")}
-              className="w-52 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-            {api.isElectron && (
-              <button onClick={async () => { const f = await api.openFolder(); if (f) set('music_folder', f) }}
-                className="p-1.5 bg-card border border-border rounded-lg text-muted hover:text-white transition-colors">
-                <FolderOpen size={14} />
-              </button>
-            )}
-          </div>
-        </Row>
       </Section>
       )}
 
@@ -1499,6 +1498,7 @@ activeCategory === 'data' ? usersTried
             <option value="off">{t('Off')}</option>
             <option value="track">{t('Track gain')}</option>
             <option value="album">{t('Album gain')}</option>
+            <option value="smart">{t('Smart gain')}</option>
           </select>
         </Row>
         <Row label={t("Song Transitions")} desc={crossfade.mode === 'automix'
@@ -2157,12 +2157,23 @@ activeCategory === 'data' ? usersTried
             {settings.glass_player_bar !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
-        <Row label={t("Waveform")} desc={t("Moving bars next to the volume while music plays.")}>
-          <button
-            onClick={() => set('player_waveform', settings.player_waveform === '0' ? '1' : '0')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.player_waveform !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.player_waveform !== '0' ? t('On') : t('Off')}
-          </button>
+        <Row label={t("Visualization")} desc={t("Choose the audio-reactive graphic beside the player controls.")}>
+          <select aria-label={t("Player bar visualization")} value={settings.player_visualizer || (settings.player_waveform === '0' ? 'off' : 'waveform')} onChange={e => set('player_visualizer', e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent/50">
+            <option value="off">{t("Off")}</option>
+            <option value="waveform">{t("Waveform")}</option>
+            <option value="spectrum">{t("Spectrum")}</option>
+            <option value="waves">{t("Waves")}</option>
+            <option value="lightning">{t("Lightning")}</option>
+          </select>
+        </Row>
+      </Section>
+      )}
+
+      {inCategory('appearance') && (
+      <Section title={t("Navigation")}>
+        <Row stacked label={t("Sidebar order")} desc={t("Drag items to reorder the sidebar. Move items below the divider to group them under More.")}>
+          <AppTabsSettings value={settings.sidebar_nav || ''} onChange={value => set('sidebar_nav', value)} />
         </Row>
       </Section>
       )}
@@ -2343,6 +2354,17 @@ activeCategory === 'data' ? usersTried
               </div>
             )}
           </div>
+        </Row>
+      </Section>
+      )}
+
+      {api.isElectron && inCategory('data') && (
+      <Section title={t("Cache Analysis")}>
+        <Row label={t("Analyze storage")} desc={t("Inspect Lokal's disk usage and remove unused caches, old logs and other recoverable data.")}>
+          <button onClick={() => navigate('/cache-analysis')}
+            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white transition-colors">
+            <Search size={14} /> {t('Open Cache Analysis')}
+          </button>
         </Row>
       </Section>
       )}

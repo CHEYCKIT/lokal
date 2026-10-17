@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import RenderErrorBoundary from './RenderErrorBoundary'
 import { LanguageProvider } from './i18n'
 import './index.css'
 import { applyTheme, THEMES } from './theme'
@@ -36,4 +37,4 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{}))
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<LanguageProvider><App /></LanguageProvider>)
+ReactDOM.createRoot(document.getElementById('root')).render(<RenderErrorBoundary><LanguageProvider><App /></LanguageProvider></RenderErrorBoundary>)

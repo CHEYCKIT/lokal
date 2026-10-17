@@ -1,5 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
-import { replayGainMultiplier } from './audio/replayGain.mjs'
+import { effectiveReplayGainMode, replayGainMultiplier } from './audio/replayGain.mjs'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
 
@@ -29,6 +29,9 @@ import Onboarding, { useOnboarding } from './components/Onboarding'
 import PostOnboardingTour from './components/PostOnboardingTour'
 import Home from './pages/Home'
 import Albums from './pages/Albums'
+import Genres, { GenreTracks } from './pages/Genres'
+import Stations from './pages/Stations'
+import CacheAnalysis from './pages/CacheAnalysis'
 import OnlineAlbum from './pages/OnlineAlbum'
 import Artists from './pages/Artists'
 import Videos from './pages/Videos'
@@ -48,12 +51,17 @@ import ImportPlaylistModal from './components/ImportPlaylistModal'
 import ShareCardModal from './components/ShareCardModal'
 import { usePlayerStore, useAppStore } from './store/player'
 import { useShallow } from 'zustand/react/shallow'
-import { api } from './api'
+import { api, peekSettings } from './api'
+import { isStationTrack, stationSongTime, RADIO_CONTEXT } from './radio/stations'
+import { pauseRadio, playRadio, radioTrackId, releaseRadio, startRadio } from './radio/radioSession'
+import { handleStationTitle, resetStationDisplay } from './radio/radioNowPlaying'
+import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
+import { playbackLog } from './playbackLog'
 
 // An addon refusing because its access isn't set up (or has lapsed).
 const ADDON_ACCESS_ERROR = /VERIFY_REQUIRED|verif|log\s*in|sign\s*in|unauthori[sz]ed|not authenticated/i
@@ -321,6 +329,10 @@ function AnimatedRoutes() {
         <Route path="/" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/home/:tab/*" element={<PageTransition gated><Home /></PageTransition>} />
         <Route path="/albums" element={<PageTransition gated><Albums /></PageTransition>} />
+        <Route path="/genres" element={<PageTransition gated><Genres /></PageTransition>} />
+        <Route path="/genre/:name" element={<PageTransition gated><GenreTracks /></PageTransition>} />
+        <Route path="/stations" element={<PageTransition gated><Stations /></PageTransition>} />
+        <Route path="/cache-analysis" element={<PageTransition gated><CacheAnalysis /></PageTransition>} />
         <Route path="/artists" element={<PageTransition gated><Artists /></PageTransition>} />
         <Route path="/videos" element={<PageTransition gated><Videos /></PageTransition>} />
         <Route path="/library" element={<PageTransition gated><Library /></PageTransition>} />
@@ -342,6 +354,10 @@ function AnimatedRoutes() {
 
 /** The app shell: header, sidebar, pages, side panels, player and overlays. */
 export default function App() {
+  useEffect(() => api.onLibraryChanged?.(() => {
+    window.dispatchEvent(new Event('lokal:refresh'))
+  }), [])
+
   const { t } = useTranslation()
   // The glass player bar floats over the pages, which keep room for it.
   const glassPlayerBar = useAppearanceFlag('glass_player_bar')
@@ -422,6 +438,8 @@ export default function App() {
   // Web mode needs nothing here: the server's stream route does the same.
   const handleAudioError = useCallback(async (event) => {
     const el = event.currentTarget
+    // Online radio: icecast-metadata-player reconnects by itself (src/radio/radioSession.js).
+    if (isStationTrack(usePlayerStore.getState().currentTrack) && el === audioRef.current) return
     const code = el?.error?.code
     // A failed stream advances through the configured playback providers.
     const failedTrack = usePlayerStore.getState().currentTrack
@@ -454,10 +472,14 @@ export default function App() {
     try {
       let filePath = src.slice('file://'.length)
       try { filePath = decodeURIComponent(filePath) } catch {}
-      const copy = await api.playableFile?.(filePath).catch(() => null)
+      const result = await api.playableFile?.(filePath).catch(() => null)
+      const copy = typeof result === 'string' ? result : result?.path || null
       if (!copy && el.getAttribute('src') === src) {
         const failed = usePlayerStore.getState().currentTrack
-        reportPlaybackError(failed, failed?.missing ? 'The file is no longer on disk' : "The file couldn't be decoded, even after conversion")
+        const message = result?.error === 'ffmpeg-missing'
+          ? 'FFMPEG_MISSING'
+          : failed?.missing ? 'The file is no longer on disk' : "The file couldn't be decoded, even after conversion"
+        reportPlaybackError(failed, message)
       }
       if (!copy || el.getAttribute('src') !== src) return
       const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
@@ -476,7 +498,9 @@ export default function App() {
   // Treating those as pauses flipped the player to paused, so the converted
   // copy never started and play had to be clicked a second time. The user's
   // own pauses go through the store, not through these events.
-  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1'
+  // Online radio: the radio player pauses the element itself while it
+  // reconnects; a real pause goes through the store (play/pause, media keys).
+  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1' || isStationTrack(usePlayerStore.getState().currentTrack)
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
@@ -650,7 +674,8 @@ export default function App() {
 
       const latestAssignedId = element.dataset.lokalTrackPending || element.dataset.lokalTrackId
       if (latestAssignedId && latestAssignedId !== id) return null
-      apply(replayGainMultiplier(tags, usePlayerStore.getState().replayGainMode))
+      const state = usePlayerStore.getState()
+      apply(replayGainMultiplier(tags, effectiveReplayGainMode(state.replayGainMode, track, state)))
       return tags || null
     } catch {
       apply(1)
@@ -993,10 +1018,13 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('lokal:analyser-ready'))
 
     if (isIOS) {
+      // iOS bypasses EQ/fade nodes, but still routes both decks through the
+      // analyser as a pass-through so every visualizer receives live audio.
       primarySource.connect(primaryReplayGain)
-      primaryReplayGain.connect(ctx.destination)
+      primaryReplayGain.connect(analyser)
+      analyser.connect(ctx.destination)
       cfSource.connect(cfReplayGain)
-      cfReplayGain.connect(ctx.destination)
+      cfReplayGain.connect(analyser)
     } else {
       let prev = primarySource
       for (const n of nodes) { prev.connect(n); prev = n }
@@ -1285,7 +1313,7 @@ export default function App() {
       return state.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
     }
 
-    if (audioRef.current && typeof navigator.mediaSession.setPositionState === 'function') {
+    if (audioRef.current && !isStationTrack(currentTrack) && typeof navigator.mediaSession.setPositionState === 'function') {
       try {
         navigator.mediaSession.setPositionState({
           duration: audioRef.current.duration || 0,
@@ -1309,6 +1337,7 @@ export default function App() {
       usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (isStationTrack(usePlayerStore.getState().currentTrack)) return
       if (usePlayerStore.getState().castActive) { if (typeof details.seekTime === 'number') usePlayerStore.getState().setProgressWithAudioUpdate(details.seekTime); return }
       const activeEl = getActiveAudio()
       if (activeEl && typeof details.seekTime === 'number') activeEl.currentTime = details.seekTime
@@ -1328,6 +1357,7 @@ export default function App() {
     if (!activeEl) return
 
     const update = () => {
+      if (isStationTrack(usePlayerStore.getState().currentTrack)) return
       if (typeof navigator.mediaSession.setPositionState === 'function') {
         try {
           navigator.mediaSession.setPositionState({
@@ -1402,7 +1432,7 @@ export default function App() {
         const targetId = String(value.trackId || '')
         const requestedIds = Array.isArray(value.trackIds) ? value.trackIds : []
         const ids = [...new Set([...requestedIds, targetId].map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
-        if (!ids.length) return { error: 'No library tracks were selected' }
+        if (!ids.length) return { error: t('No library tracks were selected') }
         const tracks = []
         // Keep each SQL IN-list under the parameter limit used by SQLite
         // builds that ship with older Linux distributions.
@@ -1414,9 +1444,9 @@ export default function App() {
         const byId = new Map(tracks.filter(track => track?.id).map(track => [String(track.id), track]))
         const ordered = ids.map(id => byId.get(id)).filter(Boolean)
         if (action === 'playLibraryTrack' && !byId.has(targetId)) {
-          return { error: 'The selected track is no longer available in the library' }
+          return { error: t('The selected track is no longer available in the library') }
         }
-        if (!ordered.length) return { error: 'No playable tracks were found' }
+        if (!ordered.length) return { error: t('No playable tracks were found') }
         if (action === 'playLibraryTrack') {
           const selected = byId.get(targetId)
           state.playTrack(selected, ordered)
@@ -1637,6 +1667,33 @@ export default function App() {
   const [addonVerificationBusy, setAddonVerificationBusy] = useState(false)
   const [addonVerificationMessage, setAddonVerificationMessage] = useState('')
   const [playbackRetryNonce, setPlaybackRetryNonce] = useState(0)
+
+  // The library's FFmpeg prompt can resume a track after the dependency is
+  // installed. Clear the media-element guard and bump the playback nonce so
+  // the same file is loaded and its conversion fallback gets another attempt.
+  useEffect(() => {
+    const retryLocalPlayback = (event) => {
+      const { track, queue, context } = event.detail || {}
+      if (!track?.id) return
+      const retryTrack = { ...track }
+      delete retryTrack.playback_error
+      for (const el of [audioRef.current, cfAudioRef.current]) {
+        if (!el) continue
+        el.dataset.fallbackFor = ''
+        el.dataset.fallbackSrc = ''
+        el.dataset.fallbackPending = ''
+      }
+      const retryQueue = Array.isArray(queue) && queue.some(item => item?.id === retryTrack.id)
+        ? queue.map(item => item?.id === retryTrack.id ? retryTrack : item)
+        : [retryTrack]
+      Promise.resolve(api.clearTrackError?.(retryTrack.id)).catch(() => {})
+      usePlayerStore.getState().playTrack(retryTrack, retryQueue, context || null)
+      setPlaybackRetryNonce(value => value + 1)
+    }
+    window.addEventListener('lokal:retry-track-playback', retryLocalPlayback)
+    return () => window.removeEventListener('lokal:retry-track-playback', retryLocalPlayback)
+  }, [setPlaybackRetryNonce])
+
   const addonVerificationRetryRef = useRef(null)
 
   const completeAddonVerification = useCallback((key) => {
@@ -1762,7 +1819,8 @@ export default function App() {
   }, [])
 
   const beginLastfmPlayback = useCallback((track) => {
-    if (!track?.id) {
+    // Online radio is never sent anywhere (Last.fm, ListenBrainz).
+    if (!track?.id || isStationTrack(track)) {
       lastfmPlaybackStartedAtRef.current = 0
       lastfmPlaybackKeyRef.current = null
       return
@@ -1954,7 +2012,7 @@ export default function App() {
     if (trackId) lastFlushedTrackIdRef.current = trackId
     tryScrobbleLastfmTrack(flushedTrack, secs)
     trySubmitListenBrainz(flushedTrack, secs)
-    if (secs >= 3 && trackId) api.incrementPlayTime(trackId, userRef.current?.id, secs)
+    if (secs >= 3 && trackId && !isStationTrack(flushedTrack)) api.incrementPlayTime(trackId, userRef.current?.id, secs)
   }, [tryScrobbleLastfmTrack, trySubmitListenBrainz])
 
   // Top up ordinary queues when fewer than 3 tracks remain.
@@ -1966,7 +2024,7 @@ export default function App() {
       return
     }
     const { queue, queueIndex, _fetchingRelated } = state
-    if (['discovery', 'mix', 'library-folder'].includes(state.playbackContext?.type) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
+    if (['discovery', 'mix', 'library-folder', RADIO_CONTEXT].includes(state.playbackContext?.type) || isStationTrack(currentTrackRef.current) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
     const generation = state.playbackGeneration
     state.setFetchingRelated(true)
     api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
@@ -2361,10 +2419,47 @@ export default function App() {
 
     initAudioCtx()
 
+    // Online radio: icecast-metadata-player plays the station on the primary
+    // element (src/radio/radioSession.js). The cover goes back to the
+    // station's own straight away; each song heard then brings its own.
+    if (isStationTrack(currentTrack)) {
+      const el = audioRef.current
+      const station = currentTrack
+      setStreamError(null)
+      beginLastfmPlayback(null)
+      resetStationDisplay(station)
+      el.dataset.lokalTrackPending = String(station.id)
+      el.dataset.fallbackFor = ''
+      el.dataset.fallbackSrc = ''
+      el.dataset.fallbackPending = ''
+      setIsBuffering(usePlayerStore.getState().isPlaying)
+      const isCurrent = () => usePlayerStore.getState().currentTrack?.id === station.id
+      startRadio(el, station, {
+        bufferSec: radioBufferSeconds(peekSettings()?.radio_buffer_sec),
+        autoplay: usePlayerStore.getState().isPlaying,
+        handlers: {
+          onTitle: (text, audioTime) => { handleStationTitle(station.id, text, audioTime).catch(() => {}) },
+          onStreamInfo: info => useRadioStore.getState().setStreamInfo(station.station?.id || station.id, info),
+          onBuffering: busy => { if (isCurrent()) setIsBuffering(busy) },
+          onFailed: message => {
+            if (!isCurrent()) return
+            usePlayerStore.getState().setIsPlaying(false)
+            setIsBuffering(false)
+            setStreamError({ title: station.station?.title || station.title, message })
+            showToast(translate("“{title}” isn't playing: {message}", { title: station.station?.title || station.title, message: translate(message) }))
+          },
+          onLog: (message, level) => playbackLog(message, level),
+        },
+      }).catch(error => playbackLog(`[radio] ${station.title}: starting failed: ${error?.message || error}`, 'warn'))
+      return () => { el.dataset.lokalTrackPending = '' }
+    }
+
     // A file, or an online song streamed from YouTube; other ghost tracks
     // (imported entries with no file) can't be played.
     const src = audioSrcFor(currentTrack)
+    const leavingRadio = radioTrackId() != null
     if (!src) {
+      if (leavingRadio) releaseRadio()
       audioRef.current.pause()
       audioRef.current.src = ''
       audioRef.current.dataset.lokalTrackPending = ''
@@ -2391,6 +2486,10 @@ export default function App() {
     const resumeFrom = takeResumePosition(currentTrack.id)
     let cancelled = false
     const start = async () => {
+      // The radio player lets go of the element first (it would otherwise
+      // put its own silent clip back on it after this song's source).
+      if (leavingRadio) await releaseRadio()
+      if (cancelled) return
       const replayGainReady = applyReplayGainToElement(el, currentTrack)
       const generation = usePlayerStore.getState().playbackGeneration
       const ref = streamRef(currentTrack)
@@ -2464,6 +2563,13 @@ export default function App() {
     
     const activeSide = usePlayerStore.getState().activeAudioElement
     const activeEl = activeSide === 'primary' ? audioRef.current : cfAudioRef.current
+
+    // Online radio: pausing stops the stream; playing reconnects, live.
+    if (isStationTrack(usePlayerStore.getState().currentTrack)) {
+      if (isPlaying) { setIsBuffering(audioRef.current.paused); playRadio(); if (!playTimerRef.current) startTimer() }
+      else { pauseRadio(); setIsBuffering(false); stopTimer() }
+      return
+    }
     
     if (isPlaying) { 
       activeEl.play().catch(() => {})
@@ -2516,6 +2622,15 @@ export default function App() {
 
     const cur = e.target.currentTime
     const dur = e.target.duration
+
+    // Online radio: the time into the song heard now (when it's known), and
+    // its length only if the station's API said.
+    const playing = usePlayerStore.getState().currentTrack
+    if (isStationTrack(playing)) {
+      setProgress(stationSongTime(playing, cur) ?? 0)
+      setDuration(Number(playing.song_duration) || 0)
+      return
+    }
     
     setProgress(cur)
     setDuration(dur)
@@ -2559,11 +2674,11 @@ export default function App() {
   }, [triggerCrossfade, isEventFromActive, topUpRelated, automixAnalysis, automixPlanFor])
 
   const handlePrimaryDurationChange = useCallback((e) => {
-    if (isEventFromActive(e)) setDuration(e.target.duration)
+    if (isEventFromActive(e) && !isStationTrack(usePlayerStore.getState().currentTrack)) setDuration(e.target.duration)
   }, [isEventFromActive])
 
   const handleCfDurationChange = useCallback((e) => {
-    if (isEventFromActive(e)) setDuration(e.target.duration)
+    if (isEventFromActive(e) && !isStationTrack(usePlayerStore.getState().currentTrack)) setDuration(e.target.duration)
   }, [isEventFromActive])
 
   const handleAudioCanPlay = useCallback((e) => {
@@ -2585,6 +2700,8 @@ export default function App() {
 
   const handlePrimaryEnded = useCallback((e) => {
     if (typeof e.currentTarget?.ended === 'boolean' && !e.currentTarget.ended) return
+    // A station's stream ending is a dropped connection: the radio player reconnects.
+    if (isStationTrack(usePlayerStore.getState().currentTrack)) return
     if (!isEventFromActive(e) || isCrossfadingRef.current) return
     
     stopTimer()
@@ -3061,7 +3178,7 @@ export default function App() {
           onDurationChange={handlePrimaryDurationChange}
           onEnded={(e) => { logAddonMediaEvent('ended', e, 'primary'); handlePrimaryEnded(e) }}
           onError={(e) => { logAddonMediaEvent('error', e, 'primary'); handleAudioError(e) }}
-          onWaiting={(e) => { logAddonMediaEvent('waiting', e, 'primary'); if (isEventFromActive(e) && streamRef(usePlayerStore.getState().currentTrack)) setIsBuffering(true) }}
+          onWaiting={(e) => { logAddonMediaEvent('waiting', e, 'primary'); const playing = usePlayerStore.getState().currentTrack; if (isEventFromActive(e) && (streamRef(playing) || isStationTrack(playing))) setIsBuffering(true) }}
           onStalled={(e) => logAddonMediaEvent('stalled', e, 'primary')}
           onSuspend={(e) => logAddonMediaEvent('suspend', e, 'primary')}
           onAbort={(e) => logAddonMediaEvent('abort', e, 'primary')}

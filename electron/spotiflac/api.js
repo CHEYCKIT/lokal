@@ -22,6 +22,12 @@ async function dispatch(db, request = {}) {
       if(status.open_auth_url&&process.versions.electron){await require('./authWindow').openAuthWindow(packages,key);return {...status,opened:true}}
       return status
     }
+    case 'package.verifyAndWait': {
+      const runtime=await packages.runtime(key);if(runtime.host.session)await runtime.host.session.bootstrap(runtime.host.signal)
+      const status=await packages.authStatus(key)
+      if(status.authenticated || !status.open_auth_url || !process.versions.electron) return status
+      return require('./authWindow').openAuthWindowAndWait(packages,key)
+    }
     case 'package.openAuth': {
       if(process.versions.electron)return require('./authWindow').openAuthWindow(packages,key)
       return packages.authStatus(key)

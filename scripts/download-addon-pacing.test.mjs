@@ -30,3 +30,42 @@ test('a batch goes to each addon one at a time a moment apart, at most two at on
   assert.deepEqual(started, ['t1', 'yt', 'o1', 't2', 't3'])
   clearTimeout(mgr.addonWake)
 })
+
+test('a download retries once after addon verification completes', async t => {
+  const packages = require('../electron/spotiflac/packages.js')
+  let attempts = 0
+  t.mock.method(packages, 'service', () => ({
+    download: async () => {
+      attempts++
+      if (attempts === 1) throw Object.assign(new Error('Addon needs verification'), { errorType: 'VERIFY_REQUIRED' })
+      return { file: 'verified.flac' }
+    },
+  }))
+  const mgr = new DownloadManager()
+  mgr.db = () => ({})
+  let verifiedKey = null
+  mgr.configure({ verifyAddonAccess: async key => { verifiedKey = key; return { authenticated: true } } })
+  const artifact = await mgr.downloadPackageWithVerification('0123456789', 'track', {})
+  assert.equal(verifiedKey, '0123456789')
+  assert.deepEqual(artifact, { file: 'verified.flac' })
+  assert.equal(attempts, 2)
+})
+
+test('a download is not retried when addon verification was not completed', async t => {
+  const packages = require('../electron/spotiflac/packages.js')
+  let attempts = 0
+  t.mock.method(packages, 'service', () => ({
+    download: async () => {
+      attempts++
+      throw Object.assign(new Error('Addon needs verification'), { errorType: 'VERIFY_REQUIRED' })
+    },
+  }))
+  const mgr = new DownloadManager()
+  mgr.db = () => ({})
+  mgr.configure({ verifyAddonAccess: async () => ({ authenticated: false }) })
+  await assert.rejects(
+    mgr.downloadPackageWithVerification('0123456789', 'track', {}),
+    /verification was not completed/i,
+  )
+  assert.equal(attempts, 1)
+})

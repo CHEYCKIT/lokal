@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { normalizeReplayGainMode, replayGainMultiplier } from '../src/audio/replayGain.mjs'
+import { effectiveReplayGainMode, normalizeReplayGainMode, replayGainMultiplier } from '../src/audio/replayGain.mjs'
 
 const close = (actual, expected, epsilon = 1e-6) => assert.ok(Math.abs(actual - expected) < epsilon, `expected ${actual} to be close to ${expected}`)
 
@@ -16,3 +16,14 @@ assert.equal(replayGainMultiplier({ trackPeak: 0.6 }, 'track'), 1)
 assert.equal(replayGainMultiplier(null, 'track'), 1)
 
 console.log('ReplayGain normalization tests passed')
+
+
+const albumTracks = [
+  { album: 'Album', album_artist: 'Artist', artist: 'Artist', track_num: 1 },
+  { album: 'Album', album_artist: 'Artist', artist: 'Artist', track_num: 2 },
+]
+assert.equal(normalizeReplayGainMode('smart'), 'smart')
+assert.equal(effectiveReplayGainMode('smart', albumTracks[0], { queue: albumTracks }), 'album')
+assert.equal(effectiveReplayGainMode('smart', albumTracks[0], { playbackContext: { type: 'album', name: 'Album' } }), 'album')
+assert.equal(effectiveReplayGainMode('smart', albumTracks[0], { queue: [albumTracks[0], { album: 'Another Album', album_artist: 'Artist' }] }), 'track')
+assert.equal(effectiveReplayGainMode('smart', albumTracks[0], { queue: [albumTracks[0]] }), 'track')

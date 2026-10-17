@@ -274,24 +274,14 @@ function getKeepCommaArtists() {
 }
 
 function splitArtists(raw) {
-  if (!raw) return []
-  const lower = raw.toLowerCase().trim()
-  const keepCommaArtists = getKeepCommaArtists()
-  for (const known of keepCommaArtists) {
-    if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
-  }
-  const commaLowerPattern = /,\s+[a-z]/
-  if (commaLowerPattern.test(raw)) return [raw.trim()]
-  let artists = [raw]
-  artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
-  artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => {
-    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
-    // A split that leaves one-letter pieces isn't a collaboration but one
-    // stylised name ("h x m x d" was becoming the artists h, m and d).
-    return parts.some(part => part.trim().length < 2) ? [a] : parts
-  })
-  return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+  const splitter = require('../../electron/artistSplit')
+  const db = getDB()
+  splitter.applySplitWordsFrom(db)
+  let userDefined = []
+  try {
+    userDefined = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]')
+  } catch {}
+  return splitter.splitArtists(raw, splitter.keepCommaSet(userDefined))
 }
 
 function applyBatchField(currentValue, operation) {
@@ -526,9 +516,32 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
   return patch().map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
 }
 
+router.get('/folder-artwork', (req, res) => {
+  try {
+    const db = getDB()
+    const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+    let configuredRoots = []
+    try { configuredRoots = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+    if (!configuredRoots.length) { const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value; if (legacy) configuredRoots = [legacy] }
+    if (!configuredRoots.length || typeof req.query.path !== 'string' || !req.query.path) return res.status(404).end()
+    const requested = fs.realpathSync(path.resolve(req.query.path))
+    const withinRoot = configuredRoots.some(configuredRoot => {
+      try {
+        const root = fs.realpathSync(configuredRoot)
+        const relative = path.relative(root, requested)
+        return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+      } catch { return false }
+    })
+    const allowed = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
+    if (!withinRoot || !fs.statSync(requested).isFile() || !allowed.has(path.extname(requested).toLowerCase())) return res.status(404).end()
+    res.set('Cache-Control', 'private, max-age=3600')
+    return res.sendFile(requested)
+  } catch { return res.status(404).end() }
+})
+
 router.get('/library-folders', (req, res) => {
   try {
-    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : ''))
+    res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : '', typeof req.query.root === 'string' ? req.query.root : ''))
   } catch (error) {
     console.error('[library-folders] Could not read library folder:', error.message)
     res.status(500).json({ available: false, error: 'Could not read the selected music folder', folders: [], tracks: [] })
@@ -697,6 +710,10 @@ router.get('/genres', (req, res) => {
   res.json(collectAllGenres(getDB()))
 })
 
+router.get('/genre-summary', (req, res) => {
+  res.json(require('../../electron/genreList').genreSummary(getDB()))
+})
+
 
 router.put('/:id/genre', (req, res) => {
   const { genre } = req.body
@@ -720,6 +737,10 @@ router.put('/:id', (req, res) => {
     record_label,
     explicit,
     instrumental,
+    clip_url,
+    clip_start,
+    clip_end,
+    clip_zoom,
     danceability,
     energy,
     track_key,
@@ -745,6 +766,10 @@ router.put('/:id', (req, res) => {
   if (record_label !== undefined) { updates.push('record_label = ?'); params.push(record_label) }
   if (explicit !== undefined) { updates.push('explicit = ?'); params.push(explicit ? 1 : 0) }
   if (instrumental !== undefined) { updates.push('instrumental = ?'); params.push(instrumental === null ? null : instrumental ? 1 : 0) }
+  if (clip_url !== undefined) { updates.push('clip_url = ?'); params.push(clip_url || null) }
+  if (clip_start !== undefined) { updates.push('clip_start = ?'); params.push(clip_start === '' ? null : clip_start) }
+  if (clip_end !== undefined) { updates.push('clip_end = ?'); params.push(clip_end === '' ? null : clip_end) }
+  if (clip_zoom !== undefined) { updates.push('clip_zoom = ?'); params.push(clip_zoom === '' ? null : clip_zoom) }
   if (danceability !== undefined) { updates.push('danceability = ?'); params.push(danceability) }
   if (energy !== undefined) { updates.push('energy = ?'); params.push(energy) }
   if (track_key !== undefined) { updates.push('track_key = ?'); params.push(track_key) }
@@ -772,7 +797,16 @@ router.put('/:id', (req, res) => {
   }
   
   if (updates.length === 0) return res.json({ error: 'No fields to update' })
-  
+
+  // The editable metadata also belongs in the audio file, not just the database.
+  const tagEdits = require('../../electron/fileComment').fileTagEdits(req.body || {})
+  if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
+    try {
+      require('../../electron/fileComment').writeFileTags(currentTrack.file_path, tagEdits)
+      require('../../electron/fileStamp').noteFileWritten(db, currentTrack.file_path)
+    } catch (e) { return res.json({ error: `Couldn't save the tags into the file: ${e.message}` }) }
+  }
+
   params.push(req.params.id)
   const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
   const result = db.prepare(sql).run(...params)

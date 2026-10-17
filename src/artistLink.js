@@ -7,6 +7,7 @@
 import { isOnlineTrack } from './onlineBrowse.js'
 import { streamRef } from './onlineTracks.js'
 import { artistIdFromName } from './artistId.js'
+import { artistCreditParts, keepCommaSet } from './artistNames.js'
 
 export function artistToSlug(artistName, keepCommaArtists = []) {
   if (!artistName) return ''
@@ -42,5 +43,34 @@ export function navigateToTrackArtist(nav, track, keepCommaArtists = []) {
   // read it from (their page is built online, see OnlineArtist).
   const name = String(track.artist).split(',')[0].trim()
   nav(`/artist/a-${slug}`, { state: { name: keepCommaArtists.find(keep => String(track.artist).toLowerCase().includes(keep.toLowerCase())) || name } })
+  return true
+}
+
+
+/** Display-preserving artist links for a track credit. */
+export function trackArtistParts(track, keepCommaArtists = []) {
+  const raw = String(track?.artist || '')
+  if (!raw.trim()) return []
+  const keep = keepCommaSet(keepCommaArtists)
+  return artistCreditParts(raw, keep)
+}
+
+/** Navigate to the specific linked artist, not just the first artist in a credit. */
+export function navigateToArtistName(nav, track, artistName) {
+  const name = String(artistName || '').trim()
+  if (!nav || !name) return false
+  const slug = artistToSlug(name, [name])
+  if (!slug) return false
+  if (isOnlineTrack(track)) {
+    const ref = streamRef(track)
+    nav(`/artist/a-${slug}`, {
+      state: {
+        name,
+        anchor: { title: track.title, album: track.album || '', provider: ref?.provider || null, id: ref?.id ?? null },
+      },
+    })
+  } else {
+    nav(`/artist/a-${slug}`, { state: { name } })
+  }
   return true
 }

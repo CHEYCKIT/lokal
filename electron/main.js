@@ -24,6 +24,7 @@ const { registerLyricsHandlers } = require('./ipc/lyrics')
 const { registerArtworkFxHandlers } = require('./ipc/artworkFx')
 const { registerFollowedArtistsHandlers } = require('./ipc/followedArtists')
 const { registerCacheHandlers } = require('./ipc/cache')
+const { registerRadioHandlers } = require('./ipc/radio')
 const { registerUserHandlers } = require('./ipc/users')
 const { registerDiscordHandlers, disconnectForQuit } = require('./ipc/discord')
 const { registerLastFmHandlers } = require('./ipc/lastfm')
@@ -545,6 +546,17 @@ app.whenReady().then(() => {
     app.setAppUserModelId('com.lokal.music');
   }
   try { initDB() } catch (e) { console.error('DB:', e.message) }
+  try {
+    const db = getDB()
+    const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+    let folders = []
+    try { folders = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+    if (!folders.length) {
+      const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+      if (legacy) folders = [legacy]
+    }
+    require('./libraryWatcher').watchLibraryRoots(folders)
+  } catch (e) { console.error('Library watcher:', e.message) }
   try { markInterruptedPlaylistsIncomplete() } catch (e) { console.error('Downloads:', e.message) }
   try { initPlugins() } catch (e) { console.error('Plugins:', e.message) }
   try {
@@ -561,7 +573,7 @@ app.whenReady().then(() => {
     registerExtraDownloaderHandlers, registerPlaylistArchiveHandlers, registerLyricsHandlers, registerUserHandlers,
     registerDiscordHandlers, registerExtraHandlers, registerV4Handlers, registerLastFmHandlers, registerListenBrainzHandlers,
     registerToolsHandlers, registerPlaylistHandlers, registerMixesHandlers, registerPluginHandlers, registerRecapHandlers,
-    registerQualityHandlers, registerLibraryKeysHandlers
+    registerQualityHandlers, registerLibraryKeysHandlers, registerRadioHandlers
   ]) {
     try { fn(ipcMain) } catch (e) { console.error(fn.name + ':', e.message) }
   }
@@ -864,7 +876,20 @@ ipcMain.handle('updater:install', () => {
   })
 
   // macOS: its window back from the Dock (hidden helper windows don't count).
-  app.on('activate', () => { if (!mainWindow || mainWindow.isDestroyed()) createWindow() })
+  app.on('activate', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+    try {
+      const db = require('./ipc/db').getDB()
+      const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+      let folders = []
+      try { folders = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+      if (!folders.length) {
+        const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+        if (legacy) folders = [legacy]
+      }
+      if (folders.length) require('./libraryWatcher').watchLibraryRoots(folders)
+    } catch (error) { console.warn('[libraryWatcher] Could not resume watching on activate:', error.message) }
+  })
   app.on('open-url', (event, url) => {
     event.preventDefault()
     const token = extractLastfmAuthToken(url)
@@ -886,6 +911,7 @@ ipcMain.handle('updater:install', () => {
   }
 })
 app.on('window-all-closed', () => {
+  try { require('./libraryWatcher').stopWatching() } catch {}
   if (process.platform !== 'darwin' || isUpdating) {
     app.quit();
   }

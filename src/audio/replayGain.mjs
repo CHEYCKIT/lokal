@@ -1,5 +1,32 @@
 export function normalizeReplayGainMode(value) {
-  return ['off', 'track', 'album'].includes(value) ? value : 'off'
+  return ['off', 'track', 'album', 'smart'].includes(value) ? value : 'off'
+}
+
+function normalizeAlbumTag(value) {
+  return String(value || '').trim().toLocaleLowerCase()
+}
+
+export function effectiveReplayGainMode(mode, track, state = {}) {
+  mode = normalizeReplayGainMode(mode)
+  if (mode !== 'smart') return mode
+
+  const album = normalizeAlbumTag(track?.album)
+  if (!album) return 'track'
+
+  const contextAlbum = normalizeAlbumTag(state.playbackContext?.album?.title || state.playbackContext?.name)
+  if (state.playbackContext?.type === 'album' && contextAlbum === album) return 'album'
+
+  const queue = state.shuffle && state.originalQueue?.length
+    ? state.originalQueue
+    : state.queue
+  if (!Array.isArray(queue) || queue.length < 2) return 'track'
+
+  const albumArtist = normalizeAlbumTag(track.album_artist || track.artist)
+  if (!albumArtist) return 'track'
+  const albumQueue = queue.every(item =>
+    normalizeAlbumTag(item?.album) === album &&
+    normalizeAlbumTag(item?.album_artist || item?.artist) === albumArtist)
+  return albumQueue ? 'album' : 'track'
 }
 
 function finiteNumber(value) {

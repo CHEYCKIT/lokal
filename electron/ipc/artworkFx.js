@@ -67,6 +67,38 @@ async function meshForTrack(trackId) {
   }
 }
 
+/**
+ * The colour mesh of a remote cover (HTTPS only, bounded response size).
+ * Online radio has no library row, so its artwork arrives as a URL.
+ */
+async function meshFromRemoteURL(url) {
+  if (!url) return null
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
+  try {
+    const response = await fetch(url, { redirect: 'error', signal: controller.signal })
+    if (!response.ok || !response.body) return null
+    const reader = response.body.getReader()
+    const chunks = []
+    let total = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_REMOTE_ARTWORK_BYTES) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(Buffer.from(value))
+    }
+    return meshFromImage(Buffer.concat(chunks, total), `remote|${url.toString()}`)
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function motionCacheDir() {
   return path.join(getStorageDir(), 'motion-covers')
 }
@@ -86,8 +118,9 @@ function spotifyCheck() {
 function registerArtworkFxHandlers(ipcMain) {
   const { findFfmpeg } = require('./tools')
   ipcMain.handle('artwork:mesh', (_, trackId) => meshForTrack(trackId).catch(() => null))
+  ipcMain.handle('artwork:meshFromUrl', (_, url) => meshFromRemoteURL(httpsImageURL(url)).catch(() => null))
   ipcMain.handle('artwork:motion', (_, trackId) => motionForTrack(trackId, findFfmpeg()).catch(() => null))
   ipcMain.handle('artwork:spotifyCheck', () => spotifyCheck())
 }
 
-module.exports = { registerArtworkFxHandlers, meshForTrack, remoteArtworkURL, motionForTrack, motionCacheDir, spotifyCheck }
+module.exports = { registerArtworkFxHandlers, meshForTrack, meshFromRemoteURL, remoteArtworkURL, motionForTrack, motionCacheDir, spotifyCheck }

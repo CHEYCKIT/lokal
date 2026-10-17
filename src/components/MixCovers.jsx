@@ -2,10 +2,10 @@
 // full-screen player. Each song's cover is a layer (its artwork, and its
 // moving cover or Canvas when it has one), the new one over the old:
 //
-//   AutoMix  the way iOS 27's AutoMix does it: the next song's cover grows
-//            in through soft, cloudy blobs, blurred at first and sharpening,
-//            while the old one stays put underneath (MIX_MS).
-//   else     a short crossfade (FADE_MS).
+// Every song change uses the AutoMix-style artwork dissolve: the next song's
+// cover grows in through soft, cloudy blobs, blurred at first and sharpening,
+// while the old one stays underneath (MIX_MS). This is independent of the
+// selected audio transition mode; it also runs for manual Next/Previous.
 //
 // The blobs are a CSS mask (radial gradients, redrawn every frame), so it
 // works the same on artwork, moving covers and Canvas clips.
@@ -15,7 +15,6 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'framer-motion'
-import { usePlayerStore } from '../store/player'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { usePerformanceMode } from '../performanceMode'
 import { blobBlur, blobMask, clamp01, coverTransitionMode, makeBlobs } from '../coverMix'
@@ -41,6 +40,8 @@ function Layer({ layer, children, onDone }) {
     let frame = 0
     let timer = null
     let finished = false
+    let lastPaint = 0
+    const frameInterval = 1000 / 30
     const finish = () => {
       if (finished) return
       finished = true
@@ -53,6 +54,11 @@ function Layer({ layer, children, onDone }) {
     const paint = now => {
       frame = 0
       if (hidden || finished) return
+      if (lastPaint && now - lastPaint < frameInterval && now - started < duration) {
+        frame = requestAnimationFrame(paint)
+        return
+      }
+      lastPaint = now
       const p = clamp01((now - started) / duration)
       if (layer.mode === 'mix') {
         const mask = blobMask(layer.blobs, p)
@@ -112,9 +118,7 @@ export default function MixCovers({ track, render }) {
       if (track !== shown.track) setLayers(list => list.map((layer, i) => (i === list.length - 1 ? { ...layer, track } : layer)))
       return
     }
-    const state = usePlayerStore.getState()
     const mode = coverTransitionMode({
-      automix: !!state.crossfade?.automix,
       reduceMotion,
       hasPreviousCover: !!shown.id,
     })

@@ -28,8 +28,14 @@ test('AutoMix cover dissolve also applies to manual track changes without an act
   assert.equal(coverTransitionMode({ automix: true, reduceMotion: false, hasPreviousCover: true }), 'mix')
 })
 
-test('ordinary track changes retain the short fade when AutoMix is off', () => {
-  assert.equal(coverTransitionMode({ automix: false, reduceMotion: false, hasPreviousCover: true }), 'fade')
+test('the AutoMix cover dissolve is visual-only and applies when audio transitions are off', () => {
+  assert.equal(coverTransitionMode({ automix: false, reduceMotion: false, hasPreviousCover: true }), 'mix')
+})
+
+test('manual Next and Previous use the same dissolve regardless of audio mix mode', () => {
+  for (const automix of [false, true]) {
+    assert.equal(coverTransitionMode({ automix, reduceMotion: false, hasPreviousCover: true }), 'mix')
+  }
 })
 
 test('reduced motion and the first cover do not animate', () => {
