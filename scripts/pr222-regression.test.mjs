@@ -2,9 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
+import { sideCardViewAfterTrackChange } from '../src/sideCardView.js'
 
 const require = createRequire(import.meta.url)
 const { classifyCodec, playbackCopyPlan, playbackCopyFailure, resolveFfmpeg } = require('../electron/download/convert.js')
+
+test('only the standalone visualizer carries over to another track', () => {
+  assert.equal(sideCardViewAfterTrackChange('visualization'), 'visualization')
+  assert.equal(sideCardViewAfterTrackChange('lyrics'), 'info')
+  assert.equal(sideCardViewAfterTrackChange('info'), 'info')
+  assert.equal(sideCardViewAfterTrackChange(null), 'info')
+})
 
 test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
   const total = 12003
