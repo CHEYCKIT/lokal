@@ -62,6 +62,20 @@ test('removing one duplicate queue entry leaves the other occurrence intact', ()
   assert.equal(store.getState().currentTrack, samePlaying)
 })
 
+test('removing a legacy shuffled-only entry still removes its row', () => {
+  const existing = track('existing')
+  const orphan = track('orphan')
+  reset({
+    queue: [existing], originalQueue: [existing], queueIndex: 0, currentTrack: existing,
+    shuffle: true, shuffleQueue: [existing, orphan], shuffleIndex: 0,
+  })
+
+  store.getState().removeFromQueue('orphan', 1)
+
+  assert.deepEqual(store.getState().shuffleQueue.map(item => item.id), ['existing'])
+  assert.deepEqual(store.getState().queue.map(item => item.id), ['existing'])
+})
+
 test('removing a duplicate in shuffle mode removes only that occurrence from all queue orders', () => {
   const samePlaying = track('same')
   const other = track('other')
