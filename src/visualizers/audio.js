@@ -44,7 +44,7 @@ export function createLoudness(size = 256) {
       else state.samples.fill(0)
       let sum = 0
       for (let i = 0; i < size; i++) sum += Math.abs(state.samples[i])
-      state.averageGain = sum / (size / 2)
+      state.averageGain = sum / size
       state.linearized = Math.max(0, state.linearized + dt * (state.averageGain > state.linearized ? 1 : -1))
       state.firstOrder += 0.5 * (state.averageGain - state.firstOrder) * dt
       for (let i = 0; i < size; i++) {
