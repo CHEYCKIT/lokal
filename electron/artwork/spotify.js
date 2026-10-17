@@ -44,6 +44,62 @@ class TransientError extends Error {
   constructor(message) { super(message); this.transient = true }
 }
 
+/** Build the same client-token request the Web Player sends. Never log this payload. */
+function buildClientTokenPayload({ clientVersion, clientId, deviceId }) {
+  return {
+    client_data: {
+      client_version: String(clientVersion || ''),
+      client_id: String(clientId || ''),
+      js_sdk_data: {
+        device_brand: 'unknown',
+        device_model: 'unknown',
+        os: 'windows',
+        os_version: 'NT 10.0',
+        device_id: String(deviceId || ''),
+        device_type: 'computer',
+      },
+    },
+  }
+}
+
+function parseGrantedClientToken(json) {
+  const granted = json?.granted_token
+  if (json?.response_type !== 'RESPONSE_GRANTED_TOKEN_RESPONSE' || typeof granted?.token !== 'string' || !granted.token) return null
+  return {
+    token: granted.token,
+    expires_after_seconds: Number(granted.expires_after_seconds) || 3600,
+  }
+}
+
+async function requestClientToken({ clientVersion, clientId, deviceId }) {
+  if (!clientVersion || !clientId || !deviceId) {
+    throw new TransientError('Spotify did not provide enough Web Player identity to request a client token.')
+  }
+  const res = await request('https://clienttoken.spotify.com/v1/clienttoken', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Origin: 'https://open.spotify.com',
+      Referer: 'https://open.spotify.com/',
+      'User-Agent': UA,
+    },
+    body: JSON.stringify(buildClientTokenPayload({ clientVersion, clientId, deviceId })),
+  }).catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
+  if (!res.ok) {
+    console.log(`[spotify-canvas] direct client-token request HTTP ${res.status}`)
+    throw new TransientError(`Spotify client-token request failed (HTTP ${res.status}).`)
+  }
+  const json = await res.json().catch(() => null)
+  const client = parseGrantedClientToken(json)
+  if (!client) {
+    console.log(`[spotify-canvas] direct client-token response was unusable (${json?.response_type || 'no response type'})`)
+    throw new TransientError('Spotify returned an unusable client token.')
+  }
+  console.log(`[spotify-canvas] obtained client token directly (${client.expires_after_seconds}s)`)
+  return client
+}
+
 // ---------------------------------------------------------------- tokens
 
 let tokens = null      // { accessToken, exp, clientToken, clientExp, cookie }
@@ -125,6 +181,18 @@ async function mintTokensInner(cookie, state) {
       const timer = setTimeout(() => reject(new TransientError('Spotify took too long to answer')), TOKEN_TIMEOUT)
       const ready = () => { if ((found.token || found.bearer) && found.client) { clearTimeout(timer); resolve() } }
       dbg.on('message', async (_e, method, params) => {
+        // Keep client identity as a fallback in case the page doesn't finish
+        // its own client-token request before the token-wait deadline.
+        if (method === 'Network.requestWillBeSent' && /clienttoken\\.spotify\\.com\\/v1\\/clienttoken/.test(params.request?.url || '') && params.request?.postData) {
+          try {
+            const data = JSON.parse(params.request.postData)?.client_data
+            if (data) {
+              found.clientVersion = found.clientVersion || data.client_version
+              found.clientId = found.clientId || data.client_id
+              found.deviceId = found.deviceId || data.js_sdk_data?.device_id
+            }
+          } catch {}
+        }
         // Backup route: the web player sends its access token with every API
         // call, so take it from there if the token response itself can't be
         // read. (Checked against /v1/me below, since it may be anonymous.)
@@ -204,6 +272,23 @@ async function mintTokensInner(cookie, state) {
     for (let i = 0; i < 20 && !found.hashes.canvas; i++) await new Promise(r => setTimeout(r, 200))
     if (!found.hashes.canvas) console.log('[spotify-canvas] canvas query not seen in the web player; using the known one')
     liveHashes = { ...liveHashes, ...found.hashes }
+
+    // A client token may not be requested by the page within TOKEN_TIMEOUT.
+    // Read its public app configuration and the session device cookie so we can
+    // mint one ourselves rather than issuing a Canvas query without the header.
+    const webPlayerInfo = await within(
+      win.webContents.executeJavaScript(`(() => {
+        const node = document.getElementById('appServerConfig')
+        if (!node?.textContent) return null
+        try { return JSON.parse(atob(node.textContent.trim())) } catch { return null }
+      })()`).catch(() => null),
+      3000,
+      null,
+    )
+    found.clientVersion = found.clientVersion || webPlayerInfo?.clientVersion || null
+    found.clientId = found.clientId || found.token?.clientId || webPlayerInfo?.clientId || webPlayerInfo?.client_id || null
+    const browserCookies = await within(part.cookies.get({ url: 'https://open.spotify.com' }).catch(() => []), 2000, [])
+    found.deviceId = found.deviceId || browserCookies.find(c => c.name === 'sp_t')?.value || ''
   } finally {
     try { dbg.detach() } catch {}
     try { win.destroy() } catch {}
@@ -219,12 +304,22 @@ async function mintTokensInner(cookie, state) {
     if (me && (me.status === 401 || me.status === 403)) throw new Error('Spotify didn\'t accept the cookie (it may have expired). Copy a fresh sp_dc.')
     t = { accessToken: found.bearer, accessTokenExpirationTimestampMs: Date.now() + 45 * 60 * 1000 }
   }
+
+  let client = found.client
+  if (!client?.token) {
+    const deviceId = found.deviceId || require('crypto').randomUUID()
+    const clientId = found.clientId || t.clientId
+    // Don't silently send a tokenless Canvas query. A request without the
+    // client-token header is rejected by Spotify's Pathfinder endpoint.
+    client = await requestClientToken({ clientVersion: found.clientVersion, clientId, deviceId })
+  }
+
   return {
     cookie,
     accessToken: t.accessToken,
     exp: Number(t.accessTokenExpirationTimestampMs) || Date.now() + 30 * 60 * 1000,
-    clientToken: found.client?.token || null,
-    clientExp: found.client ? Date.now() + (Number(found.client.expires_after_seconds) || 3600) * 1000 : 0,
+    clientToken: client.token,
+    clientExp: Date.now() + (Number(client.expires_after_seconds) || 3600) * 1000,
   }
 }
 
@@ -652,4 +747,4 @@ async function likeOnSpotify(rawCookie, track) {
   })
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, buildClientTokenPayload, parseGrantedClientToken, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
