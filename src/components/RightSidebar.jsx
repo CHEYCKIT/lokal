@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
-import SideVisualLyrics from './SideVisualLyrics'
 import GenrePopover from './GenrePopover'
 import { trackGenreList } from '../genres'
 import PowerCircle from '../visualizers/PowerCircle'
@@ -541,16 +540,7 @@ export default function RightSidebar() {
                   {currentTrack && (
                     infoCardView === 'lyrics' ? (
                       <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
-                        <SideVisualLyrics
-                          track={currentTrack}
-                          progress={progress}
-                          visual={null}
-                          visualBg={fx ? '#050505' : 'rgb(var(--surface-rgb))'}
-                          coverOff={coverOff}
-                          wordSync={wordSync}
-                          textScale={1.4}
-                          isAutoSynced={isAutoSynced}
-                        />
+                        <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} />
                       </div>
                     ) : infoCardView === 'visualization' ? (
                       <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>

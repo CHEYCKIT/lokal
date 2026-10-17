@@ -1,6 +1,7 @@
 import { Home, Library, BarChart2, Disc3, Tags, Radio, Users, Clapperboard, AudioWaveform } from 'lucide-react'
 
 export const HIDDEN_MARK = '|'
+export const REMOVED_PREFIX = '__removed__:'
 
 export const SIDEBAR_ITEMS = [
   { icon: Home, label: 'Home', path: '/' },
@@ -22,10 +23,11 @@ export function sidebarNavOrder(saved) {
   try { list = typeof saved === 'string' && saved ? JSON.parse(saved) : Array.isArray(saved) ? saved : [] } catch {}
   if (!Array.isArray(list)) list = []
   const known = new Set(SIDEBAR_ITEMS.map(item => item.path))
+  const removed = new Set(list.filter(path => typeof path === 'string' && path.startsWith(REMOVED_PREFIX)).map(path => path.slice(REMOVED_PREFIX.length)))
   const order = [...new Set(list.filter(path => path === HIDDEN_MARK || known.has(path)))]
   if (!order.includes(HIDDEN_MARK)) order.push(HIDDEN_MARK)
   for (const path of DEFAULT_SIDEBAR_ORDER) {
-    if (path === HIDDEN_MARK || order.includes(path)) continue
+    if (path === HIDDEN_MARK || order.includes(path) || removed.has(path)) continue
     const index = DEFAULT_SIDEBAR_ORDER.indexOf(path)
     const next = DEFAULT_SIDEBAR_ORDER.slice(index + 1).find(p => p !== HIDDEN_MARK && order.includes(p))
     if (next) order.splice(order.indexOf(next), 0, path)

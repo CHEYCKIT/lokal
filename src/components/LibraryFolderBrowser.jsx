@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, ChevronRight, Folder, Music, Search } from 'lucide-react'
 import { api } from '../api'
+import { isSuspect, tierOf } from '../quality'
 import TrackList from './TrackList'
 import FadeImg from './FadeImg'
 import { useTranslation } from '../i18n'
@@ -38,13 +39,27 @@ export default function LibraryFolderBrowser({
   searchQuery = '',
   onSearchQueryChange,
   rootPath = '',
+  filters = {},
 }) {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [errorTrackIds, setErrorTrackIds] = useState(null)
   const requestRef = useRef(0)
+
+  useEffect(() => {
+    if (filters.source !== 'errors') {
+      setErrorTrackIds(null)
+      return
+    }
+    let active = true
+    api.getTracks({ problems: true, limit: 10000, offset: 0, sort: 'added_at DESC' })
+      .then(rows => { if (active) setErrorTrackIds(new Set((Array.isArray(rows) ? rows : []).map(track => String(track.id)))) })
+      .catch(() => { if (active) setErrorTrackIds(new Set()) })
+    return () => { active = false }
+  }, [filters.source])
 
   // Folder navigation history stack
   const [history, setHistory] = useState([folderPath || ''])
@@ -164,6 +179,38 @@ export default function LibraryFolderBrowser({
   }, [folderPath, rootPath, refreshKey, searchQuery, onFolderChange])
 
   const term = (searchQuery || '').trim().toLowerCase()
+  const matchesFilters = track => {
+    const selectedSource = filters.source || 'all'
+    const downloadSource = String(track.download_source || '')
+    if (selectedSource === 'errors' && !errorTrackIds?.has(String(track.id))) return false
+    if (selectedSource === 'local' && downloadSource) return false
+    if (selectedSource === 'yt' && downloadSource !== 'yt') return false
+    if (selectedSource === 'sc' && downloadSource !== 'sc') return false
+    if (selectedSource === 'soulseek' && downloadSource !== 'soulseek') return false
+    if (selectedSource === 'web' && downloadSource !== 'web') return false
+    if (selectedSource === 'addon' && !downloadSource.startsWith('a-')) return false
+    if (filters.genre) {
+      const genres = [track.genre, track.genres].filter(Boolean).join(',').toLowerCase().split(/[,;]+/).map(value => value.trim())
+      if (!genres.includes(String(filters.genre).toLowerCase())) return false
+    }
+    if (filters.quality) {
+      const tier = filters.quality === 'suspect' ? (isSuspect(track) ? 'suspect' : '') : tierOf(track)
+      if (tier !== filters.quality) return false
+    }
+    if (filters.format && `${track.bit_depth}-${track.sample_rate}` !== filters.format) return false
+    return true
+  }
+  const sortTracks = list => {
+    const sorted = [...list]
+    const cmpText = key => (a, b) => String(a[key] || '').localeCompare(String(b[key] || ''), undefined, { numeric: true, sensitivity: 'base' })
+    if (filters.sort === 'title ASC') sorted.sort(cmpText('title'))
+    else if (filters.sort === 'artist ASC') sorted.sort(cmpText('artist'))
+    else if (filters.sort === 'play_count DESC') sorted.sort((a, b) => Number(b.play_count || 0) - Number(a.play_count || 0))
+    else if (filters.sort === 'duration DESC') sorted.sort((a, b) => Number(b.duration || 0) - Number(a.duration || 0))
+    else sorted.sort((a, b) => Number(b.added_at || b.created_at || 0) - Number(a.added_at || a.created_at || 0))
+    return sorted
+  }
+  const filterActive = (filters.source && filters.source !== 'all') || !!filters.genre || !!filters.quality || !!filters.format
   const visibleFolders = useMemo(() => {
     if (!data?.folders?.length) return []
     if (!term) return data.folders
@@ -172,18 +219,25 @@ export default function LibraryFolderBrowser({
 
   const visibleTracks = useMemo(() => {
     if (!data?.tracks?.length) return []
-    if (!term) return data.tracks
-    return data.tracks.filter(t => (
-      (t.title || '').toLowerCase().includes(term) ||
-      (t.artist || '').toLowerCase().includes(term) ||
-      (t.album || '').toLowerCase().includes(term)
-    ))
-  }, [data?.tracks, term])
+    return sortTracks(data.tracks.filter(track => (
+      (!term ||
+        (track.title || '').toLowerCase().includes(term) ||
+        (track.artist || '').toLowerCase().includes(term) ||
+        (track.album || '').toLowerCase().includes(term)) &&
+      matchesFilters(track)
+    )))
+  }, [data?.tracks, term, filters, errorTrackIds])
 
   const matchingDeepTracks = useMemo(() => {
     if (!term || !data?.deepTracks?.length) return []
-    return data.deepTracks.filter(dt => !visibleTracks.some(vt => vt.id === dt.id))
-  }, [data?.deepTracks, visibleTracks, term])
+    return sortTracks(data.deepTracks.filter(track =>
+      !visibleTracks.some(visible => visible.id === track.id) &&
+      matchesFilters(track) &&
+      ((track.title || '').toLowerCase().includes(term) ||
+       (track.artist || '').toLowerCase().includes(term) ||
+       (track.album || '').toLowerCase().includes(term))
+    ))
+  }, [data?.deepTracks, visibleTracks, term, filters, errorTrackIds])
 
   const allVisibleTracks = useMemo(() => {
     return [...visibleTracks, ...matchingDeepTracks]
@@ -197,10 +251,10 @@ export default function LibraryFolderBrowser({
     }
     onDataChange?.({
       ...data,
-      filteredTracks: term ? allVisibleTracks : null,
-      matchCount: term ? (visibleFolders.length + allVisibleTracks.length) : null,
+      filteredTracks: term || filterActive ? allVisibleTracks : null,
+      matchCount: term || filterActive ? (visibleFolders.length + allVisibleTracks.length) : null,
     })
-  }, [data, term, allVisibleTracks, visibleFolders.length, onDataChange])
+  }, [data, term, filterActive, allVisibleTracks, visibleFolders.length, onDataChange])
 
   const segments = String(data?.relativePath || '').split('/').filter(Boolean)
   const currentFolder = segments.length ? segments[segments.length - 1] : (data?.rootName || 'Music folder')
