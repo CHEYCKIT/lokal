@@ -361,7 +361,14 @@ async function searchPathfinder(t, { title, artist, album }, { cleanTitle }) {
   const res = await request(url, { headers }).catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
   if (!res.ok) { console.log(`[spotify-canvas] search (web player) HTTP ${res.status}`); return null }
   const json = await res.json().catch(() => null)
-  const items = json?.data?.searchV2?.tracksV2?.items || []
+  const tracks = json?.data?.searchV2?.tracksV2
+  // A successful HTTP response with a changed/error response shape isn't an
+  // empty search result. Treat it as transient so it can't poison the miss cache.
+  if (!tracks || !Array.isArray(tracks.items) || json?.errors?.length) {
+    console.log(`[spotify-canvas] search (web player) returned an unexpected response${json?.errors?.length ? `: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}` : ''}`)
+    throw new TransientError('Spotify web player search returned an unexpected response')
+  }
+  const items = tracks.items
   return items.map(x => x?.item?.data).filter(Boolean).map(d => ({
     uri: d.uri, name: d.name,
     artists: (d.artists?.items || []).map(a => a?.profile?.name).filter(Boolean),
@@ -415,11 +422,21 @@ async function canvasFromGraphql(t, uri) {
     return { failed: true }
   }
   const json = await res.json().catch(() => null)
-  const canvas = json?.data?.trackUnion?.canvas
-  const url = canvas?.url
+  const trackUnion = json?.data?.trackUnion
+  // Spotify may answer HTTP 200 with partial GraphQL data and errors when its
+  // persisted-query hash/schema has changed. Only a real trackUnion with an
+  // explicit canvas field proves the song has no Canvas; all other shapes must
+  // fall back to the Canvas service instead of caching a false miss.
+  const hasCanvasField = !!trackUnion && Object.prototype.hasOwnProperty.call(trackUnion, 'canvas')
   if (json?.errors?.length) console.log(`[spotify-canvas] canvas query errors: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}`)
+  if (!json?.data || !trackUnion || !hasCanvasField || json?.errors?.length) {
+    console.log(`[spotify-canvas] canvas query for ${uri}: unusable response; trying the Canvas service`)
+    return { failed: true }
+  }
+  const canvas = trackUnion.canvas
+  const url = canvas?.url
   console.log(`[spotify-canvas] canvas query for ${uri}: ${url ? `found a clip (${canvas.type || 'no type'})` : canvas ? `canvas without a link (${canvas.type || 'no type'})` : 'no canvas'}`)
-  return { url: url && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url) ? url : null, failed: !json?.data }
+  return { url: url && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url) ? url : null, failed: false }
 }
 
 async function canvasFor(t, uri) {
@@ -440,8 +457,11 @@ async function canvasFromCanvaz(t, uri) {
   const res = await request(CANVAS_URL, { method: 'POST', headers, body: lenField(1, lenField(1, Buffer.from(uri))) })
   if (!res.ok) {
     console.log(`[spotify-canvas] canvas request for ${uri}: HTTP ${res.status}`)
-    if (authFailed(res.status)) throw new TransientError(`Spotify canvas HTTP ${res.status}`)
-    return null
+    // An HTTP error is a failed lookup, not evidence that this track has no
+    // Canvas. In particular, 400s from a stale client token used to be cached
+    // as "no Canvas" for days.
+    authFailed(res.status) // also clears the cached token on 401
+    throw new TransientError(`Spotify canvas HTTP ${res.status}`)
   }
   const buf = Buffer.from(await res.arrayBuffer())
   const url = parseCanvases(buf, uri)
