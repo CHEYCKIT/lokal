@@ -13,7 +13,7 @@ const GROUPS = [
     'video games music', 'video game soundtrack', 'video game soundtracks',
     'videogame soundtrack', 'video game ost', 'videogame ost', 'game music',
     'video game score', 'game soundtrack', 'game ost', 'game score',
-    'video game original soundtrack', 'game background music', 'game bgm',
+    'video game original soundtrack', 'video game remix', 'video game remixes', 'game background music', 'game bgm',
     'game music soundtrack', 'gaming music', 'chiptune game music',
     'videogame'
   ]],
@@ -43,7 +43,7 @@ const GROUPS = [
     'post rock', 'post-rock', 'math rock', 'grunge', 'pop punk', 'punk rock',
     'punk', 'post punk', 'post-punk', 'emo', 'skate punk', 'new wave',
     'gothic rock', 'industrial rock', 'rock and roll', 'rock n roll',
-    'rockabilly', 'britpop', 'country rock', 'blues rock', 'рэп рок', 'рок'
+    'rockabilly', 'britpop', 'country rock', 'blues rock', 'pop rock', 'art rock', 'рэп рок', 'рок'
   ]],
   ['Metal', [
     'metal', 'heavy metal', 'death metal', 'black metal', 'thrash metal',
