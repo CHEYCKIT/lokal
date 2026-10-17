@@ -526,6 +526,22 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
   return patch().map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
 }
 
+router.get('/folder-artwork', (req, res) => {
+  try {
+    const db = getDB()
+    const configuredRoot = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+    if (!configuredRoot || typeof req.query.path !== 'string' || !req.query.path) return res.status(404).end()
+    const root = fs.realpathSync(configuredRoot)
+    const requested = fs.realpathSync(path.resolve(req.query.path))
+    const relative = path.relative(root, requested)
+    const withinRoot = relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+    const allowed = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
+    if (!withinRoot || !fs.statSync(requested).isFile() || !allowed.has(path.extname(requested).toLowerCase())) return res.status(404).end()
+    res.set('Cache-Control', 'private, max-age=3600')
+    return res.sendFile(requested)
+  } catch { return res.status(404).end() }
+})
+
 router.get('/library-folders', (req, res) => {
   try {
     res.json(getLibraryFolders(getDB(), typeof req.query.path === 'string' ? req.query.path : '', typeof req.query.search === 'string' ? req.query.search : ''))
@@ -697,6 +713,10 @@ router.get('/genres', (req, res) => {
   res.json(collectAllGenres(getDB()))
 })
 
+router.get('/genre-summary', (req, res) => {
+  res.json(require('../../electron/genreList').genreSummary(getDB()))
+})
+
 
 router.put('/:id/genre', (req, res) => {
   const { genre } = req.body
@@ -772,7 +792,16 @@ router.put('/:id', (req, res) => {
   }
   
   if (updates.length === 0) return res.json({ error: 'No fields to update' })
-  
+
+  // The editable metadata also belongs in the audio file, not just the database.
+  const tagEdits = require('../../electron/fileComment').fileTagEdits(req.body || {})
+  if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
+    try {
+      require('../../electron/fileComment').writeFileTags(currentTrack.file_path, tagEdits)
+      require('../../electron/fileStamp').noteFileWritten(db, currentTrack.file_path)
+    } catch (e) { return res.json({ error: `Couldn't save the tags into the file: ${e.message}` }) }
+  }
+
   params.push(req.params.id)
   const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
   const result = db.prepare(sql).run(...params)

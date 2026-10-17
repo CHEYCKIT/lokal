@@ -3,12 +3,22 @@ import { api } from '../api'
 import { isOnlineTrack } from '../onlineBrowse.js'
 import { artistIdFromName } from '../artistId.js'
 import { navigateToTrackArtist } from '../artistLink'
+import { artistCreditParts, keepCommaSet, setSplitWords } from '../artistNames'
 
 /**
  * The artists a track is linked to (as the library split them: "A x B feat.
  * C" is three), in credit order. A streamed song uses the names its source
  * gives. Empty while loading or for a single artist's song.
  */
+let splitWordsRequest = null
+function loadSplitWords() {
+  if (splitWordsRequest) return splitWordsRequest
+  splitWordsRequest = Promise.resolve(api.getArtistSplitWords?.())
+    .then(result => { if (Array.isArray(result?.words)) setSplitWords(result.words) })
+    .catch(() => {})
+  return splitWordsRequest
+}
+
 function useLinkedArtists(track) {
   const [linked, setLinked] = useState({ trackId: null, artists: [] })
   const online = isOnlineTrack(track)
@@ -52,6 +62,18 @@ function creditSegments(credit, artists) {
  */
 export default function TrackArtistLinks({ track, nav, keepCommaArtists = [], className = '', linkClassName = '', onContextMenu }) {
   const artists = useLinkedArtists(track)
+  const [, refreshSplitWords] = useState(0)
+  useEffect(() => {
+    let active = true
+    loadSplitWords().then(() => { if (active) refreshSplitWords(value => value + 1) })
+    const changed = event => {
+      if (!Array.isArray(event.detail)) return
+      setSplitWords(event.detail)
+      refreshSplitWords(value => value + 1)
+    }
+    window.addEventListener('lokal:split-words-updated', changed)
+    return () => { active = false; window.removeEventListener('lokal:split-words-updated', changed) }
+  }, [])
   if (!track?.artist) return null
   const credit = String(track.artist)
   if (artists.length < 2) {
@@ -63,8 +85,9 @@ export default function TrackArtistLinks({ track, nav, keepCommaArtists = [], cl
     )
   }
   const open = (artist) => nav(`/artist/${artist.id}`, { state: { name: artist.name } })
-  const segments = creditSegments(credit, artists)
-    || artists.flatMap((artist, i) => i ? [{ text: ', ' }, { text: artist.name, artist }] : [{ text: artist.name, artist }])
+  const artistByName = new Map(artists.map(artist => [artist.name.toLocaleLowerCase(), artist]))
+  const segments = artistCreditParts(credit, keepCommaSet(keepCommaArtists), artists.map(artist => artist.name))
+    .map(segment => segment.artist ? { ...segment, artist: artistByName.get(String(segment.artist).toLocaleLowerCase()) || artists.find(a => a.name.toLocaleLowerCase() === String(segment.artist).toLocaleLowerCase()) } : segment)
   return (
     <span className={className} onContextMenu={onContextMenu}>
       {segments.map((segment, i) => segment.artist ? (

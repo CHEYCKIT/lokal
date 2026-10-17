@@ -2,15 +2,35 @@
 // preload or Node access. Callback ownership stays in the trusted host.
 const { validateURL, domainAllowed } = require('./network')
 const windows = new Map()
+const closeWaiters = new Map()
+
+function waitForClose(key) {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  const waiters = closeWaiters.get(key) || new Set()
+  waiters.add(resolve)
+  closeWaiters.set(key, waiters)
+  return {
+    promise,
+    cancel: () => {
+      waiters.delete(resolve)
+      if (!waiters.size) closeWaiters.delete(key)
+    },
+  }
+}
 
 async function openAuthWindow(packages, key) {
   const runtime = await packages.runtime(key)
+  const existing = windows.get(key)
+  if (existing && !existing.isDestroyed()) {
+    existing.focus()
+    return { success: true, message: 'Complete verification in the addon window.', opened: true }
+  }
   const pending = runtime.host.session?.pending || runtime.host.auth.pending
   if (!pending?.url) throw new Error('There is no pending addon login or verification')
   const permissions = runtime.host.network.permissions
   validateURL(pending.url, permissions)
   const { BrowserWindow, session } = require('electron')
-  windows.get(key)?.close()
   const partition = session.fromPartition(`lokal-addon-${key}`)
   const window = new BrowserWindow({ width: 720, height: 800, title: 'Lokal — Addon access', autoHideMenuBar: true, webPreferences: { session: partition, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } })
   windows.set(key, window)
@@ -56,11 +76,32 @@ async function openAuthWindow(packages, key) {
   window.on('closed', () => {
     clearTimeout(timer)
     if (windows.get(key) === window) windows.delete(key)
-    packages.authStatus(key).then(status => announce(key, status), error => announce(key, { authenticated: false, error: error.message }))
+    packages.authStatus(key).then(status => {
+      announce(key, status)
+      for (const resolve of closeWaiters.get(key) || []) resolve(status)
+      closeWaiters.delete(key)
+    }, error => {
+      const status = { authenticated: false, error: error.message }
+      announce(key, status)
+      for (const resolve of closeWaiters.get(key) || []) resolve(status)
+      closeWaiters.delete(key)
+    })
   })
   await window.loadURL(pending.url)
   return { success: true, message: 'Complete verification in the addon window.' }
 }
+
+async function openAuthWindowAndWait(packages, key) {
+  const waiter = waitForClose(key)
+  try {
+    await openAuthWindow(packages, key)
+    return await waiter.promise
+  } catch (error) {
+    waiter.cancel()
+    throw error
+  }
+}
+
 function announce(key, status) {
   const { BrowserWindow } = require('electron')
   const auth = new Set(windows.values())
@@ -72,4 +113,4 @@ async function clearAuthSession(key) {
   windows.get(key)?.close()
   try { await require('electron').session.fromPartition(`lokal-addon-${key}`).clearStorageData() } catch {}
 }
-module.exports = { openAuthWindow, closeAuthWindow, clearAuthSession }
+module.exports = { openAuthWindow, openAuthWindowAndWait, closeAuthWindow, clearAuthSession }

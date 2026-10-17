@@ -1,14 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, AudioWaveform, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, FolderOpen, AudioWaveform, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
 import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { isOnlineTrack } from '../onlineBrowse'
+import { isStationTrack } from '../radio/stations'
 import Waveform from './Waveform'
+import Spectrum from '../visualizers/Spectrum'
+import Waves from '../visualizers/Waves'
+import Lightning from '../visualizers/Lightning'
 import { useAppearanceFlag } from '../appearanceFlags'
 import Modal from './Modal'
 import AudioPipelineModal from './AudioPipelineModal'
@@ -24,12 +28,38 @@ import MarqueeText from './MarqueeText'
 import TrackArtistLinks from './TrackArtistLinks'
 import { useVolumeWheel } from '../volumeWheel'
 
+const folderPathForTrack = (trackPath, musicRoot) => {
+  if (!trackPath || String(trackPath).startsWith('ghost://') || !musicRoot) return null
+  const rootOriginal = String(musicRoot).replace(/\\/g, '/')
+  let root = rootOriginal.replace(/\/+$/, '').replace(/^([a-z]:)$/i, '$1/') || (rootOriginal.startsWith('/') ? '/' : '')
+  const track = String(trackPath).replace(/\\/g, '/')
+  const windowsPath = /^[a-z]:\//i.test(root) || root.startsWith('//')
+  const rootCompare = windowsPath ? root.toLowerCase() : root
+  const trackCompare = windowsPath ? track.toLowerCase() : track
+  const prefix = rootCompare.endsWith('/') ? rootCompare : `${rootCompare}/`
+  if (trackCompare !== rootCompare && !trackCompare.startsWith(prefix)) return null
+  const relative = track.slice(root.length).replace(/^\/+/, '')
+  return relative.split('/').slice(0, -1).join('/')
+}
+
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
 export default function PlayerBar() {
   const { t } = useTranslation()
   const glass = useAppearanceFlag('glass_player_bar')
   const showWaveform = useAppearanceFlag('player_waveform')
+  const [playerVisualizer, setPlayerVisualizer] = useState(() => peekSettings()?.player_visualizer || null)
+  useEffect(() => {
+    const refreshVisualizer = () => {
+      const cached = peekSettings()
+      if (cached) { setPlayerVisualizer(cached.player_visualizer || null); return }
+      api.getSettings().then(value => setPlayerVisualizer(value?.player_visualizer || null)).catch(() => {})
+    }
+    refreshVisualizer()
+    window.addEventListener('lokal:settings-saved', refreshVisualizer)
+    return () => window.removeEventListener('lokal:settings-saved', refreshVisualizer)
+  }, [])
+  const visualizerMode = playerVisualizer || (showWaveform ? 'waveform' : 'off')
   const nav = useNavigate()
   const {
     currentTrack, isPlaying, isBuffering, progress, duration, volume, shuffle, repeat,
@@ -112,7 +142,7 @@ export default function PlayerBar() {
 
 
   const handleScrub = useCallback((e) => {
-    if (!duration) return
+    if (!duration || isStationTrack(usePlayerStore.getState().currentTrack)) return
     const r = e.currentTarget.getBoundingClientRect()
     const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration
     setLocalProg(t)
@@ -132,19 +162,28 @@ export default function PlayerBar() {
 
   // An online song (YouTube, SoundCloud): label, and a button to save it.
   const streamed = isStreamed(currentTrack)
+  const station = isStationTrack(currentTrack)
 
-  const hasAlbum = !!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
+  const hasAlbum = !station && (!!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))
   const handleTitleClick = () => {
     if (!hasAlbum) return
     navigateToTrackAlbum(nav, currentTrack)
   }
 
+  const openCurrentTrackFolder = async () => {
+    const root = peekSettings()?.music_folder || (await api.getSettings())?.music_folder
+    const relativePath = folderPathForTrack(currentTrack?.file_path, root)
+    if (relativePath === null) return
+    nav('/library', { state: { openFolder: relativePath } })
+  }
+
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
-      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
+      !station && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: 'Open folder in Library', icon: FolderOpen, onSelect: openCurrentTrackFolder },
+      !station && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
       currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
-      losslessMenuItem(currentTrack, Gem),
+      !station && losslessMenuItem(currentTrack, Gem),
     ].filter(Boolean))
   }
 
@@ -155,7 +194,7 @@ export default function PlayerBar() {
   const flowPlaying = usePlayerStore(s => s.playbackContext?.type === 'flow')
   const castStatusDevice = useCastStore(s => s.status?.device)
   const castDevice = castActive ? castStatusDevice : null
-  const qualityTier = currentTrack && !streamed ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
+  const qualityTier = currentTrack && !streamed && !station ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
   const quality = qualityTier !== 'unknown' ? { info: TIERS[qualityTier], format: formatLabel(currentTrack) } : null
 
   return (
@@ -176,7 +215,7 @@ export default function PlayerBar() {
               (and title) up for good while songs changed. Layers crossfade. */}
           <AnimatePresence initial={false}>
             {artSrc ? (
-              <motion.img key={currentTrack?.id} src={artSrc}
+              <motion.img key={station ? artSrc : currentTrack?.id} src={artSrc}
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
                 className="absolute inset-0 w-full h-full object-cover" />
             ) : (
@@ -228,6 +267,12 @@ export default function PlayerBar() {
                       {streamLabel(currentTrack)}
                     </span>
                   )}
+                  {station && (
+                    <span className="mt-1 block truncate text-[9px] font-display uppercase tracking-wider text-accent"
+                      title={t('Live radio station: {station}', { station: currentTrack.station?.title || currentTrack.title })}>
+                      {t('Live radio')} · {currentTrack.station?.title || currentTrack.title}
+                    </span>
+                  )}
                 </div>
               ) : <p className="text-xs text-muted">{t("No track playing")}</p>}
               {quality && (
@@ -243,7 +288,7 @@ export default function PlayerBar() {
         </div>
 
         <div className="flex h-5 w-[99px] flex-shrink-0 items-center gap-3">
-          {currentTrack && (
+          {currentTrack && !station && (
             <div className="relative flex-shrink-0">
               <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
                 className={`flex h-5 w-5 items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}
@@ -261,13 +306,13 @@ export default function PlayerBar() {
               </AnimatePresence>
             </div>
           )}
-          {currentTrack && (
+          {currentTrack && !station && (
             <button onClick={() => openAddToPlaylist(currentTrack)} title={t("Add to playlist")} aria-label={t("Add to playlist")}
               className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
               <Plus size={14} />
             </button>
           )}
-          {currentTrack && (
+          {currentTrack && !station && (
             <button type="button" onClick={() => setShowAudioPipeline(true)} title={t("Audio Pipeline")}
               aria-label={t("Audio Pipeline")} aria-haspopup="dialog"
               className="flex-shrink-0 text-text/90 hover:text-accent transition-colors">
@@ -292,29 +337,32 @@ export default function PlayerBar() {
           <button onClick={toggleRepeat} className={`transition-colors ${repeat !== 'none' ? 'text-accent' : 'text-text/90 hover:text-text'}`} title={t(repeat === 'none' ? 'Repeat off' : repeat === 'one' ? 'Repeat one' : 'Repeat all')}><RepeatIcon size={15} /></button>
         </div>
         <div className="relative flex items-center gap-2 w-full max-w-md">
-          <span className="text-xs text-muted w-8 text-right font-display">{fmt(display)}</span>
-          <div className="flex-1 h-1 bg-elevated rounded-full cursor-pointer group relative overflow-hidden"
-            onMouseMove={handleScrub}
-            onMouseDown={e => { scrubbing.current = true; handleScrub(e) }}
-            onMouseUp={() => { scrubbing.current = false; setLocalProg(null) }}
-            onMouseLeave={() => { if (!scrubbing.current) setLocalProg(null) }}>
+          <span className="text-xs text-muted w-8 text-right font-display">{station && !duration ? '' : fmt(display)}</span>
+          <div className={`flex-1 h-1 bg-elevated rounded-full group relative overflow-hidden ${station ? 'cursor-default' : 'cursor-pointer'}`}
+            onMouseMove={station ? undefined : handleScrub}
+            onMouseDown={station ? undefined : e => { scrubbing.current = true; handleScrub(e) }}
+            onMouseUp={station ? undefined : () => { scrubbing.current = false; setLocalProg(null) }}
+            onMouseLeave={station ? undefined : () => { if (!scrubbing.current) setLocalProg(null) }}>
             <div className="h-full bg-accent rounded-full relative" style={{ width: `${duration ? (display/duration)*100 : 0}%` }}>
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            {isBuffering && streamed && (
+            {isBuffering && (streamed || station) && (
               <div role="progressbar" aria-label={t("Loading track")} className="absolute inset-0 overflow-hidden rounded-full bg-elevated">
                 <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
               </div>
             )}
           </div>
-          <span className="text-xs text-muted w-8 font-display">{fmt(duration)}</span>
+          <span className="text-xs text-muted w-8 font-display">{station && !duration ? '' : fmt(duration)}</span>
         </div>
         </div>
 
         <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
-          {currentTrack && showWaveform && (
-            <div className="min-w-0 shrink basis-[120px] overflow-hidden">
-              <Waveform isPlaying={isPlaying} className="w-full" />
+          {currentTrack && visualizerMode !== 'off' && (
+            <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden">
+              {visualizerMode === 'spectrum' ? <Spectrum isPlaying={isPlaying} bars={39} barWidth={2} height={24} strength={0.8} color="accent" opacity={0.8} className="max-w-full" /> :
+               visualizerMode === 'waves' ? <Waves isPlaying={isPlaying} width={120} height={26} strength={1} colorBack="accent" colorFront="#ffffff" opacity={0.72} className="max-w-full" /> :
+               visualizerMode === 'lightning' ? <Lightning isPlaying={isPlaying} strength={0.8} opacity={0.75} className="h-7 w-[120px]" /> :
+               <Waveform isPlaying={isPlaying} className="w-full" />}
             </div>
           )}
           {!castDevice && <AudioOutputPicker />}

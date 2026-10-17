@@ -41,8 +41,11 @@ export function blobMask(blobs, p) {
 export const blobBlur = p => 16 * (1 - easeOut(clamp01(p / 0.88)))
 
 
-/** Cover transition for a song change; manual skips use AutoMix's dissolve too. */
-export function coverTransitionMode({ automix, reduceMotion, hasPreviousCover }) {
+/** Artwork gets the same AutoMix dissolve for every audio-transition mode,
+ * including Off. This is a visual handover only; it does not start an audio mix.
+ * Manual Next/Previous use the same track-change path as automatic transitions.
+ */
+export function coverTransitionMode({ reduceMotion, hasPreviousCover }) {
   if (reduceMotion || !hasPreviousCover) return 'base'
-  return automix ? 'mix' : 'fade'
+  return 'mix'
 }

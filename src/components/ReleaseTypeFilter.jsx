@@ -31,7 +31,7 @@ export default function ReleaseTypeFilter({ types, shown, onToggle }) {
     document.addEventListener('keydown', escape)
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape) }
   }, [open])
-  if (types.length < 2) return null
+  if (types.filter(entry => entry.count > 0).length < 2) return null
   const visible = types.filter(entry => shown.has(entry.type))
   const summary = visible.length === types.length ? t('All') : visible.length ? visible.map(entry => t(entry.label)).join(', ') : t('None')
   return (

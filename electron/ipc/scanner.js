@@ -6,6 +6,7 @@ const https = require('https')
 const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
+const artistSplit = require('../artistSplit')
 const { findFolderArtwork, getLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
@@ -72,25 +73,11 @@ function getKeepCommaArtists() {
 
 function splitArtists(raw, keepComma = null) {
   if (!raw) return []
-  const lower = raw.toLowerCase().trim()
-  const KEEP_COMMA_ARTISTS = keepComma || getKeepCommaArtists()
-  for (const known of KEEP_COMMA_ARTISTS) {
-    if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
-  }
-  const commaLowerPattern = /,\s+[a-z]/
-  if (commaLowerPattern.test(raw)) return [raw.trim()]
-  let artists = [raw]
-  artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
-  artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => {
-    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
-    // A split that leaves one-letter pieces isn't a collaboration but one
-    // stylised name ("h x m x d" was becoming the artists h, m and d).
-    return parts.some(part => part.trim().length < 2) ? [a] : parts
-  })
-  return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+  const db = getDB()
+  artistSplit.applySplitWordsFrom(db)
+  const keep = keepComma || getKeepCommaArtists()
+  return artistSplit.splitArtists(raw, artistSplit.keepCommaSet([...keep]))
 }
-
 // Tracks whose artist links were changed by hand (Manage > rename, merge,
 // delete): their links no longer follow the artist text, on purpose, so the
 // re-link pass leaves them alone. Editing the song's artist, or its file
@@ -110,7 +97,7 @@ function unlockArtistLinks(db, trackId) {
 // the library once (see relinkArtistsIfNeeded).
 // 3: version 2 also linked streamed (ghost://) tracks; this undoes that.
 // 4: artist ids keep non-Latin letters (every Japanese name was "a-unknown").
-const ARTIST_SPLITTER_VERSION = 4
+const ARTIST_SPLITTER_VERSION = 5
 
 /**
  * Brings every track's artist links in line with splitArtists (e.g. after it
@@ -187,7 +174,8 @@ function relinkArtists(db = getDB()) {
  */
 function relinkArtistsIfNeeded(db = getDB()) {
   const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
-  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}`
+  const splitWords = JSON.stringify(artistSplit.applySplitWordsFrom(db))
+  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}:${splitWords}`
   const last = db.prepare("SELECT value FROM settings WHERE key = 'artist_relink_fingerprint'").get()?.value
   if (last === fingerprint) return 0
   const changed = relinkArtists(db)
@@ -375,6 +363,7 @@ async function scanFolder(folderPath) {
     emit('scanner:progress', { ...scanStatus, ...(complete ? { complete: true } : {}) })
   }
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
+  try { require('../libraryWatcher').watchLibrary(folderPath) } catch (e) { console.warn('[scanner] Library watcher not started:', e.message) }
 
   const linkArtist = db.prepare(`INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)`)
   const findExistingTrackByPath = db.prepare('SELECT id FROM tracks WHERE file_path = ?')
@@ -444,7 +433,7 @@ async function scanFolder(folderPath) {
     try {
       const stat = fs.statSync(filePath)
       const trackId = 't-' + hashFile(filePath, stat)
-      const existing = db.prepare('SELECT last_modified, artwork_path FROM tracks WHERE id = ?').get(trackId)
+      const existing = db.prepare('SELECT id, last_modified, artwork_path FROM tracks WHERE file_path = ?').get(filePath)
       const folderArtwork = getFolderArtwork(filePath)
       if (existing && existing.last_modified === stat.mtimeMs) {
         const existingArtwork = existing.artwork_path ? path.resolve(existing.artwork_path) : null
@@ -595,11 +584,8 @@ function sourceFilter(source) {
 function genreFilter(genre) {
   const value = String(genre || '').trim()
   if (!value) return null
-  const escaped = value.replace(/[\\%_]/g, char => `\\${char}`)
-  return {
-    sql: "(LOWER(TRIM(genre)) = LOWER(?) OR (',' || REPLACE(REPLACE(LOWER(genres), ', ', ','), ' ,', ',') || ',') LIKE LOWER(?) ESCAPE '\\')",
-    params: [value, `%,${escaped},%`],
-  }
+  if (value === '__none__') return { sql: "lokal_has_genre(genre, genres, '') = 1", params: [] }
+  return { sql: 'lokal_has_genre(genre, genres, ?) = 1', params: [value] }
 }
 
 /** Profile numbers for a user (the desktop app and the web server share it). */
@@ -1171,9 +1157,11 @@ function exportAppData() {
 
 function registerScannerHandlers(ipcMain) {
   const { BrowserWindow } = require('electron')
+  try { require('../genreList').registerGenreFunctions(getDB()) } catch (error) { console.warn('[scanner] Genre filters unavailable:', error.message) }
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:status', () => scanStatus)
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search) => getLibraryFolders(getDB(), relativePath, search))
+  ipcMain.handle('scanner:getGenreSummary', () => { const db = getDB(); require('../genreList').registerGenreFunctions(db); return require('../genreList').genreSummary(db) })
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()
     const existing = db.prepare("SELECT * FROM tracks WHERE file_path = ?").get(filePath)
@@ -1454,6 +1442,7 @@ function registerScannerHandlers(ipcMain) {
     if (!currentTrack) return { error: 'Track not found' }
     const updates = []
     const params = []
+    let wroteFile = false
     
     if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
     if (data.artist !== undefined) { updates.push('artist = ?'); params.push(data.artist) }
@@ -1462,6 +1451,9 @@ function registerScannerHandlers(ipcMain) {
     if (data.track_num !== undefined) { updates.push('track_num = ?'); params.push(data.track_num) }
     if (data.year !== undefined) { updates.push('year = ?'); params.push(data.year) }
     if (data.record_label !== undefined) { updates.push('record_label = ?'); params.push(data.record_label) }
+    if (data.clip_url !== undefined) { updates.push('clip_url = ?'); params.push(String(data.clip_url || '').trim() || null) }
+    if (data.clip_start !== undefined) { updates.push('clip_start = ?'); params.push(data.clip_start === null || data.clip_start === '' ? null : Number(data.clip_start)) }
+    if (data.clip_end !== undefined) { updates.push('clip_end = ?'); params.push(data.clip_end === null || data.clip_end === '' ? null : Number(data.clip_end)) }
     if (data.explicit !== undefined) { updates.push('explicit = ?'); params.push(data.explicit ? 1 : 0) }
     if (data.instrumental !== undefined) { updates.push('instrumental = ?'); params.push(data.instrumental === null ? null : data.instrumental ? 1 : 0) }
     if (data.danceability !== undefined) { updates.push('danceability = ?'); params.push(data.danceability) }
@@ -1491,10 +1483,18 @@ function registerScannerHandlers(ipcMain) {
     }
     
     if (updates.length === 0) return { error: 'No fields to update' }
-    
+
+    // Keep editable metadata in the audio file so a later rescan doesn't restore old tags.
+    const tagEdits = require('../fileComment').fileTagEdits(data || {})
+    if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
+      try { require('../fileComment').writeFileTags(currentTrack.file_path, tagEdits); wroteFile = true }
+      catch (e) { return { error: `Couldn't save the tags into the file: ${e.message}` } }
+    }
+
     params.push(trackId)
     const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
     const result = db.prepare(sql).run(...params)
+    if (wroteFile) require('../fileStamp').noteFileWritten(db, currentTrack.file_path)
     if (data.artist !== undefined) {
       updateTrackArtistLinks(db, trackId, data.artist)
     }
@@ -1537,6 +1537,22 @@ function registerScannerHandlers(ipcMain) {
   })
   ipcMain.handle('settings:getKeepCommaArtists', () => { try { const db = getDB(); const setting = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get(); return setting?.value ? JSON.parse(setting.value) : [] } catch { return [] } })
   ipcMain.handle('settings:setKeepCommaArtists', (_, artists) => getDB().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keep_comma_artists', ?)").run(JSON.stringify(artists)))
+
+  ipcMain.handle('settings:getArtistSplitWords', () => ({
+    builtIn: artistSplit.DEFAULT_SPLIT_WORDS,
+    words: artistSplit.applySplitWordsFrom(getDB()),
+  }))
+  ipcMain.handle('settings:setArtistSplitWords', (_, words) => {
+    try {
+      const db = getDB()
+      const saved = artistSplit.saveSplitWords(db, words)
+      const changed = relinkArtists(db)
+      const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
+      const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}:${JSON.stringify(saved)}`
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_relink_fingerprint', ?)").run(fingerprint)
+      return { ok: true, words: saved, changed }
+    } catch (error) { return { ok: false, error: error?.message || String(error) } }
+  })
 
   ipcMain.handle('settings:getTheme', () => {
     const db = getDB()
@@ -1991,7 +2007,75 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
+
+async function applyFileChanges(changes = []) {
+  const db = getDB()
+  const root = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+  if (!root || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
+  const rootPath = path.resolve(root)
+  const files = new Set()
+  const gone = []
+  const seen = new Set()
+
+  for (const change of changes) {
+    const rawPath = change?.path
+    if (!rawPath) continue
+    const filePath = path.resolve(String(rawPath))
+    const relative = path.relative(rootPath, filePath)
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
+    if (seen.has(filePath)) continue
+    seen.add(filePath)
+
+    let stat
+    try { stat = fs.statSync(filePath) } catch {
+      if (change?.renamed || AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) gone.push(filePath)
+      continue
+    }
+    if (stat.isDirectory()) {
+      if (change?.renamed) for (const child of walkDir(filePath)) files.add(path.resolve(child))
+      continue
+    }
+    if (stat.isFile() && AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) files.add(filePath)
+  }
+
+  if (!files.size && !gone.length) return { added: [], updated: [], removed: [] }
+
+  const before = new Map()
+  for (const filePath of files) {
+    before.set(filePath, db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath) || null)
+  }
+
+  // scanFolder stats the full tree but reads tags only for new, changed, or
+  // artwork-stale files; doing it before pruning lets renamed copies be found.
+  await scanFolder(rootPath)
+
+  let removed = []
+  if (gone.length) {
+    try {
+      removed = require('../libraryPrune').pruneGonePaths(db, [...new Set(gone)]).ids
+    } catch (error) {
+      console.warn('[libraryWatcher] Clearing missing files skipped:', error.message)
+    }
+  }
+
+  const added = []
+  const updated = []
+  for (const filePath of files) {
+    const current = db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath)
+    if (!current) continue
+    const previous = before.get(filePath)
+    if (!previous) added.push(current.id)
+    else if (previous.id !== current.id || previous.last_modified !== current.last_modified) updated.push(current.id)
+  }
+
+  return {
+    added: [...new Set(added)],
+    updated: [...new Set(updated)],
+    removed: [...new Set(removed)],
+  }
+}
+
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, applyFileChanges, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
 
 
 function registerExtraHandlers(ipcMain) {

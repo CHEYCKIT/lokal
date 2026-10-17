@@ -2,7 +2,7 @@ import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe, Clock, Shuffle } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -20,6 +20,16 @@ import { isConnected, releaseTitleKey, setConnected } from '../onlineBrowse'
 import ReleaseTypeFilter from '../components/ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
 import FollowArtistButton from '../components/FollowArtistButton'
+import { playNextMany } from '../trackActions'
+
+const shuffledArtistTracks = list => {
+  const out = [...list]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
 
 export default function Artist() {
   const { t } = useTranslation()
@@ -263,6 +273,12 @@ export default function Artist() {
         <div className="flex items-center gap-3">
           <button onClick={() => playQueue(artist.tracks, 0, artistContext)} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-colors hover:bg-accent-dim">
             <Play size={14} fill="currentColor" className="translate-x-px" /> {t('Play all')}
+          </button>
+          <button onClick={() => playNextMany(artist.tracks)} disabled={!artist.tracks?.length} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white disabled:opacity-40">
+            <Clock size={14} /> {t('Play next')}
+          </button>
+          <button onClick={() => { const list = shuffledArtistTracks(artist.tracks || []); if (list.length) playQueue(list, 0, artistContext) }} disabled={!artist.tracks?.length} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white disabled:opacity-40">
+            <Shuffle size={14} /> {t('Shuffle')}
           </button>
           <button onClick={() => openRadio(nav, { artist: artist.name, type: 'artist' }, useAppStore.getState().user?.id)} className="flex items-center gap-2 rounded-full border border-border bg-elevated px-4 py-2 text-sm text-white/80 transition-colors hover:border-accent/30 hover:text-white">
             <Radio size={14} /> {t('Radio')}

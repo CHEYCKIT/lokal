@@ -7,7 +7,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, CircleDashed, Disc3, Download, Music, Play, Radio } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CircleDashed, Clock, Disc3, Download, Music, Play, Radio, Shuffle } from 'lucide-react'
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import DiscoveryImage from './DiscoveryImage'
 import ImageZoom from './ImageZoom'
@@ -17,6 +17,7 @@ import ReleaseTypeFilter from './ReleaseTypeFilter'
 import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
 import { libraryAlbumCounts, releaseOwnership, artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
+import { playNextMany } from '../trackActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { showToast } from './Toaster'
@@ -303,6 +304,8 @@ export default function OnlineArtist({ id, name: givenName, anchor = null }) {
             <h1 className="truncate text-3xl font-display text-white">{name}</h1>
             <div className="mt-3 flex flex-wrap gap-2">
               <button onClick={() => play(songs.tracks[0])} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"><Play size={15} fill="currentColor" /> {t('Play')}</button>
+              <button onClick={() => playNextMany(songs.tracks)} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Clock size={15} /> {t('Play next')}</button>
+              <button onClick={() => { const list = [...songs.tracks]; for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]] } if (list.length) play(list[0], list) }} disabled={!songs.tracks.length} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Shuffle size={15} /> {t('Shuffle')}</button>
               <button onClick={() => openRadio(nav, { artist: name, type: 'artist' }, userId)} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50"><Radio size={15} /> {t('Artist radio')}</button>
               <button onClick={downloadPopular} disabled={!songs.tracks.length || busy} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white backdrop-blur-sm transition-colors hover:border-accent/50 disabled:opacity-40"><Download size={15} /> {busy ? t('Finding songs…') : t('Download popular songs')}</button>
               <RefreshButton onClick={data.refresh} loading={data.loading} loadedAt={data.loadedAt} className="border-white/15 bg-black/30 backdrop-blur-sm" />

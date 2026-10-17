@@ -6,6 +6,7 @@ import { api } from '../api'
 import Modal from './Modal'
 import GenreValueInput from './GenreValueInput'
 import { usePlayerStore } from '../store/player'
+import { clipVideoLink, formatClipTime, parseClipTime } from '../clipVideo'
 
 function asInput(value) {
   return value === null || value === undefined ? '' : String(value)
@@ -60,6 +61,9 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
     valence: '',
     tempo: '',
     time_signature: '',
+    clip_url: '',
+    clip_start: '',
+    clip_end: '',
   })
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(null)
@@ -106,6 +110,9 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
         valence: asInput(track.valence),
         tempo: asInput(track.tempo),
         time_signature: asInput(track.time_signature),
+        clip_url: track.clip_url || '',
+        clip_start: asInput(track.clip_start),
+        clip_end: asInput(track.clip_end),
       })
       
       if (track.artwork_path) {
@@ -162,6 +169,20 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       if (formData.genre !== track.genre) updateData.genre = formData.genre || null
       if (normalizeGenres(formData.genres) !== normalizeGenres(track.genres || track.genre || '')) updateData.genres = normalizeGenres(formData.genres) || null
       if (formData.record_label !== (track.record_label || '')) updateData.record_label = formData.record_label || null
+      const clipUrl = formData.clip_url.trim()
+      if (clipUrl && !clipVideoLink(clipUrl)) {
+        setStatus({ type: 'error', message: t('The music video must be a link or a video file on this computer') })
+        setSaving(false)
+        return
+      }
+      if (clipUrl !== (track.clip_url || '')) updateData.clip_url = clipUrl || null
+      if (String(formData.clip_start) !== String(track.clip_start ?? '')) updateData.clip_start = formData.clip_start.trim() ? parseClipTime(formData.clip_start) : null
+      if (String(formData.clip_end) !== String(track.clip_end ?? '')) updateData.clip_end = formData.clip_end.trim() ? parseClipTime(formData.clip_end) : null
+      if (Number.isNaN(updateData.clip_start) || Number.isNaN(updateData.clip_end) || (updateData.clip_start != null && updateData.clip_start < 0) || (updateData.clip_end != null && updateData.clip_end < 0)) {
+        setStatus({ type: 'error', message: t('Clip times must be valid non-negative times.') })
+        setSaving(false)
+        return
+      }
       if (formData.explicit !== !!track.explicit) updateData.explicit = formData.explicit ? 1 : 0
       if (String(formData.instrumental) !== String(track.instrumental ?? '')) updateData.instrumental = formData.instrumental === '' ? null : formData.instrumental === '1' ? 1 : 0
       if (String(formData.danceability) !== String(track.danceability ?? '')) updateData.danceability = parseNumberField(formData.danceability)
@@ -385,6 +406,26 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               <option value="0">{t("Has vocals")}</option>
             </select>
             <p className="text-xs text-muted mt-2">{t("Instrumental tracks skip LRCLIB and lyrics lookups.")}</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
+          <div>
+            <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1">{t('Music video clip')}</label>
+            <input value={formData.clip_url} onChange={e => handleChange('clip_url', e.target.value)}
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+              placeholder={t('Video URL or local file path')} spellCheck={false} />
+            <p className="mt-1 text-xs text-muted">{t('Optional: loops a muted section of this video in the Visualization + Lyrics panel.')}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1">{t('Clip start')}</label>
+              <input value={formData.clip_start} onChange={e => handleChange('clip_start', e.target.value)} className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50" placeholder="0 or 1:15" />
+            </div>
+            <div>
+              <label className="text-xs font-display text-muted uppercase tracking-widest block mb-1">{t('Clip end')}</label>
+              <input value={formData.clip_end} onChange={e => handleChange('clip_end', e.target.value)} className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-accent/50" placeholder="1:25" />
+            </div>
           </div>
         </div>
 

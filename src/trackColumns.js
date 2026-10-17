@@ -1,3 +1,7 @@
+export const MAX_FIXED_WIDTH = 30
+export const ROW_SIZE = { min: 0.75, max: 1.5, step: 0.05, initial: 1 }
+export const ROW_GAP = { min: 0.0625, max: 1, step: 0.0625, initial: 0.375 }
+
 // Widths are in rem, including gaps, so larger text uses the compact layout
 // sooner. Header and rows use the exact same template, never content-sized cells.
 export const TRACK_COLUMN_OPTIONS = [
