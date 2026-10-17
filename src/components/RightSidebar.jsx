@@ -640,6 +640,7 @@ export default function RightSidebar() {
       )}
       {genrePopover && currentTrack && (
         <GenrePopover
+          key={currentTrack.id}
           track={currentTrack}
           anchor={genrePopover}
           onClose={() => setGenrePopover(null)}
