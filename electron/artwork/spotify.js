@@ -409,6 +409,21 @@ async function findSpotifyTrackId(track, cookie) {
   })
 }
 
+/** Parse the persisted GraphQL response without treating errors as a cacheable miss. */
+function canvasGraphqlAnswer(json) {
+  const trackUnion = json?.data?.trackUnion
+  const hasCanvasField = !!trackUnion && Object.prototype.hasOwnProperty.call(trackUnion, 'canvas')
+  if (!json?.data || !trackUnion || !hasCanvasField || json?.errors?.length) {
+    return { url: null, canvas: trackUnion?.canvas || null, failed: true }
+  }
+  const canvas = trackUnion.canvas
+  const url = canvas?.url
+  const validUrl = typeof url === 'string' && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url)
+  // A new URL shape is a protocol change, not a confirmed lack of Canvas.
+  if (url && !validUrl) return { url: null, canvas, failed: true }
+  return { url: validUrl ? url : null, canvas: canvas || null, failed: false }
+}
+
 /** How the web player gets a canvas now: the "canvas" GraphQL query. */
 async function canvasFromGraphql(t, uri) {
   const headers = { Authorization: `Bearer ${t.accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
@@ -422,21 +437,15 @@ async function canvasFromGraphql(t, uri) {
     return { failed: true }
   }
   const json = await res.json().catch(() => null)
-  const trackUnion = json?.data?.trackUnion
-  // Spotify may answer HTTP 200 with partial GraphQL data and errors when its
-  // persisted-query hash/schema has changed. Only a real trackUnion with an
-  // explicit canvas field proves the song has no Canvas; all other shapes must
-  // fall back to the Canvas service instead of caching a false miss.
-  const hasCanvasField = !!trackUnion && Object.prototype.hasOwnProperty.call(trackUnion, 'canvas')
+  const answer = canvasGraphqlAnswer(json)
   if (json?.errors?.length) console.log(`[spotify-canvas] canvas query errors: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}`)
-  if (!json?.data || !trackUnion || !hasCanvasField || json?.errors?.length) {
+  if (answer.failed) {
     console.log(`[spotify-canvas] canvas query for ${uri}: unusable response; trying the Canvas service`)
     return { failed: true }
   }
-  const canvas = trackUnion.canvas
-  const url = canvas?.url
+  const { canvas, url } = answer
   console.log(`[spotify-canvas] canvas query for ${uri}: ${url ? `found a clip (${canvas.type || 'no type'})` : canvas ? `canvas without a link (${canvas.type || 'no type'})` : 'no canvas'}`)
-  return { url: url && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url) ? url : null, failed: false }
+  return { url, failed: false }
 }
 
 async function canvasFor(t, uri) {
@@ -643,4 +652,4 @@ async function likeOnSpotify(rawCookie, track) {
   })
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
