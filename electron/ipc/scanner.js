@@ -1442,6 +1442,7 @@ function registerScannerHandlers(ipcMain) {
     if (!currentTrack) return { error: 'Track not found' }
     const updates = []
     const params = []
+    let wroteFile = false
     
     if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
     if (data.artist !== undefined) { updates.push('artist = ?'); params.push(data.artist) }
@@ -1482,10 +1483,18 @@ function registerScannerHandlers(ipcMain) {
     }
     
     if (updates.length === 0) return { error: 'No fields to update' }
-    
+
+    // Keep editable metadata in the audio file so a later rescan doesn't restore old tags.
+    const tagEdits = require('../fileComment').fileTagEdits(data || {})
+    if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
+      try { require('../fileComment').writeFileTags(currentTrack.file_path, tagEdits); wroteFile = true }
+      catch (e) { return { error: `Couldn't save the tags into the file: ${e.message}` } }
+    }
+
     params.push(trackId)
     const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
     const result = db.prepare(sql).run(...params)
+    if (wroteFile) require('../fileStamp').noteFileWritten(db, currentTrack.file_path)
     if (data.artist !== undefined) {
       updateTrackArtistLinks(db, trackId, data.artist)
     }
