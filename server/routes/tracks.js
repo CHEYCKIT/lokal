@@ -547,7 +547,7 @@ router.get('/missing', (req, res) => {
 
 router.get('/', (req, res) => {
   const db = getDB()
-  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre, quality, includeGhosts, problems, search } = req.query
+  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre, quality, includeGhosts, problems, search, format } = req.query
   if (album) {
     const params = [album]
     let sql = "SELECT * FROM tracks WHERE album = ? AND file_path NOT LIKE 'ghost://%'"
@@ -571,6 +571,10 @@ router.get('/', (req, res) => {
   if (genreWhere) { where.push(genreWhere.sql); params.push(...genreWhere.params) }
   const qualityWhere = typeof quality === 'string' && quality ? require('../../electron/quality').tierFilter(db, quality) : null
   if (qualityWhere) { where.push(qualityWhere.sql); params.push(...qualityWhere.params) }
+  if (typeof format === 'string' && format) {
+    const match = format.match(/^(16|24|32)-(\d{5,6})$/)
+    if (match) { where.push('bit_depth = ? AND sample_rate = ?'); params.push(Number(match[1]), Number(match[2])) }
+  }
   const searchText = String(search || '').trim()
   if (searchText) {
     const { wordsMatch, TRACK_COLUMNS } = require('../../electron/librarySearch')
