@@ -866,7 +866,13 @@ ipcMain.handle('updater:install', () => {
   })
 
   // macOS: its window back from the Dock (hidden helper windows don't count).
-  app.on('activate', () => { if (!mainWindow || mainWindow.isDestroyed()) createWindow() })
+  app.on('activate', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+    try {
+      const folder = require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+      if (folder) require('./libraryWatcher').watchLibrary(folder)
+    } catch (error) { console.warn('[libraryWatcher] Could not resume watching on activate:', error.message) }
+  })
   app.on('open-url', (event, url) => {
     event.preventDefault()
     const token = extractLastfmAuthToken(url)
