@@ -40,6 +40,8 @@ function Layer({ layer, children, onDone }) {
     let frame = 0
     let timer = null
     let finished = false
+    let lastPaint = 0
+    const frameInterval = 1000 / 30
     const finish = () => {
       if (finished) return
       finished = true
@@ -52,6 +54,11 @@ function Layer({ layer, children, onDone }) {
     const paint = now => {
       frame = 0
       if (hidden || finished) return
+      if (lastPaint && now - lastPaint < frameInterval && now - started < duration) {
+        frame = requestAnimationFrame(paint)
+        return
+      }
+      lastPaint = now
       const p = clamp01((now - started) / duration)
       if (layer.mode === 'mix') {
         const mask = blobMask(layer.blobs, p)
