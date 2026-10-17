@@ -34,6 +34,21 @@ test('reordering while shuffled changes playback order and tracks the current ro
   assert.equal(store.getState().queueIndex, 1)
 })
 
+test('adding a song while shuffled keeps all queue orders in sync', () => {
+  const existing = track('existing')
+  reset({
+    queue: [existing], originalQueue: [existing], queueIndex: 0, currentTrack: existing,
+    shuffle: true, shuffleQueue: [existing], shuffleIndex: 0,
+  })
+
+  store.getState().addToQueue(track('added'))
+
+  const state = store.getState()
+  assert.deepEqual(state.queue.map(item => item.id), ['existing', 'added'])
+  assert.deepEqual(state.shuffleQueue.map(item => item.id), ['existing', 'added'])
+  assert.deepEqual(state.originalQueue.map(item => item.id), ['existing', 'added'])
+})
+
 test('removing one duplicate queue entry leaves the other occurrence intact', () => {
   const samePlaying = track('same')
   const other = track('other')
