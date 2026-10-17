@@ -546,7 +546,17 @@ app.whenReady().then(() => {
     app.setAppUserModelId('com.lokal.music');
   }
   try { initDB() } catch (e) { console.error('DB:', e.message) }
-  try { const folder = getDB().prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value; require('./libraryWatcher').watchLibrary(folder) } catch (e) { console.error('Library watcher:', e.message) }
+  try {
+    const db = getDB()
+    const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+    let folders = []
+    try { folders = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+    if (!folders.length) {
+      const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+      if (legacy) folders = [legacy]
+    }
+    require('./libraryWatcher').watchLibraryRoots(folders)
+  } catch (e) { console.error('Library watcher:', e.message) }
   try { markInterruptedPlaylistsIncomplete() } catch (e) { console.error('Downloads:', e.message) }
   try { initPlugins() } catch (e) { console.error('Plugins:', e.message) }
   try {
