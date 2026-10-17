@@ -51,6 +51,11 @@ function findFolderArtwork(folderPath) {
     if (images.length === 1) return path.join(folderPath, images[0])
     // Keep fallback fingerprinting bounded; a large folder shouldn't make the main process hash hundreds of files.
     if (images.length > 32) return null
+    let totalImageBytes = 0
+    for (const name of images) {
+      try { totalImageBytes += fs.statSync(path.join(folderPath, name)).size } catch { return null }
+      if (totalImageBytes > 16 * 1024 * 1024) return null
+    }
     const fingerprints = images.map(name => artworkFingerprint(path.join(folderPath, name)))
     if (fingerprints.some(fingerprint => !fingerprint)) return null
     return new Set(fingerprints).size === 1 ? path.join(folderPath, images[0]) : null
