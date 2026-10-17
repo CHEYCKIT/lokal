@@ -24,13 +24,15 @@ const CATCH_UP_MS = 800
 // The watcher failed (the folder went away): a scan, then watching again.
 const RECOVER_MS = 3000
 
-let watcher = null
-let root = null
+let watchers = new Map()
+let roots = []
+let root = null // legacy primary root for diagnostics
 let timer = null
 let running = null
 let recovering = null
 let catchUp = null
 const pending = new Map() // path -> whether it appeared/went (vs changed)
+const catchUpRoots = new Set()
 
 function broadcast(channel, payload) {
   const { BrowserWindow } = require('electron')
@@ -70,7 +72,11 @@ async function flush() {
     if (!change.renamed) return false
     try { return fs.statSync(change.path).isDirectory() } catch { return true }
   })
-  if (needsScan) { catchUpLater(root); return }
+  if (needsScan) {
+    const affected = [...new Set(ready.map(change => rootForPath(change.path)).filter(Boolean))]
+    for (const folder of affected) catchUpLater(folder)
+    return
+  }
   running = require('./ipc/scanner').applyFileChanges(ready)
     .then(({ added, updated, removed }) => {
       if (!added.length && !updated.length && !removed.length) return
@@ -81,11 +87,37 @@ async function flush() {
     .finally(() => { running = null })
 }
 
-function selectedRoot(folder) {
+function configuredRoots() {
   try {
-    const selected = require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-    return !!selected && path.resolve(selected).toLowerCase() === path.resolve(folder).toLowerCase()
-  } catch { return false }
+    const db = require('./ipc/db').getDB()
+    const plural = db.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value
+    let values = []
+    try { values = Array.isArray(JSON.parse(plural || 'null')) ? JSON.parse(plural) : [] } catch {}
+    if (!values.length) {
+      const legacy = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+      if (legacy) values = [legacy]
+    }
+    const seen = new Set()
+    return values.map(value => path.resolve(String(value || ''))).filter(value => {
+      if (!value || seen.has(value.toLowerCase())) return false
+      seen.add(value.toLowerCase())
+      return true
+    })
+  } catch { return [] }
+}
+
+function rootForPath(filePath) {
+  const full = path.resolve(String(filePath || ''))
+  for (const candidate of roots) {
+    const relative = path.relative(candidate, full)
+    if (relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) return candidate
+  }
+  return null
+}
+
+function selectedRoot(folder) {
+  const wanted = path.resolve(folder).toLowerCase()
+  return configuredRoots().some(candidate => candidate.toLowerCase() === wanted)
 }
 
 function audioFiles(root) {
@@ -110,7 +142,7 @@ async function scan(folder) {
   const db = require('./ipc/db').getDB()
   const scanner = require('./ipc/scanner')
   const before = db.prepare("SELECT id, file_path, last_modified FROM tracks WHERE file_path NOT LIKE 'ghost://%'").all()
-  await scanner.scanFolder(target)
+  await scanner.scanFolder(target, { saveRoot: false, watch: false })
   // A queued recovery can outlive the old watch. Never prune or publish its
   // results if another music folder was selected while the scan was running.
   if (!selectedRoot(target)) return
@@ -146,57 +178,92 @@ function catchUpLater(folder) {
   pending.clear()
   clearTimeout(timer)
   timer = null
-  clearTimeout(catchUp)
   const target = path.resolve(folder)
-  catchUp = setTimeout(() => { catchUp = null; if (selectedRoot(target)) scan(target).catch(e => console.warn('[libraryWatcher] Catch-up scan failed:', e.message)) }, CATCH_UP_MS)
+  if (selectedRoot(target)) catchUpRoots.add(target)
+  clearTimeout(catchUp)
+  catchUp = setTimeout(async () => {
+    catchUp = null
+    const pendingRoots = [...catchUpRoots]
+    catchUpRoots.clear()
+    for (const candidate of pendingRoots) {
+      if (selectedRoot(candidate)) {
+        try { await scan(candidate) } catch (error) { console.warn('[libraryWatcher] Catch-up scan failed:', error.message) }
+      }
+    }
+  }, CATCH_UP_MS)
 }
 
-/** The watcher stopped: a scan catches up and watches the folder again. */
+/** The watcher stopped: catch up the failed root and restore all configured watchers. */
 function recover(folder) {
-  const next = path.resolve(folder)
+  const target = path.resolve(folder)
   stopWatching()
-  recovering = setTimeout(() => {
+  recovering = setTimeout(async () => {
     recovering = null
-    if (selectedRoot(next)) scan(next).catch(e => console.warn('[libraryWatcher] Recovery scan failed:', e.message))
+    if (selectedRoot(target)) {
+      try { await scan(target) } catch (error) { console.warn('[libraryWatcher] Recovery scan failed:', error.message) }
+    }
+    watchLibraryRoots(configuredRoots())
   }, RECOVER_MS)
 }
 
-/** Watches `folder` (the music folder); watching another one stops the old. */
 function watchLibrary(folder) {
-  const next = folder ? path.resolve(folder) : null
-  if (watcher && next && root?.toLowerCase() === next.toLowerCase()) return
+  return watchLibraryRoots(folder ? [folder] : [])
+}
+
+/** Watch every selected music root; changes are batched through the same scanner. */
+function watchLibraryRoots(folderPaths = []) {
+  const nextRoots = []
+  const seen = new Set()
+  for (const value of Array.isArray(folderPaths) ? folderPaths : []) {
+    if (typeof value !== 'string' || !value.trim()) continue
+    const full = path.resolve(value.trim())
+    let stat
+    try { stat = fs.statSync(full) } catch { continue }
+    if (!stat.isDirectory() || seen.has(full.toLowerCase())) continue
+    seen.add(full.toLowerCase())
+    nextRoots.push(full)
+  }
+  if (nextRoots.length === roots.length && nextRoots.every((value, index) => value.toLowerCase() === roots[index]?.toLowerCase()) && watchers.size === nextRoots.length) return
+
   stopWatching()
-  if (!next || !fs.existsSync(next)) return
-  try {
-    watcher = fs.watch(next, { recursive: true }, (type, name) => {
-      // No name: Windows dropped events (too many at once). Until the scan
-      // that follows, single changes needn't be read: it reads them too.
-      if (!name || catchUp) return catchUpLater(next)
-      queue(path.join(next, String(name)), type === 'rename')
-    })
-    watcher.on('error', e => {
-      console.warn('[libraryWatcher] Watching stopped:', e.message)
-      recover(next)
-    })
-    root = next
-    console.log(`[libraryWatcher] Watching ${next}`)
-  } catch (e) {
-    watcher = null
-    console.warn('[libraryWatcher] Could not watch the music folder:', e.message)
+  roots = nextRoots
+  root = nextRoots[0] || null
+  for (const next of nextRoots) {
+    try {
+      const watcher = fs.watch(next, { recursive: true }, (type, name) => {
+        // A missing filename or an overflow means the watcher dropped events;
+        // a catch-up scan of that root is cheaper and safer than guessing.
+        if (!name || catchUp) return catchUpLater(next)
+        queue(path.join(next, String(name)), type === 'rename')
+      })
+      watcher.on('error', error => {
+        console.warn('[libraryWatcher] Watching stopped:', error.message)
+        recover(next)
+      })
+      watchers.set(next, watcher)
+      console.log(`[libraryWatcher] Watching ${next}`)
+    } catch (error) {
+      console.warn('[libraryWatcher] Could not watch music folder:', next, error.message)
+    }
   }
 }
 
 function stopWatching() {
-  try { watcher?.close() } catch {}
-  watcher = null
+  for (const watcher of watchers.values()) {
+    try { watcher.close() } catch {}
+  }
+  watchers.clear()
+  roots = []
   root = null
   clearTimeout(timer)
   timer = null
   clearTimeout(catchUp)
   catchUp = null
+  catchUpRoots.clear()
   clearTimeout(recovering)
   recovering = null
   pending.clear()
 }
 
-module.exports = { watchLibrary, stopWatching }
+
+module.exports = { watchLibrary, watchLibraryRoots, stopWatching }
