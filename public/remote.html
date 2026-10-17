@@ -230,10 +230,10 @@
       <div>
         <div class="row" style="justify-content:space-between">
           <div>
-            <div id="trackTitle" class="title">No track</div>
-            <div id="trackArtist" class="sub">Open this from your phone on same Wi-Fi</div>
+            <div id="trackTitle" class="title" data-rt="No track">No track</div>
+            <div id="trackArtist" class="sub" data-rt="Open this from your phone on same Wi-Fi">Open this from your phone on same Wi-Fi</div>
           </div>
-          <span id="status" class="pill">offline</span>
+          <span id="status" class="pill" data-rt="offline">offline</span>
         </div>
         <div class="lyrics">
           <div id="ly1" class="ly1"></div>
@@ -244,10 +244,10 @@
 
     <section class="card controls">
       <div class="transport">
-        <button id="prevBtn" class="icon-btn" title="Previous" aria-label="Previous"></button>
-        <button id="playBtn" class="play-main" title="Play or Pause" aria-label="Play or Pause"></button>
-        <button id="nextBtn" class="icon-btn" title="Next" aria-label="Next"></button>
-        <button id="likeBtn" class="icon-btn" title="Like" aria-label="Like"></button>
+        <button id="prevBtn" class="icon-btn" title="Previous" aria-label="Previous" data-rt-title="Previous" data-rt-aria-label="Previous"></button>
+        <button id="playBtn" class="play-main" title="Play or Pause" aria-label="Play or Pause" data-rt-title="Play or Pause" data-rt-aria-label="Play or Pause"></button>
+        <button id="nextBtn" class="icon-btn" title="Next" aria-label="Next" data-rt-title="Next" data-rt-aria-label="Next"></button>
+        <button id="likeBtn" class="icon-btn" title="Like" aria-label="Like" data-rt-title="Like" data-rt-aria-label="Like"></button>
       </div>
     </section>
 
@@ -262,7 +262,7 @@
       </div>
 
       <div class="row" style="justify-content:space-between; margin-top:10px;">
-        <span class="tiny">Volume</span>
+        <span class="tiny" data-rt="Volume">Volume</span>
         <span id="volumePct" class="tiny">80%</span>
       </div>
       <div class="meter" style="margin-top:6px;">
@@ -274,48 +274,48 @@
     <section class="card" id="libraryCard">
       <div class="row" style="justify-content:space-between; gap:8px;">
         <div class="library-heading">
-          <button type="button" class="library-back" id="libraryBack" aria-label="Back" title="Back" hidden>←</button>
+          <button type="button" class="library-back" id="libraryBack" aria-label="Back" title="Back" data-rt-title="Back" data-rt-aria-label="Back" hidden>←</button>
           <div style="min-width:0">
-            <div class="title" id="libraryTitle" style="font-size:17px;">Your library</div>
-            <div id="libraryCount" class="tiny">Browse music on this computer</div>
+            <div class="title" id="libraryTitle" style="font-size:17px;" data-rt="Your library">Your library</div>
+            <div id="libraryCount" class="tiny" data-rt="Browse music on this computer">Browse music on this computer</div>
           </div>
         </div>
-        <span class="pill">Library</span>
+        <span class="pill" data-rt="Library">Library</span>
       </div>
-      <nav class="library-nav" id="libraryTabs" aria-label="Library sections">
-        <button type="button" class="library-tab" data-library-tab="tracks" aria-pressed="true">Tracks</button>
-        <button type="button" class="library-tab" data-library-tab="albums" aria-pressed="false">Albums</button>
-        <button type="button" class="library-tab" data-library-tab="artists" aria-pressed="false">Artists</button>
-        <button type="button" class="library-tab" data-library-tab="playlists" aria-pressed="false">Playlists</button>
-        <button type="button" class="library-tab" data-library-tab="liked" aria-pressed="false">Liked</button>
+      <nav class="library-nav" id="libraryTabs" aria-label="Library sections" data-rt-aria-label="Library sections">
+        <button type="button" class="library-tab" data-library-tab="tracks" aria-pressed="true" data-rt="Tracks">Tracks</button>
+        <button type="button" class="library-tab" data-library-tab="albums" aria-pressed="false" data-rt="Albums">Albums</button>
+        <button type="button" class="library-tab" data-library-tab="artists" aria-pressed="false" data-rt="Artists">Artists</button>
+        <button type="button" class="library-tab" data-library-tab="playlists" aria-pressed="false" data-rt="Playlists">Playlists</button>
+        <button type="button" class="library-tab" data-library-tab="liked" aria-pressed="false" data-rt="Liked">Liked</button>
       </nav>
       <div class="library-search">
-        <input id="librarySearch" type="search" placeholder="Search your library" aria-label="Search your library" autocomplete="off" enterkeyhint="search">
+        <input id="librarySearch" type="search" placeholder="Search your library" aria-label="Search your library" data-rt-placeholder="Search your library" data-rt-aria-label="Search your library" autocomplete="off" enterkeyhint="search">
       </div>
       <div class="library-collection-actions" id="libraryCollectionActions" hidden>
-        <button type="button" class="library-action primary" data-collection-action="play">Play all</button>
-        <button type="button" class="library-action" data-collection-action="next">Play next</button>
-        <button type="button" class="library-action" data-collection-action="queue">Add all</button>
+        <button type="button" class="library-action primary" data-collection-action="play" data-rt="Play all">Play all</button>
+        <button type="button" class="library-action" data-collection-action="next" data-rt="Play next">Play next</button>
+        <button type="button" class="library-action" data-collection-action="queue" data-rt="Add all">Add all</button>
       </div>
       <div class="library-message" id="libraryMessage" role="status" aria-live="polite"></div>
       <div class="library-list" id="libraryResults">
-        <div class="library-empty">Loading library…</div>
+        <div class="library-empty" data-rt="Loading library…">Loading library…</div>
       </div>
-      <button type="button" class="library-more" id="libraryLoadMore" hidden>Load more</button>
+      <button type="button" class="library-more" id="libraryLoadMore" data-rt="Load more" hidden>Load more</button>
     </section>
   </main>
 
 
-  <div class="mini-dock" role="region" aria-label="Current playback">
+  <div class="mini-dock" role="region" aria-label="Current playback" data-rt-aria-label="Current playback">
     <div class="mini-dock-inner">
       <div class="mini-track">
-        <div class="mini-title" id="miniTitle">No track playing</div>
-        <div class="mini-artist" id="miniArtist">Connect to Lokal</div>
+        <div class="mini-title" id="miniTitle" data-rt="No track playing">No track playing</div>
+        <div class="mini-artist" id="miniArtist" data-rt="Connect to Lokal">Connect to Lokal</div>
       </div>
       <div class="mini-controls">
-        <button type="button" id="miniPrevBtn" class="mini-button" title="Previous" aria-label="Previous"></button>
-        <button type="button" id="miniPlayBtn" class="mini-button main" title="Play or pause" aria-label="Play or pause"></button>
-        <button type="button" id="miniNextBtn" class="mini-button" title="Next" aria-label="Next"></button>
+        <button type="button" id="miniPrevBtn" class="mini-button" title="Previous" aria-label="Previous" data-rt-title="Previous" data-rt-aria-label="Previous"></button>
+        <button type="button" id="miniPlayBtn" class="mini-button main" title="Play or pause" aria-label="Play or pause" data-rt-title="Play or pause" data-rt-aria-label="Play or pause"></button>
+        <button type="button" id="miniNextBtn" class="mini-button" title="Next" aria-label="Next" data-rt-title="Next" data-rt-aria-label="Next"></button>
       </div>
     </div>
   </div>
@@ -338,7 +338,7 @@
       root.querySelectorAll('[data-rt]').forEach(el => { el.textContent = rt(el.getAttribute('data-rt')); });
       root.querySelectorAll('[data-rt-title]').forEach(el => { el.title = rt(el.getAttribute('data-rt-title')); });
       root.querySelectorAll('[data-rt-aria-label]').forEach(el => { el.setAttribute('aria-label', rt(el.getAttribute('data-rt-aria-label'))); });
-      root.querySelectorAll('[data-rt-placeholder]').forEach(el => { el.setAttribute('placeholder', rt(el.getAttribute('data-rt-placeholder')); });
+      root.querySelectorAll('[data-rt-placeholder]').forEach(el => { el.setAttribute('placeholder', rt(el.getAttribute('data-rt-placeholder'))); });
     }
 
     const els = {
