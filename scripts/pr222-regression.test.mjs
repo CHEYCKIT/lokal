@@ -45,7 +45,7 @@ test('Library search is on the right of the track-count row in both modes', () =
   const scanBanner = source.indexOf('<ScanBanner />')
   const statusRow = source.indexOf('className="flex w-full flex-wrap items-center justify-between gap-3"', scanBanner)
   const trackCount = source.indexOf("t('loaded tracks')", statusRow)
-  const search = source.indexOf('aria-label={libraryMode === \'simple\' ? t("Search tracks")', statusRow)
+  const search = source.indexOf(`aria-label={libraryMode === 'simple' ? t("Search tracks")`, statusRow)
   const playbackRow = source.indexOf('className="flex w-full flex-wrap items-center gap-2"', statusRow)
   assert.ok(scanBanner >= 0 && statusRow > scanBanner && trackCount > statusRow && search > trackCount && playbackRow > search)
   assert.match(source.slice(statusRow, playbackRow), /className="ml-auto flex min-w-0 items-center gap-2/)
