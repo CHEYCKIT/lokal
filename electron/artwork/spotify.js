@@ -747,4 +747,4 @@ async function likeOnSpotify(rawCookie, track) {
   })
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, buildClientTokenPayload, parseGrantedClientToken, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, buildClientTokenPayload, parseGrantedClientToken, requestClientToken, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
