@@ -134,7 +134,7 @@ function parseCatalog(text) {
 }
 
 /** Download the catalogue at `url`: { ok: true, text } or { ok: false, errors }. */
-async function fetchCatalog(url, { fetchImpl = fetch, timeout = FETCH_TIMEOUT_MS } = {}) {
+async function fetchCatalog(url, { fetchImpl = fetch, timeout = FETCH_TIMEOUT_MS, publicOnly = false } = {}) {
   if (!isHttpUrl(url)) return { ok: false, errors: [{ path: '', code: 'bad-catalog-url' }] }
   const { isPublicHttpUrl } = require('../online/publicUrl')
   const controller = new AbortController()
@@ -143,7 +143,7 @@ async function fetchCatalog(url, { fetchImpl = fetch, timeout = FETCH_TIMEOUT_MS
     let target = new URL(String(url).trim())
     let response = null
     for (let redirects = 0; redirects <= 5; redirects++) {
-      if (!(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) {
+      if (publicOnly && !(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) {
         return { ok: false, errors: [{ path: '', code: 'bad-catalog-url' }] }
       }
       response = await fetchImpl(target.href, {
