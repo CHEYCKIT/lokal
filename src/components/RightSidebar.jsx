@@ -165,8 +165,12 @@ export default function RightSidebar() {
   useEffect(() => {
     try { localStorage.setItem('lokal-side-card-view', infoCardView) } catch {}
   }, [infoCardView])
-  // Lyrics are tied to the current track; only visualization is a cross-track
-  // preference. A track with no lyrics must always return to the info card.
+  const infoCardViewRef = useRef(infoCardView)
+  useEffect(() => {
+    infoCardViewRef.current = infoCardView
+  }, [infoCardView])
+  // Only Visualization persists across tracks. Info/Lyrics choose Lyrics for
+  // the next track when it has lyric lines, and Info otherwise.
   useEffect(() => {
     setInfoCardView(sideCardViewAfterTrackChange)
   }, [currentTrack?.id])
@@ -215,7 +219,9 @@ export default function RightSidebar() {
     if (cached !== undefined) {
       const has = hasLyricLines(cached)
       setLyricsLookup({ trackId: track.id, has })
-      if ((autoSelect || autoSelectLyricsRef.current === track.id) && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+      if (autoSelectLyricsRef.current === track.id && usePlayerStore.getState().currentTrack?.id === track.id) {
+        setInfoCardView(view => sideCardViewAfterTrackChange(view, has))
+      }
       if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
       return Promise.resolve(cached)
     }
@@ -228,7 +234,9 @@ export default function RightSidebar() {
         const has = hasLyricLines(result)
         setLyricsLookup(known => known.trackId === track.id ? { trackId: track.id, has } : known)
         // Select the lyrics card only if this is still the track being played.
-        if ((autoSelect || autoSelectLyricsRef.current === track.id) && has && usePlayerStore.getState().currentTrack?.id === track.id) setInfoCardView('lyrics')
+        if (autoSelectLyricsRef.current === track.id && usePlayerStore.getState().currentTrack?.id === track.id) {
+          setInfoCardView(view => sideCardViewAfterTrackChange(view, has))
+        }
         if (autoSelectLyricsRef.current === track.id) autoSelectLyricsRef.current = null
         return result
       })
@@ -238,9 +246,10 @@ export default function RightSidebar() {
       })
   }, [currentTrack, lyricsLookup.trackId])
 
-  // Populate lyric availability on track changes, but never override the user's selected card mode.
+  // For each new track, automatically choose Lyrics if available unless the
+  // standalone visualizer was selected; no-lyrics results settle back on Info.
   useEffect(() => {
-    if (currentTrack?.id) void lookUpLyrics(currentTrack)
+    if (currentTrack?.id) void lookUpLyrics(currentTrack, infoCardViewRef.current !== 'visualization')
   }, [currentTrack?.id, lookUpLyrics])
 
   // Comma-preserving artist names (e.g. "Tyler, The Creator") configured in
@@ -474,7 +483,10 @@ export default function RightSidebar() {
                     <div className="group/lyrics absolute left-0 top-0 z-10 h-1/3 w-1/2 p-2" onMouseEnter={() => lookUpLyrics()} onDoubleClick={e => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={() => setInfoCardView(view => view === 'info' ? 'lyrics' : view === 'lyrics' ? 'visualization' : 'info')}
+                        onClick={() => {
+                           autoSelectLyricsRef.current = null
+                           setInfoCardView(view => view === 'info' ? 'lyrics' : view === 'lyrics' ? 'visualization' : 'info')
+                         }}
                         aria-label={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
                         aria-pressed={infoCardView !== 'info'}
                         title={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
