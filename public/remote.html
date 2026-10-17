@@ -230,10 +230,10 @@
       <div>
         <div class="row" style="justify-content:space-between">
           <div>
-            <div id="trackTitle" class="title">No track</div>
-            <div id="trackArtist" class="sub">Open this from your phone on same Wi-Fi</div>
+            <div id="trackTitle" class="title" data-rt="No track">No track</div>
+            <div id="trackArtist" class="sub" data-rt="Open this from your phone on same Wi-Fi">Open this from your phone on same Wi-Fi</div>
           </div>
-          <span id="status" class="pill">offline</span>
+          <span id="status" class="pill" data-rt="offline">offline</span>
         </div>
         <div class="lyrics">
           <div id="ly1" class="ly1"></div>
@@ -244,10 +244,10 @@
 
     <section class="card controls">
       <div class="transport">
-        <button id="prevBtn" class="icon-btn" title="Previous" aria-label="Previous"></button>
-        <button id="playBtn" class="play-main" title="Play or Pause" aria-label="Play or Pause"></button>
-        <button id="nextBtn" class="icon-btn" title="Next" aria-label="Next"></button>
-        <button id="likeBtn" class="icon-btn" title="Like" aria-label="Like"></button>
+        <button id="prevBtn" class="icon-btn" title="Previous" aria-label="Previous" data-rt-title="Previous" data-rt-aria-label="Previous"></button>
+        <button id="playBtn" class="play-main" title="Play or Pause" aria-label="Play or Pause" data-rt-title="Play or Pause" data-rt-aria-label="Play or Pause"></button>
+        <button id="nextBtn" class="icon-btn" title="Next" aria-label="Next" data-rt-title="Next" data-rt-aria-label="Next"></button>
+        <button id="likeBtn" class="icon-btn" title="Like" aria-label="Like" data-rt-title="Like" data-rt-aria-label="Like"></button>
       </div>
     </section>
 
@@ -262,7 +262,7 @@
       </div>
 
       <div class="row" style="justify-content:space-between; margin-top:10px;">
-        <span class="tiny">Volume</span>
+        <span class="tiny" data-rt="Volume">Volume</span>
         <span id="volumePct" class="tiny">80%</span>
       </div>
       <div class="meter" style="margin-top:6px;">
@@ -274,52 +274,77 @@
     <section class="card" id="libraryCard">
       <div class="row" style="justify-content:space-between; gap:8px;">
         <div class="library-heading">
-          <button type="button" class="library-back" id="libraryBack" aria-label="Back" title="Back" hidden>←</button>
+          <button type="button" class="library-back" id="libraryBack" aria-label="Back" title="Back" data-rt-title="Back" data-rt-aria-label="Back" hidden>←</button>
           <div style="min-width:0">
-            <div class="title" id="libraryTitle" style="font-size:17px;">Your library</div>
-            <div id="libraryCount" class="tiny">Browse music on this computer</div>
+            <div class="title" id="libraryTitle" style="font-size:17px;" data-rt="Your library">Your library</div>
+            <div id="libraryCount" class="tiny" data-rt="Browse music on this computer">Browse music on this computer</div>
           </div>
         </div>
-        <span class="pill">Library</span>
+        <span class="pill" data-rt="Library">Library</span>
       </div>
-      <nav class="library-nav" id="libraryTabs" aria-label="Library sections">
-        <button type="button" class="library-tab" data-library-tab="tracks" aria-pressed="true">Tracks</button>
-        <button type="button" class="library-tab" data-library-tab="albums" aria-pressed="false">Albums</button>
-        <button type="button" class="library-tab" data-library-tab="artists" aria-pressed="false">Artists</button>
-        <button type="button" class="library-tab" data-library-tab="playlists" aria-pressed="false">Playlists</button>
-        <button type="button" class="library-tab" data-library-tab="liked" aria-pressed="false">Liked</button>
+      <nav class="library-nav" id="libraryTabs" aria-label="Library sections" data-rt-aria-label="Library sections">
+        <button type="button" class="library-tab" data-library-tab="tracks" aria-pressed="true" data-rt="Tracks">Tracks</button>
+        <button type="button" class="library-tab" data-library-tab="albums" aria-pressed="false" data-rt="Albums">Albums</button>
+        <button type="button" class="library-tab" data-library-tab="artists" aria-pressed="false" data-rt="Artists">Artists</button>
+        <button type="button" class="library-tab" data-library-tab="playlists" aria-pressed="false" data-rt="Playlists">Playlists</button>
+        <button type="button" class="library-tab" data-library-tab="liked" aria-pressed="false" data-rt="Liked">Liked</button>
       </nav>
       <div class="library-search">
-        <input id="librarySearch" type="search" placeholder="Search your library" aria-label="Search your library" autocomplete="off" enterkeyhint="search">
+        <input id="librarySearch" type="search" placeholder="Search your library" aria-label="Search your library" data-rt-placeholder="Search your library" data-rt-aria-label="Search your library" autocomplete="off" enterkeyhint="search">
       </div>
       <div class="library-collection-actions" id="libraryCollectionActions" hidden>
-        <button type="button" class="library-action primary" data-collection-action="play">Play all</button>
-        <button type="button" class="library-action" data-collection-action="next">Play next</button>
-        <button type="button" class="library-action" data-collection-action="queue">Add all</button>
+        <button type="button" class="library-action primary" data-collection-action="play" data-rt="Play all">Play all</button>
+        <button type="button" class="library-action" data-collection-action="next" data-rt="Play next">Play next</button>
+        <button type="button" class="library-action" data-collection-action="queue" data-rt="Add all">Add all</button>
       </div>
       <div class="library-message" id="libraryMessage" role="status" aria-live="polite"></div>
       <div class="library-list" id="libraryResults">
-        <div class="library-empty">Loading library…</div>
+        <div class="library-empty" data-rt="Loading library…">Loading library…</div>
       </div>
-      <button type="button" class="library-more" id="libraryLoadMore" hidden>Load more</button>
+      <button type="button" class="library-more" id="libraryLoadMore" data-rt="Load more" hidden>Load more</button>
     </section>
   </main>
 
 
-  <div class="mini-dock" role="region" aria-label="Current playback">
+  <div class="mini-dock" role="region" aria-label="Current playback" data-rt-aria-label="Current playback">
     <div class="mini-dock-inner">
       <div class="mini-track">
-        <div class="mini-title" id="miniTitle">No track playing</div>
-        <div class="mini-artist" id="miniArtist">Connect to Lokal</div>
+        <div class="mini-title" id="miniTitle" data-rt="No track playing">No track playing</div>
+        <div class="mini-artist" id="miniArtist" data-rt="Connect to Lokal">Connect to Lokal</div>
       </div>
       <div class="mini-controls">
-        <button type="button" id="miniPrevBtn" class="mini-button" title="Previous" aria-label="Previous"></button>
-        <button type="button" id="miniPlayBtn" class="mini-button main" title="Play or pause" aria-label="Play or pause"></button>
-        <button type="button" id="miniNextBtn" class="mini-button" title="Next" aria-label="Next"></button>
+        <button type="button" id="miniPrevBtn" class="mini-button" title="Previous" aria-label="Previous" data-rt-title="Previous" data-rt-aria-label="Previous"></button>
+        <button type="button" id="miniPlayBtn" class="mini-button main" title="Play or pause" aria-label="Play or pause" data-rt-title="Play or pause" data-rt-aria-label="Play or pause"></button>
+        <button type="button" id="miniNextBtn" class="mini-button" title="Next" aria-label="Next" data-rt-title="Next" data-rt-aria-label="Next"></button>
       </div>
     </div>
   </div>
   <script>
+    // Standalone phone remote: detect the phone's language without React/i18n.
+    const REMOTE_LOCALES = ["fr","de","es","it","pt-BR","nl","pl","sv"];
+    const REMOTE_TEXT = {"Previous":["Précédent","Zurück","Anterior","Precedente","Anterior","Vorige","Poprzedni","Föregående"],"Next":["Suivant","Weiter","Siguiente","Successivo","Próxima","Volgende","Następny","Nästa"],"Play or Pause":["Lire ou mettre en pause","Wiedergabe oder Pause","Reproducir o pausar","Riproduci o metti in pausa","Reproduzir ou pausar","Afspelen of pauzeren","Odtwórz lub wstrzymaj","Spela upp eller pausa"],"Play or pause":["Lire ou mettre en pause","Wiedergabe oder Pause","Reproducir o pausar","Riproduci o metti in pausa","Reproduzir ou pausar","Afspelen of pauzeren","Odtwórz lub wstrzymaj","Spela upp eller pausa"],"Like":["Aimer","Gefällt mir","Me gusta","Mi piace","Curtir","Vind ik leuk","Polub","Gilla"],"Volume":["Volume","Lautstärke","Volumen","Volume","Volume","Volume","Głośność","Volym"],"No track":["Aucun morceau","Kein Titel","Ninguna canción","Nessun brano","Nenhuma faixa","Geen nummer","Brak utworu","Ingen låt"],"offline":["hors ligne","offline","sin conexión","offline","offline","offline","offline","offline"],"online":["en ligne","online","en línea","online","online","online","online","online"],"Open this from your phone on same Wi-Fi":["Ouvrez ceci sur votre téléphone connecté au même Wi-Fi","Öffne dies auf deinem Handy im selben WLAN","Abre esto en tu teléfono conectado a la misma Wi-Fi","Apri questa pagina sul telefono collegato allo stesso Wi-Fi","Abra isto no seu celular conectado ao mesmo Wi-Fi","Open dit op je telefoon via hetzelfde wifi-netwerk","Otwórz to na telefonie połączonym z tą samą siecią Wi-Fi","Öppna detta på telefonen som är ansluten till samma Wi-Fi"],"Your library":["Votre bibliothèque","Deine Mediathek","Tu biblioteca","La tua libreria","Sua biblioteca","Je bibliotheek","Twoja biblioteka","Ditt bibliotek"],"Browse music on this computer":["Parcourir la musique de cet ordinateur","Musik auf diesem Computer durchsuchen","Explorar la música de este equipo","Sfoglia la musica su questo computer","Procurar músicas neste computador","Muziek op deze computer doorbladeren","Przeglądaj muzykę na tym komputerze","Bläddra bland musiken på den här datorn"],"Library":["Bibliothèque","Mediathek","Biblioteca","Libreria","Biblioteca","Bibliotheek","Biblioteka","Bibliotek"],"Tracks":["Morceaux","Titel","Canciones","Brani","Faixas","Nummers","Utwory","Låtar"],"Albums":["Albums","Alben","Álbumes","Album","Álbuns","Albums","Albumy","Album"],"Artists":["Artistes","Künstler","Artistas","Artisti","Artistas","Artiesten","Wykonawcy","Artister"],"Playlists":["Playlists","Playlists","Listas","Playlist","Playlists","Afspeellijsten","Playlisty","Spellistor"],"Liked":["Favoris","Gefällt mir","Me gusta","Brani piaciuti","Curtidas","Vind-ik-leuks","Polubione","Gillade"],"Liked songs":["Titres aimés","Lieblingssongs","Canciones que te gustan","Brani che ti piacciono","Músicas curtidas","Geliefde nummers","Polubione utwory","Gillade låtar"],"Search your library":["Rechercher dans votre bibliothèque","Mediathek durchsuchen","Buscar en tu biblioteca","Cerca nella libreria","Pesquisar na biblioteca","Zoek in je bibliotheek","Szukaj w bibliotece","Sök i biblioteket"],"Play all":["Tout lire","Alle abspielen","Reproducir todo","Riproduci tutto","Reproduzir tudo","Alles afspelen","Odtwórz wszystko","Spela upp alla"],"Play next":["Lire ensuite","Als Nächstes abspielen","Reproducir a continuación","Riproduci dopo","Tocar a seguir","Hierna afspelen","Odtwórz następny","Spela härnäst"],"Add all":["Tout ajouter","Alles hinzufügen","Añadir todo","Aggiungi tutto","Adicionar tudo","Alles toevoegen","Dodaj wszystko","Lägg till alla"],"Loading library…":["Chargement de la bibliothèque…","Mediathek wird geladen…","Cargando biblioteca…","Caricamento libreria…","Carregando biblioteca…","Bibliotheek laden…","Wczytywanie biblioteki…","Läser in biblioteket…"],"Load more":["Charger plus","Mehr laden","Cargar más","Carica altro","Carregar mais","Meer laden","Wczytaj więcej","Ladda mer"],"Current playback":["Lecture en cours","Aktuelle Wiedergabe","Reproducción actual","Riproduzione attuale","Reprodução atual","Huidige afspeelsessie","Bieżące odtwarzanie","Aktuell uppspelning"],"No track playing":["Aucun morceau en cours","Kein Titel wird abgespielt","No se está reproduciendo ninguna canción","Nessun brano in riproduzione","Nenhuma faixa tocando","Er wordt geen nummer afgespeeld","Żaden utwór nie jest odtwarzany","Ingen låt spelas"],"Connect to Lokal":["Se connecter à Lokal","Mit Lokal verbinden","Conectar con Lokal","Connetti a Lokal","Conectar ao Lokal","Verbinden met Lokal","Połącz z Lokal","Anslut till Lokal"],"Library sections":["Sections de la bibliothèque","Mediathekbereiche","Secciones de la biblioteca","Sezioni della libreria","Seções da biblioteca","Bibliotheeksecties","Sekcje biblioteki","Biblioteksavsnitt"],"track":["morceau","Titel","canción","brano","faixa","nummer","utwór","låt"],"tracks":["morceaux","Titel","canciones","brani","faixas","nummers","utwory","låtar"],"item":["élément","Element","elemento","elemento","item","item","element","objekt"],"items":["éléments","Elemente","elementos","elementi","itens","items","elementy","objekt"],"Unknown artist":["Artiste inconnu","Unbekannter Künstler","Artista desconocido","Artista sconosciuto","Artista desconhecido","Onbekende artiest","Nieznany wykonawca","Okänd artist"],"Smart playlist":["Playlist intelligente","Intelligente Playlist","Lista inteligente","Playlist intelligente","Playlist inteligente","Slimme afspeellijst","Inteligentna playlista","Smart spellista"],"Album":["Album","Album","Álbum","Album","Álbum","Album","Album","Album"],"Artist":["Artiste","Künstler","Artista","Artista","Artista","Artiest","Wykonawca","Artist"],"Playlist":["Playlist","Playlist","Lista","Playlist","Playlist","Afspeellijst","Playlista","Spellista"],"Open":["Ouvrir","Öffnen","Abrir","Apri","Abrir","Openen","Otwórz","Öppna"],"Play":["Lire","Abspielen","Reproducir","Riproduci","Reproduzir","Afspelen","Odtwórz","Spela upp"],"Queue":["File d’attente","Warteschlange","Cola","Coda","Fila","Wachtrij","Kolejka","Kö"],"Next shown":["Lire les éléments affichés ensuite","Angezeigte als Nächstes abspielen","Reproducir los mostrados a continuación","Riproduci i mostrati dopo","Tocar os itens exibidos a seguir","Getoonde hierna afspelen","Odtwórz wyświetlone jako następne","Spela visade härnäst"],"Add shown":["Ajouter les éléments affichés","Angezeigte hinzufügen","Añadir los mostrados","Aggiungi elementi mostrati","Adicionar itens exibidos","Getoonde toevoegen","Dodaj wyświetlone","Lägg till visade"],"Play shown":["Lire les éléments affichés","Angezeigte abspielen","Reproducir los mostrados","Riproduci elementi mostrati","Reproduzir itens exibidos","Getoonde afspelen","Odtwórz wyświetlone","Spela upp visade"],"No matches found.":["Aucune correspondance trouvée.","Keine Treffer gefunden.","No se encontraron coincidencias.","Nessuna corrispondenza trovata.","Nenhuma correspondência encontrada.","Geen overeenkomsten gevonden.","Nie znaleziono pasujących wyników.","Inga träffar hittades."],"Nothing here yet.":["Rien ici pour le moment.","Hier ist noch nichts.","Todavía no hay nada aquí.","Non c’è ancora nulla qui.","Ainda não há nada aqui.","Hier is nog niets.","Na razie nic tu nie ma.","Inget här ännu."],"Could not load library.":["Impossible de charger la bibliothèque.","Mediathek konnte nicht geladen werden.","No se pudo cargar la biblioteca.","Impossibile caricare la libreria.","Não foi possível carregar a biblioteca.","Bibliotheek kon niet worden geladen.","Nie można wczytać biblioteki.","Det gick inte att läsa in biblioteket."],"Sending to Lokal…":["Envoi à Lokal…","Wird an Lokal gesendet…","Enviando a Lokal…","Invio a Lokal…","Enviando para o Lokal…","Verzenden naar Lokal…","Wysyłanie do Lokal…","Skickar till Lokal…"],"Could not control playback: {error}":["Impossible de contrôler la lecture : {error}","Wiedergabe konnte nicht gesteuert werden: {error}","No se pudo controlar la reproducción: {error}","Impossibile controllare la riproduzione: {error}","Não foi possível controlar a reprodução: {error}","Afspelen kan niet worden bediend: {error}","Nie można sterować odtwarzaniem: {error}","Det gick inte att styra uppspelningen: {error}"],"Playing on this computer.":["Lecture sur cet ordinateur.","Wiedergabe auf diesem Computer.","Reproduciendo en este equipo.","Riproduzione su questo computer.","Reproduzindo neste computador.","Speelt af op deze computer.","Odtwarzanie na tym komputerze.","Spelas upp på den här datorn."],"Added {count} track(s) next.":["{count} morceau(x) ajouté(s) pour lecture ensuite.","{count} Titel zur nächsten Wiedergabe hinzugefügt.","Se añadieron {count} canciones para reproducir a continuación.","Aggiunti {count} brani alla riproduzione successiva.","{count} faixa(s) adicionada(s) para tocar a seguir.","{count} nummers toegevoegd om hierna af te spelen.","Dodano {count} utworów do następnego odtwarzania.","{count} låt(ar) lades till för nästa uppspelning."],"Added {count} track(s) to the queue.":["{count} morceau(x) ajouté(s) à la file d’attente.","{count} Titel zur Warteschlange hinzugefügt.","Se añadieron {count} canciones a la cola.","Aggiunti {count} brani alla coda.","{count} faixa(s) adicionada(s) à fila.","{count} nummers toegevoegd aan de wachtrij.","Dodano {count} utworów do kolejki.","{count} låt(ar) lades till i kön."],"Command failed":["Échec de la commande","Befehl fehlgeschlagen","El comando falló","Comando non riuscito","O comando falhou","Opdracht mislukt","Polecenie nie powiodło się","Kommandot misslyckades"],"This Lokal phone remote is protected. Enter REMOTE_TOKEN:":["Cette télécommande mobile Lokal est protégée. Saisissez REMOTE_TOKEN :","Diese Lokal-Handyfernbedienung ist geschützt. Gib REMOTE_TOKEN ein:","Este control remoto de Lokal está protegido. Introduce REMOTE_TOKEN:","Questo telecomando Lokal è protetto. Inserisci REMOTE_TOKEN:","Este controle remoto do Lokal está protegido. Digite REMOTE_TOKEN:","Deze Lokal-telefoonbediening is beveiligd. Voer REMOTE_TOKEN in:","Pilot Lokal na telefon jest chroniony. Wpisz REMOTE_TOKEN:","Den här fjärrkontrollen för Lokal är skyddad. Ange REMOTE_TOKEN:"],"That remote token was not accepted. Reload the remote page to try again.":["Ce jeton distant n’a pas été accepté. Rechargez la page pour réessayer.","Das Remote-Token wurde nicht akzeptiert. Lade die Seite neu und versuche es erneut.","El token remoto no se aceptó. Recarga la página para volver a intentarlo.","Il token remoto non è stato accettato. Ricarica la pagina e riprova.","O token remoto não foi aceito. Recarregue a página para tentar novamente.","De remote-token werd niet geaccepteerd. Laad de pagina opnieuw om het nogmaals te proberen.","Token zdalny nie został zaakceptowany. Odśwież stronę i spróbuj ponownie.","Fjärrtoken accepterades inte. Ladda om sidan och försök igen."],"This Lokal server is protected. Enter its API key:":["Ce serveur Lokal est protégé. Saisissez sa clé API :","Dieser Lokal-Server ist geschützt. Gib seinen API-Schlüssel ein:","Este servidor de Lokal está protegido. Introduce su clave API:","Questo server Lokal è protetto. Inserisci la chiave API:","Este servidor Lokal está protegido. Digite a chave de API:","Deze Lokal-server is beveiligd. Voer de API-sleutel in:","Ten serwer Lokal jest chroniony. Wpisz klucz API:","Den här Lokal-servern är skyddad. Ange dess API-nyckel:"],"This server refused the key.":["Ce serveur a refusé la clé.","Dieser Server hat den Schlüssel abgelehnt.","Este servidor rechazó la clave.","Il server ha rifiutato la chiave.","O servidor recusou a chave.","Deze server heeft de sleutel geweigerd.","Serwer odrzucił klucz.","Servern avvisade nyckeln."],"That key was not accepted. Enter the API key:":["Cette clé n’a pas été acceptée. Saisissez la clé API :","Der Schlüssel wurde nicht akzeptiert. Gib den API-Schlüssel ein:","La clave no se aceptó. Introduce la clave API:","La chiave non è stata accettata. Inserisci la chiave API:","A chave não foi aceita. Digite a chave de API:","De sleutel werd niet geaccepteerd. Voer de API-sleutel in:","Klucz nie został zaakceptowany. Wpisz klucz API:","Nyckeln accepterades inte. Ange API-nyckeln:"]};
+    const remoteLanguage = (() => {
+      const preferred = (navigator.languages || [navigator.language || 'en']).find(Boolean) || 'en';
+      if (/^pt(?:-|$)/i.test(String(preferred))) return 'pt-BR';
+      return REMOTE_LOCALES.find(code => String(preferred).toLowerCase().startsWith(code.toLowerCase())) || 'en';
+    })();
+    REMOTE_TEXT['Could not load library.'][7] = 'Det gick inte att läsa in biblioteket.';
+    REMOTE_TEXT['Pause'] = ["Pausa","Pause","Pausa","Pausa","Pausar","Pauzeren","Wstrzymaj","Pausa"];
+    function rt(key, values = {}) {
+      const row = REMOTE_TEXT[key];
+      const index = REMOTE_LOCALES.indexOf(remoteLanguage);
+      const value = row && index >= 0 ? (row[index] || key) : key;
+      return String(value).replace(/\{([a-zA-Z0-9_]+)\}/g, (match, name) => Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match);
+    }
+    function applyRemoteTranslations(root = document) {
+      root.querySelectorAll('[data-rt]').forEach(el => { el.textContent = rt(el.getAttribute('data-rt')); });
+      root.querySelectorAll('[data-rt-title]').forEach(el => { el.title = rt(el.getAttribute('data-rt-title')); });
+      root.querySelectorAll('[data-rt-aria-label]').forEach(el => { el.setAttribute('aria-label', rt(el.getAttribute('data-rt-aria-label'))); });
+      root.querySelectorAll('[data-rt-placeholder]').forEach(el => { el.setAttribute('placeholder', rt(el.getAttribute('data-rt-placeholder'))); });
+    }
+
+    applyRemoteTranslations();
+
     const els = {
       bg: document.getElementById('bg'),
       art: document.getElementById('art'),
@@ -360,13 +385,13 @@
       if (askingForRemoteToken || remoteTokenPromptDismissed) return false
       askingForRemoteToken = true
       try {
-        const token = window.prompt('This Lokal phone remote is protected. Enter REMOTE_TOKEN:')
+        const token = window.prompt(rt('This Lokal phone remote is protected. Enter REMOTE_TOKEN:'))
         if (!token?.trim()) { remoteTokenPromptDismissed = true; return false }
         const candidate = token.trim()
         const response = await fetch('/api/remote/state', { headers: { 'x-remote-token': candidate } }).catch(() => null)
         if (!response?.ok) {
           remoteTokenPromptDismissed = true
-          alert('That remote token was not accepted. Reload the remote page to try again.')
+          alert(rt('That remote token was not accepted. Reload the remote page to try again.'))
           return false
         }
         remoteToken = candidate
@@ -427,7 +452,7 @@
       if (askingForKey) return
       askingForKey = true
       try {
-        let message = 'This Lokal server is protected. Enter its API key:'
+        let message = rt('This Lokal server is protected. Enter its API key:')
         for (;;) {
           const key = window.prompt(message)
           if (!key) return
@@ -439,10 +464,10 @@
           if (res?.ok) { location.reload(); return }
           if (res?.status === 403) {
             // Plain HTTP from outside the local network: retrying won't help.
-            alert((await res.json().catch(() => ({}))).error || 'This server refused the key.')
+            alert((await res.json().catch(() => ({}))).error || rt('This server refused the key.'))
             return
           }
-          message = 'That key was not accepted. Enter the API key:'
+          message = rt('That key was not accepted. Enter the API key:')
         }
       } finally {
         // Cancelled or refused: a later 401 can ask again.
@@ -518,11 +543,11 @@
       try {
         return await call('command', { method: 'POST', body: { action, value } })
       } catch (error) {
-        return { error: error?.message || 'Command failed' }
+        return { error: error?.message || rt('Command failed') }
       }
     }
 
-    const sectionLabels = { tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists', liked: 'Liked songs' }
+    const sectionLabels = { tracks: rt('Tracks'), albums: rt('Albums'), artists: rt('Artists'), playlists: rt('Playlists'), liked: rt('Liked songs') }
     const trackView = type => type === 'tracks' || type === 'liked' || type.endsWith('Tracks')
     const libraryQuery = () => String(els.librarySearch.value || '').trim()
     const trackIds = () => store.libraryItems.map(item => String(item.id || '')).filter(Boolean)
@@ -539,9 +564,9 @@
           <div class="library-sub">${fmt(track.duration)}${track.year ? ' · ' + escapeHtml(String(track.year)) : ''}${track.liked ? ' · ♥' : ''}</div>
         </div>
         <div class="library-item-actions">
-          <button type="button" class="library-action primary" data-library-action="play" data-track-id="${escapeHtml(track.id)}">Play</button>
-          <button type="button" class="library-action" data-library-action="next" data-track-id="${escapeHtml(track.id)}">Next</button>
-          <button type="button" class="library-action" data-library-action="queue" data-track-id="${escapeHtml(track.id)}">Queue</button>
+          <button type="button" class="library-action primary" data-library-action="play" data-track-id="${escapeHtml(track.id)}">${rt('Play')}</button>
+          <button type="button" class="library-action" data-library-action="next" data-track-id="${escapeHtml(track.id)}">${rt('Next')}</button>
+          <button type="button" class="library-action" data-library-action="queue" data-track-id="${escapeHtml(track.id)}">${rt('Queue')}</button>
         </div>
       </article>`
     }
@@ -550,10 +575,10 @@
       const id = item.coverTrackId
       const count = Number(item.track_count || 0)
       const sub = type === 'albums'
-        ? `${item.artist || 'Unknown artist'} · ${count} track${count === 1 ? '' : 's'}${item.year ? ' · ' + item.year : ''}`
+        ? `${item.artist || rt('Unknown artist')} · ${count} ${rt(count === 1 ? 'track' : 'tracks')}${item.year ? ' · ' + item.year : ''}`
         : type === 'artists'
-          ? `${count} track${count === 1 ? '' : 's'}`
-          : `${count} track${count === 1 ? '' : 's'}${item.smart ? ' · Smart playlist' : ''}`
+          ? `${count} ${rt(count === 1 ? 'track' : 'tracks')}`
+          : `${count} ${rt(count === 1 ? 'track' : 'tracks')}${item.smart ? ' · ' + rt('Smart playlist') : ''}`
       const openType = type === 'albums' ? 'albumTracks' : type === 'artists' ? 'artistTracks' : 'playlistTracks'
       const title = type === 'albums' ? item.title : type === 'artists' ? item.name : item.name
       const dataTitle = type === 'albums' ? `data-title="${escapeHtml(item.title)}" data-artist="${escapeHtml(item.artist || '')}"` : ''
@@ -564,17 +589,17 @@
           <div class="library-sub">${escapeHtml(sub)}</div>
         </div>
         <div class="library-item-actions">
-          <button type="button" class="library-action primary" data-open-type="${openType}" data-open-id="${escapeHtml(item.id || '')}" ${dataTitle} data-open-name="${escapeHtml(title)}">Open</button>
+          <button type="button" class="library-action primary" data-open-type="${openType}" data-open-id="${escapeHtml(item.id || '')}" ${dataTitle} data-open-name="${escapeHtml(title)}">${rt('Open')}</button>
         </div>
       </article>`
     }
 
     function currentLibraryTitle() {
       const view = store.libraryView
-      if (view.type === 'albumTracks') return view.title || 'Album'
-      if (view.type === 'artistTracks') return view.name || 'Artist'
-      if (view.type === 'playlistTracks') return view.name || 'Playlist'
-      return sectionLabels[view.type] || 'Your library'
+      if (view.type === 'albumTracks') return view.title || rt('Album')
+      if (view.type === 'artistTracks') return view.name || rt('Artist')
+      if (view.type === 'playlistTracks') return view.name || rt('Playlist')
+      return sectionLabels[view.type] || rt('Your library')
     }
 
     function renderLibrary() {
@@ -585,27 +610,27 @@
       els.libraryTitle.textContent = currentLibraryTitle()
       els.libraryBack.hidden = store.libraryStack.length === 0
       els.libraryCount.textContent = store.libraryLoading && !items.length
-        ? 'Loading…'
+        ? rt('Loading…')
         : detail
-          ? `${items.length} track${items.length === 1 ? '' : 's'}`
-          : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || 'items'}`
+          ? `${items.length} ${rt(items.length === 1 ? 'track' : 'tracks')}`
+          : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || rt('items')}`
       for (const button of els.libraryTabs.querySelectorAll('[data-library-tab]')) {
         button.setAttribute('aria-pressed', String(button.dataset.libraryTab === rootType))
       }
       const showCollection = trackView(view.type) && items.length > 0
       els.libraryCollectionActions.hidden = !showCollection
       const names = ['play', 'next', 'queue']
-      const labels = store.libraryHasMore ? ['Play shown', 'Next shown', 'Add shown'] : ['Play all', 'Play next', 'Add all']
+      const labels = store.libraryHasMore ? [rt('Play shown'), rt('Next shown'), rt('Add shown')] : [rt('Play all'), rt('Play next'), rt('Add all')]
       els.libraryCollectionActions.querySelectorAll('[data-collection-action]').forEach((button, index) => {
         button.textContent = labels[names.indexOf(button.dataset.collectionAction)] || labels[index]
         button.disabled = store.libraryLoading
       })
       els.libraryLoadMore.hidden = !store.libraryHasMore || detail
       els.libraryLoadMore.disabled = store.libraryLoading
-      els.libraryLoadMore.textContent = store.libraryLoading ? 'Loading…' : 'Load more'
+      els.libraryLoadMore.textContent = store.libraryLoading ? rt('Loading…') : rt('Load more')
       els.libraryMessage.textContent = store.libraryMessage || ''
       if (!items.length) {
-        els.libraryResults.innerHTML = `<div class="library-empty">${store.libraryLoading ? 'Loading library…' : (libraryQuery() ? 'No matches found.' : 'Nothing here yet.')}</div>`
+        els.libraryResults.innerHTML = `<div class="library-empty">${store.libraryLoading ? rt('Loading library…') : (libraryQuery() ? rt('No matches found.') : rt('Nothing here yet.'))}</div>`
         return
       }
       const type = view.type
@@ -668,7 +693,7 @@
         store.libraryMessage = ''
       } catch (error) {
         if (request === store.libraryRequest) {
-          store.libraryMessage = error?.message || 'Could not load library.'
+          store.libraryMessage = error?.message || rt('Could not load library.')
           if (!append) store.libraryItems = []
         }
       } finally {
@@ -704,7 +729,7 @@
     async function sendLibraryAction(action, ids, targetId = '') {
       const cleanIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))].slice(0, 5000)
       if (!cleanIds.length) return
-      store.libraryMessage = 'Sending to Lokal…'
+      store.libraryMessage = rt('Sending to Lokal…')
       renderLibrary()
       let result
       if (action === 'play') {
@@ -715,12 +740,12 @@
         result = await command('queueTracks', { trackIds: cleanIds })
       }
       store.libraryMessage = result?.error
-        ? `Could not control playback: ${String(result.error).slice(0, 180)}`
+        ? rt('Could not control playback: {error}', { error: String(result.error).slice(0, 180) })
         : action === 'play'
-          ? 'Playing on this computer.'
+          ? rt('Playing on this computer.')
           : action === 'next'
-            ? `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} next.`
-            : `Added ${cleanIds.length} track${cleanIds.length === 1 ? '' : 's'} to the queue.`
+            ? rt('Added {count} track(s) next.', { count: cleanIds.length })
+            : rt('Added {count} track(s) to the queue.', { count: cleanIds.length })
       renderLibrary()
     }
 
@@ -757,16 +782,16 @@
     function renderState(s) {
       store.state = s || {}
       const track = store.state.currentTrack || {}
-      els.title.textContent = track.title || 'No track'
-      els.artist.textContent = track.artist || 'Open this from your phone on same Wi-Fi'
+      els.title.textContent = track.title || rt('No track')
+      els.artist.textContent = track.artist || rt('Open this from your phone on same Wi-Fi')
       els.play.innerHTML = store.state.isPlaying ? ICONS.pause : ICONS.play
       els.like.innerHTML = ICONS.heart
-      els.status.textContent = store.state.connected ? 'online' : 'offline'
+      els.status.textContent = store.state.connected ? rt('online') : rt('offline')
       els.like.disabled = !track.id
-      els.miniTitle.textContent = track.title || 'No track playing'
-      els.miniArtist.textContent = track.artist || 'Connect to Lokal'
+      els.miniTitle.textContent = track.title || rt('No track playing')
+      els.miniArtist.textContent = track.artist || rt('Connect to Lokal')
       els.miniPlay.innerHTML = store.state.isPlaying ? ICONS.pause : ICONS.play
-      els.miniPlay.setAttribute('aria-label', store.state.isPlaying ? 'Pause' : 'Play')
+      els.miniPlay.setAttribute('aria-label', store.state.isPlaying ? rt('Pause') : rt('Play'))
 
       const dur = Math.max(0, Number(store.state.duration || 0))
       const prog = Math.max(0, Math.min(dur, Number(store.state.progress || 0)))
@@ -821,7 +846,7 @@
           loadLibrary()
         }
       } catch {
-        els.status.textContent = 'offline'
+        els.status.textContent = rt('offline')
       }
     }
 

@@ -343,9 +343,9 @@ export default function RightSidebar() {
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
-      !isStationTrack(currentTrack) && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: 'Open folder in Library', icon: FolderOpen, onSelect: openCurrentTrackFolder },
-      !isStationTrack(currentTrack) && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
-      currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
+      !isStationTrack(currentTrack) && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: t('Open folder in Library'), icon: FolderOpen, onSelect: openCurrentTrackFolder },
+      !isStationTrack(currentTrack) && { label: t('Start radio'), icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
+      currentTrack.artist && { label: t('Start artist radio'), icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
       !isStationTrack(currentTrack) && losslessMenuItem(currentTrack, Gem),
     ].filter(Boolean))
   }
