@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { genreKey as uiGenreKey, splitGenres as splitUiGenres } from '../src/genres.js'
 
 const require = createRequire(import.meta.url)
 const {
@@ -35,6 +36,12 @@ test('genre synonyms and subgenres fold into broad canonical categories', () => 
   assert.equal(normalizeGenreName('Indie Rock'), 'Rock')
   assert.equal(normalizeGenreName('Hip-Hop'), 'Hip-Hop')
   assert.equal(normalizeGenreName('R&B'), 'R&B / Soul')
+})
+
+test('genre editor treats synonyms as one choice while preserving the first raw label', () => {
+  assert.equal(uiGenreKey('VGM'), uiGenreKey('Video Game Music'))
+  assert.equal(uiGenreKey('Video Game'), uiGenreKey('Video Game Music'))
+  assert.deepEqual(splitUiGenres('VGM, Video Game, Video Game Music'), ['VGM'])
 })
 
 test('invalid and non-genre metadata values are ignored', () => {
