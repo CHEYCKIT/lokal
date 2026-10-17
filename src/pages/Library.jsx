@@ -238,28 +238,6 @@ export default function Library() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <h1 className="font-display text-lg uppercase tracking-widest text-white">{t("Library")}</h1>
-          <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
-            <Search size={14} className="flex-shrink-0 text-muted" />
-            <input
-              type="text"
-              value={libraryMode === 'simple' ? simpleSearch : folderSearch}
-              onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
-              placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
-              aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
-              className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
-            />
-            {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
-              <button
-                type="button"
-                onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
-                aria-label={t("Clear search")}
-                className="flex-shrink-0 text-muted transition-colors hover:text-white"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <select value={source} onChange={e => setSource(e.target.value)} aria-label={t("Source")}
@@ -342,19 +320,43 @@ export default function Library() {
       <ScanBanner />
 
       <div className="flex flex-col items-start gap-3">
-        <p className="min-w-0 truncate text-xs text-muted font-display">
-          {libraryMode === 'simple'
-            ? (simpleSearch.trim() !== debouncedSimpleSearch || (loading && debouncedSimpleSearch)
-                ? t('Searching…')
-                : debouncedSimpleSearch
-                  ? tracks.length + (hasMore ? '+' : '') + ' ' + (tracks.length === 1 ? t('match') : t('matches'))
-                  : tracks.length + ' ' + t('loaded tracks'))
-            : folderData?.available
-              ? (folderSearch.trim() && folderData.matchCount != null
-                  ? `${folderData.matchCount} ${folderData.matchCount === 1 ? t('match') : t('matches')} · ${folderData.relativePath || folderData.rootName}`
-                  : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
-              : t('Browse your music folders')}
-        </p>
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-xs text-muted font-display">
+            {libraryMode === 'simple'
+              ? (simpleSearch.trim() !== debouncedSimpleSearch || (loading && debouncedSimpleSearch)
+                  ? t('Searching…')
+                  : debouncedSimpleSearch
+                    ? tracks.length + (hasMore ? '+' : '') + ' ' + (tracks.length === 1 ? t('match') : t('matches'))
+                    : tracks.length + ' ' + t('loaded tracks'))
+              : folderData?.available
+                ? (folderSearch.trim() && folderData.matchCount != null
+                    ? `${folderData.matchCount} ${folderData.matchCount === 1 ? t('match') : t('matches')} · ${folderData.relativePath || folderData.rootName}`
+                    : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
+                : t('Browse your music folders')}
+          </p>
+          <div className="ml-auto flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
+            <Search size={14} className="flex-shrink-0 text-muted" />
+            <input
+              type="text"
+              value={libraryMode === 'simple' ? simpleSearch : folderSearch}
+              onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
+              placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
+              aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
+              className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
+            />
+            {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
+              <button
+                type="button"
+                onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
+                aria-label={t("Clear search")}
+                className="flex-shrink-0 text-muted transition-colors hover:text-white"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
         <div className="flex w-full flex-wrap items-center gap-2">
           {playAllTracks.length > 0 && (libraryMode === 'advanced' ? (
             <>

@@ -1,9 +1,11 @@
 /**
  * Choose the sidebar card to display after the current track changes.
- * Only the standalone visualizer persists; lyrics and other views return to info.
+ * Visualization persists; other modes select Lyrics only when lyric lines exist.
  * @param {string|null|undefined} view Previously selected card view.
- * @returns {'visualization'|'info'} The view to use for the new track.
+ * @param {boolean} hasLyrics Whether the new track has lyric lines.
+ * @returns {'visualization'|'lyrics'|'info'} The view to use for the new track.
  */
-export function sideCardViewAfterTrackChange(view) {
-  return view === 'visualization' ? 'visualization' : 'info'
+export function sideCardViewAfterTrackChange(view, hasLyrics = false) {
+  if (view === 'visualization') return 'visualization'
+  return hasLyrics ? 'lyrics' : 'info'
 }
