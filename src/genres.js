@@ -1,10 +1,26 @@
-// A song's genres, split the way the library reads them (electron/genreList.js):
-// "Рэп/Караоке", "Rock; Pop" and the comma list in `genres` are each several
-// genres. Shown joined with ", ".
+import taxonomy from './genreTaxonomy.json' with { type: 'json' }
+
+// Identity keys keep an existing alias (e.g. VGM) from appearing again as a
+// separate suggestion (e.g. Video Game Music) while preserving the stored text.
+const taxonomyKey = value => String(value || '')
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '')
+
+const genreAliases = new Map()
+for (const [canonical, aliases] of taxonomy.groups) {
+  genreAliases.set(taxonomyKey(canonical), taxonomyKey(canonical))
+  for (const alias of aliases) genreAliases.set(taxonomyKey(alias), taxonomyKey(canonical))
+}
 
 const SEPARATORS = /[\\/;,|]/
 
-export const genreKey = name => String(name || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase()
+export const genreKey = name => {
+  const raw = String(name || '').replace(/\s+/g, ' ').trim()
+  const key = taxonomyKey(raw)
+  return genreAliases.get(key) || key
+}
 
 /** "Rock / Pop; Indie" -> ['Rock', 'Pop', 'Indie'], without repeats. */
 export function splitGenres(value) {
