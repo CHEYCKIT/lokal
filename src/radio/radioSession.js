@@ -31,11 +31,11 @@ function codecName(info) {
  * Stop the station and give the element back: no source, not looping (the
  * player leaves a looping silent clip on it to keep the play button usable).
  */
-export async function releaseRadio() {
+export async function releaseRadio({ invalidate = true } = {}) {
   const current = session
-  if (!current) return
   session = null
-  generation++
+  if (invalidate) generation++
+  if (!current) return
   try { await current.player.detachAudioElement() } catch {}
   const el = current.el
   try {
@@ -55,8 +55,9 @@ export async function releaseRadio() {
  *                onBuffering(bool), onFailed(message), onLog(message, level) }
  */
 export async function startRadio(el, track, { bufferSec = 3, autoplay = true, handlers = {} } = {}) {
-  await releaseRadio()
   const mine = ++generation
+  await releaseRadio({ invalidate: false })
+  if (generation !== mine) return false
   const live = () => generation === mine && session?.trackId === track.id
   const log = (message, level = 'info') => handlers.onLog?.(`[radio] ${track.title}: ${message}`, level)
   el.loop = false
