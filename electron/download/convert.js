@@ -57,6 +57,14 @@ function afconvertArgs(src, dest) {
   return ['-f', 'WAVE', '-d', 'LEF32', src, dest]
 }
 
+// Distinguish a missing dependency from conversion failures for user-facing
+// playback diagnostics. macOS ALAC is excluded because afconvert is built in.
+function playbackCopyFailure(info, ffmpeg, platform = process.platform) {
+  if (!info?.unplayable) return null
+  const plan = playbackCopyPlan(info, ffmpeg, platform)
+  return !ffmpeg && plan.converter === 'ffmpeg' ? 'ffmpeg-missing' : null
+}
+
 function discoverFfmpeg() {
   // In Electron this finds app-managed, bundled and user-configured binaries.
   try {
@@ -230,4 +238,4 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   return job
 }
 
-module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, afconvertArgs, resolveFfmpeg }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, playbackCopyFailure, afconvertArgs, resolveFfmpeg }
