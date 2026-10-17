@@ -792,7 +792,16 @@ router.put('/:id', (req, res) => {
   }
   
   if (updates.length === 0) return res.json({ error: 'No fields to update' })
-  
+
+  // The editable metadata also belongs in the audio file, not just the database.
+  const tagEdits = require('../../electron/fileComment').fileTagEdits(req.body || {})
+  if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
+    try {
+      require('../../electron/fileComment').writeFileTags(currentTrack.file_path, tagEdits)
+      require('../../electron/fileStamp').noteFileWritten(db, currentTrack.file_path)
+    } catch (e) { return res.json({ error: `Couldn't save the tags into the file: ${e.message}` }) }
+  }
+
   params.push(req.params.id)
   const sql = `UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`
   const result = db.prepare(sql).run(...params)
