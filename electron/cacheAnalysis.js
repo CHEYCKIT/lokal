@@ -275,8 +275,9 @@ async function analyze({ userData, dataDir, db, onProgress, activePartition, cur
   }
   const ghosts = ghostTracks(db)
   if (ghosts.total) {
-    const bytes = ghosts.unused.bytes + ghosts.history.bytes
-    push('database', { id: 'ghostTracks', size: bytes, disk: bytes, files: 0, rows: ghosts.total, unused: ghosts.unused.count, history: ghosts.history.count, kept: ghosts.kept.count })
+    // Ghost-track rows already live inside the SQLite file counted above.
+    // Show their cleanup counts without adding the same bytes to disk totals.
+    push('database', { id: 'ghostTracks', size: 0, disk: 0, files: 0, rows: ghosts.total, unused: ghosts.unused.count, history: ghosts.history.count, kept: ghosts.kept.count })
   }
 
   const sections = Object.entries(groups).map(([id, items]) => {
