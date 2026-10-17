@@ -9,7 +9,7 @@
 //   only the end    the 10 seconds before it;
 //   neither         the video's middle third (60-120 s of a 3-minute one).
 
-const LOCAL_PATH = /^(?:[a-z]:[\\/]|\\\\|file:\/\/)/i
+const LOCAL_PATH = /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\|file:\/\/)/i
 const SHORT_LOOP = 10
 
 /** The link or path when it can be a video, else null. */
@@ -39,7 +39,7 @@ export function clipTimeInput(text) {
 /** "75", "1:15", "1:02:03" -> seconds; '' -> null; NaN when it can't be read. */
 export function parseClipTime(text) {
   const raw = String(text || '').trim()
-  if (/(^|:)\\s*-\\s*\\d/.test(raw)) return NaN
+  if (/(^|:)\s*-\s*\d/.test(raw)) return NaN
   const value = clipTimeInput(raw).replace(/^:+|:+$/g, '')
   if (!value) return null
   const parts = value.split(':').map(Number)
