@@ -60,7 +60,6 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   const artSrc = (track) => trackArtURL(track)
 
   const handleDragStart = (e, index) => {
-    if (shuffle) return
     setDraggedIndex(index)
     e.dataTransfer.setData('application/json', JSON.stringify({
       type: 'track',
@@ -70,7 +69,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
   }
 
   const handleDragOver = (e, index) => {
-    if (shuffle || draggedIndex === null) return
+    if (draggedIndex === null) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDragOverIndex(index)
@@ -78,7 +77,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
   const handleDrop = (e, index) => {
     e.preventDefault()
-    if (shuffle || draggedIndex === null) return
+    if (draggedIndex === null) return
     reorderQueue(draggedIndex, index)
     setDraggedIndex(null)
     setDragOverIndex(null)
@@ -104,9 +103,9 @@ export function QueueContent({ onClose, variant = 'panel' }) {
     openAddToPlaylist(track)
   }
 
-  const handleRemove = (trackId, e) => {
+  const handleRemove = (trackId, index, e) => {
     e.stopPropagation()
-    removeFromQueue(trackId)
+    removeFromQueue(trackId, index)
   }
 
   return (
@@ -119,7 +118,6 @@ export function QueueContent({ onClose, variant = 'panel' }) {
             </p>
             <p className="text-xs text-white/20 mt-0.5 truncate">
               {displayQueue.length} track{displayQueue.length === 1 ? '' : 's'}
-              {shuffle ? ' · drag disabled' : ''}
             </p>
           </div>
           {clearButton('text-xs font-display uppercase tracking-wider text-white/40 hover:text-white transition-colors')}
@@ -130,9 +128,6 @@ export function QueueContent({ onClose, variant = 'panel' }) {
             <p className="text-xs font-display text-muted uppercase tracking-widest">
               {shuffle ? 'Up Next (Shuffled)' : 'Queue'} ({displayQueue.length})
             </p>
-            {shuffle && (
-              <p className="text-[10px] text-accent/70">{t("Drag disabled in shuffle mode")}</p>
-            )}
           </div>
           <div className="flex items-center gap-3">
             {clearButton('text-[10px] font-display uppercase tracking-wider text-muted hover:text-white transition-colors')}
@@ -172,7 +167,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
               <Row
                 layout={animate || undefined}
                 key={`${track.id}-${i}`}
-                draggable={!shuffle}
+                draggable
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => handleDragOver(e, i)}
                 onDrop={(e) => handleDrop(e, i)}
@@ -190,14 +185,12 @@ export function QueueContent({ onClose, variant = 'panel' }) {
                     <div className="queue-loading-seekbar h-full w-1/3 rounded-full bg-accent" />
                   </div>
                 )}
-                {!shuffle && (
-                  <div
-                    className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 z-20 transition-opacity opacity-0 group-hover:opacity-100"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <GripVertical size={14} className="text-muted" />
-                  </div>
-                )}
+                <div
+                  className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 z-20 transition-opacity opacity-0 group-hover:opacity-100"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <GripVertical size={14} className="text-muted" />
+                </div>
 
                 <div
                   className="flex flex-1 items-center gap-2 min-w-0 cursor-pointer z-10"
@@ -258,7 +251,7 @@ export function QueueContent({ onClose, variant = 'panel' }) {
 
                   {!isCurrent && (
                     <button
-                      onClick={(e) => handleRemove(track.id, e)}
+                      onClick={(e) => handleRemove(track.id, i, e)}
                       title={t("Remove from queue")}
                       className="p-1 rounded hover:bg-red-500/20 text-muted hover:text-red-400 transition-colors"
                     >
