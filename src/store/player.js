@@ -3,6 +3,7 @@ import { packQueue, unpackQueue, QUEUE_KEYS } from '../queueStorage.js'
 import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
 import { CROSSFADE_DEFAULTS } from '../audio/crossfade.js'
+import { normalizeReplayGainMode } from '../audio/replayGain.mjs'
 import { isStationTrack } from '../radio/stations'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
@@ -141,7 +142,6 @@ function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
 }
 
-const normalizeReplayGainMode = value => ['off', 'track', 'album', 'smart'].includes(value) ? value : 'off'
 function readReplayGainModeSetting() {
   try { return normalizeReplayGainMode(localStorage.getItem('lokal-replaygain-mode')) } catch { return 'off' }
 }
