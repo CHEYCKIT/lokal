@@ -5,7 +5,11 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const { motionCacheKey } = require('../electron/artwork/motion.js')
-const { canvasGraphqlAnswer } = require('../electron/artwork/spotify.js')
+const {
+  canvasGraphqlAnswer,
+  buildClientTokenPayload,
+  parseGrantedClientToken,
+} = require('../electron/artwork/spotify.js')
 
 test('Canvas cache keys invalidate old misses and change when the Spotify cookie changes', () => {
   const track = { title: 'SPIN', artist: 'Kroi', album: 'SPIN' }
@@ -42,4 +46,37 @@ test('visible Canvas lookups refresh after settings save in sidebar and fullscre
   assert.match(motionCover, /addEventListener\('lokal:settings-saved', onSettingsSaved\)/)
   assert.match(rightSidebar, /addEventListener\('lokal:settings-saved', load\)/)
   assert.match(fullscreen, /addEventListener\('lokal:settings-saved', load\)/)
+})
+
+
+test('Spotify client-token fallback builds the required Web Player payload', () => {
+  assert.deepEqual(
+    buildClientTokenPayload({ clientVersion: '1.2.3', clientId: 'web-client', deviceId: 'device-123' }),
+    {
+      client_data: {
+        client_version: '1.2.3',
+        client_id: 'web-client',
+        js_sdk_data: {
+          device_brand: 'unknown',
+          device_model: 'unknown',
+          os: 'windows',
+          os_version: 'NT 10.0',
+          device_id: 'device-123',
+          device_type: 'computer',
+        },
+      },
+    },
+  )
+})
+
+test('Spotify client-token parser rejects invalid responses and reads the granted token expiry', () => {
+  assert.deepEqual(
+    parseGrantedClientToken({
+      response_type: 'RESPONSE_GRANTED_TOKEN_RESPONSE',
+      granted_token: { token: 'test-client-token', expires_after_seconds: 1200 },
+    }),
+    { token: 'test-client-token', expires_after_seconds: 1200 },
+  )
+  assert.equal(parseGrantedClientToken({ response_type: 'ERROR', granted_token: { token: 'no' } }), null)
+  assert.equal(parseGrantedClientToken({ response_type: 'RESPONSE_GRANTED_TOKEN_RESPONSE', granted_token: {} }), null)
 })
