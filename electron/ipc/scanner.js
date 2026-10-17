@@ -2013,46 +2013,66 @@ async function applyFileChanges(changes = []) {
   const root = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
   if (!root || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
   const rootPath = path.resolve(root)
-  const added = [], updated = [], removed = []
-  const removeTrack = (track) => {
-    const id = track.id
-    for (const table of ['artist_track_links', 'playlist_tracks', 'user_likes', 'play_history', 'listening_events', 'lyrics_cache', 'lyrics_translations']) {
-      try { db.prepare(`DELETE FROM ${table} WHERE track_id = ?`).run(id) } catch {}
-    }
-    try { db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } catch {}
-    removed.push(id)
-  }
+  const files = new Set()
+  const gone = []
   const seen = new Set()
+
   for (const change of changes) {
-    const filePath = path.resolve(String(change?.path || ''))
-    if (!filePath || seen.has(filePath)) continue
-    const fromRoot = path.relative(rootPath, filePath)
-    if (!fromRoot || fromRoot === '..' || fromRoot.startsWith('..' + path.sep) || path.isAbsolute(fromRoot)) continue
+    const rawPath = change?.path
+    if (!rawPath) continue
+    const filePath = path.resolve(String(rawPath))
+    const relative = path.relative(rootPath, filePath)
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
+    if (seen.has(filePath)) continue
     seen.add(filePath)
-    let stat = null
-    try { stat = fs.statSync(filePath) } catch {}
-    if (stat?.isDirectory()) continue
-    const rel = path.relative(rootPath, filePath)
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue
-    const exact = db.prepare("SELECT * FROM tracks WHERE file_path = ? AND file_path NOT LIKE 'ghost://%'").get(filePath)
-    const ext = path.extname(filePath).toLowerCase()
-    if (!stat?.isFile()) {
-      if (exact && AUDIO_EXTS.has(ext)) removeTrack(exact)
+
+    let stat
+    try { stat = fs.statSync(filePath) } catch {
+      if (change?.renamed || AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) gone.push(filePath)
       continue
     }
-    if (!AUDIO_EXTS.has(ext)) continue
-    const existed = !!exact
+    if (stat.isDirectory()) {
+      if (change?.renamed) for (const child of walkDir(filePath)) files.add(path.resolve(child))
+      continue
+    }
+    if (stat.isFile() && AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) files.add(filePath)
+  }
+
+  if (!files.size && !gone.length) return { added: [], updated: [], removed: [] }
+
+  const before = new Map()
+  for (const filePath of files) {
+    before.set(filePath, db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath) || null)
+  }
+
+  // scanFolder stats the full tree but reads tags only for new, changed, or
+  // artwork-stale files; doing it before pruning lets renamed copies be found.
+  await scanFolder(rootPath)
+
+  let removed = []
+  if (gone.length) {
     try {
-      const result = await indexSingleFile(filePath, { deferGhostResolution: false })
-      if (result?.success && result.id) (existed ? updated : added).push(result.id)
+      removed = require('../libraryPrune').pruneGonePaths(db, [...new Set(gone)]).ids
     } catch (error) {
-      console.warn('[libraryWatcher] Could not index changed file:', filePath, error?.message || error)
+      console.warn('[libraryWatcher] Clearing missing files skipped:', error.message)
     }
   }
-  if (removed.length) {
-    try { db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run() } catch {}
+
+  const added = []
+  const updated = []
+  for (const filePath of files) {
+    const current = db.prepare('SELECT id, last_modified FROM tracks WHERE file_path = ?').get(filePath)
+    if (!current) continue
+    const previous = before.get(filePath)
+    if (!previous) added.push(current.id)
+    else if (previous.id !== current.id || previous.last_modified !== current.last_modified) updated.push(current.id)
   }
-  return { added: [...new Set(added)], updated: [...new Set(updated)], removed: [...new Set(removed)] }
+
+  return {
+    added: [...new Set(added)],
+    updated: [...new Set(updated)],
+    removed: [...new Set(removed)],
+  }
 }
 
 module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, applyFileChanges, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
