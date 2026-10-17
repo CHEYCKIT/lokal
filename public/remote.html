@@ -328,6 +328,8 @@
       if (/^pt(?:-|$)/i.test(String(preferred))) return 'pt-BR';
       return REMOTE_LOCALES.find(code => String(preferred).toLowerCase().startsWith(code.toLowerCase())) || 'en';
     })();
+    REMOTE_TEXT['Could not load library.'][7] = 'Det gick inte att läsa in biblioteket.';
+    REMOTE_TEXT['Pause'] = ["Pausa","Pause","Pausa","Pausa","Pausar","Pauzeren","Wstrzymaj","Pausa"];
     function rt(key, values = {}) {
       const row = REMOTE_TEXT[key];
       const index = REMOTE_LOCALES.indexOf(remoteLanguage);
@@ -340,6 +342,8 @@
       root.querySelectorAll('[data-rt-aria-label]').forEach(el => { el.setAttribute('aria-label', rt(el.getAttribute('data-rt-aria-label'))); });
       root.querySelectorAll('[data-rt-placeholder]').forEach(el => { el.setAttribute('placeholder', rt(el.getAttribute('data-rt-placeholder'))); });
     }
+
+    applyRemoteTranslations();
 
     applyRemoteTranslations();
 
@@ -610,7 +614,7 @@
       els.libraryCount.textContent = store.libraryLoading && !items.length
         ? rt('Loading…')
         : detail
-          ? `${items.length} track${items.length === 1 ? '' : 's'}`
+          ? `${items.length} ${rt(items.length === 1 ? 'track' : 'tracks')}`
           : `${store.libraryTotal} ${sectionLabels[view.type]?.toLowerCase() || rt('items')}`
       for (const button of els.libraryTabs.querySelectorAll('[data-library-tab]')) {
         button.setAttribute('aria-pressed', String(button.dataset.libraryTab === rootType))
