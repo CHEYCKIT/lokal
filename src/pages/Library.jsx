@@ -303,13 +303,6 @@ export default function Library() {
             <option value="play_count DESC">{t("Most Played")}</option>
             <option value="duration DESC">{t("Longest")}</option>
           </select>
-          {api.isElectron && (
-            <button type="button" onClick={addMusicFolder} disabled={addingMusicFolder}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:text-white disabled:opacity-50">
-              {addingMusicFolder ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
-              {addingMusicFolder ? t('Adding folder…') : t('Add music folder')}
-            </button>
-          )}
           <div className="flex bg-elevated border border-border rounded-lg overflow-hidden">
             <button onClick={() => setView('list')} aria-label={t("List view")} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} aria-label={t("Grid view")} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
@@ -334,27 +327,36 @@ export default function Library() {
                     : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
                 : t('Browse your music folders')}
           </p>
-          <div className="ml-auto flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
-            <Search size={14} className="flex-shrink-0 text-muted" />
-            <input
-              type="text"
-              value={libraryMode === 'simple' ? simpleSearch : folderSearch}
-              onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
-              placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
-              aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
-              className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
-            />
-            {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
-              <button
-                type="button"
-                onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
-                aria-label={t("Clear search")}
-                className="flex-shrink-0 text-muted transition-colors hover:text-white"
-              >
-                <X size={13} />
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {api.isElectron && (
+              <button type="button" onClick={addMusicFolder} disabled={addingMusicFolder}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:text-white disabled:opacity-50">
+                {addingMusicFolder ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
+                {addingMusicFolder ? t('Adding folder…') : t('Add music folder')}
               </button>
             )}
+            <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
+              <Search size={14} className="flex-shrink-0 text-muted" />
+              <input
+                type="text"
+                value={libraryMode === 'simple' ? simpleSearch : folderSearch}
+                onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
+                placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
+                aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
+                className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
+              />
+              {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
+                <button
+                  type="button"
+                  onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
+                  aria-label={t("Clear search")}
+                  className="flex-shrink-0 text-muted transition-colors hover:text-white"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2">
