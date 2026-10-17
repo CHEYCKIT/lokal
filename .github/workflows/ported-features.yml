@@ -1,0 +1,41 @@
+name: Verify ported features
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/curated-fork-feature-bundle]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: Tests and package (${{ runner.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run ported-feature regression tests
+        run: npm run test:ported
+      - name: Build and package Lokal
+        run: npm run build
+      - name: Upload package artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lokal-package-${{ runner.os }}-${{ github.run_number }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 5
