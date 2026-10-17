@@ -361,7 +361,14 @@ async function searchPathfinder(t, { title, artist, album }, { cleanTitle }) {
   const res = await request(url, { headers }).catch(e => ({ ok: false, status: e.name === 'AbortError' ? 'timeout' : e.message }))
   if (!res.ok) { console.log(`[spotify-canvas] search (web player) HTTP ${res.status}`); return null }
   const json = await res.json().catch(() => null)
-  const items = json?.data?.searchV2?.tracksV2?.items || []
+  const tracks = json?.data?.searchV2?.tracksV2
+  // A successful HTTP response with a changed/error response shape isn't an
+  // empty search result. Treat it as transient so it can't poison the miss cache.
+  if (!tracks || !Array.isArray(tracks.items) || json?.errors?.length) {
+    console.log(`[spotify-canvas] search (web player) returned an unexpected response${json?.errors?.length ? `: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}` : ''}`)
+    throw new TransientError('Spotify web player search returned an unexpected response')
+  }
+  const items = tracks.items
   return items.map(x => x?.item?.data).filter(Boolean).map(d => ({
     uri: d.uri, name: d.name,
     artists: (d.artists?.items || []).map(a => a?.profile?.name).filter(Boolean),
@@ -402,6 +409,21 @@ async function findSpotifyTrackId(track, cookie) {
   })
 }
 
+/** Parse the persisted GraphQL response without treating errors as a cacheable miss. */
+function canvasGraphqlAnswer(json) {
+  const trackUnion = json?.data?.trackUnion
+  const hasCanvasField = !!trackUnion && Object.prototype.hasOwnProperty.call(trackUnion, 'canvas')
+  if (!json?.data || !trackUnion || !hasCanvasField || json?.errors?.length) {
+    return { url: null, canvas: trackUnion?.canvas || null, failed: true }
+  }
+  const canvas = trackUnion.canvas
+  const url = canvas?.url
+  const validUrl = typeof url === 'string' && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url)
+  // A new URL shape is a protocol change, not a confirmed lack of Canvas.
+  if (url && !validUrl) return { url: null, canvas, failed: true }
+  return { url: validUrl ? url : null, canvas: canvas || null, failed: false }
+}
+
 /** How the web player gets a canvas now: the "canvas" GraphQL query. */
 async function canvasFromGraphql(t, uri) {
   const headers = { Authorization: `Bearer ${t.accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
@@ -415,11 +437,15 @@ async function canvasFromGraphql(t, uri) {
     return { failed: true }
   }
   const json = await res.json().catch(() => null)
-  const canvas = json?.data?.trackUnion?.canvas
-  const url = canvas?.url
+  const answer = canvasGraphqlAnswer(json)
   if (json?.errors?.length) console.log(`[spotify-canvas] canvas query errors: ${json.errors.map(e => e.message).join('; ').slice(0, 200)}`)
+  if (answer.failed) {
+    console.log(`[spotify-canvas] canvas query for ${uri}: unusable response; trying the Canvas service`)
+    return { failed: true }
+  }
+  const { canvas, url } = answer
   console.log(`[spotify-canvas] canvas query for ${uri}: ${url ? `found a clip (${canvas.type || 'no type'})` : canvas ? `canvas without a link (${canvas.type || 'no type'})` : 'no canvas'}`)
-  return { url: url && /^https:\/\//.test(url) && /\.mp4(?:[?#]|$)/i.test(url) ? url : null, failed: !json?.data }
+  return { url, failed: false }
 }
 
 async function canvasFor(t, uri) {
@@ -440,8 +466,11 @@ async function canvasFromCanvaz(t, uri) {
   const res = await request(CANVAS_URL, { method: 'POST', headers, body: lenField(1, lenField(1, Buffer.from(uri))) })
   if (!res.ok) {
     console.log(`[spotify-canvas] canvas request for ${uri}: HTTP ${res.status}`)
-    if (authFailed(res.status)) throw new TransientError(`Spotify canvas HTTP ${res.status}`)
-    return null
+    // An HTTP error is a failed lookup, not evidence that this track has no
+    // Canvas. In particular, 400s from a stale client token used to be cached
+    // as "no Canvas" for days.
+    authFailed(res.status) // also clears the cached token on 401
+    throw new TransientError(`Spotify canvas HTTP ${res.status}`)
   }
   const buf = Buffer.from(await res.arrayBuffer())
   const url = parseCanvases(buf, uri)
@@ -623,4 +652,4 @@ async function likeOnSpotify(rawCookie, track) {
   })
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, canvasGraphqlAnswer, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
