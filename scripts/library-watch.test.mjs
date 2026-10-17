@@ -118,6 +118,8 @@ test('watched changes: retagged files are read again, deleted ones leave, rename
 
 test('a folder moved into the music folder is read; one moved out leaves', async t => {
   const { music, reads, row } = fixture(t)
+  // The watcher only runs after a library root has been chosen by the first scan.
+  await scanFolder(music)
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'lokal-watch-album-'))
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }))
   fs.writeFileSync(path.join(outside, 'x.mp3'), 'synthetic audio x')
