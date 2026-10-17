@@ -37,6 +37,7 @@ import { openRadio } from '../radioActions'
 import LikeBurst from './LikeBurst'
 import { showToast } from './Toaster'
 import { losslessMenuItem } from '../quality'
+import { sideCardViewAfterTrackChange } from '../sideCardView'
 
 const folderPathForTrack = (trackPath, musicRoot) => {
   if (!trackPath || String(trackPath).startsWith('ghost://') || !musicRoot) return null
@@ -157,14 +158,18 @@ export default function RightSidebar() {
   // open the full-height Lyrics overlay controlled by sidePanelView.
   const [infoCardView, setInfoCardView] = useState(() => {
     try {
-      const saved = localStorage.getItem('lokal-side-card-view')
-      return ['info', 'lyrics', 'visualization'].includes(saved) ? saved : 'info'
+      return sideCardViewAfterTrackChange(localStorage.getItem('lokal-side-card-view'))
     } catch { return 'info' }
   })
   const autoSelectLyricsRef = useRef(null)
   useEffect(() => {
     try { localStorage.setItem('lokal-side-card-view', infoCardView) } catch {}
   }, [infoCardView])
+  // Lyrics are tied to the current track; only visualization is a cross-track
+  // preference. A track with no lyrics must always return to the info card.
+  useEffect(() => {
+    setInfoCardView(sideCardViewAfterTrackChange)
+  }, [currentTrack?.id])
   // Guards against an in-flight getSettings() from an earlier call
   // resolving AFTER a later one (e.g. the Lyrics panel is reopened, or
   // 'lokal:settings-saved' fires again, while the first request is still
