@@ -336,27 +336,27 @@ export default function Library() {
               </button>
             )}
             <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-1.5 text-xs text-white">
-              <Search size={14} className="flex-shrink-0 text-muted" />
-            <input
-              type="text"
-              value={libraryMode === 'simple' ? simpleSearch : folderSearch}
-              onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
-              placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
-              aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
-              className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
-            />
-            {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
-              <button
-                type="button"
-                onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
-                aria-label={t("Clear search")}
-                className="flex-shrink-0 text-muted transition-colors hover:text-white"
-              >
-                <X size={13} />
-              </button>
-            )}
-            </div>
+                <Search size={14} className="flex-shrink-0 text-muted" />
+              <input
+                type="text"
+                value={libraryMode === 'simple' ? simpleSearch : folderSearch}
+                onChange={e => libraryMode === 'simple' ? setSimpleSearch(e.target.value) : setFolderSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') } }}
+                placeholder={libraryMode === 'simple' ? t("Search tracks…") : t("Search folders & tracks…")}
+                aria-label={libraryMode === 'simple' ? t("Search tracks") : t("Search folders and tracks")}
+                className="w-36 bg-transparent text-xs text-white outline-none placeholder:text-muted focus:w-48 transition-all @sm:w-44"
+              />
+              {(libraryMode === 'simple' ? simpleSearch : folderSearch) && (
+                <button
+                  type="button"
+                  onClick={() => { if (libraryMode === 'simple') setSimpleSearch(''); else setFolderSearch('') }}
+                  aria-label={t("Clear search")}
+                  className="flex-shrink-0 text-muted transition-colors hover:text-white"
+                >
+                  <X size={13} />
+                </button>
+              )}
+              </div>
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2">
