@@ -51,7 +51,7 @@ test('Library search is on the right of the track-count row in both modes', () =
   const addFolder = source.indexOf("t('Add music folder')", statusRow)
   assert.ok(scanBanner >= 0 && statusRow > scanBanner && trackCount > statusRow && addFolder > trackCount && search > addFolder && playbackRow > search)
   assert.match(source.slice(statusRow, playbackRow), /className="ml-auto flex min-w-0 items-center gap-2/)
-  assert.match(source.slice(statusRow, playbackRow), /Add music folder[\\s\\S]*Search size=\{14\}/)
+  assert.ok(source.slice(statusRow, playbackRow).indexOf("t('Add music folder')") < source.slice(statusRow, playbackRow).indexOf('<Search size={14}'))
   assert.doesNotMatch(source.slice(0, statusRow), /onClick=\{addMusicFolder\}/)
 })
 
