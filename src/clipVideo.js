@@ -38,7 +38,9 @@ export function clipTimeInput(text) {
 
 /** "75", "1:15", "1:02:03" -> seconds; '' -> null; NaN when it can't be read. */
 export function parseClipTime(text) {
-  const value = clipTimeInput(text).replace(/^:+|:+$/g, '')
+  const raw = String(text || '').trim()
+  if (/(^|:)\\s*-\\s*\\d/.test(raw)) return NaN
+  const value = clipTimeInput(raw).replace(/^:+|:+$/g, '')
   if (!value) return null
   const parts = value.split(':').map(Number)
   if (parts.length > 3 || parts.some(n => !Number.isFinite(n))) return NaN
@@ -101,8 +103,18 @@ export function trackClipLoop(track) {
 export function clipRange(start, end, duration) {
   const length = Number.isFinite(duration) && duration > 0 ? duration : null
   const cap = value => (length ? Math.min(value, length) : value)
-  if (start != null && end != null && end > start) return { start, end: cap(end) }
-  if (start != null) return { start: cap(start), end: cap(start + SHORT_LOOP) }
+  if (start != null && end != null && end > start) {
+    const boundedStart = cap(start)
+    const boundedEnd = cap(end)
+    if (boundedEnd > boundedStart) return { start: boundedStart, end: boundedEnd }
+    if (length) return { start: Math.max(0, length - SHORT_LOOP), end: length }
+    return { start: boundedStart, end: boundedStart + SHORT_LOOP }
+  }
+  if (start != null) {
+    const boundedStart = cap(start)
+    if (length && boundedStart >= length) return { start: Math.max(0, length - SHORT_LOOP), end: length }
+    return { start: boundedStart, end: cap(boundedStart + SHORT_LOOP) }
+  }
   if (end != null) return { start: Math.max(0, cap(end) - SHORT_LOOP), end: cap(end) }
   return length ? { start: length / 3, end: (length * 2) / 3 } : { start: 0, end: Infinity }
 }
