@@ -332,7 +332,7 @@
       const row = REMOTE_TEXT[key];
       const index = REMOTE_LOCALES.indexOf(remoteLanguage);
       const value = row && index >= 0 ? (row[index] || key) : key;
-      return String(value).replace(/\\{([a-zA-Z0-9_]+)\\}/g, (match, name) => Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match);
+      return String(value).replace(/\{([a-zA-Z0-9_]+)\}/g, (match, name) => Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match);
     }
     function applyRemoteTranslations(root = document) {
       root.querySelectorAll('[data-rt]').forEach(el => { el.textContent = rt(el.getAttribute('data-rt')); });
@@ -340,6 +340,8 @@
       root.querySelectorAll('[data-rt-aria-label]').forEach(el => { el.setAttribute('aria-label', rt(el.getAttribute('data-rt-aria-label'))); });
       root.querySelectorAll('[data-rt-placeholder]').forEach(el => { el.setAttribute('placeholder', rt(el.getAttribute('data-rt-placeholder'))); });
     }
+
+    applyRemoteTranslations();
 
     const els = {
       bg: document.getElementById('bg'),
