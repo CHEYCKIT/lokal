@@ -14,7 +14,7 @@ const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : undefi
 
 const RATE_LIMIT_RETRY_MS = 1500
 
-async function getJson(url, fetchImpl, { retryRateLimit = true } = {}) {
+async function getJson(url, fetchImpl, { retryRateLimit = true, publicOnly = false } = {}) {
   const { isPublicHttpUrl } = require('../online/publicUrl')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -22,7 +22,7 @@ async function getJson(url, fetchImpl, { retryRateLimit = true } = {}) {
     let target = new URL(String(url))
     let response = null
     for (let redirects = 0; redirects <= 5; redirects++) {
-      if (!(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) return null
+      if (publicOnly && !(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) return null
       response = await fetchImpl(target.href, { signal: controller.signal, redirect: 'manual', headers: { Accept: 'application/json' } })
       if (![301, 302, 303, 307, 308].includes(response.status)) break
       const location = response.headers?.get?.('location')
@@ -37,7 +37,7 @@ async function getJson(url, fetchImpl, { retryRateLimit = true } = {}) {
     if (response.status === 429 && retryRateLimit) {
       clearTimeout(timer)
       await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_MS))
-      return getJson(target.href, fetchImpl, { retryRateLimit: false })
+      return getJson(target.href, fetchImpl, { retryRateLimit: false, publicOnly })
     }
     if (!response.ok) return null
     return await response.json()
@@ -93,10 +93,10 @@ function fromAzuracast(data, api) {
 const RECORD_NOW_TTL_MS = 4000
 let recordStations = { at: 0, map: null }
 let recordNow = { at: 0, data: null, pending: null }
-function recordNowPlaying(fetchImpl) {
+function recordNowPlaying(fetchImpl, publicOnly = false) {
   if (recordNow.data && Date.now() - recordNow.at < RECORD_NOW_TTL_MS) return Promise.resolve(recordNow.data)
   if (recordNow.pending) return recordNow.pending
-  const pending = getJson('https://www.radiorecord.ru/api/stations/now/', fetchImpl)
+  const pending = getJson('https://www.radiorecord.ru/api/stations/now/', fetchImpl, { publicOnly })
     .then(data => {
       if (data) recordNow = { at: Date.now(), data, pending: null }
       else recordNow = { ...recordNow, pending: null }
@@ -105,10 +105,10 @@ function recordNowPlaying(fetchImpl) {
   recordNow = { ...recordNow, pending }
   return pending
 }
-async function recordStationId(station, fetchImpl) {
+async function recordStationId(station, fetchImpl, publicOnly = false) {
   if (/^\d+$/.test(station)) return Number(station)
   if (!recordStations.map || Date.now() - recordStations.at > RECORD_STATIONS_TTL_MS) {
-    const data = await getJson('https://www.radiorecord.ru/api/stations/', fetchImpl)
+    const data = await getJson('https://www.radiorecord.ru/api/stations/', fetchImpl, { publicOnly })
     const list = data?.result?.stations
     if (!Array.isArray(list)) return null
     recordStations = { at: Date.now(), map: new Map(list.map(item => [str(item.prefix).toLowerCase(), Number(item.id)])) }
@@ -169,17 +169,17 @@ function fromJson(data, api) {
 }
 
 /** What the station's API says is playing, or null. */
-async function nowPlaying(api, { fetchImpl = fetch } = {}) {
+async function nowPlaying(api, { fetchImpl = fetch, publicOnly = false } = {}) {
   const type = str(api?.type).toLowerCase()
   try {
-    if (type === 'azuracast') return fromAzuracast(await getJson(api.url, fetchImpl), api)
+    if (type === 'azuracast') return fromAzuracast(await getJson(api.url, fetchImpl, { publicOnly }), api)
     if (type === 'radiorecord') {
-      const id = await recordStationId(str(api.station), fetchImpl)
+      const id = await recordStationId(str(api.station), fetchImpl, publicOnly)
       if (id == null) return null
-      return fromRadioRecord(await recordNowPlaying(fetchImpl), id)
+      return fromRadioRecord(await recordNowPlaying(fetchImpl, publicOnly), id)
     }
-    if (type === 'lautfm') return fromLautfm(await getJson(`https://api.laut.fm/station/${encodeURIComponent(str(api.station))}/current_song`, fetchImpl))
-    if (type === 'json') return fromJson(await getJson(api.url, fetchImpl), api)
+    if (type === 'lautfm') return fromLautfm(await getJson(`https://api.laut.fm/station/${encodeURIComponent(str(api.station))}/current_song`, fetchImpl, { publicOnly }))
+    if (type === 'json') return fromJson(await getJson(api.url, fetchImpl, { publicOnly }), api)
   } catch {}
   return null
 }
