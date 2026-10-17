@@ -48,13 +48,8 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
   // The track on screen was edited: look it up again.
   useEffect(() => {
     const onUpdated = (e) => { if ((e.detail?.ids || []).includes(trackId)) setRevision(r => r + 1) }
-    const onSettingsSaved = () => setRevision(r => r + 1)
     window.addEventListener('lokal:track-updated', onUpdated)
-    window.addEventListener('lokal:settings-saved', onSettingsSaved)
-    return () => {
-      window.removeEventListener('lokal:track-updated', onUpdated)
-      window.removeEventListener('lokal:settings-saved', onSettingsSaved)
-    }
+    return () => window.removeEventListener('lokal:track-updated', onUpdated)
   }, [trackId])
 
   useEffect(() => {
