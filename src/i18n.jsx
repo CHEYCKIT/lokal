@@ -1992,6 +1992,7 @@ const ROWS = Object.assign({
   "Your words": ["Vos mots","Deine Wörter","Tus palabras","Le tue parole","Suas palavras","Jouw woorden","Twoje słowa","Dina ord"],
   "e.g. with": ["p. ex. avec","z. B. with","p. ej., con","es. with","ex.: with","bijv. with","np. with","t.ex. with"],
   "Add a word": ["Ajouter un mot","Wort hinzufügen","Añadir una palabra","Aggiungi una parola","Adicionar palavra","Woord toevoegen","Dodaj słowo","Lägg till ett ord"],
+  "Update": ["Mettre à jour","Aktualisieren","Actualizar","Aggiorna","Atualizar","Bijwerken","Aktualizuj","Uppdatera"],
 })
 
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
