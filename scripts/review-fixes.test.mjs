@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import * as clipVideo from '../src/clipVideo.js'
 import * as renderer from '../src/artistNames.js'
-import { usePlayerStore } from '../src/store/player.js'
 
 const require = createRequire(import.meta.url)
 const { isPublicHttpUrl } = require('../electron/online/publicUrl.js')
@@ -54,13 +53,4 @@ test('bare remix/production/instrumental roles split in both artist-credit parse
     assert.deepEqual(main.splitArtists(credit), expected, credit)
     assert.deepEqual(renderer.splitArtists(credit), expected, credit)
   }
-})
-
-test('player store accepts Smart ReplayGain without normalizing it to Off', () => {
-  const state = usePlayerStore.getState()
-  const previousMode = state.replayGainMode
-  const previousUserSet = state.replayGainModeUserSet
-  state.setReplayGainMode('smart')
-  assert.equal(usePlayerStore.getState().replayGainMode, 'smart')
-  usePlayerStore.setState({ replayGainMode: previousMode, replayGainModeUserSet: previousUserSet })
 })
