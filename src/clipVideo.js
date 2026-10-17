@@ -28,7 +28,9 @@ export function clipOpenUrl(text) {
   const value = clipVideoLink(text)
   if (!value || /^(?:https?|file):/i.test(value)) return value
   const path = value.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/%3A/g, ':')
-  return path.startsWith('//') ? `file:${path}` : `file:///${path}`
+  if (path.startsWith('//')) return `file:${path}`
+  if (path.startsWith('/')) return `file://${path}`
+  return `file:///${path}`
 }
 
 /** A time field as typed: anything but a digit becomes ":" (one at a time). */
