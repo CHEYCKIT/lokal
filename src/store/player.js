@@ -141,7 +141,7 @@ function readOutputDevice() {
   try { return localStorage.getItem('lokal-output-device') || 'default' } catch { return 'default' }
 }
 
-const normalizeReplayGainMode = value => ['off', 'track', 'album'].includes(value) ? value : 'off'
+const normalizeReplayGainMode = value => ['off', 'track', 'album', 'smart'].includes(value) ? value : 'off'
 function readReplayGainModeSetting() {
   try { return normalizeReplayGainMode(localStorage.getItem('lokal-replaygain-mode')) } catch { return 'off' }
 }
