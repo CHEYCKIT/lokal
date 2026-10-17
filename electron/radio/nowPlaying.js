@@ -15,16 +15,29 @@ const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : undefi
 const RATE_LIMIT_RETRY_MS = 1500
 
 async function getJson(url, fetchImpl, { retryRateLimit = true } = {}) {
+  const { isPublicHttpUrl } = require('../online/publicUrl')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const response = await fetchImpl(url, { signal: controller.signal, headers: { Accept: 'application/json' } })
+    let target = new URL(String(url))
+    let response = null
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      if (!(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) return null
+      response = await fetchImpl(target.href, { signal: controller.signal, redirect: 'manual', headers: { Accept: 'application/json' } })
+      if (![301, 302, 303, 307, 308].includes(response.status)) break
+      const location = response.headers?.get?.('location')
+      try { await response.body?.cancel?.() } catch {}
+      if (!location || redirects === 5) return null
+      target = new URL(location, target)
+      response = null
+    }
+    if (!response) return null
     // Too many requests in a row (Radio Record answers 429 to back-to-back
     // ones): once more after a pause.
     if (response.status === 429 && retryRateLimit) {
       clearTimeout(timer)
       await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_MS))
-      return getJson(url, fetchImpl, { retryRateLimit: false })
+      return getJson(target.href, fetchImpl, { retryRateLimit: false })
     }
     if (!response.ok) return null
     return await response.json()
