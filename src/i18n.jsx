@@ -2014,6 +2014,7 @@ const ROWS = Object.assign({
   "Icon": ["Icône","Symbol","Icono","Icona","Ícone","Pictogram","Ikona","Ikon"],
   "No {genre} songs.": ["Aucun morceau « {genre} ».","Keine Titel des Genres „{genre}“.","No hay canciones de «{genre}».","Nessun brano di genere «{genre}».","Nenhuma faixa de «{genre}».","Geen nummers van het genre ‘{genre}’.","Brak utworów z gatunku „{genre}”.","Inga låtar i genren ”{genre}”."],
   "No {genre} songs from this source.": ["Aucun morceau « {genre} » provenant de cette source.","Keine Titel des Genres „{genre}“ aus dieser Quelle.","No hay canciones de «{genre}» de esta fuente.","Nessun brano di genere «{genre}» da questa fonte.","Nenhuma faixa de «{genre}» desta fonte.","Geen nummers van ‘{genre}’ van deze bron.","Brak utworów z gatunku „{genre}” z tego źródła.","Inga låtar i genren ”{genre}” från den här källan."],
+  "Start artist radio": ["Lancer la radio de l’artiste","Künstlerradio starten","Iniciar radio del artista","Avvia radio dell’artista","Iniciar rádio do artista","Artiestenradio starten","Uruchom radio wykonawcy","Starta artistradio"],
 })
 
 const TRANSLATIONS = Object.fromEntries(Object.entries(ROWS).map(([phrase, values]) => [
