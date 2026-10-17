@@ -299,14 +299,6 @@ export default function Library() {
             <button onClick={() => setView('list')} aria-label={t("List view")} className={`p-1.5 transition-colors ${view === 'list' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><List size={14} /></button>
             <button onClick={() => setView('grid')} aria-label={t("Grid view")} className={`p-1.5 transition-colors ${view === 'grid' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}><LayoutGrid size={14} /></button>
           </div>
-          <button
-            type="button"
-            onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
-            aria-pressed={libraryMode === 'advanced'}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
-          >
-            {libraryMode === 'simple' ? t('Advanced') : t('Simple')}
-          </button>
         </div>
       </div>
 
@@ -326,23 +318,29 @@ export default function Library() {
                   : `${folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)} ${(folderData.totalTracks != null ? folderData.totalTracks : (folderData.tracks?.length || 0)) === 1 ? t('track') : t('tracks')} · ${folderData.relativePath || folderData.rootName}`)
               : t('Browse your music folders')}
         </p>
-        {playAllTracks.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            {libraryMode === 'advanced' ? (
-              <>
-                <button onClick={() => playQueue(playAllTracks, 0, { type: 'library-folder' })} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play')}</button>
-                <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
-                <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, { type: 'library-folder' }) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => playQueue(playAllTracks, 0, null)} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play All')}</button>
-                <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
-                <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, null) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
-              </>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {playAllTracks.length > 0 && (libraryMode === 'advanced' ? (
+            <>
+              <button onClick={() => playQueue(playAllTracks, 0, { type: 'library-folder' })} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play')}</button>
+              <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
+              <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, { type: 'library-folder' }) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => playQueue(playAllTracks, 0, null)} className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90"><Play size={15} fill="currentColor" /> {t('Play All')}</button>
+              <button onClick={() => playNextMany(playAllTracks)} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Clock size={15} /> {t('Play next')}</button>
+              <button onClick={() => { const list = shuffledLibraryTracks(playAllTracks); if (list.length) playQueue(list, 0, null) }} className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-white transition-colors hover:border-accent/50"><Shuffle size={15} /> {t('Shuffle')}</button>
+            </>
+          ))}
+          <button
+            type="button"
+            onClick={() => setLibraryMode(libraryMode === 'simple' ? 'advanced' : 'simple')}
+            aria-pressed={libraryMode === 'advanced'}
+            className={`inline-flex items-center rounded-full border px-4 py-2 text-sm transition-colors ${libraryMode === 'advanced' ? 'border-accent/40 bg-accent/15 text-accent' : 'border-border bg-elevated text-muted hover:text-white'}`}
+          >
+            {libraryMode === 'simple' ? t('Advanced') : t('Simple')}
+          </button>
+        </div>
       </div>
 
       {libraryMode === 'advanced' && (
