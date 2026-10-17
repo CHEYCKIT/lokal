@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, ChevronRight, Folder, Music, Search } from 'lucide-react'
 import { api } from '../api'
 import { isSuspect, tierOf } from '../quality'
+import { fetchAllErrorTrackIds, getFolderPlaybackTracks } from '../libraryHelpers'
 import TrackList from './TrackList'
 import FadeImg from './FadeImg'
 import { useTranslation } from '../i18n'
@@ -55,11 +56,11 @@ export default function LibraryFolderBrowser({
       return
     }
     let active = true
-    api.getTracks({ problems: true, limit: 10000, offset: 0, sort: 'added_at DESC' })
-      .then(rows => { if (active) setErrorTrackIds(new Set((Array.isArray(rows) ? rows : []).map(track => String(track.id)))) })
+    fetchAllErrorTrackIds(options => api.getTracks(options))
+      .then(ids => { if (active) setErrorTrackIds(ids) })
       .catch(() => { if (active) setErrorTrackIds(new Set()) })
     return () => { active = false }
-  }, [filters.source])
+  }, [filters.source, refreshKey])
 
   // Folder navigation history stack
   const [history, setHistory] = useState([folderPath || ''])
@@ -239,12 +240,14 @@ export default function LibraryFolderBrowser({
     ))
   }, [data?.deepTracks, visibleTracks, term, matchesFilters, sortTracks])
 
-  const allVisibleTracks = useMemo(() => {
-    if (!term && !data?.tracks?.length && data?.allTracks?.length) {
-      return sortTracks(data.allTracks.filter(matchesFilters))
-    }
-    return [...visibleTracks, ...matchingDeepTracks]
-  }, [data?.tracks?.length, data?.allTracks, term, visibleTracks, matchingDeepTracks, sortTracks, matchesFilters])
+  const allVisibleTracks = useMemo(() => getFolderPlaybackTracks({
+    term,
+    directTracks: visibleTracks,
+    deepTracks: matchingDeepTracks,
+    allTracks: data?.allTracks || [],
+    matchesFilters,
+    sortTracks,
+  }), [term, visibleTracks, matchingDeepTracks, data?.allTracks, matchesFilters, sortTracks])
 
   // Sync with parent for Play All and status header
   useEffect(() => {

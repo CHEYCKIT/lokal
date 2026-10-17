@@ -11,6 +11,7 @@ import { api } from '../api'
 import { useCachedState, usePageReady } from '../pageCache'
 import { useTranslation } from '../i18n'
 import { playNextMany } from '../trackActions'
+import { shuffledLibraryTracks } from '../libraryHelpers'
 
 const LIBRARY_PAGE_SIZE = 50
 const HEAVY_GRID_THRESHOLD = 80

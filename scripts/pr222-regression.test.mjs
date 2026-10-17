@@ -1,0 +1,73 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+import { fetchAllErrorTrackIds, getFolderPlaybackTracks, shuffledLibraryTracks } from '../src/libraryHelpers.js'
+
+const require = createRequire(import.meta.url)
+const { classifyCodec, playbackCopyPlan, afconvertArgs } = require('../electron/download/convert.js')
+
+test('Errors lookup pages beyond the IPC 5,000-row maximum', async () => {
+  const total = 12003
+  const calls = []
+  const getTracks = async ({ problems, limit, offset, sort }) => {
+    calls.push({ problems, limit, offset, sort })
+    return Array.from({ length: Math.min(limit, total - offset) }, (_, i) => ({ id: offset + i }))
+  }
+  const ids = await fetchAllErrorTrackIds(getTracks)
+  assert.equal(ids.size, total)
+  assert.equal(calls.length, 3)
+  assert.deepEqual(calls.map(call => call.offset), [0, 5000, 10000])
+  assert.ok(calls.every(call => call.problems && call.limit === 5000 && call.sort === 'added_at DESC'))
+})
+
+test('folder playback includes filtered descendant tracks and globally sorts mixed search results', () => {
+  const allTracks = [
+    { id: 'z', title: 'Zebra', error: false },
+    { id: 'a', title: 'Apple', error: false },
+    { id: 'm', title: 'Melon', error: true },
+  ]
+  const sorted = list => [...list].sort((a, b) => a.title.localeCompare(b.title))
+  const filteredDescendants = getFolderPlaybackTracks({
+    term: '',
+    directTracks: [],
+    deepTracks: [],
+    allTracks,
+    matchesFilters: track => !track.error,
+    sortTracks: sorted,
+  })
+  assert.deepEqual(filteredDescendants.map(track => track.id), ['a', 'z'])
+
+  const mixedSearch = getFolderPlaybackTracks({
+    term: 'a',
+    directTracks: [{ id: 'z', title: 'Zebra' }],
+    deepTracks: [{ id: 'a', title: 'Apple' }],
+    allTracks,
+    sortTracks: sorted,
+  })
+  assert.deepEqual(mixedSearch.map(track => track.id), ['a', 'z'])
+})
+
+test('Shuffle returns a permutation without mutating the source list', () => {
+  const tracks = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+  const shuffled = shuffledLibraryTracks(tracks)
+  assert.deepEqual([...shuffled].sort((a, b) => a.id - b.id), tracks)
+  assert.notStrictEqual(shuffled, tracks)
+  assert.deepEqual(tracks.map(track => track.id), [1, 2, 3, 4])
+  assert.deepEqual(shuffledLibraryTracks(null), [])
+})
+
+test('ALAC aliases are classified as unplayable lossless audio', () => {
+  for (const codec of ['ALAC', 'Apple Lossless', 'Apple Lossless Audio Codec']) {
+    assert.deepEqual(classifyCodec(codec), { codec, lossless: true, unplayable: true })
+  }
+})
+
+test('macOS uses built-in afconvert for ALAC when FFmpeg is unavailable', () => {
+  const info = { codec: 'ALAC', lossless: true, unplayable: true }
+  assert.deepEqual(playbackCopyPlan(info, null, 'darwin'), { converter: 'afconvert', extension: '.wav' })
+  assert.deepEqual(afconvertArgs('/Music/track.m4a', '/cache/track.wav'), [
+    '-f', 'WAVE', '-d', 'LEF32', '/Music/track.m4a', '/cache/track.wav',
+  ])
+  assert.deepEqual(playbackCopyPlan(info, '/usr/local/bin/ffmpeg', 'darwin'), { converter: 'ffmpeg', extension: '.flac' })
+  assert.deepEqual(playbackCopyPlan(info, null, 'win32'), { converter: 'ffmpeg', extension: '.flac' })
+})

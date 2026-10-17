@@ -23,6 +23,7 @@ function metadata() {
 }
 
 /** Codecs Chromium can't play, by music-metadata's codec name. */
+const ALAC_CODEC = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?)/i
 const UNPLAYABLE = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|WMA|Windows Media|DSD|DST|MLP|TrueHD|AC-?3|E-AC-?3|DTS)/i
 const LOSSLESS = /^(?:ALAC|Apple\s+Lossless(?:\s+Audio\s+Codec)?|APE|Monkey|WavPack|TTA|DSD|DST|MLP|TrueHD|FLAC|PCM)/i
 
@@ -37,6 +38,23 @@ function classifyCodec(codecValue, formatLossless = false, containerValue = '') 
     lossless: !!formatLossless || LOSSLESS.test(codec),
     unplayable: UNPLAYABLE.test(codec),
   }
+}
+
+/**
+ * macOS ships Core Audio's afconvert even when FFmpeg is not installed.
+ * Chromium doesn't decode ALAC, so use Core Audio to make a float-PCM WAV that
+ * Chromium can play without requiring users to install an external utility.
+ */
+function playbackCopyPlan(info, ffmpeg, platform = process.platform) {
+  const useAfconvert = platform === 'darwin' && !ffmpeg && ALAC_CODEC.test(String(info?.codec || ''))
+  return {
+    converter: useAfconvert ? 'afconvert' : 'ffmpeg',
+    extension: useAfconvert ? '.wav' : info?.lossless ? '.flac' : '.m4a',
+  }
+}
+
+function afconvertArgs(src, dest) {
+  return ['-f', 'WAVE', '-d', 'LEF32', src, dest]
 }
 
 async function probe(filePath) {
@@ -150,8 +168,9 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
     probed.set(memo, info)
   }
   if (!info?.unplayable) return null
+  const plan = playbackCopyPlan(info, ffmpeg)
   fs.mkdirSync(cacheDir, { recursive: true })
-  const dest = path.join(cacheDir, cacheKey(filePath, stat) + (info.lossless ? '.flac' : '.m4a'))
+  const dest = path.join(cacheDir, cacheKey(filePath, stat) + plan.extension)
   if (fs.existsSync(dest)) {
     try { const now = new Date(); fs.utimesSync(dest, now, now) } catch {}
     return dest
@@ -160,7 +179,11 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   const job = (async () => {
     const temp = `${dest}.part${path.extname(dest)}`
     try {
-      await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
+      if (plan.converter === 'afconvert') {
+        await run('/usr/bin/afconvert', afconvertArgs(filePath, temp))
+      } else {
+        await run(ffmpeg, convertArgs(filePath, temp, info.lossless))
+      }
       fs.renameSync(temp, dest)
       trimCache(cacheDir, dest)
       return dest
@@ -173,4 +196,4 @@ async function playableCopy(filePath, { ffmpeg, cacheDir } = {}) {
   return job
 }
 
-module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs }
+module.exports = { probe, classifyCodec, makePlayable, playableCopy, convertArgs, playbackCopyPlan, afconvertArgs }
