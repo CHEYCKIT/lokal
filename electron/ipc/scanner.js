@@ -1485,7 +1485,12 @@ function registerScannerHandlers(ipcMain) {
     if (updates.length === 0) return { error: 'No fields to update' }
 
     // Keep editable metadata in the audio file so a later rescan doesn't restore old tags.
-    const tagEdits = require('../fileComment').fileTagEdits(data || {})
+    const tagData = { ...(data || {}) }
+    if (tagData.genre !== undefined && tagData.genres === undefined) {
+      const existingGenres = String(currentTrack.genres || currentTrack.genre || '').split(',').map(value => value.trim()).filter(Boolean)
+      tagData.genres = [...new Set([String(tagData.genre || '').trim(), ...existingGenres].filter(Boolean))]
+    }
+    const tagEdits = require('../fileComment').fileTagEdits(tagData)
     if (Object.keys(tagEdits).length && !String(currentTrack.file_path || '').startsWith('ghost://') && fs.existsSync(currentTrack.file_path)) {
       try { require('../fileComment').writeFileTags(currentTrack.file_path, tagEdits); wroteFile = true }
       catch (e) { return { error: `Couldn't save the tags into the file: ${e.message}` } }
