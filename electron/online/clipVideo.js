@@ -44,7 +44,7 @@ function localPath(text) {
 
 // The best picture without HLS/DASH manifests (the player only reads plain
 // HTTP files): video-only is fine, the clip plays muted.
-const FORMAT = 'bv*[protocol^=http][height<=1080]/b[protocol^=http][height<=1080]/bv*[protocol^=http]/b[protocol^=http]/b'
+const FORMAT = 'bv*[protocol^=http][height<=1080]/b[protocol^=http][height<=1080]/bv*[protocol^=http]/b[protocol^=http]/b[protocol^=http]'
 
 function ytdlpDirectLink(link, { ytdlp, settings, spawnImpl = spawn, timeoutMs = YTDLP_TIMEOUT_MS }) {
   if (!ytdlp) return Promise.resolve({ error: 'yt-dlp is not installed' })
