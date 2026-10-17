@@ -30,10 +30,22 @@
       "public/lokal-icon.png"
     ],
     "extraResources": [
-      { "from": "public/remote.html", "to": "public/remote.html" },
-      { "from": "public/remote-manifest.json", "to": "public/remote-manifest.json" },
-      { "from": "public/remote-sw.js", "to": "public/remote-sw.js" },
-      { "from": "public/lokal-icon.png", "to": "public/lokal-icon.png" }
+      {
+        "from": "public/remote.html",
+        "to": "public/remote.html"
+      },
+      {
+        "from": "public/remote-manifest.json",
+        "to": "public/remote-manifest.json"
+      },
+      {
+        "from": "public/remote-sw.js",
+        "to": "public/remote-sw.js"
+      },
+      {
+        "from": "public/lokal-icon.png",
+        "to": "public/lokal-icon.png"
+      }
     ],
     "asar": true,
     "asarUnpack": [
@@ -134,7 +146,9 @@
     "sharp": "^0.35.5",
     "tough-cookie": "6.0.0",
     "yauzl": "^3.4.0",
-    "youtubei.js": "^17.2.0"
+    "youtubei.js": "^17.2.0",
+    "three": "^0.175.0",
+    "icecast-metadata-player": "1.17.13"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

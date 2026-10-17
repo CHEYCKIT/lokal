@@ -1013,6 +1013,25 @@ class DownloadManager {
     try { return !!require('../spotiflac/packages').service(this.db()).find(source.provider.slice(2)) } catch { return false }
   }
 
+  async downloadPackageWithVerification(key, id, options, { onVerificationRequired, onVerificationComplete } = {}) {
+    const packages = require('../spotiflac/packages').service(this.db())
+    const download = () => packages.download(key, id, options)
+    try {
+      return await download()
+    } catch (error) {
+      const needsVerification = error?.needsVerification === true ||
+        [error?.errorType, error?.code, error?.message].some(value => /\bVERIFY_REQUIRED\b|verification required/i.test(String(value || '')))
+      if (!needsVerification || !this.deps.verifyAddonAccess) throw error
+      onVerificationRequired?.()
+      const verification = await this.deps.verifyAddonAccess(key)
+      if (!verification?.authenticated) {
+        throw new Error(verification?.error || 'Addon verification was not completed. The download was not retried.')
+      }
+      onVerificationComplete?.()
+      return download()
+    }
+  }
+
   startPackage(job) {
     const controller = new AbortController(), runId = Symbol('package-run')
     job.packageAbort = controller; job.packageRunId = runId; job.startedAt = Date.now(); job.stop = null; job.exited = false
@@ -1021,9 +1040,12 @@ class DownloadManager {
     let artifact
     Promise.resolve().then(async () => {
       const { provider, id } = job.opts.addonSource
-      artifact = await require('../spotiflac/packages').service(this.db()).download(provider.slice(2), id, {
+      artifact = await this.downloadPackageWithVerification(provider.slice(2), id, {
         signal: controller.signal, quality: job.opts.addonQuality,
         onProgress: update => { if (job.packageRunId === runId && !job.stop) this.update(job, { progress: update.percent ?? job.progress, message: update.message || 'Downloading addon audio…' }) },
+      }, {
+        onVerificationRequired: () => this.update(job, { message: 'Waiting for addon verification…' }),
+        onVerificationComplete: () => this.update(job, { message: 'Verification complete. Retrying addon download…' }),
       })
       controller.signal.throwIfAborted()
       const outputDir = job.opts.outputDir || job.settings.music_folder || path.join(os.homedir(), 'Music')
@@ -1041,7 +1063,7 @@ class DownloadManager {
       await this.onExit(job, 0)
     }).catch(error => {
       if (job.stop) this.update(job, { status: job.stop === 'suspend' ? 'queued' : 'cancelled', message: job.stop === 'suspend' ? 'Resuming…' : 'Cancelled', finishedAt: job.stop === 'suspend' ? null : Date.now() }, { persist: true })
-      else this.fail(job, error.message)
+      else this.fail(job, error?.message || String(error))
     }).finally(async () => {
       await artifact?.cleanup()
       if (job.packageRunId === runId) job.packageAbort = null

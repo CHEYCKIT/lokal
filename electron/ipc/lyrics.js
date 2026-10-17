@@ -17,6 +17,27 @@ function registerLyricsHandlers(ipcMain) {
 
   ipcMain.handle('lyrics:sources', () => service.sources(db))
 
+  const fileLyrics = require('../lyrics/fileLyrics')
+  const trackFilePath = trackId => {
+    const row = db.prepare("SELECT file_path FROM tracks WHERE id = ?").get(trackId)
+    if (!row?.file_path || String(row.file_path).startsWith('ghost://')) throw new Error('This song has no local audio file')
+    return row.file_path
+  }
+  ipcMain.handle('lyrics:readFile', async (_, trackId) => fileLyrics.readFileLyrics(trackFilePath(trackId)))
+  ipcMain.handle('lyrics:writeFile', (_, trackId, text) => {
+    const result = fileLyrics.writeFileLyrics(trackFilePath(trackId), text)
+    try { db.prepare('UPDATE tracks SET lyrics_kind = ? WHERE id = ?').run(fileLyrics.lyricsKind(text), trackId) } catch {}
+    return result
+  })
+  ipcMain.handle('lyrics:embedFrom', async (_, providerId, trackId, title, artist, album, duration) => {
+    const result = await service.getLyricsFrom(db, { trackId, title, artist, album, duration }, providerId)
+    if (!result || (!result.lines?.length && !result.instrumental)) throw new Error('That lyrics source has no lyrics to insert')
+    const { text, privateTag } = fileLyrics.fromResult(result)
+    const written = fileLyrics.writeFileLyrics(trackFilePath(trackId), text, privateTag)
+    try { db.prepare('UPDATE tracks SET lyrics_kind = ? WHERE id = ?').run(fileLyrics.lyricsKind(text), trackId) } catch {}
+    return { ...written, source: providerId }
+  })
+
   ipcMain.handle('lyrics:import', (_, trackId, content, type) =>
     service.importLyrics(db, trackId, content, type))
 

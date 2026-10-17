@@ -1,17 +1,25 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
+import SideVisualLyrics from './SideVisualLyrics'
+import GenrePopover from './GenrePopover'
+import { trackGenreList } from '../genres'
+import PowerCircle from '../visualizers/PowerCircle'
+import Anomaly from '../visualizers/Anomaly'
+import Spectrum from '../visualizers/Spectrum'
+import Waves from '../visualizers/Waves'
+import Lightning from '../visualizers/Lightning'
 import { QueueContent } from './QueuePanel'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import { useMotionCoverOff } from '../motionCoverPrefs'
 import MixCovers from './MixCovers'
 import { useMusicVideo, useMusicVideoView } from '../musicVideo'
-import { api, wordSyncEnabled } from '../api'
+import { api, peekSettings, wordSyncEnabled } from '../api'
 import { useTranslation } from '../i18n'
 import {
   contextLabel,
@@ -22,6 +30,7 @@ import {
 import TrackArtistLinks from './TrackArtistLinks'
 import { cacheLyrics, peekLyrics, hasLyricLines } from '../lyrics/lyricsCache'
 import { isOnlineTrack } from '../onlineBrowse'
+import { isStationTrack } from '../radio/stations'
 import { isStreamed, trackArtURL } from '../onlineTracks'
 
 import ContextMenu, { useContextMenu } from './ContextMenu'
@@ -29,6 +38,20 @@ import { openRadio } from '../radioActions'
 import LikeBurst from './LikeBurst'
 import { showToast } from './Toaster'
 import { losslessMenuItem } from '../quality'
+
+const folderPathForTrack = (trackPath, musicRoot) => {
+  if (!trackPath || String(trackPath).startsWith('ghost://') || !musicRoot) return null
+  const rootOriginal = String(musicRoot).replace(/\\/g, '/')
+  let root = rootOriginal.replace(/\/+$/, '').replace(/^([a-z]:)$/i, '$1/') || (rootOriginal.startsWith('/') ? '/' : '')
+  const track = String(trackPath).replace(/\\/g, '/')
+  const windowsPath = /^[a-z]:\//i.test(root) || root.startsWith('//')
+  const rootCompare = windowsPath ? root.toLowerCase() : root
+  const trackCompare = windowsPath ? track.toLowerCase() : track
+  const prefix = rootCompare.endsWith('/') ? rootCompare : `${rootCompare}/`
+  if (trackCompare !== rootCompare && !trackCompare.startsWith(prefix)) return null
+  const relative = track.slice(root.length).replace(/^\/+/, '')
+  return relative.split('/').slice(0, -1).join('/')
+}
 
 // "Music" is a placeholder some files carry, not a genre.
 const isPlaceholderGenre = genre => !String(genre || '').trim() || String(genre).trim().toLowerCase() === 'music'
@@ -90,6 +113,7 @@ export default function RightSidebar() {
   }
   const nav = useNavigate()
   const menu = useContextMenu()
+  const [genrePopover, setGenrePopover] = useState(null)
   const likeBusy = useRef(false)
   const burstTimer = useRef(null)
   const [burst, setBurst] = useState(null)
@@ -155,6 +179,16 @@ export default function RightSidebar() {
     return () => window.removeEventListener('lokal:settings-saved', loadSettings)
   }, [sidePanelView, infoCardView])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
+  const sideVisualizer = (() => {
+    const mode = settings.side_panel_visual || 'power-circle'
+    const className = 'absolute inset-0 h-full w-full'
+    if (mode === 'off') return null
+    if (mode === 'spectrum') return <Spectrum isPlaying={isPlaying} bars={90} barWidth={3} height={150} strength={0.8} opacity={0.65} radius={1} className={className} />
+    if (mode === 'waves') return <Waves isPlaying={isPlaying} width={320} height={180} strength={1.1} opacity={0.8} className={className} />
+    if (mode === 'lightning') return <Lightning isPlaying={isPlaying} strength={1.1} opacity={0.85} className={className} />
+    if (mode === 'anomaly') return <Anomaly sensitivity={5} size={1.15} color="accent" className={className} />
+    return <PowerCircle className={className} background={fx ? '#050505' : 'rgb(var(--surface-rgb))'} />
+  })()
 
   // The cover's top-left corner shows a Lyrics button when the song has
   // lyrics: looked up the first time the pointer gets there (or already
@@ -286,7 +320,7 @@ export default function RightSidebar() {
   const artSrc = trackArtURL(currentTrack)
 
   const doubleClickLike = async event => {
-    if (!currentTrack || likeBusy.current || event.target.closest?.('button, a, input, [role="slider"]')) return
+    if (!currentTrack || isStationTrack(currentTrack) || likeBusy.current || event.target.closest?.('button, a, input, [role="slider"]')) return
     likeBusy.current = true
     const liked = likedIds.has(currentTrack.id)
     setBurst({ id: Date.now(), trackId: currentTrack.id, kind: liked ? 'unlike' : 'like' })
@@ -299,12 +333,20 @@ export default function RightSidebar() {
     } catch (error) { setBurst(null); showToast(error.message || 'Could not update this song’s like.') } finally { likeBusy.current = false }
   }
 
+  const openCurrentTrackFolder = async () => {
+    const root = peekSettings()?.music_folder || (await api.getSettings())?.music_folder
+    const relativePath = folderPathForTrack(currentTrack?.file_path, root)
+    if (relativePath === null) return
+    nav('/library', { state: { openFolder: relativePath } })
+  }
+
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
-      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
+      !isStationTrack(currentTrack) && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: 'Open folder in Library', icon: FolderOpen, onSelect: openCurrentTrackFolder },
+      !isStationTrack(currentTrack) && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
       currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
-      losslessMenuItem(currentTrack, Gem),
+      !isStationTrack(currentTrack) && losslessMenuItem(currentTrack, Gem),
     ].filter(Boolean))
   }
 
@@ -330,7 +372,7 @@ export default function RightSidebar() {
       )}
     </div>
   ) : null
-  const hasAlbumLink = !!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))
+  const hasAlbumLink = !isStationTrack(currentTrack) && (!!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))
 
   return (
     <>
@@ -441,7 +483,7 @@ export default function RightSidebar() {
 
                   {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
                     <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                      {currentTrack?.album || (isOnlineTrack(currentTrack) && (currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)) ? (
+                      {!isStationTrack(currentTrack) && (currentTrack?.album || (isOnlineTrack(currentTrack) && (currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))) ? (
                         <button
                           onClick={() => navigateToTrackAlbum(nav, currentTrack)}
                           onContextMenu={openTrackMenu}
@@ -496,7 +538,16 @@ export default function RightSidebar() {
                   {currentTrack && (
                     infoCardView === 'lyrics' ? (
                       <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
-                        <LyricsPanel track={currentTrack} progress={progress} wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
+                        <SideVisualLyrics
+                          track={currentTrack}
+                          progress={progress}
+                          visual={sideVisualizer}
+                          visualBg={fx ? '#050505' : 'rgb(var(--surface-rgb))'}
+                          coverOff={coverOff}
+                          wordSync={wordSync}
+                          textScale={1.4}
+                          isAutoSynced={isAutoSynced}
+                        />
                       </div>
                     ) : (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
@@ -509,7 +560,19 @@ export default function RightSidebar() {
                       />
                       {currentTrack.album_artist && currentTrack.album_artist !== currentTrack.artist && <InfoRow fx={fx} label={t("Alb. Artist")} value={currentTrack.album_artist} />}
                       <InfoRow fx={fx} label={t("Year")} value={currentTrack.year} />
-                      <InfoRow fx={fx} label={t("Genre")} value={genre} />
+                      {!isStationTrack(currentTrack) && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') ? (
+                        <div className={`flex items-start gap-3 py-1.5 border-b border-white/10`}>
+                          <span className={`text-xs font-display uppercase tracking-wider w-20 flex-shrink-0 pt-0.5 ${fx ? 'text-white/45' : 'text-muted'}`}>{t('Genre')}</span>
+                          <button type="button" onClick={event => {
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setGenrePopover({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })
+                          }}
+                            title={t('Edit genres')}
+                            className="text-xs text-white/70 leading-relaxed break-all text-left hover:text-accent hover:underline transition-colors">
+                            {trackGenreList(currentTrack).join(', ') || t('Add a genre…')}
+                          </button>
+                        </div>
+                      ) : <InfoRow fx={fx} label={t("Genre")} value={genre} />}
                       <InfoRow fx={fx} label={t("Track #")} value={currentTrack.track_num ? `${currentTrack.track_num}` : null} />
                       <InfoRow fx={fx} label={t("Bitrate")} value={currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : null} />
                       {/* A stream (an addon's) has no file to measure: what the source says of it. */}
@@ -574,6 +637,17 @@ export default function RightSidebar() {
           </div>
           </motion.div>
         </motion.aside>
+      )}
+      {genrePopover && currentTrack && (
+        <GenrePopover
+          track={currentTrack}
+          anchor={genrePopover}
+          onClose={() => setGenrePopover(null)}
+          onSaved={updated => {
+            usePlayerStore.getState().replaceCurrentTrack(currentTrack.id, updated)
+            window.dispatchEvent(new Event('lokal:refresh'))
+          }}
+        />
       )}
       <ContextMenu menu={menu} />
     </>

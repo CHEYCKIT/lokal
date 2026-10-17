@@ -3,6 +3,7 @@ import { packQueue, unpackQueue, QUEUE_KEYS } from '../queueStorage.js'
 import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
 import { CROSSFADE_DEFAULTS } from '../audio/crossfade.js'
+import { isStationTrack } from '../radio/stations'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
@@ -579,9 +580,11 @@ export const usePlayerStore = create((set, get) => ({
       progress, audioRef, cfAudioRef, activeAudioElement, playHistory, futureHistory
     } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
-    
-    if (progress > 3 && outputRoute) { outputRoute.seek(0); set({ progress: 0 }); return }
-    if (progress > 3 && activeRef?.current) {
+    // A radio station is live: back means the previous station, never "restart".
+    const live = isStationTrack(get().currentTrack)
+
+    if (progress > 3 && !live && outputRoute) { outputRoute.seek(0); set({ progress: 0 }); return }
+    if (progress > 3 && !live && activeRef?.current) {
       activeRef.current.currentTime = 0
       return
     }
@@ -945,6 +948,7 @@ export const usePlayerStore = create((set, get) => ({
   setProgress: (v) => set({ progress: v }),
   setIsBuffering: (v) => set({ isBuffering: !!v }),
   setProgressWithAudioUpdate: (v) => {
+    if (isStationTrack(get().currentTrack)) return // live radio: nothing to seek
     if (outputRoute) { outputRoute.seek(v); set({ progress: v }); return }
     const { audioRef, cfAudioRef, activeAudioElement } = get()
     const activeRef = activeAudioElement === 'primary' ? audioRef : cfAudioRef
@@ -1181,6 +1185,10 @@ export const usePlayerStore = create((set, get) => ({
     return { likedIds: next }
   }),
   initLiked: (ids) => set({ likedIds: new Set(ids) }),
+  // Online radio: the song a station is playing now (title, artist, cover...)
+  // goes on the current entry only. The queue keeps the stations as they are,
+  // and nothing else hears about it (it isn't a library song).
+  patchStationTrack: (id, patch) => set(state => (state.currentTrack?.id === id ? { currentTrack: { ...state.currentTrack, ...patch } } : {})),
   syncTrack: (track) => { announceTrackUpdates([track]); set((state) => {
     if (!track?.id) return state
     const syncList = (list) => sanitizeTrackList(Array.isArray(list) ? list.map(item => item?.id === track.id ? { ...item, ...track } : item) : list)

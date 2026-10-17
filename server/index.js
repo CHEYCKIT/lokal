@@ -9,6 +9,7 @@ const { initDB, getDB, getStorageDir } = require('../electron/ipc/db')
 const { httpsImageURL } = require('../electron/playlists/remoteCover')
 const { initPlugins } = require('../electron/ipc/plugins')
 initDB()
+try { require('../electron/genreList').registerGenreFunctions(getDB()) } catch (error) { console.warn('Genre filters unavailable:', error.message) }
 initPlugins()
 console.log(`DB: ${getStorageDir()}`)
 
@@ -54,6 +55,7 @@ app.use('/api/albums', require('./routes/albums'))
 app.use('/api/lastfm', require('./routes/lastfm'))
 app.use('/api/listenbrainz', require('./routes/listenbrainz'))
 app.use('/api/online', require('./routes/online'))
+app.use('/api/radio', require('./routes/radio'))
 app.use('/api/remote', (req, res, next) => {
   if (!isPhoneRemoteEnabled()) return res.status(403).json({ error: 'Phone remote is disabled in Lokal Settings.', disabled: true })
   next()

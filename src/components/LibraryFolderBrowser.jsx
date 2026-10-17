@@ -6,6 +6,28 @@ import TrackList from './TrackList'
 import FadeImg from './FadeImg'
 import { useTranslation } from '../i18n'
 
+function FolderArtwork({ folder, artSrc }) {
+  const explicit = folder?.artwork_path
+    ? (api.isElectron ? api.fileURL(folder.artwork_path) : api.folderArtworkURL(folder.artwork_path))
+    : null
+  const covers = explicit ? [] : (Array.isArray(folder?.artwork_tracks) ? folder.artwork_tracks : [])
+    .map(track => track.artwork_path ? artSrc(track) : (track.artwork_url || (track.id ? api.artworkURL(track.id) : null)))
+    .filter(Boolean)
+    .slice(0, 4)
+
+  if (explicit) return <FadeImg src={explicit} alt="" className="h-full w-full object-cover" />
+  if (!covers.length) return null
+  if (covers.length === 1) return <FadeImg src={covers[0]} alt="" className="h-full w-full object-cover" />
+
+  return (
+    <div className={`grid h-full w-full overflow-hidden ${covers.length === 2 ? 'grid-cols-2 grid-rows-1' : 'grid-cols-2 grid-rows-2'}`}>
+      {covers.map((src, index) => (
+        <FadeImg key={src + ':' + index} src={src} alt="" className="h-full w-full min-h-0 min-w-0 object-cover" />
+      ))}
+    </div>
+  )
+}
+
 export default function LibraryFolderBrowser({
   folderPath,
   onFolderChange,
@@ -262,8 +284,11 @@ export default function LibraryFolderBrowser({
                   onClick={() => navigateToFolder(folder.path)}
                   className="group flex min-w-0 flex-col gap-2 text-left"
                 >
-                  <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/40 group-hover:bg-accent/5">
-                    <Folder size={42} strokeWidth={1.5} className="text-muted transition-colors group-hover:text-accent" />
+                  <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/40 group-hover:bg-accent/5">
+                    <FolderArtwork folder={folder} artSrc={artSrc} />
+                    {!folder.artwork_path && !(folder.artwork_tracks || []).length && (
+                      <Folder size={42} strokeWidth={1.5} className="text-muted transition-colors group-hover:text-accent" />
+                    )}
                   </div>
                   <div className="w-full min-w-0 px-1">
                     <p className="truncate text-xs font-medium text-white" title={folder.name}>{folder.name}</p>
@@ -285,7 +310,10 @@ export default function LibraryFolderBrowser({
                   onClick={() => navigateToFolder(folder.path)}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-elevated/80"
                 >
-                  <Folder size={17} className="flex-shrink-0 text-muted" />
+                  <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-elevated">
+                    <FolderArtwork folder={folder} artSrc={artSrc} />
+                    {!folder.artwork_path && !(folder.artwork_tracks || []).length && <Folder size={17} className="text-muted" />}
+                  </div>
                   <span className="min-w-0 flex-1 truncate text-sm text-white">{folder.name}</span>
                   {folder.trackCount != null && (
                     <span className="flex-shrink-0 text-xs text-muted">

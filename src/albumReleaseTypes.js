@@ -49,10 +49,15 @@ function saveResolved(cache, key, type) {
 export function applyCachedReleaseTypes(albums = []) {
   const cache = readCache()
   return albums.map(album => {
-    const type = normalizeType(cache[keyFor(album)]?.type)
-    return type && Number(album?.track_count || 0) <= 1
+    if (Number(album?.track_count || 0) > 1) return album
+    const entry = cachedEntry(cache, keyFor(album))
+    if (!entry) return album
+    const type = normalizeType(entry.type)
+    // A recent unsuccessful lookup is distinct from "not checked yet": keep
+    // missing/unrecognized release metadata in the explicit Unknown albums filter.
+    return type
       ? { ...album, release_type: type, release_type_source: 'online' }
-      : album
+      : { ...album, release_type: 'unknown', release_type_source: 'unknown' }
   })
 }
 

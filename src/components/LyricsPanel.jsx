@@ -8,6 +8,7 @@ import { api } from '../api'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { useLyricSubline } from '../lyrics/useLyricSubline'
 import { announceLyricsChanged } from '../lyricLine'
+import { isStationTrack, lyricsTrackFor, stationClockUnknown, stationSongTime } from '../radio/stations'
 import { usePlayerStore } from '../store/player'
 import { cacheLyrics, hasCachedLyrics, peekLyrics } from '../lyrics/lyricsCache'
 import {
@@ -49,6 +50,7 @@ export function useLyricClock(progress) {
   return useCallback(() => {
     const s = usePlayerStore.getState()
     const el = s.activeAudioElement === 'cf' ? s.cfAudioRef?.current : s.audioRef?.current
+    if (isStationTrack(s.currentTrack)) return el ? (stationSongTime(s.currentTrack, el.currentTime) ?? 0) : 0
     if (el && Number.isFinite(el.currentTime) && el.currentTime > 0) return el.currentTime
     const { t, at } = anchor.current
     return t + (s.isPlaying ? Math.min((performance.now() - at) / 1000, 0.6) : 0)
@@ -396,13 +398,14 @@ function Loading() {
 }
 
 export default function LyricsPanel({
-  track, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
+  track: shownTrack, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
   hideToolbar = false, compact = false,
   // The full screen player hides the buttons along with its own after a few
   // seconds without the mouse moving.
   toolbarHidden = false,
 }) {
   const { t } = useTranslation()
+  const track = useMemo(() => lyricsTrackFor(shownTrack), [shownTrack])
   const setProgressWithAudioUpdate = usePlayerStore(s => s.setProgressWithAudioUpdate)
   const now = useLyricClock(progress)
   const [result, setResult] = useState(() => (track?.id && hasCachedLyrics(track.id) ? peekLyrics(track.id) : null))
@@ -432,7 +435,7 @@ export default function LyricsPanel({
     () => withOutroBreak(result?.lines || [], { duration: track?.duration, crossfade: crossfadeSeconds, synced: result?.type === 'synced' }),
     [result, track?.duration, crossfadeSeconds],
   )
-  const synced = result?.type === 'synced'
+  const synced = result?.type === 'synced' && !stationClockUnknown(track)
 
   // ---- data
   const trackKey = track?.id
@@ -453,6 +456,15 @@ export default function LyricsPanel({
     const trackId = track.id
     if (!quiet) setLoading(true)
     setNotice('')
+    if (isStationTrack(track) && track.song_lyrics && !opts.refresh) {
+      const lines = String(track.song_lyrics).split(/\r?\n/).map(text => ({ text, time: null, words: [] })).filter(line => line.text.trim())
+      const next = lines.length ? { type: 'plain', lines, source: null } : null
+      cacheLyrics(trackId, next)
+      setBoundResult(trackId, next)
+      setLoading(false)
+      lastScrollIdx.current = -1
+      return
+    }
     api.getLyrics(track.id, track.title, track.artist, track.album, track.duration, track.file_path, opts)
       .then(r => {
         if (seq !== requestSeq.current) return
@@ -467,7 +479,7 @@ export default function LyricsPanel({
       })
       .catch(() => { if (seq === requestSeq.current && !quiet) setBoundResult(trackId, null) })
       .finally(() => { if (seq === requestSeq.current) setLoading(false) })
-  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path, setBoundResult])
+  }, [track?.id, track?.title, track?.artist, track?.album, track?.duration, track?.file_path, track?.song_key, track?.song_lyrics, setBoundResult])
 
   // Manual search. The fullscreen views bring their own drawer (onSearchRequest);
   // anywhere else -- the sidebar -- the panel opens one over itself.
@@ -687,6 +699,22 @@ export default function LyricsPanel({
     setProgressWithAudioUpdate(Math.max(0, time))
   }, [setProgressWithAudioUpdate])
 
+  const embedCurrentLyrics = async () => {
+    if (!track?.id || !result?.source || !api.isElectron || !track.file_path || String(track.file_path).startsWith('ghost://')) return
+    const label = sources.find(source => source.id === result.source)?.label || result.source
+    if (!window.confirm(t('Insert lyrics from {source} into this audio file? This modifies the file tags.', { source: label }))) return
+    setSourceBusy(true)
+    try {
+      await api.embedLyricsFrom(result.source, track.id, track.title, track.artist, track.album, track.duration)
+      setNotice(t('Lyrics inserted into the audio file.'))
+      announceLyricsChanged(track.id)
+    } catch (error) {
+      setNotice(error?.message || t('Could not insert lyrics into the audio file.'))
+    } finally {
+      setSourceBusy(false)
+    }
+  }
+
   const pickSource = (id) => {
     if (!track?.id) return
     const seq = ++requestSeq.current
@@ -743,16 +771,25 @@ export default function LyricsPanel({
           <div className="flex-1" />
           <div className={`flex min-w-0 items-center justify-end gap-1.5 ${toolbarHidden ? 'pointer-events-none' : 'pointer-events-auto'}`} inert={toolbarHidden}>
             {sources.length > 0 && result?.source && (
-              <SourceMenu
-                sources={sources}
-                current={result.source}
-                attempts={result.attempts}
-                busy={sourceBusy}
-                onPick={pickSource}
-                onRefresh={() => load({ refresh: true })}
-                onSearch={requestSearch}
-                hidden={toolbarHidden}
-              />
+              <>
+                <SourceMenu
+                  sources={sources}
+                  current={result.source}
+                  attempts={result.attempts}
+                  busy={sourceBusy}
+                  onPick={pickSource}
+                  onRefresh={() => load({ refresh: true })}
+                  onSearch={requestSearch}
+                  hidden={toolbarHidden}
+                />
+                {api.isElectron && track?.file_path && !String(track.file_path).startsWith('ghost://') && (
+                  <button type="button" onClick={embedCurrentLyrics} disabled={sourceBusy || loading}
+                    title={t('Insert these lyrics into the audio file')}
+                    className={`rounded-full px-2.5 py-1 text-[11px] text-white/60 hover:text-white bg-white/[0.08] hover:bg-white/[0.14] disabled:opacity-40 ${TOOLBAR_FADE}`}>
+                    {t('Insert into track')}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

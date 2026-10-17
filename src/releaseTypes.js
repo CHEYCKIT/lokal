@@ -11,11 +11,16 @@ export const RELEASE_TYPES = [
   ['single', 'Singles'],
   ['compilation', 'Compilations'],
   ['live', 'Live'],
+  ['unknown', 'Unknown albums'],
 ]
 const KNOWN = new Set(RELEASE_TYPES.map(([type]) => type))
 
-/** A release's type: one of RELEASE_TYPES ("album" when unknown). */
-export const releaseTypeOf = release => (KNOWN.has(release?.release_type) ? release.release_type : 'album')
+/** Placeholder titles and missing/unrecognized types are grouped as unknown releases. */
+export const releaseTypeOf = release => {
+  const title = String(release?.title || '').trim().toLocaleLowerCase()
+  if (!title || title === 'unknown album') return 'unknown'
+  return KNOWN.has(release?.release_type) ? release.release_type : 'unknown'
+}
 
 /**
  * Releases in sections, in RELEASE_TYPES order, without empty or hidden ones:

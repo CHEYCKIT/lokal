@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Library, Plus, Heart, LogIn, LogOut, BarChart2, Disc3, Users, AudioWaveform, PanelLeftClose, PanelLeftOpen, Sparkles, Import, Clapperboard } from 'lucide-react'
+import { Plus, Heart, LogIn, LogOut, PanelLeftClose, PanelLeftOpen, Sparkles, Import, MoreHorizontal } from 'lucide-react'
 import { useAppStore } from '../store/player'
-import { api } from '../api'
+import { api, peekSettings } from '../api'
+import { SIDEBAR_ITEMS, sidebarNavOrder, splitSidebarNav } from '../sidebarNav'
 import { latestPeriod, listenerTimeZone, nextPeriodBoundary, recapOpened, recapTree } from '../recapPeriods'
 import PlaylistCover from './PlaylistCover'
 import { openSmartPlaylistEditor } from '../smartPlaylists'
@@ -10,15 +11,7 @@ import { openPlaylistImport } from '../playlistImport'
 import { getLastHomePath } from '../recommendationSession'
 import { useTranslation } from '../i18n'
 
-const NAV = [
-  { icon: Home, label: 'Home', path: '/' },
-  { icon: Library, label: 'Library', path: '/library', tour: 'library' },
-  { icon: BarChart2, label: 'Recap', path: '/recap' },
-  { icon: Disc3, label: 'Albums', path: '/albums', tour: 'albums' },
-  { icon: Users, label: 'Artists', path: '/artists', tour: 'artists' },
-  { icon: Clapperboard, label: 'Videos', path: '/videos' },
-  { icon: AudioWaveform, label: 'Audio Quality', path: '/quality' },
-]
+
 
 // Collapsed, the sidebar shows only icons (their names on hover); the
 // choice is remembered.
@@ -56,6 +49,9 @@ export default function Sidebar() {
   const [newPlName, setNewPlName] = useState('')
   const [confirmSignOut, setConfirmSignOut] = useState(false)
   const [showRecapBadge, setShowRecapBadge] = useState(false)
+  const [sidebarNavValue, setSidebarNavValue] = useState(() => peekSettings()?.sidebar_nav || '')
+  const [moreOpen, setMoreOpen] = useState(false)
+  const { visible: visibleNav, hidden: hiddenNav } = splitSidebarNav(sidebarNavOrder(sidebarNavValue))
   
   const { user, openAuth, logout } = useAppStore()
   const [collapsed, setCollapsed] = useState(readCollapsed)
@@ -82,6 +78,17 @@ export default function Sidebar() {
   }
 
   useEffect(() => { loadPlaylists() }, [user?.id])
+
+  useEffect(() => {
+    const reloadSidebarNav = () => {
+      const cached = peekSettings()?.sidebar_nav
+      if (cached !== undefined) setSidebarNavValue(cached || '')
+      else api.getSettings().then(values => setSidebarNavValue(values?.sidebar_nav || '')).catch(() => {})
+    }
+    reloadSidebarNav()
+    window.addEventListener('lokal:settings-saved', reloadSidebarNav)
+    return () => window.removeEventListener('lokal:settings-saved', reloadSidebarNav)
+  }, [])
 
   useEffect(() => {
     const handler = () => loadPlaylists();
@@ -321,11 +328,22 @@ export default function Sidebar() {
       </div>
 
       <nav className="px-3 space-y-0.5 flex-shrink-0">
-        {NAV.map(({ icon, label, path, tour }) => (
+        {visibleNav.map(({ icon, label, path, tour }) => (
           <NavItem key={path} icon={icon} label={t(label)} tour={tour} collapsed={collapsed}
             active={isNavItemActive(path)} onClick={() => nav(path === '/' ? getLastHomePath(user?.id) : path)}
             badge={path === '/recap' && showRecapBadge} />
         ))}
+        {hiddenNav.length > 0 && (
+          <>
+            <NavItem icon={MoreHorizontal} label={t('More')} collapsed={collapsed}
+              active={hiddenNav.some(item => isNavItemActive(item.path))} onClick={() => setMoreOpen(value => !value)} />
+            {moreOpen && hiddenNav.map(({ icon, label, path, tour }) => (
+              <NavItem key={path} icon={icon} label={t(label)} tour={tour} collapsed={collapsed}
+                active={isNavItemActive(path)} onClick={() => nav(path === '/' ? getLastHomePath(user?.id) : path)}
+                badge={path === '/recap' && showRecapBadge} />
+            ))}
+          </>
+        )}
       </nav>
 
       <div className={`${collapsed ? 'mx-3' : 'mx-4'} my-2 border-t border-border flex-shrink-0`} />

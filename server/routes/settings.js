@@ -141,6 +141,26 @@ router.put('/keep-comma-artists', (req, res) => {
   res.json({ ok: true })
 })
 
+router.get('/artist-split-words', (req, res) => {
+  try {
+    const artistSplit = require('../../electron/artistSplit')
+    res.json({ builtIn: artistSplit.DEFAULT_SPLIT_WORDS, words: artistSplit.applySplitWordsFrom(getDB()) })
+  } catch (error) { res.status(500).json({ error: error.message }) }
+})
+
+router.put('/artist-split-words', (req, res) => {
+  const db = getDB()
+  try {
+    const artistSplit = require('../../electron/artistSplit')
+    const words = artistSplit.saveSplitWords(db, req.body?.words || [])
+    const { relinkArtists } = require('../../electron/ipc/scanner')
+    const changed = relinkArtists(db)
+    const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_relink_fingerprint', ?)").run(`5:${keepComma}:${JSON.stringify(words)}`)
+    res.json({ ok: true, words, changed })
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }) }
+})
+
 router.post('/scan', async (req, res) => {
   const { folder } = req.body
   const target = folder || DEFAULT_MUSIC_PATH

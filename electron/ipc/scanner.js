@@ -6,6 +6,7 @@ const https = require('https')
 const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
+const artistSplit = require('../artistSplit')
 const { findFolderArtwork, getLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
@@ -72,25 +73,11 @@ function getKeepCommaArtists() {
 
 function splitArtists(raw, keepComma = null) {
   if (!raw) return []
-  const lower = raw.toLowerCase().trim()
-  const KEEP_COMMA_ARTISTS = keepComma || getKeepCommaArtists()
-  for (const known of KEEP_COMMA_ARTISTS) {
-    if (lower === known || lower.startsWith(known + ' ') || lower.endsWith(' ' + known)) return [raw.trim()]
-  }
-  const commaLowerPattern = /,\s+[a-z]/
-  if (commaLowerPattern.test(raw)) return [raw.trim()]
-  let artists = [raw]
-  artists = artists.flatMap(a => a.split(/\s+(?:feat\.|ft\.|featuring)\s+/i))
-  artists = artists.flatMap(a => a.split(/,\s+(?=[A-Z])/))
-  artists = artists.flatMap(a => {
-    const parts = a.split(/\s+(?:&|x|vs\.?)\s+/i)
-    // A split that leaves one-letter pieces isn't a collaboration but one
-    // stylised name ("h x m x d" was becoming the artists h, m and d).
-    return parts.some(part => part.trim().length < 2) ? [a] : parts
-  })
-  return [...new Set(artists.map(a => a.trim()).filter(Boolean))]
+  const db = getDB()
+  artistSplit.applySplitWordsFrom(db)
+  const keep = keepComma || getKeepCommaArtists()
+  return artistSplit.splitArtists(raw, artistSplit.keepCommaSet([...keep]))
 }
-
 // Tracks whose artist links were changed by hand (Manage > rename, merge,
 // delete): their links no longer follow the artist text, on purpose, so the
 // re-link pass leaves them alone. Editing the song's artist, or its file
@@ -110,7 +97,7 @@ function unlockArtistLinks(db, trackId) {
 // the library once (see relinkArtistsIfNeeded).
 // 3: version 2 also linked streamed (ghost://) tracks; this undoes that.
 // 4: artist ids keep non-Latin letters (every Japanese name was "a-unknown").
-const ARTIST_SPLITTER_VERSION = 4
+const ARTIST_SPLITTER_VERSION = 5
 
 /**
  * Brings every track's artist links in line with splitArtists (e.g. after it
@@ -187,7 +174,8 @@ function relinkArtists(db = getDB()) {
  */
 function relinkArtistsIfNeeded(db = getDB()) {
   const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
-  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}`
+  const splitWords = JSON.stringify(artistSplit.applySplitWordsFrom(db))
+  const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}:${splitWords}`
   const last = db.prepare("SELECT value FROM settings WHERE key = 'artist_relink_fingerprint'").get()?.value
   if (last === fingerprint) return 0
   const changed = relinkArtists(db)
@@ -375,6 +363,7 @@ async function scanFolder(folderPath) {
     emit('scanner:progress', { ...scanStatus, ...(complete ? { complete: true } : {}) })
   }
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folderPath)
+  try { require('../libraryWatcher').watchLibrary(folderPath) } catch (e) { console.warn('[scanner] Library watcher not started:', e.message) }
 
   const linkArtist = db.prepare(`INSERT OR IGNORE INTO artist_track_links (artist_id, track_id) VALUES (?, ?)`)
   const findExistingTrackByPath = db.prepare('SELECT id FROM tracks WHERE file_path = ?')
@@ -595,11 +584,8 @@ function sourceFilter(source) {
 function genreFilter(genre) {
   const value = String(genre || '').trim()
   if (!value) return null
-  const escaped = value.replace(/[\\%_]/g, char => `\\${char}`)
-  return {
-    sql: "(LOWER(TRIM(genre)) = LOWER(?) OR (',' || REPLACE(REPLACE(LOWER(genres), ', ', ','), ' ,', ',') || ',') LIKE LOWER(?) ESCAPE '\\')",
-    params: [value, `%,${escaped},%`],
-  }
+  if (value === '__none__') return { sql: "lokal_has_genre(genre, genres, '') = 1", params: [] }
+  return { sql: 'lokal_has_genre(genre, genres, ?) = 1', params: [value] }
 }
 
 /** Profile numbers for a user (the desktop app and the web server share it). */
@@ -1171,9 +1157,11 @@ function exportAppData() {
 
 function registerScannerHandlers(ipcMain) {
   const { BrowserWindow } = require('electron')
+  try { require('../genreList').registerGenreFunctions(getDB()) } catch (error) { console.warn('[scanner] Genre filters unavailable:', error.message) }
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:status', () => scanStatus)
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search) => getLibraryFolders(getDB(), relativePath, search))
+  ipcMain.handle('scanner:getGenreSummary', () => { const db = getDB(); require('../genreList').registerGenreFunctions(db); return require('../genreList').genreSummary(db) })
   ipcMain.handle('scanner:resolveFileToPlay', async (_, filePath) => {
     const db = getDB()
     const existing = db.prepare("SELECT * FROM tracks WHERE file_path = ?").get(filePath)
@@ -1462,6 +1450,9 @@ function registerScannerHandlers(ipcMain) {
     if (data.track_num !== undefined) { updates.push('track_num = ?'); params.push(data.track_num) }
     if (data.year !== undefined) { updates.push('year = ?'); params.push(data.year) }
     if (data.record_label !== undefined) { updates.push('record_label = ?'); params.push(data.record_label) }
+    if (data.clip_url !== undefined) { updates.push('clip_url = ?'); params.push(String(data.clip_url || '').trim() || null) }
+    if (data.clip_start !== undefined) { updates.push('clip_start = ?'); params.push(data.clip_start === null || data.clip_start === '' ? null : Number(data.clip_start)) }
+    if (data.clip_end !== undefined) { updates.push('clip_end = ?'); params.push(data.clip_end === null || data.clip_end === '' ? null : Number(data.clip_end)) }
     if (data.explicit !== undefined) { updates.push('explicit = ?'); params.push(data.explicit ? 1 : 0) }
     if (data.instrumental !== undefined) { updates.push('instrumental = ?'); params.push(data.instrumental === null ? null : data.instrumental ? 1 : 0) }
     if (data.danceability !== undefined) { updates.push('danceability = ?'); params.push(data.danceability) }
@@ -1537,6 +1528,22 @@ function registerScannerHandlers(ipcMain) {
   })
   ipcMain.handle('settings:getKeepCommaArtists', () => { try { const db = getDB(); const setting = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get(); return setting?.value ? JSON.parse(setting.value) : [] } catch { return [] } })
   ipcMain.handle('settings:setKeepCommaArtists', (_, artists) => getDB().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('keep_comma_artists', ?)").run(JSON.stringify(artists)))
+
+  ipcMain.handle('settings:getArtistSplitWords', () => ({
+    builtIn: artistSplit.DEFAULT_SPLIT_WORDS,
+    words: artistSplit.applySplitWordsFrom(getDB()),
+  }))
+  ipcMain.handle('settings:setArtistSplitWords', (_, words) => {
+    try {
+      const db = getDB()
+      const saved = artistSplit.saveSplitWords(db, words)
+      const changed = relinkArtists(db)
+      const keepComma = db.prepare("SELECT value FROM settings WHERE key = 'keep_comma_artists'").get()?.value || '[]'
+      const fingerprint = `${ARTIST_SPLITTER_VERSION}:${keepComma}:${JSON.stringify(saved)}`
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_relink_fingerprint', ?)").run(fingerprint)
+      return { ok: true, words: saved, changed }
+    } catch (error) { return { ok: false, error: error?.message || String(error) } }
+  })
 
   ipcMain.handle('settings:getTheme', () => {
     const db = getDB()
@@ -1991,7 +1998,55 @@ async function indexSingleFile(filePath, opts = {}) {
   return { success: true, id: trackId }
 }
 
-module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
+
+async function applyFileChanges(changes = []) {
+  const db = getDB()
+  const root = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+  if (!root || !Array.isArray(changes)) return { added: [], updated: [], removed: [] }
+  const rootPath = path.resolve(root)
+  const added = [], updated = [], removed = []
+  const removeTrack = (track) => {
+    const id = track.id
+    for (const table of ['artist_track_links', 'playlist_tracks', 'user_likes', 'play_history', 'listening_events', 'lyrics_cache', 'lyrics_translations']) {
+      try { db.prepare(`DELETE FROM ${table} WHERE track_id = ?`).run(id) } catch {}
+    }
+    try { db.prepare('DELETE FROM tracks WHERE id = ?').run(id) } catch {}
+    removed.push(id)
+  }
+  const seen = new Set()
+  for (const change of changes) {
+    const filePath = path.resolve(String(change?.path || ''))
+    if (!filePath || seen.has(filePath)) continue
+    const fromRoot = path.relative(rootPath, filePath)
+    if (!fromRoot || fromRoot === '..' || fromRoot.startsWith('..' + path.sep) || path.isAbsolute(fromRoot)) continue
+    seen.add(filePath)
+    let stat = null
+    try { stat = fs.statSync(filePath) } catch {}
+    if (stat?.isDirectory()) continue
+    const rel = path.relative(rootPath, filePath)
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue
+    const exact = db.prepare("SELECT * FROM tracks WHERE file_path = ? AND file_path NOT LIKE 'ghost://%'").get(filePath)
+    const ext = path.extname(filePath).toLowerCase()
+    if (!stat?.isFile()) {
+      if (exact && AUDIO_EXTS.has(ext)) removeTrack(exact)
+      continue
+    }
+    if (!AUDIO_EXTS.has(ext)) continue
+    const existed = !!exact
+    try {
+      const result = await indexSingleFile(filePath, { deferGhostResolution: false })
+      if (result?.success && result.id) (existed ? updated : added).push(result.id)
+    } catch (error) {
+      console.warn('[libraryWatcher] Could not index changed file:', filePath, error?.message || error)
+    }
+  }
+  if (removed.length) {
+    try { db.prepare('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM artist_track_links)').run() } catch {}
+  }
+  return { added: [...new Set(added)], updated: [...new Set(updated)], removed: [...new Set(removed)] }
+}
+
+module.exports = { sourceFilter, genreFilter, userStats, registerScannerHandlers, scanFolder, applyFileChanges, DEFAULT_MUSIC_PATH, indexSingleFile, AUDIO_EXTS, relinkArtists, relinkArtistsIfNeeded, SECRET_SETTING_KEYS, getLibraryFolders }
 
 
 function registerExtraHandlers(ipcMain) {

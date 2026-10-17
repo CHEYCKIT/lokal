@@ -169,6 +169,7 @@ export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
   artworkURL: (id) => `${BASE}/artwork/${encodeURIComponent(id)}`,
+  folderArtworkURL: (filePath) => `${BASE}/tracks/folder-artwork?path=${encodeURIComponent(filePath || '')}`,
   // An album's cover (from getAllAlbums: the path, and the track it's from).
   // Artwork is served by track id, not by path (or album title).
   albumArtURL: (album) => {
@@ -183,6 +184,7 @@ export const api = {
   getLibraryFolders: (relativePath = '', search = '') => isE()
     ? el().getLibraryFolders(relativePath, search)
     : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath) + (search ? '&search=' + encodeURIComponent(search) : '')),
+  onLibraryChanged: (fn) => isE() && el().onLibraryChanged ? el().onLibraryChanged(fn) : () => {},
   // A song that couldn't be played (Library → Songs with errors), or played again fine.
   reportTrackError: (id, message) => isE() ? el().reportTrackError(id, message) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'POST', body: { message } }),
   clearTrackError: (id) => isE() ? el().clearTrackError(id) : apiFetch(`/tracks/${encodeURIComponent(id)}/error`, { method: 'DELETE' }),
@@ -318,6 +320,10 @@ export const api = {
     : apiFetch(`/lyrics/${tid}/translate`, { method:'POST', body:{ lines, targetLang } }),
   importLyrics: (tid, c, t, fp) => isE() ? el().importLyrics(tid, c, t, fp) : apiFetch(`/lyrics/${tid}/import`, { method:'POST', body:{content:c,type:t,filePath:fp} }),
   clearLyricsCache: (tid) => isE() ? el().clearLyricsCache(tid) : apiFetch(`/lyrics/${tid}`, { method:'DELETE' }),
+  // The lyrics inside the track's own file (tags), read and written on request only.
+  readFileLyrics: (tid) => isE() ? el().readFileLyrics(tid) : apiFetch(`/lyrics/${tid}/file`),
+  writeFileLyrics: (tid, text) => isE() ? el().writeFileLyrics(tid, text) : apiFetch(`/lyrics/${tid}/file`, { method:'PUT', body:{ text } }),
+  embedLyricsFrom: (providerId, tid, ti, ar, al, dur) => isE() ? el().embedLyricsFrom(providerId, tid, ti, ar, al, dur) : apiFetch(`/lyrics/${tid}/embed/${encodeURIComponent(providerId)}`, { method:'POST', body:{ title:ti||'', artist:ar||'', album:al||'', duration:dur||'' } }),
   clearLyricsDb: () => isE() ? el().clearLyricsDb() : apiFetch('/lyrics/clear-all', { method:'POST' }),
   // Both keep the snapshot peekSettings() hands out, so a page can paint with
   // the real settings on its first frame instead of defaults.
@@ -346,12 +352,17 @@ export const api = {
   clearTracks: () => isE() ? el().clearTracks() : apiFetch('/settings/clear-tracks', { method:'POST' }),
   getKeepCommaArtists: () => isE() ? el().getKeepCommaArtists() : apiFetch('/settings/keep-comma-artists'),
   setKeepCommaArtists: (artists) => isE() ? el().setKeepCommaArtists(artists) : apiFetch('/settings/keep-comma-artists', { method:'PUT', body:{artists} }),
+  getArtistSplitWords: () => isE() ? el().getArtistSplitWords() : apiFetch('/settings/artist-split-words'),
+  setArtistSplitWords: (words) => isE() ? el().setArtistSplitWords(words) : apiFetch('/settings/artist-split-words', { method: 'PUT', body: { words } }),
   getTheme: () => isE() ? el().getTheme() : apiFetch('/settings/theme'),
   saveTheme: (theme, overrides) => isE() ? el().saveTheme(theme, overrides) : apiFetch('/settings/theme', { method:'PUT', body:{theme, overrides} }),
-  scanFolder: (f) => isE() ? el().scanFolder(f) : apiFetch('/settings/scan', { method:'POST', body:{folder:f} }),
+  scanFolder: (f, o = {}) => isE() ? el().scanFolder(f, o) : apiFetch('/settings/scan', { method:'POST', body:{folder:f, full:!!o.full} }),
   resolveFileToPlay: (f) => isE() ? el().resolveFileToPlay(f) : Promise.resolve({ success: false, error: 'Electron only' }),
   onOpenFileRequest: (fn) => { if (isE() && typeof el().onOpenFileRequest === 'function') return el().onOpenFileRequest(fn); return () => {} },
   updateThumbarState: (state) => (isE() && typeof el().updateThumbarState === 'function') ? el().updateThumbarState(state) : Promise.resolve(),
+  // Settings > Library > Open Folders In: start one of those programs on a sidebar folder.
+  launchFolderApp: (appPath, folder) => isE() ? el().launchFolderApp(appPath, folder) : Promise.resolve({ ok: false }),
+  setTaskbarProgress: (state) => (isE() && typeof el().setTaskbarProgress === 'function') ? el().setTaskbarProgress(state) : Promise.resolve(),
   onThumbarCommand: (fn) => { if (isE() && typeof el().onThumbarCommand === 'function') return el().onThumbarCommand(fn); return () => {} },
   openFolder: () => isE() ? el().openFolder() : Promise.resolve(null),
   openFile: (f) => isE() ? el().openFile(f) : Promise.resolve(null),
@@ -470,7 +481,16 @@ export const api = {
   cacheUsage: () => isE() ? el().cacheUsage() : Promise.resolve(null),
   cacheTrim: () => isE() ? el().cacheTrim() : Promise.resolve(null),
   cacheClear: () => isE() ? el().cacheClear() : Promise.resolve(null),
+  // Cache Analysis page (desktop only: it reads the app's folder).
+  cacheAnalysisRun: () => isE() && el().cacheAnalysisRun ? el().cacheAnalysisRun() : Promise.resolve({ ok: false, unsupported: true }),
+  cacheAnalysisClean: (mode) => isE() && el().cacheAnalysisClean ? el().cacheAnalysisClean(mode) : Promise.resolve({ ok: false, unsupported: true }),
+  onCacheAnalysisProgress: (fn) => isE() && el().onCacheAnalysisProgress ? el().onCacheAnalysisProgress((_, p) => fn(p)) : () => {},
   artworkMesh: (trackId) => isE() ? el().artworkMesh(trackId) : apiFetch(`/artwork-fx/mesh/${encodeURIComponent(trackId)}`).then(r => (Array.isArray(r) ? r : null)),
+  // Online radio: a cover given as a URL (a station has no library row).
+  artworkMeshFromUrl: (url) => isE() ? el().artworkMeshFromUrl(url) : apiFetch(`/artwork-fx/mesh-url?${new URLSearchParams({ url })}`).then(r => (Array.isArray(r) ? r : null)),
+  radioGetCatalog: () => isE() ? el().radioGetCatalog() : apiFetch('/radio/catalog'),
+  radioLoadCatalog: (url) => isE() ? el().radioLoadCatalog(url) : apiFetch('/radio/catalog', { method: 'POST', body: { url } }),
+  radioNowPlaying: (stationApi) => isE() ? el().radioNowPlaying(stationApi) : apiFetch('/radio/now-playing', { method: 'POST', body: { api: stationApi } }).catch(() => null),
   // { src, source } -- src is something a <video> can play in this mode.
   spotifyCanvasCheck: () => isE() ? el().spotifyCanvasCheck() : apiFetch('/artwork-fx/spotify-check', { method: 'POST' }),
   // Home → Releases → Followed artists: those followed on Spotify or in the Apple Music library (desktop app).
@@ -500,12 +520,21 @@ export const api = {
   // How the lookup is going ({ trackId, stage, index, total }), desktop only.
   onMusicVideoProgress: (fn) => isE() && el().onMusicVideoProgress ? el().onMusicVideoProgress((_, p) => fn(p)) : () => {},
   indexAllMusicVideos: () => isE() && el().indexAllMusicVideos ? el().indexAllMusicVideos() : Promise.resolve(null),
+  // A song's own video (Edit Track: any link or file), for the side panel's
+  // loop: { src } or { error }. fallback: the first address didn't play.
+  clipVideoSource: (link, options) => isE() && el().clipVideoSource
+    ? el().clipVideoSource(link, options).catch(e => ({ error: e?.message || 'Failed' }))
+    : Promise.resolve({ error: 'Only in the desktop app' }),
   musicVideoAnimatedPreview: (videoId, query, force = false) => isE() && el().musicVideoAnimatedPreview ? el().musicVideoAnimatedPreview(videoId, query, force) : Promise.resolve(null),
   cancelMusicVideoIndex: () => isE() && el().cancelMusicVideoIndex ? el().cancelMusicVideoIndex() : Promise.resolve(null),
   musicVideoIndexStatus: () => isE() && el().musicVideoIndexStatus ? el().musicVideoIndexStatus() : Promise.resolve(null),
   onMusicVideoIndexProgress: (fn) => isE() && el().onMusicVideoIndexProgress ? el().onMusicVideoIndexProgress((_, p) => fn(p)) : () => {},
   indexAllLyrics: () => isE() && el().indexAllLyrics ? el().indexAllLyrics() : Promise.resolve(null),
   cancelLyricsIndex: () => isE() && el().cancelLyricsIndex ? el().cancelLyricsIndex() : Promise.resolve(null),
+  // Lyrics Analysis page (desktop only: it reads every file in the music folder).
+  lyricsAnalysisGet: () => isE() && el().lyricsAnalysisGet ? el().lyricsAnalysisGet() : Promise.resolve({ report: null, progress: { running: false }, unsupported: true }),
+  lyricsAnalysisRun: () => isE() && el().lyricsAnalysisRun ? el().lyricsAnalysisRun() : Promise.resolve({ ok: false, error: 'Lyrics analysis works in the desktop app.' }),
+  onLyricsAnalysisProgress: (fn) => isE() && el().onLyricsAnalysisProgress ? el().onLyricsAnalysisProgress((_, p) => fn(p)) : () => {},
   onLyricsIndexProgress: (fn) => isE() && el().onLyricsIndexProgress ? el().onLyricsIndexProgress((_, p) => fn(p)) : () => {},
   playableFile: (fp) => isE() ? el().playableFile(fp) : Promise.resolve(null),
   soulseekStatus: () => isE() ? el().soulseekStatus() : apiFetch('/download/soulseek/status'),
@@ -541,6 +570,8 @@ export const api = {
   getRandomTrack: () => isE() ? el().getRandomTrack() : apiFetch('/tracks/random'),
   getTopGenres: () => isE() ? el().getTopGenres() : apiFetch('/tracks/top-genres'),
   getAllGenres: () => isE() ? el().getAllGenres() : apiFetch('/tracks/genres'),
+  // The Genres tab: { genres: [{ name, count, artworks }], none } (see electron/genreList.js).
+  getGenreSummary: () => isE() ? el().getGenreSummary() : apiFetch('/tracks/genre-summary'),
   historyExport: (uid, format) => isE() ? el().historyExport(uid, format) : apiFetch(`/tracks/history/export?userId=${uid||'guest'}&format=${format||'json'}`),
   register: (d) => isE() ? el().register(d) : apiFetch('/users/register', { method:'POST', body:d }),
   login: (d) => isE() ? el().login(d) : apiFetch('/users/login', { method:'POST', body:d }),
