@@ -26,8 +26,8 @@ function getCatalog() {
  * Download and parse the catalogue at `url`. Saved only when it parses, so a
  * broken file never replaces the stations already there.
  */
-async function loadAndSave(url) {
-  const result = await loadCatalog(url)
+async function loadAndSave(url, { publicOnly = false } = {}) {
+  const result = await loadCatalog(url, { publicOnly })
   if (!result.ok) return result
   const updatedAt = Date.now()
   writeSettings({ radio_catalog_url: String(url).trim(), radio_catalog: JSON.stringify(result.catalog), radio_catalog_updated_at: updatedAt })
