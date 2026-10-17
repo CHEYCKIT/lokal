@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   test-and-build:
-    name: Tests and package (${{ runner.os }})
+    name: Tests and package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
