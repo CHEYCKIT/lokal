@@ -24,7 +24,7 @@ function artworkFingerprint(filePath) {
 }
 
 function imagePriority(name) {
-  const stem = path.parse(name).name.toLowerCase().replace(/[\\s_-]+/g, '')
+  const stem = path.parse(name).name.toLowerCase().replace(/[\s_-]+/g, '')
   if (stem === 'cover') return 0
   if (stem === 'folder') return 1
   if (stem === 'front') return 2
