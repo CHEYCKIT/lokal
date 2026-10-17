@@ -287,7 +287,7 @@ export const usePlayerStore = create((set, get) => ({
     set({ replayGainMode: mode, replayGainModeUserSet: true })
   },
   hydrateReplayGainMode: (value) => {
-    if (get().replayGainModeUserSet || !['off', 'track', 'album'].includes(value)) return
+    if (get().replayGainModeUserSet || !['off', 'track', 'album', 'smart'].includes(value)) return
     const mode = normalizeReplayGainMode(value)
     try { localStorage.setItem('lokal-replaygain-mode', mode) } catch {}
     set({ replayGainMode: mode })
