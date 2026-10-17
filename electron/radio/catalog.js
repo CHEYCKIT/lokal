@@ -136,13 +136,36 @@ function parseCatalog(text) {
 /** Download the catalogue at `url`: { ok: true, text } or { ok: false, errors }. */
 async function fetchCatalog(url, { fetchImpl = fetch, timeout = FETCH_TIMEOUT_MS } = {}) {
   if (!isHttpUrl(url)) return { ok: false, errors: [{ path: '', code: 'bad-catalog-url' }] }
+  const { isPublicHttpUrl } = require('../online/publicUrl')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeout)
   try {
-    const response = await fetchImpl(String(url).trim(), { signal: controller.signal, headers: { 'Cache-Control': 'no-cache', Accept: 'application/json, text/plain, */*' } })
+    let target = new URL(String(url).trim())
+    let response = null
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      if (!(await isPublicHttpUrl(target.href, { resolveDns: fetchImpl === globalThis.fetch }))) {
+        return { ok: false, errors: [{ path: '', code: 'bad-catalog-url' }] }
+      }
+      response = await fetchImpl(target.href, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: { 'Cache-Control': 'no-cache', Accept: 'application/json, text/plain, */*' },
+      })
+      if (![301, 302, 303, 307, 308].includes(response.status)) break
+      const location = response.headers?.get?.('location')
+      try { await response.body?.cancel?.() } catch {}
+      if (!location || redirects === 5) return { ok: false, errors: [{ path: '', code: 'network', detail: 'Too many or invalid redirects' }] }
+      target = new URL(location, target)
+      response = null
+    }
+    if (!response) return { ok: false, errors: [{ path: '', code: 'network', detail: 'Too many redirects' }] }
     if (!response.ok) return { ok: false, errors: [{ path: '', code: 'http', detail: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` }] }
     const reader = response.body?.getReader?.()
-    if (!reader) return { ok: true, text: await response.text() }
+    if (!reader) {
+      const text = await response.text()
+      if (Buffer.byteLength(text, 'utf8') > MAX_CATALOG_BYTES) return { ok: false, errors: [{ path: '', code: 'too-large' }] }
+      return { ok: true, text }
+    }
     const chunks = []
     let total = 0
     while (true) {
