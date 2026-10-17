@@ -49,8 +49,9 @@ function findFolderArtwork(folderPath) {
     // image or a set of byte-identical images, never an arbitrary unrelated one.
     if (imagePriority(images[0]) < 99) return path.join(folderPath, images[0])
     if (images.length === 1) return path.join(folderPath, images[0])
-    const fingerprints = new Set(images.map(name => artworkFingerprint(path.join(folderPath, name))).filter(Boolean))
-    return fingerprints.size === 1 ? path.join(folderPath, images[0]) : null
+    const fingerprints = images.map(name => artworkFingerprint(path.join(folderPath, name)))
+    if (fingerprints.some(fingerprint => !fingerprint)) return null
+    return new Set(fingerprints).size === 1 ? path.join(folderPath, images[0]) : null
   } catch {
     return null
   }
