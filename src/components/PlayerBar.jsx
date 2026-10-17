@@ -142,7 +142,7 @@ export default function PlayerBar() {
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
-      { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
+      { label: t('Start radio'), icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
       currentTrack.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
       losslessMenuItem(currentTrack, Gem),
     ].filter(Boolean))
