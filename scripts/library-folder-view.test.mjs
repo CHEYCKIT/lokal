@@ -112,11 +112,11 @@ try {
   assert.equal(rootView.tracks.length, 0)
   assert.equal(rootView.totalTracks, 1004, 'root count excludes stale database paths')
   assert.equal(rootView.allTracks.length, 1004, 'Play All includes every descendant, with no 1,000-track cap')
-  assert.equal(rootView.folders[0].trackCount, 3, 'child folder count is recursive and excludes stale files')
+  assert.equal(rootView.folders.find(folder => folder.name === 'Artist').trackCount, 3, 'child folder count is recursive and excludes stale files')
   const artistFolder = rootView.folders.find(folder => folder.name === 'Artist')
   assert.equal(artistFolder.artwork_tracks.length, 2, 'a folder without a direct image exposes distinct album covers for a collage')
   assert.deepEqual(new Set(artistFolder.artwork_tracks.map(track => track.artwork_path)), new Set([trackCoverA, trackCoverB]))
-  assert.equal(rootView.folders[1].trackCount, 1001, 'emoji-leading folder names are included in the recursive count')
+  assert.equal(rootView.folders.find(folder => folder.name === '🎧Artist').trackCount, 1001, 'emoji-leading folder names are included in the recursive count')
 
   const artistView = getLibraryFolders(db, 'Artist')
   assert.equal(artistView.relativePath, 'Artist')
