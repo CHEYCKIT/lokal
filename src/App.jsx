@@ -472,10 +472,14 @@ export default function App() {
     try {
       let filePath = src.slice('file://'.length)
       try { filePath = decodeURIComponent(filePath) } catch {}
-      const copy = await api.playableFile?.(filePath).catch(() => null)
+      const result = await api.playableFile?.(filePath).catch(() => null)
+      const copy = typeof result === 'string' ? result : result?.path || null
       if (!copy && el.getAttribute('src') === src) {
         const failed = usePlayerStore.getState().currentTrack
-        reportPlaybackError(failed, failed?.missing ? 'The file is no longer on disk' : "The file couldn't be decoded, even after conversion")
+        const message = result?.error === 'ffmpeg-missing'
+          ? 'FFMPEG_MISSING'
+          : failed?.missing ? 'The file is no longer on disk' : "The file couldn't be decoded, even after conversion"
+        reportPlaybackError(failed, message)
       }
       if (!copy || el.getAttribute('src') !== src) return
       const next = `file://${copy.replace(/\\/g, '/').split('/').map(p => encodeURIComponent(p)).join('/').replace(/%3A/g, ':')}`
@@ -1663,6 +1667,33 @@ export default function App() {
   const [addonVerificationBusy, setAddonVerificationBusy] = useState(false)
   const [addonVerificationMessage, setAddonVerificationMessage] = useState('')
   const [playbackRetryNonce, setPlaybackRetryNonce] = useState(0)
+
+  // The library's FFmpeg prompt can resume a track after the dependency is
+  // installed. Clear the media-element guard and bump the playback nonce so
+  // the same file is loaded and its conversion fallback gets another attempt.
+  useEffect(() => {
+    const retryLocalPlayback = (event) => {
+      const { track, queue, context } = event.detail || {}
+      if (!track?.id) return
+      const retryTrack = { ...track }
+      delete retryTrack.playback_error
+      for (const el of [audioRef.current, cfAudioRef.current]) {
+        if (!el) continue
+        el.dataset.fallbackFor = ''
+        el.dataset.fallbackSrc = ''
+        el.dataset.fallbackPending = ''
+      }
+      const retryQueue = Array.isArray(queue) && queue.some(item => item?.id === retryTrack.id)
+        ? queue.map(item => item?.id === retryTrack.id ? retryTrack : item)
+        : [retryTrack]
+      Promise.resolve(api.clearTrackError?.(retryTrack.id)).catch(() => {})
+      usePlayerStore.getState().playTrack(retryTrack, retryQueue, context || null)
+      setPlaybackRetryNonce(value => value + 1)
+    }
+    window.addEventListener('lokal:retry-track-playback', retryLocalPlayback)
+    return () => window.removeEventListener('lokal:retry-track-playback', retryLocalPlayback)
+  }, [setPlaybackRetryNonce])
+
   const addonVerificationRetryRef = useRef(null)
 
   const completeAddonVerification = useCallback((key) => {
