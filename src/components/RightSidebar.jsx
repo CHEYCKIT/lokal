@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen, Info, AudioWaveform } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -474,7 +474,7 @@ export default function RightSidebar() {
                         aria-pressed={infoCardView !== 'info'}
                         title={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
                         className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView !== 'info' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
-                        <Mic2 size={15} />
+                        {infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <AudioWaveform size={15} />}
                       </button>
                     </div>
                   )}

@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, ChevronRight, Folder, Music, Search } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronRight, Folder, Music, Search, Pencil, Trash2, Check, X } from 'lucide-react'
 import { api } from '../api'
 import { isSuspect, tierOf } from '../quality'
 import { fetchAllErrorTrackIds, getFolderPlaybackTracks } from '../libraryHelpers'
 import TrackList from './TrackList'
 import FadeImg from './FadeImg'
 import { useTranslation } from '../i18n'
+import ContextMenu, { useContextMenu } from './ContextMenu'
 
 function FolderArtwork({ folder, artSrc }) {
   const explicit = folder?.artwork_path
@@ -48,7 +49,20 @@ export default function LibraryFolderBrowser({
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [errorTrackIds, setErrorTrackIds] = useState(null)
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState([])
+  const [renameTargets, setRenameTargets] = useState(null)
+  const [renameError, setRenameError] = useState('')
+  const [folderActionBusy, setFolderActionBusy] = useState(false)
+  const [folderActionMessage, setFolderActionMessage] = useState('')
+  const [folderActionIsError, setFolderActionIsError] = useState(false)
+  const folderMenu = useContextMenu()
   const requestRef = useRef(0)
+
+  useEffect(() => {
+    setSelectedFolderPaths([])
+    setFolderActionMessage('')
+    setRenameTargets(null)
+  }, [folderPath, rootPath])
 
   useEffect(() => {
     if (filters.source !== 'errors') {
@@ -178,6 +192,98 @@ export default function LibraryFolderBrowser({
       requestRef.current++
     }
   }, [folderPath, rootPath, refreshKey, searchQuery, onFolderChange])
+
+
+  const handleFolderClick = (event, folder) => {
+    if (api.isElectron && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      setFolderActionMessage('')
+      setSelectedFolderPaths(current => current.includes(folder.path)
+        ? current.filter(folderPath => folderPath !== folder.path)
+        : [...current, folder.path])
+      return
+    }
+    setSelectedFolderPaths([])
+    navigateToFolder(folder.path)
+  }
+
+  const startFolderRename = paths => {
+    const targets = paths.map(folderPath => {
+      const folder = data?.folders?.find(item => item.path === folderPath)
+      const name = folder?.name || folderPath.split('/').pop()
+      return { path: folderPath, oldName: name, newName: name }
+    })
+    setRenameError('')
+    setRenameTargets(targets)
+  }
+
+  const openFolderMenu = (event, folder) => {
+    if (!api.isElectron) return
+    const paths = selectedFolderPaths.includes(folder.path) ? selectedFolderPaths : [folder.path]
+    if (!selectedFolderPaths.includes(folder.path)) setSelectedFolderPaths(paths)
+    setFolderActionMessage('')
+    folderMenu.open(event, [
+      { label: paths.length === 1 ? 'Rename folder' : 'Rename {n} folders', labelValues: { n: paths.length }, icon: Pencil, onSelect: () => startFolderRename(paths) },
+      { separator: true },
+      { label: paths.length === 1 ? 'Delete folder…' : 'Delete {n} folders…', labelValues: { n: paths.length }, icon: Trash2, danger: true, onSelect: () => { void deleteFolders(paths) } },
+    ])
+  }
+
+  const deleteFolders = async paths => {
+    if (!api.isElectron || !paths?.length || folderActionBusy) return
+    const names = paths.map(folderPath => data?.folders?.find(item => item.path === folderPath)?.name || folderPath.split('/').pop())
+    const confirmation = paths.length === 1
+      ? t('Move the folder "{name}" and all its contents to the Trash? Its tracks will also be removed from Lokal.', { name: names[0] })
+      : t('Move {n} selected folders and all their contents to the Trash? Their tracks will also be removed from Lokal.', { n: paths.length })
+    if (!window.confirm(confirmation)) return
+    setFolderActionBusy(true)
+    setFolderActionMessage('')
+    setFolderActionIsError(false)
+    try {
+      const result = await api.deleteLibraryFolders(paths, rootPath)
+      if (result?.deleted?.length) {
+        const deleted = new Set(result.deleted)
+        setSelectedFolderPaths(current => current.filter(folderPath => !deleted.has(folderPath)))
+        window.dispatchEvent(new Event('lokal:refresh'))
+      }
+      if (result?.error) throw new Error(result.error)
+      if (result?.failed?.length) {
+        setFolderActionIsError(true)
+        setFolderActionMessage(t('Some folders could not be deleted: {folders}', { folders: result.failed.map(item => item.path || item.error).join(', ') }))
+      } else {
+        setFolderActionMessage(t(paths.length === 1 ? 'Folder moved to Trash.' : 'Folders moved to Trash.'))
+      }
+    } catch (error) {
+      setFolderActionIsError(true)
+      setFolderActionMessage(error?.message || t('Could not delete folder'))
+    } finally {
+      setFolderActionBusy(false)
+    }
+  }
+
+  const saveFolderRenames = async event => {
+    event?.preventDefault?.()
+    if (!renameTargets?.length || folderActionBusy) return
+    if (renameTargets.some(item => !item.newName?.trim())) {
+      setRenameError(t('Folder names cannot be empty'))
+      return
+    }
+    setFolderActionBusy(true)
+    setRenameError('')
+    try {
+      const result = await api.renameLibraryFolders(renameTargets.map(item => ({ path: item.path, newName: item.newName })), rootPath)
+      if (result?.error) throw new Error(result.error)
+      setRenameTargets(null)
+      setSelectedFolderPaths([])
+      setFolderActionMessage(t(renameTargets.length === 1 ? 'Folder renamed.' : 'Folders renamed.'))
+      setFolderActionIsError(false)
+      window.dispatchEvent(new Event('lokal:refresh'))
+    } catch (error) {
+      setRenameError(error?.message || t('Could not rename folders'))
+    } finally {
+      setFolderActionBusy(false)
+    }
+  }
 
   const term = (searchQuery || '').trim().toLowerCase()
   const matchesFilters = useCallback(track => {
@@ -334,56 +440,79 @@ export default function LibraryFolderBrowser({
           transition={{ duration: 0.16 }}
           className="space-y-5"
         >
+          {api.isElectron && selectedFolderPaths.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2">
+              <span className="mr-auto text-xs text-white">{t('{n} folders selected', { n: selectedFolderPaths.length })}</span>
+              <span className="text-[11px] text-muted">{t('Ctrl/Cmd-click folders to add or remove selection')}</span>
+              <button type="button" disabled={folderActionBusy} onClick={() => startFolderRename(selectedFolderPaths)} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-white hover:border-accent/40 disabled:opacity-50"><Pencil size={13} /> {t('Rename')}</button>
+              <button type="button" disabled={folderActionBusy} onClick={() => { void deleteFolders(selectedFolderPaths) }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-500/15 disabled:opacity-50"><Trash2 size={13} /> {t('Delete')}</button>
+              <button type="button" onClick={() => setSelectedFolderPaths([])} className="rounded-lg px-2 py-1.5 text-xs text-muted hover:text-white">{t('Clear')}</button>
+            </div>
+          )}
+          {folderActionMessage && (
+            <p role={folderActionIsError ? 'alert' : 'status'} className={`text-xs ${folderActionIsError ? 'text-red-400' : 'text-emerald-400'}`}>{folderActionMessage}</p>
+          )}
           {visibleFolders.length > 0 && view === 'grid' && (
             <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @lg:grid-cols-5 gap-3">
-              {visibleFolders.map(folder => (
-                <motion.button
-                  key={folder.path}
-                  type="button"
-                  initial={false}
-                  whileHover={{ y: -3 }}
-                  onClick={() => navigateToFolder(folder.path)}
-                  className="group flex min-w-0 flex-col gap-2 text-left"
-                >
-                  <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-elevated transition-colors group-hover:border-accent/40 group-hover:bg-accent/5">
-                    <FolderArtwork folder={folder} artSrc={artSrc} />
-                    {!folder.artwork_path && !(folder.artwork_tracks || []).length && (
-                      <Folder size={42} strokeWidth={1.5} className="text-muted transition-colors group-hover:text-accent" />
-                    )}
-                  </div>
-                  <div className="w-full min-w-0 px-1">
-                    <p className="truncate text-xs font-medium text-white" title={folder.name}>{folder.name}</p>
-                    <p className="text-[11px] text-muted">
-                      {folder.trackCount != null ? `${folder.trackCount} ${folder.trackCount === 1 ? t('track') : t('tracks')}` : t('Folder')}
-                    </p>
-                  </div>
-                </motion.button>
-              ))}
+              {visibleFolders.map(folder => {
+                const selected = selectedFolderPaths.includes(folder.path)
+                return (
+                  <motion.button
+                    key={folder.path}
+                    type="button"
+                    initial={false}
+                    whileHover={{ y: -3 }}
+                    aria-pressed={selected}
+                    onClick={event => handleFolderClick(event, folder)}
+                    onContextMenu={event => openFolderMenu(event, folder)}
+                    className={`group flex min-w-0 flex-col gap-2 rounded-xl p-1.5 text-left transition-colors ${selected ? 'bg-accent/10 ring-1 ring-accent/60' : 'hover:bg-elevated/40'}`}
+                  >
+                    <div className={`relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border bg-elevated transition-colors ${selected ? 'border-accent' : 'border-border group-hover:border-accent/40 group-hover:bg-accent/5'}`}>
+                      <FolderArtwork folder={folder} artSrc={artSrc} />
+                      {!folder.artwork_path && !(folder.artwork_tracks || []).length && (
+                        <Folder size={42} strokeWidth={1.5} className={`transition-colors ${selected ? 'text-accent' : 'text-muted group-hover:text-accent'}`} />
+                      )}
+                      {selected && <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-base shadow"><Check size={14} /></span>}
+                    </div>
+                    <div className="w-full min-w-0 px-1">
+                      <p className="truncate text-xs font-medium text-white" title={folder.name}>{folder.name}</p>
+                      <p className="text-[11px] text-muted">
+                        {folder.trackCount != null ? `${folder.trackCount} ${folder.trackCount === 1 ? t('track') : t('tracks')}` : t('Folder')}
+                      </p>
+                    </div>
+                  </motion.button>
+                )
+              })}
             </div>
           )}
 
           {visibleFolders.length > 0 && view === 'list' && (
             <div className="overflow-hidden rounded-xl border border-border bg-card/40 divide-y divide-border">
-              {visibleFolders.map(folder => (
-                <button
-                  key={folder.path}
-                  type="button"
-                  onClick={() => navigateToFolder(folder.path)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-elevated/80"
-                >
-                  <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-elevated">
-                    <FolderArtwork folder={folder} artSrc={artSrc} />
-                    {!folder.artwork_path && !(folder.artwork_tracks || []).length && <Folder size={17} className="text-muted" />}
-                  </div>
-                  <span className="min-w-0 flex-1 truncate text-sm text-white">{folder.name}</span>
-                  {folder.trackCount != null && (
-                    <span className="flex-shrink-0 text-xs text-muted">
-                      {folder.trackCount} {folder.trackCount === 1 ? t('track') : t('tracks')}
-                    </span>
-                  )}
-                  <ChevronRight size={14} className="flex-shrink-0 text-muted" />
-                </button>
-              ))}
+              {visibleFolders.map(folder => {
+                const selected = selectedFolderPaths.includes(folder.path)
+                return (
+                  <button
+                    key={folder.path}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={event => handleFolderClick(event, folder)}
+                    onContextMenu={event => openFolderMenu(event, folder)}
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${selected ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : 'hover:bg-elevated/80'}`}
+                  >
+                    <div className={`relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border bg-elevated ${selected ? 'border-accent' : 'border-border'}`}>
+                      <FolderArtwork folder={folder} artSrc={artSrc} />
+                      {!folder.artwork_path && !(folder.artwork_tracks || []).length && <Folder size={17} className={selected ? 'text-accent' : 'text-muted'} />}
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-sm text-white">{folder.name}</span>
+                    {folder.trackCount != null && (
+                      <span className="flex-shrink-0 text-xs text-muted">
+                        {folder.trackCount} {folder.trackCount === 1 ? t('track') : t('tracks')}
+                      </span>
+                    )}
+                    {selected ? <Check size={15} className="flex-shrink-0 text-accent" /> : <ChevronRight size={14} className="flex-shrink-0 text-muted" />}
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -496,6 +625,40 @@ export default function LibraryFolderBrowser({
           )}
         </motion.div>
       )}
+      {renameTargets && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/65 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !folderActionBusy) setRenameTargets(null) }}>
+          <form onSubmit={saveFolderRenames} className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="rename-folders-title">
+            <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <h2 id="rename-folders-title" className="text-sm font-semibold text-white">{renameTargets.length === 1 ? t('Rename folder') : t('Rename {n} folders', { n: renameTargets.length })}</h2>
+                <p className="mt-1 text-xs text-muted">{t('Enter a new name for each selected folder.')}</p>
+              </div>
+              <button type="button" disabled={folderActionBusy} onClick={() => setRenameTargets(null)} aria-label={t('Cancel')} className="rounded-lg p-1.5 text-muted hover:text-white disabled:opacity-50"><X size={16} /></button>
+            </div>
+            <div className="space-y-3 overflow-y-auto px-5 py-4">
+              {renameTargets.map((item, index) => (
+                <label key={item.path} className="block min-w-0">
+                  <span className="mb-1 block truncate text-xs text-muted" title={item.oldName}>{item.oldName}</span>
+                  <input
+                    autoFocus={index === 0}
+                    value={item.newName}
+                    onChange={event => setRenameTargets(current => current?.map((target, targetIndex) => targetIndex === index ? { ...target, newName: event.target.value } : target) || null)}
+                    disabled={folderActionBusy}
+                    maxLength={255}
+                    className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-sm text-white outline-none focus:border-accent/50 disabled:opacity-50"
+                  />
+                </label>
+              ))}
+              {renameError && <p className="text-xs text-red-400" role="alert">{renameError}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+              <button type="button" disabled={folderActionBusy} onClick={() => setRenameTargets(null)} className="rounded-lg border border-border px-3 py-2 text-xs text-muted hover:text-white disabled:opacity-50">{t('Cancel')}</button>
+              <button type="submit" disabled={folderActionBusy || renameTargets.some(item => !item.newName?.trim())} className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-base hover:opacity-90 disabled:opacity-50">{folderActionBusy ? t('Renaming…') : t('Save names')}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      <ContextMenu menu={folderMenu} />
     </div>
   )
 }
