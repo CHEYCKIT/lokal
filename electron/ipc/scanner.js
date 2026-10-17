@@ -433,7 +433,7 @@ async function scanFolder(folderPath) {
     try {
       const stat = fs.statSync(filePath)
       const trackId = 't-' + hashFile(filePath, stat)
-      const existing = db.prepare('SELECT last_modified, artwork_path FROM tracks WHERE id = ?').get(trackId)
+      const existing = db.prepare('SELECT id, last_modified, artwork_path FROM tracks WHERE file_path = ?').get(filePath)
       const folderArtwork = getFolderArtwork(filePath)
       if (existing && existing.last_modified === stat.mtimeMs) {
         const existingArtwork = existing.artwork_path ? path.resolve(existing.artwork_path) : null
