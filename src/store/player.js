@@ -839,10 +839,15 @@ export const usePlayerStore = create((set, get) => ({
   addToQueue: (track) => {
     const playableTrack = sanitizeSingleTrack(track)
     if (!playableTrack) return
-    const { shuffle, shuffleQueue, queue } = get()
-    
-    if (shuffle && shuffleQueue.length > 0) {
-      set({ shuffleQueue: [...shuffleQueue, playableTrack] })
+    const { shuffle, shuffleQueue, queue, originalQueue } = get()
+
+    if (shuffle) {
+      const nextQueue = [...queue, playableTrack]
+      set({
+        queue: nextQueue,
+        shuffleQueue: shuffleQueue.length ? [...shuffleQueue, playableTrack] : nextQueue,
+        originalQueue: [...(originalQueue.length ? originalQueue : queue), playableTrack],
+      })
     } else {
       set({ queue: [...queue, playableTrack] })
     }
