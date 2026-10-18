@@ -74,7 +74,15 @@ export async function startRadio(el, track, { bufferSec = 3, autoplay = true, ha
   const live = () => generation === mine && session?.trackId === track.id
   const log = (message, level = 'info') => handlers.onLog?.(`[radio] ${track.title}: ${message}`, level)
   el.loop = false
-  const player = new IcecastMetadataPlayer(track.stream_url, {
+  let streamUrl = track.stream_url
+  try {
+    // Browser-side ICY requests fail on stations without CORS support. Electron's
+    // registered protocol fetches the stream in the main process and exposes ICY headers.
+    if (typeof window !== 'undefined' && window.electron?.isElectron === true) {
+      streamUrl = `lokal-stream://radio/${encodeURIComponent(String(track.stream_url || ''))}`
+    }
+  } catch {}
+  const player = new IcecastMetadataPlayer(streamUrl, {
     audioElement: el,
     metadataTypes: ['icy'],
     bufferLength: Math.max(0, Number(bufferSec) || 0),
