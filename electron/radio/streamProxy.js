@@ -8,7 +8,7 @@ const { isPublicHttpUrl } = require('../online/publicUrl')
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, HEAD, OPTIONS',
-  'access-control-allow-headers': 'Icy-MetaData, Range',
+  'access-control-allow-headers': 'Content-Type, Icy-MetaData, Range',
   'access-control-expose-headers': [
     'Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges',
     'Icy-MetaInt', 'Icy-Br', 'Icy-Name', 'Icy-Description', 'Icy-Genre',
@@ -23,6 +23,7 @@ const RESPONSE_HEADERS = [
   'icy-url', 'icy-pub', 'icy-notice1', 'icy-notice2', 'ice-audio-info',
 ]
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const CONNECT_TIMEOUT_MS = 15000
 
 function parseRadioStreamTarget(value) {
   try {
@@ -89,12 +90,18 @@ async function proxyRadioStream(request, rawTarget, {
       if (range) requestHeaders.set('Range', range)
       if (icyMetadata === '1') requestHeaders.set('Icy-MetaData', '1')
 
-      upstream = await fetchImpl(target, {
-        method,
-        headers: requestHeaders,
-        signal: abortController.signal,
-        redirect: 'manual',
-      })
+      // Bound time-to-first-response, but do not time out the live stream after headers arrive.
+      const connectTimer = setTimeout(() => abortController.abort(), CONNECT_TIMEOUT_MS)
+      try {
+        upstream = await fetchImpl(target, {
+          method,
+          headers: requestHeaders,
+          signal: abortController.signal,
+          redirect: 'manual',
+        })
+      } finally {
+        clearTimeout(connectTimer)
+      }
 
       if (!REDIRECT_STATUSES.has(upstream.status)) break
       const location = upstream.headers?.get?.('location')
