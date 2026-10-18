@@ -194,7 +194,7 @@ function flattenTracks(albumResult) {
   albumResult = albumResult || {};
   var rows = [];
   /** Collects track records from nested album volume arrays. */
-function walk(value) {
+  function walk(value) {
     if (!Array.isArray(value)) return;
     for (var i = 0; i < value.length; i++) {
       var row = value[i];
