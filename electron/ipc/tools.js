@@ -200,6 +200,11 @@ function getVersionDaysBehind(installedVersion, latestVersion) {
   return diffMs > 0 ? Math.floor(diffMs / 86400000) : 0
 }
 
+// The first run of a standalone yt-dlp on macOS unpacks itself and is scanned by
+// the system, which takes far longer than 10 s; a version check that timed out
+// made the update window report "Unknown" and offer the update again forever.
+const VERSION_TIMEOUT_MS = process.platform === 'darwin' ? 60000 : 10000
+
 function getExecutableVersion(executable, args = ['--version'], retries = 3) {
   return new Promise(resolve => {
     if (!executable) {
@@ -214,7 +219,7 @@ function getExecutableVersion(executable, args = ['--version'], retries = 3) {
       // rejection that crashes the whole ipcMain handler.
       let child
       try {
-        child = execFile(executable, args, { windowsHide: true, timeout: 10000 }, (error, stdout) => {
+        child = execFile(executable, args, { windowsHide: true, timeout: VERSION_TIMEOUT_MS }, (error, stdout) => {
           if (error && !stdout) {
             if (isBusyError(error) && attemptsLeft > 0) {
               console.warn(`[Version Check] Executable busy, retrying... (${attemptsLeft} attempts left)`);
@@ -642,6 +647,12 @@ async function downloadYtDlp(progressCallback) {
         fs.chmodSync(dest, '755')
         console.log(`[Tools] Set executable permissions for yt-dlp`)
       }
+
+      // The first run is the slow one (and macOS checks the file); do it now, so
+      // the install ends with a working yt-dlp or a clear error, not a silent loop.
+      if (progressCallback) progressCallback({ status: 'installing', message: 'Checking yt-dlp starts...' })
+      const version = await getExecutableVersion(dest, ['--version'], 0)
+      if (!version) throw new Error('yt-dlp was downloaded but does not start on this computer. Try again, or set a custom path in Settings → External Tools.')
 
       return dest
     } catch (err) {
