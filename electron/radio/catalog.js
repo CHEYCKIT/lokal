@@ -67,7 +67,7 @@ function parseApi(errors, api, path) {
   }
   if (type === 'azuracast' && api.station != null) out.station = String(api.station).trim()
   if (type === 'json') {
-    for (const field of ['artist', 'title', 'text', 'cover', 'album', 'lyrics', 'duration', 'elapsed']) {
+    for (const field of ['artist', 'title', 'text', 'cover', 'album', 'lyrics', 'duration', 'elapsed', 'match']) {
       if (api[field] == null) continue
       if (typeof api[field] !== 'string') { errors.push({ path: `${path}.${field}`, code: 'not-string', field }); ok = false; continue }
       out[field] = api[field].trim()

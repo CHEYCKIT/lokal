@@ -9,7 +9,15 @@ const TIMEOUT_MS = 8000
 const RECORD_STATIONS_TTL_MS = 24 * 60 * 60 * 1000
 
 const str = value => (value == null ? '' : String(value).trim())
-const num = value => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined)
+// A length in seconds: a number, or "m:ss" / "h:mm:ss" text.
+const num = value => {
+  const clock = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(str(value))
+  if (clock) {
+    const seconds = clock[3] != null ? Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]) : Number(clock[1]) * 60 + Number(clock[2])
+    return seconds > 0 ? seconds : undefined
+  }
+  return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined
+}
 const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : undefined)
 
 const RATE_LIMIT_RETRY_MS = 1500
@@ -155,7 +163,20 @@ function pick(data, path) {
 }
 
 // Any other JSON API: the catalogue says where each field is.
+// A list answering for several stations (one JSON for all of a network's
+// radios): `match` is "path=value", the entry whose `path` is `value`.
+function selectEntry(data, match) {
+  if (!Array.isArray(data) || !match) return data
+  const at = String(match).indexOf('=')
+  if (at < 1) return data
+  const path = match.slice(0, at).trim()
+  const value = match.slice(at + 1).trim()
+  return data.find(item => str(pick(item, path)) === value) ?? null
+}
+
 function fromJson(data, api) {
+  data = selectEntry(data, api.match)
+  if (data == null) return null
   const fallback = api.text ? splitText(pick(data, api.text)) : { artist: '', title: '' }
   return clean({
     artist: str(pick(data, api.artist)) || fallback.artist,
@@ -168,8 +189,44 @@ function fromJson(data, api) {
   })
 }
 
+// A station whose API gives no cover: the song's artwork from iTunes' public
+// search, when the song is there (matched on title and artist, so another
+// song's cover is never put on it). Kept per song: it's asked once.
+const coverCache = new Map()
+const normalize = value => str(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+async function coverFor(song, fetchImpl) {
+  const key = `${normalize(song.artist)}|${normalize(song.title)}`
+  if (coverCache.has(key)) return coverCache.get(key)
+  let cover
+  try {
+    const query = new URLSearchParams({ term: `${song.artist} ${song.title}`.trim(), media: 'music', entity: 'song', limit: '5' })
+    const data = await getJson(`https://itunes.apple.com/search?${query}`, fetchImpl)
+    const wantedTitle = normalize(song.title)
+    const wantedArtist = normalize(song.artist)
+    const hit = (Array.isArray(data?.results) ? data.results : []).find(item => {
+      const title = normalize(item.trackName)
+      const artist = normalize(item.artistName)
+      return (title === wantedTitle || title.startsWith(`${wantedTitle} `)) && (!wantedArtist || artist.includes(wantedArtist) || wantedArtist.includes(artist))
+    })
+    cover = httpUrl(hit?.artworkUrl100)?.replace(/\/\d+x\d+bb\./, '/600x600bb.')
+  } catch {}
+  if (coverCache.size > 200) coverCache.delete(coverCache.keys().next().value)
+  coverCache.set(key, cover)
+  return cover
+}
+
+/** What the station's API says is playing, or null; its cover from iTunes when the API has none. */
+async function nowPlaying(api, options = {}) {
+  const song = await nowPlayingFromApi(api, options)
+  if (song && !song.cover && song.title) {
+    const cover = await coverFor(song, options.fetchImpl || fetch)
+    if (cover) return { ...song, cover }
+  }
+  return song
+}
+
 /** What the station's API says is playing, or null. */
-async function nowPlaying(api, { fetchImpl = fetch, publicOnly = false } = {}) {
+async function nowPlayingFromApi(api, { fetchImpl = fetch, publicOnly = false } = {}) {
   const type = str(api?.type).toLowerCase()
   try {
     if (type === 'azuracast') return fromAzuracast(await getJson(api.url, fetchImpl, { publicOnly }), api)
