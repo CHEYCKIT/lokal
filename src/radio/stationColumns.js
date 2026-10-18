@@ -9,7 +9,7 @@ export const STATION_COLUMN_DEFS = {
   number: { label: 'Row number', fixed: 2, min: 1.5 },
   title: { label: 'Station', flex: 3, min: 11 },
   genre: { label: 'Genre', flex: 1.2, min: 5 },
-  comment: { label: 'Comment', flex: 2, min: 6 },
+  comment: { label: 'Description', flex: 2, min: 6 },
   history: { label: 'History', flex: 2, min: 6 },
   nowPlaying: { label: 'Now playing', flex: 2.5, min: 8 },
   stream: { label: 'Stream', fixed: 6, min: 4 },
