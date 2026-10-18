@@ -611,9 +611,10 @@ async function downloadYtDlp(progressCallback) {
   }
 
   ytDlpInstallPromise = (async () => {
-    const url = process.platform === 'win32'
-      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
-      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
+    // Plain "yt-dlp" is a Python script; Macs without Python can't run it, so
+    // they get the standalone build.
+    const asset = process.platform === 'win32' ? 'yt-dlp.exe' : process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp'
+    const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}`
 
     const dest = path.join(getUserDataBin(), filename)
     const tempDest = path.join(getUserDataBin(), `${filename}.download-${process.pid}-${Date.now()}`)
@@ -660,6 +661,54 @@ async function downloadYtDlp(progressCallback) {
 
 let ffmpegInstallPromise = null
 
+// macOS ffmpeg/ffprobe: a .gz or .zip holding one binary. Native arm64 first
+// (ffmpeg-static), then evermeet.cx (Intel, runs through Rosetta on Apple silicon).
+async function installMacBinary(name, sources, binDir, progressCallback) {
+  let lastErr = null
+  for (const { url, kind } of sources) {
+    const tmp = path.join(binDir, `${name}.${process.pid}-${Date.now()}.${kind}`)
+    const out = `${tmp}.bin`
+    try {
+      await downloadFileWithRetry(url, tmp, progressCallback, 1, `Downloading ${name}`)
+      if (progressCallback) progressCallback({ status: 'extracting', message: `Extracting ${name}...` })
+      if (kind === 'gz') {
+        fs.writeFileSync(out, require('zlib').gunzipSync(fs.readFileSync(tmp)))
+      } else {
+        const entry = new AdmZip(tmp).getEntries().find(e => !e.isDirectory && path.basename(e.entryName) === name)
+        if (!entry) throw new Error(`${name} not found inside downloaded archive`)
+        fs.writeFileSync(out, entry.getData())
+      }
+      validateDownloadedExecutable(out)
+      fs.chmodSync(out, '755')
+      const dest = path.join(binDir, name)
+      await replaceFileWithRetry(out, dest, progressCallback)
+      return dest
+    } catch (err) {
+      lastErr = err
+      console.warn(`[Tools] ${name} from ${url} failed: ${err.message}`)
+    } finally {
+      try { fs.removeSync(tmp) } catch {}
+      try { fs.removeSync(out) } catch {}
+    }
+  }
+  throw lastErr || new Error(`Could not download ${name}`)
+}
+
+async function installMacFfmpeg(binDir, progressCallback) {
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const ffmpeg = await installMacBinary('ffmpeg', [
+    { url: `https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-${arch}.gz`, kind: 'gz' },
+    { url: 'https://evermeet.cx/ffmpeg/getrelease/zip', kind: 'zip' },
+  ], binDir, progressCallback)
+  // ffprobe is optional: the app works without it.
+  try {
+    await installMacBinary('ffprobe', [{ url: 'https://evermeet.cx/ffprobe/getrelease/zip', kind: 'zip' }], binDir, progressCallback)
+  } catch (err) {
+    console.warn(`[Tools] ffprobe not installed: ${err.message}`)
+  }
+  return ffmpeg
+}
+
 function getFfmpegInstallLock() {
   return ffmpegInstallPromise
 }
@@ -683,10 +732,12 @@ async function downloadFfmpeg(progressCallback) {
       extractFolderName = 'ffmpeg-master-latest-win64-gpl'
       exeSubPath = 'bin'
     } else if (process.platform === 'darwin') {
-      url = 'https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macos64-gpl.tar.xz'
-      archiveExt = 'tar.xz'
-      extractFolderName = 'ffmpeg-master-latest-macos64-gpl'
-      exeSubPath = 'bin'
+      // yt-dlp's FFmpeg-Builds has no macOS build (404): use single-binary builds.
+      try {
+        return await installMacFfmpeg(binDir, progressCallback)
+      } finally {
+        ffmpegInstallPromise = null
+      }
     } else {
       url = 'https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz'
       archiveExt = 'tar.xz'

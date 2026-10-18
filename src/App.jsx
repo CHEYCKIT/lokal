@@ -846,7 +846,19 @@ export default function App() {
     refreshYtDlpVersionStatus()
     const unsubscribe = api.onToolsDownloadProgress((_, payload) => {
       if (payload?.tool !== 'yt-dlp') return
-      // Sent when the download queue updated yt-dlp by itself (YouTube 403s).
+      // Downloads started from Settings send progress too: they must not pop
+      // this window open, nor leave it stuck at 100%. Only the queue's own
+      // update (payload.auto, on YouTube 403s) opens it, and the window's own
+      // Update button feeds its bar while the window is open.
+      if (!payload.auto) {
+        if (payload.status === 'done') return
+        setYtDlpVersionState(prev => (prev.visible && prev.downloadState === 'downloading' ? {
+          ...prev,
+          downloadMessage: payload.message || prev.downloadMessage,
+          downloadPercent: Number.isFinite(payload.percent) ? payload.percent : (payload.status === 'installing' ? 100 : prev.downloadPercent ?? null),
+        } : prev))
+        return
+      }
       if (payload.status === 'done') {
         setYtDlpVersionState(prev => ({ ...prev, visible: true, downloadState: 'done', downloadMessage: payload.message || 'yt-dlp updated.', downloadPercent: null }))
         refreshYtDlpVersionStatus()
@@ -910,6 +922,7 @@ export default function App() {
       if (result?.error) {
         setYtDlpVersionState(prev => ({
           ...prev,
+          visible: prev.visible,
           downloadState: 'error',
           downloadMessage: '',
           error: result.error,
@@ -920,7 +933,7 @@ export default function App() {
       setYtDlpVersionState(prev => ({
         ...prev,
         ...status,
-        visible: status?.upToDate === false,
+        visible: prev.visible && status?.upToDate === false,
         downloadState: 'done',
         downloadMessage: status?.upToDate === false ? 'yt-dlp updated, but another newer release is still available.' : 'yt-dlp is up to date.',
       }))
@@ -2930,7 +2943,7 @@ export default function App() {
       : null
 
     return (
-      <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/55 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/55 backdrop-blur-sm" onMouseDown={e => { if (e.target === e.currentTarget && !isDownloading) handleDismissYtDlpNotice() }}>
         <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-elevated/90 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] ring-1 ring-white/5">
           <div className="flex items-center justify-between bg-white/5 p-7">
             <div className="flex items-center gap-4">
@@ -3014,7 +3027,7 @@ export default function App() {
                 onClick={handleDismissYtDlpNotice}
                 className="rounded-2xl bg-white/5 px-6 py-4 text-sm font-bold text-white transition-all hover:bg-white/10"
               >
-                {t('Later')}
+                {isDownloading ? t('Hide') : isDone ? t('Close') : t('Later')}
               </button>
             </div>
           </div>
