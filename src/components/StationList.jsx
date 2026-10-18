@@ -24,11 +24,32 @@ let revealedAtLaunch = false
 
 const isLink = value => /^https?:\/\/\S+$/i.test(String(value || '').trim())
 
+const STATION_POLL_MS = 30000
+
 export default function StationList({ catalog, configUrl = '', toolbarStart = null, stickyBleed = '0.5rem' }) {
   const { t } = useTranslation()
   const stations = catalog?.stations || []
   const { currentTrack, isPlaying, isBuffering, playTrack, togglePlay } = usePlayerStore(useShallow(({ currentTrack, isPlaying, isBuffering, playTrack, togglePlay }) => ({ currentTrack, isPlaying, isBuffering, playTrack, togglePlay })))
   const streamInfo = useRadioStore(s => s.streamInfo)
+  const songsByStation = useRadioStore(s => s.nowPlaying)
+  // Every station that has an API shows its song, not only the one playing:
+  // asked when the list opens and every STATION_POLL_MS while it's open.
+  const withApi = stations.filter(station => station.api).map(station => `${station.id}`).join('|')
+  useEffect(() => {
+    if (!withApi) return undefined
+    let live = true
+    const refresh = () => {
+      for (const station of stations) {
+        if (!station.api || !api.radioNowPlaying) continue
+        Promise.resolve(api.radioNowPlaying(station.api)).then(info => {
+          if (live && info?.title) useRadioStore.getState().setNowPlaying(station.id, { artist: info.artist || '', title: info.title, ...(info.cover ? { cover: info.cover } : {}) })
+        }).catch(() => {})
+      }
+    }
+    refresh()
+    const timer = setInterval(refresh, STATION_POLL_MS)
+    return () => { live = false; clearInterval(timer) }
+  }, [withApi]) // eslint-disable-line react-hooks/exhaustive-deps
   const catalogUrl = useRadioStore(s => s.url)
   const catalogLoading = useRadioStore(s => s.loading)
   const loadCatalog = useRadioStore(s => s.loadCatalog)
@@ -194,7 +215,8 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
           const isCurrent = currentTrack?.id === station.id
           const playingHere = isCurrent && isPlaying
           const info = streamInfo[station.id]
-          const song = isCurrent && currentTrack.song_key ? [currentTrack.artist, currentTrack.title].filter(Boolean).join(' - ') : ''
+          const listed = songsByStation[station.id]
+          const song = isCurrent && currentTrack.song_key ? [currentTrack.artist, currentTrack.title].filter(Boolean).join(' - ') : [listed?.artist, listed?.title].filter(Boolean).join(' - ')
           const playButton = (
             <button onClick={e => play(station, e)} aria-label={t(playingHere ? 'Pause {title}' : 'Play {title}', { title: station.title })}
               className={isCurrent ? 'text-accent' : 'text-white'}>
