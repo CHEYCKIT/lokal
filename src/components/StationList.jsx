@@ -174,7 +174,7 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
 
   return (
     <div ref={listRef} className="w-full min-w-0" style={{ '--st-columns': layout.template }}>
-      <div className={`sticky top-0 z-20 pt-2 ${glass ? 'backdrop-blur-lg backdrop-saturate-150' : ''}`}
+      <div className={`sticky top-0 z-20 pt-5 pb-1 ${glass ? 'backdrop-blur-lg backdrop-saturate-150' : ''}`}
         style={{ marginInline: `calc(-1 * ${stickyBleed})`, paddingInline: stickyBleed, backgroundColor: glass ? `rgb(var(--surface-rgb) / ${(1 - glassTransparency / 100).toFixed(2)})` : 'rgb(var(--surface-rgb))' }}>
         <div className="mb-1 flex items-center justify-between gap-3 px-2">
           {toolbarStart || <span />}

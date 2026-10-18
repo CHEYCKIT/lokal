@@ -2078,7 +2078,11 @@ export function LanguageProvider({ children }) {
     if (typeof phrase !== 'string') return phrase
     const translated = language === 'en' ? phrase : (TRANSLATIONS[phrase]?.[language] || phrase)
     if (!values || typeof values !== 'object') return translated
-    return translated.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match)
+    // "{n} station|{n} stations": two forms, the first for one (`count`, else `n`).
+    const count = Number(values.count ?? values.n)
+    const forms = translated.includes('|') && Number.isFinite(count) ? translated.split('|') : null
+    const chosen = forms && forms.length === 2 ? forms[count === 1 ? 0 : 1] : translated
+    return chosen.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match)
   }, [language])
 
   return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>
