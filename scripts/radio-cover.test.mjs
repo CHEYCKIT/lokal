@@ -20,3 +20,14 @@ test('a cover the station gives is kept', async () => {
   const fetchImpl = async () => reply([{ artiste: 'A', titre: 'B', pic: 'https://own.test/c.jpg' }])
   assert.equal((await nowPlaying({ ...api, cover: '[0].pic' }, { fetchImpl })).cover, 'https://own.test/c.jpg')
 })
+
+test('one JSON for several stations: the entry named by match, with its cover and "m:ss" length', async () => {
+  const list = [
+    { radio: { code: 'nova-soul' }, currentTrack: { artist: 'A', title: 'Soul Song', image: 'https://img.test/s.jpg', duration: '03:24' } },
+    { radio: { code: 'nova-danse' }, currentTrack: { artist: 'B', title: 'Dance Song', image: 'https://img.test/d.jpg', duration: '03:24' } },
+  ]
+  const nova = code => ({ type: 'json', url: 'https://radio.test/all.json', match: `radio.code=${code}`, artist: 'currentTrack.artist', title: 'currentTrack.title', cover: 'currentTrack.image', duration: 'currentTrack.duration' })
+  const fetchImpl = async () => reply(list)
+  assert.deepEqual(await nowPlaying(nova('nova-danse'), { fetchImpl }), { artist: 'B', title: 'Dance Song', cover: 'https://img.test/d.jpg', duration: 204 })
+  assert.equal(await nowPlaying(nova('nova-missing'), { fetchImpl }), null)
+})

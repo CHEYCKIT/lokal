@@ -9,7 +9,15 @@ const TIMEOUT_MS = 8000
 const RECORD_STATIONS_TTL_MS = 24 * 60 * 60 * 1000
 
 const str = value => (value == null ? '' : String(value).trim())
-const num = value => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined)
+// A length in seconds: a number, or "m:ss" / "h:mm:ss" text.
+const num = value => {
+  const clock = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(str(value))
+  if (clock) {
+    const seconds = clock[3] != null ? Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]) : Number(clock[1]) * 60 + Number(clock[2])
+    return seconds > 0 ? seconds : undefined
+  }
+  return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined
+}
 const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : undefined)
 
 const RATE_LIMIT_RETRY_MS = 1500
@@ -155,7 +163,20 @@ function pick(data, path) {
 }
 
 // Any other JSON API: the catalogue says where each field is.
+// A list answering for several stations (one JSON for all of a network's
+// radios): `match` is "path=value", the entry whose `path` is `value`.
+function selectEntry(data, match) {
+  if (!Array.isArray(data) || !match) return data
+  const at = String(match).indexOf('=')
+  if (at < 1) return data
+  const path = match.slice(0, at).trim()
+  const value = match.slice(at + 1).trim()
+  return data.find(item => str(pick(item, path)) === value) ?? null
+}
+
 function fromJson(data, api) {
+  data = selectEntry(data, api.match)
+  if (data == null) return null
   const fallback = api.text ? splitText(pick(data, api.text)) : { artist: '', title: '' }
   return clean({
     artist: str(pick(data, api.artist)) || fallback.artist,
