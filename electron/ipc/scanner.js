@@ -7,6 +7,7 @@ const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
 const artistSplit = require('../artistSplit')
+const { getArtistNamePreference, artistNamePreferenceNeedsRescan, rememberArtistNamePreferenceAfterScan } = require('../artistMetadataPreference')
 const { findFolderArtwork, getLibraryFolders, resolveLibraryFolderTarget, getTrackRowsUnderFolder, renameLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
@@ -375,8 +376,23 @@ async function scanFolders(folderPaths = []) {
 
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folders[0])
+  // Snapshot the preference once for all roots; otherwise the first root could
+  // save the checkpoint and make later roots skip their unchanged files.
+  const artistNamePreference = getArtistNamePreference(db)
+  const forceArtistNameRefresh = artistNamePreferenceNeedsRescan(db, artistNamePreference)
   const results = []
-  for (const folder of folders) results.push(await scanFolder(folder, { saveRoot: false, watch: false }))
+  for (const folder of folders) {
+    results.push(await scanFolder(folder, {
+      saveRoot: false,
+      watch: false,
+      forceArtistNameRefresh,
+      persistArtistNamePreference: false,
+      artistNamePreference,
+    }))
+  }
+  // Persist only after all roots scan without file errors, so a failed rescan
+  // is retried next time.
+  rememberArtistNamePreferenceAfterScan(db, artistNamePreference, results)
   // Scanning a folder must not replace the selected root list or leave only
   // the last folder watched.
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
@@ -385,8 +401,19 @@ async function scanFolders(folderPaths = []) {
   return { folders, results, status: scanStatus }
 }
 
-async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
+async function scanFolder(folderPath, {
+  saveRoot = true,
+  watch = true,
+  forceArtistNameRefresh = null,
+  persistArtistNamePreference = true,
+  artistNamePreference = null,
+} = {}) {
   const db = getDB()
+  // Artist text depends on this preference as well as file metadata/mtime.
+  const scanPreference = artistNamePreference ?? getArtistNamePreference(db)
+  const refreshArtistNames = forceArtistNameRefresh == null
+    ? artistNamePreferenceNeedsRescan(db, scanPreference)
+    : Boolean(forceArtistNameRefresh)
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
   try {
@@ -483,7 +510,7 @@ async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
       const trackId = 't-' + hashFile(filePath, stat)
       const existing = db.prepare('SELECT id, last_modified, artwork_path FROM tracks WHERE file_path = ?').get(filePath)
       const folderArtwork = getFolderArtwork(filePath)
-      if (existing && existing.last_modified === stat.mtimeMs) {
+      if (!refreshArtistNames && existing && existing.last_modified === stat.mtimeMs) {
         const existingArtwork = existing.artwork_path ? path.resolve(existing.artwork_path) : null
         const storedArtworkDir = path.resolve(getStorageDir(), 'artwork')
         const hasCachedArtwork = existingArtwork &&
@@ -517,6 +544,9 @@ async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
   }
   if (batch.length > 0) await insertBatch(batch)
   scanStatus.scanning = false; emitProgress(true, true)
+  if (persistArtistNamePreference) {
+    rememberArtistNamePreferenceAfterScan(db, scanPreference, scanStatus)
+  }
   return scanStatus
 }
 
