@@ -7,6 +7,7 @@ const http = require('http')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
 const artistSplit = require('../artistSplit')
+const { getArtistNamePreference, artistNamePreferenceNeedsRescan, rememberArtistNamePreferenceAfterScan } = require('../artistMetadataPreference')
 const { findFolderArtwork, getLibraryFolders, resolveLibraryFolderTarget, getTrackRowsUnderFolder, renameLibraryFolders } = require('../libraryFolder')
 const { getDB, getStorageDir, importAppData, resetAppData } = require('./db')
 const { ipcMain } = require('electron')
@@ -88,6 +89,9 @@ function ensureLinkLocks(db) {
 function lockArtistLinks(db, artistId) {
   ensureLinkLocks(db)
   db.prepare('INSERT OR IGNORE INTO artist_link_locks (track_id) SELECT track_id FROM artist_track_links WHERE artist_id = ?').run(artistId)
+}
+function artistLinksLocked(db, trackId) {
+  try { return Boolean(db.prepare('SELECT 1 FROM artist_link_locks WHERE track_id = ?').get(trackId)) } catch { return false }
 }
 function unlockArtistLinks(db, trackId) {
   try { db.prepare('DELETE FROM artist_link_locks WHERE track_id = ?').run(trackId) } catch {}
@@ -196,14 +200,16 @@ async function extractArtwork(metadata, trackId, fallbackArtwork = null) {
   return fallbackArtwork || null
 }
 
-function walkDir(dir, files = []) {
+// `failures` collects folders that could not be read, so a scan can tell it
+// missed files instead of looking complete.
+function walkDir(dir, files = [], failures = null) {
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) walkDir(full, files)
+      if (entry.isDirectory()) walkDir(full, files, failures)
       else if (AUDIO_EXTS.has(path.extname(entry.name).toLowerCase())) files.push(full)
     }
-  } catch {}
+  } catch { failures?.push(dir) }
   return files
 }
 
@@ -256,10 +262,13 @@ function scoreArtistCandidate(name, rawArtist) {
   return score
 }
 
-function pickPreferredArtist(common) {
+// `preference` ('0' / '1') pins the choice for a whole scan; without it the
+// live setting is read.
+function pickPreferredArtist(common, preference = null) {
   const rawArtist = (common.artist || common.albumartist || '').trim()
   if (!rawArtist) return null
-  if (!preferCleanDownloadMetadata() || isKnownCommaArtist(rawArtist)) return rawArtist
+  const clean = preference == null ? preferCleanDownloadMetadata() : preference !== '0'
+  if (!clean || isKnownCommaArtist(rawArtist)) return rawArtist
 
   const rawParts = rawArtist.split(/\s*,\s*/).map(part => part.trim()).filter(Boolean)
   const candidates = []
@@ -375,8 +384,23 @@ async function scanFolders(folderPaths = []) {
 
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folder', ?)").run(folders[0])
+  // Snapshot the preference once for all roots; otherwise the first root could
+  // save the checkpoint and make later roots skip their unchanged files.
+  const artistNamePreference = getArtistNamePreference(db)
+  const forceArtistNameRefresh = artistNamePreferenceNeedsRescan(db, artistNamePreference)
   const results = []
-  for (const folder of folders) results.push(await scanFolder(folder, { saveRoot: false, watch: false }))
+  for (const folder of folders) {
+    results.push(await scanFolder(folder, {
+      saveRoot: false,
+      watch: false,
+      forceArtistNameRefresh,
+      persistArtistNamePreference: false,
+      artistNamePreference,
+    }))
+  }
+  // Persist only after all roots scan without file errors, so a failed rescan
+  // is retried next time.
+  rememberArtistNamePreferenceAfterScan(db, artistNamePreference, results)
   // Scanning a folder must not replace the selected root list or leave only
   // the last folder watched.
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('music_folders', ?)").run(JSON.stringify(folders))
@@ -385,15 +409,33 @@ async function scanFolders(folderPaths = []) {
   return { folders, results, status: scanStatus }
 }
 
-async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
+function scansEveryRoot(db, folderPath) {
+  const roots = configuredMusicFolders(db).map(root => path.resolve(root).toLowerCase())
+  return roots.every(root => root === path.resolve(folderPath).toLowerCase())
+}
+
+async function scanFolder(folderPath, {
+  saveRoot = true,
+  watch = true,
+  forceArtistNameRefresh = null,
+  persistArtistNamePreference = true,
+  artistNamePreference = null,
+} = {}) {
   const db = getDB()
+  // Artist text depends on this preference as well as file metadata/mtime.
+  const scanPreference = artistNamePreference ?? getArtistNamePreference(db)
+  const refreshArtistNames = forceArtistNameRefresh == null
+    ? artistNamePreferenceNeedsRescan(db, scanPreference)
+    : Boolean(forceArtistNameRefresh)
   try { db.exec("ALTER TABLE tracks ADD COLUMN replaygain TEXT") } catch {}
   scanStatus = { scanning: true, total: 0, done: 0, errors: 0, skipped: 0 }
   try {
     const relinked = relinkArtistsIfNeeded(db)
     if (relinked) console.log(`[scanFolder] Re-linked artists for ${relinked} track(s)`)
   } catch (e) { console.warn('[scanFolder] Artist re-link skipped:', e.message) }
-  const files = walkDir(folderPath)
+  const walkFailures = []
+  const files = walkDir(folderPath, [], walkFailures)
+  scanStatus.errors += walkFailures.length
   scanStatus.total = files.length
   const PROGRESS_INTERVAL_MS = 100
   const PROGRESS_EVERY_FILES = 20
@@ -483,7 +525,10 @@ async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
       const trackId = 't-' + hashFile(filePath, stat)
       const existing = db.prepare('SELECT id, last_modified, artwork_path FROM tracks WHERE file_path = ?').get(filePath)
       const folderArtwork = getFolderArtwork(filePath)
-      if (existing && existing.last_modified === stat.mtimeMs) {
+      // A refresh re-reads unchanged files, but not ones whose artist the user
+      // changed by hand (rename/merge/delete lock their links).
+      const refreshThis = refreshArtistNames && !(existing && artistLinksLocked(db, existing.id))
+      if (!refreshThis && existing && existing.last_modified === stat.mtimeMs) {
         const existingArtwork = existing.artwork_path ? path.resolve(existing.artwork_path) : null
         const storedArtworkDir = path.resolve(getStorageDir(), 'artwork')
         const hasCachedArtwork = existingArtwork &&
@@ -498,7 +543,7 @@ async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
       const meta = await mm.parseFile(filePath, { duration: true, skipCovers: false })
       const c = meta.common
       const rawTitle = c.title?.trim()
-      const rawArtist = pickPreferredArtist(c)
+      const rawArtist = pickPreferredArtist(c, scanPreference)
       const title = rawTitle || extractTitleFromFilename(filePath)
       const artist = rawArtist || extractArtistFromFolder(filePath)
       const duration = meta.format.duration || 0
@@ -517,6 +562,11 @@ async function scanFolder(folderPath, { saveRoot = true, watch = true } = {}) {
   }
   if (batch.length > 0) await insertBatch(batch)
   scanStatus.scanning = false; emitProgress(true, true)
+  // The checkpoint covers the whole library, so a scan of one root (a watcher
+  // or an incremental update) must not save it while other roots are stale.
+  if (persistArtistNamePreference && scansEveryRoot(db, folderPath)) {
+    rememberArtistNamePreferenceAfterScan(db, scanPreference, scanStatus)
+  }
   return scanStatus
 }
 
