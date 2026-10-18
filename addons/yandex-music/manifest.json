@@ -1,0 +1,41 @@
+{
+  "name": "yandex-music",
+  "displayName": "Yandex Music",
+  "icon": "icon.png",
+  "version": "1.0.0",
+  "description": "Search and download tracks from Yandex Music using your own OAuth token, including available lossless audio.",
+  "minAppVersion": "5.1.0",
+  "type": ["download_provider"],
+  "permissions": {
+    "network": ["api.music.yandex.net", "music.yandex.ru", "yandex.ru", "*.yandex.ru", "yandex.net", "*.yandex.net", "yandex.com", "*.yandex.com", "yandex.by", "*.yandex.by", "yandex.kz", "*.yandex.kz"],
+    "storage": true,
+    "file": true
+  },
+  "settings": [
+    {
+      "key": "token",
+      "label": "Yandex Music OAuth token",
+      "type": "password",
+      "secret": true,
+      "required": true,
+      "default": "",
+      "description": "Paste an OAuth token for your own Yandex Music account. The token is stored in Lokal's encrypted addon settings."
+    }
+  ],
+  "qualityOptions": [
+    {"id": "lossless", "label": "Lossless (FLAC when available)", "kind": "lossless"},
+    {"id": "high", "label": "High quality (AAC/MP3)", "kind": "lossy"}
+  ],
+  "searchBehavior": {
+    "filters": [
+      {"id": "tracks", "label": "Tracks"},
+      {"id": "albums", "label": "Albums"},
+      {"id": "artists", "label": "Artists"}
+    ]
+  },
+  "urlHandler": {
+    "enabled": true,
+    "patterns": ["music.yandex.ru", "music.yandex.com", "music.yandex.by", "music.yandex.kz"]
+  },
+  "capabilities": {"actionTimeoutSeconds": 30, "downloadTransfer": {"maxAttempts": 3, "resume": false}}
+}
