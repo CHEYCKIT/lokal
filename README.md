@@ -1,5 +1,5 @@
 # ![Lokal](https://i.imgur.com/O9SwX2c.png)
-![lokal icon](public/lokal-icon.png)
+<img src="public/lokal-icon.png" alt="lokal icon" width="160">
 ![convient photo of toro](https://i.imgur.com/KgjwTvk.png)
 
 
