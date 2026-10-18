@@ -111,7 +111,10 @@ class PackageService {
   }
   find(key) {const row=this.db.prepare('SELECT * FROM spotiflac_packages WHERE key=?').get(key);return row?{...row,manifest:JSON.parse(row.manifest_json),methods:JSON.parse(row.methods_json)}:null}
   settings(addon) {
-    const values=this.storage.read(addon.key,'settings'),defaults={}
+    // Settings saved by another build can be unreadable (the OS credential vault
+    // key changed): the addon then shows its defaults rather than failing to list.
+    let values={};try{values=this.storage.read(addon.key,'settings')}catch(error){console.warn(`[SpotiFLAC] Could not read settings of ${addon.name}: ${error.message}`)}
+    const defaults={}
     for(const field of addon.manifest.settings || [])if(field.default!==undefined)defaults[field.key]=field.default
     const qualitySettings={}
     for(const quality of addon.manifest.qualityOptions || [])qualitySettings[quality.id]=Object.fromEntries((quality.settings || []).filter(f=>f.default!==undefined).map(f=>[f.key,f.default]))
@@ -148,7 +151,13 @@ class PackageService {
     }
     return {kind:missing.length?'settings':'none',ready:!missing.length,verified:true,missing}
   }
-  list() {return this.db.prepare('SELECT key FROM spotiflac_packages ORDER BY installed_at').all().map(({key})=>this.publicView(this.find(key)))}
+  list() {
+    // One broken package must not hide the others (or the HTTP addons).
+    return this.db.prepare('SELECT key FROM spotiflac_packages ORDER BY installed_at').all().flatMap(({key})=>{
+      try{return [this.publicView(this.find(key))]}
+      catch(error){console.warn(`[SpotiFLAC] Skipped unreadable package ${key}: ${error.message}`);return []}
+    })
+  }
   repos() {return this.db.prepare('SELECT id,url,name,refreshed_at,error FROM spotiflac_repositories ORDER BY rowid').all()}
   async refreshDue(maxAgeMs=6*60*60*1000) {
     const repos=this.repos().filter(repo=>!repo.refreshed_at || Date.now()-repo.refreshed_at>maxAgeMs)
