@@ -1,6 +1,7 @@
 {
   "name": "yandex-music",
   "displayName": "Yandex Music",
+  "icon": "icon.png",
   "version": "1.0.0",
   "description": "Search and download tracks from Yandex Music using your own OAuth token, including available lossless audio.",
   "minAppVersion": "5.1.0",
