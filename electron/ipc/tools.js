@@ -661,8 +661,8 @@ async function downloadYtDlp(progressCallback) {
 
 let ffmpegInstallPromise = null
 
-// macOS ffmpeg/ffprobe: a .gz or .zip holding one binary. Native arm64 first
-// (ffmpeg-static), then evermeet.cx (Intel, runs through Rosetta on Apple silicon).
+// macOS ffmpeg/ffprobe: a .gz or .zip holding one native binary (arm64 or Intel,
+// from ffmpeg-static's releases).
 async function installMacBinary(name, sources, binDir, progressCallback) {
   let lastErr = null
   for (const { url, kind } of sources) {
@@ -696,13 +696,11 @@ async function installMacBinary(name, sources, binDir, progressCallback) {
 
 async function installMacFfmpeg(binDir, progressCallback) {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-  const ffmpeg = await installMacBinary('ffmpeg', [
-    { url: `https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-${arch}.gz`, kind: 'gz' },
-    { url: 'https://evermeet.cx/ffmpeg/getrelease/zip', kind: 'zip' },
-  ], binDir, progressCallback)
+  const from = name => [{ url: `https://github.com/eugeneware/ffmpeg-static/releases/latest/download/${name}-darwin-${arch}.gz`, kind: 'gz' }]
+  const ffmpeg = await installMacBinary('ffmpeg', from('ffmpeg'), binDir, progressCallback)
   // ffprobe is optional: the app works without it.
   try {
-    await installMacBinary('ffprobe', [{ url: 'https://evermeet.cx/ffprobe/getrelease/zip', kind: 'zip' }], binDir, progressCallback)
+    await installMacBinary('ffprobe', from('ffprobe'), binDir, progressCallback)
   } catch (err) {
     console.warn(`[Tools] ffprobe not installed: ${err.message}`)
   }
