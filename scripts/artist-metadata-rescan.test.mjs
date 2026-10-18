@@ -79,3 +79,12 @@ test('a scan stores its starting preference snapshot, not a mid-scan change', ()
   assert.equal(db.values.get('artist_names_scan_preference'), '0')
   assert.equal(artistNamePreferenceNeedsRescan(db), true)
 })
+
+test('the scanner pins the preference per scan, counts unreadable folders, spares hand-edited artists and saves the checkpoint only for a whole-library scan', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../electron/ipc/scanner.js', import.meta.url), 'utf8')
+  assert.match(source, /pickPreferredArtist\(c, scanPreference\)/)
+  assert.match(source, /scanStatus\.errors \+= walkFailures\.length/)
+  assert.match(source, /refreshArtistNames && !\(existing && artistLinksLocked\(db, existing\.id\)\)/)
+  assert.match(source, /persistArtistNamePreference && scansEveryRoot\(db, folderPath\)/)
+})
