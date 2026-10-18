@@ -4,7 +4,7 @@ import { isPlayable } from '../onlineTracks.js'
 import { songKey } from '../recommendations.js'
 import { CROSSFADE_DEFAULTS } from '../audio/crossfade.js'
 import { normalizeReplayGainMode } from '../audio/replayGain.mjs'
-import { isStationTrack } from '../radio/stations'
+import { isStationTrack } from '../radio/stations.js'
 
 // Only used by toggleMiniPlayer's setWindowSize/setAlwaysOnTop fallback path
 // below (when window.electron.setMiniMode isn't available), to remember the
