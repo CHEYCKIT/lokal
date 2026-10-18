@@ -8,12 +8,6 @@ const PERSISTENT_THEME_OVERRIDE_KEYS = [
   '--bg-blur',
   '--bg-size',
   '--bg-position',
-  '--logo-image-filter',
-  '--logo-image-opacity',
-  '--logo-mask-opacity',
-  '--logo-wrap-bg',
-  '--logo-wrap-shadow',
-  '--logo-wrap-border',
 ]
 
 // Theme saves go out one after another, in the order they were made, so a
