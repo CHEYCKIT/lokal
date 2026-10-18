@@ -930,6 +930,16 @@ export default function App() {
         return
       }
       const status = await api.getYtDlpVersionStatus()
+      if (!status?.installedVersion) {
+        setYtDlpVersionState(prev => ({
+          ...prev,
+          ...status,
+          downloadState: 'error',
+          downloadMessage: '',
+          error: 'yt-dlp was installed but its version could not be read. Close and reopen Lokal, then try again.',
+        }))
+        return
+      }
       setYtDlpVersionState(prev => ({
         ...prev,
         ...status,
