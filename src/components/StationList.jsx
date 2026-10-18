@@ -248,7 +248,7 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
                     : <p key={key} className="truncate text-xs text-muted" title={station.description || undefined}>{station.description || ''}</p>
                   case 'history': return isLink(station.history)
                     ? <button key={key} type="button" onClick={e => { e.stopPropagation(); api.openExternal(station.history.trim()) }}
-                        title={station.history} className="min-w-0 truncate text-left text-xs text-muted hover:text-accent hover:underline">{station.history}</button>
+                        title={station.history} className="min-w-0 truncate text-left text-xs text-muted hover:text-accent hover:underline">{t('History')}</button>
                     : <p key={key} className="truncate text-xs text-muted" title={station.history || undefined}>{station.history || ''}</p>
                   case 'nowPlaying': return <p key={key} className={`truncate text-xs ${isCurrent ? 'text-text' : 'text-muted'}`} title={song || undefined}>{song}</p>
                   case 'stream': return (

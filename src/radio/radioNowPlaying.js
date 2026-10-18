@@ -67,12 +67,45 @@ async function searchCover(song) {
   return found?.image || null
 }
 
+// A station whose stream never names its songs (Nova's, say) but whose API
+// does (the catalogue's `api`): the API is asked every API_POLL_MS while it
+// plays, and its song goes through the same path as a title from the stream.
+const API_POLL_MS = 15000
+let poll = { trackId: null, timer: null }
+
+function stopApiPolling() {
+  clearTimeout(poll.timer)
+  poll = { trackId: null, timer: null }
+}
+
+function startApiPolling(track) {
+  stopApiPolling()
+  const stationApi = track.station?.api
+  if (!stationApi || !api.radioNowPlaying) return
+  const mine = { trackId: track.id, timer: null }
+  poll = mine
+  const tick = async () => {
+    if (poll !== mine) return
+    const current = usePlayerStore.getState().currentTrack
+    if (!current || current.id !== mine.trackId || !isStationTrack(current)) { stopApiPolling(); return }
+    const info = await api.radioNowPlaying(stationApi).catch(() => null)
+    if (poll !== mine) return
+    const now = usePlayerStore.getState().currentTrack
+    if (info?.title && now?.id === mine.trackId && !(now.song_key && sameSong(info, now))) {
+      await handleStationTitle(mine.trackId, info.artist ? `${info.artist} - ${info.title}` : info.title, NaN)
+    }
+    if (poll === mine) mine.timer = setTimeout(tick, API_POLL_MS)
+  }
+  tick()
+}
+
 /**
  * A station was picked: it shows itself (its icon, or no cover) straight
  * away, not the previous song's cover while the stream connects.
  */
 export function resetStationDisplay(track) {
   if (!isStationTrack(track)) return
+  startApiPolling(track)
   sequence++
   const station = track.station || {}
   usePlayerStore.getState().patchStationTrack(track.id, {
