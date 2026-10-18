@@ -150,6 +150,28 @@ function getTrack(id) {
   if (!rows.length) throw new Error("Yandex Music track was not found: " + String(id));
   return trackOf(rows[0]);
 }
+function getTracks(ids) {
+  var tracks = [], batchSize = 50, maxIds = ids.slice(0, 300);
+  for (var start = 0; start < maxIds.length; start += batchSize) {
+    var batch = maxIds.slice(start, start + batchSize), response;
+    try {
+      response = requestJson("/tracks?" + pathQuery({"track-ids": batch.join(",")}));
+    } catch (_) {
+      continue;
+    }
+    var fetched = listFrom(response, ["tracks", "results"]), byId = Object.create(null);
+    for (var i = 0; i < fetched.length; i++) {
+      var row = fetched[i] && fetched[i].track && typeof fetched[i].track === "object" ? fetched[i].track : fetched[i];
+      var id = row && (row.id != null ? row.id : row.trackId != null ? row.trackId : row.track_id);
+      if (id != null) byId[String(id)] = row;
+    }
+    for (var j = 0; j < batch.length; j++) {
+      var found = byId[String(batch[j])];
+      if (found) tracks.push(found);
+    }
+  }
+  return tracks;
+}
 function flattenTracks(albumResult) {
   albumResult = albumResult || {};
   var rows = [];
@@ -163,10 +185,7 @@ function flattenTracks(albumResult) {
   }
   if (Array.isArray(albumResult.volumes)) walk(albumResult.volumes);
   if (Array.isArray(albumResult.tracks)) walk(albumResult.tracks);
-  if (!rows.length && albumResult.trackIds) {
-    var ids = albumResult.trackIds.slice(0, 300);
-    for (var i = 0; i < ids.length; i++) try { rows.push(getTrack(ids[i])); } catch (_) {}
-  }
+  if (!rows.length && Array.isArray(albumResult.trackIds)) rows = getTracks(albumResult.trackIds);
   return rows;
 }
 function getAlbum(id) {
@@ -201,6 +220,8 @@ function handleUrl(raw) {
     if (!track.album_id) track.album_id = track.albumId = trackMatch[1];
     return {tracks: [track]};
   }
+  var bareTrackMatch = text.match(/\/track\/(\d+)(?:[/?#]|$)/i);
+  if (bareTrackMatch) return {tracks: [getTrack(bareTrackMatch[1])]};
   var albumMatch = text.match(/\/album\/(\d+)(?:[/?#]|$)/i);
   if (albumMatch) return {tracks: getAlbum(albumMatch[1]).tracks};
   var artistMatch = text.match(/\/artist\/(\d+)(?:[/?#]|$)/i);
@@ -223,7 +244,8 @@ function outputFormat(codec) {
   if (codec === "flac") return {extension: ".flac", requiresConversion: false};
   if (codec === "flac-mp4") return {extension: ".m4a", requiresConversion: true};
   if (codec === "mp3") return {extension: ".mp3", requiresConversion: false};
-  if (codec === "aac" || codec === "he-aac" || codec === "aac-mp4" || codec === "he-aac-mp4") return {extension: ".m4a", requiresConversion: false};
+  if (codec === "aac" || codec === "he-aac") return {extension: ".aac", requiresConversion: false};
+  if (codec === "aac-mp4" || codec === "he-aac-mp4") return {extension: ".m4a", requiresConversion: false};
   throw new Error("Yandex Music returned an unsupported audio codec: " + codec);
 }
 function counterIV(blockIndex) {
@@ -269,6 +291,7 @@ async function download(trackId, quality, destinationPath, onProgress) {
   if (!downloaded) throw new Error("Yandex Music audio download failed: " + lastError);
   if (key) {
     try { decryptFile(encrypted, target, key, onProgress); }
+    catch (error) { try { file.delete(target); } catch (_) {} throw error; }
     finally { try { file.delete(encrypted); } catch (_) {} }
   }
   if (onProgress) onProgress(100);
