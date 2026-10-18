@@ -188,3 +188,36 @@ test('resetting saved logins removes the key and encrypted files, and new settin
   service.setSettings(installed.key, { token: 'new-token' })
   assert.deepEqual(service.list()[0].configuredSecrets, ['token'])
 })
+
+test('macOS keeps the addon key in a private file so updates cannot lock it away, and recovers from a lost Keychain key', async t => {
+  const { AddonStorage } = require('../electron/spotiflac/storage')
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lokal-vault-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const fakeVault = { encryptString: text => Buffer.from(`v:${text}`), decryptString: bytes => bytes.toString().slice(2) }
+  const read = () => JSON.parse(require('node:fs').readFileSync(path.join(root, 'master-key.json'), 'utf8'))
+
+  // A new key on macOS is local even when the Keychain works, and is the same after a "restart".
+  const first = new AddonStorage(root, { platform: 'darwin', vault: () => fakeVault }), key = first.masterKey()
+  assert.equal(read().kind, 'local')
+  assert.deepEqual(new AddonStorage(root, { platform: 'darwin', vault: () => null }).masterKey(), key)
+
+  // A Keychain key from an older build that still reads is moved into the file.
+  const oldKey = crypto.randomBytes(32)
+  await fs.writeFile(path.join(root, 'master-key.json'), JSON.stringify({ kind: 'os', value: fakeVault.encryptString(oldKey.toString('base64')).toString('base64') }))
+  assert.deepEqual(new AddonStorage(root, { platform: 'darwin', vault: () => fakeVault }).masterKey(), oldKey)
+  assert.equal(read().kind, 'local')
+
+  // A Keychain key that can no longer be read: new key, old encrypted files dropped, old key file kept aside.
+  await fs.writeFile(path.join(root, 'master-key.json'), JSON.stringify({ kind: 'os', value: 'bG9zdA==' }))
+  await fs.mkdir(path.join(root, 'data', 'abcdef0123'), { recursive: true })
+  await fs.writeFile(path.join(root, 'data', 'abcdef0123', 'settings.enc'), 'stale')
+  const recovered = new AddonStorage(root, { platform: 'darwin', vault: () => null }).masterKey()
+  assert.equal(recovered.length, 32)
+  assert.equal(read().kind, 'local')
+  await assert.rejects(fs.stat(path.join(root, 'data', 'abcdef0123', 'settings.enc')))
+  assert.ok(await fs.stat(path.join(root, 'master-key.os-backup.json')))
+
+  // Other systems still refuse to run without their vault.
+  await fs.writeFile(path.join(root, 'master-key.json'), JSON.stringify({ kind: 'os', value: 'bG9zdA==' }))
+  assert.throws(() => new AddonStorage(root, { platform: 'linux', vault: () => null }).masterKey(), /credential vault/)
+})
