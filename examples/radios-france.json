@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "title": "My Radio Stations",
+  "stations": [
+    {
+      "title": "Radio Nova",
+      "url": "http://radionova.ice.infomaniak.ch/radionova-256.aac",
+      "genre": "Eclectic",
+      "description": "Le Grand Mix: Soul, Funk, Rap, Reggae, Pop & Electro",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/NOVA-nova-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nouvo Nova",
+      "url": "http://nova-nouvo.ice.infomaniak.ch/nova-nouvo-256.aac",
+      "genre": "Alternative",
+      "description": "100% brand new tracks and discoveries",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-NOUVO-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova Classics",
+      "url": "http://nova-vnt.ice.infomaniak.ch/nova-vnt-256.aac",
+      "genre": "Groove",
+      "description": "From Fela Kuti to Daft Punk, the iconic Novatunes history",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-CLASSICS-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova Danse",
+      "url": "http://nova-dance.ice.infomaniak.ch/nova-dance-256.aac",
+      "genre": "Electronic",
+      "description": "Continuous club mix: House, Disco, Funk, and Nu-Disco",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-danse-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova Hip-Hop",
+      "url": "http://nova-odn.ice.infomaniak.ch/nova-odn-256.aac",
+      "genre": "Hip-Hop",
+      "description": "40 years of international hip-hop exploration",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-HIPHOP-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova La Nuit",
+      "url": "http://nova-ln.ice.infomaniak.ch/nova-ln-256.aac",
+      "genre": "Ambient",
+      "description": "Extended, rare grooves and smooth nighttime soundscapes",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-nuit-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova Soul",
+      "url": "http://nova-soul.ice.infomaniak.ch/nova-soul-256.aac",
+      "genre": "Soul",
+      "description": "The best of soul history from the 1960s to today",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-SOUL-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova La Plage",
+      "url": "http://novalaplage.ice.infomaniak.ch/novalaplage-256.aac",
+      "genre": "Yacht Rock",
+      "description": "Summer vibrations, neo-disco, and beach beats",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/Nova-la-plage-t-1260x1260.png"
+    },
+    {
+      "title": "France Inter",
+      "url": "https://icecast.radiofrance.fr/franceinter-hifi.aac?id=radiofrance",
+      "genre": "Talk/General",
+      "description": "France's premier general public radio station",
+      "icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a0/France_Inter_logo_2021.svg/960px-France_Inter_logo_2021.svg.png?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org"
+    },
+    {
+      "title": "FIP",
+      "url": "https://icecast.radiofrance.fr/fip-hifi.aac?id=radiofrance",
+      "genre": "Eclectic",
+      "description": "An incredibly smooth, commercial-free musical trip across genres",
+      "icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/16/FIP_logo_2021.svg/960px-FIP_logo_2021.svg.png?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org"
+    },
+    {
+      "title": "France Musique",
+      "url": "https://icecast.radiofrance.fr/francemusique-hifi.aac?id=radiofrance",
+      "genre": "Classical",
+      "description": "Classical music, opera, and jazz concert recordings",
+      "icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6c/France_Musique_logo_2021.svg/960px-France_Musique_logo_2021.svg.png?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org"
+    },
+    {
+      "title": "France Culture",
+      "url": "https://icecast.radiofrance.fr/franceculture-hifi.aac?id=radiofrance",
+      "genre": "Talk/Culture",
+      "description": "Deep-dive audio documentaries, philosophy, and history",
+      "icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d6/France_Culture_logo_2021.svg/960px-France_Culture_logo_2021.svg.png?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org"
+    },
+    {
+      "title": "Mouv'",
+      "url": "https://icecast.radiofrance.fr/mouv-hifi.aac?id=radiofrance",
+      "genre": "Hip-Hop",
+      "description": "Radio France's urban youth and pop-culture stream",
+      "icon": "https://images.radiovolna.net/_files/images/stations/6774/e56a6c5bb2b9f6e7779bfeae29a00fae.png"
+    }
+  ]
+}
