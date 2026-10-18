@@ -1,3 +1,4 @@
+import { syncAccentAppIcon } from './accentAppIcon'
 export const THEMES = {
   dark: {
     name: 'Dark',
@@ -301,6 +302,8 @@ export function applyTheme(vars, themeName = '') {
   if (typeof bg === 'string' && /^#[0-9a-f]{6}$/i.test(bg)) {
     try { window.electron?.setBackgroundColor?.(bg)?.catch?.(() => {}); } catch {}
   }
+  const accent = root.style.getPropertyValue('--accent').trim();
+  if (accent) syncAccentAppIcon(accent);
 }
 
 export function getAccentColors(accent) {

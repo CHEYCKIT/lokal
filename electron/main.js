@@ -320,7 +320,13 @@ function showFromTray() {
   mainWindow.show()
   mainWindow.focus()
 }
+// The icon with the sticker in the theme's accent colour, sent by the page
+// (src/accentAppIcon.js); null until it arrives.
+let accentIcon = null
+const trayImage = image => image.resize(process.platform === 'win32' ? { width: 32, height: 32 } : { width: 16, height: 16 })
+
 function loadTrayIcon() {
+  if (accentIcon) return accentIcon
   const filenames = process.platform === 'win32'
     ? ['lokal-icon.ico', 'lokal-icon.png']
     : ['lokal-icon.png', 'lokal-icon.ico']
@@ -348,7 +354,7 @@ function hideToTray() {
       log.error('[tray] Refusing to hide the window without a visible tray icon')
       return false
     }
-    tray = new Tray(process.platform === 'win32' ? image : image.resize({ width: 16, height: 16 }))
+    tray = new Tray(accentIcon || process.platform !== 'win32' ? trayImage(image) : image)
     tray.setToolTip('Lokal')
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Show Lokal', click: showFromTray },
@@ -600,6 +606,18 @@ app.whenReady().then(() => {
     } catch (e) { console.error('SpotiFLAC repository refresh:', e.message) }
   }, 8000).unref?.()
 
+
+  ipcMain.on('app:setAccentIcon', (_, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,') || dataUrl.length > 2 * 1024 * 1024) return
+    const image = nativeImage.createFromDataURL(dataUrl)
+    if (image.isEmpty()) return
+    accentIcon = image
+    try {
+      if (process.platform === 'darwin') app.dock?.setIcon(image)
+      else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(image)
+      if (tray && !tray.isDestroyed()) tray.setImage(trayImage(image))
+    } catch (e) { log.warn('[icon] Could not apply the accent icon:', e.message) }
+  })
 
   ipcMain.on('relaunch-app', () => {
     app.relaunch()
