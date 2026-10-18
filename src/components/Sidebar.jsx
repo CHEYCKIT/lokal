@@ -204,39 +204,19 @@ export default function Sidebar() {
     >
       <div className={`${collapsed ? 'px-0' : 'px-5'} py-4 flex-shrink-0`}>
         <div className={`flex items-center gap-2 ${collapsed ? 'flex-col' : ''}`}>
-          <div
-            className="w-7 h-7 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
-            style={{
-              background: 'var(--logo-wrap-bg, transparent)',
-              boxShadow: 'var(--logo-wrap-shadow, none)',
-              border: 'var(--logo-wrap-border, 1px solid transparent)',
-              position: 'relative',
-            }}
-          >
-            <img
-              src="lokal-icon.png"
-              alt={t("Lokal")}
-              className="w-7 h-7 rounded-lg flex-shrink-0"
-              style={{
-                filter: 'var(--logo-image-filter, none)',
-                opacity: 'var(--logo-image-opacity, 1)',
-              }}
-            />
+          {/* The logo's sticker takes the theme's accent colour: an accent
+              layer cut to the sticker's shape (lokal-icon-sticker.png) over it. */}
+          <div className="relative w-7 h-7 flex-shrink-0">
+            <img src="lokal-icon.png" alt={t("Lokal")} className="w-7 h-7" />
             <span
               aria-hidden="true"
-              className="absolute inset-0 rounded-lg"
+              className="absolute inset-0"
               style={{
-                opacity: 'var(--logo-mask-opacity, 0)',
-                background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%)',
-                mixBlendMode: 'screen',
-                WebkitMaskImage: "url('lokal-icon.png')",
-                WebkitMaskSize: 'cover',
-                WebkitMaskPosition: 'center',
-                WebkitMaskRepeat: 'no-repeat',
-                maskImage: "url('lokal-icon.png')",
-                maskSize: 'cover',
-                maskPosition: 'center',
-                maskRepeat: 'no-repeat',
+                background: 'var(--accent)',
+                WebkitMaskImage: "url('lokal-icon-sticker.png')",
+                WebkitMaskSize: '100% 100%',
+                maskImage: "url('lokal-icon-sticker.png')",
+                maskSize: '100% 100%',
               }}
             />
           </div>
