@@ -30,12 +30,13 @@ import TrackArtistLinks from './TrackArtistLinks'
 import { cacheLyrics, peekLyrics, hasLyricLines } from '../lyrics/lyricsCache'
 import { isOnlineTrack } from '../onlineBrowse'
 import { isStationTrack } from '../radio/stations'
+import { resolveStationSong } from '../radio/stationSong'
+import { showToast } from './Toaster'
 import { isStreamed, trackArtURL } from '../onlineTracks'
 
 import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
 import LikeBurst from './LikeBurst'
-import { showToast } from './Toaster'
 import { losslessMenuItem } from '../quality'
 import { sideCardViewAfterTrackChange } from '../sideCardView'
 
@@ -389,6 +390,12 @@ export default function RightSidebar() {
       )}
     </div>
   ) : null
+  // A radio song: its album, found online (the playing song's lookup).
+  const stationSongKnown = isStationTrack(currentTrack) && !!currentTrack?.song_key
+  const openStationAlbum = async () => {
+    const found = await resolveStationSong(currentTrack)
+    if (!found || !navigateToTrackAlbum(nav, found)) showToast(t("Couldn't find this song's album"))
+  }
   const hasAlbumLink = !isStationTrack(currentTrack) && (!!currentTrack?.album || (isStreamed(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))
 
   return (
@@ -501,11 +508,11 @@ export default function RightSidebar() {
 
                   {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
                     <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                      {!isStationTrack(currentTrack) && (currentTrack?.album || (isOnlineTrack(currentTrack) && (currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId))) ? (
+                      {stationSongKnown || (!isStationTrack(currentTrack) && (currentTrack?.album || (isOnlineTrack(currentTrack) && (currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))) ? (
                         <button
-                          onClick={() => navigateToTrackAlbum(nav, currentTrack)}
+                          onClick={stationSongKnown ? openStationAlbum : () => navigateToTrackAlbum(nav, currentTrack)}
                           onContextMenu={openTrackMenu}
-                          title={currentTrack.album ? t('Go to album: {album}', { album: currentTrack.album }) : t('Go to album')}
+                          title={currentTrack.album && !stationSongKnown ? t('Go to album: {album}', { album: currentTrack.album }) : t('Go to album')}
                           className={fx ? 'text-lg font-semibold text-white leading-tight text-left hover:underline transition-colors max-w-full block drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]' : 'font-display text-white text-sm leading-tight text-left hover:text-accent hover:underline transition-colors truncate max-w-full block'}>
                           {currentTrack?.title || 'Nothing playing'}
                         </button>
