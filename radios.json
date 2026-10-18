@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "title": "Radio Nova",
+  "stations": [
+    {
+      "title": "Radio Nova",
+      "url": "https://radionova.ice.infomaniak.ch/radionova-256.aac",
+      "genre": "Eclectic",
+      "description": "The original: new sounds, hip-hop, soul, electro and world music",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/NOVA-nova-400x496-1-t-1700x1030.png"
+    },
+    {
+      "title": "Nova Classics",
+      "url": "https://nova-vnt.ice.infomaniak.ch/nova-vnt-256.aac",
+      "genre": "Classics",
+      "description": "Nova's classics: rare groove, soul, funk and world music",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-CLASSICS-400x496-1-t-1006x1006.png"
+    },
+    {
+      "title": "Nova la Nuit",
+      "url": "https://nova-ln.ice.infomaniak.ch/nova-ln-256.aac",
+      "genre": "Chill",
+      "description": "Late-night, chilled-out sounds",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2022/11/Web-radio--Nova-la-Nuit-t-400x496.png"
+    },
+    {
+      "title": "Nova Danse",
+      "url": "https://nova-dance.ice.infomaniak.ch/nova-dance-256.aac",
+      "genre": "Dance",
+      "description": "Dance floor and electronic music",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-danse-400x496-1-t-1006x1006.png"
+    },
+    {
+      "title": "Nova Hip-Hop",
+      "url": "https://nova-odn.ice.infomaniak.ch/nova-odn-256.aac",
+      "genre": "Hip-Hop",
+      "description": "Hip-hop and rap, old and new",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-HIPHOP-400x496-1-t-1006x1006.png"
+    },
+    {
+      "title": "Nova Reggae",
+      "url": "https://nova-reggae.ice.infomaniak.ch/nova-reggae-256.aac",
+      "genre": "Reggae",
+      "description": "Reggae, dub, dancehall and rocksteady",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-reggea-400x496-1-t-1006x1006.png"
+    },
+    {
+      "title": "Nova Soul",
+      "url": "https://nova-soul.ice.infomaniak.ch/nova-soul-256.aac",
+      "genre": "Soul",
+      "description": "Soul, from the classics to today",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-SOUL-400x496-1-t-1006x1006.png"
+    },
+    {
+      "title": "Nouvo Nova",
+      "url": "https://nova-nouvo.ice.infomaniak.ch/nova-nouvo-256.aac",
+      "genre": "New Music",
+      "description": "New music and fresh discoveries",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/04/NOVA-NOUVO-400x496-1-t-1260x1260.png"
+    },
+    {
+      "title": "Nova la Plage",
+      "url": "https://novalaplage.ice.infomaniak.ch/nova-plage-128.mp3",
+      "genre": "Chill",
+      "description": "Summer, beach and sunny sounds",
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/Nova-la-plage-t-1006x1006.png"
+    }
+  ]
+}
