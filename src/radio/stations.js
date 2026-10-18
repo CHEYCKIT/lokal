@@ -3,6 +3,9 @@
 
 export const STATION_PATH_PREFIX = 'station://'
 export const RADIO_CONTEXT = 'internet-radio'
+// The station list everyone starts with (the main repository's radios.json):
+// used until another link is set (Settings → Online Radio).
+export const DEFAULT_RADIO_CATALOG_URL = 'https://raw.githubusercontent.com/sipbuu/lokal/refs/heads/main/radios.json'
 
 /** Is this queue entry an online radio station? */
 export function isStationTrack(track) {

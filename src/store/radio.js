@@ -2,7 +2,8 @@
 // see electron/ipc/radio.js) and what each station was last heard playing.
 
 import { create } from 'zustand'
-import { api } from '../api'
+import { api } from '../api.js'
+import { DEFAULT_RADIO_CATALOG_URL } from '../radio/stations.js'
 
 export const RADIO_BUFFER_DEFAULT = 3
 export const RADIO_BUFFER_MAX = 10
@@ -29,7 +30,10 @@ export const useRadioStore = create((set, get) => ({
     if (get().ready) return
     try {
       const saved = await api.radioGetCatalog?.()
-      set({ url: saved?.url || '', catalog: saved?.catalog || null, updatedAt: saved?.updatedAt || 0, ready: true })
+      set({ url: saved?.url || DEFAULT_RADIO_CATALOG_URL, catalog: saved?.catalog || null, updatedAt: saved?.updatedAt || 0, ready: true })
+      // Nothing loaded yet (first run): the default list, so there are stations
+      // without anyone having to find a link. A failure (offline) tries again next time.
+      if (!saved?.catalog && !saved?.url) get().loadCatalog(DEFAULT_RADIO_CATALOG_URL)
     } catch {
       set({ ready: true })
     }
