@@ -7,6 +7,7 @@ import path from 'node:path'
 
 const source = readFileSync(new URL('../addons/yandex-music/index.js', import.meta.url), 'utf8')
 
+/** Builds a mocked provider runtime for offline regression tests. */
 function createProvider({ token = 'test-token', routes = {}, files = {} } = {}) {
   let extension
   const requests = []

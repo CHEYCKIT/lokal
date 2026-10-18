@@ -9,15 +9,18 @@ var CODECS = ["flac", "flac-mp4", "mp3", "aac", "he-aac", "aac-mp4", "he-aac-mp4
 var DEFAULT_CLIENT = "YandexMusicAndroid/24023621";
 var config = { token: "" };
 
+/** Initializes provider settings and normalizes the OAuth token. */
 function initialize(values) {
   values = values || {};
   config.token = String(values.token || (typeof settings === "object" && settings.token) || "").trim().replace(/^OAuth\s+/i, "");
   return true;
 }
+/** Builds authenticated headers for Yandex Music API requests. */
 function requestHeaders() {
   if (!config.token) throw new Error("Set your Yandex Music OAuth token in Settings → Addons → Yandex Music.");
   return {"Authorization": "OAuth " + config.token, "X-Yandex-Music-Client": DEFAULT_CLIENT, "Accept": "application/json"};
 }
+/** Fetches and validates a JSON response from the Yandex Music API. */
 function requestJson(path) {
   var response = http.get(API_BASE + path, requestHeaders());
   if (!response) throw new Error("Yandex Music did not return a response.");
@@ -33,11 +36,13 @@ function requestJson(path) {
   if (data && data.error) throw new Error("Yandex Music: " + String(data.error.message || data.error.name || JSON.stringify(data.error)).slice(0, 180));
   return data && data.result !== undefined ? data.result : data;
 }
+/** Encodes non-null parameters into a URL query string. */
 function pathQuery(values) {
   var pairs = [];
   for (var key in values) if (Object.prototype.hasOwnProperty.call(values, key) && values[key] != null) pairs.push(encodeURIComponent(key) + "=" + encodeURIComponent(String(values[key])));
   return pairs.join("&");
 }
+/** Extracts a result array from common API response shapes. */
 function listFrom(value, keys) {
   if (Array.isArray(value)) return value;
   value = value || {};
@@ -47,6 +52,7 @@ function listFrom(value, keys) {
   }
   return [];
 }
+/** Converts a Yandex image reference to an HTTPS image URL. */
 function apiImage(value) {
   if (!value) return null;
   if (typeof value === "object") value = value.uri || value.url || value.src || "";
@@ -55,6 +61,7 @@ function apiImage(value) {
   if (/^https?:\/\//i.test(url)) return url.replace(/%%/g, "1000x1000").replace(/^http:\/\//i, "https://");
   return "https://" + url.replace(/^\/+/, "").replace(/%%/g, "1000x1000");
 }
+/** Normalizes and deduplicates artist/name values into strings. */
 function namesOf(values) {
   if (!Array.isArray(values)) return values ? [String(values)] : [];
   var result = [];
@@ -64,13 +71,16 @@ function namesOf(values) {
   }
   return result;
 }
+/** Converts a present identifier to a string, or returns null. */
 function idOf(value) { return value == null || value === "" ? null : String(value); }
+/** Returns album metadata from a track or fallback record. */
 function albumOfTrack(track, fallback) {
   if (track && Array.isArray(track.albums) && track.albums.length) return track.albums[0] || {};
   if (track && track.album && typeof track.album === "object") return track.album;
   if (track && track.album && typeof track.album === "string") return {title: track.album, id: track.album_id || track.albumId};
   return fallback || {};
 }
+/** Normalizes a Yandex track record for Lokal. */
 function trackOf(track, fallbackAlbum) {
   if (track && track.track && typeof track.track === "object") track = track.track;
   track = track || {};
@@ -106,6 +116,7 @@ function trackOf(track, fallbackAlbum) {
     explicit: track.explicit === true || !!track.contentWarning, provider_id: "yandex-music"
   };
 }
+/** Normalizes a Yandex album record for Lokal. */
 function albumOf(album) {
   album = album || {};
   var artists = Array.isArray(album.artists) ? album.artists : [], firstArtist = artists.length ? artists[0] : {};
@@ -119,22 +130,26 @@ function albumOf(album) {
     total_tracks: Number(album.trackCount || album.track_count || album.trackCountWithPopularTracks) || null
   };
 }
+/** Normalizes a Yandex artist record for Lokal. */
 function artistOf(artist) {
   artist = artist || {};
   var cover = artist.cover || {};
   var image = apiImage(cover.uri || cover.url || artist.coverUri || artist.cover_uri || artist.ogImage || artist.og_image || artist.opImage || artist.op_image);
   return {id: idOf(artist.id || artist.artistId), name: String(artist.name || artist.title || ""), item_type: "artist", cover_url: image, image_url: image};
 }
+/** Runs a type-specific catalogue search. */
 function searchResult(query, filter) {
   var type = filter === "albums" || filter === "album" ? "album" : filter === "artists" || filter === "artist" ? "artist" : "track";
   return requestJson("/search?" + pathQuery({text: String(query || "").trim(), type: type, page: 0})) || {};
 }
+/** Searches for track results and normalizes them for Lokal. */
 function searchTracks(query, limit) {
   var result = searchResult(query, "tracks"), items = listFrom(result.tracks || result, ["results"]), tracks = [];
   var max = Math.max(1, Math.min(100, Number(limit) || 20));
   for (var i = 0; i < items.length && tracks.length < max; i++) if (items[i] && items[i].id != null && (items[i].title || items[i].name)) tracks.push(trackOf(items[i]));
   return tracks;
 }
+/** Searches tracks, albums, or artists using the selected filter. */
 function customSearch(query, options) {
   options = options || {};
   var filter = String(options.filter || "tracks"), max = Math.max(1, Math.min(100, Number(options.limit) || 20));
@@ -143,6 +158,7 @@ function customSearch(query, options) {
   if (filter === "artists" || filter === "artist") return {tracks: listFrom(result.artists || result, ["results"]).slice(0, max).map(artistOf)};
   return {tracks: listFrom(result.tracks || result, ["results"]).slice(0, max).map(function (track) { return trackOf(track); })};
 }
+/** Fetches one track by ID and throws when it cannot be found. */
 function getTrack(id) {
   var result = requestJson("/tracks?" + pathQuery({"track-ids": String(id)}));
   var rows = listFrom(result, ["tracks", "results"]);
@@ -150,6 +166,7 @@ function getTrack(id) {
   if (!rows.length) throw new Error("Yandex Music track was not found: " + String(id));
   return trackOf(rows[0]);
 }
+/** Fetches track IDs in bounded batches to avoid serial album lookups. */
 function getTracks(ids) {
   var tracks = [], batchSize = 50, maxIds = ids.slice(0, 300);
   for (var start = 0; start < maxIds.length; start += batchSize) {
@@ -172,10 +189,12 @@ function getTracks(ids) {
   }
   return tracks;
 }
+/** Extracts flat track records from album volumes and ID lists. */
 function flattenTracks(albumResult) {
   albumResult = albumResult || {};
   var rows = [];
-  function walk(value) {
+  /** Collects track records from nested album volume arrays. */
+function walk(value) {
     if (!Array.isArray(value)) return;
     for (var i = 0; i < value.length; i++) {
       var row = value[i];
@@ -188,6 +207,7 @@ function flattenTracks(albumResult) {
   if (!rows.length && Array.isArray(albumResult.trackIds)) rows = getTracks(albumResult.trackIds);
   return rows;
 }
+/** Fetches an album and returns its normalized track listing. */
 function getAlbum(id) {
   var albumResult = requestJson("/albums/" + encodeURIComponent(String(id)) + "/with-tracks");
   if (!albumResult || albumResult.id == null) throw new Error("Yandex Music album was not found: " + String(id));
@@ -200,6 +220,7 @@ function getAlbum(id) {
   album.tracks = tracks; album.album_id = album.id;
   return album;
 }
+/** Fetches an artist with album and top-track listings. */
 function getArtist(id) {
   var artistResult = requestJson("/artists/" + encodeURIComponent(String(id))) || {};
   var albumsResult = {}, tracksResult = {};
@@ -212,6 +233,7 @@ function getArtist(id) {
   artist.albums = albums; artist.top_tracks = tracks; artist.tracks = tracks;
   return artist;
 }
+/** Resolves supported Yandex Music links into track listings. */
 function handleUrl(raw) {
   var text = String(raw || "").trim();
   var trackMatch = text.match(/\/album\/(\d+)(?:\/track\/(\d+))?/i);
@@ -228,6 +250,7 @@ function handleUrl(raw) {
   if (artistMatch) return {tracks: getArtist(artistMatch[1]).top_tracks || []};
   return {tracks: []};
 }
+/** Requests signed downloadable audio URLs for a track. */
 function getDownloadInfo(trackId, requestedQuality) {
   var quality = requestedQuality === "lossless" ? "lossless" : "nq";
   var timestamp = Math.floor(Date.now() / 1000), codecs = CODECS.join(",");
@@ -239,6 +262,7 @@ function getDownloadInfo(trackId, requestedQuality) {
   if (!info || !Array.isArray(info.urls) || !info.urls.length) throw new Error("Yandex Music supplied no downloadable audio for this track.");
   return info;
 }
+/** Maps a Yandex codec to its file extension and conversion needs. */
 function outputFormat(codec) {
   codec = String(codec || "").toLowerCase();
   if (codec === "flac") return {extension: ".flac", requiresConversion: false};
@@ -248,11 +272,13 @@ function outputFormat(codec) {
   if (codec === "aac-mp4" || codec === "he-aac-mp4") return {extension: ".m4a", requiresConversion: false};
   throw new Error("Yandex Music returned an unsupported audio codec: " + codec);
 }
+/** Creates the AES-CTR counter IV for a block index. */
 function counterIV(blockIndex) {
   var value = Math.max(0, Math.floor(Number(blockIndex) || 0)), iv = new Uint8Array(16);
   iv[12] = (value >>> 24) & 255; iv[13] = (value >>> 16) & 255; iv[14] = (value >>> 8) & 255; iv[15] = value & 255;
   return iv;
 }
+/** Decrypts an encrypted audio file in bounded chunks. */
 function decryptFile(sourcePath, destinationPath, keyHex, onProgress) {
   var sizeInfo = file.getSize(sourcePath);
   if (!sizeInfo || !sizeInfo.success || !Number(sizeInfo.size)) throw new Error("Could not read the downloaded Yandex Music audio.");
@@ -272,6 +298,7 @@ function decryptFile(sourcePath, destinationPath, keyHex, onProgress) {
     if (typeof onProgress === "function") onProgress(Math.min(99, 70 + Math.round((offset + length) / size * 29)));
   }
 }
+/** Downloads a track and cleans up encrypted or partial outputs. */
 async function download(trackId, quality, destinationPath, onProgress) {
   if (!trackId) throw new Error("Missing Yandex Music track ID.");
   var info = getDownloadInfo(trackId, quality), format = outputFormat(info.codec);
