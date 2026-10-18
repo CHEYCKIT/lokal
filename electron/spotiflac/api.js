@@ -3,6 +3,7 @@ const { service } = require('./packages')
 async function dispatch(db, request = {}) {
   const packages = service(db), { action, key, id, url, values, input, token } = request
   switch (action) {
+    case 'credentials.reset': return packages.resetCredentials()
     case 'repositories': return packages.refreshDue()
     case 'catalogue': return packages.catalogue(id)
     case 'repository.add': return packages.addRepo(url)

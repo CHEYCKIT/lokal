@@ -20,8 +20,24 @@ function atomicWrite(file, data) {
   finally { try { fs.unlinkSync(temp) } catch {} }
 }
 
+// Shown to the user (the Addons page looks for "credential vault" to offer the reset).
+const VAULT_UNAVAILABLE = 'Lokal cannot reach the operating-system credential vault (the Keychain on macOS), where it keeps the key for saved addon logins. Restart Lokal and try again. If it keeps happening, use "Reset saved logins" under Settings → Addons, then log in to your addons again.'
+
 class AddonStorage {
   constructor(root) { this.root = root }
+  /** Forgets the key and every saved login/setting file, so a new key is made on next use. */
+  reset() {
+    this.key = null
+    fs.rmSync(path.join(this.root, 'master-key.json'), { force: true })
+    const data = path.join(this.root, 'data')
+    let namespaces = []
+    try { namespaces = fs.readdirSync(data) } catch {}
+    for (const namespace of namespaces) {
+      let files = []
+      try { files = fs.readdirSync(path.join(data, namespace)) } catch {}
+      for (const file of files) if (file.endsWith('.enc')) fs.rmSync(path.join(data, namespace, file), { force: true })
+    }
+  }
   masterKey() {
     if (this.key) return this.key
     const file = path.join(this.root, 'master-key.json')
@@ -32,11 +48,11 @@ class AddonStorage {
     if (fs.existsSync(file)) {
       const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
       if (saved.kind === 'os') {
-        if (!safeStorage) throw new Error('The operating-system addon credential vault is unavailable')
+        if (!safeStorage) throw new Error(VAULT_UNAVAILABLE)
         this.key = Buffer.from(safeStorage.decryptString(Buffer.from(saved.value, 'base64')), 'base64')
       } else this.key = Buffer.from(saved.value, 'base64')
     } else {
-      if (process.versions.electron && !safeStorage) throw new Error('Lokal needs an operating-system credential vault before installing this addon')
+      if (process.versions.electron && !safeStorage) throw new Error(VAULT_UNAVAILABLE)
       this.key = crypto.randomBytes(32)
       atomicWrite(file, JSON.stringify(safeStorage
         ? { kind: 'os', value: safeStorage.encryptString(this.key.toString('base64')).toString('base64') }
@@ -71,4 +87,4 @@ class AddonStorage {
     return { success: true }
   }
 }
-module.exports = { AddonStorage, seal, open, atomicWrite }
+module.exports = { VAULT_UNAVAILABLE, AddonStorage, seal, open, atomicWrite }

@@ -294,6 +294,12 @@ class PackageService {
   // account credentials. The generation makes a token exchange still in
   // flight drop its result instead of writing it back afterwards.
   forgetConnection(key) {const network=this.networks.get(key);if(network){network.generation=(network.generation || 0)+1;clearTimeout(network.persistTimer);network.persistTimer=null;for(const field of Object.keys(network.auth || {}))delete network.auth[field];network.cookies=new CookieJar()}try{this.storage.write(key,'connection',{})}catch{}try{this.storage.write(key,'credentials',{})}catch{}}
+  /** Drops the saved-login key and files (see AddonStorage.reset); addons then need their logins again. */
+  resetCredentials() {
+    for(const key of [...this.runtimes.keys(),...this.networks.keys()])this.retire(key)
+    this.sessions.clear();this.storage.reset()
+    return {ok:true}
+  }
   retire(key) {const network=this.networks.get(key);if(network?.persistTimer)this.saveConnection(key,network,{now:true});this.runtimes.get(key)?.close();this.runtimes.delete(key);for(const op of this.operations.values())if(op.key===key)op.controller.abort();this.networks.delete(key);if(process.versions.electron)require('./authWindow').closeAuthWindow(key)}
   shutdown() { for(const [key,network] of this.networks)if(network.persistTimer)this.saveConnection(key,network,{now:true}); for(const key of [...this.runtimes.keys()]) this.retire(key); for(const op of this.operations.values()) op.controller.abort(); this.operations.clear() }
   async remove(key) {
