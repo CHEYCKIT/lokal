@@ -14,6 +14,7 @@ const youtube = require('../online/youtube')
 const { createArtworkResolver } = require('../discoveryArtwork')
 const { spelling } = require('../online/spelling')
 const { netFetch } = require('../online/netFetch')
+const { proxyRadioStream } = require('../radio/streamProxy')
 const discoveryArtwork = createArtworkResolver({ getDB, isElectron: true, searchArtists: require('./artistMetadata').searchArtistMetadataCandidates, searchSongs: youtube.searchSongs })
 let accountSession
 
@@ -820,6 +821,8 @@ function registerStreamProtocol(protocol, net) {
       diagnostic = streamDiagnostic(provider, id)
     } catch {}
     try {
+      // Internet radio streams need ICY metadata CORS headers that arbitrary stations often omit.
+      if (provider === 'radio') return await proxyRadioStream(request, id, { fetchImpl: (url, init) => netFetch(net, url, init) })
       if (provider === 'yt' && accountSession) await accountSession.credentials()
       if (provider === 'ytv') {
         // The player asking why the video's stream failed.
