@@ -7,7 +7,14 @@
       "url": "https://radionova.ice.infomaniak.ch/radionova-256.aac",
       "genre": "Eclectic",
       "description": "The original: new sounds, hip-hop, soul, electro and world music",
-      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/NOVA-nova-400x496-1-t-1700x1030.png"
+      "icon": "https://www.nova.fr/wp-content/thumbnails/uploads/sites/2/2024/05/NOVA-nova-400x496-1-t-1700x1030.png",
+      "history": "https://www.nova.fr/radio-tracks/",
+      "api": {
+        "type": "json",
+        "url": "https://www.nova.fr/wp-json/radio-tracks/v1/latests",
+        "artist": "[0].artiste",
+        "title": "[0].titre"
+      }
     },
     {
       "title": "Nova Classics",
