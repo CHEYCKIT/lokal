@@ -168,8 +168,44 @@ function fromJson(data, api) {
   })
 }
 
+// A station whose API gives no cover: the song's artwork from iTunes' public
+// search, when the song is there (matched on title and artist, so another
+// song's cover is never put on it). Kept per song: it's asked once.
+const coverCache = new Map()
+const normalize = value => str(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+async function coverFor(song, fetchImpl) {
+  const key = `${normalize(song.artist)}|${normalize(song.title)}`
+  if (coverCache.has(key)) return coverCache.get(key)
+  let cover
+  try {
+    const query = new URLSearchParams({ term: `${song.artist} ${song.title}`.trim(), media: 'music', entity: 'song', limit: '5' })
+    const data = await getJson(`https://itunes.apple.com/search?${query}`, fetchImpl)
+    const wantedTitle = normalize(song.title)
+    const wantedArtist = normalize(song.artist)
+    const hit = (Array.isArray(data?.results) ? data.results : []).find(item => {
+      const title = normalize(item.trackName)
+      const artist = normalize(item.artistName)
+      return (title === wantedTitle || title.startsWith(`${wantedTitle} `)) && (!wantedArtist || artist.includes(wantedArtist) || wantedArtist.includes(artist))
+    })
+    cover = httpUrl(hit?.artworkUrl100)?.replace(/\/\d+x\d+bb\./, '/600x600bb.')
+  } catch {}
+  if (coverCache.size > 200) coverCache.delete(coverCache.keys().next().value)
+  coverCache.set(key, cover)
+  return cover
+}
+
+/** What the station's API says is playing, or null; its cover from iTunes when the API has none. */
+async function nowPlaying(api, options = {}) {
+  const song = await nowPlayingFromApi(api, options)
+  if (song && !song.cover && song.title) {
+    const cover = await coverFor(song, options.fetchImpl || fetch)
+    if (cover) return { ...song, cover }
+  }
+  return song
+}
+
 /** What the station's API says is playing, or null. */
-async function nowPlaying(api, { fetchImpl = fetch, publicOnly = false } = {}) {
+async function nowPlayingFromApi(api, { fetchImpl = fetch, publicOnly = false } = {}) {
   const type = str(api?.type).toLowerCase()
   try {
     if (type === 'azuracast') return fromAzuracast(await getJson(api.url, fetchImpl, { publicOnly }), api)
