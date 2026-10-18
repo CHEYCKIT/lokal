@@ -24,6 +24,15 @@ let revealedAtLaunch = false
 
 const isLink = value => /^https?:\/\/\S+$/i.test(String(value || '').trim())
 
+function StationArtwork({ station }) {
+  const [failedIcon, setFailedIcon] = useState('')
+  const icon = station?.icon || ''
+  if (!icon || failedIcon === icon) {
+    return <div className="w-full h-full flex items-center justify-center text-muted"><Radio size={12} /></div>
+  }
+  return <img src={icon} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" onError={() => setFailedIcon(icon)} />
+}
+
 export default function StationList({ catalog, configUrl = '', toolbarStart = null, stickyBleed = '0.5rem' }) {
   const { t } = useTranslation()
   const stations = catalog?.stations || []
@@ -222,9 +231,7 @@ export default function StationList({ catalog, configUrl = '', toolbarStart = nu
                     <div key={key} className="min-w-0 flex items-center gap-2.5">
                       {columns.artwork && (
                         <div className="rounded flex-shrink-0 overflow-hidden bg-card relative" style={{ width: '2rem', height: '2rem' }}>
-                          {station.icon
-                            ? <img src={station.icon} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" />
-                            : <div className="w-full h-full flex items-center justify-center text-muted"><Radio size={12} /></div>}
+                          <StationArtwork station={station} />
                           {!layout.number && (
                             <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">{playButton}</span>
                           )}
