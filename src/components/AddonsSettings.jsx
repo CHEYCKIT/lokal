@@ -59,6 +59,7 @@ function AddonCard({ addon, onChanged, focused = false }) {
   const [values, setValues] = useState(addon.settings || {})
   const [busy, setBusy] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [message, setMessage] = useState('')
   const [auth, setAuth] = useState(null)
   const [form, setForm] = useState(null)
@@ -167,6 +168,17 @@ function AddonCard({ addon, onChanged, focused = false }) {
         </div>
       )}
       {message && <p role="status" className="mt-2 text-xs text-muted">{message}</p>}
+      {/credential vault/i.test(message) && (
+        <div className="mt-2 flex items-center gap-2">
+          {confirmReset ? (
+            <>
+              <span className="text-[11px] text-muted">{t('This removes saved addon logins and settings. Continue?')}</span>
+              <button disabled={busy} onClick={async () => { if (await run(() => api.addonsPackages({ action: 'credentials.reset' }))) { setConfirmReset(false); setMessage(t('Saved logins were reset. Log in to your addons again.')); onChanged() } }} className="rounded-lg border border-red/40 px-2.5 py-1 text-[11px] text-red hover:bg-red/10">{t('Reset')}</button>
+              <button disabled={busy} onClick={() => setConfirmReset(false)} className="rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted hover:text-text">{t('Cancel')}</button>
+            </>
+          ) : <button onClick={() => setConfirmReset(true)} className="rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted hover:text-text">{t('Reset saved logins')}</button>}
+        </div>
+      )}
     </div>
   )
 }

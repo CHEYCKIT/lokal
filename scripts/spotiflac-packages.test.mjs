@@ -176,3 +176,15 @@ test('a package whose saved settings cannot be decrypted still lists, with its d
   assert.equal(listed.length, 1)
   assert.equal(listed[0].key, installed.key)
 })
+
+test('resetting saved logins removes the key and encrypted files, and new settings can be saved after', async t => {
+  const { service, root } = await fixture(t), installed = await service.install({ buffer: archive() })
+  service.setSettings(installed.key, { token: 'old-token', country: 'GB' })
+  assert.ok(await fs.stat(path.join(root, 'master-key.json')))
+  assert.deepEqual(service.resetCredentials(), { ok: true })
+  await assert.rejects(fs.stat(path.join(root, 'master-key.json')))
+  await assert.rejects(fs.stat(path.join(root, 'data', installed.key, 'settings.enc')))
+  assert.equal(service.list().length, 1)
+  service.setSettings(installed.key, { token: 'new-token' })
+  assert.deepEqual(service.list()[0].configuredSecrets, ['token'])
+})
