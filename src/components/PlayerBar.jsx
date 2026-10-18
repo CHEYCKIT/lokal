@@ -180,6 +180,11 @@ export default function PlayerBar() {
   const station = isStationTrack(currentTrack)
 
   const hasAlbum = !station && (!!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))
+  // A radio song: its album, found online (the playing song's lookup, as for Like and Save).
+  const openStationAlbum = async () => {
+    const found = await resolveStationSong(currentTrack)
+    if (!found || !navigateToTrackAlbum(nav, found)) showToast(t("Couldn't find this song's album"))
+  }
   const handleTitleClick = () => {
     if (!hasAlbum) return
     navigateToTrackAlbum(nav, currentTrack)
@@ -244,11 +249,11 @@ export default function PlayerBar() {
             <motion.div key={currentTrack?.id||'none'} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
               <div className="flex items-center gap-2 min-w-0">
                 <MarqueeText className="flex-1 min-w-0">
-                  {hasAlbum ? (
+                  {hasAlbum || stationSongKnown ? (
                     <button
-                      onClick={handleTitleClick}
+                      onClick={hasAlbum ? handleTitleClick : openStationAlbum}
                       onContextMenu={openTrackMenu}
-                      title={`Go to album: ${currentTrack.album || t('Album · Online')}`}
+                      title={hasAlbum ? `Go to album: ${currentTrack.album || t('Album · Online')}` : t('Go to album')}
                       className="text-sm font-medium text-text hover:text-accent hover:underline transition-colors text-left">
                       {currentTrack.title}
                     </button>
