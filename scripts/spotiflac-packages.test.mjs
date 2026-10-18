@@ -166,3 +166,13 @@ test('a plain FLAC download can be played while it arrives, and a range past wha
   liveUpdate(other,{part:path.join(dir,'b.flac.part'),file:path.join(dir,'b.flac'),total,written:100000})
   assert.equal(other.live.ready,false)
 })
+
+test('a package whose saved settings cannot be decrypted still lists, with its defaults', async t => {
+  const { service, root } = await fixture(t), installed = await service.install({ buffer: archive() })
+  service.setSettings(installed.key, { token: 'private-token', country: 'GB' })
+  // The OS vault key changed: the saved settings no longer decrypt.
+  await fs.writeFile(path.join(root, 'data', installed.key, 'settings.enc'), crypto.randomBytes(80))
+  const listed = service.list()
+  assert.equal(listed.length, 1)
+  assert.equal(listed[0].key, installed.key)
+})
