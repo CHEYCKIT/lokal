@@ -9,6 +9,8 @@ import { useTranslation } from '../i18n'
 import { navigateToTrackAlbum } from '../playbackContext'
 import { isOnlineTrack } from '../onlineBrowse'
 import { isStationTrack } from '../radio/stations'
+import { resolveStationSong } from '../radio/stationSong'
+import { showToast } from './Toaster'
 import Waveform from './Waveform'
 import Spectrum from '../visualizers/Spectrum'
 import Waves from '../visualizers/Waves'
@@ -101,7 +103,8 @@ export default function PlayerBar() {
   const [sleepTimerDisplay, setSleepTimerDisplay] = useState(null)
   const menu = useContextMenu()
   const display = localProg ?? progress
-  const isLiked = currentTrack && likedIds.has(currentTrack.id)
+  const [stationLikeId, setStationLikeId] = useState({}) // radio: song_key -> the found song's id
+  const isLiked = currentTrack && likedIds.has(isStationTrack(currentTrack) ? stationLikeId[currentTrack.song_key] : currentTrack.id)
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat
 
   useEffect(() => {
@@ -154,11 +157,19 @@ export default function PlayerBar() {
     if (scrubbing.current) usePlayerStore.getState().setProgressWithAudioUpdate(t)
   }, [duration])
 
+  // A radio station playing a named song: Like and Save act on that song, found online.
+  const stationSongKnown = isStationTrack(currentTrack) && !!currentTrack?.song_key
   const toggleLike = async () => {
     if (!currentTrack) return
-    const r = await api.toggleLike(currentTrack.id, user?.id, currentTrack)
+    let track = currentTrack
+    if (stationSongKnown) {
+      track = await resolveStationSong(currentTrack)
+      if (!track) { showToast(t("Couldn't find this song online")); return }
+      setStationLikeId(ids => ({ ...ids, [currentTrack.song_key]: track.id }))
+    }
+    const r = await api.toggleLike(track.id, user?.id, track)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
-    setLiked(currentTrack.id, liked)
+    setLiked(track.id, liked)
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }
   }
 
@@ -292,7 +303,7 @@ export default function PlayerBar() {
         </div>
 
         <div className="flex h-5 w-[99px] flex-shrink-0 items-center gap-3">
-          {currentTrack && !station && (
+          {currentTrack && (!station || stationSongKnown) && (
             <div className="relative flex-shrink-0">
               <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
                 className={`flex h-5 w-5 items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}
@@ -324,6 +335,7 @@ export default function PlayerBar() {
             </button>
           )}
           {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-text/90" />}
+          {stationSongKnown && <SaveToLibraryButton key={currentTrack.song_key} getTrack={() => resolveStationSong(currentTrack)} meta={{ title: currentTrack.title, artist: currentTrack.artist }} className="text-text/90" />}
         </div>
         </div>
 

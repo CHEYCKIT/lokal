@@ -22,7 +22,23 @@ const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : undefi
 
 const RATE_LIMIT_RETRY_MS = 1500
 
-async function getJson(url, fetchImpl, { retryRateLimit = true, publicOnly = false } = {}) {
+// One JSON can answer for every station of a network (Nova's): a station list
+// asking for each of them at once shares one request for a few seconds.
+const JSON_TTL_MS = 8000
+const jsonCache = new Map() // url -> { at, pending }
+function getJson(url, fetchImpl, options = {}) {
+  if (fetchImpl !== globalThis.fetch) return getJsonUncached(url, fetchImpl, options)
+  const key = `${options.publicOnly ? 'p:' : ''}${url}`
+  const hit = jsonCache.get(key)
+  if (hit && Date.now() - hit.at < JSON_TTL_MS) return hit.pending
+  const pending = getJsonUncached(url, fetchImpl, options)
+  jsonCache.set(key, { at: Date.now(), pending })
+  pending.then(data => { if (data == null) jsonCache.delete(key) })
+  if (jsonCache.size > 50) jsonCache.delete(jsonCache.keys().next().value)
+  return pending
+}
+
+async function getJsonUncached(url, fetchImpl, { retryRateLimit = true, publicOnly = false } = {}) {
   const { isPublicHttpUrl } = require('../online/publicUrl')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -45,7 +61,7 @@ async function getJson(url, fetchImpl, { retryRateLimit = true, publicOnly = fal
     if (response.status === 429 && retryRateLimit) {
       clearTimeout(timer)
       await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_MS))
-      return getJson(target.href, fetchImpl, { retryRateLimit: false, publicOnly })
+      return getJsonUncached(target.href, fetchImpl, { retryRateLimit: false, publicOnly })
     }
     if (!response.ok) return null
     return await response.json()
