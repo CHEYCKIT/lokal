@@ -152,6 +152,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       setStatus({ type: 'success', message: 'Artwork updated in the audio file.' })
       setTimeout(() => setStatus(null), 2000)
     } catch (e) {
+      setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
       setStatus({ type: 'error', message: e.message })
     }
     setSaving(false)
