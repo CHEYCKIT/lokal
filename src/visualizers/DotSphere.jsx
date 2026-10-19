@@ -1,19 +1,34 @@
-// The side panel's Visualization: a sphere of dots whose surface folds with
-// the music (after an abstract "colourful mesh" vector): the bass swells big
-// lobes, the mids twist them, the highs ripple the surface. Dots facing out
-// and pushed outwards glow orange, the folds and far side fade to magenta
-// and violet. Transparent, so it sits on the panel's own background. Quiet
-// or paused, it keeps folding slowly on its own.
+// The side panel's Visualization: a sphere of dots that only moves with the
+// music. At rest (paused, quiet) it is a still sphere.
+//
+// How it reacts (the usual audio-reactive sphere recipe: each point pushed
+// out along its normal by the part of the spectrum it stands for, plus a
+// beat pulse):
+//   - every dot listens to one slice of the spectrum, by latitude: the bass
+//     round the equator, the highs towards the poles, so each band moves its
+//     own part of the sphere;
+//   - each slice is measured against its own recent peak, so quiet songs and
+//     quiet highs still show;
+//   - a little noise breaks the bands into folds; it only advances with the
+//     music's energy, so nothing drifts when it's quiet;
+//   - a beat (the bass jumping above its recent average) swells the sphere
+//     for a moment.
+// Colours come from the song's cover (its two most vivid colours), else from
+// the theme's accent: the calm surface in one, what the music pushes out in
+// the other.
+//
+// Kept light: ~1100 square dots drawn in a few colour batches, 30 frames a
+// second, 1 canvas pixel per CSS pixel, nothing while hidden or off screen.
 
 import React, { useEffect, useRef } from 'react'
-import { getAnalyser, useAnalyserVersion } from './audio'
+import { getAnalyser, spectrumSlices, sliceLevel, accentColor, useAnalyserVersion } from './audio'
 
 const DOTS = 1100
-const ORANGE = [255, 138, 31]
-const MAGENTA = [231, 72, 160]
-const VIOLET = [86, 60, 255]
+const SLICES = 24
+const SHADES = 8
+const FRAME_MS = 1000 / 30
+const TILT = 0.45 // seen a little from above, and it stays that way
 
-// Points spread evenly over a sphere (Fibonacci lattice).
 function spherePoints(count) {
   const golden = Math.PI * (3 - Math.sqrt(5))
   return Array.from({ length: count }, (_, i) => {
@@ -24,64 +39,106 @@ function spherePoints(count) {
   })
 }
 
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
-function colorAt(t) {
-  return t < 0.5 ? mix(VIOLET, MAGENTA, t * 2) : mix(MAGENTA, ORANGE, (t - 0.5) * 2)
+const hexToRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2
+  if (max === min) return [0, 0, l]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return [h * 60, s, l]
+}
+function hslToRgb([h, s, l]) {
+  const k = n => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  return [0, 8, 4].map(n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))))
 }
 
-// The analyser's spectrum as three levels (0-1): bass, mids, highs.
-function bands(data) {
-  const n = data.length
-  const avg = (from, to) => {
-    let sum = 0
-    for (let i = Math.floor(from * n); i < Math.floor(to * n); i++) sum += data[i]
-    return sum / Math.max(1, Math.floor(to * n) - Math.floor(from * n)) / 255
+/** Two colours from the accent: itself, and a deeper neighbour hue. */
+function accentPalette() {
+  const accent = accentColor('#ff8a1f')
+  const rgb = /^#[0-9a-f]{6}$/i.test(accent) ? hexToRgb(accent) : [255, 138, 31]
+  const [h, s] = rgbToHsl(rgb)
+  return { calm: hslToRgb([(h + 220) % 360, Math.max(0.55, s), 0.55]), loud: rgb }
+}
+
+/** The cover's two most vivid, different colours, or null if it can't be read. */
+function coverPalette(image) {
+  try {
+    const c = document.createElement('canvas')
+    c.width = c.height = 24
+    const g = c.getContext('2d', { willReadFrequently: true })
+    g.drawImage(image, 0, 0, 24, 24)
+    const px = g.getImageData(0, 0, 24, 24).data
+    const picks = []
+    for (let i = 0; i < px.length; i += 4) {
+      const [h, s, l] = rgbToHsl([px[i], px[i + 1], px[i + 2]])
+      if (l < 0.15 || l > 0.9) continue
+      picks.push({ h, s, l, score: s * (1 - Math.abs(l - 0.55)) })
+    }
+    if (picks.length < 10) return null
+    picks.sort((a, b) => b.score - a.score)
+    const first = picks[0]
+    const hueGap = p => Math.min(Math.abs(p.h - first.h), 360 - Math.abs(p.h - first.h))
+    const second = picks.find(p => hueGap(p) > 50) || { ...first, h: (first.h + 200) % 360 }
+    const vivid = p => hslToRgb([p.h, Math.max(0.6, p.s), Math.min(0.62, Math.max(0.5, p.l))])
+    return { loud: vivid(first), calm: vivid(second) }
+  } catch {
+    return null // a cover from another site can't be read back
   }
-  return [avg(0, 0.06), avg(0.06, 0.3), avg(0.3, 0.8)]
 }
 
-// Kept light: few dots, square ones (cheaper than circles), drawn in a
-// handful of colour batches instead of one by one, at most 30 frames a
-// second, and not at all while it's hidden or scrolled away.
-const FRAME_MS = 1000 / 30
-const SHADES = 8
-
-export default function DotSphere({ className = '' }) {
+export default function DotSphere({ className = '', artSrc = null }) {
   const canvasRef = useRef(null)
+  const paletteRef = useRef(null)
   const analyserVersion = useAnalyserVersion()
+
+  // The colours: the cover's when it can be read, else the accent's.
+  useEffect(() => {
+    paletteRef.current = accentPalette()
+    if (!artSrc) return undefined
+    let live = true
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => { if (live) paletteRef.current = coverPalette(image) || accentPalette() }
+    image.src = artSrc
+    return () => { live = false }
+  }, [artSrc])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const ctx = canvas.getContext('2d')
     const points = spherePoints(DOTS)
-    const shades = Array.from({ length: SHADES }, (_, i) => {
-      const [r, g, b] = colorAt(i / (SHADES - 1))
-      return `rgb(${r},${g},${b})`
-    })
-    // Per frame: each dot's position, size and shade; buckets[side][shade]
-    // lists the dots to draw together.
+    // The spectrum slice each dot listens to: bass round the equator, highs at the poles.
+    const sliceOf = points.map(([, y]) => Math.min(SLICES - 1, Math.floor(Math.abs(y) * SLICES)))
+    const levels = new Float32Array(SLICES)
+    const peaks = new Float32Array(SLICES).fill(0.2)
     const xs = new Float32Array(DOTS), ys = new Float32Array(DOTS), sizes = new Float32Array(DOTS)
     const buckets = [0, 1].map(() => Array.from({ length: SHADES }, () => []))
-    const level = [0, 0, 0]
+    let shades = []
+    let shadesFor = null
     let data = null
+    let slices = null
+    let phase = 0
+    let bassAvg = 0
+    let beat = 0
+    let sinceBeat = 1
     let frame = 0
     let last = performance.now()
     let lastDraw = 0
     let visible = true
-    let kick = 0 // jumps on each beat, then fades
-    let bassAvg = 0
-    let spin = 0
 
     const resize = () => {
-      // 1 canvas pixel per CSS pixel: plenty for dots, a quarter of the work on high-DPI screens.
       const { width, height } = canvas.getBoundingClientRect()
       canvas.width = Math.max(1, Math.round(width))
       canvas.height = Math.max(1, Math.round(height))
     }
     resize()
-    const observer = new ResizeObserver(resize)
-    observer.observe(canvas)
+    const sized = new ResizeObserver(resize)
+    sized.observe(canvas)
     const seen = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting })
     seen.observe(canvas)
 
@@ -91,67 +148,70 @@ export default function DotSphere({ className = '' }) {
       lastDraw = now
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
+
+      const palette = paletteRef.current || accentPalette()
+      if (palette !== shadesFor) {
+        shadesFor = palette
+        shades = Array.from({ length: SHADES }, (_, i) => {
+          const t = i / (SHADES - 1)
+          return `rgb(${palette.calm.map((v, k) => Math.round(v + (palette.loud[k] - v) * t)).join(',')})`
+        })
+      }
+
       const analyser = getAnalyser()
-      let heard = [0, 0, 0]
       if (analyser) {
-        if (!data || data.length !== analyser.frequencyBinCount) data = new Uint8Array(analyser.frequencyBinCount)
+        if (!data || data.length !== analyser.frequencyBinCount) {
+          data = new Uint8Array(analyser.frequencyBinCount)
+          slices = spectrumSlices(analyser, SLICES, { topHz: 14000 })
+        }
         analyser.getByteFrequencyData(data)
-        heard = bands(data)
       }
-      for (let b = 0; b < 3; b++) {
-        level[b] += (heard[b] - level[b]) * Math.min(1, dt * (heard[b] > level[b] ? 14 : 4))
+      let energy = 0
+      for (let s = 0; s < SLICES; s++) {
+        const heard = data && slices ? sliceLevel(data, slices[s]) / 255 : 0
+        peaks[s] = Math.max(heard, peaks[s] - dt * 0.08, 0.2)
+        const target = Math.pow(heard / peaks[s], 2) * Math.min(1, heard * 4) // quiet = nothing
+        levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 20 : 6))
+        energy += levels[s]
       }
-      const [bass, mids, highs] = level
+      energy /= SLICES
       // A beat: the bass jumping well above its recent average.
-      bassAvg += (heard[0] - bassAvg) * Math.min(1, dt * 1.5)
-      kick = Math.max(kick * Math.exp(-dt * 7), Math.min(1, Math.max(0, heard[0] - bassAvg) * 4))
-      const t = now / 1000
-      spin += dt * (mids + highs) * 0.8
+      const bass = (levels[0] + levels[1] + levels[2]) / 3
+      bassAvg += (bass - bassAvg) * Math.min(1, dt * 2)
+      sinceBeat += dt
+      if (bass > 0.25 && bass > bassAvg * 1.3 && sinceBeat > 0.2) { beat = 1; sinceBeat = 0 }
+      beat *= Math.exp(-dt * 8)
+      // The folds only move with the music.
+      phase += dt * energy * 2.5
 
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
       const cx = width / 2
       const cy = height / 2
-      const radius = Math.min(width, height) * 0.22 * (1 + kick * 0.18)
-      const dotSize = Math.max(1, radius / 60)
-      const turnY = t * 0.2 + spin
-      const turnX = 0.35 + Math.sin(t * 0.2) * 0.15
-      const sy = Math.sin(turnY), cyR = Math.cos(turnY), sx = Math.sin(turnX), cxR = Math.cos(turnX)
-      // How much the surface folds comes from the music: nearly smooth when
-      // it's quiet, crumpled when it's loud, a jolt on every beat.
-      const lobes = 0.03 + bass * 0.4 + kick * 0.25
-      const twist = 0.02 + mids * 0.3
-      const ripple = highs * 0.12
+      const radius = Math.min(width, height) * 0.27 * (1 + beat * 0.08)
+      const amp = 0.4
+      const dotSize = Math.max(1, radius / 55)
+      const st = Math.sin(TILT), ct = Math.cos(TILT)
       for (const side of buckets) for (const list of side) list.length = 0
 
       for (let i = 0; i < DOTS; i++) {
-        const p = points[i]
-        const px = p[0], py = p[1], pz = p[2]
-        // Several folds along different directions crumple it like cloth.
-        const fold =
-          lobes * 0.6 * Math.sin(px * 2.1 + t * 0.9) * Math.cos(py * 1.7 - t * 0.7) +
-          lobes * 0.5 * Math.sin(py * 3.1 - pz * 2.4 + t * 1.1) +
-          lobes * 0.4 * Math.cos(pz * 3.7 + px * 1.9 - t * 0.8) +
-          twist * Math.sin(pz * 4.3 + py * 3.2 + t * 1.6) +
-          ripple * Math.sin(px * 11 + py * 9 + pz * 7 + t * 6)
-        const r = 1 + fold
-        // Turn the sphere: around the vertical axis, then tilt.
-        const x1 = px * r * cyR - pz * r * sy
-        const z1 = px * r * sy + pz * r * cyR
-        const y = py * r * cxR - z1 * sx
-        const z = py * r * sx + z1 * cxR
-        const depth = 2.6 / (2.6 - z) // perspective
-        xs[i] = cx + x1 * radius * depth
+        const [px, py, pz] = points[i]
+        const fold = 0.65 + 0.35 * Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
+        const push = amp * levels[sliceOf[i]] * fold
+        const r = 1 + push
+        const y = py * r * ct - pz * r * st
+        const z = py * r * st + pz * r * ct
+        const depth = 2.8 / (2.8 - z)
+        xs[i] = cx + px * r * radius * depth
         ys[i] = cy + y * radius * depth
-        sizes[i] = dotSize * depth * (0.8 + Math.max(0, fold) * 1.4 + kick * 0.5)
-        // Like the vector: the middle (facing us) violet, the rims and the
-        // folds pushed outwards orange.
-        const warm = Math.min(1, Math.max(0, 0.75 - Math.max(0, z) * 1.1 + fold * 2.2 + kick * 0.5 + bass * 0.3))
-        buckets[z < 0 ? 0 : 1][Math.round(warm * (SHADES - 1))].push(i)
+        sizes[i] = dotSize * depth * (0.85 + push * 1.6)
+        // Calm surface in one colour, what the music pushes out in the other;
+        // the rim a touch warmer so the ball reads as round.
+        const shade = Math.min(1, push / amp * 1.6 + (1 - Math.abs(z)) * 0.25 + beat * 0.2)
+        buckets[z < 0 ? 0 : 1][Math.round(shade * (SHADES - 1))].push(i)
       }
-      // The far side first and dimmer, then the near side over it.
       for (let side = 0; side < 2; side++) {
-        ctx.globalAlpha = side ? 1 : 0.35
+        ctx.globalAlpha = side ? 1 : 0.3
         for (let s = 0; s < SHADES; s++) {
           const list = buckets[side][s]
           if (!list.length) continue
@@ -164,7 +224,7 @@ export default function DotSphere({ className = '' }) {
       ctx.globalAlpha = 1
     }
     frame = requestAnimationFrame(draw)
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); seen.disconnect() }
+    return () => { cancelAnimationFrame(frame); sized.disconnect(); seen.disconnect() }
   }, [analyserVersion])
 
   return <canvas ref={canvasRef} aria-hidden="true" className={className} />
