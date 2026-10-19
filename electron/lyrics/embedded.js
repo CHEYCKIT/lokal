@@ -37,13 +37,28 @@ function toPortableLyrics(result) {
     const text = lines.map(withBackground).filter(Boolean).join('\n').trim()
     return text || null
   }
+  // Keep portable LRC consistent with attachTranslations() in lrc.js. Sparse
+  // untimestamped lines are ambiguous with notes/credits, so preserve them in
+  // Lokal's private tag but omit them from the standard LRC unless at least
+  // half of the sung lines have translations.
+  const sungTimes = new Set(lines
+    .filter(line => line.time != null && !line.gap && withBackground(line))
+    .map(line => stamp(line.time)))
+  const translatedTimes = new Set(lines
+    .filter(line => line.time != null && !line.gap && withBackground(line) && String(line.translation?.text || '').trim())
+    .map(line => stamp(line.time)))
+  const writeTranslations = sungTimes.size > 0 && translatedTimes.size >= sungTimes.size / 2
   const out = []
   for (const line of lines) {
     if (line.time == null) continue
     // A break is written the way LRC writes one: a bare stamp.
     if (line.gap) { if (line.time > 0) out.push(stamp(line.time)); continue }
     const text = withBackground(line)
-    if (text) out.push(`${stamp(line.time)}${text}`)
+    if (text) {
+      out.push(`${stamp(line.time)}${text}`)
+      const translation = String(line.translation?.text || '').trim()
+      if (writeTranslations && translation) out.push(translation)
+    }
   }
   return out.length ? out.join('\n') : null
 }
@@ -69,6 +84,10 @@ function toPrivateTag(result) {
     const words = packUnits(line.words)
     if (words.length) entry.w = words
     if (line.bgText) entry.b = String(line.bgText)
+    if (line.translation?.text) {
+      entry.tr = String(line.translation.text)
+      if (line.translation.bgText) entry.tb = String(line.translation.bgText)
+    }
     const bgWords = packUnits(line.bgWords)
     if (bgWords.length) entry.bw = bgWords
     if (line.agent) entry.a = String(line.agent)
@@ -104,6 +123,7 @@ function fromPrivateTag(text) {
         words: unpackUnits(l.w),
       }
       if (l.b) line.bgText = String(l.b)
+      if (l.tr) line.translation = { text: String(l.tr), bgText: l.tb ? String(l.tb) : null }
       const bgWords = unpackUnits(l.bw)
       if (bgWords.length) line.bgWords = bgWords
       // Sides are re-derived from voices, so a right-hand line gets its own voice.

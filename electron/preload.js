@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('electron', {
     return () => { for (const [channel, cb] of Object.entries(bound)) ipcRenderer.removeListener(channel, cb) }
   },
   getTracks: (o) => invoke('scanner:getTracks', o),
+  getTrackFileSize: (id) => invoke('scanner:getTrackFileSize', id),
   getLibraryFolders: (p, s, root) => invoke('scanner:getLibraryFolders', p, s, root),
   renameLibraryFolders: (changes, root) => invoke('scanner:renameLibraryFolders', changes, root),
   deleteLibraryFolders: (paths, root) => invoke('scanner:deleteLibraryFolders', paths, root),

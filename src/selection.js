@@ -48,6 +48,18 @@ export function useSelection(keys, { onDelete } = {}) {
 
   const selectAll = useCallback(() => setSelected(new Set(keyList)), [keyList])
 
+  // An explicit checkbox click toggles one item without modifier keys.
+  const toggle = useCallback((key) => {
+    key = String(key)
+    anchor.current = key
+    setSelected(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
   /**
    * A click on an item. Returns true when it only changed the selection
    * (Ctrl/Cmd or Shift held), so the caller skips its usual action (play,
@@ -112,6 +124,7 @@ export function useSelection(keys, { onDelete } = {}) {
     count: selected.size,
     has: (key) => selected.has(String(key)),
     click,
+    toggle,
     contextSelect,
     clear,
     selectAll,
