@@ -513,11 +513,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       const c = document.createElement('canvas'); c.width = img.width; c.height = img.height
       c.getContext('2d').drawImage(img, 0, 0)
       api.trackSetArtwork(track.id, c.toDataURL('image/jpeg', 0.85)).then((updatedTrack) => {
+        if (updatedTrack?.error) { showToast(updatedTrack.error); return }
         if (updatedTrack?.id) {
           syncTrack(updatedTrack)
           setTrackOverrides(prev => ({ ...prev, [updatedTrack.id]: updatedTrack }))
+          showToast(t('Artwork updated in the audio file.'))
         }
-      })
+      }).catch(error => showToast(error?.message || t('Could not replace artwork')))
     }
   }
 
@@ -820,6 +822,15 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       </div>
       <div data-track-header className="grid grid-cols-[var(--tl-columns)] items-center gap-2 px-4 py-1.5 text-xs text-muted uppercase tracking-widest border-b border-border font-display mb-0.5">
         {layout.grip && <span />}
+        {layout.selection && <div className="flex items-center justify-center">
+          <input type="checkbox"
+            checked={totalTracks > 0 && mergedTracks.every(track => selectedIds.has(String(track.id)))}
+            onChange={event => { if (event.target.checked) selection.selectAll(); else selection.clear() }}
+            onClick={event => event.stopPropagation()}
+            aria-label={t("Select all tracks")}
+            title={t("Select all tracks")}
+            className="h-3.5 w-3.5 accent-[rgb(var(--accent-rgb))]" />
+        </div>}
         {layout.number && <SortableHeader column="number" label={t("playlist number")} sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{t(layout.album ? 'Title' : 'Title / Album')}</span>
         {layout.album && <span className="truncate">{t("Album")}</span>}
@@ -884,6 +895,16 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               </div>
             )}
 
+            {layout.selection && <div data-track-column="selection" className="flex items-center justify-center h-7">
+              <input type="checkbox"
+                checked={isSelected}
+                onChange={() => selection.toggle(track.id)}
+                onClick={event => event.stopPropagation()}
+                onDoubleClick={event => event.stopPropagation()}
+                aria-label={t('Select {track}', { track: track.title || t('track') })}
+                title={t('Select {track}', { track: track.title || t('track') })}
+                className="h-3.5 w-3.5 accent-[rgb(var(--accent-rgb))]" />
+            </div>}
             {layout.number && <div data-track-column="number" className="flex items-center justify-center h-7 text-xs text-muted font-display">
               {isGhost ? (
                 <button onClick={e => { e.stopPropagation(); setGhostTrack(track) }} className="text-yellow-300 hover:text-yellow-200 transition-colors" title={t("Ghost song")}>

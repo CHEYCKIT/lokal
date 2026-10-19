@@ -140,13 +140,19 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
     setSaving(true)
     try {
       const updatedTrack = await api.trackSetArtwork(track.id, dataUrl)
-      if (updatedTrack?.id) {
-        syncTrack(updatedTrack)
-        if (onSave) onSave(updatedTrack)
+      if (updatedTrack?.error) {
+        setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
+        setStatus({ type: 'error', message: updatedTrack.error })
+        setSaving(false)
+        return
       }
-      setStatus({ type: 'success', message: 'Artwork updated!' })
+      if (!updatedTrack?.id) throw new Error('Could not update artwork')
+      syncTrack(updatedTrack)
+      if (onSave) onSave(updatedTrack)
+      setStatus({ type: 'success', message: 'Artwork updated in the audio file.' })
       setTimeout(() => setStatus(null), 2000)
     } catch (e) {
+      setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
       setStatus({ type: 'error', message: e.message })
     }
     setSaving(false)
@@ -275,7 +281,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               className="mt-2 w-full py-1.5 text-xs bg-card border border-border rounded-lg text-muted hover:text-accent hover:border-accent/30 transition-colors flex items-center justify-center gap-1"
             >
               {saving ? <RefreshCw size={12} className="animate-spin" /> : null}
-              iTunes Artwork
+              {t(artworkPreview ? 'Replace with iTunes Artwork' : 'Find Artwork on iTunes')}
             </button>
           </div>
           

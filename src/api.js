@@ -181,6 +181,7 @@ export const api = {
   streamURL: (t) => `${BASE}/stream/${encodeURIComponent(t.id)}`,
   avatarURL: (id) => `${BASE}/avatar/${id}`,
   getTracks: (o = {}) => isE() ? el().getTracks(o) : apiFetch(`/tracks?${new URLSearchParams(o)}`),
+  getTrackFileSize: (id) => isE() ? el().getTrackFileSize(id) : apiFetch(`/tracks/${encodeURIComponent(id)}/file-size`),
   getLibraryFolders: (relativePath = '', search = '', root = '') => isE()
     ? el().getLibraryFolders(relativePath, search, root)
     : apiFetch('/tracks/library-folders?path=' + encodeURIComponent(relativePath) + (search ? '&search=' + encodeURIComponent(search) : '') + (root ? '&root=' + encodeURIComponent(root) : '')),

@@ -43,6 +43,7 @@ export default function LosslessModal() {
   const { t } = useTranslation()
   const nav = useNavigate()
   const [track, setTrack] = useState(null)
+  const [fileSizeBytes, setFileSizeBytes] = useState(null)
   const [links, setLinks] = useState(null) // null: loading
   const [check, setCheck] = useState(null) // { loading } | result | { error }
 
@@ -51,6 +52,36 @@ export default function LosslessModal() {
     window.addEventListener('lokal:lossless', open)
     return () => window.removeEventListener('lokal:lossless', open)
   }, [])
+
+  useEffect(() => {
+    if (!track?.id) {
+      setFileSizeBytes(null)
+      return undefined
+    }
+    let alive = true
+    let request = 0
+    const loadFileSize = () => {
+      const currentRequest = ++request
+      setFileSizeBytes(null)
+      Promise.resolve(api.getTrackFileSize(track.id))
+        .then(result => {
+          if (!alive || currentRequest !== request) return
+          const bytes = result?.bytes == null ? null : Number(result.bytes)
+          setFileSizeBytes(Number.isFinite(bytes) ? bytes : null)
+        })
+        .catch(() => {
+          if (alive && currentRequest === request) setFileSizeBytes(null)
+        })
+    }
+    loadFileSize()
+    // Replacing a file retains its track ID. The library refresh is the signal
+    // that its on-disk file may have changed, so re-read its actual size.
+    window.addEventListener('lokal:refresh', loadFileSize)
+    return () => {
+      alive = false
+      window.removeEventListener('lokal:refresh', loadFileSize)
+    }
+  }, [track?.id])
 
   useEffect(() => {
     if (!track?.id) return undefined
@@ -126,6 +157,7 @@ export default function LosslessModal() {
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
             {formatLabel(track) && <span className="text-[11px] text-muted">{formatLabel(track)}</span>}
+            {fileSizeBytes != null && <span className="text-[11px] text-muted">{t('Current file size: {size} MB', { size: (fileSizeBytes / (1024 * 1024)).toFixed(2) })}</span>}
           </div>
         </div>
 

@@ -19,6 +19,7 @@ const { deduplicatePlaylist } = require('../playlists/deduplicate')
 const { fetchCoverData } = require('../playlists/remoteCover')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('./artistMetadata')
 const { recordListeningEvent } = require('./recaps')
+const { normalizeArtwork, writeEmbeddedArtwork } = require('../fileArtwork')
 const { artistIdFromName, findArtistById, migrateUnknownArtist, resolveArtistId, trackArtistLinks } = require('../artistId')
 
 const DEFAULT_MUSIC_PATH = 'C:\\Users\\sipbuu\\Music'
@@ -1246,6 +1247,14 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:scanFolders', async (e, folders) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolders(folders) })
   ipcMain.handle('scanner:status', () => scanStatus)
+  ipcMain.handle('scanner:getTrackFileSize', (_, trackId) => {
+    const filePath = getDB().prepare('SELECT file_path FROM tracks WHERE id = ?').get(String(trackId || ''))?.file_path
+    if (!filePath || String(filePath).startsWith('ghost://')) return { bytes: null }
+    try {
+      const stat = fs.statSync(filePath)
+      return { bytes: stat.isFile() ? stat.size : null }
+    } catch { return { bytes: null } }
+  })
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search, rootPath) => getLibraryFolders(getDB(), relativePath, search, rootPath))
 
   ipcMain.handle('scanner:renameLibraryFolders', (e, changes, rootPath) => {
@@ -1585,12 +1594,34 @@ function registerScannerHandlers(ipcMain) {
   });
   ipcMain.handle('artist:delete', (_, artistId) => { const db = getDB(); lockArtistLinks(db, artistId); db.prepare('DELETE FROM artist_track_links WHERE artist_id = ?').run(artistId); db.prepare('DELETE FROM artists WHERE id = ?').run(artistId) })
   ipcMain.handle('track:setArtwork', async (_, trackId, imageData) => {
-    const buf = Buffer.from(imageData.split(',')[1], 'base64')
-    const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-    await fs.writeFile(artPath, buf)
     const db = getDB()
-    db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(artPath, trackId)
-    return db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) || null
+    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(trackId || ''))
+    if (!track) return { error: 'Track not found' }
+    let tempPath = null
+    try {
+      const buf = await normalizeArtwork(imageData)
+      const filePath = String(track.file_path || '')
+      const hasLocalFile = path.isAbsolute(filePath) && !filePath.startsWith('ghost://')
+      if (hasLocalFile) {
+        if (!fs.existsSync(filePath)) return { error: 'The audio file is missing; artwork was not changed.' }
+        // Write the cover into the audio's own metadata, so other music players
+        // see the new image too. Don't report success if this step fails.
+        writeEmbeddedArtwork(filePath, buf)
+        require('../fileStamp').noteFileWritten(db, filePath)
+      }
+      const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
+      await fs.ensureDir(path.dirname(artPath))
+      tempPath = `${artPath}.${process.pid}.tmp`
+      await fs.writeFile(tempPath, buf)
+      await fs.rename(tempPath, artPath)
+      tempPath = null
+      db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(artPath, trackId)
+      return db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) || null
+    } catch (error) {
+      if (tempPath) { try { await fs.unlink(tempPath) } catch {} }
+      console.error('[track:setArtwork] Could not replace artwork:', error)
+      return { error: error?.message || 'Could not replace artwork' }
+    }
   })
   ipcMain.handle('track:setGenre', (_, trackId, genre) => getDB().prepare('UPDATE tracks SET genre = ? WHERE id = ?').run(genre || null, trackId))
   ipcMain.handle('track:update', (_, trackId, data) => {
@@ -1672,6 +1703,19 @@ function registerScannerHandlers(ipcMain) {
     try {
       const result = await fetchExternalMetadata(title, artist, trackId)
       if (result?.artPath) {
+        const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(trackId || ''))
+        if (!track) return { success: false, error: 'Track not found' }
+        const filePath = String(track.file_path || '')
+        const hasLocalFile = path.isAbsolute(filePath) && !filePath.startsWith('ghost://')
+        if (hasLocalFile) {
+          if (!fs.existsSync(filePath)) return { success: false, error: 'The audio file is missing; artwork was not changed.' }
+          // iTunes/Cover Art Archive images need the same embedded-tag write as
+          // the manual picker. Otherwise the new cover appears only in Lokal.
+          const cover = await normalizeArtwork(await fs.readFile(result.artPath))
+          writeEmbeddedArtwork(filePath, cover)
+          await fs.writeFile(result.artPath, cover)
+          require('../fileStamp').noteFileWritten(db, filePath)
+        }
         db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(result.artPath, trackId)
         return {
           success: true,
@@ -1682,7 +1726,7 @@ function registerScannerHandlers(ipcMain) {
       return { success: false, error: 'No artwork found' }
     } catch (err) {
       console.error('[track:fetchExternalArtwork]', err.message)
-      return { success: false, error: err.message }
+      return { success: false, error: err?.message || 'Could not replace artwork' }
     }
   })
   ipcMain.handle('scanner:getTopGenres', () => getDB().prepare(`SELECT genre, COUNT(*) as count FROM tracks WHERE genre IS NOT NULL GROUP BY genre ORDER BY count DESC LIMIT 10`).all())

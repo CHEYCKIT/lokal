@@ -25,7 +25,7 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
  * @param offerUpgrade a low-quality copy in the library can be replaced by this
  *                  version (Search); elsewhere it's just "In your library"
  */
-export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false, replaceTrackId = null }) {
+export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false, replaceTrackId = null, openMenuOnEvent = false, openMenuEventKey = null }) {
   const nav = useNavigate()
   const ref = streamRef(track) || source
   const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
@@ -58,6 +58,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   const [menuPosition, setMenuPosition] = useState(null)
   const [findSources, setFindSources] = useState(DEFAULT_FIND_ON_SOURCES)
   const menuRef = useRef(null)
+  const externalMenuButtonRef = useRef(null)
   // Another song in the same place (a reused row, the player's next song):
   // nothing of the previous one's state carries over, not even a late answer.
   const keyRef = useRef(refKey)
@@ -73,6 +74,20 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
       : (job && SAVING.has(job.status)) || requested ? 'saving'
         : 'idle'
   useEffect(() => { if (job) setRequested(false) }, [job])
+
+  useEffect(() => {
+    if (!openMenuOnEvent) return undefined
+    const openFromPlayerMenu = (event) => {
+      const eventKey = event.detail?.key
+      if (eventKey == null || openMenuEventKey == null || String(eventKey) !== String(openMenuEventKey)) return
+      const rect = externalMenuButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setMenuPosition(null)
+      setMenu({ x: rect.left, y: rect.bottom + 4 })
+    }
+    window.addEventListener('lokal:open-save-source-menu', openFromPlayerMenu)
+    return () => window.removeEventListener('lokal:open-save-source-menu', openFromPlayerMenu)
+  }, [openMenuOnEvent, openMenuEventKey])
 
   useEffect(() => {
     if (!menu) return undefined
@@ -160,6 +175,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
   return (
     <>
       <button
+        ref={externalMenuButtonRef}
         onClick={(e) => { e.stopPropagation(); saveFromSource() }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuPosition(null); setMenu({ x: e.clientX, y: e.clientY }) }}
         disabled={state === 'saving' || (state === 'saved' && !ownedOnly)}

@@ -71,6 +71,21 @@ function privateLyrics(meta) {
 
 const HAS_STAMP = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/
 
+/** Number of unstamped lines directly following timestamped lyrics (usually translations). */
+function translationLineScore(text) {
+  let score = 0
+  let afterStampedLine = false
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n')
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) { afterStampedLine = false; continue }
+    if (HAS_STAMP.test(line)) { afterStampedLine = true; continue }
+    if (afterStampedLine && !/^\[(?:ar|ti|al|au|by|re|ve|length|offset|id|hash|sign|qq|total|#)\s*:/i.test(line)) score++
+    afterStampedLine = false
+  }
+  return score
+}
+
 /**
  * The lyrics a file carries, as text: the tags exactly as written first
  * (native), then music-metadata's common.lyrics. Since music-metadata 12 the
@@ -85,7 +100,12 @@ function embeddedText(meta) {
   const lyrics = meta?.common?.lyrics
   const common = (Array.isArray(lyrics) ? lyrics : lyrics ? [lyrics] : []).map(tagText)
   const parts = [...native, ...common].filter(s => s && s.trim())
-  return parts.find(part => HAS_STAMP.test(part)) || parts[0] || null
+  const synced = parts.filter(part => HAS_STAMP.test(part))
+  // MP3s may contain both SYLT (timing only) and USLT (LRC plus translated
+  // lines). Prefer the synced tag carrying the most adjacent translation text.
+  if (synced.length) return synced.reduce((best, part) =>
+    translationLineScore(part) > translationLineScore(best) ? part : best)
+  return parts[0] || null
 }
 
 /** The file's own ISRC tag, if it has one. Cheap: skips covers. */
@@ -101,6 +121,48 @@ async function readIsrc(filePath) {
 }
 
 const AUDIO_EXT = /\.(mp3|flac|m4a|mp4|aac|ogg|oga|opus|wav|wma|aiff?|alac|ape|wv|dsf|dff)$/i
+
+/**
+ * Recover translations missing from Lokal's private timed-lyrics tag using
+ * the standard LRC tag, without replacing existing translations or mapping
+ * one standard line onto multiple private lines.
+ */
+function recoverTranslations(own, text) {
+  if (!text || !Array.isArray(own?.lines) || !own.lines.some(line => !line.translation?.text)) return null
+  const sourceLines = require('../detect').parseAny(text)?.lines || []
+  if (!sourceLines.some(line => line.translation?.text)) return null
+
+  const usePosition = own.lines.length === sourceLines.length
+  const usedSourceIndexes = new Set()
+  let recovered = 0
+  const lines = own.lines.map((line, index) => {
+    if (line.translation?.text) {
+      if (usePosition) usedSourceIndexes.add(index)
+      return line
+    }
+
+    let sourceIndex = -1
+    // Equal-length lyric payloads have a stable line identity; prefer it when
+    // available, especially when two distinct lines share the same timestamp.
+    if (usePosition && !usedSourceIndexes.has(index) && sourceLines[index]?.translation?.text) {
+      sourceIndex = index
+    }
+    if (sourceIndex < 0 && line.time != null) {
+      sourceIndex = sourceLines.findIndex((candidate, candidateIndex) =>
+        !usedSourceIndexes.has(candidateIndex) && candidate.translation?.text &&
+        candidate.time != null && !candidate.gap && Math.abs(candidate.time - line.time) < 0.06)
+    }
+    if (sourceIndex < 0 && usePosition && !usedSourceIndexes.has(index) && sourceLines[index]?.translation?.text) {
+      sourceIndex = index
+    }
+    if (sourceIndex < 0) return line
+
+    usedSourceIndexes.add(sourceIndex)
+    recovered++
+    return { ...line, translation: sourceLines[sourceIndex].translation }
+  })
+  return recovered ? { lines, language: own.language } : null
+}
 
 /** Only an absolute path to an existing audio file is ever read. */
 function isAudioFile(filePath) {
@@ -119,10 +181,19 @@ async function fetch(query) {
   try {
     const meta = await lib.parseFile(filePath, { duration: false, skipCovers: true })
     const own = privateLyrics(meta)
-    if (own) return { lines: own.lines, language: own.language }
+    if (own) {
+      const text = embeddedText(meta)
+      if (text && own.lines.some(line => !line.translation?.text)) {
+        // Older private tags may have lost some or all translations. Fill only
+        // missing lines from the portable tag; keep Lokal's precise timings.
+        const recovered = recoverTranslations(own, text)
+        if (recovered) return recovered
+      }
+      return { lines: own.lines, language: own.language }
+    }
     const text = embeddedText(meta)
     return text ? { raw: text } : null
   } catch { return null }
 }
 
-module.exports = { fetch, readIsrc, privateLyrics, embeddedText }
+module.exports = { fetch, readIsrc, privateLyrics, embeddedText, recoverTranslations }
