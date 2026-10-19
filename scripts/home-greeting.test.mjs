@@ -20,6 +20,24 @@ function rows(count, { genre = '', playedHour = 12, sameTrack = false, artistCou
   })
 }
 
+// Explicit day offsets keep the fixture's active-date count controlled, rather
+// than accidentally turning the streak/diversity cases into a different branch.
+function rowsOnDays(dayOffsets, { genre = '', playedHour = 11, artistCount = dayOffsets.length } = {}) {
+  return dayOffsets.map((daysAgo, index) => {
+    const date = new Date(now)
+    date.setDate(date.getDate() - daysAgo)
+    date.setHours(playedHour, 0, 0, 0)
+    const artistIndex = index % Math.max(1, artistCount)
+    return {
+      id: `dated-track-${index}`,
+      title: `Private dated track ${index}`,
+      artist: `Private dated artist ${artistIndex}`,
+      genre,
+      played_at: Math.floor(date.getTime() / 1000),
+    }
+  })
+}
+
 test('uses time-of-day fallback when there is not enough listening history', () => {
   assert.equal(personalizedHomeGreeting([], { hour: 9, now }), 'Ready for a fresh soundtrack?')
   assert.equal(personalizedHomeGreeting([], { hour: 23, now }), 'Keeping the late hours company?')
@@ -45,4 +63,26 @@ test('recognizes a high-energy listening profile without naming genres', () => {
 test('recognizes late-night listening habits without naming tracks or artists', () => {
   assert.equal(personalizedHomeGreeting(rows(10, { playedHour: 23, artistCount: 10 }), { hour: 12, now }),
     'Your after-dark listening rhythm is holding steady.')
+})
+
+test('uses the five-valid-entry threshold before choosing a listening pattern', () => {
+  const four = rows(4, { sameTrack: true, artistCount: 1 })
+  const five = rows(5, { sameTrack: true, artistCount: 1 })
+  assert.equal(personalizedHomeGreeting(four, { hour: 12, now }), 'What sounds good this afternoon?')
+  assert.equal(personalizedHomeGreeting(five, { hour: 12, now }), 'The repeat button has been getting a workout.')
+})
+
+test('recognizes early-morning listening without triggering other patterns', () => {
+  const history = rowsOnDays([1, 2, 3, 4, 5, 6, 6, 6], { playedHour: 6, artistCount: 8 })
+  assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'You have a soundtrack for the early hours.')
+})
+
+test('recognizes four distinct recent active dates as a listening streak', () => {
+  const history = rowsOnDays([1, 1, 3, 3, 5, 5, 6, 6], { playedHour: 11, artistCount: 3 })
+  assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'Your listening streak has some momentum.')
+})
+
+test('recognizes diverse artists when higher-priority patterns are absent', () => {
+  const history = rowsOnDays(Array(10).fill(1), { playedHour: 11, artistCount: 10 })
+  assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'Lots of different sounds in your rotation lately.')
 })
