@@ -233,6 +233,9 @@ export const api = {
   spotifyLikesDisable: () => isE() && el()?.spotifyLikesDisable ? el().spotifyLikesDisable() : Promise.resolve({ enabled: false }),
   spotifyLikesPoll: () => isE() && el()?.spotifyLikesPoll ? el().spotifyLikesPoll() : Promise.resolve({ items: [] }),
   spotifyLikesAck: (progress) => isE() && el()?.spotifyLikesAck ? el().spotifyLikesAck(progress) : Promise.resolve(null),
+  // Discovery's Spotify source: Made For You mixes and their songs (desktop).
+  spotifyMadeForYou: (force = false) => isE() && el()?.spotifyMadeForYou ? el().spotifyMadeForYou(force) : Promise.resolve({ mixes: [], error: 'Spotify discovery works in the desktop app.' }),
+  spotifyPlaylist: (uri, force = false) => isE() && el()?.spotifyPlaylist ? el().spotifyPlaylist(uri, force) : Promise.resolve({ tracks: [], error: 'Spotify discovery works in the desktop app.' }),
   // AutoMix: a song's analysis (desktop; electron/automix), null when it can't be.
   automixAnalyze: (track) => isE() && el()?.automixAnalyze ? el().automixAnalyze(track) : Promise.resolve(null),
   // Flow's songs: the library with this user's likes and plays (electron/ipc/flow.js; the server's /tracks/flow-pool on the web).
@@ -343,7 +346,7 @@ export const api = {
   },
   saveSettings: (s) => Promise.resolve(isE() ? el().saveSettings(s) : apiFetch('/settings', { method:'PUT', body:s })).then(r => {
     if (!r?.error && Object.prototype.hasOwnProperty.call(s || {}, 'yt_cookie_header')) clearYoutubeAccountStatus()
-    if (!r?.error && s && typeof window !== 'undefined' && ['yt_cookie_header', 'yt_account_session', 'yt_account_revision', 'lastfm_api_key', 'lastfm_username', 'lastfm_enabled', 'recommendation_source'].some(key => Object.prototype.hasOwnProperty.call(s, key))) {
+    if (!r?.error && s && typeof window !== 'undefined' && ['yt_cookie_header', 'yt_account_session', 'yt_account_revision', 'lastfm_api_key', 'lastfm_username', 'lastfm_enabled', 'recommendation_source', 'spotify_sp_dc'].some(key => Object.prototype.hasOwnProperty.call(s, key))) {
       window.dispatchEvent(new Event('lokal:recommendation-access-changed'))
     }
     // Only what was actually saved goes into the snapshot.

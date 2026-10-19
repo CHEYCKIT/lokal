@@ -231,6 +231,9 @@ contextBridge.exposeInMainWorld('electron', {
   spotifyLikesPoll: () => invoke('spotifyLikes:poll'),
   spotifyLikesAck: (progress) => invoke('spotifyLikes:ack', progress),
   spotifyLikesPush: (track) => invoke('spotifyLikes:push', track),
+  // Discovery's Spotify source: Made For You mixes (electron/ipc/spotifyLikes.js)
+  spotifyMadeForYou: (force) => invoke('spotify:madeForYou', force),
+  spotifyPlaylist: (uri, force) => invoke('spotify:playlist', uri, force),
   // AutoMix: a song's analysis (electron/automix)
   automixAnalyze: (track) => invoke('automix:analyze', track),
   // Flow's songs (electron/ipc/flow.js)

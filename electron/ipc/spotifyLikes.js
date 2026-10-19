@@ -88,6 +88,28 @@ function registerSpotifyLikesHandlers(ipcMain) {
     return status()
   })
 
+  // Discovery's Spotify source: the Made For You mixes and their songs. Spotify
+  // remakes them weekly (Discover Weekly on Monday, Release Radar on Friday)
+  // and Daily Mixes daily, so a look is kept 12 hours unless refreshed.
+  const DISCOVERY_KEEP_MS = 12 * 60 * 60 * 1000
+  const cache = new Map() // `${cookie}\0${key}` -> { at, value }
+  const cached = async (key, force, load) => {
+    const id = `${spotify.cookieValue(settings().spotify_sp_dc)}\0${key}`
+    const hit = cache.get(id)
+    if (!force && hit && Date.now() - hit.at < DISCOVERY_KEEP_MS) return hit.value
+    const value = await load()
+    cache.set(id, { at: Date.now(), value })
+    return value
+  }
+  ipcMain.handle('spotify:madeForYou', async (_, force) => {
+    try { return { mixes: await cached('home', !!force, () => spotify.madeForYou(settings().spotify_sp_dc)) } }
+    catch (error) { return { mixes: [], error: error.message } }
+  })
+  ipcMain.handle('spotify:playlist', async (_, uri, force) => {
+    try { return await cached(`playlist:${uri}`, !!force, () => spotify.playlistTracks(settings().spotify_sp_dc, String(uri || ''))) }
+    catch (error) { return { tracks: [], error: error.message } }
+  })
+
   // A song liked in Lokal: liked on Spotify too.
   ipcMain.handle('spotifyLikes:push', async (_, track) => {
     const now = status()
