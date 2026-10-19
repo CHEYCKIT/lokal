@@ -306,7 +306,7 @@ export default function PlayerBar() {
         ? 'absolute inset-x-3 bottom-3 z-30 h-20 rounded-2xl border border-white/10 flex items-center px-4 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-lg backdrop-saturate-150'
         : 'h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10'}
         style={glass ? { backgroundColor: 'rgba(var(--surface-rgb), 0.55)' } : { backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
-        <div className="flex items-center gap-3 w-[370px] min-w-0">
+        <div className="flex items-center gap-3 w-[370px] max-[1360px]:w-[320px] min-w-0">
         <button onClick={toggleFullscreen} disabled={!currentTrack}
           className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
           {/* Not "wait": with the window minimized no animation runs, and a
@@ -456,9 +456,9 @@ export default function PlayerBar() {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
+        <div className="flex items-center gap-2 w-[370px] max-[1360px]:gap-1.5 min-w-0 justify-end">
           {currentTrack && visualizerMode !== 'off' && (
-            <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden">
+            <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden max-[1360px]:hidden">
               {['spectrum', 'spectrumCenter'].includes(visualizerMode) ? <Spectrum isPlaying={isPlaying} bars={39} barWidth={2} height={24} strength={0.8} color="accent" opacity={0.8} className="max-w-full" /> :
                visualizerMode === 'waves' ? <Waves isPlaying={isPlaying} width={120} height={26} strength={1} colorBack="accent" colorFront="#ffffff" opacity={0.72} className="max-w-full" /> :
                visualizerMode === 'lightning' ? <Lightning isPlaying={isPlaying} strength={0.8} opacity={0.75} className="h-7 w-[120px]" /> :

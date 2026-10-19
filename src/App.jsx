@@ -1312,18 +1312,34 @@ export default function App() {
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
-    if (!currentTrack) return
 
+    const actions = ['play', 'pause', 'seekto', 'previoustrack', 'nexttrack']
+    if (!currentTrack) {
+      // Chromium's Linux MPRIS session otherwise retains the previous song
+      // and its handlers after the queue stops or is cleared.
+      try {
+        navigator.mediaSession.metadata = null
+        navigator.mediaSession.playbackState = 'none'
+        navigator.mediaSession.setPositionState?.()
+      } catch {}
+      for (const action of actions) {
+        try { navigator.mediaSession.setActionHandler(action, null) } catch {}
+      }
+      return
+    }
+
+    let current = true
     const updateMetadata = async () => {
       let artworkSrc = 'fallback_nopfp.png'
       if (currentTrack.artwork_path) {
         const dataUrl = await getArtworkDataURL(currentTrack.artwork_path)
-        if (dataUrl) {
-          artworkSrc = dataUrl
-        }
+        if (dataUrl) artworkSrc = dataUrl
       } else if (currentTrack.artwork_url) {
         artworkSrc = currentTrack.artwork_url
       }
+      // A slower artwork read for the previous song must not replace the
+      // metadata for the current one in Linux MPRIS or other Media Session UIs.
+      if (!current) return
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: currentTrack.title || '',
         artist: currentTrack.artist || '',
@@ -1332,11 +1348,11 @@ export default function App() {
       })
     }
 
-    updateMetadata()
+    updateMetadata().catch(() => {})
     try {
       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'
     } catch {}
-    
+
     const getActiveAudio = () => {
       const state = usePlayerStore.getState()
       return state.activeAudioElement === 'primary' ? audioRef.current : cfAudioRef.current
@@ -1351,32 +1367,30 @@ export default function App() {
         })
       } catch {}
     }
-    navigator.mediaSession.setActionHandler('play', () => { 
+    navigator.mediaSession.setActionHandler('play', () => {
       if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(true); return }
       const activeEl = getActiveAudio()
-      activeEl?.play() 
+      activeEl?.play()
     })
-    navigator.mediaSession.setActionHandler('pause', () => { 
+    navigator.mediaSession.setActionHandler('pause', () => {
       if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(false); return }
       const activeEl = getActiveAudio()
-      activeEl?.pause() 
-      // An explicit pause: record it in the store directly, since the element's
-      // own pause event is ignored while a file is failing or being swapped
-      // for its playable copy (ignoreElementPause).
+      activeEl?.pause()
+      // Record explicit pauses even when a source is failing or being swapped.
       usePlayerStore.getState().setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (isStationTrack(usePlayerStore.getState().currentTrack)) return
-      if (usePlayerStore.getState().castActive) { if (typeof details.seekTime === 'number') usePlayerStore.getState().setProgressWithAudioUpdate(details.seekTime); return }
+      if (usePlayerStore.getState().castActive) {
+        if (typeof details.seekTime === 'number') usePlayerStore.getState().setProgressWithAudioUpdate(details.seekTime)
+        return
+      }
       const activeEl = getActiveAudio()
       if (activeEl && typeof details.seekTime === 'number') activeEl.currentTime = details.seekTime
     })
-    navigator.mediaSession.setActionHandler('previoustrack', () => {
-      usePlayerStore.getState().prev()
-    })
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      usePlayerStore.getState().next()
-    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => usePlayerStore.getState().prev())
+    navigator.mediaSession.setActionHandler('nexttrack', () => usePlayerStore.getState().next())
+    return () => { current = false }
   }, [currentTrack, isPlaying])
 
   useEffect(() => {

@@ -24,7 +24,10 @@ import { useVolumeWheel } from '../volumeWheel'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
-const PANEL_WIDTH = 'min(52vw, 780px)'
+// With a side panel open, the cover must fit in the space left beside it.
+// 6rem accounts for the cover stage's horizontal padding (px-12).
+const COVER_SIZE_WITH_PANEL = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem), calc(100vw - min(42vw, 780px) - 6rem))'
+const PANEL_WIDTH = 'min(42vw, 780px)'
 const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
 // long without the mouse moving.
@@ -620,6 +623,7 @@ export default function FullscreenPlayer() {
 
   const isAutoSynced = settings.unsynced_auto_sync === '1'
   const isPanelVisible = currentTrack && fullscreenPanel !== 'none'
+  const coverSize = isPanelVisible ? COVER_SIZE_WITH_PANEL : COVER_SIZE
   // The two layout-affecting transitions below (main content re-centering,
   // panel width collapsing) only need to animate while this view is
   // actually staying open -- while it's closing, the whole overlay is
@@ -758,7 +762,7 @@ export default function FullscreenPlayer() {
                 // frame -- slow, especially while the panel slid open.)
                 style={fsCanvas
                   ? { height: 'min(38rem, 62vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: COVER_SIZE, height: COVER_SIZE }}
+                  : { width: coverSize, height: coverSize }}
               >
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
@@ -827,7 +831,7 @@ export default function FullscreenPlayer() {
                 {burst && burst.trackId === currentTrack?.id && <LikeBurst key={burst.id} kind={burst.kind} />}
               </motion.div>
 
-            <div className="relative mt-6 flex items-center gap-3" style={{ width: COVER_SIZE }}>
+            <div className="relative mt-6 flex items-center gap-3" style={{ width: coverSize }}>
               <MixingMark className="absolute -top-4 left-1/2 -translate-x-1/2 pointer-events-none !text-white/80" />
               <span className="w-11 text-right text-sm tabular-nums text-white/75">{fmt(progress)}</span>
               <div ref={barRef} className="group/bar relative h-3.5 flex-1 cursor-pointer overflow-hidden rounded-full bg-white/20 backdrop-blur-[2px] drop-shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
@@ -839,7 +843,7 @@ export default function FullscreenPlayer() {
 
             {/* In at once, fading: never waiting on the old title's way out (see PlayerBar). */}
             <motion.div key={currentTrack?.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              className="mt-5 text-center" style={{ width: COVER_SIZE }}>
+              className="mt-5 text-center" style={{ width: coverSize }}>
               <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
               <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
               {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
