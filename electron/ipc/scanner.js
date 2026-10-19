@@ -1703,6 +1703,19 @@ function registerScannerHandlers(ipcMain) {
     try {
       const result = await fetchExternalMetadata(title, artist, trackId)
       if (result?.artPath) {
+        const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(trackId || ''))
+        if (!track) return { success: false, error: 'Track not found' }
+        const filePath = String(track.file_path || '')
+        const hasLocalFile = path.isAbsolute(filePath) && !filePath.startsWith('ghost://')
+        if (hasLocalFile) {
+          if (!fs.existsSync(filePath)) return { success: false, error: 'The audio file is missing; artwork was not changed.' }
+          // iTunes/Cover Art Archive images need the same embedded-tag write as
+          // the manual picker. Otherwise the new cover appears only in Lokal.
+          const cover = await normalizeArtwork(await fs.readFile(result.artPath))
+          writeEmbeddedArtwork(filePath, cover)
+          await fs.writeFile(result.artPath, cover)
+          require('../fileStamp').noteFileWritten(db, filePath)
+        }
         db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(result.artPath, trackId)
         return {
           success: true,
@@ -1713,7 +1726,7 @@ function registerScannerHandlers(ipcMain) {
       return { success: false, error: 'No artwork found' }
     } catch (err) {
       console.error('[track:fetchExternalArtwork]', err.message)
-      return { success: false, error: err.message }
+      return { success: false, error: err?.message || 'Could not replace artwork' }
     }
   })
   ipcMain.handle('scanner:getTopGenres', () => getDB().prepare(`SELECT genre, COUNT(*) as count FROM tracks WHERE genre IS NOT NULL GROUP BY genre ORDER BY count DESC LIMIT 10`).all())
