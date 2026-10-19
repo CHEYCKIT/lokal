@@ -69,6 +69,9 @@ export default function DotSphere({ className = '' }) {
     let last = performance.now()
     let lastDraw = 0
     let visible = true
+    let kick = 0 // jumps on each beat, then fades
+    let bassAvg = 0
+    let spin = 0
 
     const resize = () => {
       // 1 canvas pixel per CSS pixel: plenty for dots, a quarter of the work on high-DPI screens.
@@ -99,21 +102,26 @@ export default function DotSphere({ className = '' }) {
         level[b] += (heard[b] - level[b]) * Math.min(1, dt * (heard[b] > level[b] ? 14 : 4))
       }
       const [bass, mids, highs] = level
+      // A beat: the bass jumping well above its recent average.
+      bassAvg += (heard[0] - bassAvg) * Math.min(1, dt * 1.5)
+      kick = Math.max(kick * Math.exp(-dt * 7), Math.min(1, Math.max(0, heard[0] - bassAvg) * 4))
       const t = now / 1000
+      spin += dt * (mids + highs) * 0.8
 
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
       const cx = width / 2
       const cy = height / 2
-      const radius = Math.min(width, height) * 0.24
+      const radius = Math.min(width, height) * 0.22 * (1 + kick * 0.18)
       const dotSize = Math.max(1, radius / 60)
-      const turnY = t * 0.25
+      const turnY = t * 0.2 + spin
       const turnX = 0.35 + Math.sin(t * 0.2) * 0.15
       const sy = Math.sin(turnY), cyR = Math.cos(turnY), sx = Math.sin(turnX), cxR = Math.cos(turnX)
-      // How much the surface folds: always a little, more with the music.
-      const lobes = 0.16 + bass * 0.3
-      const twist = 0.07 + mids * 0.16
-      const ripple = highs * 0.06
+      // How much the surface folds comes from the music: nearly smooth when
+      // it's quiet, crumpled when it's loud, a jolt on every beat.
+      const lobes = 0.03 + bass * 0.4 + kick * 0.25
+      const twist = 0.02 + mids * 0.3
+      const ripple = highs * 0.12
       for (const side of buckets) for (const list of side) list.length = 0
 
       for (let i = 0; i < DOTS; i++) {
@@ -135,10 +143,10 @@ export default function DotSphere({ className = '' }) {
         const depth = 2.6 / (2.6 - z) // perspective
         xs[i] = cx + x1 * radius * depth
         ys[i] = cy + y * radius * depth
-        sizes[i] = dotSize * depth * (0.85 + Math.max(0, fold) * 1.2)
+        sizes[i] = dotSize * depth * (0.8 + Math.max(0, fold) * 1.4 + kick * 0.5)
         // Like the vector: the middle (facing us) violet, the rims and the
         // folds pushed outwards orange.
-        const warm = Math.min(1, Math.max(0, 1.05 - Math.max(0, z) * 1.1 + fold * 1.8))
+        const warm = Math.min(1, Math.max(0, 0.75 - Math.max(0, z) * 1.1 + fold * 2.2 + kick * 0.5 + bass * 0.3))
         buckets[z < 0 ? 0 : 1][Math.round(warm * (SHADES - 1))].push(i)
       }
       // The far side first and dimmer, then the near side over it.
