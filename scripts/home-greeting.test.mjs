@@ -4,10 +4,10 @@ import { personalizedHomeGreeting } from '../src/homeGreeting.mjs'
 
 const now = new Date('2026-10-19T12:00:00').getTime()
 
-function rows(count, { genre = '', playedHour = 12, dayOffset = 0, sameTrack = false, artistCount = count } = {}) {
+function rows(count, { genre = '', playedHour = 12, sameTrack = false, artistCount = count } = {}) {
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(now)
-    date.setDate(date.getDate() - Math.floor(index / Math.max(1, count / (dayOffset + 1))))
+    date.setDate(date.getDate() - Math.floor(index * 7 / count) - 1)
     date.setHours(playedHour, 0, 0, 0)
     const artistIndex = index % Math.max(1, artistCount)
     return {
