@@ -37,6 +37,17 @@ function toPortableLyrics(result) {
     const text = lines.map(withBackground).filter(Boolean).join('\n').trim()
     return text || null
   }
+  // Keep portable LRC consistent with attachTranslations() in lrc.js. Sparse
+  // untimestamped lines are ambiguous with notes/credits, so preserve them in
+  // Lokal's private tag but omit them from the standard LRC unless at least
+  // half of the sung lines have translations.
+  const sungTimes = new Set(lines
+    .filter(line => line.time != null && !line.gap && withBackground(line))
+    .map(line => stamp(line.time)))
+  const translatedTimes = new Set(lines
+    .filter(line => line.time != null && !line.gap && withBackground(line) && String(line.translation?.text || '').trim())
+    .map(line => stamp(line.time)))
+  const writeTranslations = sungTimes.size > 0 && translatedTimes.size >= sungTimes.size / 2
   const out = []
   for (const line of lines) {
     if (line.time == null) continue
@@ -46,7 +57,7 @@ function toPortableLyrics(result) {
     if (text) {
       out.push(`${stamp(line.time)}${text}`)
       const translation = String(line.translation?.text || '').trim()
-      if (translation) out.push(translation)
+      if (writeTranslations && translation) out.push(translation)
     }
   }
   return out.length ? out.join('\n') : null
