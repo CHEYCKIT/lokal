@@ -25,7 +25,7 @@ const SAVING = new Set(['queued', 'downloading', 'finishing'])
  * @param offerUpgrade a low-quality copy in the library can be replaced by this
  *                  version (Search); elsewhere it's just "In your library"
  */
-export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false, replaceTrackId = null, openMenuOnEvent = false }) {
+export default function SaveToLibraryButton({ track, getTrack, source, meta, size = 14, className = '', offerUpgrade = false, replaceTrackId = null, openMenuOnEvent = false, openMenuEventKey = null }) {
   const nav = useNavigate()
   const ref = streamRef(track) || source
   const url = ref && (ref.provider === 'yt' || ref.provider === 'sc')
