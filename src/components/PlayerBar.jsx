@@ -107,7 +107,11 @@ export default function PlayerBar() {
   const menu = useContextMenu()
   const display = localProg ?? progress
   const [stationLikeId, setStationLikeId] = useState({}) // radio: song_key -> the found song's id
-  const isLiked = currentTrack && likedIds.has(isStationTrack(currentTrack) ? stationLikeId[currentTrack.song_key] : currentTrack.id)
+  const currentIsStationSong = isStationTrack(currentTrack) && !!currentTrack?.song_key
+  const currentStationLikeId = currentIsStationSong ? stationLikeId[currentTrack.song_key] : null
+  const isLiked = currentTrack && (currentIsStationSong
+    ? currentStationLikeId != null && likedIds.has(currentStationLikeId)
+    : !isStationTrack(currentTrack) && currentTrack.id != null && likedIds.has(currentTrack.id))
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat
 
   useEffect(() => {
@@ -162,8 +166,21 @@ export default function PlayerBar() {
 
   // A radio station playing a named song: Like and Save act on that song, found online.
   const stationSongKnown = isStationTrack(currentTrack) && !!currentTrack?.song_key
-  const toggleLike = async (target = currentTrack) => {
+
+  useEffect(() => {
+    if (!stationSongKnown) return undefined
+    const target = currentTrack
+    let alive = true
+    resolveStationSong(target).then(track => {
+      if (!alive || track?.id == null) return
+      setStationLikeId(ids => ids[target.song_key] === track.id ? ids : { ...ids, [target.song_key]: track.id })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [stationSongKnown, currentTrack?.song_key])
+
+  const toggleLike = async (target = currentTrack, desiredLiked = null) => {
     if (!target) return
+    const userId = user?.id ?? null
     let track = target
     const targetIsStationSong = isStationTrack(target) && !!target.song_key
     if (targetIsStationSong) {
@@ -171,8 +188,12 @@ export default function PlayerBar() {
       if (!track) { showToast(t("Couldn't find this song online")); return }
       setStationLikeId(ids => ({ ...ids, [target.song_key]: track.id }))
     }
-    const r = await api.toggleLike(track.id, user?.id, track)
+    // Don't apply an async response to a different account's in-memory likes.
+    if ((useAppStore.getState().user?.id ?? null) !== userId) return
+    if (desiredLiked != null && usePlayerStore.getState().likedIds.has(track.id) === desiredLiked) return
+    const r = await api.toggleLike(track.id, userId, track)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
+    if ((useAppStore.getState().user?.id ?? null) !== userId) return
     setLiked(track.id, liked)
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }
   }
@@ -227,17 +248,24 @@ export default function PlayerBar() {
     const targetStreamed = isStreamed(target)
     const targetLocal = !targetIsStation && !targetStreamed && !!target.file_path && !String(target.file_path).startsWith('ghost://')
     const targetHasAlbum = !!(target.album || target.source_album_id || target.sourceAlbumId || target.albumId)
-    const targetLiked = targetIsStationSong ? likedIds.has(stationLikeId[target.song_key]) : likedIds.has(target.id)
+    const mappedStationLikeId = targetIsStationSong ? stationLikeId[target.song_key] : null
+    const targetLiked = targetIsStationSong
+      ? mappedStationLikeId != null && likedIds.has(mappedStationLikeId)
+      : target.id != null && likedIds.has(target.id)
+    const shouldPlay = !isPlaying
     menu.open(event, [
-      { label: isPlaying ? 'Pause' : 'Play', icon: isPlaying ? Pause : Play, onSelect: togglePlay },
+      { label: isPlaying ? 'Pause' : 'Play', icon: isPlaying ? Pause : Play, onSelect: () => {
+        const state = usePlayerStore.getState()
+        if (state.isPlaying !== shouldPlay) state.togglePlay()
+      } },
       !targetIsStation && { label: 'Play next', icon: Clock, onSelect: () => playNextMany([target]) },
       !targetIsStation && { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany([target]) },
       !targetIsStation && { label: 'Add to playlist…', icon: Plus, onSelect: () => openAddToPlaylist(target) },
-      (targetIsStationSong || !targetIsStation) && { label: targetLiked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(target) },
+      (targetIsStationSong || !targetIsStation) && { label: targetLiked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(target, !targetLiked) },
       targetIsStationSong && { label: 'Go to album', icon: Disc3, onSelect: () => openStationAlbum(target) },
       !targetIsStation && targetHasAlbum && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(nav, target) },
-      targetStreamed && !targetIsStation && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu')) },
-      targetIsStationSong && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu')) },
+      targetStreamed && !targetIsStation && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu', { detail: { key: target.id } })) },
+      targetIsStationSong && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu', { detail: { key: target.song_key } })) },
       !targetIsStation && losslessMenuItem(target, Gem),
       targetLocal && { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(target) },
       targetLocal && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(target) },
@@ -379,8 +407,8 @@ export default function PlayerBar() {
               <AudioWaveform size={15} />
             </button>
           )}
-          {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} openMenuOnEvent className="text-text/90" />}
-          {stationSongKnown && <SaveToLibraryButton key={currentTrack.song_key} getTrack={() => resolveStationSong(currentTrack)} meta={{ title: currentTrack.title, artist: currentTrack.artist }} openMenuOnEvent className="text-text/90" />}
+          {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} openMenuOnEvent openMenuEventKey={currentTrack.id} className="text-text/90" />}
+          {stationSongKnown && <SaveToLibraryButton key={currentTrack.song_key} getTrack={() => resolveStationSong(currentTrack)} meta={{ title: currentTrack.title, artist: currentTrack.artist }} openMenuOnEvent openMenuEventKey={currentTrack.song_key} className="text-text/90" />}
         </div>
         </div>
 
