@@ -1,4 +1,5 @@
 import { NativeAudioBridge, readOutputPreferences, saveOutputPreferences } from './audio/nativeOutput'
+import { useKeyboardShortcuts } from './useKeyboardShortcuts'
 import { effectiveReplayGainMode, replayGainMultiplier } from './audio/replayGain.mjs'
 import { readCrossfadeSettings, fadeCurve, crossfadeDurations, CROSSFADE_MIN_S } from './audio/crossfade'
 import { planTransition, AUTOMIX_PRELOAD_S } from './audio/automix'
@@ -188,6 +189,11 @@ function normalizeEqGains(input) {
     return [values[0], values[0], values[1], values[1], values[2], values[2], values[3], values[3], values[4], values[4]]
   }
   return EQ_AUDIO_BANDS.map((_, i) => values[i] || 0)
+}
+
+function KeyboardShortcuts() {
+  useKeyboardShortcuts()
+  return null
 }
 
 function NativeHistoryNavigation() {
@@ -3049,6 +3055,7 @@ export default function App() {
   return (
     <Router>
       <NativeHistoryNavigation />
+      <KeyboardShortcuts />
       <div className="relative flex flex-col h-screen bg-transparent overflow-hidden" onClick={initAudioCtx} style={showMiniPlayer || !glassPlayerBar ? undefined : { '--player-space': '104px' }}>
         {/* Covers the window (overlays included) while it switches to or from
             the mini player: the window is resized behind it, so neither view
