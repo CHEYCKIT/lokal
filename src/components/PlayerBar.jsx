@@ -291,7 +291,7 @@ export default function PlayerBar() {
                 <MarqueeText className="flex-1 min-w-0">
                   {hasAlbum || stationSongKnown ? (
                     <button
-                      onClick={hasAlbum ? handleTitleClick : openStationAlbum}
+                      onClick={hasAlbum ? () => handleTitleClick() : () => openStationAlbum()}
                       onContextMenu={openTrackMenu}
                       title={hasAlbum ? `Go to album: ${currentTrack.album || t('Album · Online')}` : t('Go to album')}
                       className="text-sm font-medium text-text hover:text-accent hover:underline transition-colors text-left">
@@ -350,7 +350,7 @@ export default function PlayerBar() {
         <div className="flex h-5 w-[99px] flex-shrink-0 items-center gap-3">
           {currentTrack && (!station || stationSongKnown) && (
             <div className="relative flex-shrink-0">
-              <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
+              <motion.button onClick={() => toggleLike()} whileTap={{ scale: 0.75 }}
                 className={`flex h-5 w-5 items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}
                 title={isLiked ? t("Unlike") : t("Like")} aria-label={isLiked ? t("Unlike") : t("Like")}>
                 <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
