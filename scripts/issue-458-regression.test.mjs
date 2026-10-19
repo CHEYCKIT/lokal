@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { parseLRC, parseEnhancedLRC, parseKaraokeLRC } = require('../electron/lyrics/lrc.js')
 const { parseAny } = require('../electron/lyrics/detect.js')
-const { embeddedText } = require('../electron/lyrics/providers/local.js')
+const { embeddedText, recoverTranslations } = require('../electron/lyrics/providers/local.js')
 const { toPortableLyrics, toPrivateTag, fromPrivateTag } = require('../electron/lyrics/embedded.js')
 
 const lineSynced = `[00:01.00]第一行
@@ -115,4 +115,37 @@ Orphan translation
   const lines = parseKaraokeLRC(lyrics)
   assert.equal(lines.length, 2)
   assert.ok(lines.every(line => !line.translation?.text))
+})
+
+test('standard lyrics recover missing translations in a partially translated private tag', () => {
+  const own = {
+    language: 'zh',
+    lines: [
+      { time: 1, text: '第一行', words: [], translation: { text: 'Keep this one', bgText: null } },
+      { time: 2, text: '第二行', words: [] },
+    ],
+  }
+  const recovered = recoverTranslations(own, `[00:01.00]第一行
+Standard first
+[00:02.00]第二行
+Standard second`)
+  assert.ok(recovered)
+  assert.equal(recovered.lines[0].translation.text, 'Keep this one')
+  assert.equal(recovered.lines[1].translation.text, 'Standard second')
+})
+
+test('repeated timestamps recover each line from a different standard source line', () => {
+  const own = {
+    language: 'zh',
+    lines: [
+      { time: 1, text: '第一行', words: [] },
+      { time: 1, text: '第二行', words: [] },
+    ],
+  }
+  const recovered = recoverTranslations(own, `[00:01.00]第一行
+First line
+[00:01.00]第二行
+Second line`)
+  assert.ok(recovered)
+  assert.deepEqual(recovered.lines.map(line => line.translation?.text), ['First line', 'Second line'])
 })
