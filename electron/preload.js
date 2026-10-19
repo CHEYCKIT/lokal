@@ -310,6 +310,7 @@ contextBridge.exposeInMainWorld('electron', {
   savePerfSettings: (s) => invoke('perf:save', s),
   setMediaKeyPreference: (enabled) => invoke('mediaKeys:setPreferred', enabled),
   relaunchApp: () => ipcRenderer.send('relaunch-app'),
+  setAccentIcon: dataUrl => ipcRenderer.send('app:setAccentIcon', dataUrl),
   onPerfSettings: (fn) => on('perf-settings', (_, settings) => fn(settings)),
 
   
