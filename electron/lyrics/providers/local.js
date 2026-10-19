@@ -122,6 +122,48 @@ async function readIsrc(filePath) {
 
 const AUDIO_EXT = /\.(mp3|flac|m4a|mp4|aac|ogg|oga|opus|wav|wma|aiff?|alac|ape|wv|dsf|dff)$/i
 
+/**
+ * Recover translations missing from Lokal's private timed-lyrics tag using
+ * the standard LRC tag, without replacing existing translations or mapping
+ * one standard line onto multiple private lines.
+ */
+function recoverTranslations(own, text) {
+  if (!text || !Array.isArray(own?.lines) || !own.lines.some(line => !line.translation?.text)) return null
+  const sourceLines = require('../detect').parseAny(text)?.lines || []
+  if (!sourceLines.some(line => line.translation?.text)) return null
+
+  const usePosition = own.lines.length === sourceLines.length
+  const usedSourceIndexes = new Set()
+  let recovered = 0
+  const lines = own.lines.map((line, index) => {
+    if (line.translation?.text) {
+      if (usePosition) usedSourceIndexes.add(index)
+      return line
+    }
+
+    let sourceIndex = -1
+    // Equal-length lyric payloads have a stable line identity; prefer it when
+    // available, especially when two distinct lines share the same timestamp.
+    if (usePosition && !usedSourceIndexes.has(index) && sourceLines[index]?.translation?.text) {
+      sourceIndex = index
+    }
+    if (sourceIndex < 0 && line.time != null) {
+      sourceIndex = sourceLines.findIndex((candidate, candidateIndex) =>
+        !usedSourceIndexes.has(candidateIndex) && candidate.translation?.text &&
+        candidate.time != null && !candidate.gap && Math.abs(candidate.time - line.time) < 0.06)
+    }
+    if (sourceIndex < 0 && usePosition && !usedSourceIndexes.has(index) && sourceLines[index]?.translation?.text) {
+      sourceIndex = index
+    }
+    if (sourceIndex < 0) return line
+
+    usedSourceIndexes.add(sourceIndex)
+    recovered++
+    return { ...line, translation: sourceLines[sourceIndex].translation }
+  })
+  return recovered ? { lines, language: own.language } : null
+}
+
 /** Only an absolute path to an existing audio file is ever read. */
 function isAudioFile(filePath) {
   if (typeof filePath !== 'string' || !filePath || filePath.includes('\0')) return false
@@ -141,22 +183,11 @@ async function fetch(query) {
     const own = privateLyrics(meta)
     if (own) {
       const text = embeddedText(meta)
-      if (text && !own.lines.some(line => line.translation?.text)) {
-        // Older private tags did not save translations. Recover them from the
-        // portable standard tag while keeping Lokal's word-level timings.
-        const parsed = require('../detect').parseAny(text)
-        const sourceLines = parsed?.lines || []
-        if (sourceLines.some(line => line.translation?.text)) {
-          const lines = own.lines.map((line, index) => {
-            if (line.translation?.text) return line
-            const byTime = line.time == null ? null : sourceLines.find(candidate =>
-              candidate.translation?.text && candidate.time != null && Math.abs(candidate.time - line.time) < 0.06)
-            const byPosition = own.lines.length === sourceLines.length ? sourceLines[index] : null
-            const translation = byTime?.translation || byPosition?.translation
-            return translation?.text ? { ...line, translation } : line
-          })
-          return { lines, language: own.language }
-        }
+      if (text && own.lines.some(line => !line.translation?.text)) {
+        // Older private tags may have lost some or all translations. Fill only
+        // missing lines from the portable tag; keep Lokal's precise timings.
+        const recovered = recoverTranslations(own, text)
+        if (recovered) return recovered
       }
       return { lines: own.lines, language: own.language }
     }
@@ -165,4 +196,4 @@ async function fetch(query) {
   } catch { return null }
 }
 
-module.exports = { fetch, readIsrc, privateLyrics, embeddedText }
+module.exports = { fetch, readIsrc, privateLyrics, embeddedText, recoverTranslations }
