@@ -81,3 +81,38 @@ test('embedded lyric reader prefers the synced tag that also contains translatio
   assert.deepEqual(parseAny(text).lines.map(line => line.translation?.text), ['First line', 'Second line', 'Third line'])
 })
 
+test('portable LRC omits sparse translations that its reader must reject as ambiguous', () => {
+  const result = {
+    type: 'synced',
+    sync: 'line',
+    lines: [
+      { time: 1, text: 'One', words: [], translation: { text: 'Uno' } },
+      { time: 2, text: 'Two', words: [] },
+      { time: 3, text: 'Three', words: [] },
+    ],
+  }
+  const portable = toPortableLyrics(result)
+  assert.ok(portable)
+  assert.doesNotMatch(portable, /Uno/)
+  assert.ok(parseAny(portable).lines.every(line => !line.translation?.text))
+})
+
+test('an empty enhanced timestamped line breaks translation adjacency', () => {
+  const lyrics = `[00:01.00]<00:01.00>First<00:01.80>
+[00:02.00]<00:02.00><00:02.80>
+Orphan translation
+[00:03.00]<00:03.00>Third<00:03.80>`
+  const lines = parseEnhancedLRC(lyrics)
+  assert.equal(lines.length, 2)
+  assert.ok(lines.every(line => !line.translation?.text))
+})
+
+test('an empty karaoke timestamped line breaks translation adjacency', () => {
+  const lyrics = `[1000,900](1000,400,0)First
+[2000,900]
+Orphan translation
+[3000,900](3000,400,0)Third`
+  const lines = parseKaraokeLRC(lyrics)
+  assert.equal(lines.length, 2)
+  assert.ok(lines.every(line => !line.translation?.text))
+})
