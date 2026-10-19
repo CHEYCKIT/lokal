@@ -5,6 +5,7 @@ export const ROW_GAP = { min: 0.0625, max: 1, step: 0.0625, initial: 0.375 }
 // Widths are in rem, including gaps, so larger text uses the compact layout
 // sooner. Header and rows use the exact same template, never content-sized cells.
 export const TRACK_COLUMN_OPTIONS = [
+  ['selection', 'Selection'],
   ['number', 'Track number'],
   ['artwork', 'Artwork'],
   ['artist', 'Artist'],
@@ -17,7 +18,7 @@ export const TRACK_COLUMN_OPTIONS = [
 ]
 
 export function trackColumnDefaults(showQuality = false, playlist = false) {
-  return { number: true, artwork: true, artist: true, source: true, quality: showQuality, added: playlist, time: true, actions: true, grip: true }
+  return { selection: true, number: true, artwork: true, artist: true, source: true, quality: showQuality, added: playlist, time: true, actions: true, grip: true }
 }
 
 export function trackColumnPreferences(saved, showQuality = false, playlist = false) {
@@ -36,6 +37,8 @@ export function trackColumnLayout(width, columns, { playlist = false, actionSlot
     visible[key] = enabled && remaining >= size + 0.5
     if (visible[key]) remaining -= size + 0.5
   }
+  // Keep selection beside the track number when there is room.
+  fit('selection', 1.25, columns.selection)
   // Keep quality and the tiny source mark before less essential metadata.
   fit('quality', 4.5, columns.quality)
   fit('source', 2, columns.source)
@@ -52,6 +55,7 @@ export function trackColumnLayout(width, columns, { playlist = false, actionSlot
   const actionsWidth = (visible.actions ? extraActions + 1.25 : 1.25) + (likedTrack ? 1.25 : 0)
   const template = [
     visible.grip && '1rem',
+    visible.selection && '1.25rem',
     visible.number && '2rem',
     'minmax(0,3fr)',
     visible.album && 'minmax(0,2fr)',

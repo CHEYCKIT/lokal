@@ -1,0 +1,64 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const { parseLRC, parseEnhancedLRC, parseKaraokeLRC } = require('../electron/lyrics/lrc.js')
+const { parseAny } = require('../electron/lyrics/detect.js')
+const { toPortableLyrics, toPrivateTag, fromPrivateTag } = require('../electron/lyrics/embedded.js')
+
+const lineSynced = `[00:01.00]第一行
+First line
+[00:02.00]第二行
+Second line
+[00:03.00]第三行
+Third line`
+
+test('line-synced LRC keeps each untimestamped translation on the previous lyric line', () => {
+  const lines = parseLRC(lineSynced)
+  assert.equal(lines.length, 3)
+  assert.deepEqual(lines.map(line => line.translation?.text), ['First line', 'Second line', 'Third line'])
+})
+
+test('enhanced LRC keeps translations while preserving word timings', () => {
+  const lyrics = `[00:01.00]<00:01.00>第一<00:01.40>行<00:01.70>
+First line
+[00:02.00]<00:02.00>第二<00:02.40>行<00:02.70>
+Second line
+[00:03.00]<00:03.00>第三<00:03.40>行<00:03.70>
+Third line`
+  const lines = parseEnhancedLRC(lyrics)
+  assert.equal(lines.length, 3)
+  assert.ok(lines.every(line => line.words.length > 0))
+  assert.deepEqual(lines.map(line => line.translation?.text), ['First line', 'Second line', 'Third line'])
+})
+
+test('karaoke LRC keeps translations below timed lines', () => {
+  const lyrics = `[1000,900](1000,400,0)第一行
+First line
+[2000,900](2000,400,0)第二行
+Second line
+[3000,900](3000,400,0)第三行
+Third line`
+  const lines = parseKaraokeLRC(lyrics)
+  assert.equal(lines.length, 3)
+  assert.deepEqual(lines.map(line => line.translation?.text), ['First line', 'Second line', 'Third line'])
+})
+
+test('portable and private Lokal lyric tags round-trip line translations', () => {
+  const result = {
+    type: 'synced',
+    sync: 'line',
+    source: 'local',
+    language: 'zh',
+    lines: [
+      { time: 1, text: '第一行', words: [], translation: { text: 'First line', bgText: null } },
+      { time: 2, text: '第二行', words: [], translation: { text: 'Second line', bgText: null } },
+    ],
+  }
+  const portable = toPortableLyrics(result)
+  assert.match(portable, /\[00:01\.00\]第一行\nFirst line/)
+  assert.deepEqual(parseAny(portable).lines.map(line => line.translation?.text), ['First line', 'Second line'])
+  const privateTag = toPrivateTag(result)
+  assert.deepEqual(fromPrivateTag(privateTag).lines.map(line => line.translation?.text), ['First line', 'Second line'])
+})

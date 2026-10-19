@@ -43,7 +43,11 @@ function toPortableLyrics(result) {
     // A break is written the way LRC writes one: a bare stamp.
     if (line.gap) { if (line.time > 0) out.push(stamp(line.time)); continue }
     const text = withBackground(line)
-    if (text) out.push(`${stamp(line.time)}${text}`)
+    if (text) {
+      out.push(`${stamp(line.time)}${text}`)
+      const translation = String(line.translation?.text || '').trim()
+      if (translation) out.push(translation)
+    }
   }
   return out.length ? out.join('\n') : null
 }
@@ -69,6 +73,10 @@ function toPrivateTag(result) {
     const words = packUnits(line.words)
     if (words.length) entry.w = words
     if (line.bgText) entry.b = String(line.bgText)
+    if (line.translation?.text) {
+      entry.tr = String(line.translation.text)
+      if (line.translation.bgText) entry.tb = String(line.translation.bgText)
+    }
     const bgWords = packUnits(line.bgWords)
     if (bgWords.length) entry.bw = bgWords
     if (line.agent) entry.a = String(line.agent)
@@ -104,6 +112,7 @@ function fromPrivateTag(text) {
         words: unpackUnits(l.w),
       }
       if (l.b) line.bgText = String(l.b)
+      if (l.tr) line.translation = { text: String(l.tr), bgText: l.tb ? String(l.tb) : null }
       const bgWords = unpackUnits(l.bw)
       if (bgWords.length) line.bgWords = bgWords
       // Sides are re-derived from voices, so a right-hand line gets its own voice.

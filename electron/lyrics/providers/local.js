@@ -119,7 +119,27 @@ async function fetch(query) {
   try {
     const meta = await lib.parseFile(filePath, { duration: false, skipCovers: true })
     const own = privateLyrics(meta)
-    if (own) return { lines: own.lines, language: own.language }
+    if (own) {
+      const text = embeddedText(meta)
+      if (text && !own.lines.some(line => line.translation?.text)) {
+        // Older private tags did not save translations. Recover them from the
+        // portable standard tag while keeping Lokal's word-level timings.
+        const parsed = require('../detect').parseAny(text)
+        const sourceLines = parsed?.lines || []
+        if (sourceLines.some(line => line.translation?.text)) {
+          const lines = own.lines.map((line, index) => {
+            if (line.translation?.text) return line
+            const byTime = line.time == null ? null : sourceLines.find(candidate =>
+              candidate.translation?.text && candidate.time != null && Math.abs(candidate.time - line.time) < 0.06)
+            const byPosition = own.lines.length === sourceLines.length ? sourceLines[index] : null
+            const translation = byTime?.translation || byPosition?.translation
+            return translation?.text ? { ...line, translation } : line
+          })
+          return { lines, language: own.language }
+        }
+      }
+      return { lines: own.lines, language: own.language }
+    }
     const text = embeddedText(meta)
     return text ? { raw: text } : null
   } catch { return null }

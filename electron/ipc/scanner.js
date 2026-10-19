@@ -1246,6 +1246,14 @@ function registerScannerHandlers(ipcMain) {
   ipcMain.handle('scanner:scan', async (e, folder) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolder(folder || DEFAULT_MUSIC_PATH) })
   ipcMain.handle('scanner:scanFolders', async (e, folders) => { mainWindow = BrowserWindow.fromWebContents(e.sender); return scanFolders(folders) })
   ipcMain.handle('scanner:status', () => scanStatus)
+  ipcMain.handle('scanner:getTrackFileSize', (_, trackId) => {
+    const filePath = getDB().prepare('SELECT file_path FROM tracks WHERE id = ?').get(String(trackId || ''))?.file_path
+    if (!filePath || String(filePath).startsWith('ghost://')) return { bytes: null }
+    try {
+      const stat = fs.statSync(filePath)
+      return { bytes: stat.isFile() ? stat.size : null }
+    } catch { return { bytes: null } }
+  })
   ipcMain.handle('scanner:getLibraryFolders', (_, relativePath, search, rootPath) => getLibraryFolders(getDB(), relativePath, search, rootPath))
 
   ipcMain.handle('scanner:renameLibraryFolders', (e, changes, rootPath) => {

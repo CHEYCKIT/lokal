@@ -588,6 +588,15 @@ router.get('/', (req, res) => {
 router.post('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').recordTrackError(getDB(), req.params.id, req.body?.message) }))
 router.delete('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').clearTrackError(getDB(), req.params.id) }))
 
+router.get('/:id/file-size', (req, res) => {
+  const filePath = getDB().prepare('SELECT file_path FROM tracks WHERE id = ?').get(String(req.params.id || ''))?.file_path
+  if (!filePath || String(filePath).startsWith('ghost://')) return res.json({ bytes: null })
+  try {
+    const stat = fs.statSync(filePath)
+    return res.json({ bytes: stat.isFile() ? stat.size : null })
+  } catch { return res.json({ bytes: null }) }
+})
+
 // Settings > Library > Fill In Genres (see electron/online/genres.js).
 router.post('/fetch-missing-genres', (req, res) => {
   try { res.json(require('../../electron/online/genres').startLibraryGenres(getDB())) } catch (e) { res.json({ error: e.message }) }

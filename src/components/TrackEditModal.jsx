@@ -275,7 +275,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
               className="mt-2 w-full py-1.5 text-xs bg-card border border-border rounded-lg text-muted hover:text-accent hover:border-accent/30 transition-colors flex items-center justify-center gap-1"
             >
               {saving ? <RefreshCw size={12} className="animate-spin" /> : null}
-              iTunes Artwork
+              {t(artworkPreview ? 'Replace with iTunes Artwork' : 'Find Artwork on iTunes')}
             </button>
           </div>
           

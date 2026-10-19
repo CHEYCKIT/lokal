@@ -32,6 +32,21 @@ function isEnhanced(text) {
   return WORD_STAMP.test(text || '')
 }
 
+/** Attach un-timestamped lines immediately following lyric lines as translations. */
+function attachTranslations(out, extras) {
+  const sungLines = new Set(out.filter(entry => entry.text).map(entry => entry.time)).size
+  // A stray note shouldn't be mistaken for a translation; line-by-line files
+  // normally contain translations for at least half their sung lines.
+  if (extras.length && extras.length >= sungLines / 2) {
+    for (const [entries, extra] of extras) {
+      const text = String(extra || '').replace(/\s+/g, ' ').trim()
+      if (!text) continue
+      for (const entry of entries) entry.translation = { text, bgText: null }
+    }
+  }
+  return out
+}
+
 /**
  * Plain line-synced LRC. Lines with several stamps are repeated at each.
  * A line without a stamp right under a stamped one is its translation (some
@@ -68,12 +83,8 @@ function parseLRC(text) {
     previous = stamps.map(t => ({ time: Math.max(0, round3(t - offset)), end: null, endStated: false, text: body, words: [] }))
     out.push(...previous)
   }
-  const sungLines = new Set(out.filter(entry => entry.text).map(entry => entry.time)).size
-  if (extras.length && extras.length >= sungLines / 2) {
-    for (const [entries, extra] of extras) for (const entry of entries) entry.translation = { text: extra, bgText: null }
-  }
   out.sort((a, b) => a.time - b.time)
-  return out
+  return attachTranslations(out, extras)
 }
 
 /** Enhanced (A2) LRC with <mm:ss.xx> stamps before each word. */
@@ -81,12 +92,19 @@ function parseEnhancedLRC(text) {
   if (!text || !isEnhanced(text)) return []
   const offset = readOffset(text)
   const out = []
+  const extras = []
+  let previous = []
   for (const rawLine of String(text).replace(/\r/g, '').split('\n')) {
     const line = rawLine.trim()
-    if (!line || META_TAG.test(line)) continue
+    if (!line) { previous = []; continue }
+    if (META_TAG.test(line)) { previous = []; continue }
     LINE_STAMP.lastIndex = 0
     const lm = LINE_STAMP.exec(line)
-    if (!lm || lm.index !== 0) continue
+    if (!lm || lm.index !== 0) {
+      if (previous.length && previous[0].text) extras.push([previous, decodeEntities(line).replace(/\s+/g, ' ').trim()])
+      previous = []
+      continue
+    }
     const lineStart = stampToSeconds(lm[1], lm[2], lm[3])
     const body = line.slice(LINE_STAMP.lastIndex)
 
@@ -112,16 +130,18 @@ function parseEnhancedLRC(text) {
     words[words.length - 1].space = false
     // A background vocal in enhanced LRC is usually a "[bg:" line or a bracket;
     // brackets are split later by the shared post-processing.
-    out.push({
+    const entry = {
       time: Math.max(0, round3(Math.min(lineStart, words[0].time + offset) - offset)),
       end: words[words.length - 1].end,
       endStated: true,
       text: joinUnits(words),
       words,
-    })
+    }
+    out.push(entry)
+    previous = [entry]
   }
   out.sort((a, b) => a.time - b.time)
-  return out
+  return attachTranslations(out, extras)
 }
 
 // QQ QRC / NetEase YRC: [lineStartMs,lineDurMs] then (startMs,durMs[,x]) around each word.
@@ -143,9 +163,18 @@ function isKaraoke(raw) {
 
 function parseKaraokeLRC(raw) {
   const out = []
+  const extras = []
+  let previous = []
   for (const source of lyricContent(raw).replace(/\r/g, '').split('\n')) {
-    const m = source.trim().match(KARAOKE_LINE)
-    if (!m) continue
+    const line = source.trim()
+    if (!line) { previous = []; continue }
+    if (META_TAG.test(line)) { previous = []; continue }
+    const m = line.match(KARAOKE_LINE)
+    if (!m) {
+      if (previous.length && previous[0].text) extras.push([previous, decodeEntities(line).replace(/\s+/g, ' ').trim()])
+      previous = []
+      continue
+    }
     const lineStart = parseInt(m[1], 10) / 1000
     const lineDur = parseInt(m[2], 10) / 1000
     const body = m[3]
@@ -168,16 +197,18 @@ function parseKaraokeLRC(raw) {
     const words = chars(prefixed) >= chars(suffixed) ? prefixed : suffixed
     if (!words.length) continue
     words[words.length - 1].space = false
-    out.push({
+    const entry = {
       time: round3(Math.min(lineStart, words[0].time)),
       end: lineDur > 0 ? round3(lineStart + lineDur) : words[words.length - 1].end,
       endStated: true,
       text: joinUnits(words),
       words,
-    })
+    }
+    out.push(entry)
+    previous = [entry]
   }
   out.sort((a, b) => a.time - b.time)
-  return out
+  return attachTranslations(out, extras)
 }
 
 /** Untimed lyrics: one line each, no stamps. */
