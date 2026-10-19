@@ -5,6 +5,7 @@ const { getDB } = require('../../electron/ipc/db')
 const { resolveArtistId } = require('../../electron/artistId')
 const { getLibraryFolders } = require('../../electron/libraryFolder')
 const { recordListeningEvent } = require('../../electron/ipc/recaps')
+const { normalizeArtwork, writeEmbeddedArtwork } = require('../../electron/fileArtwork')
 const path = require('path')
 const fs = require('fs')
 
@@ -588,6 +589,15 @@ router.get('/', (req, res) => {
 router.post('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').recordTrackError(getDB(), req.params.id, req.body?.message) }))
 router.delete('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').clearTrackError(getDB(), req.params.id) }))
 
+router.get('/:id/file-size', (req, res) => {
+  const filePath = getDB().prepare('SELECT file_path FROM tracks WHERE id = ?').get(String(req.params.id || ''))?.file_path
+  if (!filePath || String(filePath).startsWith('ghost://')) return res.json({ bytes: null })
+  try {
+    const stat = fs.statSync(filePath)
+    return res.json({ bytes: stat.isFile() ? stat.size : null })
+  } catch { return res.json({ bytes: null }) }
+})
+
 // Settings > Library > Fill In Genres (see electron/online/genres.js).
 router.post('/fetch-missing-genres', (req, res) => {
   try { res.json(require('../../electron/online/genres').startLibraryGenres(getDB())) } catch (e) { res.json({ error: e.message }) }
@@ -823,30 +833,38 @@ router.post('/batch-update', async (req, res) => {
   }
 })
 
-router.put('/:id/artwork', (req, res) => {
-  const { imageData } = req.body
+router.put('/:id/artwork', async (req, res) => {
+  const { imageData } = req.body || {}
   if (!imageData) return res.json({ error: 'No image data provided' })
-  
+
   const db = getDB()
-  const path = require('path')
-  const fs = require('fs')
   const { getStorageDir } = require('../../electron/ipc/db')
-  
+  let tempPath = null
+
   try {
-    const buf = Buffer.from(imageData.split(',')[1], 'base64')
-    const artPath = path.join(getStorageDir(), 'artwork', `${req.params.id}.jpg`)
-    
-    const dir = path.dirname(artPath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
+    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(req.params.id || ''))
+    if (!track) return res.json({ error: 'Track not found' })
+    const buf = await normalizeArtwork(imageData)
+    const filePath = String(track.file_path || '')
+    const hasLocalFile = path.isAbsolute(filePath) && !filePath.startsWith('ghost://')
+    if (hasLocalFile) {
+      if (!fs.existsSync(filePath)) return res.json({ error: 'The audio file is missing; artwork was not changed.' })
+      // Embed the new cover into the original audio, not just Lokal's artwork cache.
+      writeEmbeddedArtwork(filePath, buf)
+      require('../../electron/fileStamp').noteFileWritten(db, filePath)
     }
-    
-    fs.writeFileSync(artPath, buf)
+
+    const artPath = path.join(getStorageDir(), 'artwork', `${req.params.id}.jpg`)
+    fs.mkdirSync(path.dirname(artPath), { recursive: true })
+    tempPath = `${artPath}.${process.pid}.tmp`
+    await fs.promises.writeFile(tempPath, buf)
+    await fs.promises.rename(tempPath, artPath)
+    tempPath = null
     db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(artPath, req.params.id)
-    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id)
-    res.json(track || { success: true, path: artPath })
-  } catch (e) {
-    res.json({ error: e.message })
+    res.json(db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id) || { success: true, path: artPath })
+  } catch (error) {
+    if (tempPath) { try { await fs.promises.unlink(tempPath) } catch {} }
+    res.json({ error: error?.message || 'Could not replace artwork' })
   }
 })
 

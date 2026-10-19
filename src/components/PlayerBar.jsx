@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, FolderOpen, AudioWaveform, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Heart, FolderOpen, AudioWaveform, Mic2, PanelRight, Maximize2, ListMusic, Plus, Moon, X, Radio, Gem, Cast, Clock, ListEnd, Disc3, Edit2, Camera, Download } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useNavigate } from 'react-router-dom'
@@ -24,7 +24,9 @@ import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../qual
 import AudioOutputPicker from './AudioOutputPicker'
 import MixingMark from './MixingMark'
 import ContextMenu, { useContextMenu } from './ContextMenu'
+import TrackEditModal from './TrackEditModal'
 import { openRadio } from '../radioActions'
+import { addToQueueMany, playNextMany } from '../trackActions'
 import { useCastStore } from '../cast/castStore'
 import MarqueeText from './MarqueeText'
 import TrackArtistLinks from './TrackArtistLinks'
@@ -95,6 +97,7 @@ export default function PlayerBar() {
   const { user, openAddToPlaylist } = useAppStore()
   const [likeAnim, setLikeAnim] = useState(false)
   const [showAudioPipeline, setShowAudioPipeline] = useState(false)
+  const [editingTrack, setEditingTrack] = useState(null)
   const [keepCommaArtists, setKeepCommaArtists] = useState([])
   const volumeWheelRef = useVolumeWheel(volume, setVolume)
   const scrubbing = useRef(false)
@@ -103,8 +106,23 @@ export default function PlayerBar() {
   const [sleepTimerDisplay, setSleepTimerDisplay] = useState(null)
   const menu = useContextMenu()
   const display = localProg ?? progress
+  const contextMenuTrackKey = currentTrack
+    ? (isStationTrack(currentTrack) && currentTrack.song_key ? `station:${currentTrack.song_key}` : `track:${currentTrack.id ?? ''}`)
+    : null
+  const previousContextMenuTrackKey = useRef(contextMenuTrackKey)
+  useEffect(() => {
+    if (previousContextMenuTrackKey.current === contextMenuTrackKey) return
+    previousContextMenuTrackKey.current = contextMenuTrackKey
+    // A player-bar context menu belongs to the track that opened it. Close it
+    // on track changes rather than letting an action target a different song.
+    menu.close()
+  }, [contextMenuTrackKey, menu.close])
   const [stationLikeId, setStationLikeId] = useState({}) // radio: song_key -> the found song's id
-  const isLiked = currentTrack && likedIds.has(isStationTrack(currentTrack) ? stationLikeId[currentTrack.song_key] : currentTrack.id)
+  const currentIsStationSong = isStationTrack(currentTrack) && !!currentTrack?.song_key
+  const currentStationLikeId = currentIsStationSong ? stationLikeId[currentTrack.song_key] : null
+  const isLiked = currentTrack && (currentIsStationSong
+    ? currentStationLikeId != null && likedIds.has(currentStationLikeId)
+    : !isStationTrack(currentTrack) && currentTrack.id != null && likedIds.has(currentTrack.id))
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat
 
   useEffect(() => {
@@ -159,16 +177,34 @@ export default function PlayerBar() {
 
   // A radio station playing a named song: Like and Save act on that song, found online.
   const stationSongKnown = isStationTrack(currentTrack) && !!currentTrack?.song_key
-  const toggleLike = async () => {
-    if (!currentTrack) return
-    let track = currentTrack
-    if (stationSongKnown) {
-      track = await resolveStationSong(currentTrack)
+
+  useEffect(() => {
+    if (!stationSongKnown) return undefined
+    const target = currentTrack
+    let alive = true
+    resolveStationSong(target).then(track => {
+      if (!alive || track?.id == null) return
+      setStationLikeId(ids => ids[target.song_key] === track.id ? ids : { ...ids, [target.song_key]: track.id })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [stationSongKnown, currentTrack?.song_key])
+
+  const toggleLike = async (target = currentTrack, desiredLiked = null) => {
+    if (!target) return
+    const userId = user?.id ?? null
+    let track = target
+    const targetIsStationSong = isStationTrack(target) && !!target.song_key
+    if (targetIsStationSong) {
+      track = await resolveStationSong(target)
       if (!track) { showToast(t("Couldn't find this song online")); return }
-      setStationLikeId(ids => ({ ...ids, [currentTrack.song_key]: track.id }))
+      setStationLikeId(ids => ({ ...ids, [target.song_key]: track.id }))
     }
-    const r = await api.toggleLike(track.id, user?.id, track)
+    // Don't apply an async response to a different account's in-memory likes.
+    if ((useAppStore.getState().user?.id ?? null) !== userId) return
+    if (desiredLiked != null && usePlayerStore.getState().likedIds.has(track.id) === desiredLiked) return
+    const r = await api.toggleLike(track.id, userId, track)
     const liked = typeof r === 'boolean' ? r : r?.liked ?? false
+    if ((useAppStore.getState().user?.id ?? null) !== userId) return
     setLiked(track.id, liked)
     if (liked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600) }
   }
@@ -181,29 +217,72 @@ export default function PlayerBar() {
 
   const hasAlbum = !station && (!!currentTrack?.album || (!!isOnlineTrack(currentTrack) && !!(currentTrack?.source_album_id || currentTrack?.sourceAlbumId || currentTrack?.albumId)))
   // A radio song: its album, found online (the playing song's lookup, as for Like and Save).
-  const openStationAlbum = async () => {
-    const found = await resolveStationSong(currentTrack)
+  const openStationAlbum = async (target = currentTrack) => {
+    const found = await resolveStationSong(target)
     if (!found || !navigateToTrackAlbum(nav, found)) showToast(t("Couldn't find this song's album"))
   }
-  const handleTitleClick = () => {
-    if (!hasAlbum) return
-    navigateToTrackAlbum(nav, currentTrack)
+  const handleTitleClick = (target = currentTrack) => {
+    if (!target?.album && !target?.source_album_id && !target?.sourceAlbumId && !target?.albumId) return
+    navigateToTrackAlbum(nav, target)
   }
 
-  const openCurrentTrackFolder = async () => {
+  const openCurrentTrackFolder = async (target = currentTrack) => {
     const root = peekSettings()?.music_folder || (await api.getSettings())?.music_folder
-    const relativePath = folderPathForTrack(currentTrack?.file_path, root)
+    const relativePath = folderPathForTrack(target?.file_path, root)
     if (relativePath === null) return
     nav('/library', { state: { openFolder: relativePath } })
   }
 
+  const replaceArtwork = async (target) => {
+    if (!api.isElectron || !target?.id || !target.file_path || String(target.file_path).startsWith('ghost://')) return
+    try {
+      const fp = await api.openFile([{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }])
+      if (!fp) return
+      const dataUrl = await api.readFileAsDataURL(fp)
+      const updatedTrack = await api.trackSetArtwork(target.id, dataUrl)
+      if (updatedTrack?.error) { showToast(updatedTrack.error); return }
+      if (updatedTrack?.id) {
+        usePlayerStore.getState().syncTrack(updatedTrack)
+        window.dispatchEvent(new Event('lokal:refresh'))
+        showToast(t('Artwork updated!'))
+      }
+    } catch (error) {
+      showToast(error?.message || t('Could not replace artwork'))
+    }
+  }
+
   const openTrackMenu = (event) => {
     if (!currentTrack) return
+    const target = currentTrack
+    const targetIsStation = isStationTrack(target)
+    const targetIsStationSong = targetIsStation && !!target.song_key
+    const targetStreamed = isStreamed(target)
+    const targetLocal = !targetIsStation && !targetStreamed && !!target.file_path && !String(target.file_path).startsWith('ghost://')
+    const targetHasAlbum = !!(target.album || target.source_album_id || target.sourceAlbumId || target.albumId)
+    const mappedStationLikeId = targetIsStationSong ? stationLikeId[target.song_key] : null
+    const targetLiked = targetIsStationSong
+      ? mappedStationLikeId != null && likedIds.has(mappedStationLikeId)
+      : target.id != null && likedIds.has(target.id)
+    const shouldPlay = !isPlaying
     menu.open(event, [
-      !station && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: t('Open folder in Library'), icon: FolderOpen, onSelect: openCurrentTrackFolder },
-      !station && { label: t('Start radio'), icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
-      currentTrack.artist && { label: t('Start artist radio'), icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },
-      !station && losslessMenuItem(currentTrack, Gem),
+      { label: isPlaying ? 'Pause' : 'Play', icon: isPlaying ? Pause : Play, onSelect: () => {
+        const state = usePlayerStore.getState()
+        if (state.isPlaying !== shouldPlay) state.togglePlay()
+      } },
+      !targetIsStation && { label: 'Play next', icon: Clock, onSelect: () => playNextMany([target]) },
+      !targetIsStation && { label: 'Add to queue', icon: ListEnd, onSelect: () => addToQueueMany([target]) },
+      !targetIsStation && { label: 'Add to playlist…', icon: Plus, onSelect: () => openAddToPlaylist(target) },
+      (targetIsStationSong || !targetIsStation) && { label: targetLiked ? 'Remove from Liked Songs' : 'Like', icon: Heart, onSelect: () => toggleLike(target, !targetLiked) },
+      targetIsStationSong && { label: 'Go to album', icon: Disc3, onSelect: () => openStationAlbum(target) },
+      !targetIsStation && targetHasAlbum && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(nav, target) },
+      targetStreamed && !targetIsStation && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu', { detail: { key: target.id } })) },
+      targetIsStationSong && { label: 'Save to library / Find another source…', icon: Download, onSelect: () => window.dispatchEvent(new CustomEvent('lokal:open-save-source-menu', { detail: { key: target.song_key } })) },
+      !targetIsStation && losslessMenuItem(target, Gem),
+      targetLocal && { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(target) },
+      targetLocal && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(target) },
+      !targetIsStation && target.file_path && !String(target.file_path).startsWith('ghost://') && { label: 'Open folder in Library', icon: FolderOpen, onSelect: () => openCurrentTrackFolder(target) },
+      !targetIsStation && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, target, user?.id) },
+      target.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: target.artist, type: 'artist' }, user?.id) },
     ].filter(Boolean))
   }
 
@@ -223,11 +302,11 @@ export default function PlayerBar() {
           a card floating over the bottom of the pages, which scroll on
           underneath it (App leaves --player-space for it). Off: the plain
           strip below the pages. */}
-      <div data-player-bar className={glass
+      <div data-player-bar onContextMenu={openTrackMenu} className={glass
         ? 'absolute inset-x-3 bottom-3 z-30 h-20 rounded-2xl border border-white/10 flex items-center px-4 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-lg backdrop-saturate-150'
         : 'h-20 border-t border-border flex items-center px-4 gap-4 flex-shrink-0 z-10'}
         style={glass ? { backgroundColor: 'rgba(var(--surface-rgb), 0.55)' } : { backgroundColor: 'rgba(var(--surface-rgb), 0.9)', backdropFilter: 'blur(12px)' }}>
-        <div className="flex items-center gap-3 w-[370px] min-w-0">
+        <div className="flex items-center gap-3 w-[370px] max-[1360px]:w-[320px] min-w-0">
         <button onClick={toggleFullscreen} disabled={!currentTrack}
           className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-elevated hover:ring-2 ring-accent/30 transition-all disabled:cursor-default">
           {/* Not "wait": with the window minimized no animation runs, and a
@@ -251,7 +330,7 @@ export default function PlayerBar() {
                 <MarqueeText className="flex-1 min-w-0">
                   {hasAlbum || stationSongKnown ? (
                     <button
-                      onClick={hasAlbum ? handleTitleClick : openStationAlbum}
+                      onClick={hasAlbum ? () => handleTitleClick() : () => openStationAlbum()}
                       onContextMenu={openTrackMenu}
                       title={hasAlbum ? `Go to album: ${currentTrack.album || t('Album · Online')}` : t('Go to album')}
                       className="text-sm font-medium text-text hover:text-accent hover:underline transition-colors text-left">
@@ -310,7 +389,7 @@ export default function PlayerBar() {
         <div className="flex h-5 w-[99px] flex-shrink-0 items-center gap-3">
           {currentTrack && (!station || stationSongKnown) && (
             <div className="relative flex-shrink-0">
-              <motion.button onClick={toggleLike} whileTap={{ scale: 0.75 }}
+              <motion.button onClick={() => toggleLike()} whileTap={{ scale: 0.75 }}
                 className={`flex h-5 w-5 items-center justify-center leading-none transition-colors ${isLiked ? 'text-accent' : 'text-text/90 hover:text-text'}`}
                 title={isLiked ? t("Unlike") : t("Like")} aria-label={isLiked ? t("Unlike") : t("Like")}>
                 <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
@@ -339,8 +418,8 @@ export default function PlayerBar() {
               <AudioWaveform size={15} />
             </button>
           )}
-          {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} className="text-text/90" />}
-          {stationSongKnown && <SaveToLibraryButton key={currentTrack.song_key} getTrack={() => resolveStationSong(currentTrack)} meta={{ title: currentTrack.title, artist: currentTrack.artist }} className="text-text/90" />}
+          {streamed && <SaveToLibraryButton key={currentTrack.id} track={currentTrack} openMenuOnEvent openMenuEventKey={currentTrack.id} className="text-text/90" />}
+          {stationSongKnown && <SaveToLibraryButton key={currentTrack.song_key} getTrack={() => resolveStationSong(currentTrack)} meta={{ title: currentTrack.title, artist: currentTrack.artist }} openMenuOnEvent openMenuEventKey={currentTrack.song_key} className="text-text/90" />}
         </div>
         </div>
 
@@ -377,9 +456,9 @@ export default function PlayerBar() {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 w-[370px] min-w-0 justify-end">
+        <div className="flex items-center gap-2 w-[370px] max-[1360px]:gap-1.5 min-w-0 justify-end">
           {currentTrack && visualizerMode !== 'off' && (
-            <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden">
+            <div className="relative flex h-7 min-w-0 shrink basis-[120px] items-center justify-center overflow-hidden max-[1360px]:hidden">
               {['spectrum', 'spectrumCenter'].includes(visualizerMode) ? <Spectrum isPlaying={isPlaying} bars={39} barWidth={2} height={24} strength={0.8} color="accent" opacity={0.8} className="max-w-full" /> :
                visualizerMode === 'waves' ? <Waves isPlaying={isPlaying} width={120} height={26} strength={1} colorBack="accent" colorFront="#ffffff" opacity={0.72} className="max-w-full" /> :
                visualizerMode === 'lightning' ? <Lightning isPlaying={isPlaying} strength={0.8} opacity={0.75} className="h-7 w-[120px]" /> :
@@ -464,6 +543,13 @@ export default function PlayerBar() {
         </div>
       </Modal>
       <AudioPipelineModal open={showAudioPipeline} onClose={() => setShowAudioPipeline(false)} track={currentTrack} />
+      <TrackEditModal track={editingTrack} open={!!editingTrack} onClose={() => setEditingTrack(null)}
+        onSave={updatedTrack => {
+          if (!updatedTrack?.id) return
+          usePlayerStore.getState().syncTrack(updatedTrack)
+          setEditingTrack(updatedTrack)
+          window.dispatchEvent(new Event('lokal:refresh'))
+        }} />
       <ContextMenu menu={menu} />
     </>
   )
