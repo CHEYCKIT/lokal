@@ -77,7 +77,9 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
 
   useEffect(() => {
     if (!openMenuOnEvent) return undefined
-    const openFromPlayerMenu = () => {
+    const openFromPlayerMenu = (event) => {
+      const eventKey = event.detail?.key
+      if (eventKey == null || openMenuEventKey == null || String(eventKey) !== String(openMenuEventKey)) return
       const rect = externalMenuButtonRef.current?.getBoundingClientRect()
       if (!rect) return
       setMenuPosition(null)
@@ -85,7 +87,7 @@ export default function SaveToLibraryButton({ track, getTrack, source, meta, siz
     }
     window.addEventListener('lokal:open-save-source-menu', openFromPlayerMenu)
     return () => window.removeEventListener('lokal:open-save-source-menu', openFromPlayerMenu)
-  }, [openMenuOnEvent])
+  }, [openMenuOnEvent, openMenuEventKey])
 
   useEffect(() => {
     if (!menu) return undefined
