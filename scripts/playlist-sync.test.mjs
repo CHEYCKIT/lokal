@@ -75,3 +75,20 @@ test('a partial artist match is not taken as the library copy, and album objects
   assert.equal(result.ghosts.length, 1)
   assert.equal(entries[0].album, 'Record')
 })
+
+test('YouTube Music playlists sync without an addon, through the built-in reader', async () => {
+  const { db, helpers } = setup({ list: [] })
+  assert.equal(sync.link(db, 'p1', 'https://music.youtube.com/playlist?list=PLabc').platform, 'youtube-music')
+  const entries = [{ title: 'Song A', artist: 'Artist', album: 'Album', duration: 200, source_url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa' }]
+  helpers.readPlaylist = async () => ({ title: 'My mix', entries })
+  const created = []
+  const create = helpers.createGhostTrack
+  helpers.createGhostTrack = (database, entry, ...rest) => { created.push(entry); return create(database, entry, ...rest) }
+  const first = await sync.sync(db, 'p1', { packages: { list: () => [], find: () => null }, helpers })
+  assert.equal(first.added, 1)
+  assert.equal(first.title, 'My mix')
+  assert.equal(created[0].source_url, 'https://www.youtube.com/watch?v=aaaaaaaaaaa')
+  entries.push({ title: 'Song B', artist: 'Artist', duration: 180, source_url: 'https://www.youtube.com/watch?v=bbbbbbbbbbb' })
+  const second = await sync.sync(db, 'p1', { packages: { list: () => [], find: () => null }, helpers })
+  assert.equal(second.added, 1)
+})
