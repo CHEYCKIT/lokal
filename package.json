@@ -131,6 +131,8 @@
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
     "bgutils-js": "^4.0.3",
+    "butterchurn": "^2.6.7",
+    "butterchurn-presets": "^2.4.7",
     "cors": "^2.8.5",
     "discord-rpc": "^4.0.1",
     "dotenv": "^16.4.5",
@@ -140,16 +142,16 @@
     "electron-updater": "^6.8.9",
     "express": "^4.18.3",
     "fs-extra": "^11.3.3",
+    "icecast-metadata-player": "1.17.13",
     "multicast-dns": "^7.2.5",
     "music-metadata": "^12.0.0",
     "node-taglib-sharp": "^6.0.3",
     "quickjs-emscripten": "0.32.0",
     "sharp": "^0.35.5",
+    "three": "^0.175.0",
     "tough-cookie": "6.0.0",
     "yauzl": "^3.4.0",
-    "youtubei.js": "^17.2.0",
-    "three": "^0.175.0",
-    "icecast-metadata-player": "1.17.13"
+    "youtubei.js": "^17.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
