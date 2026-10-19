@@ -87,8 +87,12 @@ function coverPalette(image) {
   }
 }
 
-export default function DotSphere({ className = '', artSrc = null }) {
+export default function DotSphere({ className = '', artSrc = null, isPlaying = true }) {
   const canvasRef = useRef(null)
+  // Paused means still, whatever the analyser still reports (its own tail,
+  // other sounds in the graph, its noise floor).
+  const playingRef = useRef(isPlaying)
+  playingRef.current = isPlaying
   const paletteRef = useRef(null)
   const analyserVersion = useAnalyserVersion()
 
@@ -187,7 +191,8 @@ export default function DotSphere({ className = '', artSrc = null }) {
         analyser.getByteFrequencyData(data)
       }
       for (let s = 0; s < SLICES; s++) {
-        const heard = data && slices ? sliceLevel(data, slices[s]) / 255 : 0
+        const raw = playingRef.current && data && slices ? sliceLevel(data, slices[s]) / 255 : 0
+        const heard = raw < 0.06 ? 0 : raw // below the noise floor: nothing
         peaks[s] = Math.max(heard, peaks[s] - dt * 0.08, 0.2)
         const target = Math.pow(heard / peaks[s], 2.6) * Math.min(1, heard * 4) // quiet = nothing
         levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 30 : 9))
