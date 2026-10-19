@@ -4,7 +4,7 @@ import { isPlayable, providerLabel, streamRef } from './onlineTracks.js'
 
 export const recommendationKey = value => String(value || '').normalize('NFKD').replace(/(\p{Script=Latin})\p{M}+/gu, '$1').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim()
 export const songKey = track => `${recommendationKey(track?.artist)}\0${recommendationKey(track?.title)}`
-export const sourceName = source => source === 'youtube' ? 'YouTube Music' : 'Last.fm'
+export const sourceName = source => source === 'youtube' ? 'YouTube Music' : source === 'spotify' ? 'Spotify' : 'Last.fm'
 
 export async function mapLimited(items, callback, concurrency = 4) {
   const out = new Array(items.length)
@@ -471,7 +471,29 @@ export async function buildRecommendationMix({ size, previous = [], loadPage, re
   return tracks
 }
 
+// Spotify: the Made For You mixes; Fresh Finds are the songs of two of the
+// personal ones (Discover Weekly and Release Radar first), two more each page.
+async function loadSpotifyPage(page, client, force) {
+  const home = await client.spotifyMadeForYou(force)
+  if (home?.error && !home?.mixes?.length) return { error: home.error }
+  const mixes = (home?.mixes || []).map(mix => ({ ...mix, source: 'spotify', artwork_url: mix.thumbnail }))
+  const personal = mixes.filter(mix => mix.personal)
+  const pool = personal.length ? personal : mixes
+  const start = pool.length ? page * 2 % pool.length : 0
+  const picked = [...pool.slice(start), ...pool.slice(0, start)].slice(0, 2)
+  const expanded = await Promise.all(picked.map(mix => client.spotifyPlaylist(mix.id, force).catch(error => ({ error: error.message }))))
+  const candidates = uniqueSongs(expanded.flatMap(data => data?.tracks || []).map(track => ({ ...track, source: 'spotify' })))
+  return {
+    source: 'spotify', fetchedAt: Date.now(), candidates,
+    freshFinds: candidates.slice(0, 30), quickPicks: [], liked: [], history: [], mixes, mixError: home?.error || '',
+    artists: [...new Map(candidates.flatMap(track => (track.artists || [track.artist]).map(name => ({ name, source: 'spotify' }))).filter(artist => artist.name).map(artist => [recommendationKey(artist.name), artist])).values()].slice(0, 30),
+    albums: [...new Map(candidates.filter(track => track.album).map(track => ({ title: track.album, artist: track.artists?.[0] || track.artist, artwork_url: track.artwork_url })).map(album => [`${album.artist}\0${album.title}`, album])).values()].slice(0, 30),
+    warnings: expanded.map(data => data?.error).filter(Boolean),
+  }
+}
+
 export async function loadRecommendationPage(source, page = 0, client = api, { force = false } = {}) {
+  if (source === 'spotify') return loadSpotifyPage(page, client, force)
   if (source !== 'youtube') return client.lastfmDiscovery(page, force)
   const account = await client.youtubeAccount(true)
   if (account?.error) return account

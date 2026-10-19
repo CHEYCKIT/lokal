@@ -35,8 +35,8 @@ export function createRecommendationSession(client = api, { profile = 'guest', s
   let settingsJob = null
   const update = patch => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
   const configure = settings => {
-    const source = settings.recommendation_source === 'youtube' ? 'youtube' : 'lastfm'
-    const account = JSON.stringify([source, source === 'lastfm' ? settings.lastfm_username || '' : `${settings.yt_cookie_header || ''}:${settings.yt_account_session || ''}:${settings.yt_account_revision || ''}`, settings.lastfm_enabled, source === 'lastfm' ? settings.lastfm_api_key || '' : ''])
+    const source = ['youtube', 'spotify'].includes(settings.recommendation_source) ? settings.recommendation_source : 'lastfm'
+    const account = JSON.stringify([source, source === 'lastfm' ? settings.lastfm_username || '' : source === 'spotify' ? settings.spotify_sp_dc || '' : `${settings.yt_cookie_header || ''}:${settings.yt_account_session || ''}:${settings.yt_account_revision || ''}`, settings.lastfm_enabled, source === 'lastfm' ? settings.lastfm_api_key || '' : ''])
     if (state.account === account) return false
     generation++
     discoveryPage = 0

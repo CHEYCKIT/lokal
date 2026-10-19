@@ -26,10 +26,12 @@ const KNOWN_HASHES = {
   libraryV3: '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455', // Oct 2026
   fetchLibraryTracks: '087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240', // Oct 2026
   addToLibrary: '896ebcb47815681340860d121cb5d494e157e2a78d3950385cd54e0393c67148', // Oct 2026
+  home: '5fb7da7a03ee2776c0670856609cb85a189a3cecc36cc160b91cde79063b9cf1', // Oct 2026
+  fetchPlaylist: '21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf', // Oct 2026
 }
 let liveHashes = {}
 const hashFor = (op) => liveHashes[op] || KNOWN_HASHES[op]
-const HASH_PATTERN = /["'](canvas|searchTracks|libraryV3|fetchLibraryTracks|addToLibrary)["']\s*,\s*["'](?:query|mutation)["']\s*,\s*["']([0-9a-f]{64})["']/g
+const HASH_PATTERN = /["'](canvas|searchTracks|libraryV3|fetchLibraryTracks|addToLibrary|home|fetchPlaylist)["']\s*,\s*["'](?:query|mutation)["']\s*,\s*["']([0-9a-f]{64})["']/g
 
 const TOKEN_TIMEOUT = 25000   // waiting for the page's token requests
 const MINT_DEADLINE = 40000   // the whole sign-in step, whatever gets stuck
@@ -623,4 +625,84 @@ async function likeOnSpotify(rawCookie, track) {
   })
 }
 
-module.exports = { fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+// Made For You: the mixes Spotify makes for the cookie's account (Discover
+// Weekly, Release Radar, Daily Mixes, ...), read off the web player's Home the
+// way it shows them, and their songs. Playlists Spotify makes for one listener
+// have ids starting 37i9dQZEVX (Discover Weekly, Release Radar) or 37i9dQZF1E
+// (Daily Mixes, artist and decade mixes, On Repeat); they come first.
+const PERSONAL_PLAYLIST = /^spotify:playlist:37i9dQZ(?:EVX|F1E)/
+const biggestImage = sources => [...(sources || [])].sort((a, b) => (b.width || 0) - (a.width || 0))[0]?.url || null
+
+/** The Spotify-made playlists on a `home` answer, personal ones first. */
+function homeMixes(data) {
+  const seen = new Set()
+  const mixes = []
+  for (const section of data?.home?.sectionContainer?.sections?.items || []) {
+    for (const item of section?.sectionItems?.items || []) {
+      const playlist = item?.content?.data
+      if (item?.content?.__typename !== 'PlaylistResponseWrapper' || playlist?.__typename !== 'Playlist') continue
+      const uri = playlist.uri || item.uri || ''
+      if (!/^spotify:playlist:[A-Za-z0-9]{22}$/.test(uri) || seen.has(uri)) continue
+      const owner = playlist.ownerV2?.data?.name || ''
+      if (owner !== 'Spotify' && !PERSONAL_PLAYLIST.test(uri)) continue
+      seen.add(uri)
+      mixes.push({
+        id: uri, title: playlist.name || '', author: 'Spotify',
+        description: String(playlist.description || '').replace(/<[^>]*>/g, ''),
+        thumbnail: biggestImage(playlist.images?.items?.[0]?.sources), personal: PERSONAL_PLAYLIST.test(uri),
+      })
+    }
+  }
+  return [...mixes.filter(mix => mix.personal), ...mixes.filter(mix => !mix.personal)]
+}
+
+/** A playlist row (`fetchPlaylist`'s content.items[]) as a Lokal song, or null for episodes and local files. */
+function playlistEntry(item) {
+  const data = item?.itemV2?.data
+  if (item?.itemV2?.__typename !== 'TrackResponseWrapper' || data?.__typename !== 'Track' || !data.name) return null
+  const artists = (data.artists?.items || []).map(a => a?.profile?.name).filter(Boolean)
+  if (!artists.length) return null
+  return {
+    title: data.name, artist: artists.join(', '), artists, album: data.albumOfTrack?.name || '',
+    duration: Number(data.trackDuration?.totalMilliseconds) > 0 ? Number(data.trackDuration.totalMilliseconds) / 1000 : null,
+    artwork_url: biggestImage(data.albumOfTrack?.coverArt?.sources), spotifyUri: data.uri || '', source: 'spotify',
+  }
+}
+
+const tokenQuery = rawCookie => async (operationName, variables) => {
+  const t = await getTokens(rawCookie)
+  if (!t?.accessToken) throw new Error('Spotify did not accept the cookie. Copy a fresh sp_dc value.')
+  return pathfinder(t, operationName, variables)
+}
+
+/** The Made For You playlists on the account's Spotify Home. `query(op, variables)` is for the tests. */
+async function madeForYou(rawCookie, { query } = {}) {
+  if (!query && !cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) in Settings → Integrations → Spotify first.')
+  const data = await (query || tokenQuery(rawCookie))('home', {
+    homeEndUserIntegration: 'INTEGRATION_WEB_PLAYER', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    sp_t: '', facet: '', sectionItemsLimit: 20, includeHomeChapterVideoCards: false, includeEpisodeContentRatingsV2: false,
+  })
+  if (!data?.home?.sectionContainer) throw new TransientError('Spotify: your Home couldn\'t be read')
+  return homeMixes(data)
+}
+
+/** Up to `max` songs of a Spotify playlist. */
+async function playlistTracks(rawCookie, uri, { query, max = 200 } = {}) {
+  if (!/^spotify:playlist:[A-Za-z0-9]{22}$/.test(String(uri || ''))) throw new Error('Not a Spotify playlist.')
+  if (!query && !cookieValue(rawCookie)) throw new Error('Add your Spotify cookie (sp_dc) in Settings → Integrations → Spotify first.')
+  const run = query || tokenQuery(rawCookie)
+  const tracks = []
+  let title = ''
+  for (let offset = 0; offset < max; offset += 100) {
+    const data = await run('fetchPlaylist', { uri, offset, limit: 100, enableWatchFeedEntrypoint: false, includeEpisodeContentRatingsV2: false })
+    const playlist = data?.playlistV2
+    if (playlist?.__typename !== 'Playlist') throw new TransientError(`Spotify: ${playlist?.message || 'the playlist couldn\'t be read'}`)
+    title = title || playlist.name || ''
+    const items = playlist.content?.items || []
+    tracks.push(...items.map(playlistEntry).filter(Boolean))
+    if (items.length < 100 || offset + 100 >= (playlist.content?.totalCount || 0)) break
+  }
+  return { title, tracks: tracks.slice(0, max) }
+}
+
+module.exports = { madeForYou, playlistTracks, homeMixes, playlistEntry, fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
