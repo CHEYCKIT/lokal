@@ -117,8 +117,6 @@ export default function DotSphere({ className = '', artSrc = null }) {
     const levels = new Float32Array(SLICES)
     const peaks = new Float32Array(SLICES).fill(0.2)
     const xs = new Float32Array(DOTS), ys = new Float32Array(DOTS), sizes = new Float32Array(DOTS)
-    // Where each dot sits on the still sphere, to draw a spike from there to the dot.
-    const bx = new Float32Array(DOTS), by = new Float32Array(DOTS), pushes = new Float32Array(DOTS), near = new Uint8Array(DOTS)
     const buckets = [0, 1].map(() => Array.from({ length: SHADES }, () => []))
     let shades = []
     let shadesFor = null
@@ -172,8 +170,8 @@ export default function DotSphere({ className = '', artSrc = null }) {
       for (let s = 0; s < SLICES; s++) {
         const heard = data && slices ? sliceLevel(data, slices[s]) / 255 : 0
         peaks[s] = Math.max(heard, peaks[s] - dt * 0.08, 0.2)
-        const target = Math.pow(heard / peaks[s], 2) * Math.min(1, heard * 4) // quiet = nothing
-        levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 20 : 6))
+        const target = Math.pow(heard / peaks[s], 2.6) * Math.min(1, heard * 4) // quiet = nothing
+        levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 30 : 9))
         energy += levels[s]
       }
       energy /= SLICES
@@ -184,55 +182,34 @@ export default function DotSphere({ className = '', artSrc = null }) {
       if (bass > 0.25 && bass > bassAvg * 1.3 && sinceBeat > 0.2) { beat = 1; sinceBeat = 0 }
       beat *= Math.exp(-dt * 8)
       // The folds only move with the music.
-      phase += dt * energy * 2.5
+      phase += dt * energy * 4
 
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
       const cx = width / 2
       const cy = height / 2
-      const radius = Math.min(width, height) * 0.27 * (1 + beat * 0.08)
-      const amp = 0.42
+      const radius = Math.min(width, height) * 0.23 * (1 + beat * 0.16)
+      const amp = 0.62
       const dotSize = Math.max(1, radius / 55)
       const st = Math.sin(TILT), ct = Math.cos(TILT)
       for (const side of buckets) for (const list of side) list.length = 0
 
       for (let i = 0; i < DOTS; i++) {
         const [px, py, pz] = points[i]
-        // Spikes: a fine, sharpened pattern picks which dots shoot out, so the
-        // surface turns into points instead of smooth swells.
-        const wave = 0.5 + 0.5 * Math.sin(px * 13 + phase) * Math.sin(py * 11 - phase * 0.6) * Math.sin(pz * 12 + phase * 0.4)
-        const spike = 0.15 + 1.7 * wave * wave * wave * wave
-        const push = amp * levels[sliceOf[i]] * spike
+        const wave = Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
+        const fold = 0.35 + 0.65 * Math.abs(wave) // peaks and troughs, not an even swell
+        const push = amp * levels[sliceOf[i]] * fold
         const r = 1 + push
         const y = py * r * ct - pz * r * st
         const z = py * r * st + pz * r * ct
         const depth = 2.8 / (2.8 - z)
         xs[i] = cx + px * r * radius * depth
         ys[i] = cy + y * radius * depth
-        const by0 = py * ct - pz * st, bz0 = py * st + pz * ct, bdepth = 2.8 / (2.8 - bz0)
-        bx[i] = cx + px * radius * bdepth
-        by[i] = cy + by0 * radius * bdepth
-        pushes[i] = push
-        near[i] = z >= 0 ? 1 : 0
-        sizes[i] = dotSize * depth * (0.85 + Math.min(push, 0.6) * 1.4)
+        sizes[i] = dotSize * depth * (0.85 + push * 1.6)
         // Calm surface in one colour, what the music pushes out in the other;
         // the rim a touch warmer so the ball reads as round.
-        const shade = Math.min(1, push / amp * 1.2 + (1 - Math.abs(z)) * 0.25 + beat * 0.2)
+        const shade = Math.min(1, push / amp * 2.2 + (1 - Math.abs(z)) * 0.2 + beat * 0.35)
         buckets[z < 0 ? 0 : 1][Math.round(shade * (SHADES - 1))].push(i)
-      }
-      // The spikes: a line from the surface out to each dot pushed far enough.
-      ctx.lineCap = 'round'
-      for (let side = 0; side < 2; side++) {
-        ctx.globalAlpha = side ? 0.85 : 0.25
-        ctx.strokeStyle = shades[SHADES - 1]
-        ctx.lineWidth = Math.max(1, dotSize * 0.7)
-        ctx.beginPath()
-        for (let i = 0; i < DOTS; i++) {
-          if (near[i] !== side || pushes[i] < 0.06) continue
-          ctx.moveTo(bx[i], by[i])
-          ctx.lineTo(xs[i], ys[i])
-        }
-        ctx.stroke()
       }
       for (let side = 0; side < 2; side++) {
         ctx.globalAlpha = side ? 1 : 0.3
