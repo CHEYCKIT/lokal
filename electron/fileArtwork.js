@@ -51,6 +51,10 @@ function writeEmbeddedArtwork(filePath, jpegBytes) {
       ...current.filter(picture => picture && picture.type !== T.PictureType.FrontCover),
       cover,
     ]
+    const stored = Array.isArray(tag.pictures) ? tag.pictures : []
+    if (!stored.some(picture => picture && picture.type === T.PictureType.FrontCover)) {
+      throw new Error('This audio format does not support embedded artwork')
+    }
     file.save()
   } catch (error) {
     const busy = /EBUSY|EPERM|EACCES/i.test(String(error?.code || error?.message || ''))
