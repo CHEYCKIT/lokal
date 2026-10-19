@@ -59,15 +59,28 @@ export default function LosslessModal() {
       return undefined
     }
     let alive = true
-    setFileSizeBytes(null)
-    Promise.resolve(api.getTrackFileSize(track.id))
-      .then(result => {
-        if (!alive) return
-        const bytes = result?.bytes == null ? null : Number(result.bytes)
-        setFileSizeBytes(Number.isFinite(bytes) ? bytes : null)
-      })
-      .catch(() => { if (alive) setFileSizeBytes(null) })
-    return () => { alive = false }
+    let request = 0
+    const loadFileSize = () => {
+      const currentRequest = ++request
+      setFileSizeBytes(null)
+      Promise.resolve(api.getTrackFileSize(track.id))
+        .then(result => {
+          if (!alive || currentRequest !== request) return
+          const bytes = result?.bytes == null ? null : Number(result.bytes)
+          setFileSizeBytes(Number.isFinite(bytes) ? bytes : null)
+        })
+        .catch(() => {
+          if (alive && currentRequest === request) setFileSizeBytes(null)
+        })
+    }
+    loadFileSize()
+    // Replacing a file retains its track ID. The library refresh is the signal
+    // that its on-disk file may have changed, so re-read its actual size.
+    window.addEventListener('lokal:refresh', loadFileSize)
+    return () => {
+      alive = false
+      window.removeEventListener('lokal:refresh', loadFileSize)
+    }
   }, [track?.id])
 
   useEffect(() => {
