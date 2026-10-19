@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { parseLRC, parseEnhancedLRC, parseKaraokeLRC } = require('../electron/lyrics/lrc.js')
 const { parseAny } = require('../electron/lyrics/detect.js')
+const { embeddedText } = require('../electron/lyrics/providers/local.js')
 const { toPortableLyrics, toPrivateTag, fromPrivateTag } = require('../electron/lyrics/embedded.js')
 
 const lineSynced = `[00:01.00]第一行
@@ -62,3 +63,21 @@ test('portable and private Lokal lyric tags round-trip line translations', () =>
   const privateTag = toPrivateTag(result)
   assert.deepEqual(fromPrivateTag(privateTag).lines.map(line => line.translation?.text), ['First line', 'Second line'])
 })
+test('embedded lyric reader prefers the synced tag that also contains translations', () => {
+  const meta = {
+    native: {
+      ID3v2: [
+        { id: 'SYLT', value: { timeStampFormat: 2, syncText: [
+          { timestamp: 1000, text: '第一行' },
+          { timestamp: 2000, text: '第二行' },
+          { timestamp: 3000, text: '第三行' },
+        ] } },
+        { id: 'USLT', value: { text: lineSynced } },
+      ],
+    },
+  }
+  const text = embeddedText(meta)
+  assert.match(text, /First line/)
+  assert.deepEqual(parseAny(text).lines.map(line => line.translation?.text), ['First line', 'Second line', 'Third line'])
+})
+

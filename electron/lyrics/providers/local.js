@@ -71,6 +71,21 @@ function privateLyrics(meta) {
 
 const HAS_STAMP = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/
 
+/** Number of unstamped lines directly following timestamped lyrics (usually translations). */
+function translationLineScore(text) {
+  let score = 0
+  let afterStampedLine = false
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n')
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) { afterStampedLine = false; continue }
+    if (HAS_STAMP.test(line)) { afterStampedLine = true; continue }
+    if (afterStampedLine && !/^\[(?:ar|ti|al|au|by|re|ve|length|offset|id|hash|sign|qq|total|#)\s*:/i.test(line)) score++
+    afterStampedLine = false
+  }
+  return score
+}
+
 /**
  * The lyrics a file carries, as text: the tags exactly as written first
  * (native), then music-metadata's common.lyrics. Since music-metadata 12 the
@@ -85,7 +100,12 @@ function embeddedText(meta) {
   const lyrics = meta?.common?.lyrics
   const common = (Array.isArray(lyrics) ? lyrics : lyrics ? [lyrics] : []).map(tagText)
   const parts = [...native, ...common].filter(s => s && s.trim())
-  return parts.find(part => HAS_STAMP.test(part)) || parts[0] || null
+  const synced = parts.filter(part => HAS_STAMP.test(part))
+  // MP3s may contain both SYLT (timing only) and USLT (LRC plus translated
+  // lines). Prefer the synced tag carrying the most adjacent translation text.
+  if (synced.length) return synced.reduce((best, part) =>
+    translationLineScore(part) > translationLineScore(best) ? part : best)
+  return parts[0] || null
 }
 
 /** The file's own ISRC tag, if it has one. Cheap: skips covers. */
