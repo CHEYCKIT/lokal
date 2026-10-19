@@ -140,11 +140,15 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
     setSaving(true)
     try {
       const updatedTrack = await api.trackSetArtwork(track.id, dataUrl)
-      if (updatedTrack?.id) {
-        syncTrack(updatedTrack)
-        if (onSave) onSave(updatedTrack)
+      if (updatedTrack?.error) {
+        setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
+        setStatus({ type: 'error', message: updatedTrack.error })
+        return
       }
-      setStatus({ type: 'success', message: 'Artwork updated!' })
+      if (!updatedTrack?.id) throw new Error('Could not update artwork')
+      syncTrack(updatedTrack)
+      if (onSave) onSave(updatedTrack)
+      setStatus({ type: 'success', message: 'Artwork updated in the audio file.' })
       setTimeout(() => setStatus(null), 2000)
     } catch (e) {
       setStatus({ type: 'error', message: e.message })

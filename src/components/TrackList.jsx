@@ -513,11 +513,13 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       const c = document.createElement('canvas'); c.width = img.width; c.height = img.height
       c.getContext('2d').drawImage(img, 0, 0)
       api.trackSetArtwork(track.id, c.toDataURL('image/jpeg', 0.85)).then((updatedTrack) => {
+        if (updatedTrack?.error) { showToast(updatedTrack.error); return }
         if (updatedTrack?.id) {
           syncTrack(updatedTrack)
           setTrackOverrides(prev => ({ ...prev, [updatedTrack.id]: updatedTrack }))
+          showToast(t('Artwork updated in the audio file.'))
         }
-      })
+      }).catch(error => showToast(error?.message || t('Could not replace artwork')))
     }
   }
 
