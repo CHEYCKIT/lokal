@@ -117,6 +117,8 @@ export default function DotSphere({ className = '', artSrc = null }) {
     const levels = new Float32Array(SLICES)
     const peaks = new Float32Array(SLICES).fill(0.2)
     const xs = new Float32Array(DOTS), ys = new Float32Array(DOTS), sizes = new Float32Array(DOTS)
+    // Where each dot sits on the still sphere, to draw a spike from there to the dot.
+    const bx = new Float32Array(DOTS), by = new Float32Array(DOTS), pushes = new Float32Array(DOTS), near = new Uint8Array(DOTS)
     const buckets = [0, 1].map(() => Array.from({ length: SHADES }, () => []))
     let shades = []
     let shadesFor = null
@@ -189,26 +191,48 @@ export default function DotSphere({ className = '', artSrc = null }) {
       const cx = width / 2
       const cy = height / 2
       const radius = Math.min(width, height) * 0.27 * (1 + beat * 0.08)
-      const amp = 0.4
+      const amp = 0.42
       const dotSize = Math.max(1, radius / 55)
       const st = Math.sin(TILT), ct = Math.cos(TILT)
       for (const side of buckets) for (const list of side) list.length = 0
 
       for (let i = 0; i < DOTS; i++) {
         const [px, py, pz] = points[i]
-        const fold = 0.65 + 0.35 * Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
-        const push = amp * levels[sliceOf[i]] * fold
+        // Spikes: a fine, sharpened pattern picks which dots shoot out, so the
+        // surface turns into points instead of smooth swells.
+        const wave = 0.5 + 0.5 * Math.sin(px * 13 + phase) * Math.sin(py * 11 - phase * 0.6) * Math.sin(pz * 12 + phase * 0.4)
+        const spike = 0.15 + 1.7 * wave * wave * wave * wave
+        const push = amp * levels[sliceOf[i]] * spike
         const r = 1 + push
         const y = py * r * ct - pz * r * st
         const z = py * r * st + pz * r * ct
         const depth = 2.8 / (2.8 - z)
         xs[i] = cx + px * r * radius * depth
         ys[i] = cy + y * radius * depth
-        sizes[i] = dotSize * depth * (0.85 + push * 1.6)
+        const by0 = py * ct - pz * st, bz0 = py * st + pz * ct, bdepth = 2.8 / (2.8 - bz0)
+        bx[i] = cx + px * radius * bdepth
+        by[i] = cy + by0 * radius * bdepth
+        pushes[i] = push
+        near[i] = z >= 0 ? 1 : 0
+        sizes[i] = dotSize * depth * (0.85 + Math.min(push, 0.6) * 1.4)
         // Calm surface in one colour, what the music pushes out in the other;
         // the rim a touch warmer so the ball reads as round.
-        const shade = Math.min(1, push / amp * 1.6 + (1 - Math.abs(z)) * 0.25 + beat * 0.2)
+        const shade = Math.min(1, push / amp * 1.2 + (1 - Math.abs(z)) * 0.25 + beat * 0.2)
         buckets[z < 0 ? 0 : 1][Math.round(shade * (SHADES - 1))].push(i)
+      }
+      // The spikes: a line from the surface out to each dot pushed far enough.
+      ctx.lineCap = 'round'
+      for (let side = 0; side < 2; side++) {
+        ctx.globalAlpha = side ? 0.85 : 0.25
+        ctx.strokeStyle = shades[SHADES - 1]
+        ctx.lineWidth = Math.max(1, dotSize * 0.7)
+        ctx.beginPath()
+        for (let i = 0; i < DOTS; i++) {
+          if (near[i] !== side || pushes[i] < 0.06) continue
+          ctx.moveTo(bx[i], by[i])
+          ctx.lineTo(xs[i], ys[i])
+        }
+        ctx.stroke()
       }
       for (let side = 0; side < 2; side++) {
         ctx.globalAlpha = side ? 1 : 0.3
