@@ -1,4 +1,5 @@
 import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
+import { KEYBOARD_SHORTCUTS } from '../useKeyboardShortcuts'
 import SplitWordsSettings from '../components/SplitWordsSettings'
 import { collectLocalPrefs, restoreLocalPrefs } from '../localPrefsBackup'
 import AppTabsSettings from '../components/AppTabsSettings'
@@ -1196,6 +1197,16 @@ activeCategory === 'data' ? usersTried
             >
               <FolderOpen size={14} /> Show Logs
             </button>
+          </Row>
+          <Row label={t("Keyboard shortcuts")} desc={t("Not while typing in a search or text box. Esc closes what's open.")} stacked>
+            <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {KEYBOARD_SHORTCUTS.map(({ keys, label }) => (
+                <div key={label} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-muted">{t(label)}</span>
+                  <span className="flex gap-1">{keys.map(key => <kbd key={key} className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-text">{t(key)}</kbd>)}</span>
+                </div>
+              ))}
+            </div>
           </Row>
           <Row label={t("Hardware Acceleration")} desc={perfSaveError?.key === 'hardwareAcceleration' ? `${t("Couldn't save")} (${perfSaveError.message})` : perfRestartNeeded ? t('Restart Lokal to apply this change') : t('Use the graphics card to draw the app. Turn off if the window flickers or shows glitches.')}>
             <div className="flex items-center gap-3">
