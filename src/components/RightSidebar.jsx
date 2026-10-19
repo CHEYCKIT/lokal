@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import GenrePopover from './GenrePopover'
 import { trackGenreList } from '../genres'
-import PowerCircle from '../visualizers/PowerCircle'
+import DotSphere from '../visualizers/DotSphere'
 import Anomaly from '../visualizers/Anomaly'
 import Spectrum from '../visualizers/Spectrum'
 import Waves from '../visualizers/Waves'
@@ -204,7 +204,8 @@ export default function RightSidebar() {
     if (mode === 'waves') return <Waves isPlaying={isPlaying} width={320} height={180} strength={1.1} opacity={0.8} className={className} />
     if (mode === 'lightning') return <Lightning isPlaying={isPlaying} strength={1.1} opacity={0.85} className={className} />
     if (mode === 'anomaly') return <Anomaly sensitivity={5} size={1.15} color="accent" className={className} />
-    return <PowerCircle className={className} background={fx ? '#050505' : 'rgb(var(--surface-rgb))'} />
+    // 'power-circle' (the default) was the previous round one; the dot sphere took its place.
+    return <DotSphere className={className} />
   })()
 
   // The cover's Lyrics button is shown when lyrics are available. The lookup
@@ -566,7 +567,8 @@ export default function RightSidebar() {
                         <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
                       </div>
                     ) : infoCardView === 'visualization' ? (
-                      <div className={`relative h-[clamp(140px,24vh,210px)] min-h-[140px] max-h-[210px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                      // No card around it: the ring sits on the panel's own background.
+                      <div className="relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
                         {sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
                       </div>
                     ) : (
