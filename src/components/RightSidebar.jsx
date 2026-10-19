@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import GenrePopover from './GenrePopover'
 import { trackGenreList } from '../genres'
-import PrismRing from '../visualizers/PrismRing'
+import DotSphere from '../visualizers/DotSphere'
 import Anomaly from '../visualizers/Anomaly'
 import Spectrum from '../visualizers/Spectrum'
 import Waves from '../visualizers/Waves'
@@ -204,8 +204,8 @@ export default function RightSidebar() {
     if (mode === 'waves') return <Waves isPlaying={isPlaying} width={320} height={180} strength={1.1} opacity={0.8} className={className} />
     if (mode === 'lightning') return <Lightning isPlaying={isPlaying} strength={1.1} opacity={0.85} className={className} />
     if (mode === 'anomaly') return <Anomaly sensitivity={5} size={1.15} color="accent" className={className} />
-    // 'power-circle' (the default) was the previous round one; the ring took its place.
-    return <PrismRing className={className} />
+    // 'power-circle' (the default) was the previous round one; the dot sphere took its place.
+    return <DotSphere className={className} />
   })()
 
   // The cover's Lyrics button is shown when lyrics are available. The lookup
