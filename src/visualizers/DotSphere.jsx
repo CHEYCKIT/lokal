@@ -1,18 +1,15 @@
 // The side panel's Visualization: a sphere of dots that only moves with the
 // music. At rest (paused, quiet) it is a still sphere.
 //
-// How it reacts (the usual audio-reactive sphere recipe: each point pushed
-// out along its normal by the part of the spectrum it stands for, plus a
-// beat pulse):
-//   - every dot listens to one slice of the spectrum, by latitude: the bass
-//     round the equator, the highs towards the poles, so each band moves its
-//     own part of the sphere;
+// How it reacts, the same way every time so you can follow it by eye:
+//   - each slice of the spectrum owns one fixed spot on the sphere, on a
+//     spiral from the bottom (bass) up to the top (highs); when that slice
+//     sounds, a bump rises at its spot and nowhere else. Nothing is mirrored,
+//     and nothing moves on its own: no noise, no rotation;
 //   - each slice is measured against its own recent peak, so quiet songs and
 //     quiet highs still show;
-//   - a little noise breaks the bands into folds; it only advances with the
-//     music's energy, so nothing drifts when it's quiet;
-//   - a beat (the bass jumping above its recent average) swells the sphere
-//     for a moment.
+//   - a beat (the bass jumping above its recent average) swells the whole
+//     sphere for a moment.
 // Colours come from the song's cover (its two most vivid colours), else from
 // the theme's accent: the calm surface in one, what the music pushes out in
 // the other.
@@ -24,7 +21,7 @@ import React, { useEffect, useRef } from 'react'
 import { getAnalyser, spectrumSlices, sliceLevel, accentColor, useAnalyserVersion } from './audio'
 
 const DOTS = 1100
-const SLICES = 24
+const SLICES = 32
 const SHADES = 8
 const FRAME_MS = 1000 / 30
 const TILT = 0.45 // seen a little from above, and it stays that way
@@ -90,8 +87,12 @@ function coverPalette(image) {
   }
 }
 
-export default function DotSphere({ className = '', artSrc = null }) {
+export default function DotSphere({ className = '', artSrc = null, isPlaying = true }) {
   const canvasRef = useRef(null)
+  // Paused means still, whatever the analyser still reports (its own tail,
+  // other sounds in the graph, its noise floor).
+  const playingRef = useRef(isPlaying)
+  playingRef.current = isPlaying
   const paletteRef = useRef(null)
   const analyserVersion = useAnalyserVersion()
 
@@ -113,7 +114,31 @@ export default function DotSphere({ className = '', artSrc = null }) {
     const ctx = canvas.getContext('2d')
     const points = spherePoints(DOTS)
     // The spectrum slice each dot listens to: bass round the equator, highs at the poles.
-    const sliceOf = points.map(([, y]) => Math.min(SLICES - 1, Math.floor(Math.abs(y) * SLICES)))
+    // Each spectrum slice owns one fixed spot on the sphere, laid out on a
+    // spiral from the bottom (bass) to the top (highs), all the way round, so
+    // no two spots mirror each other. A slice raises a bump at its spot, and
+    // only there: the same note always moves the same place.
+    // Neighbouring slices sit next to each other (2.5 turns from bottom to
+    // top), so a sound spanning a few slices lifts one ridge, not scattered bumps.
+    const TURNS = 2.5
+    const anchors = Array.from({ length: SLICES }, (_, k) => {
+      const y = -0.85 + (1.7 * k) / (SLICES - 1)
+      const r = Math.sqrt(1 - y * y)
+      const a = (k / (SLICES - 1)) * TURNS * Math.PI * 2
+      return [Math.cos(a) * r, y, Math.sin(a) * r]
+    })
+    // Per dot: the spots close enough to lift it, and by how much (a soft,
+    // round bump around each spot).
+    const reach = points.map(([px, py, pz]) => {
+      const near = []
+      for (let k = 0; k < SLICES; k++) {
+        const [ax, ay, az] = anchors[k]
+        const cos = px * ax + py * ay + pz * az
+        const weight = Math.exp((cos - 1) / 0.035) // ~0.26 rad wide
+        if (weight > 0.04) near.push(k, weight)
+      }
+      return near
+    })
     const levels = new Float32Array(SLICES)
     const peaks = new Float32Array(SLICES).fill(0.2)
     const xs = new Float32Array(DOTS), ys = new Float32Array(DOTS), sizes = new Float32Array(DOTS)
@@ -122,7 +147,6 @@ export default function DotSphere({ className = '', artSrc = null }) {
     let shadesFor = null
     let data = null
     let slices = null
-    let phase = 0
     let bassAvg = 0
     let beat = 0
     let sinceBeat = 1
@@ -166,15 +190,13 @@ export default function DotSphere({ className = '', artSrc = null }) {
         }
         analyser.getByteFrequencyData(data)
       }
-      let energy = 0
       for (let s = 0; s < SLICES; s++) {
-        const heard = data && slices ? sliceLevel(data, slices[s]) / 255 : 0
+        const raw = playingRef.current && data && slices ? sliceLevel(data, slices[s]) / 255 : 0
+        const heard = raw < 0.06 ? 0 : raw // below the noise floor: nothing
         peaks[s] = Math.max(heard, peaks[s] - dt * 0.08, 0.2)
         const target = Math.pow(heard / peaks[s], 2.6) * Math.min(1, heard * 4) // quiet = nothing
         levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 30 : 9))
-        energy += levels[s]
       }
-      energy /= SLICES
       // A beat: the bass jumping well above its recent average.
       const bass = (levels[0] + levels[1] + levels[2]) / 3
       bassAvg += (bass - bassAvg) * Math.min(1, dt * 2)
@@ -182,7 +204,6 @@ export default function DotSphere({ className = '', artSrc = null }) {
       if (bass > 0.25 && bass > bassAvg * 1.3 && sinceBeat > 0.2) { beat = 1; sinceBeat = 0 }
       beat *= Math.exp(-dt * 8)
       // The folds only move with the music.
-      phase += dt * energy * 4
 
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
@@ -196,15 +217,16 @@ export default function DotSphere({ className = '', artSrc = null }) {
 
       for (let i = 0; i < DOTS; i++) {
         const [px, py, pz] = points[i]
-        const wave = Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
-        const fold = 0.35 + 0.65 * Math.abs(wave) // peaks and troughs, not an even swell
-        const push = amp * levels[sliceOf[i]] * fold
+        const near = reach[i]
+        let lift = 0
+        for (let n = 0; n < near.length; n += 2) lift += levels[near[n]] * near[n + 1]
+        const push = amp * Math.min(1.2, lift)
         const r = 1 + push
         const y = py * r * ct - pz * r * st
         const z = py * r * st + pz * r * ct
         const depth = 2.8 / (2.8 - z)
         xs[i] = cx + px * r * radius * depth
-        ys[i] = cy + y * radius * depth
+        ys[i] = cy - y * radius * depth
         sizes[i] = dotSize * depth * (0.85 + push * 1.6)
         // Calm surface in one colour, what the music pushes out in the other;
         // the rim a touch warmer so the ball reads as round.
