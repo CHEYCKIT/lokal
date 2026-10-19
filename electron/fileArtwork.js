@@ -34,7 +34,11 @@ function writeEmbeddedArtwork(filePath, jpegBytes) {
   let file
   try {
     file = T.File.createFromPath(filePath)
-    const current = Array.isArray(file.tag.pictures) ? file.tag.pictures : []
+    // An MP3 without tags has no generic writable tag, so explicitly create
+    // ID3v2 before writing its APIC/front-cover frame.
+    const tag = /\.mp3$/i.test(filePath) ? file.getTag(T.TagTypes.Id3v2, true) : file.tag
+    if (!tag) throw new Error('This audio format does not support embedded artwork')
+    const current = Array.isArray(tag.pictures) ? tag.pictures : []
     const cover = T.Picture.fromFullData(
       T.ByteVector.fromByteArray(Buffer.from(jpegBytes)),
       T.PictureType.FrontCover,
@@ -43,7 +47,7 @@ function writeEmbeddedArtwork(filePath, jpegBytes) {
     )
     cover.filename = 'cover.jpg'
     cover.description = ''
-    file.tag.pictures = [
+    tag.pictures = [
       ...current.filter(picture => picture && picture.type !== T.PictureType.FrontCover),
       cover,
     ]

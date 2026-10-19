@@ -143,6 +143,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       if (updatedTrack?.error) {
         setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
         setStatus({ type: 'error', message: updatedTrack.error })
+        setSaving(false)
         return
       }
       if (!updatedTrack?.id) throw new Error('Could not update artwork')
