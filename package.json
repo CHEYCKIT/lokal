@@ -15,7 +15,8 @@
     "postinstall": "electron-builder install-app-deps && npm run native:prepare",
     "native:prepare": "node scripts/prepare-native.js",
     "test:home-greeting": "node --test scripts/home-greeting.test.mjs",
-    "test:ported": "node --test scripts/artist-metadata-rescan.test.mjs scripts/artist-split.test.mjs scripts/cover-mix.test.mjs scripts/download-addon-pacing.test.mjs scripts/genre-cleanup.test.mjs scripts/genre-playlist.test.mjs scripts/file-tags.test.mjs scripts/library-folder-view.test.mjs scripts/library-folder-operations.test.mjs scripts/library-watch.test.mjs scripts/video-section-dedupe.test.mjs scripts/pr222-regression.test.mjs scripts/release-types.test.mjs scripts/replaygain.test.mjs scripts/review-fixes.test.mjs scripts/yandex-music-package.test.mjs scripts/issue-458-regression.test.mjs scripts/file-artwork.test.mjs"
+    "test:ported": "node --test scripts/artist-metadata-rescan.test.mjs scripts/artist-split.test.mjs scripts/cover-mix.test.mjs scripts/download-addon-pacing.test.mjs scripts/genre-cleanup.test.mjs scripts/genre-playlist.test.mjs scripts/file-tags.test.mjs scripts/library-folder-view.test.mjs scripts/library-folder-operations.test.mjs scripts/library-watch.test.mjs scripts/video-section-dedupe.test.mjs scripts/pr222-regression.test.mjs scripts/release-types.test.mjs scripts/replaygain.test.mjs scripts/review-fixes.test.mjs scripts/yandex-music-package.test.mjs scripts/issue-458-regression.test.mjs scripts/mpris-config.test.mjs scripts/file-artwork.test.mjs",
+    "test:mpris": "node --test scripts/mpris-config.test.mjs"
   },
   "build": {
     "appId": "com.lokal.music",
