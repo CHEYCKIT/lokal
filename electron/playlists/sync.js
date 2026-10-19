@@ -1,5 +1,6 @@
 // A Lokal playlist linked to a playlist on Spotify, Tidal, Apple Music or
-// Qobuz (anything a SpotiFLAC addon's link handler reads). Syncing is never
+// Qobuz (anything a SpotiFLAC addon's link handler reads), or on YouTube
+// Music (read by Lokal itself, no addon). Syncing is never
 // automatic unless asked for: each sync adds the songs added there since the
 // last one, in the library already or as ghost songs the caller then
 // downloads from the playback sources. Nothing is removed: a song deleted
@@ -11,6 +12,8 @@ const PLATFORMS = [
   { id: 'apple', label: 'Apple Music', hosts: /^music\.apple\.com$/, addon: 'Apple Music' },
   { id: 'qobuz', label: 'Qobuz', hosts: /(^|\.)qobuz\.com$/, addon: 'Qobuz' },
   { id: 'deezer', label: 'Deezer', hosts: /(^|\.)deezer\.com$|^deezer\.page\.link$/, addon: 'Deezer' },
+  // Read with the playlist import's own reader (helpers.readPlaylist).
+  { id: 'youtube-music', label: 'YouTube Music', hosts: /^music\.youtube\.com$/, builtin: true },
 ]
 
 function ensure(db) {
@@ -41,7 +44,7 @@ function addonFor(packages, url) {
 function link(db, playlistId, rawUrl) {
   ensure(db)
   const platform = platformOf(rawUrl)
-  if (!platform) return { error: 'Paste the link of a playlist on Spotify, Tidal, Apple Music, Qobuz or Deezer.' }
+  if (!platform) return { error: 'Paste the link of a playlist on Spotify, Tidal, Apple Music, Qobuz, Deezer or YouTube Music.' }
   if (!db.prepare('SELECT id FROM playlists WHERE id = ?').get(playlistId)) return { error: 'Playlist not found' }
   db.prepare('INSERT OR REPLACE INTO playlist_sync (playlist_id, url, platform, title, synced_at, seen_json, error) VALUES (?, ?, ?, NULL, NULL, \'[]\', NULL)').run(playlistId, platform.url, platform.id)
   return status(db, playlistId)
@@ -95,14 +98,28 @@ async function sync(db, playlistId, { packages, helpers, userId = 'guest' }) {
   if (!row) return { error: 'This playlist is not linked to a streaming playlist.' }
   const platform = PLATFORMS.find(p => p.id === row.platform)
   const fail = message => { db.prepare('UPDATE playlist_sync SET error = ? WHERE playlist_id = ?').run(message, playlistId); return { error: message } }
-  const addon = addonFor(packages, row.url)
-  if (!addon) return fail(`To sync ${platform?.label || 'this'} playlists, install the ${platform?.addon || 'matching'} addon in Settings → Addons.`)
-  const runtime = await packages.runtime(addon.key)
   let result
-  try { result = await runtime.invoke('handleUrl', [row.url]) } catch (error) { return fail(error.message) }
-  if (result?.success === false || result?.error) {
-    const message = String(result?.error || 'The addon could not read this playlist.')
-    return fail(/VERIFY_REQUIRED/i.test(message) ? `${addon.manifest.displayName} needs verifying first: Settings → Addons → Verify access.` : message)
+  if (platform?.builtin) {
+    // YouTube Music: the same reader as pasting a playlist link to import it.
+    let read
+    try { read = await helpers.readPlaylist(row.url) } catch (error) { return fail(error.message) }
+    if (!read || read.error) return fail(String(read?.error || 'Could not read that YouTube Music playlist.'))
+    result = {
+      name: read.title,
+      tracks: (read.entries || []).map(entry => ({
+        id: entry.source_url, name: entry.title, artists: entry.artist || '', album: entry.album,
+        duration_ms: entry.duration ? entry.duration * 1000 : null, source_url: entry.source_url,
+      })),
+    }
+  } else {
+    const addon = addonFor(packages, row.url)
+    if (!addon) return fail(`To sync ${platform?.label || 'this'} playlists, install the ${platform?.addon || 'matching'} addon in Settings → Addons.`)
+    const runtime = await packages.runtime(addon.key)
+    try { result = await runtime.invoke('handleUrl', [row.url]) } catch (error) { return fail(error.message) }
+    if (result?.success === false || result?.error) {
+      const message = String(result?.error || 'The addon could not read this playlist.')
+      return fail(/VERIFY_REQUIRED/i.test(message) ? `${addon.manifest.displayName} needs verifying first: Settings → Addons → Verify access.` : message)
+    }
   }
   const remote = (result?.playlist?.tracks || result?.tracks || []).filter(track => track && (track.name || track.title))
   if (!remote.length) return fail('The playlist is empty, or the addon could not read its songs.')
@@ -130,7 +147,7 @@ async function sync(db, playlistId, { packages, helpers, userId = 'guest' }) {
     seen.add(key)
     const already = existing.get(songKey(title, artist)) || 0
     if (already) { existing.set(songKey(title, artist), already - 1); continue }
-    const entry = { title, artist, album: textOf(track.album_name) || textOf(track.album), duration: Number(track.duration_ms) > 0 ? Math.round(Number(track.duration_ms) / 1000) : null, isrc: track.isrc || null, year: Number(String(track.release_date || '').slice(0, 4)) || null }
+    const entry = { title, artist, album: textOf(track.album_name) || textOf(track.album), duration: Number(track.duration_ms) > 0 ? Math.round(Number(track.duration_ms) / 1000) : null, isrc: track.isrc || null, year: Number(String(track.release_date || '').slice(0, 4)) || null, source_url: track.source_url || null }
     let found = libraryCopy(db, helpers, entry)
     if (found) matched++
     else { found = helpers.createGhostTrack(db, entry, row.platform, playlistId); ghosts.push(found) }
