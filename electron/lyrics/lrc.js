@@ -126,7 +126,7 @@ function parseEnhancedLRC(text) {
       const next = pieces[i + 1]
       words.push(unit(core, piece.t - offset, (next ? next.t : piece.t + 0.5) - offset, trail || /^\s/.test(next?.text || '')))
     })
-    if (!words.length) continue
+    if (!words.length) { previous = []; continue }
     words[words.length - 1].space = false
     // A background vocal in enhanced LRC is usually a "[bg:" line or a bracket;
     // brackets are split later by the shared post-processing.
@@ -195,7 +195,7 @@ function parseKaraokeLRC(raw) {
     const suffixed = build(SUFFIX_WORD, 1, 2, 3)
     const chars = (ws) => ws.reduce((n, x) => n + x.word.length, 0)
     const words = chars(prefixed) >= chars(suffixed) ? prefixed : suffixed
-    if (!words.length) continue
+    if (!words.length) { previous = []; continue }
     words[words.length - 1].space = false
     const entry = {
       time: round3(Math.min(lineStart, words[0].time)),
