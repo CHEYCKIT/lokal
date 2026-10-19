@@ -106,6 +106,17 @@ export default function PlayerBar() {
   const [sleepTimerDisplay, setSleepTimerDisplay] = useState(null)
   const menu = useContextMenu()
   const display = localProg ?? progress
+  const contextMenuTrackKey = currentTrack
+    ? (isStationTrack(currentTrack) && currentTrack.song_key ? `station:${currentTrack.song_key}` : `track:${currentTrack.id ?? ''}`)
+    : null
+  const previousContextMenuTrackKey = useRef(contextMenuTrackKey)
+  useEffect(() => {
+    if (previousContextMenuTrackKey.current === contextMenuTrackKey) return
+    previousContextMenuTrackKey.current = contextMenuTrackKey
+    // A player-bar context menu belongs to the track that opened it. Close it
+    // on track changes rather than letting an action target a different song.
+    menu.close()
+  }, [contextMenuTrackKey, menu.close])
   const [stationLikeId, setStationLikeId] = useState({}) // radio: song_key -> the found song's id
   const currentIsStationSong = isStationTrack(currentTrack) && !!currentTrack?.song_key
   const currentStationLikeId = currentIsStationSong ? stationLikeId[currentTrack.song_key] : null
