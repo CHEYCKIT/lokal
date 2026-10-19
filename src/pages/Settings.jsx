@@ -1198,6 +1198,16 @@ activeCategory === 'data' ? usersTried
               <FolderOpen size={14} /> Show Logs
             </button>
           </Row>
+          <Row label={t("Keyboard shortcuts")} desc={t("Not while typing in a search or text box. Esc closes what's open.")} stacked>
+            <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {KEYBOARD_SHORTCUTS.map(({ keys, label }) => (
+                <div key={label} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-muted">{t(label)}</span>
+                  <span className="flex gap-1">{keys.map(key => <kbd key={key} className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-text">{t(key)}</kbd>)}</span>
+                </div>
+              ))}
+            </div>
+          </Row>
           <Row label={t("Hardware Acceleration")} desc={perfSaveError?.key === 'hardwareAcceleration' ? `${t("Couldn't save")} (${perfSaveError.message})` : perfRestartNeeded ? t('Restart Lokal to apply this change') : t('Use the graphics card to draw the app. Turn off if the window flickers or shows glitches.')}>
             <div className="flex items-center gap-3">
               {perfRestartNeeded && (
@@ -1228,16 +1238,6 @@ activeCategory === 'data' ? usersTried
               className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.close_to_tray === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
               {settings.close_to_tray === '1' ? t('On') : t('Off')}
             </button>
-          </Row>
-          <Row label={t("Keyboard shortcuts")} desc={t("Not while typing in a search or text box. Esc closes what's open.")} stacked>
-            <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-              {KEYBOARD_SHORTCUTS.map(({ keys, label }) => (
-                <div key={label} className="flex items-center justify-between gap-3 text-xs">
-                  <span className="text-muted">{t(label)}</span>
-                  <span className="flex gap-1">{keys.map(key => <kbd key={key} className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-text">{t(key)}</kbd>)}</span>
-                </div>
-              ))}
-            </div>
           </Row>
         </Section>
 
