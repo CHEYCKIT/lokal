@@ -86,6 +86,7 @@ export function useLyricSubline({ trackId, result, lines }) {
   const compactLines = useMemo(() => lines.map(l => (l.gap ? { gap: true } : { text: l.text, bgText: l.bgText || null })), [lines])
   const embeddedTranslation = useMemo(() => {
     if (!result?.translationLang) return null
+    if (result.translationLang === '*') return lines.map(l => l.translation || null)
     const want = translateTarget.split('-')[0].toLowerCase()
     if (result.translationLang.split('-')[0].toLowerCase() !== want) return null
     return lines.map(l => l.translation || null)

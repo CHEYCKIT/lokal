@@ -72,7 +72,9 @@ function embeddedText(meta) {
   if (!parts.length) {
     parts = nativeTags(meta).filter(t => LYRIC_IDS.has(t.id)).map(t => tagText(t.value)).filter(s => s && s.trim())
   }
-  return parts.length ? parts[0] : null
+  // FLAC/Ogg files often carry both UNSYNCEDLYRICS (plain) and LYRICS (LRC);
+  // the synced one wins whichever comes first.
+  return parts.find(part => /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(part)) || parts[0] || null
 }
 
 /** The file's own ISRC tag, if it has one. Cheap: skips covers. */

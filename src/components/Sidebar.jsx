@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { usePanelWidths, usePanelWidth, PanelResizeHandle } from '../panelWidths.jsx'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Heart, LogIn, LogOut, PanelLeftClose, PanelLeftOpen, Sparkles, Import, MoreHorizontal } from 'lucide-react'
 import { useAppStore } from '../store/player'
@@ -44,6 +45,8 @@ export default function Sidebar() {
   const nav = useNavigate()
   const loc = useLocation()
   const { t } = useTranslation()
+  const freeform = usePanelWidths(s => s.freeform)
+  const panelWidth = usePanelWidth('left')
   const [playlists, setPlaylists] = useState([])
   const [showNewPlaylist, setShowNewPlaylist] = useState(false)
   const [newPlName, setNewPlName] = useState('')
@@ -199,9 +202,10 @@ export default function Sidebar() {
   return (
     <aside
       aria-label={t("Sidebar")}
-      className={`${collapsed ? 'w-[4.5rem]' : 'w-56'} border-r border-border flex flex-col h-full pb-[var(--player-space,0px)] flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out`}
-      style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)' }}
+      className={`${collapsed ? 'w-[4.5rem]' : freeform ? '' : 'w-56'} relative border-r border-border flex flex-col h-full pb-[var(--player-space,0px)] flex-shrink-0 overflow-hidden ${freeform ? '' : 'transition-[width] duration-200 ease-out'}`}
+      style={{ backgroundColor: 'rgba(var(--surface-rgb), 0.85)', backdropFilter: 'blur(12px)', ...(freeform && !collapsed ? { width: panelWidth } : {}) }}
     >
+      {!collapsed && <PanelResizeHandle side="left" />}
       <div className={`${collapsed ? 'px-0' : 'px-5'} py-4 flex-shrink-0`}>
         <div className={`flex items-center gap-2 ${collapsed ? 'flex-col' : ''}`}>
           {/* The logo's sticker takes the theme's accent colour: an accent

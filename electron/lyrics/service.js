@@ -70,6 +70,7 @@ function readSettings(db) {
     order,
     enabled,
     prioritizeSyllable: s.lyrics_prioritize_syllable === '1',
+    autoFetch: s.lyrics_auto_fetch !== '0',
     keepCommaArtists,
     spicyKey: s.spicylyrics_api_key || '',
     spotifyCookie: s.spotify_sp_dc || '',
@@ -209,6 +210,13 @@ async function getLyrics(db, args) {
   const instrumental = instrumentalResult(db, trackId)
   if (instrumental) return instrumental
   const settings = readSettings(db)
+  // Automatic lyrics off (Settings > Playback): a song's lyrics come only from
+  // the song itself (its tags, a file next to it). Refreshing, or picking a
+  // source, still looks online.
+  if (!settings.autoFetch && !args.refresh) {
+    settings.enabled = settings.enabled.filter(id => id === 'local')
+    settings.settingsKey += '|own-only'
+  }
   // Cached lyrics with untimed stamps, as plain text: kept when the fresh
   // lookup finds nothing better (every source down, say).
   let untimedFallback = null

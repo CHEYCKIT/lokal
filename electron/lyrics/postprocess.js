@@ -233,7 +233,9 @@ function finish(rawLines, { source, doc = null, isrc = null, language = null, ti
   }
   lines.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
   lines = lines.map(splitTrailingBracket)
-  const embedded = doc ? attachEmbedded(lines, doc) : { translationLang: null, romanizationLang: null }
+  // An LRC with a translation under each line (see parseLRC) doesn't say its
+  // language: '*' shows it whatever the chosen translation language.
+  const embedded = doc ? attachEmbedded(lines, doc) : { translationLang: lines.some(l => l.translation?.text) ? '*' : null, romanizationLang: null }
   const duet = assignSides(lines, doc?.agents || {})
   lines = withInstrumentalGaps(lines)
   return {

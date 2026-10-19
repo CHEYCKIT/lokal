@@ -8,8 +8,17 @@
 import { create } from 'zustand'
 
 /** Shared search state: the header's query and focus requests. */
+const ONLINE_KEY = 'lokal-online-search'
+const readOnline = () => { try { return localStorage.getItem(ONLINE_KEY) !== '0' } catch { return true } }
+
 export const useSearchStore = create((set) => ({
   query: '',
+  // Search also looks online (YouTube, addons...): the header's globe button.
+  online: readOnline(),
+  setOnline: (online) => {
+    try { localStorage.setItem(ONLINE_KEY, online ? '1' : '0') } catch {}
+    set({ online })
+  },
   focusSeq: 0,
   submitSeq: 0,
   pendingSubmit: null,

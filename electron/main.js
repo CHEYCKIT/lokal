@@ -920,6 +920,9 @@ ipcMain.handle('updater:install', () => {
     console.log('[updater] skipping in dev mode')
   } else if (IS_NIGHTLY) {
     console.log(`[updater] nightly build (${app.getVersion()}): not checking for stable updates`)
+  } else if ((() => { try { return require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'auto_update'").get()?.value === '0' } catch { return false } })()) {
+    // Settings > About > Automatic Updates off: only "Check for updates" looks.
+    console.log('[updater] automatic update checks are off')
   } else {
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(err => {

@@ -32,14 +32,20 @@ function isEnhanced(text) {
   return WORD_STAMP.test(text || '')
 }
 
-/** Plain line-synced LRC. Lines with several stamps are repeated at each. */
+/**
+ * Plain line-synced LRC. Lines with several stamps are repeated at each.
+ * A line without a stamp right under a stamped one is its translation (some
+ * taggers write "[00:21.65] Saigo no Kisu wa" then "    The last kiss").
+ */
 function parseLRC(text) {
   if (!text) return []
   const offset = readOffset(text)
   const out = []
+  let previous = [] // the entries the last stamped line made
   for (const rawLine of String(text).replace(/\r/g, '').split('\n')) {
     const line = rawLine.trim()
-    if (!line || META_TAG.test(line)) continue
+    if (!line) { previous = []; continue }
+    if (META_TAG.test(line)) continue
     LINE_STAMP.lastIndex = 0
     const stamps = []
     let m
@@ -49,11 +55,17 @@ function parseLRC(text) {
       stamps.push(stampToSeconds(m[1], m[2], m[3]))
       lastIndex = LINE_STAMP.lastIndex
     }
-    if (!stamps.length) continue
-    const body = decodeEntities(line.slice(lastIndex).replace(WORD_STAMP, '')).replace(/\s+/g, ' ').trim()
-    for (const t of stamps) {
-      out.push({ time: Math.max(0, round3(t - offset)), end: null, endStated: false, text: body, words: [] })
+    if (!stamps.length) {
+      const extra = decodeEntities(line).replace(/\s+/g, ' ').trim()
+      for (const entry of previous) {
+        if (entry.text && !entry.translation) entry.translation = { text: extra, bgText: null }
+      }
+      previous = []
+      continue
     }
+    const body = decodeEntities(line.slice(lastIndex).replace(WORD_STAMP, '')).replace(/\s+/g, ' ').trim()
+    previous = stamps.map(t => ({ time: Math.max(0, round3(t - offset)), end: null, endStated: false, text: body, words: [] }))
+    out.push(...previous)
   }
   out.sort((a, b) => a.time - b.time)
   return out

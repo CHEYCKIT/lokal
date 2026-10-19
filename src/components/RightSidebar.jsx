@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { usePanelWidth, PanelResizeHandle } from '../panelWidths.jsx'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen, Info, AudioWaveform } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -87,6 +88,7 @@ function streamQualityLabel(track) {
 
 export default function RightSidebar() {
   const { t } = useTranslation()
+  const panelWidth = usePanelWidth('right')
   const { user } = useAppStore()
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
@@ -414,11 +416,11 @@ export default function RightSidebar() {
         // I can verify without a live browser.
         <motion.aside
           initial={{ width: 0 }}
-          animate={{ width: 300 }}
+          animate={{ width: panelWidth }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
           aria-label={t("Now Playing")}
           className="overflow-hidden flex-shrink-0"
-          style={{ minWidth: 300 }}
+          style={{ minWidth: panelWidth }}
         >
           {/* Fixed width, slides via transform instead of the width above --
               keeping backdrop-filter/background off the width-animating
@@ -427,12 +429,13 @@ export default function RightSidebar() {
               flash. This element's own width never changes; sliding is
               purely x, and closing is instant along with the parent. */}
           <motion.div
-            initial={{ x: 300 }}
+            initial={{ x: panelWidth }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="h-full flex flex-col border-l border-border"
-            style={{ width: 300, backgroundColor: 'rgba(var(--surface-rgb), 0.85)' }}
+            className="relative h-full flex flex-col border-l border-border"
+            style={{ width: panelWidth, backgroundColor: 'rgba(var(--surface-rgb), 0.85)' }}
           >
+          <PanelResizeHandle side="right" />
           <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0 border-b border-border">
             <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
               {[['info', 'Details'], ['lyrics', 'Lyrics'], ['queue', 'Queue']].map(([id, label]) => (
