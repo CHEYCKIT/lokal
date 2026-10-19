@@ -32,14 +32,24 @@ function isEnhanced(text) {
   return WORD_STAMP.test(text || '')
 }
 
-/** Plain line-synced LRC. Lines with several stamps are repeated at each. */
+/**
+ * Plain line-synced LRC. Lines with several stamps are repeated at each.
+ * A line without a stamp right under a stamped one is its translation (some
+ * taggers write "[00:21.65] Saigo no Kisu wa" then "    The last kiss") --
+ * but only when most sung lines have one: a stray unstamped line (a credit,
+ * a note) in an ordinary LRC is left out, as before.
+ */
 function parseLRC(text) {
   if (!text) return []
   const offset = readOffset(text)
   const out = []
-  for (const rawLine of String(text).replace(/\r/g, '').split('\n')) {
+  const extras = [] // [entries of a stamped line, the unstamped line under it]
+  let previous = [] // the entries the last stamped line made
+  // Windows (\r\n), Unix (\n) and old Mac (\r alone) line endings alike.
+  for (const rawLine of String(text).replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '').split('\n')) {
     const line = rawLine.trim()
-    if (!line || META_TAG.test(line)) continue
+    if (!line) { previous = []; continue }
+    if (META_TAG.test(line)) continue
     LINE_STAMP.lastIndex = 0
     const stamps = []
     let m
@@ -49,11 +59,18 @@ function parseLRC(text) {
       stamps.push(stampToSeconds(m[1], m[2], m[3]))
       lastIndex = LINE_STAMP.lastIndex
     }
-    if (!stamps.length) continue
-    const body = decodeEntities(line.slice(lastIndex).replace(WORD_STAMP, '')).replace(/\s+/g, ' ').trim()
-    for (const t of stamps) {
-      out.push({ time: Math.max(0, round3(t - offset)), end: null, endStated: false, text: body, words: [] })
+    if (!stamps.length) {
+      if (previous.length && previous[0].text) extras.push([previous, decodeEntities(line).replace(/\s+/g, ' ').trim()])
+      previous = []
+      continue
     }
+    const body = decodeEntities(line.slice(lastIndex).replace(WORD_STAMP, '')).replace(/\s+/g, ' ').trim()
+    previous = stamps.map(t => ({ time: Math.max(0, round3(t - offset)), end: null, endStated: false, text: body, words: [] }))
+    out.push(...previous)
+  }
+  const sungLines = new Set(out.filter(entry => entry.text).map(entry => entry.time)).size
+  if (extras.length && extras.length >= sungLines / 2) {
+    for (const [entries, extra] of extras) for (const entry of entries) entry.translation = { text: extra, bgText: null }
   }
   out.sort((a, b) => a.time - b.time)
   return out

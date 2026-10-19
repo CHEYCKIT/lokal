@@ -70,6 +70,7 @@ function readSettings(db) {
     order,
     enabled,
     prioritizeSyllable: s.lyrics_prioritize_syllable === '1',
+    autoFetch: s.lyrics_auto_fetch !== '0',
     keepCommaArtists,
     spicyKey: s.spicylyrics_api_key || '',
     spotifyCookie: s.spotify_sp_dc || '',
@@ -209,6 +210,13 @@ async function getLyrics(db, args) {
   const instrumental = instrumentalResult(db, trackId)
   if (instrumental) return instrumental
   const settings = readSettings(db)
+  // Automatic lyrics off (Settings > Playback): a song's lyrics come only from
+  // the song itself (its tags, a file next to it). Refreshing, or picking a
+  // source, still looks online.
+  if (!settings.autoFetch && !args.refresh) {
+    settings.enabled = settings.enabled.filter(id => id === 'local')
+    settings.settingsKey += '|own-only'
+  }
   // Cached lyrics with untimed stamps, as plain text: kept when the fresh
   // lookup finds nothing better (every source down, say).
   let untimedFallback = null
@@ -232,6 +240,10 @@ async function getLyrics(db, args) {
             return { ...plain, attempts: meta.attempts || null, pinned: true }
           }
           if (plain.type) untimedFallback = { result: plain, attempts: meta.attempts || null }
+        } else if (row.source === 'local' && row.lyrics_type !== 'synced') {
+          // The song's own lyrics, saved unsynced: read again, so a file whose
+          // timed lyrics were missed before (two lyrics tags, a SYLT frame)
+          // gets them now. Reading a tag is cheap.
         } else {
           if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, fromRow(row, meta), { attempts: meta.attempts, pinned: meta.pinned })
           return fromRow(row, meta)

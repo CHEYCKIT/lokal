@@ -24,6 +24,7 @@ export default function Search() {
   const { t } = useTranslation()
   const query = useSearchStore(s => s.query)
   const setQuery = useSearchStore(s => s.setQuery)
+  const searchOnline = useSearchStore(s => s.online)
   // A source search from a streamed song or a lossless request. The selected
   // source receives the same query and can replace the original ghost track.
   const location = useLocation()
@@ -381,7 +382,7 @@ export default function Search() {
             </div>
           )}
 
-          <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} />
+          {searchOnline && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} />}
         </>
       )}
     </div>

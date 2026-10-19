@@ -15,6 +15,7 @@ import { Check, X, RotateCcw, AlertCircle, Info, Disc3, Library, ChevronDown, Mi
 import { useNavigate } from 'react-router-dom'
 import { useDownloads, batchOf, isActive, startDownloadSync } from '../store/downloads'
 import { useSearchStore } from '../store/search'
+import { usePlayerStore } from '../store/player'
 import { api, peekSettings } from '../api'
 import { peekCache, writeCache } from '../pageCache'
 import { displayTitle } from '../downloadLinks'
@@ -119,6 +120,17 @@ function Artwork({ job, size = 40 }) {
   )
 }
 
+/** Plays what a finished download added to the library, in download order. */
+async function playDownloaded(job) {
+  const ids = (job.indexedTracks || []).map(track => track?.id).filter(Boolean)
+  if (!ids.length) return
+  const answer = await api.getTracks({ ids }).catch(() => null)
+  const rows = Array.isArray(answer) ? answer : answer?.tracks || []
+  const byId = new Map(rows.map(track => [track.id, track]))
+  const tracks = ids.map(id => byId.get(id)).filter(Boolean)
+  if (tracks.length) usePlayerStore.getState().playQueue(tracks, 0)
+}
+
 export function DownloadRow({ job, detailed = false }) {
   const { t } = useTranslation()
   const { cancel, retry, remove } = useDownloads.getState()
@@ -147,6 +159,10 @@ export function DownloadRow({ job, detailed = false }) {
         </div>
         <div className="flex flex-shrink-0 items-center gap-1">
           {job.status === 'downloading' && <span className="w-9 text-right text-[11px] tabular-nums text-muted">{Math.round(job.progress || 0)}%</span>}
+          {job.status === 'done' && job.indexedTracks?.length > 0 && (
+            <button onClick={() => playDownloaded(job)} title={t(job.indexedTracks.length > 1 ? 'Play them' : 'Play')} aria-label={t('Play')}
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-accent"><Play size={13} fill="currentColor" /></button>
+          )}
           {job.lyricsCount > 0 && !active && (
             <span title={t('Lyrics added to {count} files', { count: job.lyricsCount })} className="text-accent/80"><Mic2 size={12} /></span>
           )}

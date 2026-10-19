@@ -1,4 +1,5 @@
 import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
+import { usePanelWidths } from '../panelWidths.jsx'
 import { KEYBOARD_SHORTCUTS } from '../useKeyboardShortcuts'
 import SplitWordsSettings from '../components/SplitWordsSettings'
 import { collectLocalPrefs, restoreLocalPrefs } from '../localPrefsBackup'
@@ -259,6 +260,8 @@ export default function Settings() {
   const location = useLocation()
   const navigate = useNavigate()
   const { t, language, setLanguage } = useTranslation()
+  const panelFreeform = usePanelWidths(s => s.freeform)
+  const setPanelFreeform = (freeform) => usePanelWidths.getState().set({ freeform })
   const replayGainMode = usePlayerStore(s => s.replayGainMode)
   // Seeded from the settings already read (and the version / tools found on
   // the last visit), so the first frame already has the real values: rows
@@ -1190,6 +1193,14 @@ activeCategory === 'data' ? usersTried
               )}
             </div>
           </Row>
+          <Row label={t("Automatic Updates")} desc={t("Off: Lokal no longer looks for a new version when it starts. Check for updates above still works.")}>
+            <button
+              onClick={() => set('auto_update', settings.auto_update === '0' ? '1' : '0')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.auto_update !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
+            >
+              {settings.auto_update !== '0' ? t('On') : t('Off')}
+            </button>
+          </Row>
           <Row label={t("Debug Logs")} desc={t("Open the folder with Lokal's logs, to attach to a bug report.")}>
             <button 
               onClick={() => api.openLogs?.()}
@@ -1511,6 +1522,14 @@ activeCategory === 'data' ? usersTried
             <option value="album">{t('Album gain')}</option>
             <option value="smart">{t('Smart gain')}</option>
           </select>
+        </Row>
+        <Row label={t("Fetch Lyrics Automatically")} desc={t("Off: songs only show the lyrics they carry themselves (in their tags or a .lrc next to them). Looking again from the lyrics panel still searches online.")}>
+          <button
+            onClick={() => set('lyrics_auto_fetch', settings.lyrics_auto_fetch === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.lyrics_auto_fetch !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}
+          >
+            {settings.lyrics_auto_fetch !== '0' ? t('On') : t('Off')}
+          </button>
         </Row>
         <Row label={t("Song Transitions")} desc={crossfade.mode === 'automix'
           ? t('AutoMix listens to both songs and blends them like a DJ: on the beat when their tempos are close (the next one sped up or slowed a touch, pitch kept), on the song\'s own fade-out otherwise, with silence at either end cut. Albums play as made.')
@@ -2156,6 +2175,16 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('appearance') && (
       <Section title={t("Layout")}>
+        <Row label={t("Panel Width")} desc={t("Freeform: drag the inner edge of the sidebar or the side panel to make it wider or narrower (double-click the edge to reset).")}>
+          <div className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
+            {[[false, 'Fixed'], [true, 'Freeform']].map(([value, label]) => (
+              <button key={label} onClick={() => setPanelFreeform(value)}
+                className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${panelFreeform === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}>
+                {t(label)}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row
           label={t("Side Panels")}
           desc={t("Merged: Queue and Lyrics open as tabs in the side panel. Independent: each opens in its own panel next to it.")}

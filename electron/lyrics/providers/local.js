@@ -45,6 +45,12 @@ function nativeTags(meta) {
 
 function tagText(value) {
   if (typeof value === 'string') return value
+  // ID3 SYLT (and some readers' USLT) come as { syncText: [{ text, timestamp }] }:
+  // turned into LRC so the times are kept.
+  if (value && Array.isArray(value.syncText) && value.syncText.length) {
+    const lrc = require('../fileLyrics').syltToLrc(value)
+    if (lrc) return lrc
+  }
   if (value && typeof value.text === 'string') return value.text
   return ''
 }
@@ -63,16 +69,23 @@ function privateLyrics(meta) {
   return values.length > 1 ? fromPrivateTag(values.join('/')) : null
 }
 
+const HAS_STAMP = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/
+
+/**
+ * The lyrics a file carries, as text: the tags exactly as written first
+ * (native), then music-metadata's common.lyrics. Since music-metadata 12 the
+ * common entry of an LRC tag is the words with the time stamps taken out
+ * (they move to syncText), so reading it alone turned every synced LYRICS
+ * tag into plain lyrics. Timed text wins over plain whichever tag comes first
+ * (FLAC/Ogg files often have both UNSYNCEDLYRICS and LYRICS); an ID3 SYLT
+ * frame is rebuilt into LRC.
+ */
 function embeddedText(meta) {
+  const native = nativeTags(meta).filter(t => LYRIC_IDS.has(t.id) || t.id === 'SYLT').map(t => tagText(t.value))
   const lyrics = meta?.common?.lyrics
-  let parts = (Array.isArray(lyrics) ? lyrics : lyrics ? [lyrics] : [])
-    .map(tagText)
-    .filter(s => s && s.trim())
-  // Some versions of music-metadata don't surface ID3 USLT as common.lyrics.
-  if (!parts.length) {
-    parts = nativeTags(meta).filter(t => LYRIC_IDS.has(t.id)).map(t => tagText(t.value)).filter(s => s && s.trim())
-  }
-  return parts.length ? parts[0] : null
+  const common = (Array.isArray(lyrics) ? lyrics : lyrics ? [lyrics] : []).map(tagText)
+  const parts = [...native, ...common].filter(s => s && s.trim())
+  return parts.find(part => HAS_STAMP.test(part)) || parts[0] || null
 }
 
 /** The file's own ISRC tag, if it has one. Cheap: skips covers. */
