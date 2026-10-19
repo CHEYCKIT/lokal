@@ -77,9 +77,12 @@ test('recognizes early-morning listening without triggering other patterns', () 
   assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'You have a soundtrack for the early hours.')
 })
 
-test('recognizes four distinct recent active dates as a listening streak', () => {
-  const history = rowsOnDays([1, 1, 3, 3, 5, 5, 6, 6], { playedHour: 11, artistCount: 3 })
-  assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'Your listening streak has some momentum.')
+test('uses distinct recent active dates rather than raw play count for a listening streak', () => {
+  const threeDates = rowsOnDays([1, 1, 1, 3, 3, 3, 5, 5], { playedHour: 11, artistCount: 3 })
+  assert.equal(personalizedHomeGreeting(threeDates, { hour: 12, now }), 'What sounds good this afternoon?')
+
+  const fourDates = rowsOnDays([1, 1, 3, 3, 5, 5, 6, 6], { playedHour: 11, artistCount: 3 })
+  assert.equal(personalizedHomeGreeting(fourDates, { hour: 12, now }), 'Your listening streak has some momentum.')
 })
 
 test('recognizes diverse artists when higher-priority patterns are absent', () => {
