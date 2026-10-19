@@ -170,8 +170,8 @@ export default function DotSphere({ className = '', artSrc = null }) {
       for (let s = 0; s < SLICES; s++) {
         const heard = data && slices ? sliceLevel(data, slices[s]) / 255 : 0
         peaks[s] = Math.max(heard, peaks[s] - dt * 0.08, 0.2)
-        const target = Math.pow(heard / peaks[s], 2) * Math.min(1, heard * 4) // quiet = nothing
-        levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 20 : 6))
+        const target = Math.pow(heard / peaks[s], 2.6) * Math.min(1, heard * 4) // quiet = nothing
+        levels[s] += (target - levels[s]) * Math.min(1, dt * (target > levels[s] ? 30 : 9))
         energy += levels[s]
       }
       energy /= SLICES
@@ -182,21 +182,22 @@ export default function DotSphere({ className = '', artSrc = null }) {
       if (bass > 0.25 && bass > bassAvg * 1.3 && sinceBeat > 0.2) { beat = 1; sinceBeat = 0 }
       beat *= Math.exp(-dt * 8)
       // The folds only move with the music.
-      phase += dt * energy * 2.5
+      phase += dt * energy * 4
 
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
       const cx = width / 2
       const cy = height / 2
-      const radius = Math.min(width, height) * 0.27 * (1 + beat * 0.08)
-      const amp = 0.4
+      const radius = Math.min(width, height) * 0.23 * (1 + beat * 0.16)
+      const amp = 0.62
       const dotSize = Math.max(1, radius / 55)
       const st = Math.sin(TILT), ct = Math.cos(TILT)
       for (const side of buckets) for (const list of side) list.length = 0
 
       for (let i = 0; i < DOTS; i++) {
         const [px, py, pz] = points[i]
-        const fold = 0.65 + 0.35 * Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
+        const wave = Math.sin(px * 5 + phase) * Math.sin(pz * 5 - phase * 0.7) * Math.cos(py * 4 + phase * 0.5)
+        const fold = 0.35 + 0.65 * Math.abs(wave) // peaks and troughs, not an even swell
         const push = amp * levels[sliceOf[i]] * fold
         const r = 1 + push
         const y = py * r * ct - pz * r * st
@@ -207,7 +208,7 @@ export default function DotSphere({ className = '', artSrc = null }) {
         sizes[i] = dotSize * depth * (0.85 + push * 1.6)
         // Calm surface in one colour, what the music pushes out in the other;
         // the rim a touch warmer so the ball reads as round.
-        const shade = Math.min(1, push / amp * 1.6 + (1 - Math.abs(z)) * 0.25 + beat * 0.2)
+        const shade = Math.min(1, push / amp * 2.2 + (1 - Math.abs(z)) * 0.2 + beat * 0.35)
         buckets[z < 0 ? 0 : 1][Math.round(shade * (SHADES - 1))].push(i)
       }
       for (let side = 0; side < 2; side++) {
