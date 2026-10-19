@@ -240,6 +240,10 @@ async function getLyrics(db, args) {
             return { ...plain, attempts: meta.attempts || null, pinned: true }
           }
           if (plain.type) untimedFallback = { result: plain, attempts: meta.attempts || null }
+        } else if (row.source === 'local' && row.lyrics_type !== 'synced') {
+          // The song's own lyrics, saved unsynced: read again, so a file whose
+          // timed lyrics were missed before (two lyrics tags, a SYLT frame)
+          // gets them now. Reading a tag is cheap.
         } else {
           if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, fromRow(row, meta), { attempts: meta.attempts, pinned: meta.pinned })
           return fromRow(row, meta)
