@@ -81,6 +81,31 @@ function readSettings(db) {
 
 // ---------------------------------------------------------------- cache
 
+/**
+ * Rank lyrics by information quality, not merely by source priority:
+ * syllable-timed > line-timed > plain text > instrumental/no result.
+ */
+function lyricsQualityRank(result) {
+  if (!result || result.instrumental || result.type === 'instrumental') return 0
+  const lines = Array.isArray(result.lines) ? result.lines : []
+  const sync = String(result.sync || '').toLowerCase()
+  const hasWordTimes = lines.some(line =>
+    (Array.isArray(line?.words) && line.words.some(word => word?.time != null)) ||
+    (Array.isArray(line?.bgWords) && line.bgWords.some(word => word?.time != null)))
+  if (sync === 'syllable' || result.type === 'syllable' || hasWordTimes) return 3
+  const hasLineTimes = lines.some(line => line && typeof line === 'object' && line.time != null)
+  if (sync === 'line' || sync === 'sync' || sync === 'synced' || hasLineTimes) return 2
+  const hasText = (typeof result.text === 'string' && result.text.trim()) ||
+    lines.some(line => (typeof line === 'string' ? line.trim() : String(line?.text || line?.bgText || '').trim()))
+  return hasText ? 1 : 0
+}
+
+/** A lower/equal-quality refresh must not downgrade an existing usable result. */
+function retainBetterLyrics(existing, candidate) {
+  const oldRank = lyricsQualityRank(existing)
+  return oldRank > 0 && oldRank >= lyricsQualityRank(candidate) ? existing : (candidate || existing || null)
+}
+
 function readRow(db, trackId, filePath) {
   let row = trackId ? db.prepare('SELECT * FROM lyrics_cache WHERE track_id = ?').get(trackId) : null
   if (!row && filePath) {
@@ -220,6 +245,16 @@ async function getLyrics(db, args) {
   // Cached lyrics with untimed stamps, as plain text: kept when the fresh
   // lookup finds nothing better (every source down, say).
   let untimedFallback = null
+  // The file's own usable lyrics are never replaced by an equal or worse lookup.
+  let cachedLocalLyrics = null
+
+  // Explicit refresh skips cache hits, but a saved local answer still needs to
+  // participate in quality comparison so a weaker lookup cannot overwrite it.
+  if (args.refresh) {
+    const cachedRow = readRow(db, trackId, filePath)
+    const cachedMeta = parseMeta(cachedRow)
+    if (cachedRow?.source === 'local' && cachedMeta) cachedLocalLyrics = fromRow(cachedRow, cachedMeta)
+  }
 
   if (!args.refresh) {
     const row = readRow(db, trackId, filePath)
@@ -240,10 +275,16 @@ async function getLyrics(db, args) {
             return { ...plain, attempts: meta.attempts || null, pinned: true }
           }
           if (plain.type) untimedFallback = { result: plain, attempts: meta.attempts || null }
+        } else if (meta.pinned) {
+          // An explicit source choice is the user's decision, even when plain.
+          const pinned = fromRow(row, meta)
+          if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, pinned, { attempts: meta.attempts, pinned: true })
+          return pinned
         } else if (row.source === 'local' && row.lyrics_type !== 'synced') {
           // The song's own lyrics, saved unsynced: read again, so a file whose
           // timed lyrics were missed before (two lyrics tags, a SYLT frame)
-          // gets them now. Reading a tag is cheap.
+          // gets them now. Keep the existing words if the refresh cannot improve them.
+          cachedLocalLyrics = fromRow(row, meta)
         } else {
           if (trackId && row.track_id !== trackId) writeRow(db, trackId, filePath, fromRow(row, meta), { attempts: meta.attempts, pinned: meta.pinned })
           return fromRow(row, meta)
@@ -264,6 +305,12 @@ async function getLyrics(db, args) {
     settings,
   )
   if (!trackId) return result
+  const preferred = retainBetterLyrics(cachedLocalLyrics, result)
+  if (cachedLocalLyrics && preferred === cachedLocalLyrics) {
+    const merged = { ...(cachedLocalLyrics.attempts || {}), ...attempts }
+    writeRow(db, trackId, filePath, cachedLocalLyrics, { attempts: merged })
+    return { ...cachedLocalLyrics, attempts: merged }
+  }
   if (result && !result.instrumental) {
     writeRow(db, trackId, filePath, result, { attempts })
     return { ...result, attempts }
@@ -336,4 +383,4 @@ async function romanize(db, trackId, lines) {
   return translation.romanize(db, trackId, lines)
 }
 
-module.exports = { getLyrics, getLyricsFrom, importLyrics, clearCache, sources, translate, romanize, readSettings, upgradeLegacy }
+module.exports = { getLyrics, getLyricsFrom, importLyrics, clearCache, sources, translate, romanize, readSettings, upgradeLegacy, lyricsQualityRank, retainBetterLyrics }
