@@ -27,7 +27,7 @@ const SECTIONS = {
 
 const ITEMS = {
   dbMain: 'Database file', dbWal: 'Write-ahead log (WAL)', dbShm: 'Shared memory index (SHM)', dbJournal: 'Rollback journal',
-  trackCovers: 'Track covers', artistImages: 'Artist images', playlistCovers: 'Playlist covers', otherArtwork: 'Other images',
+  coverThumbs: 'Track cover thumbnails', trackCovers: 'Full-size track covers', artistImages: 'Artist images', playlistCovers: 'Playlist covers', otherArtwork: 'Other images',
   motionCovers: 'Motion covers (video)', playbackCache: 'Playback copies (converted files)', musicVideoCache: 'Music video cache',
   castCache: 'Cast copies', addonCache: 'Addon audio cache', musicVideoIndex: 'Music video index',
   lyricsFiles: 'Lyrics files', avatars: 'Avatars', plugins: 'Plugins', youtubeCookies: 'YouTube cookies',
@@ -65,6 +65,7 @@ const CLEAN = {
     intro: 'Removes only what nothing uses any more or what comes back by itself:',
     list: [
       'Covers no track, artist or playlist uses any more',
+      'Full-size embedded song covers that can be replaced by small thumbnails (the original stays in the audio file)',
       'Covers and pages loaded from the internet, compiled scripts and GPU shaders (loaded again when needed)',
       'Motion covers and converted copies (made again when needed)',
       'Sign-in profiles left over from unfinished sign-ins',

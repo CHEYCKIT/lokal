@@ -96,9 +96,24 @@ app.get('/api/stream/:trackId', async (req, res) => {
   }
 })
 
-app.get('/api/artwork/:trackId', (req, res) => {
+app.get('/api/artwork/:trackId', async (req, res) => {
   const dir = path.join(getStorageDir(), 'artwork')
-  const p = path.join(dir, `${req.params.trackId}.jpg`)
+  const id = String(req.params.trackId || '')
+  const full = req.query.full === '1'
+  if (full) {
+    try {
+      const picture = await require('../electron/artwork/fullCover').fullCoverForTrack(getDB(), id)
+      if (picture) {
+        res.set('Cache-Control', 'private, max-age=3600')
+        return res.type(picture.mime).send(picture.bytes)
+      }
+    } catch {}
+  }
+  // Generated song thumbnails are WebP; old and externally chosen covers stay
+  // readable at their existing paths until the safe cleanup can shrink them.
+  const webp = path.join(dir, id + '.webp')
+  const p = path.join(dir, id + '.jpg')
+  if (path.dirname(webp) === dir && fs.existsSync(webp)) return res.sendFile(webp)
   if (path.dirname(p) === dir && fs.existsSync(p)) return res.sendFile(p)
   // Covers not named after the track (a download's thumbnail "t-<id>.jpg",
   // one found online, one shared from the same album): the track's own

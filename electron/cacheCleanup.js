@@ -38,10 +38,22 @@ async function clean({ mode, userData, dataDir, db, electron, activePartition, c
   // Covers nothing in the library points to any more.
   if (dataDir) {
     await step('unusedArtwork', async () => {
+      // Convert eligible old full-size embedded covers before collecting unused files.
+      let shrunk = { converted: 0, freed: 0, skipped: 0, trackIds: [] }
+      if (db) {
+        shrunk = await require('./artwork/shrinkCovers').shrinkCovers(db, path.join(dataDir, 'artwork'))
+        if (shrunk.trackIds?.length) {
+          try {
+            for (const win of require('electron').BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) win.webContents.send('library:changed', { added: [], removed: [], updated: [...new Set(shrunk.trackIds)] })
+            }
+          } catch {}
+        }
+      }
       const info = await artwork(path.join(dataDir, 'artwork'), db)
       let removed = 0
       for (const f of info.unusedFiles || []) if (await rm(f)) removed++
-      return { removed }
+      return { removed, thumbnailsCreated: shrunk.converted || 0, artworkBytesFreed: shrunk.freed || 0, artworkSkipped: shrunk.skipped || 0 }
     })
   }
 
