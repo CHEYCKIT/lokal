@@ -4,6 +4,8 @@ const fs = require('fs-extra')
 const crypto = require('crypto')
 const https = require('https')
 const http = require('http')
+const { downloadImageWithTimeout } = require('../artworkDownload')
+const artistRoles = require('../artistRoles')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
 const artistSplit = require('../artistSplit')
@@ -706,6 +708,7 @@ function getArtistsPage(db, opts = {}) {
   const offset = Math.max(0, parseInt(opts.offset, 10) || 0)
   const rawSearch = typeof opts.search === 'string' ? opts.search.trim() : ''
   const sort = opts.sort === 'tracks' ? 'tracks' : 'name'
+  const mainOnly = opts.mainOnly === true || opts.mainOnly === '1'
   const params = []
   const conditions = []
   const groupBy = 'GROUP BY a.id'
@@ -714,48 +717,46 @@ function getArtistsPage(db, opts = {}) {
 
   if (rawSearch) {
     conditions.push('a.name LIKE ?')
-    params.push(`%${rawSearch}%`)
+    params.push('%' + rawSearch + '%')
   }
-  // Artists → Followed: only the artists you follow.
   if (opts.followed === true || opts.followed === '1') {
     const followed = require('../followedArtistIds').followedCondition(db)
     conditions.push(followed.sql)
     params.push(followed.param)
   }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+  const baseSql = [
+    'FROM artists a',
+    'LEFT JOIN artist_track_links atl ON atl.artist_id = a.id',
+    "LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'",
+  ].join('\n')
+  const selectSql = [
+    'SELECT a.*, COUNT(DISTINCT t.id) as track_count',
+    baseSql, where, groupBy, having, orderBy,
+  ].filter(Boolean).join('\n')
 
-  // Songs in the library only (not streamed ones), as on the artist's page.
-  const baseSql = `
-    FROM artists a
-    LEFT JOIN artist_track_links atl ON atl.artist_id = a.id
-    LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'
-  `
-  const rows = db.prepare(`
-    SELECT a.*, COUNT(DISTINCT t.id) as track_count
-    ${baseSql}
-    ${where}
-    ${groupBy}
-    ${having}
-    ${orderBy}
-    LIMIT ? OFFSET ?
-  `).all(...params, limit, offset)
-  const totalRow = db.prepare(`
-    SELECT COUNT(*) as total
-    FROM (
-      SELECT a.id
-      ${baseSql}
-      ${where}
-      ${groupBy}
-      ${having}
-    ) grouped_artists
-  `).get(...params)
+  let rows
+  let total
+  if (mainOnly) {
+    const mainIds = artistRoles.mainOnlyArtistIds(db)
+    const eligible = db.prepare(selectSql).all(...params).filter(artist => mainIds.has(String(artist.id)))
+    total = eligible.length
+    rows = eligible.slice(offset, offset + limit)
+  } else {
+    rows = db.prepare(selectSql + '\nLIMIT ? OFFSET ?').all(...params, limit, offset)
+    total = db.prepare([
+      'SELECT COUNT(*) as total FROM (',
+      'SELECT a.id', baseSql, where, groupBy, having,
+      ') grouped_artists',
+    ].filter(Boolean).join('\n')).get(...params)?.total || 0
+  }
 
   return {
     items: rows.map(artist => addArtistFallback(db, artist)),
-    total: totalRow?.total || 0,
+    total,
     limit,
     offset,
-    hasMore: offset + rows.length < (totalRow?.total || 0),
+    hasMore: offset + rows.length < total,
   }
 }
 
@@ -843,7 +844,7 @@ function scoreRelatedTrack(baseTrack, candidate) {
 }
 
 function classifyAlbumRow(row) {
-  const trackCount = Number(row?.track_count || 0)
+  const trackCount = Number(row?.release_track_count ?? row?.track_count ?? 0)
   if (trackCount <= 1) return 'single'
   if (trackCount <= 6) return 'ep'
   return 'album'
@@ -1400,6 +1401,10 @@ function registerScannerHandlers(ipcMain) {
         t.year,
         t.artwork_path,
         COUNT(*) as track_count,
+        (SELECT COUNT(*) FROM tracks full_release
+          WHERE LOWER(full_release.album) = LOWER(t.album)
+            AND LOWER(COALESCE(NULLIF(full_release.album_artist, ''), full_release.artist)) = LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
+            AND full_release.file_path NOT LIKE 'ghost://%') as release_track_count,
         GROUP_CONCAT(DISTINCT t.artist) as artists
       FROM tracks t
       JOIN artist_track_links atl ON atl.track_id = t.id
@@ -1408,7 +1413,7 @@ function registerScannerHandlers(ipcMain) {
         AND t.album IS NOT NULL
       GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
       ORDER BY t.year DESC, t.album ASC
-    `).all(artist.id))
+    `).all(artist.id)).map(album => ({ ...album, is_main_artist: artistRoles.isMainArtistRelease(artist.name, album, tracks, db) }))
     const artistWithFallback = addArtistFallback(db, artist)
     return { ...artistWithFallback, tracks, topTracks, albums }
   })
@@ -1893,6 +1898,11 @@ function registerScannerHandlers(ipcMain) {
   })
 }
 
+function uniqueArtworkCachePath(trackId) {
+  const safeTrackId = String(trackId || 'track').replace(/[^a-z0-9_-]/gi, '_')
+  return path.join(getStorageDir(), 'artwork', safeTrackId + '-external-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '.jpg')
+}
+
 async function fetchExternalMetadata(title, artist, trackId) {
   const db = getDB()
   try {
@@ -1917,7 +1927,7 @@ async function fetchExternalMetadata(title, artist, trackId) {
 
       if (artworkUrl) {
         artworkUrl = artworkUrl.replace('100x100bb', '600x600bb')
-        const artPath = path.join(getStorageDir(), 'artwork', `t-${trackId}.jpg`)
+        const artPath = uniqueArtworkCachePath(trackId)
         try {
           await downloadImageWithTimeout(artworkUrl, artPath, 5000)
           clearTimeout(timeout)
@@ -1950,7 +1960,7 @@ async function fetchExternalMetadata(title, artist, trackId) {
     if (recording?.releases?.[0]?.id) {
       const releaseId = recording.releases[0].id
       const coverUrl = `https://coverartarchive.org/release/${releaseId}/front-500`
-      const artPath = path.join(getStorageDir(), 'artwork', `t-${trackId}.jpg`)
+      const artPath = uniqueArtworkCachePath(trackId)
       try {
         await downloadImageWithTimeout(coverUrl, artPath, 5000)
         clearTimeout(timeout2)
@@ -1962,38 +1972,6 @@ async function fetchExternalMetadata(title, artist, trackId) {
 
   clearTimeout(timeout2)
   return null
-}
-
-function downloadImageWithTimeout(url, dest, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith('https') ? https : http
-    const timeout = setTimeout(() => { reject(new Error('Download timeout')) }, timeoutMs)
-    const file = fs.createWriteStream(dest)
-    client.get(url, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        file.close()
-        clearTimeout(timeout)
-        return downloadImageWithTimeout(res.headers.location, dest, timeoutMs).then(resolve).catch(reject)
-      }
-      if (res.statusCode !== 200) {
-        file.close()
-        clearTimeout(timeout)
-        fs.unlink(dest, () => {})
-        reject(new Error('HTTP ' + res.statusCode))
-        return
-      }
-      res.pipe(file)
-      file.on('finish', () => {
-        file.close()
-        clearTimeout(timeout)
-        resolve(dest)
-      })
-    }).on('error', (err) => {
-      clearTimeout(timeout)
-      fs.unlink(dest, () => {})
-      reject(err)
-    })
-  })
 }
 
 const ARTIST_CLEANUP_INTERVAL_MS = 60_000
@@ -2118,7 +2096,7 @@ async function indexSingleFile(filePath, opts = {}) {
   const thumbnailUrl = opts.thumbnailUrl
   if (!artwork && thumbnailUrl) {
     try {
-      const artPath = path.join(getStorageDir(), 'artwork', `t-${trackId}.jpg`)
+      const artPath = uniqueArtworkCachePath(trackId)
       await downloadImageWithTimeout(thumbnailUrl, artPath, 5000)
       artwork = artPath
     } catch {}
