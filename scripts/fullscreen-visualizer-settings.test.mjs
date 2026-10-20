@@ -1,21 +1,30 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_ENABLED_VISUALIZERS, normalizeVisualizerModes } from '../src/visualizers/modes.mjs'
+import { normalizeEnabledMilkDropPresets } from '../src/visualizers/milkDropPresets.mjs'
 
-test('missing and invalid settings keep every visualizer available', () => {
-  assert.deepEqual(normalizeVisualizerModes(undefined), DEFAULT_ENABLED_VISUALIZERS)
-  assert.deepEqual(normalizeVisualizerModes('{bad json'), DEFAULT_ENABLED_VISUALIZERS)
-  assert.deepEqual(normalizeVisualizerModes('[]'), DEFAULT_ENABLED_VISUALIZERS)
+const presets = ['Classic Spiral', 'Fractal Dream', 'Neon Tunnel']
+
+test('missing and malformed settings enable every available MilkDrop preset', () => {
+  assert.deepEqual(normalizeEnabledMilkDropPresets(undefined, presets), presets)
+  assert.deepEqual(normalizeEnabledMilkDropPresets('{bad json', presets), presets)
+  assert.deepEqual(normalizeEnabledMilkDropPresets('[]', presets), presets)
 })
 
-test('only known enabled visualizers are returned, without duplicates', () => {
+test('a configured subset is preserved and duplicate or unknown names are removed', () => {
   assert.deepEqual(
-    normalizeVisualizerModes('["waves","milkdrop","waves","not-a-visualizer",3]'),
-    ['waves', 'milkdrop'],
+    normalizeEnabledMilkDropPresets('["Fractal Dream","Classic Spiral","Fractal Dream","unknown",3]', presets),
+    ['Fractal Dream', 'Classic Spiral'],
   )
 })
 
-test('an invalid or empty enabled list safely falls back to all modes', () => {
-  assert.deepEqual(normalizeVisualizerModes(['invalid']), DEFAULT_ENABLED_VISUALIZERS)
-  assert.deepEqual(normalizeVisualizerModes([]), DEFAULT_ENABLED_VISUALIZERS)
+test('an invalid or fully stale list safely falls back to all current presets', () => {
+  assert.deepEqual(normalizeEnabledMilkDropPresets(['not-installed'], presets), presets)
+  assert.deepEqual(normalizeEnabledMilkDropPresets([], presets), presets)
+})
+
+test('new preset-pack versions ignore saved names that no longer exist', () => {
+  assert.deepEqual(
+    normalizeEnabledMilkDropPresets(['Classic Spiral', 'removed preset'], presets),
+    ['Classic Spiral'],
+  )
 })
