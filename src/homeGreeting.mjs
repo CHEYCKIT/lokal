@@ -52,8 +52,10 @@ export function personalizedHomeGreeting(history = [], { hour = new Date().getHo
 
   if (recent.length < 5) return timeOfDay(currentHour)
 
+  // A repeat insight should reflect a current streak, not a few replays
+  // scattered across a large window that can keep the message stuck for days.
   const trackCounts = new Map()
-  for (const { entry } of recent.slice(0, 25)) {
+  for (const { entry } of recent.slice(0, 8)) {
     const key = trackKey(entry)
     if (key && key !== '\u0000') trackCounts.set(key, (trackCounts.get(key) || 0) + 1)
   }
