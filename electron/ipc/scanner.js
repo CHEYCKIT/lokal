@@ -193,12 +193,9 @@ function relinkArtistsIfNeeded(db = getDB()) {
 async function extractArtwork(metadata, trackId, fallbackArtwork = null) {
   const pic = metadata.common.picture?.[0]
   if (pic) {
-    const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-    if (!fs.existsSync(artPath)) {
-      await fs.ensureDir(path.dirname(artPath))
-      await fs.writeFile(artPath, pic.data)
-    }
-    return artPath
+    // Lists and player controls use small WebP thumbnails. Fullscreen views
+    // read the embedded original from the audio file only when needed.
+    return require('../artwork/thumb').writeCover(path.join(getStorageDir(), 'artwork'), trackId, pic.data)
   }
   return fallbackArtwork || null
 }

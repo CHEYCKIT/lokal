@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import SearchDrawer from './LyricsSearchDrawer'
 import { api, wordSyncEnabled } from '../api'
+import { trackFullArtURL } from '../onlineTracks'
 
 // How the player and full-screen lyrics trade places (FullscreenPlayer uses
 // these too): the view being left fades out quickly, the one arriving fades in
@@ -82,9 +83,7 @@ export default function LyricsFullscreen({ idle = false, onChromeHover = null, s
     setRefreshKey(k => k + 1)
   }
 
-  const artSrc = currentTrack?.artwork_path
-    ? (api.isElectron ? `file://${currentTrack.artwork_path}` : api.artworkURL(currentTrack.id))
-    : null
+  const artSrc = trackFullArtURL(currentTrack)
 
   const handleSearchRequest = () => {
     setShowSearch(true)

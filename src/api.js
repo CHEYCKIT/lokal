@@ -168,7 +168,9 @@ export function wordSyncEnabled() {
 export const api = {
   get isElectron() { return isE() },
   fileURL: (path) => electronFileURL(path),
-  artworkURL: (id) => `${BASE}/artwork/${encodeURIComponent(id)}`,
+  artworkURL: (id, full = false) => BASE + '/artwork/' + encodeURIComponent(id) + (full ? '?full=1' : ''),
+  // Full art is loaded only for large surfaces; Electron uses the local cover protocol.
+  fullArtworkURL: (id) => isE() ? 'lokal-stream://cover/' + encodeURIComponent(id) : BASE + '/artwork/' + encodeURIComponent(id) + '?full=1',
   folderArtworkURL: (filePath) => `${BASE}/tracks/folder-artwork?path=${encodeURIComponent(filePath || '')}`,
   // An album's cover (from getAllAlbums: the path, and the track it's from).
   // Artwork is served by track id, not by path (or album title).
