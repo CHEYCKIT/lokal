@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { usePanelWidth, PanelResizeHandle } from '../panelWidths.jsx'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen, Info, AudioWaveform } from 'lucide-react'
+import { ChevronRight, Music, Maximize2, Mic2, Disc3, Radio, Clapperboard, Gem, ImageOff, ImagePlay, FolderOpen, Info, Gamepad2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -92,15 +92,15 @@ export default function RightSidebar() {
   const { user } = useAppStore()
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   } = usePlayerStore(useShallow(({
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   }) => ({
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   })))
   // Back from the mini player: the Lyrics and Queue overlays start over.
@@ -501,7 +501,7 @@ export default function RightSidebar() {
                         aria-pressed={infoCardView !== 'info'}
                         title={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
                         className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView !== 'info' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
-                        {infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <AudioWaveform size={15} />}
+                        {infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <Gamepad2 size={15} />}
                       </button>
                     </div>
                   )}
@@ -571,8 +571,13 @@ export default function RightSidebar() {
                       </div>
                     ) : infoCardView === 'visualization' ? (
                       // No card around it: the ring sits on the panel's own background.
-                      <div className="relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
+                      <div className="group/fullscreen-visualizer relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
                         {sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
+                        <button type="button" onClick={() => setShowFullscreenVisualizer(true)}
+                          title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')}
+                          className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/75 opacity-0 shadow-lg backdrop-blur-sm transition hover:bg-black/80 hover:text-white group-hover/fullscreen-visualizer:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                          <Maximize2 size={14} />
+                        </button>
                       </div>
                     ) : (
                     <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
