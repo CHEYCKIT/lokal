@@ -1,7 +1,7 @@
 import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard, Gamepad2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard, Gamepad2, Minimize2, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings, wordSyncEnabled as getWordSyncEnabled } from '../api'
@@ -73,6 +73,13 @@ export default function MiniPlayer({ windowed = false }) {
   const cycleVisualizer = delta => {
     if (enabledVisualizers.length < 2) return
     setVisualizerMode(enabledVisualizers[(activeVisualizerIndex + delta + enabledVisualizers.length) % enabledVisualizers.length])
+  }
+
+  const enterFullscreenVisualizer = async () => {
+    await toggleMiniPlayer()
+    if (!usePlayerStore.getState().showMiniPlayer) {
+      usePlayerStore.setState({ showMiniVisualizer: false, showFullscreen: false, showFullscreenVisualizer: true })
+    }
   }
 
   const [lyricsLines, setLyricsLines] = useState([])
@@ -330,6 +337,7 @@ export default function MiniPlayer({ windowed = false }) {
               <p className="truncate text-[10px] text-white/55">{currentTrack?.artist || t(activeVisualizer.label)}</p>
             </div>
             <button onClick={() => setShowMiniVisualizer(false)} title={t('Show mini player controls')} aria-label={t('Show mini player controls')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><Minimize2 size={14} /></button>
+            <button onClick={enterFullscreenVisualizer} title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><Maximize2 size={14} /></button>
             <button onClick={toggleMiniPlayer} title={t('Close mini player')} aria-label={t('Close mini player')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><X size={14} /></button>
           </div>
           <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between gap-1 px-3 py-2.5">
