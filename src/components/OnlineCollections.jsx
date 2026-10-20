@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { artistPath } from '../releaseActions'
 import { api } from '../api'
 import { useDownloads, isActive } from '../store/downloads'
-import { normalizeArtistResults } from '../downloadLinks'
+import { artistResultKey, normalizeArtistResults } from '../downloadLinks'
 import { useTranslation } from '../i18n'
 
 const DEBOUNCE_MS = 600
@@ -99,7 +99,7 @@ export default function OnlineCollections({ query }) {
               const openArtist = () => navigate(artistPath(item.title), { state: { name: item.title } })
               return (
                 <motion.div
-                  key={`channel:${item.id || item.url}`}
+                  key={artistResultKey(item)}
                   initial={{ opacity: 0, y: 3 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i, 10) * 0.025 }}
@@ -149,7 +149,7 @@ export default function OnlineCollections({ query }) {
               const problem = failed[item.url] || (job?.status === 'error' ? job.error || t('Failed') : null)
               return (
                 <motion.div
-                  key={`playlist:${item.id || item.url}`}
+                  key={artistResultKey(item)}
                   initial={{ opacity: 0, y: 3 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i, 8) * 0.025 }}

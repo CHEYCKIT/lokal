@@ -131,13 +131,18 @@ export function displayTitle(item, fallback = 'Download') {
   return inferTitleFromUrl(item.url, fallback)
 }
 
+/** Stable identity for an artist-search result, including the canonical URL. */
+export function artistResultKey(item) {
+  return JSON.stringify([item?.type || 'item', item?.id || item?.url || '', item?.url || ''])
+}
+
 /** An artist search's channels and playlists, without duplicates. */
 export function normalizeArtistResults(items) {
   const seen = new Set()
   return (Array.isArray(items) ? items : [])
     .filter(item => item?.title && item?.url && (item.type === 'channel' || item.type === 'playlist'))
     .filter(item => {
-      const key = `${item.type}:${item.id || item.url}:${item.url}`
+      const key = artistResultKey(item)
       if (seen.has(key)) return false
       seen.add(key)
       return true
