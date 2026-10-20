@@ -597,15 +597,15 @@ app.whenReady().then(() => {
   try { registerFlowHandlers(ipcMain) } catch (e) { console.error('registerFlowHandlers:', e.message) }
   try { registerCastHandlers(ipcMain, { getWindow: () => mainWindow, powerSaveBlocker }) } catch (e) { console.error('registerCastHandlers:', e.message) }
   try { registerStreamProtocol(protocol, net) } catch (e) { console.error('registerStreamProtocol:', e.message) }
-  // SpotiFLAC repositories are refreshed at every launch (in the background,
+  // Mornye repositories are refreshed at every launch (in the background,
   // once the window has had time to open), so updates and new sources show
   // without visiting Settings first.
   setTimeout(() => {
     try {
-      const packages = require('./spotiflac/packages').service(getDB())
-      // Only for people using SpotiFLAC sources: nothing is fetched otherwise.
-      if (packages.list().length || packages.repos().length > 1) packages.refreshDue(0).catch(e => console.error('SpotiFLAC repository refresh:', e.message))
-    } catch (e) { console.error('SpotiFLAC repository refresh:', e.message) }
+      const packages = require('./mornye/packages').service(getDB())
+      // Only for people using Mornye sources: nothing is fetched otherwise.
+      if (packages.list().length || packages.repos().length > 1) packages.refreshDue(0).catch(e => console.error('Mornye repository refresh:', e.message))
+    } catch (e) { console.error('Mornye repository refresh:', e.message) }
   }, 8000).unref?.()
 
 
@@ -976,7 +976,7 @@ app.on('will-quit', () => {
   try { require('./online/poToken').reset() } catch {}
   for (const window of BrowserWindow.getAllWindows()) { try { if (!window.isDestroyed()) window.destroy() } catch {} }
   try { shutdownActiveDownloads() } catch {}
-  try { require('./spotiflac/packages').shutdown(require('./ipc/db').getDB()) } catch {}
+  try { require('./mornye/packages').shutdown(require('./ipc/db').getDB()) } catch {}
   unregisterMediaShortcuts()
   try { stopSmtcBridge() } catch {}
 })

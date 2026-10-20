@@ -20,11 +20,11 @@ function compareVersions(a,b) {
   for(let i=0;i<Math.max(left.length,right.length);i++){const d=(left[i]||0)-(right[i]||0);if(d)return Math.sign(d)}return 0
 }
 function validateManifest(manifest) {
-  if(!manifest || !/^[a-z0-9][a-z0-9_-]{0,99}$/.test(manifest.name || '') || typeof manifest.displayName!=='string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(manifest.version || ''))throw new Error('Invalid SpotiFLAC package manifest')
+  if(!manifest || !/^[a-z0-9][a-z0-9_-]{0,99}$/.test(manifest.name || '') || typeof manifest.displayName!=='string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(manifest.version || ''))throw new Error('Invalid Mornye package manifest')
   // Download providers, or metadata addons that read playlist links (Spotify
   // Web, Apple Music): those are only used to sync linked playlists.
-  if(!Array.isArray(manifest.type)||!(manifest.type.includes('download_provider')||manifest.type.includes('metadata_provider')&&manifest.urlHandler?.enabled))throw new Error('Only download-capable or playlist-link SpotiFLAC addons can be installed')
-  if(compareVersions(manifest.minAppVersion,COMPAT_VERSION)>0)throw new Error(`This addon requires SpotiFLAC compatibility ${manifest.minAppVersion}`)
+  if(!Array.isArray(manifest.type)||!(manifest.type.includes('download_provider')||manifest.type.includes('metadata_provider')&&manifest.urlHandler?.enabled))throw new Error('Only download-capable or playlist-link Mornye addons can be installed')
+  if(compareVersions(manifest.minAppVersion,COMPAT_VERSION)>0)throw new Error(`This addon requires Mornye compatibility ${manifest.minAppVersion}`)
   for(const required of manifest.requiredRuntimeFeatures || []){
     const match=String(required).match(/^([A-Za-z]+)@(\d+)$/)
     if(!match||!FEATURES[match[1]]||FEATURES[match[1]]<Number(match[2]))throw new Error(`Unsupported runtime feature: ${required}`)
@@ -45,7 +45,7 @@ function readArchive(buffer) {
     names.add(name);total+=entry.header.size
     if(total>64*1024*1024)throw new Error('Unpacked addon package exceeds 64 MB')
   }
-  if(!names.has('manifest.json')||!names.has('index.js'))throw new Error('A SpotiFLAC package needs manifest.json and index.js at its root')
+  if(!names.has('manifest.json')||!names.has('index.js'))throw new Error('A Mornye package needs manifest.json and index.js at its root')
   const manifest=validateManifest(JSON.parse(zip.readAsText('manifest.json'))),code=zip.readAsText('index.js')
   if(Buffer.byteLength(code)>8*1024*1024)throw new Error('Addon script exceeds 8 MB')
   return {zip,manifest,code}
@@ -95,13 +95,64 @@ function trackOf(track, provider) {
   const artists=Array.isArray(track.artists)?track.artists.map(a=>typeof a==='string'?a:a.name).filter(Boolean):[String(track.artists || track.artist || '')].filter(Boolean)
   return {provider,id:String(track.id),title:String(track.name || track.title || '').slice(0,500),artist:artists.join(', '),artists,artistIds:track.artist_id?[String(track.artist_id)]:[],album:albumNameOf(track),albumId:albumIdOf(track),track_num:Number(track.track_number || track.trackNumber)||null,disc_num:Number(track.disc_number || track.discNumber)||null,year:Number(String(track.release_date || '').slice(0,4))||null,isrc:track.isrc || null,genre:track.genre || null,duration:(Number(track.duration_ms ?? track.durationMs)||0)/1000 || null,thumbnail:track.cover_url || track.coverUrl || (typeof track.images==='string'?track.images:null),quality:track.audio_quality || null,spotify_id:track.spotify_id || track.spotifyId || null,deezer_id:track.deezer_id || track.deezerId || null,qobuz_id:track.qobuz_id || track.qobuzId || null,tidal_id:track.tidal_id || track.tidalId || null,kind:'song'}
 }
+
+// Move legacy on-disk state without overwriting any Mornye data already present.
+// If a file collides, keep it in the legacy directory for manual recovery.
+function migrateLegacyRoot(legacyRoot, currentRoot) {
+  if (legacyRoot === currentRoot || !fs.existsSync(legacyRoot)) return currentRoot
+  fs.mkdirSync(currentRoot, { recursive: true })
+  const moveMissing = (source, target) => {
+    for (const name of fs.readdirSync(source)) {
+      const from = path.join(source, name), to = path.join(target, name)
+      if (!fs.existsSync(to)) {
+        try { fs.renameSync(from, to) } catch {}
+      } else {
+        try {
+          if (fs.statSync(from).isDirectory() && fs.statSync(to).isDirectory()) moveMissing(from, to)
+        } catch {}
+      }
+    }
+    try { if (fs.readdirSync(source).length === 0) fs.rmdirSync(source) } catch {}
+  }
+  try { moveMissing(legacyRoot, currentRoot) } catch (error) {
+    console.warn(`[Mornye] Could not fully migrate legacy state: ${error.message}`)
+  }
+  return currentRoot
+}
+
+function migrateLegacyTables(db) {
+  const tables = [
+    ['spotiflac_repositories', 'mornye_repositories'],
+    ['spotiflac_packages', 'mornye_packages'],
+    ['spotiflac_tracks', 'mornye_tracks'],
+  ]
+  const exists = name => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name)
+  for (const [legacy, current] of tables) {
+    const hasLegacy = exists(legacy), hasCurrent = exists(current)
+    if (hasLegacy && !hasCurrent) {
+      db.exec(`ALTER TABLE ${legacy} RENAME TO ${current}`)
+    } else if (hasLegacy && hasCurrent) {
+      // Both names can exist after an interrupted upgrade; merge rows before
+      // retiring the legacy table. Both schemas have identical columns.
+      db.exec(`INSERT OR IGNORE INTO ${current} SELECT * FROM ${legacy}; DROP TABLE ${legacy}`)
+    }
+  }
+}
+
 class PackageService {
   constructor(db, {root, fetchImpl = fetch, tools}={}) {
-    this.db=db;this.root=root || path.join(require('../ipc/db').getStorageDir() || process.env.LOKAL_DATA_DIR || path.join(process.cwd(),'data'),'spotiflac');this.fetch=fetchImpl;this.toolProvider=tools
+    const dataDir = require('../ipc/db').getStorageDir() || process.env.LOKAL_DATA_DIR || path.join(process.cwd(),'data')
+    const legacyRoot = path.join(dataDir, 'spotiflac')
+    const mornyeRoot = path.join(dataDir, 'mornye')
+    this.db=db
+    this.root = root || migrateLegacyRoot(legacyRoot, mornyeRoot)
+    this.fetch=fetchImpl;this.toolProvider=tools
     this.storage=new AddonStorage(this.root);this.runtimes=new Map();this.networks=new Map();this.sessions=new Map();this.operations=new Map();this.locks=new Map();this.forms=new Map()
-    db.exec('CREATE TABLE IF NOT EXISTS spotiflac_repositories (id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, name TEXT, refreshed_at INTEGER, index_json TEXT, error TEXT); CREATE TABLE IF NOT EXISTS spotiflac_packages (key TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, manifest_json TEXT NOT NULL, repository_id TEXT, digest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, installed_at INTEGER NOT NULL, methods_json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS spotiflac_tracks (provider TEXT NOT NULL, id TEXT NOT NULL, metadata_json TEXT NOT NULL, PRIMARY KEY(provider,id));')
+    migrateLegacyTables(db)
+    db.exec('CREATE TABLE IF NOT EXISTS mornye_repositories (id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, name TEXT, refreshed_at INTEGER, index_json TEXT, error TEXT); CREATE TABLE IF NOT EXISTS mornye_packages (key TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, manifest_json TEXT NOT NULL, repository_id TEXT, digest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, installed_at INTEGER NOT NULL, methods_json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS mornye_tracks (provider TEXT NOT NULL, id TEXT NOT NULL, metadata_json TEXT NOT NULL, PRIMARY KEY(provider,id));')
     const defaultId=hash(REGISTRY).slice(0,16)
-    db.prepare('INSERT OR IGNORE INTO spotiflac_repositories (id,url,name) VALUES (?,?,?)').run(defaultId,REGISTRY,'SpotiFLAC official')
+    db.prepare('INSERT OR IGNORE INTO mornye_repositories (id,url,name) VALUES (?,?,?)').run(defaultId,REGISTRY,'Mornye official')
+    db.prepare('UPDATE mornye_repositories SET name=? WHERE id=? AND name=?').run('Mornye official',defaultId,'SpotiFLAC official')
   }
   tools() {
     if(this.toolProvider)return this.toolProvider()
@@ -109,11 +160,11 @@ class PackageService {
     const settings=Object.fromEntries(this.db.prepare("SELECT key,value FROM settings WHERE key IN ('ffmpeg_path','ffprobe_path')").all().map(r=>[r.key,r.value]))
     return {ffmpeg:settings.ffmpeg_path || 'ffmpeg',ffprobe:settings.ffprobe_path || 'ffprobe'}
   }
-  find(key) {const row=this.db.prepare('SELECT * FROM spotiflac_packages WHERE key=?').get(key);return row?{...row,manifest:JSON.parse(row.manifest_json),methods:JSON.parse(row.methods_json)}:null}
+  find(key) {const row=this.db.prepare('SELECT * FROM mornye_packages WHERE key=?').get(key);return row?{...row,manifest:JSON.parse(row.manifest_json),methods:JSON.parse(row.methods_json)}:null}
   settings(addon) {
     // Settings saved by another build can be unreadable (the OS credential vault
     // key changed): the addon then shows its defaults rather than failing to list.
-    let values={};try{values=this.storage.read(addon.key,'settings')}catch(error){console.warn(`[SpotiFLAC] Could not read settings of ${addon.name}: ${error.message}`)}
+    let values={};try{values=this.storage.read(addon.key,'settings')}catch(error){console.warn(`[Mornye] Could not read settings of ${addon.name}: ${error.message}`)}
     const defaults={}
     for(const field of addon.manifest.settings || [])if(field.default!==undefined)defaults[field.key]=field.default
     const qualitySettings={}
@@ -128,7 +179,7 @@ class PackageService {
     const resources=['stream',...(addon.methods.includes('customSearch')||addon.methods.includes('searchTracks')?['search']:[]),...['album','artist','playlist'].filter(r=>addon.methods.includes(`get${r[0].toUpperCase()+r.slice(1)}`))]
     let icon=null
     if(addon.manifest.icon){try{const file=safePath(path.join(this.root,'packages',addon.key),addon.manifest.icon);const data=fs.readFileSync(file);if(data.length<256*1024&&/\.(png|jpg|jpeg|webp)$/i.test(file))icon=`data:image/${/\.png$/i.test(file)?'png':/\.webp$/i.test(file)?'webp':'jpeg'};base64,${data.toString('base64')}`}catch{}}
-    return {key:addon.key,provider:`a-${addon.key}`,id:addon.name,name:addon.manifest.displayName,version:addon.manifest.version,description:addon.manifest.description || '',icon:icon||require('../online/addonBrand').addonIcon({name:addon.manifest.displayName,id:addon.name}),resources,enabled:!!addon.enabled,installedAt:addon.installed_at,kind:'spotiflac',host:'SpotiFLAC package',repositoryId:addon.repository_id,settingsSchema:schema,settings:{...Object.fromEntries(Object.entries(values).filter(([k])=>!secretKeys.has(k)&&k!=='qualitySettings')),qualitySettings},configuredSecrets:[...secretKeys].filter(k=>values[k]),qualityOptions:addon.manifest.qualityOptions || [],signedSession:!!addon.manifest.signedSession,actions:addon.manifest.globalActions || [],searchFilters:addon.manifest.searchBehavior?.filters || [],compatibilityVersion:COMPAT_VERSION,access:this.access(addon,values),linksOnly:!addon.manifest.type.includes('download_provider')}
+    return {key:addon.key,provider:`a-${addon.key}`,id:addon.name,name:addon.manifest.displayName,version:addon.manifest.version,description:addon.manifest.description || '',icon:icon||require('../online/addonBrand').addonIcon({name:addon.manifest.displayName,id:addon.name}),resources,enabled:!!addon.enabled,installedAt:addon.installed_at,kind:'mornye',host:'Mornye package',repositoryId:addon.repository_id,settingsSchema:schema,settings:{...Object.fromEntries(Object.entries(values).filter(([k])=>!secretKeys.has(k)&&k!=='qualitySettings')),qualitySettings},configuredSecrets:[...secretKeys].filter(k=>values[k]),qualityOptions:addon.manifest.qualityOptions || [],signedSession:!!addon.manifest.signedSession,actions:addon.manifest.globalActions || [],searchFilters:addon.manifest.searchBehavior?.filters || [],compatibilityVersion:COMPAT_VERSION,access:this.access(addon,values),linksOnly:!addon.manifest.type.includes('download_provider')}
   }
   /**
    * Whether an addon still needs setting up before it can stream or download:
@@ -153,12 +204,12 @@ class PackageService {
   }
   list() {
     // One broken package must not hide the others (or the HTTP addons).
-    return this.db.prepare('SELECT key FROM spotiflac_packages ORDER BY installed_at').all().flatMap(({key})=>{
+    return this.db.prepare('SELECT key FROM mornye_packages ORDER BY installed_at').all().flatMap(({key})=>{
       try{return [this.publicView(this.find(key))]}
-      catch(error){console.warn(`[SpotiFLAC] Skipped unreadable package ${key}: ${error.message}`);return []}
+      catch(error){console.warn(`[Mornye] Skipped unreadable package ${key}: ${error.message}`);return []}
     })
   }
-  repos() {return this.db.prepare('SELECT id,url,name,refreshed_at,error FROM spotiflac_repositories ORDER BY rowid').all()}
+  repos() {return this.db.prepare('SELECT id,url,name,refreshed_at,error FROM mornye_repositories ORDER BY rowid').all()}
   async refreshDue(maxAgeMs=6*60*60*1000) {
     const repos=this.repos().filter(repo=>!repo.refreshed_at || Date.now()-repo.refreshed_at>maxAgeMs)
     await Promise.all(repos.map(repo=>this.refreshRepo(repo.id).catch(()=>null)))
@@ -169,7 +220,7 @@ class PackageService {
     if(url.protocol!=='https:'||url.username||url.password)throw new Error('Repository URLs must use HTTPS')
     if(!/\.json$/i.test(url.pathname))url.pathname=url.pathname.replace(/\/$/,'')+'/registry.json'
     url.hash='';const id=hash(url.href).slice(0,16)
-    this.db.prepare('INSERT OR IGNORE INTO spotiflac_repositories (id,url,name) VALUES (?,?,?)').run(id,url.href,url.hostname)
+    this.db.prepare('INSERT OR IGNORE INTO mornye_repositories (id,url,name) VALUES (?,?,?)').run(id,url.href,url.hostname)
     await this.refreshRepo(id);return this.repos().find(r=>r.id===id)
   }
   async document(raw, max=2*1024*1024) {
@@ -185,11 +236,11 @@ class PackageService {
     }finally{response.destroy()}
   }
   async refreshRepo(id) {
-    const repo=this.db.prepare('SELECT * FROM spotiflac_repositories WHERE id=?').get(id)
+    const repo=this.db.prepare('SELECT * FROM mornye_repositories WHERE id=?').get(id)
     if(!repo)throw new Error('Repository not found')
     try{
       const index=JSON.parse((await this.document(repo.url)).toString())
-      if(index.version!==1||!Array.isArray(index.extensions)||index.extensions.length>2000)throw new Error('Invalid SpotiFLAC registry')
+      if(index.version!==1||!Array.isArray(index.extensions)||index.extensions.length>2000)throw new Error('Invalid Mornye registry')
       const valid=e=>{try{return /^[a-z0-9][a-z0-9_-]{0,99}$/.test(e.id || e.name || '')&&typeof e.version==='string'&&/^[a-f0-9]{64}$/i.test(e.sha256 || '')&&new URL(e.download_url).protocol==='https:'}catch{return false}}
       // Download sources must all be well formed; metadata ("integration")
       // entries are only offered as playlist-link readers, and skipped when
@@ -199,18 +250,18 @@ class PackageService {
         return {...e,id:e.id || e.name}
       })
       if(new Set(entries.map(e=>e.id)).size!==entries.length)throw new Error('Duplicate registry package IDs')
-      this.db.prepare('UPDATE spotiflac_repositories SET index_json=?,refreshed_at=?,error=NULL WHERE id=?').run(JSON.stringify(entries),Date.now(),id)
+      this.db.prepare('UPDATE mornye_repositories SET index_json=?,refreshed_at=?,error=NULL WHERE id=?').run(JSON.stringify(entries),Date.now(),id)
       // A registry that names itself gets that name (the official one keeps its own).
       const title=typeof index.name==='string'?index.name.replace(/[\u0000-\u001f]/g,'').trim().slice(0,80):''
-      if(title&&repo.url!==REGISTRY)this.db.prepare('UPDATE spotiflac_repositories SET name=? WHERE id=?').run(title,id)
-    }catch(error){this.db.prepare('UPDATE spotiflac_repositories SET error=? WHERE id=?').run(error.message,id);throw error}
+      if(title&&repo.url!==REGISTRY)this.db.prepare('UPDATE mornye_repositories SET name=? WHERE id=?').run(title,id)
+    }catch(error){this.db.prepare('UPDATE mornye_repositories SET error=? WHERE id=?').run(error.message,id);throw error}
     return this.catalogue(id)
   }
   catalogue(id) {
-    const repos=id?[this.db.prepare('SELECT * FROM spotiflac_repositories WHERE id=?').get(id)].filter(Boolean):this.db.prepare('SELECT * FROM spotiflac_repositories').all()
+    const repos=id?[this.db.prepare('SELECT * FROM mornye_repositories WHERE id=?').get(id)].filter(Boolean):this.db.prepare('SELECT * FROM mornye_repositories').all()
     return repos.flatMap(repo=>JSON.parse(repo.index_json || '[]').map(entry=>{const installed=this.find(keyOf(entry.id));return {...entry,repositoryId:repo.id,installed:!!installed,installedVersion:installed?.manifest.version,updateAvailable:!!installed&&compareVersions(entry.version,installed.manifest.version)>0,compatible:compareVersions(entry.min_app_version,COMPAT_VERSION)<=0}}))
   }
-  removeRepo(id) {this.db.prepare('DELETE FROM spotiflac_repositories WHERE id=?').run(id);return {ok:true}}
+  removeRepo(id) {this.db.prepare('DELETE FROM mornye_repositories WHERE id=?').run(id);return {ok:true}}
   async locked(key, action) {
     const previous=this.locks.get(key) || Promise.resolve()
     const promise=previous.catch(()=>{}).then(action);this.locks.set(key,promise)
@@ -247,7 +298,7 @@ class PackageService {
         if(fs.existsSync(target))await fsp.rename(target,backup)
         try{
           await fsp.rename(staged,target)
-          this.db.prepare('INSERT INTO spotiflac_packages (key,name,manifest_json,repository_id,digest,enabled,installed_at,methods_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET manifest_json=excluded.manifest_json,repository_id=excluded.repository_id,digest=excluded.digest,methods_json=excluded.methods_json').run(key,manifest.name,JSON.stringify(manifest),repositoryId || null,digest,existing?.enabled ?? 1,existing?.installed_at || Date.now(),JSON.stringify(methods))
+          this.db.prepare('INSERT INTO mornye_packages (key,name,manifest_json,repository_id,digest,enabled,installed_at,methods_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET manifest_json=excluded.manifest_json,repository_id=excluded.repository_id,digest=excluded.digest,methods_json=excluded.methods_json').run(key,manifest.name,JSON.stringify(manifest),repositoryId || null,digest,existing?.enabled ?? 1,existing?.installed_at || Date.now(),JSON.stringify(methods))
         }catch(error){await fsp.rm(target,{recursive:true,force:true});if(fs.existsSync(backup))await fsp.rename(backup,target);throw error}
         await fsp.rm(backup,{recursive:true,force:true})
         return this.publicView(this.find(key))
@@ -304,9 +355,9 @@ class PackageService {
   shutdown() { for(const [key,network] of this.networks)if(network.persistTimer)this.saveConnection(key,network,{now:true}); for(const key of [...this.runtimes.keys()]) this.retire(key); for(const op of this.operations.values()) op.controller.abort(); this.operations.clear() }
   async remove(key) {
     if(!/^[a-f0-9]{10}$/.test(key))throw new Error('Invalid addon key')
-    return this.locked(key,async()=>{this.retire(key);this.db.prepare('DELETE FROM spotiflac_packages WHERE key=?').run(key);await fsp.rm(path.join(this.root,'packages',key),{recursive:true,force:true});await fsp.rm(path.join(this.root,'data',key),{recursive:true,force:true});return {ok:true}})
+    return this.locked(key,async()=>{this.retire(key);this.db.prepare('DELETE FROM mornye_packages WHERE key=?').run(key);await fsp.rm(path.join(this.root,'packages',key),{recursive:true,force:true});await fsp.rm(path.join(this.root,'data',key),{recursive:true,force:true});return {ok:true}})
   }
-  setEnabled(key,enabled){this.retire(key);this.db.prepare('UPDATE spotiflac_packages SET enabled=? WHERE key=?').run(enabled?1:0,key);return {ok:true}}
+  setEnabled(key,enabled){this.retire(key);this.db.prepare('UPDATE mornye_packages SET enabled=? WHERE key=?').run(enabled?1:0,key);return {ok:true}}
   setSettings(key,values) {
     const addon=this.find(key);if(!addon)throw new Error('Addon not found')
     const current=this.storage.read(key,'settings')
@@ -318,7 +369,7 @@ class PackageService {
     this.storage.write(key,'settings',current);this.retire(key);return {ok:true}
   }
   remember(key,tracks) {
-    const stmt=this.db.prepare('INSERT OR REPLACE INTO spotiflac_tracks (provider,id,metadata_json) VALUES (?,?,?)')
+    const stmt=this.db.prepare('INSERT OR REPLACE INTO mornye_tracks (provider,id,metadata_json) VALUES (?,?,?)')
     for(const track of tracks)if(track?.id!=null)stmt.run(`a-${key}`,String(track.id),JSON.stringify(track))
   }
   async search(key,query,{limit=20}={}) {
@@ -382,10 +433,10 @@ class PackageService {
     const runtime=this.createRuntime(addon,fs.readFileSync(path.join(this.root,'packages',key,'index.js'),'utf8'),{grants:[staged],onProgress,onTransfer,signal:combined,heapMb:512})
     try{
       await runtime.ready;await runtime.invoke('initialize',[this.settings(addon)],{signal:combined})
-      let track=JSON.parse(this.db.prepare('SELECT metadata_json FROM spotiflac_tracks WHERE provider=? AND id=?').get(`a-${key}`,String(id))?.metadata_json || 'null')
+      let track=JSON.parse(this.db.prepare('SELECT metadata_json FROM mornye_tracks WHERE provider=? AND id=?').get(`a-${key}`,String(id))?.metadata_json || 'null')
       if(!track&&runtime.methods.includes('getTrack'))track=await runtime.invoke('getTrack',[String(id)],{signal:combined})
       track ||= {id:String(id),name:'',artists:'',duration_ms:0,provider_id:addon.name}
-      // Search results may be sparse; SpotiFLAC providers such as Amazon
+      // Search results may be sparse; Mornye providers such as Amazon
       // expose enrichTrack() to resolve canonical release metadata before the
       // availability check and prepared download context are built.
       if(runtime.methods.includes('enrichTrack')) {
@@ -424,7 +475,7 @@ class PackageService {
         } catch(error) {
           // Keep downloads usable when metadata lookup fails, but never swallow cancellation.
           if(combined.aborted || runtime.closed) throw error
-          console.warn('[SpotiFLAC] Amazon album lookup failed:', error.message || error)
+          console.warn('[Mornye] Amazon album lookup failed:', error.message || error)
         }
       }
       await resolveAmazonAlbum()
@@ -451,7 +502,7 @@ class PackageService {
           }
         } catch(error) {
           if(combined.aborted || runtime.closed) throw error
-          console.warn('[SpotiFLAC] Amazon track metadata lookup failed:', error.message || error)
+          console.warn('[Mornye] Amazon track metadata lookup failed:', error.message || error)
         }
         await resolveAmazonAlbum()
       }

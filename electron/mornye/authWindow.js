@@ -19,6 +19,31 @@ function waitForClose(key) {
   }
 }
 
+function isExpectedCallback(raw, runtime) {
+  let url
+  try { url = new URL(raw) } catch { return false }
+  // Some provider flows wrap the final callback in a "cb" query parameter.
+  const nested = url.searchParams.get('cb')
+  if (nested) {
+    // A challenge may include a cb parameter describing its eventual redirect.
+    // Only consume it when the nested URL is an actual completed grant callback.
+    let callback
+    try { callback = new URL(nested) } catch { return false }
+    if (!callback.searchParams.get('state') || !(callback.searchParams.get('grant') || callback.searchParams.get('code'))) return false
+    return isExpectedCallback(callback.href, runtime)
+  }
+  const configured = runtime.host.session?.config.callbackUrl || runtime.host.auth.pending?.callback
+  const candidates = configured
+    ? [configured]
+    : ['mornye://session-grant', 'spotiflac://session-grant']
+  return candidates.some(value => {
+    try {
+      const expected = new URL(value)
+      return url.protocol === expected.protocol && url.host === expected.host && url.pathname === expected.pathname
+    } catch { return false }
+  })
+}
+
 async function openAuthWindow(packages, key) {
   const runtime = await packages.runtime(key)
   const existing = windows.get(key)
@@ -35,30 +60,30 @@ async function openAuthWindow(packages, key) {
   const window = new BrowserWindow({ width: 720, height: 800, title: 'Lokal — Addon access', autoHideMenuBar: true, webPreferences: { session: partition, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } })
   windows.set(key, window)
   let completing = false
-  const inspect = async (event, raw) => {
-    let url
-    try { url = new URL(raw) } catch { event.preventDefault(); return }
-    const expected = runtime.host.session?.config.callbackUrl || runtime.host.auth.pending?.callback
-    const callback = expected ? new URL(expected) : null
-    if (callback && url.protocol === callback.protocol && url.host === callback.host && url.pathname === callback.pathname) {
-      event.preventDefault()
-      if (completing) return
-      completing = true
-      try {
-        const cookies = await partition.cookies.get({})
-        for (const cookie of cookies) {
-          const host = cookie.domain.replace(/^\./, '')
-          if (!domainAllowed(host, permissions.network)) continue
-          const attributes = `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path || '/'}${cookie.secure ? '; Secure' : ''}${cookie.httpOnly ? '; HttpOnly' : ''}`
-          try { runtime.host.network.cookies.setCookieSync(attributes, `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path || '/'}`) } catch {}
-        }
-        runtime.host.network.persist?.()
-        await packages.authCallback(key, raw)
-        if (!window.isDestroyed()) window.close()
-      } catch (error) {
-        completing = false
-        if (!window.isDestroyed()) window.setTitle(`Lokal — ${error.message}`)
+  const completeCallback = async raw => {
+    if (completing) return
+    completing = true
+    try {
+      const cookies = await partition.cookies.get({})
+      for (const cookie of cookies) {
+        const host = cookie.domain.replace(/^\./, '')
+        if (!domainAllowed(host, permissions.network)) continue
+        const attributes = `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path || '/'}${cookie.secure ? '; Secure' : ''}${cookie.httpOnly ? '; HttpOnly' : ''}`
+        try { runtime.host.network.cookies.setCookieSync(attributes, `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path || '/'}`) } catch {}
       }
+      runtime.host.network.persist?.()
+      await packages.authCallback(key, raw)
+      if (!window.isDestroyed()) window.close()
+    } catch (error) {
+      completing = false
+      if (!window.isDestroyed()) window.setTitle(`Lokal — ${error.message}`)
+    }
+  }
+  const inspect = (event, raw) => {
+    try { new URL(raw) } catch { event.preventDefault(); return }
+    if (isExpectedCallback(raw, runtime)) {
+      event.preventDefault()
+      void completeCallback(raw)
       return
     }
     try { validateURL(raw, permissions) } catch { event.preventDefault() }
@@ -66,6 +91,13 @@ async function openAuthWindow(packages, key) {
   window.webContents.on('will-navigate', inspect)
   window.webContents.on('will-redirect', inspect)
   window.webContents.setWindowOpenHandler(({ url }) => {
+    // Updated Mornye challenges may hand off through window.open rather than
+    // a top-level navigation. Consume the callback in either case; attempting
+    // to load a custom callback URI as a normal page leaves verification open.
+    if (isExpectedCallback(url, runtime)) {
+      void completeCallback(url)
+      return { action: 'deny' }
+    }
     try { validateURL(url, permissions); window.loadURL(url).catch(() => {}) } catch {}
     return { action: 'deny' }
   })
@@ -113,4 +145,4 @@ async function clearAuthSession(key) {
   windows.get(key)?.close()
   try { await require('electron').session.fromPartition(`lokal-addon-${key}`).clearStorageData() } catch {}
 }
-module.exports = { openAuthWindow, openAuthWindowAndWait, closeAuthWindow, clearAuthSession }
+module.exports = { openAuthWindow, openAuthWindowAndWait, closeAuthWindow, clearAuthSession, isExpectedCallback }

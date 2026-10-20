@@ -7,12 +7,13 @@ import http from 'node:http'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { ExtensionRuntime } = require('../electron/spotiflac/runtime')
-const { ExtensionHost, safePath } = require('../electron/spotiflac/host')
-const { AddonStorage } = require('../electron/spotiflac/storage')
-const { ExtensionNetwork } = require('../electron/spotiflac/network')
-const { block } = require('../electron/spotiflac/crypto')
-const { signedHeaders, SignedSession } = require('../electron/spotiflac/session')
+const { ExtensionRuntime } = require('../electron/mornye/runtime')
+const { ExtensionHost, safePath } = require('../electron/mornye/host')
+const { AddonStorage } = require('../electron/mornye/storage')
+const { ExtensionNetwork } = require('../electron/mornye/network')
+const { block } = require('../electron/mornye/crypto')
+const { signedHeaders, SignedSession } = require('../electron/mornye/session')
+const { isExpectedCallback } = require('../electron/mornye/authWindow')
 
 async function fixture(t, code, overrides = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lokal-sflx-'))
@@ -100,7 +101,7 @@ test('addon paths work beneath symlinked OS ancestors but reject symlinks inside
   const alias=backing+'-link'
   t.after(async()=>{await fs.rm(backing,{recursive:true,force:true});await fs.rm(alias,{recursive:true,force:true})})
   await fs.symlink(backing,alias,'dir')
-  const root=path.join(alias,'user-data','spotiflac')
+  const root=path.join(alias,'user-data','mornye')
   await fs.mkdir(root,{recursive:true})
   assert.equal(safePath(root,'nested/file.dat'),path.join(root,'nested','file.dat'))
   await fs.symlink(os.tmpdir(),path.join(root,'inside-link'),'dir')
@@ -130,11 +131,34 @@ test('signed requests use the manifest identity, exact body bytes, and empty can
 test('signed-session grants require pending callback ownership and reject replay', async t => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-session-'));t.after(()=>fs.rm(root,{recursive:true,force:true}))
   const network={permissions:{network:['gateway.example']},async jsonResponse(url,opts){return {ok:true,status:200,body:JSON.stringify(opts?.method==='POST'?{session_id:'sid',session_secret:'secret',expires_at:new Date(Date.now()+86400000).toISOString()}:{auth_url:'https://gateway.example/challenge?state=owned'})}}}
-  const session=new SignedSession({baseUrl:'https://gateway.example/v2',callbackUrl:'spotiflac://session-grant'},new AddonStorage(root),network,'1234567890')
+  const session=new SignedSession({baseUrl:'https://gateway.example/v2',callbackUrl:'mornye://session-grant'},new AddonStorage(root),network,'1234567890')
   assert.equal(await session.bootstrap(),false)
-  await assert.rejects(session.callback('spotiflac://session-grant?state=wrong&grant=value'),/Invalid/)
-  await session.callback('spotiflac://session-grant?state=owned&grant=value')
+  await assert.rejects(session.callback('mornye://session-grant?state=wrong&grant=value'),/Invalid/)
+  await session.callback('mornye://session-grant?state=owned&grant=value')
   assert.equal(session.status().authenticated,true)
   assert.equal(session.status().session_secret,undefined)
   await assert.rejects(session.callback('spotiflac://session-grant?state=owned&grant=value'),/Invalid/)
+})
+
+test('Mornye callback matcher handles top-level and window.open handoffs with legacy compatibility', () => {
+  const runtime = { host: { session: { config: {} }, auth: {} } }
+  assert.equal(isExpectedCallback('mornye://session-grant?state=x&grant=y', runtime), true)
+  assert.equal(isExpectedCallback('spotiflac://session-grant?state=x&grant=y', runtime), true)
+  assert.equal(isExpectedCallback('https://gateway.example/finish?cb=mornye%3A%2F%2Fsession-grant%3Fstate%3Dx', runtime), true)
+  assert.equal(isExpectedCallback('https://example.com/not-the-callback', runtime), false)
+  runtime.host.session.config.callbackUrl = 'https://gateway.example/callback'
+  assert.equal(isExpectedCallback('https://gateway.example/callback?code=x', runtime), true)
+  assert.equal(isExpectedCallback('mornye://session-grant?state=x', runtime), false)
+})
+
+test('signed-session default callback is Mornye while a legacy callback remains accepted', async t => {
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-session-default-'));t.after(()=>fs.rm(root,{recursive:true,force:true}))
+  const network={permissions:{network:['gateway.example']},async jsonResponse(url,opts){return {ok:true,status:200,body:JSON.stringify(opts?.method==='POST'?{session_id:'sid',session_secret:'secret',expires_at:new Date(Date.now()+86400000).toISOString()}:{auth_url:'https://gateway.example/challenge?state=owned'})}}}
+  for (const callback of ['mornye://session-grant','spotiflac://session-grant']) {
+    const owner = callback.startsWith('mornye:') ? 'mornye-test-owner' : 'legacy-test-owner'
+    const session=new SignedSession({baseUrl:'https://gateway.example/v2'},new AddonStorage(root),network,owner)
+    assert.equal(await session.bootstrap(),false)
+    await session.callback(`${callback}?state=owned&grant=value`)
+    assert.equal(session.status().authenticated,true)
+  }
 })

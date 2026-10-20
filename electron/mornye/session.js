@@ -52,7 +52,7 @@ class SignedSession {
       let state = crypto.randomBytes(24).toString('base64url')
       if (!authUrl && body.challenge_id) {
         const challenge = new URL(this.endpoint(this.config.endpoints?.challenge || '/challenge'))
-        const callback = new URL(this.config.callbackUrl || 'spotiflac://session-grant')
+        const callback = new URL(this.config.callbackUrl || 'mornye://session-grant')
         callback.searchParams.set('cb_version', 'v2grant'); callback.searchParams.set('state', state)
         challenge.searchParams.set('id', body.challenge_id)
         challenge.searchParams.set('cb', callback.href)
@@ -91,8 +91,15 @@ class SignedSession {
   async callback(raw, signal) {
     let url = new URL(raw)
     if (url.searchParams.get('cb')) url = new URL(url.searchParams.get('cb'))
-    const expected = new URL(this.config.callbackUrl || 'spotiflac://session-grant')
-    if (url.protocol !== expected.protocol || url.host !== expected.host || url.pathname !== expected.pathname || !this.pending || Date.now() - this.pending.createdAt > 180000 || !url.searchParams.get('state') || url.searchParams.get('state') !== this.pending.state) throw new Error('Invalid or expired verification callback')
+    const callbacks = this.config.callbackUrl
+      ? [new URL(this.config.callbackUrl)]
+      : [new URL('mornye://session-grant'), new URL('spotiflac://session-grant')]
+    const validCallback = callbacks.some(expected =>
+      url.protocol === expected.protocol &&
+      url.host === expected.host &&
+      url.pathname === expected.pathname
+    )
+    if (!validCallback || !this.pending || Date.now() - this.pending.createdAt > 180000 || !url.searchParams.get('state') || url.searchParams.get('state') !== this.pending.state) throw new Error('Invalid or expired verification callback')
     this.pendingGrant = url.searchParams.get('grant') || url.searchParams.get('code')
     return this.completeGrant(undefined, signal)
   }
