@@ -101,7 +101,7 @@ test('addon paths work beneath symlinked OS ancestors but reject symlinks inside
   const alias=backing+'-link'
   t.after(async()=>{await fs.rm(backing,{recursive:true,force:true});await fs.rm(alias,{recursive:true,force:true})})
   await fs.symlink(backing,alias,'dir')
-  const root=path.join(alias,'user-data','spotiflac')
+  const root=path.join(alias,'user-data','mornye')
   await fs.mkdir(root,{recursive:true})
   assert.equal(safePath(root,'nested/file.dat'),path.join(root,'nested','file.dat'))
   await fs.symlink(os.tmpdir(),path.join(root,'inside-link'),'dir')

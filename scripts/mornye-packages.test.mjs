@@ -68,7 +68,7 @@ test('registries exclude metadata-only entries and enforce package SHA-256 and i
   const repo=await service.addRepo('https://packages.example/registry.json')
   assert.equal(service.catalogue(repo.id).length,1)
   await service.install({repositoryId:repo.id,id:manifest.name})
-  service.db.prepare('UPDATE spotiflac_repositories SET index_json=? WHERE id=?').run(JSON.stringify([{...entry,sha256:'0'.repeat(64)}]),repo.id)
+  service.db.prepare('UPDATE mornye_repositories SET index_json=? WHERE id=?').run(JSON.stringify([{...entry,sha256:'0'.repeat(64)}]),repo.id)
   await assert.rejects(service.install({repositoryId:repo.id,id:manifest.name}),/SHA-256/)
   service.removeRepo(repo.id);assert.equal(service.list().length,1)
 })
