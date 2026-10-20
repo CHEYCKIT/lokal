@@ -92,15 +92,15 @@ export default function RightSidebar() {
   const { user } = useAppStore()
   const {
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, showFullscreenVisualizer, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   } = usePlayerStore(useShallow(({
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, showFullscreenVisualizer, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   }) => ({
     showRightSidebar, toggleRightSidebar, currentTrack, isPlaying, progress,
-    toggleFullscreen, toggleLyricsFullscreen, playbackContext, setShowFullscreenVisualizer,
+    toggleFullscreen, toggleLyricsFullscreen, playbackContext, showFullscreenVisualizer, setShowFullscreenVisualizer,
     sidePanelView, setSidePanelView, toggleQueueButton, exclusiveSidePanels, likedIds, setLiked,
   })))
   // Back from the mini player: the Lyrics and Queue overlays start over.
@@ -572,7 +572,7 @@ export default function RightSidebar() {
                     ) : infoCardView === 'visualization' ? (
                       // No card around it: the ring sits on the panel's own background.
                       <div className="group/fullscreen-visualizer relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
-                        {sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
+                        {showFullscreenVisualizer ? null : sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
                         <button type="button" onClick={() => setShowFullscreenVisualizer(true)}
                           title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')}
                           className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/75 opacity-0 shadow-lg backdrop-blur-sm transition hover:bg-black/80 hover:text-white group-hover/fullscreen-visualizer:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
