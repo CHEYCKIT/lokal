@@ -814,6 +814,7 @@ export default function LyricsPanel({
 
       <div
         ref={containerRef}
+        data-lyrics-auto-follow={!browsing ? 'true' : 'false'}
         onWheel={startBrowsing}
         onTouchMove={startBrowsing}
         onKeyDown={(e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) startBrowsing() }}

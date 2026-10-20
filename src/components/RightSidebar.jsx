@@ -364,6 +364,7 @@ export default function RightSidebar() {
   const openTrackMenu = (event) => {
     if (!currentTrack) return
     menu.open(event, [
+      !isStationTrack(currentTrack) && !isStreamed(currentTrack) && api.isElectron && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: t('Open in file manager'), icon: FolderOpen, onSelect: () => api.showItemInFolder(currentTrack.file_path) },
       !isStationTrack(currentTrack) && currentTrack.file_path && !String(currentTrack.file_path).startsWith('ghost://') && { label: t('Open folder in Library'), icon: FolderOpen, onSelect: openCurrentTrackFolder },
       !isStationTrack(currentTrack) && { label: t('Start radio'), icon: Radio, onSelect: () => openRadio(nav, currentTrack, user?.id) },
       currentTrack.artist && { label: t('Start artist radio'), icon: Radio, onSelect: () => openRadio(nav, { artist: currentTrack.artist, type: 'artist' }, user?.id) },

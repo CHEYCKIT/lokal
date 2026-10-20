@@ -673,6 +673,7 @@ export const api = {
     return 'fallback_nopfp.png';
   },
   openLogs: () => isE() ? el().openLogs() : Promise.resolve(),
+  showItemInFolder: filePath => isE() && el()?.showItemInFolder ? el().showItemInFolder(filePath) : Promise.resolve({ error: 'Electron only' }),
   log: (level, message) => isE() ? el().log(level, message) : console.log(`[${level}] ${message}`),
   getPerfSettings: () => isE() ? el().getPerfSettings() : Promise.resolve({ hardwareAcceleration: true, performanceMode: false }),
   getRemoteConnectionInfo: () => isE() && el()?.getRemoteConnectionInfo ? el().getRemoteConnectionInfo() : Promise.resolve({ error: 'Electron only' }),

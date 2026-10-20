@@ -887,7 +887,17 @@ if (bootFilePath) {
 }
 
 ipcMain.handle('shell:openExternal', (_, url) => shell.openExternal(url))
-ipcMain.on('open-logs', () => {
+ipcMain.handle('shell:showItemInFolder', (_, filePath) => {
+  try {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return { ok: false, error: 'Invalid file path' }
+    if (!fs.statSync(filePath).isFile()) return { ok: false, error: 'Not a file' }
+    shell.showItemInFolder(filePath)
+    return { ok: true }
+  } catch {
+    return { ok: false, error: 'File not found' }
+  }
+})
+ipcMain.on('open-logs', () => {}
   const logFile = log.transports.file.getFile().path;
   const logDir = path.dirname(logFile);
   if (fs.existsSync(logFile)) {
