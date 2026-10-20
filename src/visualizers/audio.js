@@ -4,21 +4,40 @@
 // graph (both crossfade decks go through it), so they show what is heard.
 // It only exists once audio has started: until then a visualization stays still.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /** The playback analyser, or null before audio has started. */
 export function getAnalyser() {
   return (typeof window !== 'undefined' && window.__lokalAnalyser) || null
 }
 
+/**
+ * Subscribe to the analyser becoming available. Subscribe first, then check
+ * the current graph: the ready event can have fired before a visualizer mounts
+ * (or between render and its effect), leaving an effect that saw no analyser
+ * asleep until the card is remounted.
+ */
+export function subscribeAnalyserReady(listener, alreadyReady = false) {
+  if (typeof window === 'undefined') return () => {}
+  let notified = false
+  const ready = () => {
+    if (notified) return
+    notified = true
+    listener()
+  }
+  window.addEventListener('lokal:analyser-ready', ready)
+  if (!alreadyReady && getAnalyser()) ready()
+  return () => window.removeEventListener('lokal:analyser-ready', ready)
+}
+
 /** Re-renders when the analyser appears (the audio graph is built on first play). */
 export function useAnalyserVersion() {
-  const [version, setVersion] = useState(0)
-  useEffect(() => {
-    const ready = () => setVersion(v => v + 1)
-    window.addEventListener('lokal:analyser-ready', ready)
-    return () => window.removeEventListener('lokal:analyser-ready', ready)
-  }, [])
+  const [version, setVersion] = useState(() => getAnalyser() ? 1 : 0)
+  const readyRef = useRef(!!getAnalyser())
+  useEffect(() => subscribeAnalyserReady(() => {
+    readyRef.current = true
+    setVersion(v => v + 1)
+  }, readyRef.current), [])
   return version
 }
 
