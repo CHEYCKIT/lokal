@@ -86,10 +86,10 @@ export default function FullscreenVisualizer() {
       visual = <Anomaly sensitivity={5} size={1.65} color="accent" className="absolute inset-0 h-full w-full" />
       break
     case 'spectrum':
-      visual = <Spectrum isPlaying={isPlaying} bars={240} barWidth={3} height={540} strength={1.1} color="accent" opacity={0.95} radius={2} className="absolute inset-0 h-full w-full" />
+      visual = <Spectrum isPlaying={isPlaying} bars={240} barWidth={3} height={540} strength={1.1} color="accent" opacity={0.95} radius={2} fill className="absolute inset-0 h-full w-full" />
       break
     case 'waves':
-      visual = <Waves isPlaying={isPlaying} width={1920} height={860} strength={1.2} colorBack="accent" colorFront="#ffffff" opacity={0.9} className="absolute inset-0 h-full w-full" />
+      visual = <Waves isPlaying={isPlaying} width={1920} height={860} strength={1.2} colorBack="accent" colorFront="#ffffff" opacity={0.9} fill className="absolute inset-0 h-full w-full" />
       break
     case 'lightning':
       visual = <Lightning isPlaying={isPlaying} strength={1.15} opacity={0.95} className="absolute inset-0 h-full w-full" />
