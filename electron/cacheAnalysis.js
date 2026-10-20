@@ -135,14 +135,22 @@ async function artwork(dir, db) {
       try { for (const r of db.prepare(sql).all()) ids.add(`${prefix}${r.id}`.toLowerCase()) } catch {}
     }
   }
-  const isUsed = file => used.has(path.resolve(file).toLowerCase()) || ids.has(path.basename(file).replace(/\.[^.]+$/, '').toLowerCase())
-  const kinds = { trackCovers: empty(), artistImages: empty(), playlistCovers: empty(), otherArtwork: empty() }
+  const isUsed = file => {
+    if (used.has(path.resolve(file).toLowerCase())) return true
+    const stem = path.basename(file).replace(/\.[^.]+$/, '').toLowerCase()
+    // A full-size sibling is obsolete once the same song has a thumbnail.
+    // A direct database path above still protects a manually chosen image.
+    const ext = path.extname(file).toLowerCase()
+    const thumb = path.join(path.dirname(file), stem + '.webp')
+    return ids.has(stem) && ext !== '.webp' && !fs.existsSync(thumb)
+  }
+  const kinds = { coverThumbs: empty(), trackCovers: empty(), artistImages: empty(), playlistCovers: empty(), otherArtwork: empty() }
   const unused = empty()
   const unusedFiles = []
   for (const f of m.list) {
     const name = path.basename(f.path)
     const kind = name.startsWith('artist-') ? 'artistImages' : name.startsWith('playlist-') ? 'playlistCovers'
-      : /^t-|^[0-9a-f]{8,}/i.test(name) ? 'trackCovers' : 'otherArtwork'
+      : /^t-|^[0-9a-f]{8,}/i.test(name) ? (/\.webp$/i.test(name) ? 'coverThumbs' : 'trackCovers') : 'otherArtwork'
     const one = { size: f.size, disk: onDisk(f.size), files: 1, dirs: 0 }
     add(kinds[kind], one)
     if (db && !isUsed(f.path)) { add(unused, one); unusedFiles.push(f.path) }

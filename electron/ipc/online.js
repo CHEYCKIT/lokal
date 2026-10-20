@@ -820,6 +820,13 @@ function registerStreamProtocol(protocol, net) {
       diagnostic = streamDiagnostic(provider, id)
     } catch {}
     try {
+      if (provider === 'cover') {
+        // Full-resolution artwork uses the database's trusted track path, never a caller-supplied filesystem path.
+        const picture = await require('../artwork/fullCover').fullCoverForTrack(getDB(), id)
+        return picture
+          ? new Response(picture.bytes, { status: 200, headers: { 'content-type': picture.mime, 'cache-control': 'private, max-age=3600' } })
+          : new Response('No full artwork', { status: 404 })
+      }
       if (provider === 'yt' && accountSession) await accountSession.credentials()
       if (provider === 'ytv') {
         // The player asking why the video's stream failed.

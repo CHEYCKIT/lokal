@@ -19,7 +19,7 @@ import { QueueContent } from './QueuePanel'
 import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } from './LyricsFullscreen'
 import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
-import { trackArtURL } from '../onlineTracks'
+import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
@@ -493,7 +493,7 @@ export default function FullscreenPlayer() {
     }
   }, [currentTrack?.id])
 
-  const artSrc = trackArtURL(currentTrack)
+  const artSrc = trackFullArtURL(currentTrack)
 
   const isLiked = currentTrack && likedIds.has(currentTrack.id)
   const RepeatIcon = repeat === 'one' ? Repeat1 : Repeat

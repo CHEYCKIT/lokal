@@ -96,39 +96,61 @@ app.get('/api/stream/:trackId', async (req, res) => {
   }
 })
 
-app.get('/api/artwork/:trackId', (req, res) => {
+app.get('/api/artwork/:trackId', async (req, res) => {
   const dir = path.join(getStorageDir(), 'artwork')
-  const p = path.join(dir, `${req.params.trackId}.jpg`)
-  if (path.dirname(p) === dir && fs.existsSync(p)) return res.sendFile(p)
-  // Covers not named after the track (a download's thumbnail "t-<id>.jpg",
-  // one found online, one shared from the same album): the track's own
-  // artwork_path, as long as it's in the artwork folder.
-  let remoteArtworkUrl = null
+  const id = String(req.params.trackId || '')
+  const full = req.query.full === '1'
+  let db = null
+  let stored = null
   try {
-    const db = getDB()
-    const stored = db.prepare('SELECT artwork_path, artwork_url FROM tracks WHERE id = ?').get(req.params.trackId)
-    remoteArtworkUrl = stored?.artwork_url || null
-    const resolved = stored?.artwork_path ? path.resolve(stored.artwork_path) : null
-    const musicFolder = db.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
-    const root = musicFolder ? path.resolve(musicFolder) : null
+    db = getDB()
+    stored = db.prepare('SELECT file_path, artwork_path, artwork_url FROM tracks WHERE id = ?').get(id)
+  } catch {}
+
+  if (full && db) {
+    try {
+      const picture = await require('../electron/artwork/fullCover').fullCoverForTrack(db, id)
+      if (picture) {
+        res.set('Cache-Control', 'private, max-age=3600')
+        return res.type(picture.mime).send(picture.bytes)
+      }
+    } catch {}
+  }
+
+  // Prefer the precise path chosen for this track. In particular, an older
+  // <id>.jpg must never override a current <id>.webp thumbnail or a manual cover.
+  const resolved = stored?.artwork_path ? path.resolve(stored.artwork_path) : null
+  if (resolved && fs.existsSync(resolved)) {
+    const roots = [dir]
+    try {
+      const plural = JSON.parse(db?.prepare("SELECT value FROM settings WHERE key = 'music_folders'").get()?.value || 'null')
+      if (Array.isArray(plural)) roots.push(...plural.filter(value => typeof value === 'string' && value.trim()))
+    } catch {}
+    try {
+      const single = db?.prepare("SELECT value FROM settings WHERE key = 'music_folder'").get()?.value
+      if (single) roots.push(single)
+    } catch {}
     const isWithin = (base, candidate) => {
       const relative = path.relative(base, candidate)
       return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
     }
-    if (resolved && fs.existsSync(resolved)) {
+    try {
       const realArtwork = fs.realpathSync(resolved)
-      let inCache = false
-      let inMusicFolder = false
-      try { inCache = isWithin(fs.realpathSync(dir), realArtwork) } catch {}
-      try { inMusicFolder = !!root && isWithin(fs.realpathSync(root), realArtwork) } catch {}
-      if (inCache || inMusicFolder) return res.sendFile(resolved)
-    }
-  } catch {}
-  // Streamed tracks keep their cover as an external artwork_url rather than
-  // an on-disk artwork_path. The phone remote (and other artwork consumers)
-  // still requests this same endpoint, so safely redirect to that HTTPS image
-  // when no local copy is available.
-  const externalArtwork = httpsImageURL(remoteArtworkUrl)
+      const allowed = roots.some(root => {
+        try { return isWithin(fs.realpathSync(root), realArtwork) } catch { return false }
+      })
+      if (allowed) return res.sendFile(resolved)
+    } catch {}
+  }
+
+  // Compatibility fallback for older rows that don't store an artwork_path.
+  const webp = path.join(dir, id + '.webp')
+  const jpg = path.join(dir, id + '.jpg')
+  if (path.dirname(webp) === dir && fs.existsSync(webp)) return res.sendFile(webp)
+  if (path.dirname(jpg) === dir && fs.existsSync(jpg)) return res.sendFile(jpg)
+
+  // Streamed tracks keep their cover as an external artwork_url.
+  const externalArtwork = httpsImageURL(stored?.artwork_url)
   if (externalArtwork) {
     res.set('Cache-Control', 'private, max-age=300')
     return res.redirect(302, externalArtwork.href)

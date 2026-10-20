@@ -194,12 +194,9 @@ function relinkArtistsIfNeeded(db = getDB()) {
 async function extractArtwork(metadata, trackId, fallbackArtwork = null) {
   const pic = metadata.common.picture?.[0]
   if (pic) {
-    const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-    if (!fs.existsSync(artPath)) {
-      await fs.ensureDir(path.dirname(artPath))
-      await fs.writeFile(artPath, pic.data)
-    }
-    return artPath
+    // Lists and player controls use small WebP thumbnails. Fullscreen views
+    // read the embedded original from the audio file only when needed.
+    return require('../artwork/thumb').writeCover(path.join(getStorageDir(), 'artwork'), trackId, pic.data)
   }
   return fallbackArtwork || null
 }
@@ -1121,14 +1118,15 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
   const tracks = ids.map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
   if (!tracks.length) return []
 
-  let artworkPath = null
   const artworkOp = operations.artwork
+  const artworkPaths = new Map()
   if (artworkOp?.mode === 'replace' && artworkOp?.value) {
-    const base64 = String(artworkOp.value).split(',')[1] || ''
-    artworkPath = '__pending__'
+    const normalized = await normalizeArtwork(artworkOp.value)
     for (const track of tracks) {
-      const nextArtPath = path.join(getStorageDir(), 'artwork', `${track.id}.jpg`)
-      await fs.writeFile(nextArtPath, Buffer.from(base64, 'base64'))
+      const nextArtPath = await require('../artwork/thumb').writeCover(
+        path.join(getStorageDir(), 'artwork'), String(track.id), normalized, { overwrite: true }
+      )
+      artworkPaths.set(track.id, nextArtPath)
     }
   }
 
@@ -1171,7 +1169,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
         params.push(null)
       } else if (artworkOp?.mode === 'replace' && artworkOp?.value) {
         updates.push('artwork_path = ?')
-        params.push(path.join(getStorageDir(), 'artwork', `${track.id}.jpg`))
+        params.push(artworkPaths.get(track.id) || path.join(getStorageDir(), 'artwork', `${track.id}.jpg`))
       }
       if (!updates.length) continue
       params.push(track.id)
@@ -1611,7 +1609,6 @@ function registerScannerHandlers(ipcMain) {
     const db = getDB()
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(trackId || ''))
     if (!track) return { error: 'Track not found' }
-    let tempPath = null
     try {
       const buf = await normalizeArtwork(imageData)
       const filePath = String(track.file_path || '')
@@ -1623,16 +1620,10 @@ function registerScannerHandlers(ipcMain) {
         writeEmbeddedArtwork(filePath, buf)
         require('../fileStamp').noteFileWritten(db, filePath)
       }
-      const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-      await fs.ensureDir(path.dirname(artPath))
-      tempPath = `${artPath}.${process.pid}.tmp`
-      await fs.writeFile(tempPath, buf)
-      await fs.rename(tempPath, artPath)
-      tempPath = null
+      const artPath = await require('../artwork/thumb').writeCover(path.join(getStorageDir(), 'artwork'), String(trackId), buf, { overwrite: true })
       db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(artPath, trackId)
       return db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) || null
     } catch (error) {
-      if (tempPath) { try { await fs.unlink(tempPath) } catch {} }
       console.error('[track:setArtwork] Could not replace artwork:', error)
       return { error: error?.message || 'Could not replace artwork' }
     }

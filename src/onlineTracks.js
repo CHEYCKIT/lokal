@@ -94,8 +94,16 @@ export function isPlayable(track) {
 /** Cover to show for a track: its artwork file, or an online song's remote cover. */
 export function trackArtURL(track) {
   if (!track) return null
-  if (track.artwork_path) return api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)
+  if (track.artwork_path) return api.isElectron ? 'file://' + track.artwork_path : api.artworkURL(track.id)
   return track.artwork_url || null
+}
+
+/** The cover for a large surface; generated thumbnails resolve to the original when possible. */
+export function trackFullArtURL(track) {
+  if (!track) return null
+  if (!track.artwork_path) return track.artwork_url || null
+  if (/\.webp$/i.test(String(track.artwork_path))) return api.fullArtworkURL(track.id)
+  return api.isElectron ? 'file://' + track.artwork_path : api.artworkURL(track.id, true)
 }
 
 /** Where the player gets the audio: the file, or the stream of an online song; null if neither. */
