@@ -209,10 +209,9 @@ export default function TvController() {
   // user choice should change the window's fullscreen state.
   useEffect(() => {
     const tv = window.electron?.tv
-    if (!tv) return
+    if (!tv || mode !== 'on') return
 
-    const forceFullscreen = mode === 'on'
-    tv.setFullscreen(forceFullscreen).catch(error => {
+    tv.setFullscreen(true).catch(error => {
       console.error('TV fullscreen toggle failed:', error)
     })
 
