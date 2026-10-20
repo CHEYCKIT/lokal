@@ -897,7 +897,7 @@ ipcMain.handle('shell:showItemInFolder', (_, filePath) => {
     return { ok: false, error: 'File not found' }
   }
 })
-ipcMain.on('open-logs', () => {}
+ipcMain.on('open-logs', () => {
   const logFile = log.transports.file.getFile().path;
   const logDir = path.dirname(logFile);
   if (fs.existsSync(logFile)) {
