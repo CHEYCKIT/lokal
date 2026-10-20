@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Gamepad2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Expand, Gamepad2, Minimize, X } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { usePlayerStore } from '../store/player'
 import Anomaly from '../visualizers/Anomaly'
@@ -16,6 +16,7 @@ export default function FullscreenVisualizer() {
   const setOpen = usePlayerStore(state => state.setShowFullscreenVisualizer)
   const currentTrack = usePlayerStore(state => state.currentTrack)
   const isPlaying = usePlayerStore(state => state.isPlaying)
+  const [screenFull, setScreenFull] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
   const [settings, setSettings] = useState(() => peekSettings() || {})
   const enabled = useMemo(
     () => normalizeVisualizerModes(settings.fullscreen_visualizers),
@@ -29,6 +30,17 @@ export default function FullscreenVisualizer() {
   })
   const index = Math.max(0, enabled.indexOf(visualizer))
   const selectedMode = VISUALIZER_MODES.find(mode => mode.id === visualizer) || VISUALIZER_MODES[0]
+
+  useEffect(() => {
+    const onFullscreenChange = () => setScreenFull(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  const toggleScreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    else document.documentElement.requestFullscreen?.().catch(() => {})
+  }
 
   useEffect(() => {
     if (!open) return undefined
@@ -132,20 +144,31 @@ export default function FullscreenVisualizer() {
           {currentTrack?.artist && <p className="mt-0.5 truncate text-xs text-white/45">{currentTrack.artist}</p>}
         </div>
 
-        <div className="flex h-10 shrink-0 items-center gap-1 rounded-full border border-white/10 bg-black/35 p-1 backdrop-blur-md">
-          {enabled.length > 1 && (
-            <button type="button" onClick={() => cycle(-1)} title={t('Previous visualizer')} aria-label={t('Previous visualizer')}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-              <ChevronLeft size={17} />
-            </button>
-          )}
-          <span className="max-w-28 px-1 text-xs text-white/75 sm:max-w-36">{t(selectedMode.label)}</span>
-          {enabled.length > 1 && (
-            <button type="button" onClick={() => cycle(1)} title={t('Next visualizer')} aria-label={t('Next visualizer')}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-              <ChevronRight size={17} />
-            </button>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleScreen}
+            title={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
+            aria-label={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 backdrop-blur-md transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            {screenFull ? <Minimize size={16} /> : <Expand size={16} />}
+          </button>
+          <div className="flex h-10 items-center gap-1 rounded-full border border-white/10 bg-black/35 p-1 backdrop-blur-md">
+            {enabled.length > 1 && (
+              <button type="button" onClick={() => cycle(-1)} title={t('Previous visualizer')} aria-label={t('Previous visualizer')}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                <ChevronLeft size={17} />
+              </button>
+            )}
+            <span className="max-w-28 px-1 text-xs text-white/75 sm:max-w-36">{t(selectedMode.label)}</span>
+            {enabled.length > 1 && (
+              <button type="button" onClick={() => cycle(1)} title={t('Next visualizer')} aria-label={t('Next visualizer')}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                <ChevronRight size={17} />
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
