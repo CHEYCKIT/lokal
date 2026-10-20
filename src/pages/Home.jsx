@@ -30,7 +30,7 @@ import UnfollowedArtists from '../components/UnfollowedArtists'
 import MadeForYou from '../components/MadeForYou'
 import FlowPanel from '../components/FlowPanel'
 import { madeForYou } from '../madeForYou'
-import { personalizedHomeGreeting } from '../homeGreeting.mjs'
+import { personalizedHomeGreeting, personalizedHomeHeadline } from '../homeGreeting.mjs'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
@@ -561,13 +561,16 @@ function HomeContent({ user }) {
     {loaded && !recentTracks.length && !suggestions.length && !mixes.length && <p className="py-10 text-center text-sm text-muted">{t("No local tracks yet. Pick your music folder in Library.")}</p>}
   </>
 
-  const greetingLine = tab === 'home'
-    ? personalizedHomeGreeting(localHistory, { hour: new Date().getHours() })
+  const hour = new Date().getHours()
+  const subheaderMessage = tab === 'home'
+    ? personalizedHomeGreeting(localHistory, { hour })
     : "Your music, listening history, and recommendations"
-  const timeGreeting = new Date().getHours() < 12 ? t('Good morning') : new Date().getHours() < 18 ? t('Good afternoon') : t('Good evening')
+  const headlineMessage = tab === 'home'
+    ? t(personalizedHomeHeadline(localHistory, { hour }))
+    : hour < 12 ? t('Good morning') : hour < 18 ? t('Good afternoon') : t('Good evening')
 
   return <div className="p-6 space-y-7 w-full max-w-6xl mx-auto pb-10">
-    <div><h1 className="text-2xl font-display text-white">{tab === 'home' ? t(greetingLine) : timeGreeting}</h1><p className="text-sm text-muted mt-1">{t(tab === 'home' ? "Your music, listening history, and recommendations" : greetingLine)}</p></div>
+    <div><h1 className="text-2xl font-display text-white">{headlineMessage}</h1><p className="text-sm text-muted mt-1">{t(subheaderMessage)}</p></div>
     <div className="flex gap-1 p-0.5 bg-elevated rounded-lg border border-border w-fit">{[['home', 'Local'], ['discovery', 'Discovery'], ['flow', 'Flow'], ['releases', 'Releases'], ['history', 'History']].map(([id, label]) => <button key={id} onClick={() => goHome(id)} className={`px-4 py-1.5 text-xs font-display uppercase tracking-wider rounded transition-colors ${tab === id ? 'bg-accent text-base' : 'text-muted hover:text-white'}`}>{label}</button>)}</div>
     <SectionSwap id={tab} className="space-y-10">
       {tab === 'history' ? <section>
