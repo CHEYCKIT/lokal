@@ -155,12 +155,15 @@ export default function Artists() {
   const [followedOnly, setFollowedOnly] = useState(() => { try { return localStorage.getItem('lokal-artists-followed') === '1' } catch { return false } })
   const followedRef = useRef(followedOnly)
   followedRef.current = followedOnly
-  const listKey = sortMode => `artists:${sortMode}${followedRef.current ? ':followed' : ''}`
+  const [mainOnly, setMainOnly] = useState(() => { try { return localStorage.getItem('lokal-artists-main-only') === '1' } catch { return false } })
+  const mainOnlyRef = useRef(mainOnly)
+  mainOnlyRef.current = mainOnly
+  const listKey = (sortMode, followed = followedRef.current, main = mainOnlyRef.current) => `artists:${sortMode}${followed ? ':followed' : ''}${main ? ':main-only' : ''}`
   // The unfiltered first page from last time, shown at once on the way back
   // (count included) while it refreshes, instead of "Loading artists...".
-  const cached = peekCache(`artists:${sort}${followedOnly ? ':followed' : ''}`)
+  const cached = peekCache(listKey(sort, followedOnly, mainOnly))
   const [artists, setArtists] = useState(() => cached?.items || [])
-  const [topArtists, setTopArtists] = useState(() => peekCache('artists:top') || [])
+  const [topArtists, setTopArtists] = useState(() => peekCache(`artists:top${mainOnly ? ':main-only' : ''}`) || [])
   const [total, setTotal] = useState(() => cached?.total || 0)
   const [hasMore, setHasMore] = useState(() => !!cached?.hasMore)
   const [loading, setLoading] = useState(!cached)
@@ -194,7 +197,8 @@ export default function Artists() {
     // The list this request is for, fixed now: the All / Followed switch can
     // change before it answers.
     const followed = followedRef.current
-    const cacheKey = listKey(sortMode)
+    const mainOnly = mainOnlyRef.current
+    const cacheKey = listKey(sortMode, followed, mainOnly)
     const seen = !append && !search ? peekCache(cacheKey) : null
     if (seen) {
       setArtists(seen.items)
@@ -202,9 +206,9 @@ export default function Artists() {
       setHasMore(seen.hasMore)
       setBusy(false)
     } else setBusy(true)
-    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode, followed }).then((result) => {
+    return api.getArtistsPage({ search, limit: PAGE_SIZE, offset, sort: sortMode, followed, mainOnly }).then((result) => {
       if (stale()) return
-      if (followed !== followedRef.current) { setBusy(false); return }
+      if (followed !== followedRef.current || mainOnly !== mainOnlyRef.current) { setBusy(false); return }
       // A failed request keeps what's shown (and the cache) as it was.
       if (!Array.isArray(result?.items)) { setBusy(false); return }
       const items = result.items
@@ -220,11 +224,11 @@ export default function Artists() {
   }
 
   const loadTopArtists = () => {
-    api.getArtistsPage({ search: '', limit: TOP_ARTISTS_LIMIT, offset: 0, sort: 'tracks' }).then((result) => {
-      // A failed request keeps the top artists shown (and cached).
-      if (!Array.isArray(result?.items)) return
+    const mainOnly = mainOnlyRef.current
+    api.getArtistsPage({ search: '', limit: TOP_ARTISTS_LIMIT, offset: 0, sort: 'tracks', mainOnly }).then((result) => {
+      if (mainOnly !== mainOnlyRef.current || !Array.isArray(result?.items)) return
       const top = result.items.filter((artist) => Number(artist.track_count) > 0)
-      writeCache('artists:top', top)
+      writeCache(`artists:top${mainOnly ? ':main-only' : ''}`, top)
       setTopArtists(top)
     }).catch(() => {})
   }
@@ -235,7 +239,7 @@ export default function Artists() {
     }, query ? 200 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sort, followedOnly])
+  }, [query, sort, followedOnly, mainOnly])
   // Following or unfollowing someone changes the Followed list.
   const followed = useDiscoveryArtists(state => state.followed)
   useEffect(() => { loadDiscoveryArtists().catch(() => {}) }, [])
@@ -250,7 +254,7 @@ export default function Artists() {
   // it loads (never this list's artists under the other filter's name).
   const changeFollowedOnly = (next) => {
     if (next === followedOnly) return
-    const seen = peekCache(`artists:${sort}${next ? ':followed' : ''}`)
+    const seen = peekCache(listKey(sort, next, mainOnly))
     setArtists(seen?.items || [])
     setTotal(seen?.total || 0)
     setHasMore(!!seen?.hasMore)
@@ -259,7 +263,19 @@ export default function Artists() {
     try { localStorage.setItem('lokal-artists-followed', next ? '1' : '0') } catch {}
   }
 
-  useEffect(() => { loadTopArtists() }, [])
+  const changeMainOnly = (next) => {
+    if (next === mainOnly) return
+    const seen = peekCache(listKey(sort, followedOnly, next))
+    setArtists(seen?.items || [])
+    setTotal(seen?.total || 0)
+    setHasMore(!!seen?.hasMore)
+    setLoading(!seen)
+    setMainOnly(next)
+    setTopArtists(peekCache(`artists:top${next ? ':main-only' : ''}`) || [])
+    try { localStorage.setItem('lokal-artists-main-only', next ? '1' : '0') } catch {}
+  }
+
+  useEffect(() => { loadTopArtists() }, [mainOnly])
 
   useEffect(() => {
     const handleRefresh = () => {
@@ -269,7 +285,7 @@ export default function Artists() {
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sort, followedOnly])
+  }, [query, sort, followedOnly, mainOnly])
 
   useEffect(() => {
     const node = loadMoreRef.current
@@ -327,8 +343,9 @@ export default function Artists() {
   const emptyMessage = useMemo(() => {
     if (query.trim()) return followedOnly ? 'No followed artist matched that search.' : 'No artists matched that search.'
     if (followedOnly) return "You don't follow any of your library's artists yet. Right-click one to follow it, or choose them in Home → Releases → Followed artists."
+    if (mainOnly) return 'No main artists in your library yet.'
     return 'No artists in your library yet.'
-  }, [query, followedOnly])
+  }, [query, followedOnly, mainOnly])
 
   const gridClass = density === 'compact'
     ? 'grid grid-cols-4 gap-3 @sm:grid-cols-6 @md:grid-cols-8 @lg:grid-cols-10'
@@ -373,6 +390,15 @@ export default function Artists() {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              aria-pressed={mainOnly}
+              onClick={() => changeMainOnly(!mainOnly)}
+              title={t('Only show artists with a principal release credit')}
+              className={`h-10 rounded-xl border px-3 text-sm transition-colors ${mainOnly ? 'border-accent/50 bg-accent/15 text-accent' : 'border-white/10 bg-white/5 text-muted hover:text-text'}`}
+            >
+              {t('Main Only')}
+            </button>
             <select
               value={sort}
               onChange={(event) => changeSort(event.target.value)}

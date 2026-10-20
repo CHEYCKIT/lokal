@@ -2,7 +2,7 @@ import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe, Clock, Shuffle } from 'lucide-react'
+import { ArrowLeft, Check, Play, Music, Settings, Camera, Share2, Radio, Globe, Clock, Shuffle, List, Grid2x2 } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import ArtistManageModal from '../components/ArtistManageModal'
@@ -22,6 +22,18 @@ import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTyp
 import FollowArtistButton from '../components/FollowArtistButton'
 import { playNextMany } from '../trackActions'
 
+const RELEASE_LAYOUTS_KEY = 'lokal-artist-release-layouts'
+const releaseIdentityPart = value => String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleLowerCase()
+const releaseIdentity = (title, albumArtist) => releaseIdentityPart(title) + '\u0000' + releaseIdentityPart(albumArtist)
+
+function readReleaseLayouts(artistId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(RELEASE_LAYOUTS_KEY) || '{}')
+    const layouts = saved && typeof saved === 'object' ? saved[String(artistId)] : null
+    return layouts && typeof layouts === 'object' ? layouts : {}
+  } catch { return {} }
+}
+
 const shuffledArtistTracks = list => {
   const out = [...list]
   for (let i = out.length - 1; i > 0; i--) {
@@ -39,6 +51,7 @@ export default function Artist() {
   const [artist, setArtist] = useState(null)
   const [allArtists, setAllArtists] = useState([])
   const [selectedAlbum, setSelectedAlbum] = useState(null)
+  const [releaseLayoutState, setReleaseLayoutState] = useState(() => ({ artistId: id, layouts: readReleaseLayouts(id) }))
   // A highlighted track that has no album AND isn't in "Popular" -- e.g. a
   // loose single -- has no Releases card to open and no Popular row to
   // scroll to, so there's nothing for the effect below to select. Without
@@ -168,6 +181,8 @@ export default function Artist() {
   // this page's when a release doesn't name one (so its songs are found by
   // title and artist, not title alone).
   const releaseList = useMemo(() => (artist?.albums || []).map(album => ({ ...album, album_artist: album.album_artist || artist?.name })), [artist])
+  const mainReleaseList = useMemo(() => releaseList.filter(album => album.is_main_artist !== false), [releaseList])
+  const featureReleaseList = useMemo(() => releaseList.filter(album => album.is_main_artist === false), [releaseList])
   const releaseKeys = useMemo(() => releaseList.map(releaseKey), [releaseList])
   const releases = useReleaseActions({ goToArtist: false, onDeleted: () => releaseSelection.clear() })
   const releasesFor = (keys) => releaseList.filter(album => keys.includes(releaseKey(album)))
@@ -184,15 +199,15 @@ export default function Artist() {
   // Releases in sections (Albums, EPs, Singles...), the types shown chosen per
   // artist; "More releases online" follows the same choice.
   const [shownTypes, toggleType] = useReleaseTypes(artist?.name || id)
-  const releaseGroups = useMemo(() => groupReleases(releaseList, shownTypes), [releaseList, shownTypes])
+  const releaseGroups = useMemo(() => groupReleases(mainReleaseList, shownTypes), [mainReleaseList, shownTypes])
   // Song counts of the releases online (when the source gives them), to mark
   // the library's partial ones.
   const onlineTotals = useMemo(() => new Map(connected ? onlineData.albums.items.filter(album => album.track_count).map(album => [releaseTitleKey(album.title), Number(album.track_count)]) : []), [connected, onlineData.albums.items])
   const releaseTypes = useMemo(() => {
     const owned = new Set(releaseList.map(album => releaseTitleKey(album.title)))
     const online = connected ? onlineData.albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : []
-    return releaseTypeCounts([...releaseList, ...online])
-  }, [releaseList, connected, onlineData.albums.items])
+    return releaseTypeCounts([...mainReleaseList, ...online])
+  }, [releaseList, mainReleaseList, connected, onlineData.albums.items])
 
   if (online) return <OnlineArtist key={id} id={id} name={onlineNames.current[id]?.name} anchor={onlineNames.current[id]?.anchor} />
   if (!artist) return <div className="p-6 text-muted text-sm">{t("Loading...")}</div>
@@ -204,6 +219,21 @@ export default function Artist() {
     ? (api.isElectron ? `file://${artist.image_path}` : `/api/artist-image/${encodeURIComponent(artist.id)}`)
     : null
   const artSrc = (track) => track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null
+  const releaseLayouts = releaseLayoutState.artistId === id ? releaseLayoutState.layouts : readReleaseLayouts(id)
+  const releaseLayout = section => releaseLayouts[section] === 'list' ? 'list' : 'grid'
+  const toggleReleaseLayout = section => {
+    const next = releaseLayout(section) === 'list' ? 'grid' : 'list'
+    let all = {}
+    try { const saved = JSON.parse(localStorage.getItem(RELEASE_LAYOUTS_KEY) || '{}'); if (saved && typeof saved === 'object') all = saved } catch {}
+    const layouts = { ...(all[String(id)] || {}), [section]: next }
+    all[String(id)] = layouts
+    try { localStorage.setItem(RELEASE_LAYOUTS_KEY, JSON.stringify(all)) } catch {}
+    setReleaseLayoutState({ artistId: id, layouts })
+  }
+  const tracksForReleaseRows = rows => {
+    const keys = new Set(rows.map(release => releaseIdentity(release.title, release.album_artist || artist.name)))
+    return (artist.tracks || []).filter(track => keys.has(releaseIdentity(track.album, track.album_artist || track.artist)))
+  }
   // The share card: the artist's photo (else a cover), their songs and your
   // plays of them, counted as recaps count them (30 seconds or more, streamed
   // songs too); the library's play counts if that can't be read.
@@ -229,6 +259,49 @@ export default function Artist() {
     if (type === 'single') return 'Single'
     if (type === 'ep') return 'EP'
     return 'Album'
+  }
+
+  const renderReleaseCard = album => {
+    const firstTrack = artist.tracks?.find(track =>
+      releaseIdentity(track.album, track.album_artist || track.artist) ===
+      releaseIdentity(album.title, album.album_artist || artist.name)
+    ) || artist.tracks?.find(track => track.album === album.title)
+    const cover = firstTrack ? artSrc(firstTrack) : null
+    const selected = releaseSelection.has(releaseKey(album))
+    const selectedAlbumCard = selectedAlbum?.title === album.title &&
+      releaseIdentity(selectedAlbum.title, selectedAlbum.album_artist || selectedAlbum.artist || artist.name) ===
+      releaseIdentity(album.title, album.album_artist || artist.name)
+    return (
+      <motion.button
+        key={releaseKey(album)}
+        onClick={event => {
+          if (!releaseSelection.click(releaseKey(album), event)) nav('/albums', { state: { album, from: location.pathname } })
+        }}
+        onContextMenu={event => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))}
+        aria-selected={selected}
+        whileHover={{ scale: 1.02 }}
+        className={'relative flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ' + (selected ? 'border-accent ring-2 ring-accent/60 bg-accent/10' : selectedAlbumCard ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30')}
+      >
+        <div className="relative flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
+          {cover ? <img src={cover} className="h-full w-full object-cover" /> : <Music size={28} />}
+          {selected && (
+            <span className="pointer-events-none absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-base shadow-lg">
+              <Check size={14} strokeWidth={3} />
+            </span>
+          )}
+        </div>
+        <div className="min-w-0 overflow-hidden">
+          <p className="block truncate text-sm font-medium text-white">{album.title}</p>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted">
+            <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-display uppercase tracking-[0.18em] text-white/70">
+              {releaseLabel(album.release_type)}
+            </span>
+            <span className="block truncate">{album.year ? String(album.year) + ' • ' : ''}{t((Number(album.track_count) || 0) === 1 ? '{count} track' : '{count} tracks', { count: Number(album.track_count) || 0 })}</span>
+            {(() => { const total = onlineTotals.get(releaseTitleKey(album.title)); return total > album.track_count ? <OwnershipBadge ownership={{ owned: album.track_count, total, full: false }} /> : null })()}
+          </div>
+        </div>
+      </motion.button>
+    )
   }
 
   return (
@@ -315,66 +388,85 @@ export default function Artist() {
           </section>
         )}
 
-        {artist.albums?.length > 0 && (
-          <section>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Releases")}</h2>
-              <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
-            </div>
-            <SelectionBar
-              open={releaseSelection.count > 0}
-              label={t('{count} releases selected', { count: releaseSelection.count })}
-              onClear={releaseSelection.clear}
-              actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
-            />
-            {releaseGroups.length === 0 && <p className="text-sm text-muted">{t("No releases of the types chosen.")}</p>}
-            <div className="space-y-6">
-              {releaseGroups.map(group => (
-                <div key={group.type}>
-                  {(releaseGroups.length > 1 || group.type !== 'album') && <h3 className="mb-2 text-[11px] font-display uppercase tracking-[0.28em] text-white/50">{group.label} <span className="text-muted">· {group.items.length}</span></h3>}
-                  <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
-                    {group.items.map((album) => {
-                const firstTrack = artist.tracks?.find((track) => track.album === album.title)
-                const cover = firstTrack ? artSrc(firstTrack) : null
-                const selected = releaseSelection.has(releaseKey(album))
-                return (
-                  <motion.button
-                    key={album.title}
-                    onClick={(event) => {
-                      if (!releaseSelection.click(releaseKey(album), event)) nav('/albums', { state: { album, from: location.pathname } })
-                    }}
-                    onContextMenu={(event) => releases.openMenu(event, releasesFor(releaseSelection.contextSelect(releaseKey(album))))}
-                    aria-selected={selected}
-                    whileHover={{ scale: 1.02 }}
-                    className={`relative flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl border p-3 text-left transition-all ${selected ? 'border-accent ring-2 ring-accent/60 bg-accent/10' : selectedAlbum?.title === album.title ? 'border-accent/40 bg-accent/10' : 'border-border bg-elevated hover:border-accent/30'}`}
-                  >
-                    <div className="relative flex w-full aspect-square items-center justify-center overflow-hidden rounded-lg bg-card text-subtle">
-                      {cover ? <img src={cover} className="h-full w-full object-cover" /> : <Music size={28} />}
-                      {selected && (
-                        <span className="pointer-events-none absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-base shadow-lg">
-                          <Check size={14} strokeWidth={3} />
-                        </span>
-                      )}
-                    </div>
-                    <div className="min-w-0 overflow-hidden">
-                      <p className="block truncate text-sm font-medium text-white">{album.title}</p>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-muted">
-                        <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-display uppercase tracking-[0.18em] text-white/70">
-                          {releaseLabel(album.release_type)}
-                        </span>
-                        <span className="block truncate">{album.year ? `${album.year} • ` : ''}{t((Number(album.track_count) || 0) === 1 ? '{count} track' : '{count} tracks', { count: Number(album.track_count) || 0 })}</span>
-                        {/* Part of a release ("1/9"), when the release online has more songs. */}
-                        {(() => { const total = onlineTotals.get(releaseTitleKey(album.title)); return total > album.track_count ? <OwnershipBadge ownership={{ owned: album.track_count, total, full: false }} /> : null })()}
-                      </div>
-                    </div>
-                  </motion.button>
-                )
-                    })}
-                  </div>
+        {(mainReleaseList.length > 0 || featureReleaseList.length > 0) && (
+          <>
+            {releaseSelection.count > 0 && (
+              <SelectionBar
+                open
+                label={t('{count} releases selected', { count: releaseSelection.count })}
+                onClear={releaseSelection.clear}
+                actions={releases.barActions(releasesFor([...releaseSelection.selected]))}
+              />
+            )}
+
+            {mainReleaseList.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Releases")}</h2>
+                  <ReleaseTypeFilter types={releaseTypes} shown={shownTypes} onToggle={toggleType} />
                 </div>
-              ))}
-            </div>
-          </section>
+                {releaseGroups.length === 0 && <p className="text-sm text-muted">{t("No releases of the types chosen.")}</p>}
+                <div className="space-y-6">
+                  {releaseGroups.map(group => {
+                    const layout = releaseLayout(group.type)
+                    const groupTracks = tracksForReleaseRows(group.items)
+                    return (
+                      <div key={group.type}>
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <h3 className="text-[11px] font-display uppercase tracking-[0.28em] text-white/50">
+                            {t(group.label)} <span className="text-muted">· {group.items.length}</span>
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => toggleReleaseLayout(group.type)}
+                            title={t(layout === 'list' ? 'Show album covers' : 'Show track list')}
+                            aria-label={t(layout === 'list' ? 'Show album covers' : 'Show track list')}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-muted transition-colors hover:border-accent/40 hover:text-accent"
+                          >
+                            {layout === 'list' ? <Grid2x2 size={15} /> : <List size={15} />}
+                          </button>
+                        </div>
+                        {layout === 'list' ? (
+                          <TrackList tracks={groupTracks} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+                        ) : (
+                          <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
+                            {group.items.map(renderReleaseCard)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {featureReleaseList.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xs font-display uppercase tracking-widest text-muted">{t("Features")}</h2>
+                    <p className="mt-1 text-[11px] text-muted">{t('{count} releases', { count: featureReleaseList.length })}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleReleaseLayout('features')}
+                    title={t(releaseLayout('features') === 'list' ? 'Show album covers' : 'Show track list')}
+                    aria-label={t(releaseLayout('features') === 'list' ? 'Show album covers' : 'Show track list')}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-muted transition-colors hover:border-accent/40 hover:text-accent"
+                  >
+                    {releaseLayout('features') === 'list' ? <Grid2x2 size={15} /> : <List size={15} />}
+                  </button>
+                </div>
+                {releaseLayout('features') === 'list' ? (
+                  <TrackList tracks={tracksForReleaseRows(featureReleaseList)} context={artistContext} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 @md:grid-cols-3 @lg:grid-cols-4">
+                    {featureReleaseList.map(renderReleaseCard)}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
         )}
 
         {selectedAlbum && <AlbumTracks album={selectedAlbum} artistName={artist?.name} highlightTrackId={highlightTrackId} highlightRequestKey={highlightRequestKey} />}

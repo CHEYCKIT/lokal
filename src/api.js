@@ -258,6 +258,7 @@ export const api = {
         offset: String(opts.offset || 0),
         sort: opts.sort || 'name',
         ...(opts.followed ? { followed: '1' } : {}),
+        ...(opts.mainOnly ? { mainOnly: '1' } : {}),
       })}`),
   getArtist: (id) => isE() ? el().getArtist(id) : apiFetch(`/artists/${id}`),
   getAlbumTracks: (a) => isE() ? el().getAlbumTracks(a) : apiFetch(`/tracks?${albumTrackParams(a)}`),
