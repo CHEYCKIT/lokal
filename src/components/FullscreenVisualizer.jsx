@@ -150,7 +150,7 @@ export default function FullscreenVisualizer() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(46,38,82,0.24),transparent_68%)]" />
       <div className="absolute inset-0">{visual}</div>
 
-      <header onMouseEnter={() => { overChromeRef.current = true; clearTimeout(idleTimerRef.current); setIdle(false) }} onMouseLeave={() => { overChromeRef.current = false; wakeChrome() }} className={"absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 py-4 sm:px-6 sm:py-5 transition-opacity duration-300 " + (chromeHidden ? "pointer-events-none opacity-0" : "opacity-100")}>
+      <header onMouseEnter={() => { overChromeRef.current = true; clearTimeout(idleTimerRef.current); setIdle(false) }} onMouseLeave={() => { overChromeRef.current = false; wakeChrome() }} className={"absolute inset-x-0 top-0 z-20 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-4 px-4 py-4 sm:px-6 sm:py-5 transition-opacity duration-300 " + (chromeHidden ? "pointer-events-none opacity-0" : "opacity-100")}>
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -161,7 +161,7 @@ export default function FullscreenVisualizer() {
           <X size={17} />
         </button>
 
-        <div className="min-w-0 flex-1 pt-1 text-center">
+        <div className="min-w-0 max-w-[min(52vw,48rem)] pt-1 text-center">
           <div className="flex items-center justify-center gap-2 text-xs font-display uppercase tracking-[0.24em] text-white/65">
             <Gamepad2 size={15} />
             <span>{t('Full-screen visualizer')}</span>
@@ -170,7 +170,7 @@ export default function FullscreenVisualizer() {
           {currentTrack?.artist && <p className="mt-0.5 truncate text-xs text-white/45">{currentTrack.artist}</p>}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 justify-self-end">
           <button
             type="button"
             onClick={enterMiniVisualizer}
@@ -182,7 +182,7 @@ export default function FullscreenVisualizer() {
           </button>
           <button
             type="button"
-            onClick={toggleScreen
+            onClick={toggleScreen}
             title={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
             aria-label={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 backdrop-blur-md transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
