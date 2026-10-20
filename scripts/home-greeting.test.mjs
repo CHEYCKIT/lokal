@@ -50,6 +50,14 @@ test('recognizes a repeated-track listening pattern without exposing its metadat
   assert.ok(!message.includes('Private artist'))
 })
 
+test('does not let older repeats dominate the message when recent listens are varied', () => {
+  const history = rows(20, { artistCount: 20 }).map((entry, index) => ({
+    ...entry,
+    id: index < 8 ? `recent-track-${index}` : 'same-old-track',
+  }))
+  assert.notEqual(personalizedHomeGreeting(history, { hour: 12, now }), 'The repeat button has been getting a workout.')
+})
+
 test('recognizes a dominant mellow listening profile without naming genres', () => {
   assert.equal(personalizedHomeGreeting(rows(12, { genre: 'Ambient', artistCount: 10 }), { hour: 12, now }),
     'Your mellow side has been getting more play.')
