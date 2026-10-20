@@ -183,8 +183,8 @@ export default function FullscreenVisualizer() {
           <button
             type="button"
             onClick={toggleScreen}
-            title={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
-            aria-label={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
+            title={screenFull ? t('Exit full screen') : t('Enter full screen')}
+            aria-label={screenFull ? t('Exit full screen') : t('Enter full screen')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 backdrop-blur-md transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             {screenFull ? <Minimize size={16} /> : <Expand size={16} />}
