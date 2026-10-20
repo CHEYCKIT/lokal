@@ -40,7 +40,7 @@ function fillWave(ctx, points, width, height, color) {
   ctx.fill()
 }
 
-export default function Waves({ isPlaying, width = 480, height = 50, strength = 1, colorBack = '#38bdf8', colorFront = '#f472d0', opacity = 0.85, className = '' }) {
+export default function Waves({ isPlaying, width = 480, height = 50, strength = 1, colorBack = '#38bdf8', colorFront = '#f472d0', opacity = 0.85, className = '', fill = false }) {
   const canvasRef = useRef(null)
   const analyserVersion = useAnalyserVersion()
   const canvasHeight = height + GLOW
@@ -112,7 +112,7 @@ export default function Waves({ isPlaying, width = 480, height = 50, strength = 
       ref={canvasRef}
       aria-hidden="true"
       className={className}
-      style={{ display: 'block', width, height: canvasHeight, opacity }}
+      style={{ display: 'block', width: fill ? '100%' : width, height: fill ? '100%' : canvasHeight, opacity }}
     />
   )
 }

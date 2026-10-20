@@ -1,7 +1,7 @@
 import { useTranslation } from '../i18n'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Clapperboard, Image as ImageIcon } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Heart, Shuffle, Repeat, Repeat1, Mic2, ListMusic, ListPlus, Search, Maximize2, Expand, Minimize, Volume2, Film, Clapperboard, Gamepad2, Image as ImageIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
@@ -233,6 +233,7 @@ export default function FullscreenPlayer() {
   const { t } = useTranslation()
   const {
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
+    showFullscreenVisualizer, setShowFullscreenVisualizer,
     progress, duration, volume, shuffle, repeat,
     showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
@@ -240,6 +241,7 @@ export default function FullscreenPlayer() {
     playbackContext, setVolume,
   } = usePlayerStore(useShallow(({
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
+    showFullscreenVisualizer, setShowFullscreenVisualizer,
     progress, duration, volume, shuffle, repeat,
     showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
@@ -247,6 +249,7 @@ export default function FullscreenPlayer() {
     playbackContext, setVolume,
   }) => ({
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
+    showFullscreenVisualizer, setShowFullscreenVisualizer,
     progress, duration, volume, shuffle, repeat,
     showLyricsFullscreen, toggleLyricsFullscreen, switchFullscreenView,
     togglePlay, next, prev, setProgress, toggleShuffle, toggleRepeat,
@@ -477,14 +480,14 @@ export default function FullscreenPlayer() {
     // should close *that* first instead of also tearing down this whole
     // fullscreen view underneath it.
     const h = (e) => {
-      if (e.key !== 'Escape') return
+      if (e.key !== 'Escape' || showFullscreenVisualizer) return
       // In the whole-screen mode, Escape leaves that first (the player stays).
       if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); return }
       toggleFullscreen()
     }
     if (showFullscreen && !showLyricsFullscreen) document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  }, [showFullscreen, showLyricsFullscreen])
+  }, [showFullscreen, showLyricsFullscreen, showFullscreenVisualizer])
 
   useEffect(() => {
     if (currentTrack?.id !== prevTrackId.current) {
@@ -733,10 +736,17 @@ export default function FullscreenPlayer() {
                 )}
               </div>
             )}
-            <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
-              className={`col-start-3 justify-self-end w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm ${chromeFade}`}>
-              {screenFull ? <Minimize size={15} /> : <Expand size={15} />}
-            </button>
+            <div className={`col-start-3 justify-self-end flex items-center gap-2 ${chromeFade}`}>
+              <button onClick={() => setShowFullscreenVisualizer(true)} disabled={!currentTrack}
+                title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm disabled:opacity-30">
+                <Gamepad2 size={16} />
+              </button>
+              <button onClick={toggleScreen} title={screenFull ? 'Exit full screen' : 'Fill the whole screen'} aria-label={screenFull ? 'Exit full screen' : 'Fill the whole screen'}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm">
+                {screenFull ? <Minimize size={15} /> : <Expand size={15} />}
+              </button>
+            </div>
           </div>
 
           {/* The cover, with the controls over it (shown while the pointer is

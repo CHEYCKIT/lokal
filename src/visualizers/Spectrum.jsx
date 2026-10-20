@@ -21,7 +21,7 @@ const GAP = 1
 // repaint also redoes its blur.
 const FRAME_MS = 1000 / 30
 
-export default function Spectrum({ isPlaying, bars = 119, barWidth = 4, height = 76, strength = 0.58, color = '#ffffff', opacity = 0.2, radius = 0, mirrored = false, className = '' }) {
+export default function Spectrum({ isPlaying, bars = 119, barWidth = 4, height = 76, strength = 0.58, color = '#ffffff', opacity = 0.2, radius = 0, mirrored = false, className = '', fill = false }) {
   const canvasRef = useRef(null)
   const levelsRef = useRef(null)
   // The centre spectrum grows in over half a second when the music starts
@@ -104,7 +104,7 @@ export default function Spectrum({ isPlaying, bars = 119, barWidth = 4, height =
       ref={canvasRef}
       aria-hidden="true"
       className={className}
-      style={{ display: 'block', width, height: canvasHeight, opacity }}
+      style={{ display: 'block', width: fill ? '100%' : width, height: fill ? '100%' : canvasHeight, opacity }}
     />
   )
 }
