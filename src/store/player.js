@@ -233,7 +233,7 @@ export const usePlayerStore = create((set, get) => ({
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
-  showRightSidebar: false, showFullscreen: false, showQueue: false, showLyricsPanel: false,
+  showRightSidebar: false, showFullscreen: false, showFullscreenVisualizer: false, showQueue: false, showLyricsPanel: false,
   // Which content the right-hand panel shows. Only meaningful in merged
   // mode -- independent mode's Queue lives in its own separate panel and
   // never touches this.
@@ -1002,6 +1002,7 @@ export const usePlayerStore = create((set, get) => ({
     // there's nothing left to reset here on the way out.
     return { showRightSidebar: false }
   }),
+  setShowFullscreenVisualizer: (value) => set({ showFullscreenVisualizer: !!value }),
   toggleFullscreen: () => set(s => {
     const next = !s.showFullscreen
     if (!next && typeof window !== 'undefined' && window.electron?.refreshHitRegions) {
