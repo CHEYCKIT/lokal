@@ -125,14 +125,14 @@ const MIME_OF_EXT = {
   m4a: 'audio/mp4', mp4: 'audio/mp4', mp3: 'audio/mpeg',
   aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg',
 }
-const safeName = value => String(value || '').replace(/[^\\w.-]+/g, '_').slice(0, 80) || 'hls'
+const safeName = value => String(value || '').replace(/[^\w.-]+/g, '_').slice(0, 80) || 'hls'
 
 /** A previously joined HLS stream, or null. Prefer full streams over previews. */
 function joinedFile(id) {
   let names
   try {
     names = fs.readdirSync(hlsDir()).filter(name =>
-      name.startsWith(`sc-${id}-`) && !/\\.part(?:\\.|$)|\\.tmp$/.test(name)
+      name.startsWith(`sc-${id}-`) && !/\.part(?:\.|$)|\.tmp$/.test(name)
     )
   } catch { return null }
   if (!names.length) return null
@@ -160,7 +160,7 @@ async function fetchChecked(url, headers, fetchImpl, as = 'bytes', signal = null
 
 /** Resolve the init fragment and media segments of an HLS media playlist. */
 function hlsPieces(playlist, base) {
-  const lines = String(playlist || '').split(/\\r?\\n/).map(line => line.trim()).filter(Boolean)
+  const lines = String(playlist || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   if (!lines[0]?.startsWith('#EXTM3U')) throw new Error('SoundCloud sent no playlist for this track.')
   if (lines.some(line => line.startsWith('#EXT-X-STREAM-INF'))) throw new Error('Unexpected SoundCloud master playlist.')
   const key = lines.find(line => line.startsWith('#EXT-X-KEY'))
