@@ -1326,6 +1326,23 @@ class DownloadManager {
         const settings = job.stop ? { ...(job.settings || {}), download_embed_lyrics: '0' } : (job.settings || {})
         const done = await finishFile(filepath, { db: this.db(), settings, url: job.url, meta, kind: job.kind, outputDir, known: job.opts?.tags || null })
         finalPath = done.filePath
+        // Explicit output paths and lossless replacements keep their own destinations.
+        const downloadFolder = String(job.settings?.download_folder || '').trim()
+        if (downloadFolder && !job.opts?.outputDir && !job.opts?.upgradeTrackId) {
+          const assigned = job.downloadFolderNumbers || (job.downloadFolderNumbers = {})
+          const originalPath = finalPath
+          const placed = require('../downloadFolder').placeDownload(this.db(), finalPath, downloadFolder, assigned)
+          if (placed.filePath !== originalPath) {
+            const fileIndex = job.filepaths.indexOf(originalPath)
+            if (fileIndex >= 0) job.filepaths[fileIndex] = placed.filePath
+            job.pendingIndex = (job.pendingIndex || []).map(fp => fp === originalPath ? placed.filePath : fp)
+            job.outputLines.push('[Lokal] Moved to ' + placed.filePath)
+            finalPath = placed.filePath
+            done.filePath = placed.filePath
+          }
+        }
+        // Stamp after moving so the tag and index both refer to the final path.
+        if (!job.opts?.upgradeTrackId) require('../addedDate').stampNewFile(this.db(), finalPath)
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
         if (job.musicPlaylistBatchFile && job.totalTracks) {

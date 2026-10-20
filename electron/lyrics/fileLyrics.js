@@ -184,7 +184,7 @@ async function readFileLyrics(filePath) {
   return { text, synced: isSyncedText(text) }
 }
 
-function setPrivateField(T, file, value) {
+function setPrivateField(T, file, value, tagName = PRIVATE_TAG) {
   const types = T.TagTypes
   const name = String(file.name || '').toLowerCase()
   try {
@@ -192,18 +192,18 @@ function setPrivateField(T, file, value) {
       const id3 = file.getTag(types.Id3v2, value != null)
       if (!id3) return
       for (const frame of id3.getFramesByClassType(T.Id3v2FrameClassType.UserTextInformationFrame) || []) {
-        if (frame.description === PRIVATE_TAG) id3.removeFrame(frame)
+        if (frame.description === tagName) id3.removeFrame(frame)
       }
       if (value == null) return
-      const frame = T.Id3v2UserTextInformationFrame.fromDescription(PRIVATE_TAG)
+      const frame = T.Id3v2UserTextInformationFrame.fromDescription(tagName)
       frame.text = [value]
       id3.addFrame(frame)
     } else if (/\.(m4a|mp4|aac|alac)$/.test(name)) {
       const apple = file.getTag(types.Apple, value != null)
-      if (apple) apple.setItunesStrings('com.apple.iTunes', PRIVATE_TAG, value == null ? undefined : value)
+      if (apple) apple.setItunesStrings('com.apple.iTunes', tagName, value == null ? undefined : value)
     } else {
       const xiph = file.getTag(types.Xiph, value != null)
-      if (xiph) xiph.setFieldAsStrings(PRIVATE_TAG, ...(value == null ? [] : [value]))
+      if (xiph) xiph.setFieldAsStrings(tagName, ...(value == null ? [] : [value]))
     }
   } catch { /* a format without that tag: nothing to keep in sync */ }
 }
@@ -285,4 +285,4 @@ function sidecarFor(filePath) {
   return null
 }
 
-module.exports = { lyricsKind, fixMojibake, readFileLyrics, writeFileLyrics, fromResult, lyricsFromMeta, isSyncedText, parseLrc, syltToLrc, sidecarFor }
+module.exports = { lyricsKind, fixMojibake, readFileLyrics, writeFileLyrics, fromResult, lyricsFromMeta, isSyncedText, parseLrc, syltToLrc, sidecarFor, setPrivateField }
