@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { personalizedHomeGreeting } from '../src/homeGreeting.mjs'
+import { personalizedHomeGreeting, personalizedHomeHeadline } from '../src/homeGreeting.mjs'
 
 const now = new Date('2026-10-19T12:00:00').getTime()
 
@@ -43,11 +43,40 @@ test('uses time-of-day fallback when there is not enough listening history', () 
   assert.equal(personalizedHomeGreeting([], { hour: 23, now }), 'Keeping the late hours company?')
 })
 
+test('uses a concise time-of-day headline when listening history is too short', () => {
+  assert.equal(personalizedHomeHeadline([], { hour: 9, now }), 'Good morning')
+  assert.equal(personalizedHomeHeadline([], { hour: 14, now }), 'Good afternoon')
+  assert.equal(personalizedHomeHeadline([], { hour: 20, now }), 'Good evening')
+})
+
+test('pairs a concise repeat headline with the detailed repeat subheader', () => {
+  const history = rows(8, { sameTrack: true, artistCount: 1 })
+  assert.equal(personalizedHomeHeadline(history, { hour: 12, now }), 'On repeat')
+  assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'The repeat button has been getting a workout.')
+})
+
+test('uses short headlines for other listening patterns', () => {
+  assert.equal(personalizedHomeHeadline(rows(12, { genre: 'Ambient', artistCount: 10 }), { hour: 12, now }), 'Taking it easy')
+  assert.equal(personalizedHomeHeadline(rows(12, { genre: 'Techno', artistCount: 10 }), { hour: 12, now }), 'High energy')
+  assert.equal(personalizedHomeHeadline(rows(10, { playedHour: 23, artistCount: 10 }), { hour: 12, now }), 'Night owl')
+  assert.equal(personalizedHomeHeadline(rowsOnDays([1, 2, 3, 4, 5, 6, 6, 6], { playedHour: 6, artistCount: 8 }), { hour: 12, now }), 'Early bird')
+  assert.equal(personalizedHomeHeadline(rowsOnDays([1, 1, 3, 3, 5, 5, 6, 6], { playedHour: 11, artistCount: 3 }), { hour: 12, now }), 'In a groove')
+  assert.equal(personalizedHomeHeadline(rowsOnDays(Array(10).fill(1), { playedHour: 11, artistCount: 10 }), { hour: 12, now }), 'Wide rotation')
+})
+
 test('recognizes a repeated-track listening pattern without exposing its metadata', () => {
   const message = personalizedHomeGreeting(rows(8, { sameTrack: true, artistCount: 1 }), { hour: 12, now })
   assert.equal(message, 'The repeat button has been getting a workout.')
   assert.ok(!message.includes('Private track'))
   assert.ok(!message.includes('Private artist'))
+})
+
+test('does not let older repeats dominate the message when recent listens are varied', () => {
+  const history = rows(20, { artistCount: 20 }).map((entry, index) => ({
+    ...entry,
+    id: index < 8 ? `recent-track-${index}` : 'same-old-track',
+  }))
+  assert.notEqual(personalizedHomeGreeting(history, { hour: 12, now }), 'The repeat button has been getting a workout.')
 })
 
 test('recognizes a dominant mellow listening profile without naming genres', () => {
