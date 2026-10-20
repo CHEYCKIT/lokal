@@ -1599,7 +1599,6 @@ function registerScannerHandlers(ipcMain) {
     const db = getDB()
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(String(trackId || ''))
     if (!track) return { error: 'Track not found' }
-    let tempPath = null
     try {
       const buf = await normalizeArtwork(imageData)
       const filePath = String(track.file_path || '')
@@ -1611,16 +1610,10 @@ function registerScannerHandlers(ipcMain) {
         writeEmbeddedArtwork(filePath, buf)
         require('../fileStamp').noteFileWritten(db, filePath)
       }
-      const artPath = path.join(getStorageDir(), 'artwork', `${trackId}.jpg`)
-      await fs.ensureDir(path.dirname(artPath))
-      tempPath = `${artPath}.${process.pid}.tmp`
-      await fs.writeFile(tempPath, buf)
-      await fs.rename(tempPath, artPath)
-      tempPath = null
+      const artPath = await require('../artwork/thumb').writeCover(path.join(getStorageDir(), 'artwork'), String(trackId), buf, { overwrite: true })
       db.prepare('UPDATE tracks SET artwork_path = ? WHERE id = ?').run(artPath, trackId)
       return db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) || null
     } catch (error) {
-      if (tempPath) { try { await fs.unlink(tempPath) } catch {} }
       console.error('[track:setArtwork] Could not replace artwork:', error)
       return { error: error?.message || 'Could not replace artwork' }
     }

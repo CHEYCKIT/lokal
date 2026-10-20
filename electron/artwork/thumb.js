@@ -36,17 +36,27 @@ async function makeThumb(bytes) {
  * or `<base>.jpg` with the picture as it is when no thumbnail can be made.
  * An existing file is kept (the name carries the file's version). -> its path.
  */
-async function writeCover(dir, base, bytes) {
+async function writeCover(dir, base, bytes, { overwrite = false } = {}) {
   const thumbPath = path.join(dir, `${base}.webp`)
-  if (fs.existsSync(thumbPath)) return thumbPath
+  if (!overwrite && fs.existsSync(thumbPath)) return thumbPath
   fs.mkdirSync(dir, { recursive: true })
+  const writeAtomic = (target, content) => {
+    const temp = `${target}.${process.pid}.tmp`
+    fs.writeFileSync(temp, content)
+    try { fs.renameSync(temp, target) } catch (error) {
+      // Windows may refuse replacing an existing file; the image can be rebuilt.
+      try { fs.rmSync(target, { force: true }) } catch {}
+      try { fs.renameSync(temp, target) } catch (e) { try { fs.rmSync(temp, { force: true }) } catch {}; throw e || error }
+    }
+  }
   const thumb = await makeThumb(bytes)
   if (thumb) {
-    fs.writeFileSync(thumbPath, thumb)
+    writeAtomic(thumbPath, thumb)
     return thumbPath
   }
   const rawPath = path.join(dir, `${base}.jpg`)
-  if (!fs.existsSync(rawPath)) fs.writeFileSync(rawPath, bytes)
+  if (!overwrite && fs.existsSync(rawPath)) return rawPath
+  writeAtomic(rawPath, bytes)
   return rawPath
 }
 

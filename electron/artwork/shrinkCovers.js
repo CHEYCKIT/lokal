@@ -69,6 +69,11 @@ async function shrinkAll(db, artworkDir, onProgress) {
       if (picture) break
     }
     if (!picture) { skipped++; continue }
+    // Never replace a manually chosen/external cache cover with whatever the
+    // audio file currently embeds. Their image bytes must match exactly.
+    try {
+      if (!fs.readFileSync(cover.path).equals(picture.bytes)) { skipped++; continue }
+    } catch { skipped++; continue }
     let thumbPath
     try { thumbPath = await writeCover(storageDir, path.basename(cover.path).replace(/\.[^.]+$/, ''), picture.bytes) } catch { skipped++; continue }
     if (path.extname(thumbPath).toLowerCase() !== '.webp') { skipped++; continue }
