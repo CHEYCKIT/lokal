@@ -53,19 +53,25 @@ export default function ContextMenu({ menu, id }) {
       // Only the menu closes (not a selection behind it, too).
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
     }
+    const onScroll = (event) => {
+      // Lyrics follow mode changes scrollTop on every focused-line handover.
+      // These are presentation updates, not a user scroll that should dismiss a menu.
+      if (event.target?.closest?.('[data-lyrics-auto-follow="true"]')) return
+      close()
+    }
     window.addEventListener('mousedown', onPointer, true)
     window.addEventListener('contextmenu', onPointer, true)
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('resize', close)
     window.addEventListener('blur', close)
-    document.addEventListener('scroll', close, true)
+    document.addEventListener('scroll', onScroll, true)
     return () => {
       window.removeEventListener('mousedown', onPointer, true)
       window.removeEventListener('contextmenu', onPointer, true)
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('resize', close)
       window.removeEventListener('blur', close)
-      document.removeEventListener('scroll', close, true)
+      document.removeEventListener('scroll', onScroll, true)
     }
   }, [state, close])
 

@@ -99,6 +99,41 @@ html[data-theme="light"] [class*="bg-black"] :is(.bg-base, .bg-surface, .bg-elev
   color: #fff !important;
 }
 
+.selection-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+.selection-checkbox::before {
+  content: '';
+  width: 7px;
+  height: 4px;
+  border: solid currentColor;
+  border-width: 0 0 1.5px 1.5px;
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transform-origin: center;
+  transition: transform 100ms ease-out;
+}
+.selection-checkbox:checked {
+  background: var(--surface3);
+  border-color: var(--muted);
+}
+.selection-checkbox:checked::before {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+.selection-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }

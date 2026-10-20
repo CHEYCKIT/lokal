@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Heart, Plus, Camera, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio, ChevronUp, ChevronDown } from 'lucide-react'
+import { Play, Pause, Heart, Plus, Camera, FolderOpen, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast, showLoadingToast } from './Toaster'
 import { canGetLossless, openLossless, formatLabel, isSuspect, tierOf, TIERS, losslessMenuItem, losslessManyMenuItem } from '../quality'
@@ -614,6 +614,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
       { separator: true },
       one?.album && { label: 'Go to album', icon: Disc3, onSelect: () => navigateToTrackAlbum(navigate, one) },
       !resolveTracks && (one ? { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(one) } : { label: `Edit${count}`, icon: Edit2, onSelect: () => setShowBatchEdit(true) }),
+      one && !resolveTracks && api.isElectron && !oneGhost && !isStreamed(one) && one.file_path && !String(one.file_path).startsWith('ghost://') && { label: 'Open in file manager', icon: FolderOpen, onSelect: () => api.showItemInFolder(one.file_path) },
       !resolveTracks && one && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(one, { stopPropagation() {} }) },
       { separator: true },
       onRemove && { label: one ? 'Remove from this playlist' : `Remove${count} from this playlist`, icon: ListMinus, onSelect: () => removeMany(list) },
@@ -800,7 +801,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
   return (
     <div ref={listRef} className="w-full min-w-0" style={{ '--tl-columns': layout.template }} onClick={handleContainerClick}>
       <SelectionBar
-        open={selection.count > 0}
+        open={selection.count > 1}
         label={t('{count} selected', { count: selection.count })}
         onClear={selection.clear}
         actions={[
@@ -829,7 +830,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             onClick={event => event.stopPropagation()}
             aria-label={t("Select all tracks")}
             title={t("Select all tracks")}
-            className="h-3.5 w-3.5 accent-[rgb(var(--accent-rgb))]" />
+            className="selection-checkbox h-3.5 w-3.5" />
         </div>}
         {layout.number && <SortableHeader column="number" label={t("playlist number")} sort={sort} onSortChange={onSortChange} className="justify-center text-center">#</SortableHeader>}
         <span>{t(layout.album ? 'Title' : 'Title / Album')}</span>
@@ -903,7 +904,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
                 onDoubleClick={event => event.stopPropagation()}
                 aria-label={t('Select {track}', { track: track.title || t('track') })}
                 title={t('Select {track}', { track: track.title || t('track') })}
-                className="h-3.5 w-3.5 accent-[rgb(var(--accent-rgb))]" />
+                className="selection-checkbox h-3.5 w-3.5" />
             </div>}
             {layout.number && <div data-track-column="number" className="flex items-center justify-center h-7 text-xs text-muted font-display">
               {isGhost ? (

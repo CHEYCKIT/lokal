@@ -280,6 +280,7 @@ export default function PlayerBar() {
       !targetIsStation && losslessMenuItem(target, Gem),
       targetLocal && { label: 'Edit info', icon: Edit2, onSelect: () => setEditingTrack(target) },
       targetLocal && api.isElectron && { label: 'Replace artwork', icon: Camera, onSelect: () => replaceArtwork(target) },
+      targetLocal && api.isElectron && { label: 'Open in file manager', icon: FolderOpen, onSelect: () => api.showItemInFolder(target.file_path) },
       !targetIsStation && target.file_path && !String(target.file_path).startsWith('ghost://') && { label: 'Open folder in Library', icon: FolderOpen, onSelect: () => openCurrentTrackFolder(target) },
       !targetIsStation && { label: 'Start radio', icon: Radio, onSelect: () => openRadio(nav, target, user?.id) },
       target.artist && { label: 'Start artist radio', icon: Radio, onSelect: () => openRadio(nav, { artist: target.artist, type: 'artist' }, user?.id) },
