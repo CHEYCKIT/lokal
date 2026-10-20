@@ -1109,14 +1109,15 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
   const tracks = ids.map(id => db.prepare('SELECT * FROM tracks WHERE id = ?').get(id)).filter(Boolean)
   if (!tracks.length) return []
 
-  let artworkPath = null
   const artworkOp = operations.artwork
+  const artworkPaths = new Map()
   if (artworkOp?.mode === 'replace' && artworkOp?.value) {
-    const base64 = String(artworkOp.value).split(',')[1] || ''
-    artworkPath = '__pending__'
+    const normalized = await normalizeArtwork(artworkOp.value)
     for (const track of tracks) {
-      const nextArtPath = path.join(getStorageDir(), 'artwork', `${track.id}.jpg`)
-      await fs.writeFile(nextArtPath, Buffer.from(base64, 'base64'))
+      const nextArtPath = await require('../artwork/thumb').writeCover(
+        path.join(getStorageDir(), 'artwork'), String(track.id), normalized, { overwrite: true }
+      )
+      artworkPaths.set(track.id, nextArtPath)
     }
   }
 
@@ -1159,7 +1160,7 @@ async function applyBatchTrackUpdates(db, trackIds = [], operations = {}) {
         params.push(null)
       } else if (artworkOp?.mode === 'replace' && artworkOp?.value) {
         updates.push('artwork_path = ?')
-        params.push(path.join(getStorageDir(), 'artwork', `${track.id}.jpg`))
+        params.push(artworkPaths.get(track.id) || path.join(getStorageDir(), 'artwork', `${track.id}.jpg`))
       }
       if (!updates.length) continue
       params.push(track.id)

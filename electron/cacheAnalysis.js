@@ -142,7 +142,7 @@ async function artwork(dir, db) {
     // A direct database path above still protects a manually chosen image.
     const ext = path.extname(file).toLowerCase()
     const thumb = path.join(path.dirname(file), stem + '.webp')
-    return ids.has(stem) && (ext === '.webp' || !fs.existsSync(thumb))
+    return ids.has(stem) && ext !== '.webp' && !fs.existsSync(thumb)
   }
   const kinds = { coverThumbs: empty(), trackCovers: empty(), artistImages: empty(), playlistCovers: empty(), otherArtwork: empty() }
   const unused = empty()
