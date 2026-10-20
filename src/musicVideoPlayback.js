@@ -1,3 +1,5 @@
+import { playbackSpeed } from './playbackSpeed.mjs'
+
 // The song remains the playback clock. Following it must never pause its audio
 // element: that emits a real Pause and changes the player's intended state.
 export function syncVideo(element, { time, segments, isPlaying, hidden = false, duration }) {
@@ -23,9 +25,10 @@ export function syncVideo(element, { time, segments, isPlaying, hidden = false, 
       // Somewhere not loaded yet: aim a moment ahead, so the picture is ready
       // when the song gets there instead of always arriving late.
       element.currentTime = isStreamed(element) && !isBuffered(element, target) ? target + SEEK_LEAD_S : target
-      element.playbackRate = 1
+      element.playbackRate = playbackSpeed()
     } else {
-      element.playbackRate = Math.abs(drift) > 0.04 ? 1 - Math.max(-0.06, Math.min(0.06, drift)) : 1
+      const speed = playbackSpeed()
+      element.playbackRate = Math.abs(drift) > 0.04 ? speed * (1 - Math.max(-0.06, Math.min(0.06, drift))) : speed
     }
   }
   if (isPlaying && !hidden && !hold && element.paused) element.play().catch(() => {})
@@ -55,7 +58,7 @@ export function seekVideo(time, { state, element, segments }) {
   const target = segment ? time + segment.offset : null
   if (element?.readyState >= 1 && target != null && target >= 0) {
     element.currentTime = target
-    element.playbackRate = 1
+    element.playbackRate = playbackSpeed()
     if (state.isPlaying && element.paused) element.play().catch(() => {})
   }
   const audio = (state.activeAudioElement === 'primary' ? state.audioRef : state.cfAudioRef)?.current
