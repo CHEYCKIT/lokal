@@ -45,6 +45,34 @@ test('placeholder album tags yield to real source metadata without replacing val
   assert.deepEqual(resolveKnownAlbum('Unknown album','Unknown album'),{value:'Unknown album',replace:false})
 })
 
+test('legacy add-on tables migrate to Mornye names without losing existing rows', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lokal-legacy-mornye-'))
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE settings (key TEXT PRIMARY KEY,value TEXT);
+    CREATE TABLE spotiflac_repositories (id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, name TEXT, refreshed_at INTEGER, index_json TEXT, error TEXT);
+    CREATE TABLE spotiflac_packages (key TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, manifest_json TEXT NOT NULL, repository_id TEXT, digest TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, installed_at INTEGER NOT NULL, methods_json TEXT NOT NULL);
+    CREATE TABLE spotiflac_tracks (provider TEXT NOT NULL, id TEXT NOT NULL, metadata_json TEXT NOT NULL, PRIMARY KEY(provider,id));
+  `)
+  db.prepare('INSERT INTO spotiflac_repositories (id,url,name) VALUES (?,?,?)').run('legacy-repo', 'https://legacy.example/registry.json', 'Legacy repository')
+  db.prepare('INSERT INTO spotiflac_packages (key,name,manifest_json,repository_id,digest,enabled,installed_at,methods_json) VALUES (?,?,?,?,?,?,?,?)')
+    .run('legacy-key', 'legacy-addon', JSON.stringify(manifest), 'legacy-repo', 'digest', 1, 1, JSON.stringify(['initialize']))
+  db.prepare('INSERT INTO spotiflac_tracks (provider,id,metadata_json) VALUES (?,?,?)')
+    .run('a-legacy-key', 'legacy-track', JSON.stringify({ title: 'Preserved track' }))
+  const service = new PackageService(db, { root, tools: () => ({}) })
+  t.after(async () => {
+    for (const runtime of service.runtimes.values()) runtime.close()
+    db.close()
+    await fs.rm(root, { recursive: true, force: true })
+  })
+  assert.equal(service.repos().some(repo => repo.id === 'legacy-repo'), true)
+  assert.equal(service.find('legacy-key')?.manifest.name, manifest.name)
+  assert.deepEqual(db.prepare('SELECT metadata_json FROM mornye_tracks WHERE provider=? AND id=?').get('a-legacy-key', 'legacy-track'), { metadata_json: JSON.stringify({ title: 'Preserved track' }) })
+  for (const table of ['spotiflac_repositories', 'spotiflac_packages', 'spotiflac_tracks']) {
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined)
+  }
+})
+
 test('install, search, update and enable preserve provider identity and isolated secret settings',async t=>{
   const {service,root}=await fixture(t),installed=await service.install({buffer:archive()})
   assert.equal(installed.kind,'mornye');assert.ok(installed.resources.includes('search'))

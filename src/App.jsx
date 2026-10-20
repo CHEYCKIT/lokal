@@ -1767,11 +1767,13 @@ export default function App() {
     const pending = addonVerificationRetryRef.current
     if (!pending || pending.key !== key || pending.retrying) return
     if (typeof pending.retry === 'function') {
-      // The popup may be completed both by its immediate response and by the
-      // auth-window event. Guard the retry and close only once it has started.
+      // The verification popup represents missing access, not playback
+      // resolution. Close it as soon as authentication is confirmed; Mornye
+      // updates may return a different shape from the interrupted retry.
       pending.retrying = true
+      setAddonVerificationPrompt(current => current?.key === key ? null : current)
+      setAddonVerificationMessage('')
       setAddonVerificationBusy(true)
-      setAddonVerificationMessage('Access verified. Starting the selected song…')
       return Promise.resolve().then(async () => {
         let result = await pending.retry()
         if (addonVerificationRetryRef.current !== pending) return
