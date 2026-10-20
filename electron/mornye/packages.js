@@ -10,7 +10,7 @@ const { SignedSession } = require('./session')
 const { ExtensionHost, safePath, runTool, mediaInfo } = require('./host')
 const { ExtensionRuntime } = require('./runtime')
 
-const REGISTRY = 'https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/main/registry.json'
+const REGISTRY = 'https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/refs/heads/main/registry.json'
 const COMPAT_VERSION = '5.1.0'
 const FEATURES = { signedSession: 3, sessionRefresh: 1, sessionGrant: 1, globalAction: 1, webviewAuth: 1, downloadSegments: 1, patternedFileTransform: 1, preparedContext: 1, accountForms: 1, accountDownloadMode: 1, directMedia: 1 }
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex')
