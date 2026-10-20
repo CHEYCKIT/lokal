@@ -59,7 +59,7 @@ async function openAuthWindow(packages, key) {
     try {
       const cookies = await partition.cookies.get({})
       for (const cookie of cookies) {
-        const host = cookie.domain.replace(/^\\./, '')
+        const host = cookie.domain.replace(/^\./, '')
         if (!domainAllowed(host, permissions.network)) continue
         const attributes = `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path || '/'}${cookie.secure ? '; Secure' : ''}${cookie.httpOnly ? '; HttpOnly' : ''}`
         try { runtime.host.network.cookies.setCookieSync(attributes, `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path || '/'}`) } catch {}
