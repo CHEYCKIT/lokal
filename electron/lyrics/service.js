@@ -88,12 +88,16 @@ function readSettings(db) {
 function lyricsQualityRank(result) {
   if (!result || result.instrumental || result.type === 'instrumental') return 0
   const lines = Array.isArray(result.lines) ? result.lines : []
-  if (result.sync === 'syllable' || result.type === 'syllable' ||
-      lines.some(line => (Array.isArray(line?.words) && line.words.some(word => word?.time != null)) ||
-        (Array.isArray(line?.bgWords) && line.bgWords.some(word => word?.time != null)))) return 3
-  if (result.sync === 'line' || result.sync === 'sync' || result.type === 'synced' ||
-      lines.some(line => line && line.time != null)) return 2
-  return lines.some(line => String(line?.text || line?.bgText || '').trim()) ? 1 : 0
+  const sync = String(result.sync || '').toLowerCase()
+  const hasWordTimes = lines.some(line =>
+    (Array.isArray(line?.words) && line.words.some(word => word?.time != null)) ||
+    (Array.isArray(line?.bgWords) && line.bgWords.some(word => word?.time != null)))
+  if (sync === 'syllable' || result.type === 'syllable' || hasWordTimes) return 3
+  const hasLineTimes = lines.some(line => line && typeof line === 'object' && line.time != null)
+  if (sync === 'line' || sync === 'sync' || sync === 'synced' || hasLineTimes) return 2
+  const hasText = (typeof result.text === 'string' && result.text.trim()) ||
+    lines.some(line => (typeof line === 'string' ? line.trim() : String(line?.text || line?.bgText || '').trim()))
+  return hasText ? 1 : 0
 }
 
 /** A lower/equal-quality refresh must not downgrade an existing usable result. */
@@ -243,6 +247,14 @@ async function getLyrics(db, args) {
   let untimedFallback = null
   // The file's own usable lyrics are never replaced by an equal or worse lookup.
   let cachedLocalLyrics = null
+
+  // Explicit refresh skips cache hits, but a saved local answer still needs to
+  // participate in quality comparison so a weaker lookup cannot overwrite it.
+  if (args.refresh) {
+    const cachedRow = readRow(db, trackId, filePath)
+    const cachedMeta = parseMeta(cachedRow)
+    if (cachedRow?.source === 'local' && cachedMeta) cachedLocalLyrics = fromRow(cachedRow, cachedMeta)
+  }
 
   if (!args.refresh) {
     const row = readRow(db, trackId, filePath)
