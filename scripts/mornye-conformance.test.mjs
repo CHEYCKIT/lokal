@@ -1,4 +1,4 @@
-// Point SPOTIFLAC_EXTENSION_DIR at an upstream SpotiFLAC-Extension checkout to
+// Point MORNYE_EXTENSION_DIR at the Mornye extension checkout to
 // verify its real registry packages without contacting provider services.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,8 +8,8 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3')
-const {PackageService,readArchive}=require('../electron/spotiflac/packages')
-const reference=process.env.SPOTIFLAC_EXTENSION_DIR
+const {PackageService,readArchive}=require('../electron/mornye/packages')
+const reference=process.env.MORNYE_EXTENSION_DIR || process.env.SPOTIFLAC_EXTENSION_DIR
 
 for(const file of ['amzn.sflx','soundcloud.sflx','ytmusic-spotiflac.sflx','deezer.sflx','qobuz-web.sflx','tidal-web.sflx']){
   test(`real upstream ${file} registers and initializes in the isolated runtime`,{skip:!reference},async t=>{

@@ -70,7 +70,7 @@ class AddonStorage {
           if (mac) keepLocally(key)
         } else if (mac) {
           // The old key is gone for good, and so is what it protected.
-          console.warn('[SpotiFLAC] The Keychain key for saved addon logins is unreadable; starting with a new key (logins must be entered again).')
+          console.warn('[Mornye] The Keychain key for saved addon logins is unreadable; starting with a new key (logins must be entered again).')
           try { fs.copyFileSync(file, path.join(this.root, 'master-key.os-backup.json')) } catch {}
           this.discardEncrypted()
           this.key = crypto.randomBytes(32)

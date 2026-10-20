@@ -1,4 +1,4 @@
-// "Finish setting up" for SpotiFLAC sources that can't stream or download
+// "Finish setting up" for Mornye sources that can't stream or download
 // yet (an unverified session, a login not done): people often install one
 // and don't notice it still needs this step.
 

@@ -11,7 +11,7 @@ const redact=text=>String(text||'').replace(/(hmac|token|signature|sig|key|secre
 function logFailure(db,key,id,error){
   try{
     const name=service(db).find(key)?.manifest?.displayName || key
-    const line=`[SpotiFLAC] ${name}: couldn't prepare ${String(id).slice(0,80)} for playback: ${redact(error?.message)}${error?.errorType?` (${error.errorType})`:''}`
+    const line=`[Mornye] ${name}: couldn't prepare ${String(id).slice(0,80)} for playback: ${redact(error?.message)}${error?.errorType?` (${error.errorType})`:''}`
     try{require('electron-log').warn(line)}catch{console.warn(line)}
   }catch{}
 }
