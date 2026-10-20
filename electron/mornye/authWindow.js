@@ -24,7 +24,14 @@ function isExpectedCallback(raw, runtime) {
   try { url = new URL(raw) } catch { return false }
   // Some provider flows wrap the final callback in a "cb" query parameter.
   const nested = url.searchParams.get('cb')
-  if (nested) return isExpectedCallback(nested, runtime)
+  if (nested) {
+    // A challenge may include a cb parameter describing its eventual redirect.
+    // Only consume it when the nested URL is an actual completed grant callback.
+    let callback
+    try { callback = new URL(nested) } catch { return false }
+    if (!callback.searchParams.get('state') || !(callback.searchParams.get('grant') || callback.searchParams.get('code'))) return false
+    return isExpectedCallback(callback.href, runtime)
+  }
   const configured = runtime.host.session?.config.callbackUrl || runtime.host.auth.pending?.callback
   const candidates = configured
     ? [configured]
