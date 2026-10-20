@@ -34,6 +34,11 @@ function parseNumberField(value) {
   return Number.isNaN(parsed) ? null : parsed
 }
 
+function trackArtworkPreview(track) {
+  if (!track?.artwork_path) return null
+  return api.isElectron ? api.fileURL(track.artwork_path) : api.artworkURL(track.id)
+}
+
 export default function TrackEditModal({ track, open, onClose, onSave }) {
   const { t } = useTranslation()
   const syncTrack = usePlayerStore(s => s.syncTrack)
@@ -116,7 +121,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       })
       
       if (track.artwork_path) {
-        setArtworkPreview(api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id))
+        setArtworkPreview(trackArtworkPreview(track))
       } else {
         setArtworkPreview(null)
       }
@@ -141,7 +146,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
     try {
       const updatedTrack = await api.trackSetArtwork(track.id, dataUrl)
       if (updatedTrack?.error) {
-        setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
+        setArtworkPreview(track.artwork_path ? (trackArtworkPreview(track)) : null)
         setStatus({ type: 'error', message: updatedTrack.error })
         setSaving(false)
         return
@@ -152,7 +157,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       setStatus({ type: 'success', message: 'Artwork updated in the audio file.' })
       setTimeout(() => setStatus(null), 2000)
     } catch (e) {
-      setArtworkPreview(track.artwork_path ? (api.isElectron ? `file://${track.artwork_path}` : api.artworkURL(track.id)) : null)
+      setArtworkPreview(track.artwork_path ? (trackArtworkPreview(track)) : null)
       setStatus({ type: 'error', message: e.message })
     }
     setSaving(false)
@@ -238,8 +243,8 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       const result = await api.fetchExternalArtwork(track.id, track.title, track.artist)
       
       if (result?.success && result.artworkPath) {
-        const updatedTrack = result?.track || { ...track, artwork_path: result.artworkPath }
-        setArtworkPreview(api.isElectron ? `file://${updatedTrack.artwork_path}` : api.artworkURL(track.id))
+        const updatedTrack = { ...(result?.track || track), artwork_path: result.artworkPath }
+        setArtworkPreview(trackArtworkPreview(updatedTrack))
         syncTrack(updatedTrack)
         setStatus({ type: 'success', message: 'Artwork found and updated!' })
         if (onSave) onSave(updatedTrack)
