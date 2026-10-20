@@ -146,7 +146,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
     try {
       const updatedTrack = await api.trackSetArtwork(track.id, dataUrl)
       if (updatedTrack?.error) {
-        setArtworkPreview(track.artwork_path ? (trackArtworkPreview(track)) : null)
+        setArtworkPreview(trackArtworkPreview(track))
         setStatus({ type: 'error', message: updatedTrack.error })
         setSaving(false)
         return
@@ -157,7 +157,7 @@ export default function TrackEditModal({ track, open, onClose, onSave }) {
       setStatus({ type: 'success', message: 'Artwork updated in the audio file.' })
       setTimeout(() => setStatus(null), 2000)
     } catch (e) {
-      setArtworkPreview(track.artwork_path ? (trackArtworkPreview(track)) : null)
+      setArtworkPreview(trackArtworkPreview(track))
       setStatus({ type: 'error', message: e.message })
     }
     setSaving(false)
