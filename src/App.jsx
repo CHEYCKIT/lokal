@@ -81,6 +81,7 @@ import { usePerformanceMode } from './performanceMode'
 import { isWindowHidden, onWindowVisibility } from './windowVisibility'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
+import { playbackSpeed, usePlaybackSpeed } from './playbackSpeed.mjs'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
 
 async function addonStreamTrackHash(id) {
@@ -527,6 +528,26 @@ export default function App() {
   const nativeAudioRef = useRef(null)
   const analyserRef = useRef(null)
   const isCrossfadingRef = useRef(false)
+  // Keep both audio decks at the user's speed. During AutoMix, leave the
+  // beat-matched rate alone until its normal glide at the end of the transition.
+  useEffect(() => {
+    const apply = speed => {
+      for (const el of [audioRef.current, cfAudioRef.current]) {
+        if (!el) continue
+        try {
+          el.defaultPlaybackRate = speed
+          if (!isCrossfadingRef.current) {
+            clearInterval(rateGlideRef.current)
+            el.playbackRate = speed
+          }
+        } catch {}
+      }
+    }
+    apply(playbackSpeed())
+    return usePlaybackSpeed.subscribe((state, previous) => {
+      if (state.speed !== previous.speed) apply(state.speed)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const audioSourcesInitializedRef = useRef(false)
   const playSecsRef = useRef(0)
   const playTimerRef = useRef(null)
@@ -2147,7 +2168,7 @@ export default function App() {
     // An AutoMix transition called off: filters open, both songs at their own speed.
     openMixFilters()
     clearInterval(rateGlideRef.current)
-    for (const el of [audioRef.current, cfAudioRef.current]) { try { if (el && el.playbackRate !== 1) el.playbackRate = 1 } catch {} }
+    for (const el of [audioRef.current, cfAudioRef.current]) { try { if (el && el.playbackRate !== playbackSpeed()) el.playbackRate = playbackSpeed() } catch {} }
     if (usePlayerStore.getState().mixing) usePlayerStore.setState({ mixing: null })
   }, [openMixFilters])
 
@@ -2289,7 +2310,7 @@ export default function App() {
         // AutoMix: the next song waits, ready, at its entry point, until the
         // playing one reaches the transition (it was loaded ahead of it).
         try { fadeInEl.currentTime = plan.inOffset || 0 } catch {}
-        try { fadeInEl.playbackRate = plan.rate || 1 } catch {}
+        try { fadeInEl.playbackRate = (plan.rate || 1) * playbackSpeed() } catch {}
         const waitForStart = () => {
           if (!isCrossfadingRef.current || token !== crossfadeTokenRef.current) return
           const left = plan.start - fadeOutEl.currentTime
@@ -2394,7 +2415,7 @@ export default function App() {
         openMixFilters()
         usePlayerStore.setState({ mixing: null })
         // A beat-matched song back to its own tempo, gently (8 s).
-        if (plan && fadeInEl.playbackRate !== 1) {
+        if (plan && fadeInEl.playbackRate !== playbackSpeed()) {
           clearInterval(rateGlideRef.current)
           const from = fadeInEl.playbackRate
           const began = Date.now()
@@ -2402,9 +2423,10 @@ export default function App() {
           // audio (costly on Linux): a few coarse steps, not 80 tiny ones.
           rateGlideRef.current = setInterval(() => {
             const part = Math.min(1, (Date.now() - began) / 8000)
-            const rate = from + (1 - from) * part
-            try { fadeInEl.playbackRate = Math.abs(rate - 1) < 0.004 ? 1 : Math.round(rate * 1000) / 1000 } catch {}
-            if (part >= 1 || fadeInEl.playbackRate === 1) clearInterval(rateGlideRef.current)
+            const target = playbackSpeed()
+            const rate = from + (target - from) * part
+            try { fadeInEl.playbackRate = Math.abs(rate - target) < 0.004 ? target : Math.round(rate * 1000) / 1000 } catch {}
+            if (part >= 1 || fadeInEl.playbackRate === playbackSpeed()) clearInterval(rateGlideRef.current)
           }, 500)
         }
 

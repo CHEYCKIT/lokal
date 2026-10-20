@@ -16,6 +16,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
+import { usePlaybackSpeed } from '../playbackSpeed.mjs'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { clipRange, clipZoomPreview, onClipZoomPreview, trackClipLoop } from '../clipVideo'
 import { useAppearanceValue } from '../appearanceFlags'
@@ -39,8 +40,16 @@ function ClipLoop({ link, start, end, zoom = 0, onActive, onFail }) {
   // more through yt-dlp's own link.
   const triedFallback = useRef(false)
   const isPlaying = usePlayerStore(s => s.isPlaying)
+  const speed = usePlaybackSpeed(state => state.speed)
   const playingRef = useRef(isPlaying)
   playingRef.current = isPlaying
+
+  // The muted clip follows the song's selected speed, not normal speed.
+  useEffect(() => {
+    const video = ref.current
+    if (!video || !src) return
+    try { video.defaultPlaybackRate = speed; video.playbackRate = speed } catch {}
+  }, [src, speed])
 
   const resolve = (fallback) => {
     let current = true
