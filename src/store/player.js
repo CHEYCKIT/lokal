@@ -61,7 +61,7 @@ async function applyMiniMode(next, electron, set) {
       return
     }
   }
-  set({ showMiniPlayer: next })
+  set({ showMiniPlayer: next, ...(next ? {} : { showMiniVisualizer: false }) })
 }
 
 // Shared by setExclusiveSidePanels (the user's Settings toggle) and
@@ -233,7 +233,7 @@ export const usePlayerStore = create((set, get) => ({
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
-  showRightSidebar: false, showFullscreen: false, showFullscreenVisualizer: false, showQueue: false, showLyricsPanel: false,
+  showRightSidebar: false, showFullscreen: false, showFullscreenVisualizer: false, showMiniVisualizer: false, showQueue: false, showLyricsPanel: false,
   // Which content the right-hand panel shows. Only meaningful in merged
   // mode -- independent mode's Queue lives in its own separate panel and
   // never touches this.
@@ -1003,6 +1003,7 @@ export const usePlayerStore = create((set, get) => ({
     return { showRightSidebar: false }
   }),
   setShowFullscreenVisualizer: (value) => set({ showFullscreenVisualizer: !!value }),
+  setShowMiniVisualizer: (value) => set({ showMiniVisualizer: !!value }),
   toggleFullscreen: () => set(s => {
     const next = !s.showFullscreen
     if (!next && typeof window !== 'undefined' && window.electron?.refreshHitRegions) {
