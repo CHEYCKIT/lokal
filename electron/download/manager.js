@@ -1326,6 +1326,8 @@ class DownloadManager {
         const settings = job.stop ? { ...(job.settings || {}), download_embed_lyrics: '0' } : (job.settings || {})
         const done = await finishFile(filepath, { db: this.db(), settings, url: job.url, meta, kind: job.kind, outputDir, known: job.opts?.tags || null })
         finalPath = done.filePath
+        // A download is a new library arrival even if the source file carried a date tag.
+        if (!job.opts?.upgradeTrackId) require('../addedDate').stampNewFile(this.db(), finalPath)
         const name = path.basename(finalPath)
         if (!job.downloadedTracks.includes(name)) job.downloadedTracks.push(name)
         if (job.musicPlaylistBatchFile && job.totalTracks) {

@@ -95,6 +95,8 @@ async function upgradeTrackFile(db, trackId, newPath, { storageDir, allowDuratio
     if (movedTo) { try { moveFile(movedTo, track.file_path) } catch {} }
     return { error: `Could not update the library (${e.message}).` }
   }
+  // This is the same library entry, not a new arrival: keep its original date.
+  try { await require('../addedDate').stampAddedDates(db, [newPath]) } catch {}
   return { id: track.id, oldPath: track.file_path, movedTo }
 }
 

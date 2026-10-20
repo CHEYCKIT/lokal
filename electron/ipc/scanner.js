@@ -8,6 +8,7 @@ const { downloadImageWithTimeout } = require('../artworkDownload')
 const artistRoles = require('../artistRoles')
 const mm = require('../musicMetadata')
 const quality = require('../quality')
+const addedDate = require('../addedDate')
 const artistSplit = require('../artistSplit')
 const { getArtistNamePreference, artistNamePreferenceNeedsRescan, rememberArtistNamePreferenceAfterScan } = require('../artistMetadataPreference')
 const { findFolderArtwork, getLibraryFolders, resolveLibraryFolderTarget, getTrackRowsUnderFolder, renameLibraryFolders } = require('../libraryFolder')
@@ -482,6 +483,7 @@ async function scanFolder(folderPath, {
       } else {
         insertTrack.run(params)
       }
+      addedDate.applyToRow(db, trackId, item.added)
       if (item.quality) quality.saveFields(db, trackId, item.quality, { fileChanged: true })
       db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
       unlockArtistLinks(db, trackId)
@@ -500,6 +502,13 @@ async function scanFolder(folderPath, {
   })
   const insertBatch = async (items) => {
     insertBatchTransaction(items)
+    // New entries without a LOKAL_ADDED tag take the library's date and write
+    // it into the file. Existing entries are deliberately not re-dated.
+    const toStamp = items.filter(item => item.isNew && item.added == null).map(item => item.file_path)
+    if (toStamp.length) {
+      const stamped = await addedDate.stampAddedDates(db, toStamp)
+      if (stamped.failed) console.warn(`[scanFolder] Date-added tag write failed for ${stamped.failed} file(s)`)
+    }
     // Run hook calls together for this bounded DB batch, rather than making
     // each indexed track wait for the previous plugin round-trip.
     await Promise.all(items.map(item => emitPluginHook('onTrackIndexed', {
@@ -558,7 +567,7 @@ async function scanFolder(folderPath, {
       if (getSkipDrumKit() && isDrumKit(title, c.album, c.genre?.[0])) { console.log(`[scanFolder] Skipped: ${filePath} - Drumkit pattern detected`); scanStatus.skipped++; scanStatus.done++; emitProgress(); continue }
       const artwork = await extractArtwork(meta, trackId, folderArtwork)
       const replaygain = c.replaygain_track_gain || null
-      batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta) })
+      batch.push({ id: trackId, file_path: filePath, file_hash: trackId, title, artist, album: c.album?.trim() || 'Unknown Album', album_artist: c.albumartist?.trim() || null, track_num: c.track?.no || null, year: c.year || null, genre: c.genre?.[0] || null, duration, artwork_path: artwork, bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate / 1000) : null, last_modified: stat.mtimeMs, replaygain, quality: quality.qualityFields(meta), added: addedDate.fromMeta(meta), isNew: !existing })
       if (batch.length >= BATCH) { await insertBatch(batch); batch = [] }
     } catch { scanStatus.errors++ }
     scanStatus.done++; emitProgress()
@@ -2056,7 +2065,10 @@ async function indexSingleFile(filePath, opts = {}) {
         db.transaction(() => {
           db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
           if (artistOverride && existing.artist !== artistOverride) updateTrackArtistLinks(db, existing.id, artistOverride)
-          if (currentMeta) quality.saveFields(db, existing.id, quality.qualityFields(currentMeta), { fileChanged: true })
+          if (currentMeta) {
+        quality.saveFields(db, existing.id, quality.qualityFields(currentMeta), { fileChanged: true })
+        addedDate.applyToRow(db, existing.id, addedDate.fromMeta(currentMeta))
+      }
         })()
       }
       return { skipped: true, id: existing.id, repaired: !!updates.length }
@@ -2072,6 +2084,7 @@ async function indexSingleFile(filePath, opts = {}) {
   } catch { return { error: 'Failed to parse metadata' } }
   finally { clearTimeout(parseTimeout) }
   const c = meta.common
+  const added = addedDate.fromMeta(meta)
   const rawTitle = c.title?.trim()
   const rawArtist = pickPreferredArtist(c)
   const requested = opts.metadata || {}
@@ -2174,11 +2187,15 @@ async function indexSingleFile(filePath, opts = {}) {
         console.warn(`[indexSingleFile] Failed to link artist ${aid} to track ${trackId}:`, linkErr.message)
       }
     }
+    addedDate.applyToRow(db, trackId, added)
     applyPendingImportedMetadataToTrack(db, trackId)
     if (!opts.deferGhostResolution) resolveGhostsByIsrc(db, trackId)
   })
   
   insertTransaction()
+  if (added == null) {
+    try { await addedDate.stampAddedDates(db, [filePath]) } catch (error) { console.warn('[indexSingleFile] Date-added tag skipped:', error.message) }
+  }
   await emitPluginHook('onTrackIndexed', {
     id: trackId,
     title,
