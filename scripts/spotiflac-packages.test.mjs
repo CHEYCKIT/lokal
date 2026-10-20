@@ -47,7 +47,7 @@ test('placeholder album tags yield to real source metadata without replacing val
 
 test('install, search, update and enable preserve provider identity and isolated secret settings',async t=>{
   const {service,root}=await fixture(t),installed=await service.install({buffer:archive()})
-  assert.equal(installed.kind,'spotiflac');assert.ok(installed.resources.includes('search'))
+  assert.equal(installed.kind,'mornye');assert.ok(installed.resources.includes('search'))
   service.setSettings(installed.key,{token:'private-token',country:'GB'})
   assert.equal(service.list()[0].settings.token,undefined)
   assert.deepEqual(service.list()[0].configuredSecrets,['token'])

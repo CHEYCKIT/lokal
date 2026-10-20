@@ -1694,7 +1694,7 @@ export default function App() {
     return playedSeconds >= Math.min(durationSeconds / 2, 240)
   }, [getLastfmTrackDuration])
 
-  // A SpotiFLAC song playing while it downloads: a seek finishes once the
+  // A Mornye song playing while it downloads: a seek finishes once the
   // song is complete (src/liveSeek.js).
   const onAudioSeeking = useCallback((event) => handleLiveSeek(event.currentTarget, {
     currentTrack: () => usePlayerStore.getState().currentTrack,

@@ -327,7 +327,7 @@ class ExtensionHost {
     if(name==='utils'){
       if(action==='isDownloadCancelled'||action==='isRequestCancelled')return this.signal.aborted
       if(action==='appVersion')return '5.1.0'
-      if(action==='appUserAgent')return `Lokal/${require('../../package.json').version} SpotiFLAC-compatible/5.1.0`
+      if(action==='appUserAgent')return `Lokal/${require('../../package.json').version} Mornye-compatible/5.1.0`
       if(action==='randomUserAgent')return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36'
       if(action==='setDownloadStatus'){this.onProgress?.({message:String(args[0]).slice(0,200)});return true}
       if(action==='getResolutionRemainingMs')return Math.max(0,60000-(Date.now()-this.startedAt))

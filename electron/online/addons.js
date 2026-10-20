@@ -506,6 +506,6 @@ module.exports = {
 function packageService(db) { return require('../spotiflac/packages').service(db) }
 // A failing package service must not take the HTTP addons down with it.
 function packageList(db) {
-  try { return optionalPackages(db)?.list() || [] } catch (error) { console.warn('[addons] SpotiFLAC packages unavailable:', error.message); return [] }
+  try { return optionalPackages(db)?.list() || [] } catch (error) { console.warn('[addons] Mornye packages unavailable:', error.message); return [] }
 }
 function optionalPackages(db) { return typeof db?.exec === 'function' ? packageService(db) : null }
