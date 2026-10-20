@@ -1314,6 +1314,11 @@ activeCategory === 'data' ? usersTried
             )}
           </div>
         </Row>
+        <Row label={t("Download Folder")} desc={t("Optional folder inside your music library. Downloads are moved there and numbered in that folder; leave blank to keep the usual artist/album layout.")}>
+          <input type="text" value={settings.download_folder || ''} onChange={e => set('download_folder', e.target.value)}
+            placeholder={t("e.g. Downloads")} aria-label={t("Download Folder")}
+            className="w-52 max-w-full bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
+        </Row>
         <Row label={t("Simultaneous Downloads")} desc={t("How many downloads run at once; the rest wait. A playlist counts as one.")}>
           <select
             value={settings.download_concurrency || '3'}
