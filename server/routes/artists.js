@@ -3,10 +3,11 @@ const fs = require('fs-extra')
 const path = require('path')
 const { getDB } = require('../../electron/ipc/db')
 const { findArtistById, trackArtistLinks } = require('../../electron/artistId')
+const artistRoles = require('../../electron/artistRoles')
 const { cacheArtistMetadata, refreshArtistMetadata, startRefreshAll, refreshAllStatus, cancelRefreshAll, searchArtistMetadataCandidates, applyArtistMetadataSelection, clearArtistImageOverride } = require('../../electron/ipc/artistMetadata')
 
 function classifyAlbumRow(row) {
-  const trackCount = Number(row?.track_count || 0)
+  const trackCount = Number(row?.release_track_count ?? row?.track_count ?? 0)
   if (trackCount <= 1) return 'single'
   if (trackCount <= 6) return 'ep'
   return 'album'
@@ -43,7 +44,8 @@ router.get('/', (req, res) => {
   const db = getDB()
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
   const followedOnly = req.query.followed === '1'
-  const hasPaging = !!search || followedOnly || req.query.limit !== undefined || req.query.offset !== undefined
+  const mainOnly = req.query.mainOnly === '1'
+  const hasPaging = !!search || followedOnly || mainOnly || req.query.limit !== undefined || req.query.offset !== undefined
   const limit = hasPaging ? Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 60)) : null
   const offset = hasPaging ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0
   const sort = req.query.sort === 'tracks' ? 'tracks' : 'name'
@@ -55,64 +57,52 @@ router.get('/', (req, res) => {
 
   if (search) {
     conditions.push('a.name LIKE ?')
-    params.push(`%${search}%`)
+    params.push('%' + search + '%')
   }
-  // Artists → Followed: only the artists you follow.
   if (followedOnly) {
     const followed = require('../../electron/followedArtistIds').followedCondition(db)
     conditions.push(followed.sql)
     params.push(followed.param)
   }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-
-  // Songs in the library only (not streamed ones), as on the artist's page.
-  const baseSql = `
-    FROM artists a
-    LEFT JOIN artist_track_links atl ON atl.artist_id = a.id
-    LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'
-  `
-  // Unpaged (the full list): the same songs as the paged one.
-  const selectSql = `
-    SELECT a.*, COUNT(DISTINCT t.id) as track_count
-    ${baseSql}
-    ${groupBy}
-    ${having}
-    ORDER BY a.name ASC
-  `
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+  const baseSql = [
+    'FROM artists a',
+    'LEFT JOIN artist_track_links atl ON atl.artist_id = a.id',
+    "LEFT JOIN tracks t ON t.id = atl.track_id AND t.file_path NOT LIKE 'ghost://%'",
+  ].join('\n')
+  const selectSql = [
+    'SELECT a.*, COUNT(DISTINCT t.id) as track_count',
+    baseSql, where, groupBy, having, orderBy,
+  ].filter(Boolean).join('\n')
 
   if (!hasPaging) {
-    const artists = db.prepare(selectSql).all()
-    const artistsWithFallback = artists.map(artist => addArtistFallback(db, artist))
-    res.json(artistsWithFallback)
+    const artists = db.prepare(selectSql).all(...params)
+    res.json(artists.map(artist => addArtistFallback(db, artist)))
     return
   }
 
-  const rows = db.prepare(`
-    SELECT a.*, COUNT(DISTINCT t.id) as track_count
-    ${baseSql}
-    ${where}
-    ${groupBy}
-    ${having}
-    ${orderBy}
-    LIMIT ? OFFSET ?
-  `).all(...params, limit, offset)
-  const totalRow = db.prepare(`
-    SELECT COUNT(*) as total
-    FROM (
-      SELECT a.id
-      ${baseSql}
-      ${where}
-      ${groupBy}
-      ${having}
-    ) grouped_artists
-  `).get(...params)
+  let rows
+  let total
+  if (mainOnly) {
+    const mainIds = artistRoles.mainOnlyArtistIds(db)
+    const eligible = db.prepare(selectSql).all(...params).filter(artist => mainIds.has(String(artist.id)))
+    total = eligible.length
+    rows = eligible.slice(offset, offset + limit)
+  } else {
+    rows = db.prepare(selectSql + '\nLIMIT ? OFFSET ?').all(...params, limit, offset)
+    total = db.prepare([
+      'SELECT COUNT(*) as total FROM (',
+      'SELECT a.id', baseSql, where, groupBy, having,
+      ') grouped_artists',
+    ].filter(Boolean).join('\n')).get(...params)?.total || 0
+  }
 
   res.json({
     items: rows.map(artist => addArtistFallback(db, artist)),
-    total: totalRow?.total || 0,
+    total,
     limit,
     offset,
-    hasMore: offset + rows.length < (totalRow?.total || 0),
+    hasMore: offset + rows.length < total,
   })
 })
 
@@ -144,6 +134,10 @@ router.get('/:id', (req, res) => {
       t.year,
       t.artwork_path,
       COUNT(*) as track_count,
+      (SELECT COUNT(*) FROM tracks full_release
+        WHERE LOWER(full_release.album) = LOWER(t.album)
+          AND LOWER(COALESCE(NULLIF(full_release.album_artist, ''), full_release.artist)) = LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
+          AND full_release.file_path NOT LIKE 'ghost://%') as release_track_count,
       GROUP_CONCAT(DISTINCT t.artist) as artists
     FROM tracks t
     JOIN artist_track_links atl ON atl.track_id = t.id
@@ -152,7 +146,7 @@ router.get('/:id', (req, res) => {
       AND t.album IS NOT NULL
     GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist))
     ORDER BY t.year DESC, t.album ASC
-  `).all(artist.id))
+  `).all(artist.id)).map(album => ({ ...album, is_main_artist: artistRoles.isMainArtistRelease(artist.name, album, tracks, db) }))
   const artistWithFallback = addArtistFallback(db, artist)
   res.json({ ...artistWithFallback, tracks, topTracks, albums })
 })
