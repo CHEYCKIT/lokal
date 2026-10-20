@@ -1,4 +1,17 @@
 const TOO_HEAVY = /mandelbox|reaction diffusion/i
+const EXCLUDED_PRESETS = new Set(['idiot - star of annon'])
+
+const normalizePresetName = name => name
+  .trim()
+  .toLowerCase()
+  .replace(/\s*-\s*/g, ' - ')
+  .replace(/\s+/g, ' ')
+
+export function filterMilkDropPresetNames(names) {
+  return names.filter(name =>
+    !TOO_HEAVY.test(name) && !EXCLUDED_PRESETS.has(normalizePresetName(name)),
+  )
+}
 
 const unwrap = (mod, key) => [mod, mod?.default, mod?.default?.default]
   .find(value => value && typeof value[key] === 'function')
@@ -13,8 +26,7 @@ export function loadMilkDropPresets() {
         const pack = unwrap(module, 'getPresets')
         if (!pack) throw new Error('MilkDrop preset pack did not load')
         const all = pack.getPresets()
-        return Object.keys(all)
-          .filter(name => !TOO_HEAVY.test(name))
+        return filterMilkDropPresetNames(Object.keys(all))
           .map(name => ({ name, preset: all[name] }))
       })
       .catch(error => {
