@@ -1,22 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Expand, Gamepad2, Minimize, X } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Expand, Gamepad2, Minimize, Minimize2, X } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { usePlayerStore } from '../store/player'
-import Anomaly from '../visualizers/Anomaly'
-import Lightning from '../visualizers/Lightning'
-import MilkDrop from '../visualizers/MilkDrop'
-import Spectrum from '../visualizers/Spectrum'
-import Waves from '../visualizers/Waves'
+import VisualizerCanvas from './VisualizerCanvas'
 import { normalizeVisualizerModes, VISUALIZER_MODES } from '../visualizers/modes.mjs'
 import { useTranslation } from '../i18n'
+
+const IDLE_MS = 3000
 
 export default function FullscreenVisualizer() {
   const { t } = useTranslation()
   const open = usePlayerStore(state => state.showFullscreenVisualizer)
   const setOpen = usePlayerStore(state => state.setShowFullscreenVisualizer)
+  const toggleMiniPlayer = usePlayerStore(state => state.toggleMiniPlayer)
+  const setStoredVisualizer = usePlayerStore(state => state.setVisualizerMode)
   const currentTrack = usePlayerStore(state => state.currentTrack)
   const isPlaying = usePlayerStore(state => state.isPlaying)
   const [screenFull, setScreenFull] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
+  const [idle, setIdle] = useState(false)
+  const idleTimerRef = useRef(null)
+  const overChromeRef = useRef(false)
   const [settings, setSettings] = useState(() => peekSettings() || {})
   const enabled = useMemo(
     () => normalizeVisualizerModes(settings.fullscreen_visualizers),
@@ -31,11 +34,51 @@ export default function FullscreenVisualizer() {
   const index = Math.max(0, enabled.indexOf(visualizer))
   const selectedMode = VISUALIZER_MODES.find(mode => mode.id === visualizer) || VISUALIZER_MODES[0]
 
+  useEffect(() => { setStoredVisualizer(visualizer) }, [visualizer, setStoredVisualizer])
+
   useEffect(() => {
     const onFullscreenChange = () => setScreenFull(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
+
+  useEffect(() => {
+    if (!open) {
+      clearTimeout(idleTimerRef.current)
+      setIdle(false)
+      overChromeRef.current = false
+      return undefined
+    }
+    const wake = () => {
+      setIdle(false)
+      clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(() => {
+        if (!overChromeRef.current) setIdle(true)
+      }, IDLE_MS)
+    }
+    const events = ['mousemove', 'mousedown', 'wheel', 'keydown', 'touchstart']
+    events.forEach(type => window.addEventListener(type, wake, { passive: true }))
+    wake()
+    return () => {
+      clearTimeout(idleTimerRef.current)
+      events.forEach(type => window.removeEventListener(type, wake))
+    }
+  }, [open])
+
+  const wakeChrome = () => {
+    setIdle(false)
+    clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = setTimeout(() => {
+      if (!overChromeRef.current) setIdle(true)
+    }, IDLE_MS)
+  }
+
+  const enterMiniVisualizer = async () => {
+    await toggleMiniPlayer()
+    if (usePlayerStore.getState().showMiniPlayer) {
+      usePlayerStore.setState({ showFullscreen: false, showFullscreenVisualizer: false, showMiniVisualizer: true })
+    }
+  }
 
   const toggleScreen = () => {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
@@ -92,25 +135,8 @@ export default function FullscreenVisualizer() {
 
   if (!open) return null
 
-  let visual
-  switch (visualizer) {
-    case 'anomaly':
-      visual = <Anomaly sensitivity={5} size={1.65} color="accent" className="absolute inset-0 h-full w-full" />
-      break
-    case 'spectrum':
-      visual = <Spectrum isPlaying={isPlaying} bars={240} barWidth={3} height={540} strength={1.1} color="accent" opacity={0.95} radius={2} fill className="absolute inset-0 h-full w-full" />
-      break
-    case 'waves':
-      visual = <Waves isPlaying={isPlaying} width={1920} height={860} strength={1.2} colorBack="accent" colorFront="#ffffff" opacity={0.9} fill className="absolute inset-0 h-full w-full" />
-      break
-    case 'lightning':
-      visual = <Lightning isPlaying={isPlaying} strength={1.15} opacity={0.95} className="absolute inset-0 h-full w-full" />
-      break
-    case 'milkdrop':
-    default:
-      visual = <MilkDrop className="absolute inset-0 h-full w-full" isPlaying={isPlaying} trackId={currentTrack?.id} />
-      break
-  }
+  const visual = <VisualizerCanvas visualizer={visualizer} currentTrack={currentTrack} isPlaying={isPlaying} />
+  const chromeHidden = idle
 
   return (
     <div
@@ -118,13 +144,13 @@ export default function FullscreenVisualizer() {
       role="dialog"
       aria-modal="true"
       aria-label={t('Full-screen visualizer')}
-      className="fixed inset-0 z-[70] overflow-hidden bg-[#030305] text-white"
+      className={chromeHidden ? "fixed inset-0 z-[70] overflow-hidden bg-[#030305] text-white cursor-none [&_*]:!cursor-none" : "fixed inset-0 z-[70] overflow-hidden bg-[#030305] text-white"}
       style={{ WebkitAppRegion: 'no-drag' }}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(46,38,82,0.24),transparent_68%)]" />
       <div className="absolute inset-0">{visual}</div>
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 py-4 sm:px-6 sm:py-5">
+      <header onMouseEnter={() => { overChromeRef.current = true; clearTimeout(idleTimerRef.current); setIdle(false) }} onMouseLeave={() => { overChromeRef.current = false; wakeChrome() }} className={"absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 py-4 sm:px-6 sm:py-5 transition-opacity duration-300 " + (chromeHidden ? "pointer-events-none opacity-0" : "opacity-100")}>
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -147,7 +173,16 @@ export default function FullscreenVisualizer() {
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={toggleScreen}
+            onClick={enterMiniVisualizer}
+            title={t('Switch to mini visualizer')}
+            aria-label={t('Switch to mini visualizer')}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 backdrop-blur-md transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <Minimize2 size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={toggleScreen
             title={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
             aria-label={screenFull ? t('Exit full screen') : t('Fill the whole screen')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 backdrop-blur-md transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -172,7 +207,7 @@ export default function FullscreenVisualizer() {
         </div>
       </header>
 
-      <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between gap-4 bg-gradient-to-t from-black/65 to-transparent px-5 pb-5 pt-14 sm:px-7 sm:pb-6">
+      <footer onMouseEnter={() => { overChromeRef.current = true; clearTimeout(idleTimerRef.current); setIdle(false) }} onMouseLeave={() => { overChromeRef.current = false; wakeChrome() }} className={"pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between gap-4 bg-gradient-to-t from-black/65 to-transparent px-5 pb-5 pt-14 sm:px-7 sm:pb-6 transition-opacity duration-300 " + (chromeHidden ? "opacity-0" : "opacity-100")}>
         <span className="text-[10px] uppercase tracking-[0.18em] text-white/30">{t('{count} visualizers available', { count: enabled.length })}</span>
         <span className="text-[10px] text-white/30">{t('Use the arrow keys to switch visualizers · Esc to close')}</span>
       </footer>
