@@ -74,6 +74,9 @@ export default function FullscreenVisualizer() {
   }
 
   const enterMiniVisualizer = async () => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try { await document.exitFullscreen() } catch {}
+    }
     await toggleMiniPlayer()
     if (usePlayerStore.getState().showMiniPlayer) {
       usePlayerStore.setState({ showFullscreen: false, showFullscreenVisualizer: false, showMiniVisualizer: true })
