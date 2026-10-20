@@ -602,7 +602,7 @@ app.whenReady().then(() => {
   // without visiting Settings first.
   setTimeout(() => {
     try {
-      const packages = require('./spotiflac/packages').service(getDB())
+      const packages = require('./mornye/packages').service(getDB())
       // Only for people using Mornye sources: nothing is fetched otherwise.
       if (packages.list().length || packages.repos().length > 1) packages.refreshDue(0).catch(e => console.error('Mornye repository refresh:', e.message))
     } catch (e) { console.error('Mornye repository refresh:', e.message) }
@@ -976,7 +976,7 @@ app.on('will-quit', () => {
   try { require('./online/poToken').reset() } catch {}
   for (const window of BrowserWindow.getAllWindows()) { try { if (!window.isDestroyed()) window.destroy() } catch {} }
   try { shutdownActiveDownloads() } catch {}
-  try { require('./spotiflac/packages').shutdown(require('./ipc/db').getDB()) } catch {}
+  try { require('./mornye/packages').shutdown(require('./ipc/db').getDB()) } catch {}
   unregisterMediaShortcuts()
   try { stopSmtcBridge() } catch {}
 })

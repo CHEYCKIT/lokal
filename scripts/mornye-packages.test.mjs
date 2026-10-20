@@ -8,9 +8,9 @@ import http from 'node:http'
 import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3'),AdmZip=require('adm-zip')
-const {PackageService,readArchive,validateManifest,trackOf}=require('../electron/spotiflac/packages')
+const {PackageService,readArchive,validateManifest,trackOf}=require('../electron/mornye/packages')
 const {mergePackageDownloadTags}=require('../electron/download/manager')
-const {rangeOf,fileResponse}=require('../electron/spotiflac/media')
+const {rangeOf,fileResponse}=require('../electron/mornye/media')
 const {resolveKnownAlbum}=require('../electron/download/postprocess')
 const {isPlaceholderAlbum}=require('../electron/download/tagger')
 
@@ -144,7 +144,7 @@ test('an addon login (tokens and verification cookies) survives a restart, and D
 })
 
 test('a plain FLAC download can be played while it arrives, and a range past what arrived waits for it',async t=>{
-  const {liveUpdate,liveResponse}=require('../electron/spotiflac/media')
+  const {liveUpdate,liveResponse}=require('../electron/mornye/media')
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'lokal-live-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}))
   const file=path.join(dir,'audio.flac'),part=`${file}.part`,total=200000
   const bytes=Buffer.alloc(total,7);bytes.write('fLaC',0,'latin1')
@@ -190,7 +190,7 @@ test('resetting saved logins removes the key and encrypted files, and new settin
 })
 
 test('macOS keeps the addon key in a private file so updates cannot lock it away, and recovers from a lost Keychain key', async t => {
-  const { AddonStorage } = require('../electron/spotiflac/storage')
+  const { AddonStorage } = require('../electron/mornye/storage')
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lokal-vault-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
   const fakeVault = { encryptString: text => Buffer.from(`v:${text}`), decryptString: bytes => bytes.toString().slice(2) }

@@ -8,7 +8,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
 const Database=require('better-sqlite3')
-const {PackageService,readArchive}=require('../electron/spotiflac/packages')
+const {PackageService,readArchive}=require('../electron/mornye/packages')
 const reference=process.env.MORNYE_EXTENSION_DIR || process.env.SPOTIFLAC_EXTENSION_DIR
 
 for(const file of ['amzn.sflx','soundcloud.sflx','ytmusic-spotiflac.sflx','deezer.sflx','qobuz-web.sflx','tidal-web.sflx']){

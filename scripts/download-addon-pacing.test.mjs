@@ -32,7 +32,7 @@ test('a batch goes to each addon one at a time a moment apart, at most two at on
 })
 
 test('a download retries once after addon verification completes', async t => {
-  const packages = require('../electron/spotiflac/packages.js')
+  const packages = require('../electron/mornye/packages.js')
   let attempts = 0
   t.mock.method(packages, 'service', () => ({
     download: async () => {
@@ -52,7 +52,7 @@ test('a download retries once after addon verification completes', async t => {
 })
 
 test('a download is not retried when addon verification was not completed', async t => {
-  const packages = require('../electron/spotiflac/packages.js')
+  const packages = require('../electron/mornye/packages.js')
   let attempts = 0
   t.mock.method(packages, 'service', () => ({
     download: async () => {

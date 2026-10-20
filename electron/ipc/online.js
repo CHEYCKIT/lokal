@@ -104,7 +104,7 @@ function providers() {
   return [
     { id: 'yt', label: 'YouTube Music' },
     { id: 'sc', label: 'SoundCloud' },
-    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, package: a.kind === 'mornye', needsSetup: a.kind === 'spotiflac' && !!a.access && !a.access.ready, filters: a.searchFilters, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
+    ...sources.addons.searchable(getDB()).map(a => ({ id: a.provider, label: a.name, icon: a.icon, addon: true, package: a.kind === 'mornye', needsSetup: a.kind === 'mornye' && !!a.access && !a.access.ready, filters: a.searchFilters, album: a.resources.includes('album'), artist: a.resources.includes('artist') })),
   ]
 }
 
@@ -181,7 +181,7 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('addons:setSettings', (_, key, values) => addonRequest(() => sources.addons.setSettings(getDB(), key, values)))
   ipcMain.handle('addons:packages', (event, request) => {
     if (event.senderFrame !== event.sender.mainFrame) return { error: 'Addon management requires the main application frame' }
-    return addonRequest(() => require('../spotiflac/api').dispatch(getDB(), request))
+    return addonRequest(() => require('../mornye/api').dispatch(getDB(), request))
   })
   const musicVideoProgress = (event, trackId) => update => {
     try { if (!event.sender.isDestroyed()) event.sender.send('musicVideo:progress', { trackId, ...update }) } catch {}
@@ -274,7 +274,7 @@ function registerOnlineHandlers(ipcMain) {
   ipcMain.handle('online:prepare', async (_, provider, id, force = false) => {
     try {
       const key = sources.addons.keyOfProvider(provider)
-      if (key && sources.addons.packageService(getDB()).find(key)) return require('../spotiflac/media').prepare(getDB(), key, id, { force: !!force })
+      if (key && sources.addons.packageService(getDB()).find(key)) return require('../mornye/media').prepare(getDB(), key, id, { force: !!force })
       if (provider === 'yt') await accountSession.credentials()
       const stream = await sources.resolveStream(provider, id, { ...streamOptions(), force: !!force })
       return { ok: true, preview: !!stream.preview }

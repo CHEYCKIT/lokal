@@ -7,13 +7,13 @@ import http from 'node:http'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { ExtensionRuntime } = require('../electron/spotiflac/runtime')
-const { ExtensionHost, safePath } = require('../electron/spotiflac/host')
-const { AddonStorage } = require('../electron/spotiflac/storage')
-const { ExtensionNetwork } = require('../electron/spotiflac/network')
-const { block } = require('../electron/spotiflac/crypto')
-const { signedHeaders, SignedSession } = require('../electron/spotiflac/session')
-const { isExpectedCallback } = require('../electron/spotiflac/authWindow')
+const { ExtensionRuntime } = require('../electron/mornye/runtime')
+const { ExtensionHost, safePath } = require('../electron/mornye/host')
+const { AddonStorage } = require('../electron/mornye/storage')
+const { ExtensionNetwork } = require('../electron/mornye/network')
+const { block } = require('../electron/mornye/crypto')
+const { signedHeaders, SignedSession } = require('../electron/mornye/session')
+const { isExpectedCallback } = require('../electron/mornye/authWindow')
 
 async function fixture(t, code, overrides = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lokal-sflx-'))
