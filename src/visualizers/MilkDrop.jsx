@@ -162,6 +162,7 @@ const MilkDrop = React.forwardRef(function MilkDrop({
         </button>
       )}
     </div>
-  })
+  )
+})
 
 export default MilkDrop
