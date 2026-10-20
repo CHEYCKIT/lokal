@@ -1,10 +1,10 @@
 import { useTranslation } from '../i18n'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, X, Volume2, VolumeX, Heart, Clapperboard, Gamepad2, Minimize2, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
-import { api, wordSyncEnabled as getWordSyncEnabled } from '../api'
+import { api, peekSettings, wordSyncEnabled as getWordSyncEnabled } from '../api'
 import Waveform from './Waveform'
 import { useAppearanceFlag } from '../appearanceFlags'
 import { trackArtURL } from '../onlineTracks'
@@ -12,6 +12,8 @@ import { useMusicVideo, useMusicVideoView } from '../musicVideo'
 import MusicVideoPlayer from './MusicVideoPlayer'
 import VideoOffsetControl from './VideoOffsetControl'
 import { useVolumeWheel } from '../volumeWheel'
+import MilkDrop from '../visualizers/MilkDrop'
+import { loadMilkDropPresetNames, normalizeEnabledMilkDropPresets } from '../visualizers/milkDropPresets.mjs'
 
 function fmt(s) { return `${Math.floor((s||0)/60)}:${Math.floor((s||0)%60).toString().padStart(2,'0')}` }
 
@@ -21,21 +23,62 @@ export default function MiniPlayer({ windowed = false }) {
   const {
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
-    toggleMiniPlayer, likedIds, setLiked
+    toggleMiniPlayer, likedIds, setLiked,
+    showMiniVisualizer, setShowMiniVisualizer
   } = usePlayerStore(useShallow(({
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
-    toggleMiniPlayer, likedIds, setLiked
+    toggleMiniPlayer, likedIds, setLiked,
+    showMiniVisualizer, setShowMiniVisualizer
   }) => ({
     currentTrack, isPlaying, progress, duration, volume,
     togglePlay, next, prev, setProgressWithAudioUpdate, setVolume,
-    toggleMiniPlayer, likedIds, setLiked
+    toggleMiniPlayer, likedIds, setLiked,
+    showMiniVisualizer, setShowMiniVisualizer
   })))
   const { user } = useAppStore()
   const volumeWheelRef = useVolumeWheel(volume, setVolume)
   const { video: musicVideo } = useMusicVideo(currentTrack)
   const videoMode = useMusicVideoView(s => s.mini)
   const toggleVideo = useMusicVideoView(s => s.toggleMini)
+  const [visualizerSettings, setVisualizerSettings] = useState(() => peekSettings() || {})
+  const [availablePresets, setAvailablePresets] = useState([])
+  const [currentPreset, setCurrentPreset] = useState('')
+  const milkDropRef = useRef(null)
+  const enabledPresets = useMemo(
+    () => normalizeEnabledMilkDropPresets(visualizerSettings.fullscreen_milkdrop_presets, availablePresets),
+    [visualizerSettings.fullscreen_milkdrop_presets, availablePresets],
+  )
+
+  useEffect(() => {
+    if (!showMiniVisualizer) return undefined
+    let live = true
+    loadMilkDropPresetNames()
+      .then(names => { if (live) setAvailablePresets(names) })
+      .catch(error => console.warn('[mini visualizer] Could not load MilkDrop preset names:', error))
+    const refresh = () => api.getSettings().then(next => {
+      if (live && next && !next.error) setVisualizerSettings(next)
+    }).catch(() => {})
+    refresh()
+    window.addEventListener('lokal:settings-saved', refresh)
+    return () => {
+      live = false
+      window.removeEventListener('lokal:settings-saved', refresh)
+    }
+  }, [showMiniVisualizer])
+
+  const cyclePreset = delta => {
+    if (enabledPresets.length < 2) return
+    if (delta < 0) milkDropRef.current?.previousPreset()
+    else milkDropRef.current?.nextPreset()
+  }
+
+  const enterFullscreenVisualizer = async () => {
+    await toggleMiniPlayer()
+    if (!usePlayerStore.getState().showMiniPlayer) {
+      usePlayerStore.setState({ showMiniVisualizer: false, showFullscreen: false, showFullscreenVisualizer: true })
+    }
+  }
 
   const [lyricsLines, setLyricsLines] = useState([])
   const [lyricsType, setLyricsType] = useState(null)
@@ -266,9 +309,11 @@ export default function MiniPlayer({ windowed = false }) {
         </>
       )}
 
+      {!showMiniVisualizer && (
       <div className="flex items-center justify-between px-3 py-2 bg-surface/50 backdrop-blur-sm border-b border-white/10" style={windowed && api.isElectron ? { WebkitAppRegion: 'drag' } : undefined}>
         <span className="min-w-0 flex-1 truncate pr-2 text-xs text-muted font-medium">{videoMode && currentTrack ? <><span className="text-white/90">{currentTrack.title}</span>{currentTrack.artist ? ` · ${currentTrack.artist}` : ''}</> : 'Mini Player'}</span>
         {(musicVideo?.videoId || videoMode) && <button onClick={toggleVideo} aria-pressed={videoMode} aria-label={videoMode ? 'Show artwork' : 'Show music video'} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="inline-flex items-center gap-1 text-[10px] text-muted hover:text-white transition-colors" title={videoMode ? 'Show artwork' : 'Show music video'}><Clapperboard size={13} />{videoMode ? 'Artwork' : 'Video'}</button>}
+        <button onClick={() => setShowMiniVisualizer(true)} title={t('Show visualizer')} aria-label={t('Show visualizer')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="inline-flex items-center gap-1 text-[10px] text-muted hover:text-white transition-colors"><Gamepad2 size={13} /></button>
         <button
           onClick={toggleMiniPlayer}
           className="text-muted hover:text-white transition-colors p-1"
@@ -277,8 +322,42 @@ export default function MiniPlayer({ windowed = false }) {
           <X size={14} />
         </button>
       </div>
+      )}
 
-      {videoMode ? (
+      {showMiniVisualizer ? (
+        <div className="relative h-[246px] w-full overflow-hidden bg-[#030305] text-white">
+          <MilkDrop
+            ref={milkDropRef}
+            className="absolute inset-0 h-full w-full"
+            isPlaying={isPlaying}
+            trackId={currentTrack?.id}
+            presetNames={enabledPresets}
+            onPresetChange={setCurrentPreset}
+            showNextButton={false}
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70" />
+          <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 px-3 py-2" style={windowed && api.isElectron ? { WebkitAppRegion: 'drag' } : undefined}>
+            <Gamepad2 size={14} className="shrink-0 text-white/70" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-white/90">{currentTrack?.title || t('Nothing playing')}</p>
+              <p className="truncate text-[10px] text-white/55">{currentTrack?.artist || currentPreset || 'MilkDrop'}</p>
+            </div>
+            <button onClick={() => setShowMiniVisualizer(false)} title={t('Show mini player controls')} aria-label={t('Show mini player controls')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><Minimize2 size={14} /></button>
+            <button onClick={enterFullscreenVisualizer} title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><Maximize2 size={14} /></button>
+            <button onClick={toggleMiniPlayer} title={t('Close mini player')} aria-label={t('Close mini player')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-md p-1.5 text-white/75 hover:bg-white/15 hover:text-white"><X size={14} /></button>
+          </div>
+          <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between gap-1 px-3 py-2.5">
+            <button onClick={() => cyclePreset(-1)} disabled={enabledPresets.length < 2} title={t('Previous preset')} aria-label={t('Previous preset')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-full p-1.5 text-white/70 hover:bg-white/15 hover:text-white disabled:opacity-30"><ChevronLeft size={16} /></button>
+            <div className="flex items-center gap-2">
+              <button onClick={prev} title={t('Previous')} aria-label={t('Previous')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="p-1 text-white/85 hover:text-white"><SkipBack size={16} fill="currentColor" /></button>
+              <button onClick={togglePlay} disabled={!currentTrack} title={isPlaying ? t('Pause') : t('Play')} aria-label={isPlaying ? t('Pause') : t('Play')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-black disabled:opacity-40">{isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}</button>
+              <button onClick={next} title={t('Next')} aria-label={t('Next')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="p-1 text-white/85 hover:text-white"><SkipForward size={16} fill="currentColor" /></button>
+            </div>
+            <button onClick={() => cyclePreset(1)} disabled={enabledPresets.length < 2} title={t('Next preset')} aria-label={t('Next preset')} style={windowed && api.isElectron ? { WebkitAppRegion: 'no-drag' } : undefined} className="rounded-full p-1.5 text-white/70 hover:bg-white/15 hover:text-white disabled:opacity-30"><ChevronRight size={16} /></button>
+          </div>
+          <div className="pointer-events-none absolute bottom-14 inset-x-0 text-center text-[10px] tracking-wide text-white/60">{currentPreset || 'MilkDrop'}</div>
+        </div>
+      ) : videoMode ? (
         // Video mode: just the video and its lyrics. The seek bar and the
         // controls show over it while the mouse is on it (or keyboard focus
         // is in them); a click doesn't keep them up.
