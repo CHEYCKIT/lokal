@@ -30,7 +30,7 @@ import { plural } from '../plural'
 import { readCrossfadeSettings, CROSSFADE_MIN_S } from '../audio/crossfade'
 import { SPEED_MAX, SPEED_MIN, SPEED_STEP, usePlaybackSpeed } from '../playbackSpeed.mjs'
 import SoulseekSignIn from '../components/SoulseekSignIn'
-import { normalizeVisualizerModes, VISUALIZER_MODES } from '../visualizers/modes.mjs'
+import { loadMilkDropPresetNames, normalizeEnabledMilkDropPresets } from '../visualizers/milkDropPresets.mjs'
 
 const EQ_BANDS = ['31Hz', '62Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz']
 const EQ_PRESETS = {
@@ -300,6 +300,11 @@ export default function Settings() {
   }, [])
   const [scanning, setScanning] = useState(false)
   const [showVisualizerMenu, setShowVisualizerMenu] = useState(false)
+  const [milkDropPresetNames, setMilkDropPresetNames] = useState([])
+  const [milkDropPresetsLoading, setMilkDropPresetsLoading] = useState(false)
+  const [milkDropPresetLoadStarted, setMilkDropPresetLoadStarted] = useState(false)
+  const [milkDropPresetLoadError, setMilkDropPresetLoadError] = useState('')
+  const [milkDropPresetSearch, setMilkDropPresetSearch] = useState('')
   const visualizerMenuRef = useRef(null)
   useEffect(() => {
     const closeOutside = event => {
@@ -308,6 +313,22 @@ export default function Settings() {
     document.addEventListener('pointerdown', closeOutside)
     return () => document.removeEventListener('pointerdown', closeOutside)
   }, [])
+
+  useEffect(() => {
+    if (!showVisualizerMenu || milkDropPresetLoadStarted) return
+    setMilkDropPresetLoadStarted(true)
+    setMilkDropPresetsLoading(true)
+    loadMilkDropPresetNames()
+      .then(names => {
+        setMilkDropPresetNames(names)
+        setMilkDropPresetLoadError('')
+      })
+      .catch(error => {
+        console.warn('[settings] Could not load MilkDrop presets:', error)
+        setMilkDropPresetLoadError('Could not load MilkDrop presets.')
+      })
+      .finally(() => setMilkDropPresetsLoading(false))
+  }, [showVisualizerMenu, milkDropPresetLoadStarted])
   const [showGenreModal, setShowGenreModal] = useState(false)
   const [eqGains, setEqGains] = useState(EQ_PRESETS[DEFAULT_EQ_PRESET].gains)
   const [eqPreset, setEqPreset] = useState(DEFAULT_EQ_PRESET)
@@ -672,7 +693,13 @@ export default function Settings() {
     if (k === 'replaygain_mode') usePlayerStore.getState().setReplayGainMode(v)
   }
   const crossfade = readCrossfadeSettings(settings)
-  const enabledVisualizers = normalizeVisualizerModes(settings.fullscreen_visualizers)
+  const enabledMilkDropPresets = normalizeEnabledMilkDropPresets(
+    settings.fullscreen_milkdrop_presets,
+    milkDropPresetNames,
+  )
+  const filteredMilkDropPresetNames = milkDropPresetNames.filter(name =>
+    name.toLowerCase().includes(milkDropPresetSearch.trim().toLowerCase()),
+  )
 
   const applyEqGains = (nextGains, presetKey = getEqPresetKey(nextGains)) => {
     const normalized = normalizeEqGains(nextGains)
@@ -2203,48 +2230,72 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('appearance') && (
       <Section title={t("Visualizer")}>
-        <Row label={t("Full-screen visualizers")} desc={t("Choose which visualizers are available to switch between in full-screen mode.")}>
+        <Row label={t("MilkDrop presets")} desc={t("Choose which MilkDrop presets are available to switch between in full-screen mode.")}>
           <div className="relative" ref={visualizerMenuRef}>
             <button
               type="button"
               onClick={() => setShowVisualizerMenu(value => !value)}
               aria-haspopup="true"
               aria-expanded={showVisualizerMenu}
-              title={t("Choose which visualizers appear in full-screen mode")}
+              title={t("Choose which MilkDrop presets appear in full-screen mode")}
               className="flex min-w-44 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-white transition hover:border-accent/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
-              <span>{t("Choose visualizers")}</span>
+              <span>{t("Choose presets")}</span>
               <span className="flex items-center gap-2 text-muted">
-                {enabledVisualizers.length}/{VISUALIZER_MODES.length}
+                {milkDropPresetNames.length ? `${enabledMilkDropPresets.length}/${milkDropPresetNames.length}` : '—'}
                 <ChevronDown size={13} className={showVisualizerMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
               </span>
             </button>
             {showVisualizerMenu && (
-              <div role="group" aria-label={t("Available visualizers")}
-                className="absolute right-0 top-full z-40 mt-2 w-60 rounded-xl border border-border bg-elevated p-2 shadow-2xl">
+              <div role="group" aria-label={t("Available MilkDrop presets")}
+                className="absolute right-0 top-full z-40 mt-2 w-72 max-w-[80vw] rounded-xl border border-border bg-elevated p-2 shadow-2xl">
                 <p className="px-2 pb-2 pt-1 text-[10px] uppercase tracking-widest text-muted">{t("Included in full-screen mode")}</p>
-                {VISUALIZER_MODES.map(({ id, label }) => {
-                  const checked = enabledVisualizers.includes(id)
-                  return (
-                    <label key={id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-white transition hover:bg-card">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={checked && enabledVisualizers.length === 1}
-                        onChange={() => {
-                          const next = checked
-                            ? enabledVisualizers.filter(value => value !== id)
-                            : [...enabledVisualizers, id]
-                          if (next.length) set('fullscreen_visualizers', JSON.stringify(next))
-                        }}
-                        className="h-3.5 w-3.5 accent-accent disabled:opacity-50"
-                      />
-                      <span className="flex-1">{t(label)}</span>
-                      {checked && <span className="text-[10px] text-accent">{t("On")}</span>}
-                    </label>
-                  )
-                })}
-                <p className="border-t border-border/60 px-2 pb-1 pt-2 text-[10px] text-muted">{t("{count} selected", { count: enabledVisualizers.length })}</p>
+                <input
+                  type="search"
+                  value={milkDropPresetSearch}
+                  onChange={event => setMilkDropPresetSearch(event.target.value)}
+                  placeholder={t("Search presets")}
+                  aria-label={t("Search presets")}
+                  className="mb-2 w-full rounded-lg border border-border bg-card px-2.5 py-2 text-xs text-white outline-none placeholder:text-muted focus:border-accent/60"
+                />
+                <div className="max-h-64 overflow-y-auto overscroll-contain">
+                  {milkDropPresetsLoading && <p className="px-2 py-3 text-xs text-muted">{t("Loading MilkDrop presets…")}</p>}
+                  {!milkDropPresetsLoading && milkDropPresetLoadError && (
+                    <div className="px-2 py-3 text-xs text-muted">
+                      <p>{t(milkDropPresetLoadError)}</p>
+                      <button
+                        type="button"
+                        className="mt-2 text-accent hover:underline"
+                        onClick={() => { setMilkDropPresetLoadStarted(false); setMilkDropPresetLoadError('') }}
+                      >{t("Retry")}</button>
+                    </div>
+                  )}
+                  {!milkDropPresetsLoading && !milkDropPresetLoadError && filteredMilkDropPresetNames.length === 0 && (
+                    <p className="px-2 py-3 text-xs text-muted">{t("No presets match this search.")}</p>
+                  )}
+                  {!milkDropPresetsLoading && !milkDropPresetLoadError && filteredMilkDropPresetNames.map(name => {
+                    const checked = enabledMilkDropPresets.includes(name)
+                    return (
+                      <label key={name} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-white transition hover:bg-card">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={checked && enabledMilkDropPresets.length === 1}
+                          onChange={() => {
+                            const next = checked
+                              ? enabledMilkDropPresets.filter(value => value !== name)
+                              : [...enabledMilkDropPresets, name]
+                            if (next.length) set('fullscreen_milkdrop_presets', JSON.stringify(next))
+                          }}
+                          className="h-3.5 w-3.5 accent-accent disabled:opacity-50"
+                        />
+                        <span className="flex-1 break-words">{name}</span>
+                        {checked && <span className="text-[10px] text-accent">{t("On")}</span>}
+                      </label>
+                    )
+                  })}
+                </div>
+                <p className="border-t border-border/60 px-2 pb-1 pt-2 text-[10px] text-muted">{t("{count} selected", { count: enabledMilkDropPresets.length })}</p>
               </div>
             )}
           </div>
