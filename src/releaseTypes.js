@@ -58,7 +58,7 @@ export function classifyOnlineReleases(releases = []) {
     .map(release => {
       const explicit = catalogueReleaseType(release)
       const count = catalogueTrackCount(release)
-      const inferred = count === 1 ? 'single' : count >= 2 && count <= 6 ? 'ep' : count >= 7 ? 'album' : 'album'
+      const inferred = count === 1 ? 'single' : count >= 2 && count <= 6 ? 'ep' : 'album'
       return { ...release, release_type: explicit || inferred }
     })
 }
