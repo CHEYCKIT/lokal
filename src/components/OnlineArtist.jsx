@@ -14,7 +14,7 @@ import ImageZoom from './ImageZoom'
 import OnlineSongList from './OnlineSongList'
 import RefreshButton from './RefreshButton'
 import ReleaseTypeFilter from './ReleaseTypeFilter'
-import { groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
+import { classifyOnlineReleases, groupReleases, releaseTypeCounts, useReleaseTypes } from '../releaseTypes'
 import { libraryAlbumCounts, releaseOwnership, artistCacheKey, keepOnline, peekOnline, loadOnlineAlbumCached, loadAddonArtist, loadArtistChannel, loadOnlineArtistAlbums, loadOnlineArtistSongs, mergeWithLibrary, onlineAlbumPath, releaseTitleKey } from '../onlineBrowse'
 import { downloadOnline, playOnline } from '../onlineActions'
 import { playNextMany } from '../trackActions'
@@ -170,7 +170,9 @@ export function OnlineArtistSections({ data, path, libraryTracks = null, library
   const [allPopular, setAllPopular] = useState(false)
   const shownPopular = allPopular ? popularTracks : popularTracks.slice(0, 5)
   const owned = useMemo(() => new Set((libraryAlbums || []).map(album => releaseTitleKey(album.title))), [libraryAlbums])
-  const albumItems = libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items
+  const albumItems = useMemo(() => classifyOnlineReleases(
+    libraryAlbums ? albums.items.filter(album => !owned.has(releaseTitleKey(album.title))) : albums.items,
+  ), [albums.items, owned, libraryAlbums])
   // In sections by type; the types shown chosen per artist (the library's
   // artist page passes its own choice in, so both follow one setting).
   const [ownShown, toggleType] = useReleaseTypes(name)

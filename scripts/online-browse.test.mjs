@@ -112,11 +112,19 @@ test("album songs fall back to the album's cover, and to the playback sources", 
 test("an artist's albums: the catalogue's, then their songs' albums, once each", async () => {
   const client = { discoveryCatalogue: async ({ source }) => source === 'youtube' ? { albums: [{ title: 'I Am', artist: 'Earth, Wind & Fire', albumId: 'MPREiam' }] } : { error: 'no' } }
   const albums = await loadOnlineArtistAlbums('Earth, Wind & Fire', [
-    { title: 'September', album: 'The Best of Earth, Wind & Fire, Vol. 1', artwork_url: 'https://x.example/best.jpg' },
+    {
+      title: 'September',
+      album: 'The Best of Earth, Wind & Fire, Vol. 1',
+      artwork_url: 'https://x.example/best.jpg',
+      album_release_type: 'Compilation',
+      album_track_count: 17,
+    },
     { title: 'Boogie Wonderland', album: 'I am', artwork_url: 'https://x.example/iam.jpg' },
   ], client)
   assert.deepEqual(albums.map(album => album.title), ['I Am', 'The Best of Earth, Wind & Fire, Vol. 1'])
   assert.equal(albums[0].artwork_url, 'https://x.example/iam.jpg')
+  assert.equal(albums[1].release_type, 'Compilation')
+  assert.equal(albums[1].track_count, 17)
 })
 
 test('"Playing from" leads back to an online album or artist page', () => {
