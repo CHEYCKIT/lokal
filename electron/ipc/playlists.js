@@ -799,7 +799,7 @@ function registerPlaylistHandlers() {
   ipcMain.handle('playlist:syncLinked', () => { try { return require('../playlists/sync').linked(getDB()) } catch { return [] } });
   ipcMain.handle('playlist:sync', async (_, playlistId, userId) => {
     try {
-      return await require('../playlists/sync').sync(getDB(), playlistId, { packages: require('../spotiflac/packages').service(getDB()), helpers: { findTrack, createGhostTrack, readPlaylist: url => require('../playlists/linkImport').fetchPlaylist({ ytdlp: require('./tools').findYtDlp(), url, settings: require('./downloader').manager().settings(), db: getDB() }) }, userId: userId || 'guest' });
+      return await require('../playlists/sync').sync(getDB(), playlistId, { packages: require('../mornye/packages').service(getDB()), helpers: { findTrack, createGhostTrack, readPlaylist: url => require('../playlists/linkImport').fetchPlaylist({ ytdlp: require('./tools').findYtDlp(), url, settings: require('./downloader').manager().settings(), db: getDB() }) }, userId: userId || 'guest' });
     } catch (e) { return { error: e.message } }
   });
 
