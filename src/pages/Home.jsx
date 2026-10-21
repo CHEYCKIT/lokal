@@ -30,7 +30,7 @@ import UnfollowedArtists from '../components/UnfollowedArtists'
 import MadeForYou from '../components/MadeForYou'
 import FlowPanel from '../components/FlowPanel'
 import { madeForYou } from '../madeForYou'
-import { personalizedHomeGreeting, personalizedHomeHeadline } from '../homeGreeting.mjs'
+import { personalizedHomeMessages } from '../homeGreeting.mjs'
 
 const today = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const mixTitle = (mix) => (mix.type === 'artist' ? `${mix.name} Mix` : mix.name)
@@ -562,12 +562,10 @@ function HomeContent({ user }) {
   </>
 
   const hour = new Date().getHours()
-  const subheaderMessage = tab === 'home'
-    ? personalizedHomeGreeting(localHistory, { hour })
-    : "Your music, listening history, and recommendations"
-  const headlineMessage = tab === 'home'
-    ? t(personalizedHomeHeadline(localHistory, { hour }))
-    : hour < 12 ? t('Good morning') : hour < 18 ? t('Good afternoon') : t('Good evening')
+  // Keep the same history-aware headline/subheader pair on every Home tab.
+  const homeMessages = personalizedHomeMessages(localHistory, { hour })
+  const headlineMessage = t(homeMessages.headline)
+  const subheaderMessage = t(homeMessages.subheader)
 
   return <div className="p-6 space-y-7 w-full max-w-6xl mx-auto pb-10">
     <div><h1 className="text-2xl font-display text-white">{headlineMessage}</h1><p className="text-sm text-muted mt-1">{t(subheaderMessage)}</p></div>
