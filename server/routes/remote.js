@@ -106,6 +106,8 @@ function compactTrack(track) {
     artist: track.artist || 'Unknown artist',
     album: track.album || '',
     album_artist: track.album_artist || '',
+    genre: track.genre || '',
+    genres: track.genres || null,
     duration: Number(track.duration) || 0,
     bitrate: Number(track.bitrate) || null,
     sample_rate: Number(track.sample_rate) || null,
