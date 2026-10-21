@@ -15,6 +15,54 @@ export const RELEASE_TYPES = [
 ]
 const KNOWN = new Set(RELEASE_TYPES.map(([type]) => type))
 
+/**
+ * Online catalogues don't all use the same release-type field or casing.
+ * Normalize their metadata before grouping; the local library's unknown
+ * releases remain explicit so they can still be reviewed and classified.
+ */
+function catalogueReleaseType(release) {
+  for (const value of [release?.release_type, release?.releaseType, release?.album_type, release?.albumType, release?.type]) {
+    if (typeof value !== 'string') continue
+    const type = value.trim().toLocaleLowerCase().replace(/[_-]+/g, ' ')
+    if (!type || type === 'unknown' || type === 'unknown album' || type === 'n/a') continue
+    if (/\bsingle\b/.test(type)) return 'single'
+    if (/\bep\b|extended play/.test(type)) return 'ep'
+    if (/compilation|greatest hits|best of/.test(type)) return 'compilation'
+    if (/\blive\b/.test(type)) return 'live'
+    if (/\balbum\b|\blp\b|long play/.test(type)) return 'album'
+  }
+  return null
+}
+
+function catalogueTrackCount(release) {
+  const value = [release?.track_count, release?.trackCount, release?.total_tracks, release?.totalTracks]
+    .find(count => Number.isFinite(Number(count)) && Number(count) > 0)
+  if (value !== undefined) return Number(value)
+  return Array.isArray(release?.tracks) ? release.tracks.length : 0
+}
+
+/**
+ * Online artist shelves should be split into Albums, EPs and Singles, not
+ * strand valid releases under "Unknown albums" simply because a catalogue
+ * omitted or differently named its type field. Explicit source metadata wins;
+ * complete track counts provide the fallback (1 = single, 2–6 = EP, 7+ = album).
+ * Unresolved titled releases default to Albums rather than an Unknown section.
+ * Placeholder records are discarded.
+ */
+export function classifyOnlineReleases(releases = []) {
+  return (Array.isArray(releases) ? releases : [])
+    .filter(release => {
+      const title = String(release?.title || '').trim().toLocaleLowerCase()
+      return title && !['unknown', 'unknown album', 'untitled', 'untitled album', 'n/a'].includes(title)
+    })
+    .map(release => {
+      const explicit = catalogueReleaseType(release)
+      const count = catalogueTrackCount(release)
+      const inferred = count === 1 ? 'single' : count >= 2 && count <= 6 ? 'ep' : 'album'
+      return { ...release, release_type: explicit || inferred }
+    })
+}
+
 /** Placeholder titles and missing/unrecognized types are grouped as unknown releases. */
 export const releaseTypeOf = release => {
   const title = String(release?.title || '').trim().toLocaleLowerCase()

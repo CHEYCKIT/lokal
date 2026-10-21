@@ -211,7 +211,13 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
     if (Array.isArray(result?.albums) && result.albums.length) { albums.push(...result.albums); break }
   }
   for (const song of songs) {
-    if (song?.album) albums.push({ title: song.album, artist: song.album_artist || artist, artwork_url: song.artwork_url || song.thumbnail || '' })
+    if (song?.album) albums.push({
+      title: song.album,
+      artist: song.album_artist || artist,
+      artwork_url: song.artwork_url || song.thumbnail || '',
+      release_type: song.album_release_type || song.albumReleaseType || song.album_type || song.albumType || song.release_type || song.releaseType,
+      track_count: song.album_track_count || song.albumTrackCount || song.album?.track_count || song.album?.trackCount,
+    })
   }
   const seen = new Map()
   for (const album of albums) {
@@ -219,7 +225,11 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
     if (!key) continue
     const known = seen.get(key)
     if (!known) seen.set(key, { ...album })
-    else if (!known.artwork_url && album.artwork_url) known.artwork_url = album.artwork_url
+    else {
+      if (!known.artwork_url && album.artwork_url) known.artwork_url = album.artwork_url
+      if (!known.release_type) known.release_type = album.release_type || album.releaseType || album.album_type || album.albumType || album.type
+      if (!known.track_count) known.track_count = album.track_count || album.trackCount || album.total_tracks || album.totalTracks
+    }
   }
   return [...seen.values()]
 }
