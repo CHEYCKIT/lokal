@@ -190,11 +190,20 @@ export async function loadArtistChannel(artist, { anchor, hints = [] } = {}, cli
   if (!result || result.error || (!result.tracks?.length && !result.albums?.length)) return null
   const tracks = result.tracks.map(track => ({ ...track, source: 'youtube', artwork_url: track.artwork_url || track.thumbnail || '' }))
   const albums = [...(result.albums || [])]
-  const known = new Set(albums.map(album => releaseTitleKey(album.title)))
+  const byTitle = new Map(albums.map(album => [releaseTitleKey(album.title), album]))
   for (const track of tracks) {
-    if (track.album && !known.has(releaseTitleKey(track.album))) {
-      known.add(releaseTitleKey(track.album))
-      albums.push({ title: track.album, artist: result.name || artist, albumId: track.albumId, artwork_url: track.artwork_url, ...mainArtistMetadata(track) })
+    if (!track.album) continue
+    const key = releaseTitleKey(track.album)
+    const existing = byTitle.get(key)
+    const role = mainArtistMetadata(track)
+    if (!existing) {
+      const album = { title: track.album, artist: result.name || artist, albumId: track.albumId, artwork_url: track.artwork_url, ...role }
+      albums.push(album)
+      byTitle.set(key, album)
+    } else if (mainArtistMetadata(existing).is_main_artist === undefined && role.is_main_artist !== undefined) {
+      // The channel catalogue can list the release without its credit role;
+      // a matching song may still identify it as a feature release.
+      existing.is_main_artist = role.is_main_artist
     }
   }
   return { name: result.name || artist, image: result.image || '', tracks, albums }
