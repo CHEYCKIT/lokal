@@ -90,11 +90,10 @@ function homeHeadlineForTime(hour) {
 }
 
 /**
- * A compact headline based on the same recent listening pattern as the
- * subheader. It intentionally stays to a few words; the subheader carries
- * the fuller observation. With little history, use a time-of-day greeting.
+ * Return the paired Home headline and subheader from one listening-pattern
+ * analysis, so callers never mix a personalized message with a generic one.
  */
-export function personalizedHomeHeadline(history = [], options = {}) {
+export function personalizedHomeMessages(history = [], options = {}) {
   const { pattern, currentHour } = analyseListeningPattern(history, options)
   const headlines = {
     repeat: 'On repeat',
@@ -105,15 +104,6 @@ export function personalizedHomeHeadline(history = [], options = {}) {
     streak: 'In a groove',
     variety: 'Wide rotation',
   }
-  return headlines[pattern] || homeHeadlineForTime(currentHour)
-}
-
-/**
- * Returns the detailed listening insight for the subheader. Patterns are
- * inferred from recent local history; track and artist metadata is never shown.
- */
-export function personalizedHomeGreeting(history = [], options = {}) {
-  const { pattern, currentHour } = analyseListeningPattern(history, options)
   const greetings = {
     repeat: 'The repeat button has been getting a workout.',
     mellow: 'Your mellow side has been getting more play.',
@@ -123,5 +113,18 @@ export function personalizedHomeGreeting(history = [], options = {}) {
     streak: 'Your listening streak has some momentum.',
     variety: 'Lots of different sounds in your rotation lately.',
   }
-  return greetings[pattern] || timeOfDay(currentHour)
+  return {
+    headline: headlines[pattern] || homeHeadlineForTime(currentHour),
+    subheader: greetings[pattern] || timeOfDay(currentHour),
+  }
+}
+
+/** The compact headline half of the shared Home message pair. */
+export function personalizedHomeHeadline(history = [], options = {}) {
+  return personalizedHomeMessages(history, options).headline
+}
+
+/** The detailed, anonymous listening insight half of the shared Home message pair. */
+export function personalizedHomeGreeting(history = [], options = {}) {
+  return personalizedHomeMessages(history, options).subheader
 }
