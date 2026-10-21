@@ -889,7 +889,7 @@ router.get('/:id/tracks', (req, res) => {
     SELECT t.*, pt.added_by, pt.added_at FROM tracks t 
     JOIN playlist_tracks pt ON pt.track_id = t.id
     WHERE pt.playlist_id = ? 
-    ORDER BY pt.position
+    ORDER BY pt.position, link_track_key(t.artist,t.title,t.duration)
   `).all(req.params.id))
 })
 

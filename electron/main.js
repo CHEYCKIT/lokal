@@ -694,13 +694,26 @@ app.whenReady().then(() => {
       return { ...fallback, serverReachable: false, error: e?.message || 'Could not reach the remote server', platform: process.platform }
     }
   })
-  setRemoteCommandHandler(async (command) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { error: 'Main window unavailable' }
-    }
-    mainWindow.webContents.send('remote:command', command || {})
-    return { ok: true }
+  require('./ipc/remote').events.on('library', detail => { if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('library:changed',detail) })
+  const linkRequests = new Map()
+  ipcMain.on('remote:commandResult', (event, id, result) => {
+    if (event.sender !== mainWindow?.webContents) return
+    const pending = linkRequests.get(id)
+    if (pending) { clearTimeout(pending.timer); linkRequests.delete(id); pending.resolve(result) }
   })
+  setRemoteCommandHandler(command => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { error: 'Main window unavailable' }
+    const id = require('crypto').randomUUID()
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { linkRequests.delete(id); resolve({error:'The desktop player did not respond.'}) }, 6000)
+      linkRequests.set(id,{resolve,timer})
+      mainWindow.webContents.send('remote:command',{...command,_requestId:id})
+    })
+  })
+  ipcMain.handle('remote:createPairing', () => require('./link').getLink()?.createPairing())
+  ipcMain.handle('remote:listDevices', () => require('./link').getLink()?.devices() || [])
+  ipcMain.handle('remote:revokeDevice', (_, id) => require('./link').getLink()?.revoke(String(id)))
+  ipcMain.handle('remote:commandDevice', (_, {id,command}) => require('./link').getLink()?.commandDevice(String(id),command))
   ipcMain.handle('dialog:openFolder', async () => {
     const r = await require('electron').dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
     return r.filePaths[0] || null
