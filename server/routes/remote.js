@@ -6,6 +6,7 @@ const { smartTracks, playlistRules } = require('../../electron/playlists/smart')
 const router = express.Router()
 
 function authorized(req) {
+  if (req.linkDevice || require('../../electron/link').getLink()?.auth(req.headers['x-remote-token'])) return true
   const token = String(process.env.REMOTE_TOKEN || '').trim()
   if (!token) return true
   const provided = req.headers['x-remote-token'] || req.query.token || req.body?.token
@@ -46,6 +47,8 @@ function compactTrack(track) {
     play_count: Number(track.play_count) || 0,
     liked: !!(track.user_liked ?? track.liked),
     hasArtwork: !!track.artwork_path,
+    file_hash: track.file_hash || null,
+    fileType: require('path').extname(track.file_path || '').slice(1).toLowerCase() || 'bin',
   }
 }
 
@@ -191,7 +194,7 @@ router.get('/library/playlists', (req, res) => {
     SELECT p.id, p.name, p.description, p.user_id, p.smart_rules,
       (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id) AS track_count,
       (SELECT t.id FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
-       WHERE pt.playlist_id = p.id AND NULLIF(t.artwork_path, '') IS NOT NULL ORDER BY pt.position LIMIT 1) AS coverTrackId
+       WHERE pt.playlist_id = p.id AND NULLIF(t.artwork_path, '') IS NOT NULL ORDER BY pt.position, link_track_key(t.artist,t.title,t.duration) LIMIT 1) AS coverTrackId
     FROM playlists p WHERE ${whereSql}
     ORDER BY p.name COLLATE NOCASE LIMIT ? OFFSET ?
   `).all(...params, limit, offset)
@@ -222,7 +225,7 @@ router.get('/library/playlist-tracks', (req, res) => {
     ? smartTracks(db, playlist.smart_rules, playlist.user_id)
     : db.prepare(`
         SELECT t.* FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id
-        WHERE pt.playlist_id = ? ORDER BY pt.position
+        WHERE pt.playlist_id = ? ORDER BY pt.position, link_track_key(t.artist,t.title,t.duration)
       `).all(playlistId)
   const ids = (Array.isArray(tracks) ? tracks : []).map(track => track?.id).filter(Boolean)
   if (!ids.length) return res.json({ items: [], total: 0 })

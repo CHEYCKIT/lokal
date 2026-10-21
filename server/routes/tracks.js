@@ -549,7 +549,7 @@ router.get('/missing', (req, res) => {
 
 router.get('/', (req, res) => {
   const db = getDB()
-  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, album, albumArtist, source, genre, quality, includeGhosts, problems, search, format } = req.query
+  const { sort = 'added_at DESC', limit = 500, offset = 0, id, artistName, artistId, album, albumArtist, source, genre, quality, includeGhosts, problems, search, format } = req.query
   if (album) {
     const params = [album]
     let sql = "SELECT * FROM tracks WHERE album = ? AND file_path NOT LIKE 'ghost://%'"
@@ -567,6 +567,7 @@ router.get('/', (req, res) => {
   const where = files ? [files] : []
   if (id) { where.push('id = ?'); params.push(id) }
   if (artistName) { where.push('artist = ?'); params.push(artistName) }
+  if (artistId) { where.push('id IN (SELECT track_id FROM artist_track_links WHERE artist_id = ?)'); params.push(artistId) }
   const sourceWhere = require('../../electron/ipc/scanner').sourceFilter(source)
   if (sourceWhere) { where.push(sourceWhere.sql); params.push(...sourceWhere.params) }
   const genreWhere = require('../../electron/ipc/scanner').genreFilter(typeof genre === 'string' ? genre : '')

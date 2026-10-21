@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { RefreshCw, Smartphone } from 'lucide-react'
 import { api, peekSettings } from '../api'
 import { useTranslation } from '../i18n'
+import LinkedDevicesPanel from './LinkedDevicesPanel'
 
 export default function PhoneRemoteButton() {
   const { t } = useTranslation()
@@ -211,6 +212,7 @@ export default function PhoneRemoteButton() {
                 )}
 
                 <p className="text-xs leading-relaxed text-muted">{t('Your phone and computer must be connected to the same Wi-Fi network.')}</p>
+                {enabled && <LinkedDevicesPanel />}
                 {connectionInfo?.tokenRequired && <p className="text-xs leading-relaxed text-muted">{t('REMOTE_TOKEN is enabled. The phone remote will ask for the token when you connect; keep it private.')}</p>}
                 {connectionError && (
                   <p className="text-xs leading-relaxed text-muted">

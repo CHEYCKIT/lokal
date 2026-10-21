@@ -155,10 +155,12 @@
     "multicast-dns": "^7.2.5",
     "music-metadata": "^12.0.0",
     "node-taglib-sharp": "^6.0.3",
+    "qrcode": "^1.5.4",
     "quickjs-emscripten": "0.32.0",
     "sharp": "^0.35.5",
     "three": "^0.175.0",
     "tough-cookie": "6.0.0",
+    "ws": "^8.22.0",
     "yauzl": "^3.4.0",
     "youtubei.js": "^17.2.0"
   },

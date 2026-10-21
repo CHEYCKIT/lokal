@@ -1552,7 +1552,7 @@ function registerScannerHandlers(ipcMain) {
     const db = getDB()
     const playlist = db.prepare('SELECT user_id, smart_rules FROM playlists WHERE id = ?').get(plId)
     if (playlistRules(playlist)) return smartTracks(db, playlist.smart_rules, playlist.user_id)
-    return db.prepare(`SELECT t.*, pt.id as playlist_track_id, pt.added_by, pt.added_at FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id WHERE pt.playlist_id = ? ORDER BY pt.position`).all(plId)
+    return db.prepare(`SELECT t.*, pt.id as playlist_track_id, pt.added_by, pt.added_at FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id WHERE pt.playlist_id = ? ORDER BY pt.position, link_track_key(t.artist,t.title,t.duration)`).all(plId)
   })
   ipcMain.handle('playlist:smartPreview', (_, rules, userId) => {
     try { return smartPreview(getDB(), rules, userId) } catch (e) { return { error: e.message } }
@@ -1783,6 +1783,7 @@ function registerScannerHandlers(ipcMain) {
     if (overrides !== undefined) {
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme_overrides', ?)").run(JSON.stringify(overrides))
     }
+    require('./remote').events.emit('theme')
   })
   ipcMain.handle('track:batchUpdate', async (_, trackIds, operations) => {
     const db = getDB()
