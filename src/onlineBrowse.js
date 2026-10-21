@@ -190,11 +190,20 @@ export async function loadArtistChannel(artist, { anchor, hints = [] } = {}, cli
   if (!result || result.error || (!result.tracks?.length && !result.albums?.length)) return null
   const tracks = result.tracks.map(track => ({ ...track, source: 'youtube', artwork_url: track.artwork_url || track.thumbnail || '' }))
   const albums = [...(result.albums || [])]
-  const known = new Set(albums.map(album => releaseTitleKey(album.title)))
+  const byTitle = new Map(albums.map(album => [releaseTitleKey(album.title), album]))
   for (const track of tracks) {
-    if (track.album && !known.has(releaseTitleKey(track.album))) {
-      known.add(releaseTitleKey(track.album))
-      albums.push({ title: track.album, artist: result.name || artist, albumId: track.albumId, artwork_url: track.artwork_url })
+    if (!track.album) continue
+    const key = releaseTitleKey(track.album)
+    const existing = byTitle.get(key)
+    const role = mainArtistMetadata(track)
+    if (!existing) {
+      const album = { title: track.album, artist: result.name || artist, albumId: track.albumId, artwork_url: track.artwork_url, ...role }
+      albums.push(album)
+      byTitle.set(key, album)
+    } else if (mainArtistMetadata(existing).is_main_artist === undefined && role.is_main_artist !== undefined) {
+      // The channel catalogue can list the release without its credit role;
+      // a matching song may still identify it as a feature release.
+      existing.is_main_artist = role.is_main_artist
     }
   }
   return { name: result.name || artist, image: result.image || '', tracks, albums }
@@ -217,6 +226,7 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
       artwork_url: song.artwork_url || song.thumbnail || '',
       release_type: song.album_release_type || song.albumReleaseType || song.album_type || song.albumType || song.release_type || song.releaseType,
       track_count: song.album_track_count || song.albumTrackCount || song.album?.track_count || song.album?.trackCount,
+      ...mainArtistMetadata(song),
     })
   }
   const seen = new Map()
@@ -229,6 +239,10 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
       if (!known.artwork_url && album.artwork_url) known.artwork_url = album.artwork_url
       if (!known.release_type) known.release_type = album.release_type || album.releaseType || album.album_type || album.albumType || album.type
       if (!known.track_count) known.track_count = album.track_count || album.trackCount || album.total_tracks || album.totalTracks
+      if (known.is_main_artist == null) {
+        const role = mainArtistMetadata(album)
+        if (role.is_main_artist !== undefined) known.is_main_artist = role.is_main_artist
+      }
     }
   }
   return [...seen.values()]
@@ -236,6 +250,18 @@ export async function loadOnlineArtistAlbums(artist, songs = [], client = api, {
 
 /** A release title to compare by: "I Am (Expanded Edition)" -> "i am". */
 export const releaseTitleKey = title => recommendationKey(String(title || '').replace(/\s*[([][^)\]]*[)\]]/g, '')) || recommendationKey(title)
+
+/** Preserve the album-level main/featured-artist role when a release is inferred from a song. */
+function mainArtistMetadata(source) {
+  const album = source?.album && typeof source.album === 'object' ? source.album : null
+  const value = [
+    source?.album_is_main_artist, source?.albumIsMainArtist,
+    album?.is_main_artist, album?.isMainArtist,
+    source?.is_main_artist, source?.isMainArtist,
+    source?.main_artist, source?.mainArtist,
+  ].find(value => value !== undefined && value !== null)
+  return value === undefined ? {} : { is_main_artist: value }
+}
 
 /** How many of the library's songs (files) each release has, by releaseTitleKey. */
 export function libraryAlbumCounts(libraryTracks = []) {

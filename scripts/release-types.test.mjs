@@ -21,17 +21,30 @@ test('releases come in sections, in a fixed order, unknown types as unknown albu
 
 test('hidden types are left out; the choice is per artist, all shown until chosen', () => {
   assert.deepEqual(groupReleases(releases, new Set(['album', 'single'])).map(group => group.type), ['album', 'single'])
-  assert.equal(shownReleaseTypes('Earth, Wind & Fire').size, 6)
+  assert.equal(shownReleaseTypes('Earth, Wind & Fire').size, 7)
   store.set('lokal-artist-release-types', JSON.stringify({ 'earth wind fire': ['album', 'ep', 'nonsense'] }))
   assert.deepEqual([...shownReleaseTypes('Earth Wind & Fire')], ['album', 'ep'])
-  assert.equal(shownReleaseTypes('Someone Else').size, 6)
+  assert.equal(shownReleaseTypes('Someone Else').size, 7)
   store.set('lokal-artist-release-types', 'not json')
-  assert.equal(shownReleaseTypes('Earth, Wind & Fire').size, 6)
+  assert.equal(shownReleaseTypes('Earth, Wind & Fire').size, 7)
+})
+
+test('saved artist filters migrate to show Features once without overriding later choices', () => {
+  const key = 'lokal-artist-release-types'
+  const migrationKey = 'lokal-artist-release-types-features-v1'
+  store.delete(migrationKey)
+  store.set(key, JSON.stringify({ 'earth wind fire': ['album', 'ep'] }))
+  assert.deepEqual([...shownReleaseTypes('Earth, Wind & Fire')], ['album', 'ep', 'feature'])
+  assert.equal(store.get(migrationKey), '1')
+  store.set(key, JSON.stringify({ 'earth wind fire': ['album', 'ep'] }))
+  assert.deepEqual([...shownReleaseTypes('Earth, Wind & Fire')], ['album', 'ep'])
 })
 
 test('online artist releases normalize provider type names and infer missing types from full track counts', () => {
   const online = classifyOnlineReleases([
     { title: 'Known Album', releaseType: 'Album' },
+    { title: 'Featured Album', release_type: 'album', is_main_artist: false },
+    { title: 'Featured Shelf', type: 'Featured on' },
     { title: 'Known Single', type: 'Single' },
     { title: 'Known EP', album_type: 'Extended Play' },
     { title: 'One Track', trackCount: 1 },
@@ -43,6 +56,8 @@ test('online artist releases normalize provider type names and infer missing typ
   ])
   assert.deepEqual(online.map(release => [release.title, release.release_type]), [
     ['Known Album', 'album'],
+    ['Featured Album', 'feature'],
+    ['Featured Shelf', 'feature'],
     ['Known Single', 'single'],
     ['Known EP', 'ep'],
     ['One Track', 'single'],
@@ -52,6 +67,6 @@ test('online artist releases normalize provider type names and infer missing typ
   ])
   assert.equal(groupReleases(online).some(group => group.type === 'unknown'), false)
   assert.deepEqual(groupReleases(online).map(group => [group.type, group.items.length]), [
-    ['album', 3], ['ep', 2], ['single', 2],
+    ['album', 3], ['ep', 2], ['single', 2], ['feature', 2],
   ])
 })
