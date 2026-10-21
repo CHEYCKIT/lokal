@@ -1,6 +1,6 @@
 // Release types on artist pages: releases are shown in sections (Albums,
-// EPs, Singles, Compilations, Live), and which ones show is chosen per
-// artist (useReleaseTypes), remembered on this computer.
+// EPs, Singles, Compilations, Live and Features), and which ones show is chosen
+// per artist (useReleaseTypes), remembered on this computer.
 
 import { useCallback, useState } from 'react'
 import { recommendationKey } from './recommendations.js'
@@ -11,6 +11,7 @@ export const RELEASE_TYPES = [
   ['single', 'Singles'],
   ['compilation', 'Compilations'],
   ['live', 'Live'],
+  ['feature', 'Features'],
   ['unknown', 'Unknown albums'],
 ]
 const KNOWN = new Set(RELEASE_TYPES.map(([type]) => type))
@@ -25,6 +26,7 @@ function catalogueReleaseType(release) {
     if (typeof value !== 'string') continue
     const type = value.trim().toLocaleLowerCase().replace(/[_-]+/g, ' ')
     if (!type || type === 'unknown' || type === 'unknown album' || type === 'n/a') continue
+    if (/\bfeature(?:d|s)?\b|\bfeaturing\b|\bappears? on\b|\bguest appearance\b/.test(type)) return 'feature'
     if (/\bsingle\b/.test(type)) return 'single'
     if (/\bep\b|extended play/.test(type)) return 'ep'
     if (/compilation|greatest hits|best of/.test(type)) return 'compilation'
@@ -32,6 +34,25 @@ function catalogueReleaseType(release) {
     if (/\balbum\b|\blp\b|long play/.test(type)) return 'album'
   }
   return null
+}
+
+const falseLike = value => value === false || value === 0 || (typeof value === 'string' && /^(false|0|no|off)$/i.test(value.trim()))
+const trueLike = value => value === true || value === 1 || (typeof value === 'string' && /^(true|1|yes|on)$/i.test(value.trim()))
+
+/** True when the catalogue identifies this as a featured/secondary-artist release. */
+function isFeatureRelease(release) {
+  for (const key of ['is_main_artist', 'isMainArtist', 'main_artist', 'mainArtist', 'is_primary_artist', 'isPrimaryArtist', 'album_is_main_artist', 'albumIsMainArtist']) {
+    if (falseLike(release?.[key])) return true
+  }
+  for (const key of ['is_featured', 'isFeatured', 'featured', 'is_feature', 'isFeature']) {
+    if (trueLike(release?.[key])) return true
+  }
+  for (const value of [release?.release_type, release?.releaseType, release?.album_type, release?.albumType, release?.type, release?.release_role, release?.releaseRole, release?.artist_role, release?.artistRole, release?.role]) {
+    if (typeof value !== 'string') continue
+    const type = value.trim().toLocaleLowerCase().replace(/[_-]+/g, ' ')
+    if (/\bfeature(?:d|s)?\b|\bfeaturing\b|\bappears? on\b|\bguest appearance\b/.test(type)) return true
+  }
+  return false
 }
 
 function catalogueTrackCount(release) {
@@ -42,12 +63,12 @@ function catalogueTrackCount(release) {
 }
 
 /**
- * Online artist shelves should be split into Albums, EPs and Singles, not
- * strand valid releases under "Unknown albums" simply because a catalogue
- * omitted or differently named its type field. Explicit source metadata wins;
- * complete track counts provide the fallback (1 = single, 2–6 = EP, 7+ = album).
- * Unresolved titled releases default to Albums rather than an Unknown section.
- * Placeholder records are discarded.
+ * Online artist shelves should be split into release types, not strand valid
+ * releases under "Unknown albums" simply because a catalogue omitted or
+ * differently named its type field. Feature credits take precedence over the
+ * release's format; otherwise explicit metadata wins, then track counts provide
+ * the fallback (1 = single, 2–6 = EP, 7+ = album). Unresolved titled releases
+ * default to Albums. Placeholder records are discarded.
  */
 export function classifyOnlineReleases(releases = []) {
   return (Array.isArray(releases) ? releases : [])
@@ -56,7 +77,7 @@ export function classifyOnlineReleases(releases = []) {
       return title && !['unknown', 'unknown album', 'untitled', 'untitled album', 'n/a'].includes(title)
     })
     .map(release => {
-      const explicit = catalogueReleaseType(release)
+      const explicit = isFeatureRelease(release) ? 'feature' : catalogueReleaseType(release)
       const count = catalogueTrackCount(release)
       const inferred = count === 1 ? 'single' : count >= 2 && count <= 6 ? 'ep' : 'album'
       return { ...release, release_type: explicit || inferred }
@@ -88,8 +109,22 @@ export function releaseTypeCounts(releases = []) {
 }
 
 const STORAGE_KEY = 'lokal-artist-release-types'
+const FEATURE_FILTER_MIGRATION_KEY = 'lokal-artist-release-types-features-v1'
 function readAll() {
-  try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return value && typeof value === 'object' ? value : {} } catch { return {} }
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+    const all = value && typeof value === 'object' ? value : {}
+    // Features are new to the filter. Include them in each saved artist choice
+    // once, so existing preferences don't accidentally hide the new section.
+    if (localStorage.getItem(FEATURE_FILTER_MIGRATION_KEY) !== '1') {
+      for (const [artist, types] of Object.entries(all)) {
+        if (Array.isArray(types) && !types.includes('feature')) all[artist] = [...types, 'feature']
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
+      localStorage.setItem(FEATURE_FILTER_MIGRATION_KEY, '1')
+    }
+    return all
+  } catch { return {} }
 }
 
 /** The types shown for an artist (all unless chosen), as a Set. */
