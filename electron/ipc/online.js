@@ -155,7 +155,7 @@ function registerOnlineHandlers(ipcMain) {
   // Direct audio link of an addon track, for "Save to library" (the downloader fetches it).
   ipcMain.handle('online:downloadUrl', async (_, provider, id) => {
     const key = sources.addons.keyOfProvider(provider)
-    if (key && sources.addons.packageService(getDB()).find(key)) return { package: true, url: `spotiflac://${key}/${encodeURIComponent(id)}` }
+    if (key && sources.addons.packageService(getDB()).find(key)) return { package: true, url: `mornye://${key}/${encodeURIComponent(id)}` }
     try { return { url: (await sources.resolveStream(provider, id, { ...streamOptions(), force: true })).url } } catch (e) { return { error: e.message } }
   })
   // Addons' manifests are read again now and then (new resources, settings).
