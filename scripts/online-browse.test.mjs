@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { libraryAlbum, loadOnlineAlbum, loadOnlineArtistAlbums, onlineAlbumPath, trackAlbumPath } from '../src/onlineBrowse.js'
+import { classifyOnlineReleases, groupReleases } from '../src/releaseTypes.js'
 import { isContextNavigable, navigateToTrackAlbum } from '../src/playbackContext.js'
 
 test('album pages are addressed by artist and album (and YouTube album id)', () => {
@@ -118,6 +119,7 @@ test("an artist's albums: the catalogue's, then their songs' albums, once each",
       artwork_url: 'https://x.example/best.jpg',
       album_release_type: 'Compilation',
       album_track_count: 17,
+      album_is_main_artist: false,
     },
     { title: 'Boogie Wonderland', album: 'I am', artwork_url: 'https://x.example/iam.jpg' },
   ], client)
@@ -125,6 +127,10 @@ test("an artist's albums: the catalogue's, then their songs' albums, once each",
   assert.equal(albums[0].artwork_url, 'https://x.example/iam.jpg')
   assert.equal(albums[1].release_type, 'Compilation')
   assert.equal(albums[1].track_count, 17)
+  assert.equal(albums[1].is_main_artist, false)
+  assert.deepEqual(groupReleases(classifyOnlineReleases(albums)).map(group => [group.type, group.items.map(item => item.title)]), [
+    ['album', ['I Am']], ['feature', ['The Best of Earth, Wind & Fire, Vol. 1']],
+  ])
 })
 
 test('"Playing from" leads back to an online album or artist page', () => {
