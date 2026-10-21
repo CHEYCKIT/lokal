@@ -1447,46 +1447,37 @@ export default function App() {
 
   useEffect(() => {
     if (!api.isElectron || !window.electron?.reportRemoteState) return
-    let interval = null
+    let previousSignature = ''
+    let previousQueue = null
+    let compactQueue = []
+    let queueRevision = 0
+    let previousProgress = 0
+    let previousAt = Date.now()
+    const compact = track => track ? { id: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration, file_hash: track.file_hash, hasArtwork: !!track.artwork_path, liked:!!track.liked, fileType:String(track.file_path||'').split('.').at(-1)?.toLowerCase()||'bin' } : null
     const publish = () => {
       const state = usePlayerStore.getState()
+      const now = Date.now()
+      const queue = state.shuffle && state.shuffleQueue?.length ? state.shuffleQueue : state.queue
+      if(queue!==previousQueue){previousQueue=queue;compactQueue=(queue||[]).map(compact);queueRevision++}
       const payload = {
-        userId: userRef.current?.id || 'guest',
-        isPlaying: state.isPlaying,
-        progress: state.progress || 0,
-        duration: state.duration || 0,
-        volume: state.volume ?? 0.8,
-        repeat: state.repeat || 'none',
-        shuffle: !!state.shuffle,
-        currentTrack: state.currentTrack
-          ? {
-              id: state.currentTrack.id,
-              title: state.currentTrack.title,
-              artist: state.currentTrack.artist,
-              album: state.currentTrack.album,
-              artwork_path: state.currentTrack.artwork_path,
-            }
-          : null,
+        userId: userRef.current?.id || 'guest', isPlaying: state.isPlaying,
+        progress: state.progress || 0, positionAt: now, duration: state.duration || 0,
+        volume: state.volume ?? 0.8, repeat: state.repeat || 'none', shuffle: !!state.shuffle,
+        currentTrack: compact(state.currentTrack), queue: compactQueue,
+        currentIndex: state.shuffle ? state.shuffleIndex : state.queueIndex,
       }
-      const serialized = JSON.stringify(payload)
-      if (serialized === lastRemoteStateRef.current) return
-      lastRemoteStateRef.current = serialized
+      const signature = JSON.stringify({ ...payload, progress: undefined, positionAt: undefined, queue: undefined, queueRevision })
+      const expected = previousProgress + (state.isPlaying ? (now - previousAt) / 1000 : 0)
+      const seeked = Math.abs(payload.progress - expected) > 1.5
+      if (signature === previousSignature && !seeked) return
+      previousSignature = signature
+      previousProgress = payload.progress
+      previousAt = now
       window.electron.reportRemoteState(payload)
     }
-    const stop = () => {
-      if (interval !== null) clearInterval(interval)
-      interval = null
-    }
-    const schedule = hidden => {
-      stop()
-      // Keep remotes current during background playback, but poll less often.
-      publish()
-      interval = setInterval(publish, hidden ? 5000 : 1000)
-    }
-    const unsubscribe = onWindowVisibility(schedule)
-    schedule(isWindowHidden())
-    return () => { stop(); unsubscribe() }
-  }, [currentTrack?.id, isPlaying, duration, volume])
+    publish()
+    return usePlayerStore.subscribe(publish)
+  }, [user?.id])
 
   useEffect(() => {
     if (!api.isElectron || !window.electron?.onRemoteCommand) return
@@ -1526,6 +1517,55 @@ export default function App() {
         for (const track of ordered) state.addToQueue(track)
         return { ok: true, count: ordered.length }
       }
+      if (action === 'playQueueIndex') { const list=state.shuffle&&state.shuffleQueue.length?state.shuffleQueue:state.queue; const index=Number(command.value);if(!Number.isInteger(index)||!list[index])return {error:'Queue entry is unavailable'};state.playQueue(list,index);return {ok:true} }
+      if (action === 'clearQueue') { const queue=state.currentTrack?[state.currentTrack]:[];usePlayerStore.setState({queue,queueIndex:queue.length?0:-1,originalQueue:queue,shuffleQueue:state.shuffle?queue:[],shuffleIndex:queue.length?0:-1});return {ok:true} }
+      if (action === 'queueFromMetadata') {
+        const wanted=command.value?.track;if(!wanted)return {error:'No track was supplied'};
+        const result=await api.getTracks({limit:100000,includeGhosts:'1'});const rows=(Array.isArray(result)?result:result?.items||[]).filter(track=>!String(track.file_path||'').startsWith('ghost://'));
+        const norm=v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+        const track=rows.find(t=>wanted.file_hash&&t.file_hash===wanted.file_hash)||rows.find(t=>norm(t.artist)===norm(wanted.artist)&&norm(t.title)===norm(wanted.title)&&Math.abs(Number(t.duration||0)-Number(wanted.duration||0))<=2);
+        if(!track)return {error:'This track is not available on the desktop'};state.addToQueue(track);return {ok:true}
+      }
+      if (action === 'playContext') {
+        const value=command.value||{};let result;
+        if(value.type==='playlist')result=await api.getPlaylistTracks(value.id);
+        else if(value.type==='album')result=await api.getAlbumTracks(value.album || value.id);
+        else if(value.type==='artist')result=await api.getTracks(value.artist ? {artistName:value.artist,limit:100000} : {artistId:value.id,limit:100000});
+        else return {error:'Unsupported playback context'};
+        const tracks=(Array.isArray(result)?result:result?.items||[]).filter(track=>!String(track.file_path||'').startsWith('ghost://'));
+        if(!tracks.length)return {error:'The selected collection has no available audio'};
+        const start=Math.max(0,tracks.findIndex(t=>String(t.id)===String(value.startTrackId)));state.playQueue(tracks,start);return {ok:true}
+      }
+      if (action === 'fadePause') { const volume=state.volume;for(let step=9;step>=0;step--){usePlayerStore.getState().setVolume(volume*step/10);await new Promise(resolve=>setTimeout(resolve,25))}if(usePlayerStore.getState().isPlaying)usePlayerStore.getState().togglePlay();usePlayerStore.getState().setVolume(volume);return {ok:true} }
+      if (action === 'setShuffle') { if (!!command.value !== !!state.shuffle) command.value ? state.enableShuffle() : state.disableShuffle(); return { ok: true } }
+      if (action === 'setRepeat') { state.setRepeat(command.value); return { ok: true } }
+      if (action === 'reorderQueue') { state.reorderQueue(command.value?.from, command.value?.to); return { ok: true } }
+      if (action === 'removeFromQueue') { const index=command.value?.index; const list=state.shuffle&&state.shuffleQueue.length?state.shuffleQueue:state.queue; if(!Number.isInteger(index)||!list[index])return {error:'Queue entry is unavailable'}; state.removeFromQueue(list[index].id,index); return {ok:true} }
+      if (action === 'handoff') {
+        const handoff = command.value || {}
+        if (!Array.isArray(handoff.queue) || !handoff.queue.length || handoff.queue.length > 5000 || !Number.isInteger(handoff.index) || handoff.index < 0 || handoff.index >= handoff.queue.length) return {error:'Invalid handoff queue'}
+        const all = await api.getTracks({ limit: 100000, includeGhosts: '1' })
+        const library = (Array.isArray(all) ? all : all?.items || []).filter(track=>!String(track.file_path||'').startsWith('ghost://'))
+        const norm = value => String(value || '').toLowerCase().trim().replace(/\s+/g,' ')
+        const resolve = entry => library.find(track => entry.file_hash && track.file_hash===entry.file_hash) || library.find(track=>norm(track.artist)===norm(entry.artist)&&norm(track.title)===norm(entry.title)&&Math.abs(Number(track.duration||0)-Number(entry.duration||0))<=2)
+        const queue=handoff.queue.map(resolve)
+        if(queue.some(track=>!track))return {error:'Some songs are not available on this desktop. Download them here before handing off.'}
+        const originalVolume=state.volume
+        state.setVolume(0)
+        state.playTrack(queue[handoff.index],queue)
+        const seekWhenReady=()=>{const latest=usePlayerStore.getState(); if(latest.currentTrack?.id===queue[handoff.index].id&&latest.duration>0){unsubscribe();clearTimeout(timeout);latest.setProgressWithAudioUpdate(Math.min(latest.duration,Math.max(0,Number(handoff.positionMs)||0)/1000));let step=0;const fade=setInterval(()=>{usePlayerStore.getState().setVolume(originalVolume*(++step/10));if(step>=10)clearInterval(fade)},30)}}
+        const unsubscribe=usePlayerStore.subscribe(seekWhenReady)
+        const timeout=setTimeout(()=>{unsubscribe();usePlayerStore.getState().setVolume(originalVolume)},10000)
+        seekWhenReady()
+        return {ok:true}
+      }
+      if (action === 'linkTheme') {
+        const body=command.value||{},theme=Object.hasOwn(THEMES,body.theme)?body.theme:null;
+        if(!theme)return {error:'Unsupported theme'};
+        const current=await api.getTheme(),overrides={...(current?.overrides||{})};
+        if(/^#[0-9a-fA-F]{6}$/.test(body.accentColor||''))overrides['--accent']=body.accentColor;
+        await api.saveTheme(theme,overrides);applyTheme({...THEMES[theme].vars,...overrides});return {ok:true}
+      }
       if (action === 'togglePlay') return state.togglePlay()
       if (action === 'play' && !state.isPlaying) return state.togglePlay()
       if (action === 'pause' && state.isPlaying) return state.togglePlay()
@@ -1544,6 +1584,7 @@ export default function App() {
         }
         return
       }
+      if (action === 'applyTrackLike') { state.setLiked(command.value.trackId,command.value.liked);return {ok:true,liked:command.value.liked} }
       if (action === 'toggleLike' && state.currentTrack?.id) {
         const r = await api.toggleLike(state.currentTrack.id, userRef.current?.id, state.currentTrack)
         const liked = typeof r === 'boolean' ? r : r?.liked ?? false

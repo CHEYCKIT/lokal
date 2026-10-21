@@ -28,6 +28,9 @@ function initDB() {
   ensureStorageDirs()
 
   db = new Database(path.join(_dataDir, 'lokal.db'))
+  // Capture functions are registered after migrations, before ordinary writes.
+  for (const {name} of db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name GLOB 'link_*'").all()) db.exec('DROP TRIGGER IF EXISTS \"' + name.replace(/\"/g, '\"\"') + '\"')
+  db.function('link_track_key', (artist,title,duration) => require('../link/protocol').trackKey({artist,title,duration}))
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
 

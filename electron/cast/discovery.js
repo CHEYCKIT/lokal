@@ -93,7 +93,7 @@ function deviceOf(instance, entry) {
  * tests pass a pretend one).
  */
 class CastDiscovery extends EventEmitter {
-  constructor({ mdns = () => require('multicast-dns')(), now = Date.now, log = () => {} } = {}) {
+  constructor({ mdns = () => require('../network/mdns').acquireMdns(), now = Date.now, log = () => {} } = {}) {
     super()
     this.createMdns = mdns
     this.now = now
