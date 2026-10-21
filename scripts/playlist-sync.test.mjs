@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import vm from 'node:vm'
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
 const sync = require('../electron/playlists/sync')
@@ -20,6 +22,73 @@ function setup(remote) {
   return { db, packages, helpers }
 }
 const songs = db => db.prepare('SELECT t.title FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id ORDER BY position').all().map(r => r.title)
+
+// Exercise the registered IPC handlers used by both launch and manual sync.
+// Resolve the actual package module path before replacing its external runtime.
+function ipcHandlers(db, packages, readPlaylist) {
+  const file = new URL('../electron/ipc/playlists.js', import.meta.url)
+  const ipcRequire = createRequire(file)
+  const handlers = new Map()
+  const module = { exports: {} }
+  vm.runInNewContext(readFileSync(file, 'utf8'), {
+    module, exports: module.exports, console, URL,
+    require: id => {
+      if (id === 'electron') return { ipcMain: { handle: (name, handler) => handlers.set(name, handler) } }
+      if (id === './db') return { getDB: () => db }
+      if (id.endsWith('/packages')) {
+        assert.equal(ipcRequire.resolve(id), ipcRequire.resolve('../mornye/packages'))
+        return { service: database => { assert.equal(database, db); return packages } }
+      }
+      if (id === '../playlists/linkImport') return { fetchPlaylist: readPlaylist }
+      if (id === './tools') return { findYtDlp: () => 'fixture-ytdlp' }
+      if (id === './downloader') return { manager: () => ({ settings: () => ({}) }) }
+      return ipcRequire(id)
+    },
+  }, { filename: file.pathname })
+  module.exports.registerPlaylistHandlers()
+  return (name, ...args) => handlers.get(`playlist:${name}`)(null, ...args)
+}
+
+for (const platform of ['spotify', 'youtube-music']) {
+  test(`startup IPC resumes an existing ${platform} sync without resetting saved history`, async t => {
+    const { db, packages } = setup({ list: [
+      { id: 'seen', name: 'Owned', artists: 'Band' },
+      { id: 'new', name: 'Owned', artists: 'Band' },
+    ] })
+    t.after(() => db.close())
+    const url = platform === 'spotify' ? 'https://open.spotify.com/playlist/xyz' : 'https://music.youtube.com/playlist?list=PLabc'
+    // Persisted pre-rename schema and keys: no relinking or migration needed.
+    sync.ensure // Table creation is exercised via link, then seed saved state.
+    sync.link(db, 'p1', url)
+    db.prepare('UPDATE playlist_sync SET synced_at=?, title=?, seen_json=?, error=? WHERE playlist_id=?')
+      .run(123, 'Saved title', JSON.stringify([`${platform}:seen`]), 'Previous failure', 'p1')
+    db.prepare('INSERT INTO playlist_tracks VALUES (?, ?, ?, ?, ?)').run('p1', 'local-1', 1, 'original-user', 100)
+    let reads = 0
+    const invoke = ipcHandlers(db, packages, async options => {
+      reads++
+      assert.equal(options.url, url)
+      return { title: 'Theirs', entries: ['seen', 'new'].map(source_url => ({ source_url, title: 'Owned', artist: 'Band' })) }
+    })
+    assert.deepEqual(Array.from(invoke('syncLinked')), ['p1'])
+    assert.equal(invoke('syncStatus', 'p1').syncedAt, 123)
+    const result = await invoke('sync', 'p1', 'current-user')
+    assert.equal(result.error, undefined)
+    assert.equal(result.added, 1)
+    assert.equal(result.firstSync, false)
+    assert.equal((await invoke('sync', 'p1', 'current-user')).added, 0)
+    assert.deepEqual(songs(db), ['Owned', 'Owned'])
+    const row = db.prepare('SELECT * FROM playlist_sync WHERE playlist_id=?').get('p1')
+    assert.equal(row.url, url)
+    assert.equal(row.platform, platform)
+    assert.equal(row.error, null)
+    assert.deepEqual(JSON.parse(row.seen_json), [`${platform}:seen`, `${platform}:new`])
+    assert.deepEqual(db.prepare('SELECT added_by, added_at FROM playlist_tracks ORDER BY position').all(), [
+      { added_by: 'original-user', added_at: 100 },
+      { added_by: 'current-user', added_at: db.prepare('SELECT added_at FROM playlist_tracks WHERE position=2').get().added_at },
+    ])
+    assert.equal(reads, platform === 'youtube-music' ? 2 : 0)
+  })
+}
 
 test('linking accepts streaming playlist links only', () => {
   const { db } = setup({ list: [] })
