@@ -18,6 +18,71 @@ router.use((req, res, next) => {
   next()
 })
 
+// Profile and original audio are available only to the individually paired
+// phone belonging to the active desktop user, never the legacy shared token.
+function pairedUser(req, res) {
+  const device = req.linkDevice
+  const userId = String(getRemoteState().userId || 'guest')
+  if (!device || device.legacy || device.user_id !== userId) {
+    res.status(403).json({ error: 'Pair this phone with the active desktop user first.' })
+    return null
+  }
+  return userId
+}
+
+function profileFor(userId) {
+  return getDB().prepare('SELECT id, username, display_name, avatar_path FROM users WHERE id = ?').get(userId)
+}
+
+router.get('/profile', (req, res) => {
+  const userId = pairedUser(req, res)
+  if (!userId) return
+  const user = profileFor(userId)
+  let avatarVersion = null
+  if (user?.avatar_path) {
+    try {
+      const stat = require('fs').statSync(user.avatar_path)
+      if (stat.isFile() && stat.size <= 5 * 1024 * 1024) avatarVersion = `${stat.mtimeMs}:${stat.size}`
+    } catch {}
+  }
+  res.set('Cache-Control', 'no-store')
+  res.json({ profile: user ? {
+    id: user.id, username: user.username, displayName: user.display_name,
+    hasAvatar: avatarVersion !== null, avatarVersion,
+  } : null })
+})
+
+router.get('/profile/avatar', (req, res) => {
+  const userId = pairedUser(req, res)
+  if (!userId) return
+  const avatar = profileFor(userId)?.avatar_path
+  try {
+    const stat = require('fs').statSync(avatar)
+    if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return res.sendStatus(404)
+    res.set('Cache-Control', 'private, no-cache')
+    res.sendFile(require('path').resolve(avatar))
+  } catch { res.sendStatus(404) }
+})
+
+router.get('/files', (req, res) => {
+  if (!pairedUser(req, res)) return
+  res.json({ originalFiles: true })
+})
+
+router.get('/files/:trackId', (req, res) => {
+  if (!pairedUser(req, res)) return
+  const track = getDB().prepare('SELECT file_path, file_hash FROM tracks WHERE id = ?').get(req.params.trackId)
+  if (!track || track.file_path.startsWith('ghost://')) return res.sendStatus(404)
+  try {
+    const stat = require('fs').statSync(track.file_path)
+    if (!stat.isFile()) return res.sendStatus(404)
+    // Unlike /api/stream, this never substitutes a playback transcode.
+    res.set('Cache-Control', 'private, no-store')
+    if (/^[a-fA-F0-9]{64}$/.test(track.file_hash || '')) res.set('X-Content-SHA256', track.file_hash)
+    res.type('application/octet-stream').sendFile(require('path').resolve(track.file_path))
+  } catch { res.sendStatus(404) }
+})
+
 function queryText(value) {
   return String(value || '').trim().slice(0, 100)
 }
