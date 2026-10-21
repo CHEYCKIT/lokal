@@ -36,9 +36,9 @@ function catalogueReleaseType(release) {
 
 function catalogueTrackCount(release) {
   const value = [release?.track_count, release?.trackCount, release?.total_tracks, release?.totalTracks]
-    .find(count => count !== null && count !== undefined && count !== '')
-  const count = Number(value ?? (Array.isArray(release?.tracks) ? release.tracks.length : 0))
-  return Number.isFinite(count) && count > 0 ? count : 0
+    .find(count => Number.isFinite(Number(count)) && Number(count) > 0)
+  if (value !== undefined) return Number(value)
+  return Array.isArray(release?.tracks) ? release.tracks.length : 0
 }
 
 /**
