@@ -116,8 +116,8 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
       throw withStreamErrorStage(error, 'resolve')
     }
     try {
-      if (stream.type === 'live') return { stream, res: await require('../spotiflac/media').liveResponse(stream.job, { range, signal, mime: stream.mime }) }
-      if (stream.type === 'file') return { stream, res: await require('../spotiflac/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
+      if (stream.type === 'live') return { stream, res: await require('../mornye/media').liveResponse(stream.job, { range, signal, mime: stream.mime }) }
+      if (stream.type === 'file') return { stream, res: await require('../mornye/media').fileResponse(stream.file, { range, signal, mime: stream.mime }) }
       const headers = { ...stream.headers }
       if (range) headers.Range = range
       // An addon's media URL is the addon's to choose: follow its redirects one
