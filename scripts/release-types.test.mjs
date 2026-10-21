@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 const store = new Map()
 globalThis.localStorage = { getItem: key => (store.has(key) ? store.get(key) : null), setItem: (key, value) => { store.set(key, String(value)) } }
-const { groupReleases, releaseTypeCounts, releaseTypeOf, shownReleaseTypes } = await import('../src/releaseTypes.js')
+const { classifyOnlineReleases, groupReleases, releaseTypeCounts, releaseTypeOf, shownReleaseTypes } = await import('../src/releaseTypes.js')
 
 const releases = [
   { title: 'I Am', release_type: 'album' }, { title: 'Let\'s Go Dumb Crasy', release_type: 'ep' },
@@ -27,4 +27,31 @@ test('hidden types are left out; the choice is per artist, all shown until chose
   assert.equal(shownReleaseTypes('Someone Else').size, 6)
   store.set('lokal-artist-release-types', 'not json')
   assert.equal(shownReleaseTypes('Earth, Wind & Fire').size, 6)
+})
+
+test('online artist releases normalize provider type names and infer missing types from full track counts', () => {
+  const online = classifyOnlineReleases([
+    { title: 'Known Album', releaseType: 'Album' },
+    { title: 'Known Single', type: 'Single' },
+    { title: 'Known EP', album_type: 'Extended Play' },
+    { title: 'One Track', trackCount: 1 },
+    { title: 'Short Release', track_count: 5 },
+    { title: 'Long Release', total_tracks: 12 },
+    { title: 'Fallback Release' },
+    { title: 'Unknown Album', release_type: 'album' },
+    { title: '' },
+  ])
+  assert.deepEqual(online.map(release => [release.title, release.release_type]), [
+    ['Known Album', 'album'],
+    ['Known Single', 'single'],
+    ['Known EP', 'ep'],
+    ['One Track', 'single'],
+    ['Short Release', 'ep'],
+    ['Long Release', 'album'],
+    ['Fallback Release', 'album'],
+  ])
+  assert.equal(groupReleases(online).some(group => group.type === 'unknown'), false)
+  assert.deepEqual(groupReleases(online).map(group => [group.type, group.items.length]), [
+    ['album', 3], ['ep', 2], ['single', 2],
+  ])
 })
