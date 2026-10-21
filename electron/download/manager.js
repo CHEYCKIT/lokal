@@ -1010,11 +1010,11 @@ class DownloadManager {
 
   isPackageSource(source) {
     if (!source || !/^a-[0-9a-f]{10}$/.test(source.provider) || typeof source.id !== 'string' || !source.id || source.id.length > 300 || /[\r\n]/.test(source.id)) return false
-    try { return !!require('../spotiflac/packages').service(this.db()).find(source.provider.slice(2)) } catch { return false }
+    try { return !!require('../mornye/packages').service(this.db()).find(source.provider.slice(2)) } catch { return false }
   }
 
   async downloadPackageWithVerification(key, id, options, { onVerificationRequired, onVerificationComplete } = {}) {
-    const packages = require('../spotiflac/packages').service(this.db())
+    const packages = require('../mornye/packages').service(this.db())
     const download = () => packages.download(key, id, options)
     try {
       return await download()
