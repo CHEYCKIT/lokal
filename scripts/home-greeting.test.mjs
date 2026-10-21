@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { personalizedHomeGreeting, personalizedHomeHeadline } from '../src/homeGreeting.mjs'
+import { personalizedHomeGreeting, personalizedHomeHeadline, personalizedHomeMessages } from '../src/homeGreeting.mjs'
 
 const now = new Date('2026-10-19T12:00:00').getTime()
 
@@ -54,6 +54,19 @@ test('pairs a concise repeat headline with the detailed repeat subheader', () =>
   assert.equal(personalizedHomeHeadline(history, { hour: 12, now }), 'On repeat')
   assert.equal(personalizedHomeGreeting(history, { hour: 12, now }), 'The repeat button has been getting a workout.')
 })
+
+test('returns the personalized headline and subheader as one consistent pair for every Home tab', () => {
+  const history = rows(8, { sameTrack: true, artistCount: 1 })
+  assert.deepEqual(personalizedHomeMessages(history, { hour: 12, now }), {
+    headline: 'On repeat',
+    subheader: 'The repeat button has been getting a workout.',
+  })
+  assert.deepEqual(personalizedHomeMessages([], { hour: 9, now }), {
+    headline: 'Good morning',
+    subheader: 'Ready for a fresh soundtrack?',
+  })
+})
+
 
 test('uses short headlines for other listening patterns', () => {
   assert.equal(personalizedHomeHeadline(rows(12, { genre: 'Ambient', artistCount: 10 }), { hour: 12, now }), 'Taking it easy')
