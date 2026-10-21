@@ -14,7 +14,7 @@ async function receivePhoneFile(req,res) {
   try{metadata=JSON.parse(Buffer.from(String(req.headers['x-link-metadata']||''),'base64url').toString('utf8'))}catch{return res.status(400).json({error:'Invalid file metadata.'})}
   if(!metadata || typeof metadata!=='object' || Array.isArray(metadata))return res.status(400).json({error:'Invalid file metadata.'})
   const extension=String(metadata.extension||'').toLowerCase()
-  if(!['flac','mp3','m4a','aac','ogg','opus','wav','aiff','aif','alac','ape','wv','dsf','dff'].includes(extension))return res.status(400).json({error:'Unsupported audio format.'})
+  if(!['flac','mp3','m4a','aac','ogg','opus','wav','aiff','aif','alac','ape','wv','dsf','dff','webm'].includes(extension))return res.status(400).json({error:'Unsupported audio format.'})
   const directory=path.join(getStorageDir(),'phone-downloads')
   await fs.ensureDir(directory)
   const id=randomUUID(),destination=path.join(directory,`${id}.${extension}`),partial=destination+'.part'
