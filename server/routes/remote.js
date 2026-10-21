@@ -64,6 +64,39 @@ router.get('/profile/avatar', (req, res) => {
   } catch { res.sendStatus(404) }
 })
 
+router.post('/library/lyrics', async (req, res) => {
+  if (!pairedUser(req, res)) return
+  const ids = req.body?.ids
+  if (!Array.isArray(ids) || ids.length > 50 || ids.some(id => typeof id !== 'string' || id.length > 512)) {
+    return res.status(400).json({ error: 'Expected up to 50 track IDs' })
+  }
+  try {
+    const { exportedLyrics } = require('../../electron/link/lyricsExport')
+    const db = getDB()
+    const hasMeta = db.prepare('PRAGMA table_info(lyrics_cache)').all().some(c => c.name === 'meta')
+    const select = db.prepare(`SELECT t.id,t.file_path,l.content,l.lyrics_type,l.source,${hasMeta ? 'l.meta' : 'NULL AS meta'}
+      FROM tracks t LEFT JOIN lyrics_cache l ON l.track_id=t.id
+      WHERE t.id=? AND t.file_path NOT LIKE 'ghost://%'`)
+    const items = []
+    let bytes = 0
+    for (const id of new Set(ids)) {
+      const row = select.get(id)
+      if (!row) continue
+      const lyrics = await exportedLyrics(row)
+      if (!lyrics) continue
+      const item = { id: String(row.id), lyrics }
+      const size = Buffer.byteLength(JSON.stringify(item))
+      if (size > 2 * 1024 * 1024 || bytes + size > 4 * 1024 * 1024) continue
+      bytes += size
+      items.push(item)
+    }
+    res.set('Cache-Control', 'private, no-store').json({ items })
+  } catch (error) {
+    console.error('[remote] Lyrics export failed:', error.message)
+    res.status(500).json({ error: 'Could not export saved lyrics' })
+  }
+})
+
 router.get('/files', (req, res) => {
   if (!pairedUser(req, res)) return
   res.json({ originalFiles: true })
