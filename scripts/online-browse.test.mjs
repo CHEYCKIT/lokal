@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { libraryAlbum, loadOnlineAlbum, loadOnlineArtistAlbums, onlineAlbumPath, trackAlbumPath } from '../src/onlineBrowse.js'
+import { libraryAlbum, loadArtistChannel, loadOnlineAlbum, loadOnlineArtistAlbums, onlineAlbumPath, trackAlbumPath } from '../src/onlineBrowse.js'
 import { classifyOnlineReleases, groupReleases } from '../src/releaseTypes.js'
 import { isContextNavigable, navigateToTrackAlbum } from '../src/playbackContext.js'
 
@@ -130,6 +130,21 @@ test("an artist's albums: the catalogue's, then their songs' albums, once each",
   assert.equal(albums[1].is_main_artist, false)
   assert.deepEqual(groupReleases(classifyOnlineReleases(albums)).map(group => [group.type, group.items.map(item => item.title)]), [
     ['album', ['I Am']], ['feature', ['The Best of Earth, Wind & Fire, Vol. 1']],
+  ])
+})
+
+test('channel feature metadata is merged into an existing catalogue release', async () => {
+  const channel = await loadArtistChannel('Artist', {}, {
+    discoveryCatalogue: async () => ({
+      name: 'Artist',
+      tracks: [{ title: 'Guest song', artist: 'Other', album: 'Collaboration', album_is_main_artist: false }],
+      albums: [{ title: 'Collaboration', artist: 'Artist', release_type: 'album' }],
+    }),
+  })
+  assert.equal(channel.albums.length, 1)
+  assert.equal(channel.albums[0].is_main_artist, false)
+  assert.deepEqual(groupReleases(classifyOnlineReleases(channel.albums)).map(group => [group.type, group.items.map(item => item.title)]), [
+    ['feature', ['Collaboration']],
   ])
 })
 
