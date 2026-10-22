@@ -58,3 +58,20 @@ test('imports real codec, bitrate, resolution, genres and artwork without replac
     assert.deepEqual(JSON.parse(row.genres), ['Jazz', 'Soul'])
   } finally { db.close() }
 })
+
+test('size preflight excludes absent files without hashing their audio and stops on cancellation', async () => {
+  const { candidateOriginalSizes } = require('../server/phoneFileMatch')
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'phone-sizes-'))
+  const db = new DatabaseSync(':memory:')
+  try {
+    db.exec('CREATE TABLE tracks (id TEXT PRIMARY KEY,file_path TEXT)')
+    await fs.writeFile(path.join(root, 'song.flac'), Buffer.alloc(123))
+    const insert = db.prepare('INSERT INTO tracks VALUES (?,?)')
+    insert.run('local', path.join(root, 'song.flac'))
+    insert.run('missing', path.join(root, 'deleted.flac'))
+    insert.run('ghost', 'ghost://link/song')
+    assert.deepEqual(await candidateOriginalSizes(db, [123, 456]), [123])
+    await assert.rejects(candidateOriginalSizes(db, [123], { check() { throw new Error('cancelled') } }), /cancelled/)
+    await assert.rejects(resolvePhoneFiles(db, [{ size: 123, sha256: '0'.repeat(64) }], { check() { throw new Error('cancelled') } }), /cancelled/)
+  } finally { db.close(); await fs.rm(root, { recursive: true, force: true }) }
+})
