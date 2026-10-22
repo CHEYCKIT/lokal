@@ -99,7 +99,32 @@ router.post('/library/lyrics', async (req, res) => {
 
 router.get('/files', (req, res) => {
   if (!pairedUser(req, res)) return
-  res.json({ originalFiles: true })
+  res.json({ originalFiles: true, contentMatching: true })
+})
+
+router.post('/files/match', async (req, res) => {
+  if (!pairedUser(req, res)) return
+  const items = req.body?.items
+  if (!Array.isArray(items) || items.length > 32 || items.some(item =>
+    !item || !Number.isSafeInteger(item.size) || item.size <= 0 || item.size > 1024 * 1024 * 1024 ||
+    typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256))) {
+    return res.status(400).json({ error: 'Expected up to 32 audio fingerprints' })
+  }
+  try {
+    const { resolvePhoneFiles } = require('../phoneFileMatch')
+    const db = getDB(), matches = await resolvePhoneFiles(db, items)
+    const { repairPhoneFileMetadata } = require('../phoneFileMetadata')
+    const { getStorageDir } = require('../../electron/ipc/db')
+    let repaired = false
+    for (const match of matches) {
+      try { if (await repairPhoneFileMetadata(db, match.trackId, getStorageDir())) repaired = true }
+      catch (error) { console.warn('[phone-copy] Metadata repair failed:', error.message) }
+    }
+    if (repaired) require('../../electron/ipc/remote').events.emit('library', { type: 'phone-metadata-repair' })
+    res.set('Cache-Control', 'private, no-store').json({ matches })
+  } catch {
+    res.status(500).json({ error: 'Could not compare desktop originals' })
+  }
 })
 
 router.get('/files/:trackId', (req, res) => {
