@@ -680,7 +680,7 @@ function searchLyricsEntries(db, query) {
 function sourceFilter(source) {
   if (source === 'local') return { sql: 'download_source IS NULL', params: [] }
   if (source === 'addon') return { sql: "download_source LIKE 'a-%'", params: [] }
-  if (['yt', 'sc', 'soulseek', 'web'].includes(source)) return { sql: 'download_source = ?', params: [source] }
+  if (['yt', 'sc', 'soulseek', 'web', 'mobile'].includes(source)) return { sql: 'download_source = ?', params: [source] }
   return null
 }
 

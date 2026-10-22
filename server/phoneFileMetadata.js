@@ -4,7 +4,7 @@ const { qualityFields, saveFields } = require('../electron/quality')
 // file extension or a transport-level bitrate guess.
 function savePhoneFileMetadata(db, id, meta, { artwork, mtimeMs }) {
   const c = meta.common || {}, f = meta.format || {}
-  db.prepare(`UPDATE tracks SET album_artist=COALESCE(?,album_artist), track_num=COALESCE(?,track_num),
+  db.prepare(`UPDATE tracks SET download_source='mobile', album_artist=COALESCE(?,album_artist), track_num=COALESCE(?,track_num),
     year=COALESCE(?,year), genre=COALESCE(?,genre), genres=COALESCE(?,genres),
     bitrate=?, last_modified=?, artwork_path=COALESCE(?,artwork_path) WHERE id=?`)
     .run(c.albumartist || null, c.track?.no || null, c.year || null,
@@ -19,7 +19,8 @@ module.exports = { savePhoneFileMetadata }
 async function repairPhoneFileMetadata(db, id, storageDir) {
   require('../electron/quality').ensureColumns(db)
   const row = db.prepare('SELECT file_path,file_hash,quality_read_at FROM tracks WHERE id=?').get(id)
-  if (!row || row.quality_read_at || !/^[a-f0-9]{64}$/i.test(row.file_hash || '')) return
+  if (!row || row.quality_read_at || !/^[a-f0-9]{64}$/i.test(row.file_hash || '') ||
+      !require('../electron/mobileSource').isMobileImportPath(row.file_path, storageDir)) return
   const { parseFile } = await import('music-metadata')
   const meta = await parseFile(row.file_path, { duration: true, skipCovers: false })
   const picture = meta.common.picture?.[0]

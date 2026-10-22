@@ -381,6 +381,17 @@ function initDB() {
     } catch {}
   }
 
+  // Older phone uploads predate source tracking; repair those identifiable
+  // imports once while keeping explicit addon/download origins intact.
+  try {
+    if (!db.prepare("SELECT 1 FROM settings WHERE key = 'mobile_sources_v1'").get()) {
+      db.transaction(() => {
+        require('../mobileSource').backfillMobileSources(db, getStorageDir())
+        db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('mobile_sources_v1','1')").run()
+      })()
+    }
+  } catch (error) { console.warn('mobile source migration:', error.message) }
+
   try {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('lyrics_auto_translate', '0')").run()
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('lyrics_translate_target', 'en')").run()
