@@ -27,24 +27,38 @@ async function receivePhoneFile(req,res) {
     if(!bytes)throw new Error('The file was empty.')
     const digest=hash.digest('hex')
     if(metadata.sha256 && metadata.sha256!==digest)throw new Error('The file checksum did not match.')
-    const existing=getDB().prepare("SELECT id FROM tracks WHERE file_hash=? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(digest)
-    if(existing)return res.json({ok:true,trackId:existing.id,alreadyPresent:true})
+    const db=getDB()
+    const matches=await require('./phoneFileMatch').resolvePhoneFiles(db,[{size:bytes,sha256:digest}])
+    if(matches.length){
+      try {
+        if(await require('./phoneFileMetadata').repairPhoneFileMetadata(db,matches[0].trackId,getStorageDir()))
+          require('../electron/ipc/remote').events.emit('library',{type:'phone-metadata-repair'})
+      }
+      catch(error){ console.warn('[phone-copy] Metadata repair failed:',error.message) }
+      return res.json({ok:true,trackId:matches[0].trackId,alreadyPresent:true})
+    }
     const { parseFile }=await import('music-metadata')
     const parsed=await parseFile(partial,{duration:true})
     if(!Number.isFinite(parsed.format.duration)||parsed.format.duration<=0)throw new Error('The upload is not a playable audio file.')
     await fs.rename(partial,destination)
     const clean=(value,fallback)=>typeof value==='string'&&value.trim()?value.trim().slice(0,1000):fallback
     const tags=parsed.common
-    const concurrent=getDB().prepare("SELECT id FROM tracks WHERE file_hash=? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(digest)
-    if(concurrent)return res.json({ok:true,trackId:concurrent.id,alreadyPresent:true})
-    const db=getDB(),title=clean(metadata.title,clean(tags.title,'Unknown track')),artist=clean(metadata.artist,clean(tags.artist,'Unknown artist')),album=clean(metadata.album,clean(tags.album,''))
+    const concurrent=getDB().prepare("SELECT id,file_path FROM tracks WHERE file_hash=? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(digest)
+    if(concurrent && await fs.pathExists(concurrent.file_path))return res.json({ok:true,trackId:concurrent.id,alreadyPresent:true})
+    const title=clean(metadata.title,clean(tags.title,'Unknown track')),artist=clean(metadata.artist,clean(tags.artist,'Unknown artist')),album=clean(metadata.album,clean(tags.album,''))
     // Promote a matching sync placeholder in place so its likes, playlist
     // membership and listening history continue to reference the playable row.
     const ghost=findPhonePlaceholder(db,title,artist,parsed.format.duration)
     const trackId=ghost?.id || id
+    const picture=tags.picture?.[0]
+    const artwork=picture?.data?.length
+      ? await require('../electron/artwork/thumb').writeCover(path.join(getStorageDir(),'artwork'),trackId,picture.data,{overwrite:true})
+      : null
+    const stat=await fs.stat(destination)
     db.transaction(()=>{
     if(ghost)db.prepare('UPDATE tracks SET file_path=?,file_hash=?,duration=? WHERE id=?').run(destination,digest,parsed.format.duration,trackId)
     else db.prepare('INSERT INTO tracks (id,file_path,file_hash,title,artist,album,album_artist,duration,track_num,year) VALUES (?,?,?,?,?,?,?,?,?,?)').run(trackId,destination,digest,title,artist,album,clean(tags.albumartist,''),parsed.format.duration,tags.track?.no||null,tags.year||null)
+    require('./phoneFileMetadata').savePhoneFileMetadata(db,trackId,parsed,{artwork,mtimeMs:stat.mtimeMs})
     const artistId=require('../electron/artistId').resolveArtistId(db,artist)
     db.prepare('INSERT OR IGNORE INTO artist_track_links(artist_id,track_id) VALUES (?,?)').run(artistId,trackId)
     })()
