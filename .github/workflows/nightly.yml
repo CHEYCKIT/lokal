@@ -170,6 +170,12 @@ jobs:
         if: runner.os != 'macOS'
         run: npm run build -- --publish never
 
+      # Verify the actual AppImage, not just installed node_modules.
+      # Missing libvips made AppImages fail on CachyOS (sipbuu/lokal#521).
+      - name: Verify Sharp and libvips inside AppImage
+        if: runner.os == 'Linux'
+        run: node scripts/check-linux-sharp-appimage.cjs release
+
       # macOS: two runners (Apple silicon and Intel). Signing only happens
       # when the certificate secrets exist: an empty CSC_LINK makes
       # electron-builder read the project folder as the certificate ("not a

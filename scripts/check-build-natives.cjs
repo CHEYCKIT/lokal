@@ -15,6 +15,10 @@ const checks = [
   ['lightningcss (vite)', fromVite, 'lightningcss'],
 ]
 
+// Detect missing Sharp's native optional packages on Linux before packaging.
+// npm may silently skip those packages during installation (#521).
+if (process.platform === 'linux') checks.push(['sharp', fromRoot])
+
 let failed = 0
 for (const [label, requireFrom, name = label] of checks) {
   try {
