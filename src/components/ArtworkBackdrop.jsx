@@ -14,6 +14,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { usePerformanceMode } from '../performanceMode'
 import { isStationTrack } from '../radio/stations'
 
 const meshCache = new Map() // trackId -> grid | null
@@ -181,7 +182,14 @@ function Layer({ grid, seed, seam, blur, size, visible }) {
  * @param seam     px from the top where a full-bleed cover ends (0 = mesh everywhere)
  * @param onReady  called with true once colours are showing (false when the track has no art)
  */
-export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blur = 32, onReady }) {
+export default function ArtworkBackdrop(props) {
+  const performanceMode = usePerformanceMode()
+  const onReady = props.onReady
+  useEffect(() => { if (performanceMode) onReady?.(false) }, [performanceMode, onReady])
+  return performanceMode ? null : <ColourBackdrop {...props} />
+}
+
+function ColourBackdrop({ trackId, seam = 0, className = '', blur = 32, onReady }) {
   // Two slots so the old song fades out while the new one fades in.
   const [slots, setSlots] = useState([{ id: null, grid: null }, { id: null, grid: null }])
   const [front, setFront] = useState(0)
@@ -224,6 +232,7 @@ export default function ArtworkBackdrop({ trackId, seam = 0, className = '', blu
       })
       if (!grid) setSlots([{ id: null, grid: null }, { id: null, grid: null }])
     })
+    return () => { reqRef.current++ }
   }, [trackId, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

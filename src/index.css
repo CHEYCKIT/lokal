@@ -374,10 +374,11 @@ html[data-theme="light"] .on-media .text-white\/10 { color: rgb(255 255 255 / 0.
 }
 
 
-/* Performance Mode: avoid compositor-heavy glass across every surface. */
+/* Performance Mode: glass, lyric blur and decorative filter effects. */
 html.performance-mode *,
 html.performance-mode *::before,
 html.performance-mode *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  filter: none !important;
 }
