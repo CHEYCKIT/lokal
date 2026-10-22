@@ -4,6 +4,7 @@ const { randomUUID, createHash } = require('crypto')
 const { Transform } = require('stream')
 const { pipeline } = require('stream/promises')
 const { getDB, getStorageDir } = require('../electron/ipc/db')
+const { findPhonePlaceholder } = require('./linkUploadMatch')
 
 // The phone must opt in before using this endpoint. Only an individually
 // paired device can upload, and only newly created files are ever removed.
@@ -39,7 +40,7 @@ async function receivePhoneFile(req,res) {
     const db=getDB(),title=clean(metadata.title,clean(tags.title,'Unknown track')),artist=clean(metadata.artist,clean(tags.artist,'Unknown artist')),album=clean(metadata.album,clean(tags.album,''))
     // Promote a matching sync placeholder in place so its likes, playlist
     // membership and listening history continue to reference the playable row.
-    const ghost=db.prepare("SELECT id FROM tracks WHERE file_path LIKE 'ghost://link/%' AND link_normalize(title)=link_normalize(?) AND link_normalize(artist)=link_normalize(?) AND abs(COALESCE(duration,0)-?)<=2 LIMIT 1").get(title,artist,parsed.format.duration)
+    const ghost=findPhonePlaceholder(db,title,artist,parsed.format.duration)
     const trackId=ghost?.id || id
     db.transaction(()=>{
     if(ghost)db.prepare('UPDATE tracks SET file_path=?,file_hash=?,duration=? WHERE id=?').run(destination,digest,parsed.format.duration,trackId)
