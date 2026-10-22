@@ -59,7 +59,9 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "electron/native/**/*.node"
+      "electron/native/**/*.node",
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
     ],
     "publish": {
       "provider": "github",
