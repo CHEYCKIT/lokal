@@ -947,12 +947,16 @@ function possibleDuplicateMatch(left, right) {
 
 function buildPossibleDuplicateGroups(tracks = []) {
   if (!Array.isArray(tracks) || tracks.length < 2) return []
-  const enriched = tracks.map((track, index) => {
+  // Ghosts retain streaming/history metadata, not another music file. They
+  // must not be offered as duplicate files or as suggested keep candidates.
+  const enriched = tracks.filter(track =>
+    typeof track?.file_path === 'string' && track.file_path.trim() &&
+    !/^ghost:\/\//i.test(track.file_path.trim())
+  ).map(track => {
     const titleTokens = tokenizeDuplicateText(track.title, 'title')
     const artistTokens = tokenizeDuplicateText(track.artist, 'artist')
     return {
       ...track,
-      index,
       qualityScore: scoreTrack(track),
       normalizedTitle: normalizeDuplicateText(track.title, 'title'),
       normalizedArtist: normalizeDuplicateText(track.artist, 'artist'),
@@ -962,6 +966,7 @@ function buildPossibleDuplicateGroups(tracks = []) {
       durationBucket: Math.round(Number(track.duration || 0) / 2),
     }
   }).filter(track => track.artistKey && track.titleTokens.length)
+    .map((track, index) => ({ ...track, index }))
 
   const buckets = new Map()
   for (const track of enriched) {
@@ -2287,7 +2292,7 @@ function registerExtraHandlers(ipcMain) {
   ipcMain.handle('album:setImageUrl', async (_, albumTitle, url) => { const db = getDB(); const safeTitle = albumTitle.replace(/[^a-z0-9]+/gi, '-'); const imgPath = path.join(getStorageDir(), 'artwork', `album-${safeTitle}.jpg`); await downloadToFile(url, imgPath); db.prepare('UPDATE tracks SET artwork_path = ? WHERE album = ?').run(imgPath, albumTitle); return imgPath })
   ipcMain.handle('scanner:checkDuplicates', () => getDB().prepare(`SELECT title, artist, COUNT(*) as count, GROUP_CONCAT(id) as ids, GROUP_CONCAT(file_path) as paths FROM tracks GROUP BY LOWER(title), LOWER(artist) HAVING count > 1`).all())
   ipcMain.handle('scanner:checkPossibleDuplicates', () => {
-    const tracks = getDB().prepare('SELECT * FROM tracks ORDER BY artist, title').all()
+    const tracks = getDB().prepare("SELECT * FROM tracks WHERE file_path NOT LIKE 'ghost://%' ORDER BY artist, title").all()
     return buildPossibleDuplicateGroups(tracks)
   })
   ipcMain.handle('scanner:deleteTrack', async (_, trackId) => { const db = getDB(); const filePath = db.prepare('SELECT file_path FROM tracks WHERE id = ?').get(trackId)?.file_path; db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM playlist_tracks WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM user_likes WHERE track_id = ?').run(trackId); db.prepare('DELETE FROM play_history WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM listening_events WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM lyrics_cache WHERE track_id = ?').run(trackId); try { db.prepare('DELETE FROM lyrics_translations WHERE track_id = ?').run(trackId) } catch {}; db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId); forgetDownloads([trackId]); return { success: true, files: await removeTrackFiles(db, [filePath]) } })
