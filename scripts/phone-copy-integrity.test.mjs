@@ -37,7 +37,7 @@ test('imports real codec, bitrate, resolution, genres and artwork without replac
   const db = new DatabaseSync(':memory:')
   try {
     db.exec(`CREATE TABLE tracks (id TEXT PRIMARY KEY,album_artist TEXT,track_num INTEGER,year INTEGER,
-      genre TEXT,genres TEXT,bitrate INTEGER,last_modified REAL,artwork_path TEXT,liked INTEGER);
+      genre TEXT,genres TEXT,download_source TEXT,bitrate INTEGER,last_modified REAL,artwork_path TEXT,liked INTEGER);
       INSERT INTO tracks (id,liked) VALUES ('existing-placeholder',1)`)
     savePhoneFileMetadata(db, 'existing-placeholder', {
       common: { albumartist: 'Album Artist', track: { no: 4 }, year: 2026, genre: ['Jazz', 'Soul'] },
@@ -46,6 +46,7 @@ test('imports real codec, bitrate, resolution, genres and artwork without replac
     const row = db.prepare('SELECT * FROM tracks').get()
     assert.equal(row.id, 'existing-placeholder')
     assert.equal(row.liked, 1)
+    assert.equal(row.download_source, 'mobile')
     assert.equal(row.bitrate, 2346)
     assert.equal(row.codec, 'FLAC')
     assert.equal(row.lossless, 1)

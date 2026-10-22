@@ -244,6 +244,7 @@ export default function Library() {
             className="bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-muted outline-none focus:border-accent/50">
             <option value="all">{t("All sources")}</option>
             <option value="local">{t("Music folder")}</option>
+            <option value="mobile">{t("Mobile")}</option>
             <option value="yt">{t("YouTube")}</option>
             <option value="sc">{t("SoundCloud")}</option>
             <option value="addon">{t("Addons")}</option>
