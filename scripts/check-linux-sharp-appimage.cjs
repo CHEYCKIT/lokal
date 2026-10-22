@@ -22,10 +22,33 @@ function locateResources(root) {
   throw new Error('No resources/app.asar.unpacked found in extracted AppImage')
 }
 
+
+// Check the path, not merely the SONAME: ldd may resolve a system-wide
+// libvips on the CI host even when the AppImage's own RPATH is broken.
+function assertBundledLibvips(output, vipsDir) {
+  const linkedPath = output.match(
+    /^\s*libvips-cpp\.so\S*\s+=>\s+(\/\S+)/m,
+  )?.[1]
+  if (!linkedPath) {
+    throw new Error('Sharp addon does not resolve libvips:\n' + output)
+  }
+  // Resolve symlinks too: a path inside the bundle must not point to a
+  // system library outside the extracted AppImage.
+  const bundledDir = fs.realpathSync(vipsDir)
+  const linkedFile = fs.realpathSync(linkedPath)
+  const relative = path.relative(bundledDir, linkedFile)
+  if (!relative || relative === '..' || relative.startsWith('..' + path.sep) ||
+      path.isAbsolute(relative)) {
+    throw new Error('Sharp resolved host libvips ' + linkedFile +
+      ' instead of bundled libvips in ' + bundledDir)
+  }
+  return linkedFile
+}
+
 function checkBundledSharp(resources) {
   const unpacked = path.join(resources, 'app.asar.unpacked', 'node_modules')
   const arch = process.arch
-  const sharpDir = path.join(unpacked, 'sharp', 'lib')
+  const sharpDir = path.join(unpacked, 'sharp', 'dist')
   const addonDir = path.join(unpacked, '@img', 'sharp-linux-' + arch, 'lib')
   const vipsDir = path.join(unpacked, '@img', 'sharp-libvips-linux-' + arch, 'lib')
   for (const dir of [sharpDir, addonDir, vipsDir]) {
@@ -40,13 +63,12 @@ function checkBundledSharp(resources) {
   // that both files happen to exist somewhere in the AppImage.
   const linked = spawnSync('ldd', [path.join(addonDir, addon)], { encoding: 'utf8' })
   const output = (linked.stdout || '') + (linked.stderr || '')
-  if (linked.error || linked.status !== 0 ||
-      /libvips-cpp\.so[^\n]*not found/.test(output) ||
-      !/libvips-cpp\.so/.test(output)) {
-    throw new Error('Sharp addon cannot resolve libvips:\n' + output +
+  if (linked.error || linked.status !== 0) {
+    throw new Error('Unable to inspect Sharp addon:\n' + output +
       (linked.error ? '\n' + linked.error.message : ''))
   }
-  console.log('OK: Sharp ' + addon + ' resolves bundled ' + vips)
+  const linkedVips = assertBundledLibvips(output, vipsDir)
+  console.log('OK: Sharp ' + addon + ' resolves bundled ' + linkedVips)
 }
 
 function main() {
@@ -77,9 +99,13 @@ function main() {
   }
 }
 
-try {
-  main()
-} catch (error) {
-  console.error('AppImage Sharp packaging check failed:', error.message)
-  process.exitCode = 1
+if (require.main === module) {
+  try {
+    main()
+  } catch (error) {
+    console.error('AppImage Sharp packaging check failed:', error.message)
+    process.exitCode = 1
+  }
 }
+
+module.exports = { assertBundledLibvips }
