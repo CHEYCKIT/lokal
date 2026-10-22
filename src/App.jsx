@@ -3153,7 +3153,7 @@ export default function App() {
               className="fixed inset-0 bg-no-repeat -z-10"
               style={{ 
                 backgroundImage: 'var(--bg-image)', 
-                filter: 'blur(var(--bg-blur))', 
+                filter: performanceMode ? 'none' : 'blur(var(--bg-blur))',
                 transform: 'scale(1.02)',
                 backgroundSize: 'var(--bg-size)',
                 backgroundPosition: 'var(--bg-position)'

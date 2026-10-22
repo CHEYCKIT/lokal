@@ -1,3 +1,4 @@
+import { loadBrowserPerformanceSettings, saveBrowserPerformanceSettings, onBrowserPerformanceSettings } from './browserPerformanceSettings.mjs'
 import { updateYoutubeAccountStatus, clearYoutubeAccountStatus, youtubeAccountStatusRevision } from './youtubeAccountStatus.js'
 import { cancelDownloadBatches } from './downloadCancellation.js'
 
@@ -675,13 +676,13 @@ export const api = {
   openLogs: () => isE() ? el().openLogs() : Promise.resolve(),
   showItemInFolder: filePath => isE() && el()?.showItemInFolder ? el().showItemInFolder(filePath) : Promise.resolve({ error: 'Electron only' }),
   log: (level, message) => isE() ? el().log(level, message) : console.log(`[${level}] ${message}`),
-  getPerfSettings: () => isE() ? el().getPerfSettings() : Promise.resolve({ hardwareAcceleration: true, performanceMode: false }),
+  getPerfSettings: () => isE() ? el().getPerfSettings() : Promise.resolve(loadBrowserPerformanceSettings()),
   getRemoteConnectionInfo: () => isE() && el()?.getRemoteConnectionInfo ? el().getRemoteConnectionInfo() : Promise.resolve({ error: 'Electron only' }),
   openExternal: (url) => isE() && el()?.openExternal ? el().openExternal(url) : Promise.resolve(),
-  savePerfSettings: (s) => isE() ? el().savePerfSettings(s) : Promise.resolve({}),
+  savePerfSettings: (s) => isE() ? el().savePerfSettings(s) : Promise.resolve(saveBrowserPerformanceSettings(s)),
   setMediaKeyPreference: (enabled) => (isE() && typeof el().setMediaKeyPreference === 'function') ? el().setMediaKeyPreference(enabled) : Promise.resolve({ ok: false, enabled: false }),
   relaunchApp: () => isE() ? el().relaunchApp() : Promise.resolve(),
-  onPerfSettings: (fn) => { if (isE()) return el().onPerfSettings(fn); return () => {} },
+  onPerfSettings: (fn) => { if (isE()) return el().onPerfSettings(fn); return onBrowserPerformanceSettings(fn) },
   updaterInstall: () => isE() ? el().updaterInstall() : Promise.resolve(),
   updaterCheck: () => isE() ? el().updaterCheck() : Promise.resolve(),
   getVersion: () => isE() ? el().getVersion() : Promise.resolve('1.0.0'),

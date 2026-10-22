@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { usePerformanceMode } from '../performanceMode'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 import { seamlessLoop } from '../seamlessLoop'
 
@@ -41,6 +42,7 @@ if (typeof window !== 'undefined') {
  * @param off       turned off for this song (motionCoverPrefs.js): the still cover only
  */
 export default function MotionCover({ trackId, className = '', onActive, only, style, off = false }) {
+  const performanceMode = usePerformanceMode()
   const [clip, setClip] = useState(null)
   const [ready, setReady] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -58,7 +60,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
     setReady(false)
     onActive?.(false)
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-    if (!trackId || reduced || off) return undefined
+    if (!trackId || reduced || off || performanceMode) return undefined
     loadMotionCover(trackId).then(found => {
       if (cancelled || !found?.src) return
       if (only === 'square' && found.tall) return
@@ -66,7 +68,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
       setClip(found)
     })
     return () => { cancelled = true }
-  }, [trackId, only, revision, off]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trackId, only, revision, off, performanceMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unmounting (e.g. the next track has no artwork, so the parent stops
   // rendering this) must also clear the parent's "clip showing" state -- the
@@ -100,7 +102,7 @@ export default function MotionCover({ trackId, className = '', onActive, only, s
     else v.play().catch(() => {})
   }), [])
 
-  if (!clip) return null
+  if (!clip || performanceMode) return null
   const title = { apple: 'Moving cover from Apple Music', tidal: 'Moving cover from Tidal', spotify: 'Spotify Canvas' }[clip.source] || 'Moving cover'
   if (canvas) {
     return (

@@ -605,7 +605,6 @@ export default function Settings() {
       api.getToolsStatus().then(setToolsStatus)
       api.getVersion().then(v => setAppVersion(v || '1.0.0'))
 
-      api.getPerfSettings().then(s => { if (s) setPerfSettings(p => ({ ...p, ...s })) }).catch(() => {})
     }
 
 
@@ -683,6 +682,22 @@ export default function Settings() {
   const setHardwareAcceleration = (on) => savePerfField('hardwareAcceleration', on)
   const setPerformanceMode = (on) => savePerfField('performanceMode', on)
   const perfRestartNeeded = !!perfSettings.running && perfSettings.running.hardwareAcceleration !== perfSettings.hardwareAcceleration
+
+  useEffect(() => {
+    let revision = 0
+    let disposed = false
+    const unsubscribe = api.onPerfSettings(settings => {
+      revision++
+      if (!disposed) setPerfSettings(p => ({ ...p, ...settings }))
+    })
+    const initialRevision = revision
+    api.getPerfSettings().then(settings => {
+      if (!disposed && revision === initialRevision && settings) {
+        setPerfSettings(p => ({ ...p, ...settings }))
+      }
+    }).catch(() => {})
+    return () => { disposed = true; unsubscribe?.() }
+  }, [])
 
   // Every change saves itself (see queueSettings above).
   const set = (k, v) => {
@@ -1278,7 +1293,7 @@ activeCategory === 'data' ? usersTried
               </button>
             </div>
           </Row>
-          <Row label={t("Performance Mode")} desc={perfSaveError?.key === 'performanceMode' ? `${t("Couldn't save")} (${perfSaveError.message})` : t('Disable visual effects such as backdrop blur, waveform drawing, ambient video glow, and cover-mix transitions to reduce CPU/GPU usage. Changes apply immediately without restarting.') }>
+          <Row label={t("Performance Mode")} desc={perfSaveError?.key === 'performanceMode' ? `${t("Couldn't save")} (${perfSaveError.message})` : t('Disable visual effects such as backdrop blur, waveform drawing, moving covers, colour backgrounds, ambient video glow, and cover-mix transitions to reduce CPU/GPU usage. Changes apply immediately without restarting.') }>
             <button
               onClick={() => setPerformanceMode(!perfSettings.performanceMode)}
               className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${perfSettings.performanceMode ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
