@@ -99,7 +99,42 @@ router.post('/library/lyrics', async (req, res) => {
 
 router.get('/files', (req, res) => {
   if (!pairedUser(req, res)) return
-  res.json({ originalFiles: true, contentMatching: true })
+  res.json({ originalFiles: true, contentMatching: true, sizeMatching: true })
+})
+
+// A blocked filesystem or disconnected phone must not leave a preview running
+// indefinitely. Checks also stop further stat/hash work after the response ends.
+async function boundedFileCheck(res, work, milliseconds) {
+  let expired = false
+  const check = () => {
+    if (expired || res.destroyed) throw new Error('File comparison stopped')
+  }
+  let timer
+  try {
+    return await Promise.race([
+      work(check),
+      new Promise((_, reject) => { timer = setTimeout(() => {
+        expired = true
+        reject(new Error('File comparison timed out'))
+      }, milliseconds) }),
+    ])
+  } finally { clearTimeout(timer) }
+}
+
+router.post('/files/sizes', async (req, res) => {
+  if (!pairedUser(req, res)) return
+  const sizes = req.body?.sizes
+  if (!Array.isArray(sizes) || sizes.length > 2048 || sizes.some(size =>
+    !Number.isSafeInteger(size) || size <= 0 || size > 1024 * 1024 * 1024)) {
+    return res.status(400).json({ error: 'Expected up to 2048 file sizes' })
+  }
+  try {
+    const { candidateOriginalSizes } = require('../phoneFileMatch')
+    const candidates = await boundedFileCheck(res, check => candidateOriginalSizes(getDB(), sizes, { check }), 15000)
+    if (!res.destroyed) res.set('Cache-Control', 'private, no-store').json({ sizes: candidates })
+  } catch {
+    if (!res.destroyed) res.status(503).json({ error: 'Desktop file-size check did not finish. Reconnect and retry.' })
+  }
 })
 
 router.post('/files/match', async (req, res) => {
@@ -112,18 +147,11 @@ router.post('/files/match', async (req, res) => {
   }
   try {
     const { resolvePhoneFiles } = require('../phoneFileMatch')
-    const db = getDB(), matches = await resolvePhoneFiles(db, items)
-    const { repairPhoneFileMetadata } = require('../phoneFileMetadata')
-    const { getStorageDir } = require('../../electron/ipc/db')
-    let repaired = false
-    for (const match of matches) {
-      try { if (await repairPhoneFileMetadata(db, match.trackId, getStorageDir())) repaired = true }
-      catch (error) { console.warn('[phone-copy] Metadata repair failed:', error.message) }
-    }
-    if (repaired) require('../../electron/ipc/remote').events.emit('library', { type: 'phone-metadata-repair' })
-    res.set('Cache-Control', 'private, no-store').json({ matches })
+    const matches = await boundedFileCheck(res, check => resolvePhoneFiles(getDB(), items, { check }), 25000)
+    // Preview must not probe metadata or rebuild artwork before responding.
+    if (!res.destroyed) res.set('Cache-Control', 'private, no-store').json({ matches })
   } catch {
-    res.status(500).json({ error: 'Could not compare desktop originals' })
+    if (!res.destroyed) res.status(503).json({ error: 'Desktop content check did not finish. Reconnect and retry.' })
   }
 })
 
