@@ -502,7 +502,7 @@ function createWindow() {
   })
   
   mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.send('perf-settings', perfSettings)
+    mainWindow.webContents.send('perf-settings', loadPerformanceSettings())
     if (pendingLastfmAuthToken) {
       mainWindow.webContents.send('lastfm:auth-token', pendingLastfmAuthToken)
       pendingLastfmAuthToken = ''

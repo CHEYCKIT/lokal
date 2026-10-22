@@ -21,6 +21,7 @@ import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
+import { usePerformanceMode } from '../performanceMode'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
@@ -230,6 +231,7 @@ function SearchDrawer({ track, onClose, onSelect }) {
 }
 
 export default function FullscreenPlayer() {
+  const performanceMode = usePerformanceMode()
   const { t } = useTranslation()
   const {
     showFullscreen, toggleFullscreen, currentTrack, isPlaying,
@@ -657,7 +659,7 @@ export default function FullscreenPlayer() {
           <div className="absolute inset-0 bg-black">
             {/* Colours taken from the cover (see ArtworkBackdrop), or -- with
                 that switched off in Settings -- the plain blurred cover. */}
-            {backdropFx ? (
+            {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : backdropFx ? (
               <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
             ) : (
               <AnimatePresence mode="wait">
