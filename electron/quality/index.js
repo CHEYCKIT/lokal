@@ -222,6 +222,7 @@ async function backfillAtmos(db, { limit = 1000, onChanged } = {}) {
     (LOWER(IFNULL(codec, '')) LIKE '%e-ac-3%' OR
      LOWER(IFNULL(codec, '')) LIKE '%eac3%' OR
      LOWER(IFNULL(codec, '')) LIKE '%ec-3%' OR
+     LOWER(IFNULL(codec, '')) LIKE '%dolby digital plus%' OR
      LOWER(file_path) LIKE '%.atmos.m4a' OR
      LOWER(file_path) LIKE '%.ec3' OR
      LOWER(file_path) LIKE '%.eac3')
