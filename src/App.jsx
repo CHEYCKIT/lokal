@@ -514,7 +514,8 @@ export default function App() {
   // own pauses go through the store, not through these events.
   // Online radio: the radio player pauses the element itself while it
   // reconnects; a real pause goes through the store (play/pause, media keys).
-  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1' || isStationTrack(usePlayerStore.getState().currentTrack)
+  const ignoreElementPause = (el) => !!el?.error || el?.readyState === 0 || el?.dataset.fallbackPending === '1' ||
+    usePlayerStore.getState().currentTrack?.atmosNative || isStationTrack(usePlayerStore.getState().currentTrack)
   const smtcKeepAliveRef = useRef(null)
   const gainNodeRef = useRef(null)
   const cfGainNodeRef = useRef(null)
@@ -1396,16 +1397,26 @@ export default function App() {
       } catch {}
     }
     navigator.mediaSession.setActionHandler('play', () => {
-      if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(true); return }
+      const state = usePlayerStore.getState()
+      if (state.currentTrack?.atmosNative) {
+        if (!state.isPlaying) state.togglePlay()
+        return
+      }
+      if (state.castActive) { state.setIsPlaying(true); return }
       const activeEl = getActiveAudio()
       activeEl?.play()
     })
     navigator.mediaSession.setActionHandler('pause', () => {
-      if (usePlayerStore.getState().castActive) { usePlayerStore.getState().setIsPlaying(false); return }
+      const state = usePlayerStore.getState()
+      if (state.currentTrack?.atmosNative) {
+        if (state.isPlaying) state.togglePlay()
+        return
+      }
+      if (state.castActive) { state.setIsPlaying(false); return }
       const activeEl = getActiveAudio()
       activeEl?.pause()
       // Record explicit pauses even when a source is failing or being swapped.
-      usePlayerStore.getState().setIsPlaying(false)
+      state.setIsPlaying(false)
     })
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (isStationTrack(usePlayerStore.getState().currentTrack)) return
