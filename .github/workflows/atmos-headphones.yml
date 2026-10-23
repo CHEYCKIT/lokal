@@ -17,6 +17,16 @@ on:
       - 'scripts/atmos-output.test.mjs'
       - 'scripts/atmos-transfer-progress.test.mjs'
       - 'scripts/loading-toast-progress.test.mjs'
+      - 'scripts/stream-buffer-progress.test.mjs'
+      - 'scripts/atmos-library-quality.test.mjs'
+      - 'electron/quality/**'
+      - 'electron/ipc/quality.js'
+      - 'electron/ipc/scanner.js'
+      - 'src/streamBufferProgress.mjs'
+      - 'src/components/StreamLoadingToast.jsx'
+      - 'src/components/PlayerBar.jsx'
+      - 'src/quality.js'
+      - 'src/pages/Quality.jsx'
       - 'src/components/Toaster.jsx'
       - 'src/pages/Home.jsx'
       - 'src/recommendations.js'
@@ -47,9 +57,9 @@ jobs:
       - name: Verify Windows headphone bridge exports
         run: node -e "const b=require('./electron/native/smtc-bridge.win32-x64-msvc.node'); for(const k of ['startAtmosHeadphones','stopAtmosHeadphones','atmosHeadphoneStatus','atmosHeadphoneCommand']) if(typeof b[k] !== 'function') throw Error('Missing export '+k)"
       - name: Run Atmos routing tests
-        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs scripts/atmos-transfer-progress.test.mjs
+        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs scripts/atmos-transfer-progress.test.mjs scripts/atmos-library-quality.test.mjs
       - name: Verify shared desktop loading progress
-        run: node --test scripts/loading-toast-progress.test.mjs scripts/loading-toast-persistence.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs
+        run: node --test scripts/loading-toast-progress.test.mjs scripts/stream-buffer-progress.test.mjs scripts/loading-toast-persistence.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
       - name: Compile desktop React player UI
