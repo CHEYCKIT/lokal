@@ -398,23 +398,28 @@ function streamQuality(format) {
   // Tidal Mornye often advertises "24bit" or "16bit/44.1kHz" rather
   // than prefixing a codec. Preserve the catalogue tier but never infer an
   // unreported sample rate or label it as measured output.
-  const tidalDepth = text.match(/\b(16|24|32)\s*-?\s*bits?\b/i)
-  if (tidalDepth) {
-    out.lossless = 1
-    out.bit_depth = Number(tidalDepth[1])
-    const khz = text.match(/\b(44\.1|48|88\.2|96|176\.4|192|384)\s*k(?:hz)?\b/i)
-    if (khz) out.sample_rate = Math.round(Number(khz[1]) * 1000)
-  }
   const codec = text.match(/^(flac|alac|wav|aiff|mp3|aac|opus|ogg|vorbis|m4a)\b/i)?.[1]?.toLowerCase()
   if (codec) {
     out.codec = codec
     out.lossless = ['flac', 'alac', 'wav', 'aiff'].includes(codec) ? 1 : 0
   }
-  const hires = text.match(/(\d{2})\s*(?:-?\s*bits?)?\s*[-/·,]\s*(\d{2,3}(?:\.\d+)?)\s*(?:k\s*hz)?/i)
-  if (out.lossless && hires) {
-    out.bit_depth = Number(hires[1])
-    out.sample_rate = Math.round(Number(hires[2]) * 1000)
-  } else if (out.lossless === 0) {
+  const depth = text.match(/\b(16|24|32)\s*(?:-?\s*bits?)?\b/i)
+  if (depth && out.lossless !== 0) {
+    out.lossless = 1
+    out.bit_depth = Number(depth[1])
+  }
+  // A full 44100Hz must never match the first three digits as 441kHz.
+  // Keep the unit when provided; older "FLAC 16/44.1" means kHz.
+  const pairedRate = text.match(/\b(?:16|24|32)\s*(?:-?\s*bits?)?\s*[-/·,]\s*(\d+(?:\.\d+)?)\s*(k(?:hz)?|hz)?\b/i)
+  const explicitRate = text.match(/\b(\d{2,6}(?:\.\d+)?)\s*(k(?:hz)?|hz)\b/i)
+  const rate = pairedRate || explicitRate
+  if (out.lossless === 1 && rate) {
+    const value = Number(rate[1])
+    const unit = (rate[2] || '').toLowerCase()
+    const hz = unit === 'hz' || (!unit && value > 1000) ? value : value * 1000
+    if (Number.isFinite(hz) && hz >= 8000 && hz <= 384000) out.sample_rate = Math.round(hz)
+  }
+  if (out.lossless === 0) {
     const kbps = Number(text.match(/(\d{2,4})\s*(?:kbps|k)?\s*$/i)?.[1])
     if (kbps >= 32 && kbps <= 2000) out.bitrate = kbps
   }
