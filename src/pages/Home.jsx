@@ -544,7 +544,7 @@ function HomeContent({ user }) {
     saving,
     onOpenSettings: () => navigate('/settings', { state: { category: 'integrations' } }),
   }
-  // Two songs from each of Your Mixes, picked once per start (src/madeForYou.js).
+  // Four songs from each of Your Mixes, picked once per start (src/madeForYou.js).
   const picks = madeForYou(uidKey, mixes)
   const pickTracks = picks.map(pick => pick.track)
   const madeForYouContext = { type: 'made-for-you', name: 'Made for you' }

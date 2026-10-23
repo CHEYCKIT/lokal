@@ -1,8 +1,8 @@
-// Home → Local → "Made for you": twelve songs, two from each of Your Mixes,
+// Home → Local → "Made for you": up to 24 songs, four from each of Your Mixes,
 // picked once when Lokal starts and kept until the next start (refreshing
 // the mixes doesn't reshuffle them).
 
-export const PER_MIX = 2
+export const PER_MIX = 4
 export const MIXES = 6
 
 const picked = new Map() // user -> [{ track, mix }]
@@ -17,7 +17,7 @@ export function shuffled(list, random = Math.random) {
 }
 
 /**
- * Two songs from each of the first six mixes, no song twice (a mix whose
+ * Four songs from each of the first six mixes, no song twice (a mix whose
  * songs are already picked gives others), in mix order: [{ track, mix }].
  */
 export function pickMadeForYou(mixes, { random = Math.random, perMix = PER_MIX, count = MIXES } = {}) {
