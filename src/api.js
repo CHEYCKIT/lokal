@@ -451,9 +451,9 @@ export const api = {
   atmosCapabilities: () => isE() && el().atmosCapabilities ? el().atmosCapabilities() : Promise.resolve({ available: false }),
   atmosDevices: () => isE() && el().atmosDevices ? el().atmosDevices() : Promise.resolve({ devices: [] }),
   atmosChooseMpv: () => isE() && el().atmosChooseMpv ? el().atmosChooseMpv() : Promise.resolve({ error: 'Desktop only' }),
-  atmosOpenFile: device => isE() && el().atmosOpenFile ? el().atmosOpenFile(device) : Promise.resolve({ error: 'Desktop only' }),
-  atmosPlay: (provider, id, device = '') => isE() && el().atmosPlay
-    ? el().atmosPlay(provider, id, device) : Promise.resolve({ error: 'Native Atmos HDMI output requires desktop Lokal' }),
+  atmosOpenFile: (device, mode) => isE() && el().atmosOpenFile ? el().atmosOpenFile(device, mode) : Promise.resolve({ error: 'Desktop only' }),
+  atmosPlay: (provider, id, device = '', mode = 'hdmi') => isE() && el().atmosPlay
+    ? el().atmosPlay(provider, id, device, mode) : Promise.resolve({ error: 'Native Atmos HDMI output requires desktop Lokal' }),
   atmosStop: () => isE() && el().atmosStop ? el().atmosStop() : Promise.resolve({ ok: true }),
   atmosCommand: command => isE() && el().atmosCommand ? el().atmosCommand(command) : Promise.resolve({ error: 'Unavailable' }),
   onAtmosStatus: callback => isE() && el()?.onAtmosStatus ? el().onAtmosStatus(callback) : () => {},
