@@ -137,11 +137,11 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
           const result = await api.atmosPlay(item.provider, String(item.id), device)
           if (result?.ok) return
-          showToast(`Dolby Atmos couldn't start: ${result?.error || 'output refused'}. Stream not switched to a different provider.`)
+          showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: result?.error || t('output refused') }))
           return
         }
       } catch (error) {
-        showToast(`Dolby Atmos couldn't start: ${error?.message || error}. Stream not switched to a different provider.`)
+        showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: error?.message || String(error) }))
         return
       }
     }
@@ -232,9 +232,9 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                     {item.preview && <span title={t('SoundCloud only lets non-subscribers play 30 seconds of this track')} className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{t('30 s preview')}</span>}
                   </p>
                   {(advertisedQuality(item) || atmosAvailable(item)) && (
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]" aria-label="Catalogue audio formats">
-                      {advertisedQuality(item) && <span className="rounded border border-border px-1.5 py-px text-muted" title="Catalogue quality (actual playback format can differ)">{advertisedQuality(item)}</span>}
-                      {atmosAvailable(item) && <span className={`rounded border px-1.5 py-px font-semibold ${ATMOS_AVAILABLE.className}`} title="Tidal catalogue offers an Atmos version. Playback depends on the stream and output.">DOLBY ATMOS</span>}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]" aria-label={t('Catalogue audio formats')}>
+                      {advertisedQuality(item) && <span className="rounded border border-border px-1.5 py-px text-muted" title={t('Catalogue quality (actual playback format can differ)')}>{t(advertisedQuality(item))}</span>}
+                      {atmosAvailable(item) && <span className={`rounded border px-1.5 py-px font-semibold ${ATMOS_AVAILABLE.className}`} title={t('Tidal catalogue offers an Atmos version. Playback depends on the stream and output.')}>{t('DOLBY ATMOS')}</span>}
                     </div>
                   )}
                 </div>
