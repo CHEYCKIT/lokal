@@ -1,5 +1,5 @@
-// Desktop port of Lokal Mobile's lib/widgets/lokal/lokal_cover_flow.dart.
-// Preserve the exact 70° side angle, depth spacing, reflection and bounded spring.
+// Desktop port of Lokal Mobile's iTunes-style Cover Flow.
+// Inner-edge hinges, outer-edge-forward panels, tight stacking and smooth dragging.
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion'
 import FadeImg from './FadeImg'
@@ -30,13 +30,14 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
     return 'translate3d(' + x + 'px,0,0) perspective(' + (size * 5) +
       'px) translateZ(' + depth + 'px) rotateY(' + (angle + (index === activeIndex ? f * 180 : 0)) + 'deg)'
   })
+  const origin = useTransform(position, p => flowCoverGeometry(index - p, size, reduced).pivot + '% 50%')
   const opacity = useTransform(position, p => flowCoverGeometry(index - p, size, reduced).opacity)
   const zIndex = useTransform(position, p => 100 - Math.round(Math.abs(index - p) * 10))
   const artwork = trackArtURL(pick.track)
 
   return <motion.div data-cover-flow-item={index} style={{
     position: 'absolute', left: '50%', top: size * 0.06, width: size, height: size,
-    marginLeft: -size / 2, transform, opacity, zIndex, transformOrigin: '50% 50%',
+    marginLeft: -size / 2, transform, opacity, zIndex, transformOrigin: origin,
     transformStyle: 'preserve-3d',
   }}>
     <button type="button" onClick={e => { e.stopPropagation(); onSelect(index) }}
@@ -62,9 +63,9 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
         className="self-start rounded-xl bg-accent px-4 py-1.5 text-xs font-semibold text-base">PLAY</button>
     </div>
     {!reduced && artwork && <div className="pointer-events-none absolute left-0 overflow-hidden"
-      style={{ top: size * 1.02, width: size, height: size * 0.32,
-        maskImage: 'linear-gradient(to bottom,rgba(0,0,0,.28),transparent)',
-        WebkitMaskImage: 'linear-gradient(to bottom,rgba(0,0,0,.28),transparent)' }}>
+      style={{ top: size * 1.005, width: size, height: size * 0.30,
+        maskImage: 'linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)',
+        WebkitMaskImage: 'linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)' }}>
       <img src={artwork} alt="" draggable={false} loading="lazy" className="block w-full object-cover"
         style={{ height: size, transform: 'scaleY(-1)', transformOrigin: 'center' }} />
     </div>}
@@ -173,7 +174,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       e.currentTarget.setPointerCapture?.(e.pointerId)
     }
     if (g.moved) {
-      position.set(flowDrag(position.get(), e.clientX - g.last, Math.max(1, size * 0.6), count))
+      position.set(flowDrag(position.get(), e.clientX - g.last, Math.max(1, size * 0.55), count))
       g.samples.push({ x: e.clientX, t: performance.now() })
       if (g.samples.length > 5) g.samples.shift()
     }
@@ -188,7 +189,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       const first = g.samples[0]
       const last = g.samples[g.samples.length - 1]
       const seconds = Math.max(0.016, (last.t - first.t) / 1000)
-      const velocity = -((last.x - first.x) / seconds) / Math.max(1, size * 0.6)
+      const velocity = -((last.x - first.x) / seconds) / Math.max(1, size * 0.55)
       settle(flowTarget(position.get(), velocity, count), velocity)
     }
     gesture.current = null
@@ -200,7 +201,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     stopPress()
     rotateBack(false)
     spring.current?.stop()
-    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / Math.max(1, size * 0.6))))
+    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / Math.max(1, size * 0.55))))
     clearTimeout(wheelTimer.current)
     wheelTimer.current = setTimeout(() => settle(position.get()), 120)
   }
@@ -232,7 +233,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         const rect = e.currentTarget.getBoundingClientRect()
         select(flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced))
       }}
-      className="relative isolate cursor-grab select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
+      className="relative isolate cursor-grab select-none overflow-hidden bg-black outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
       style={{ height: size * 1.42, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
       {picks.map((pick, index) => <FlowCover key={pick.track.id}
         pick={pick} index={index} position={position} flip={flip}
