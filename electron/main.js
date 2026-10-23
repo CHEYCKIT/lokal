@@ -168,6 +168,9 @@ autoUpdater.allowPrerelease = false
 // it, and being offered the stable release (older in features once the
 // nightly moves on) makes no sense. New nightlies come from GitHub Releases.
 const IS_NIGHTLY = /-nightly\./i.test(app.getVersion())
+// The Microsoft Store (MSIX) build is updated by the Store itself; an
+// electron-updater install would fail inside the package anyway.
+const IS_WINDOWS_STORE = process.windowsStore === true
 
 autoUpdater.on('update-available', (info) => {
   if (mainWindow) {
@@ -929,6 +932,7 @@ ipcMain.handle('updater:install', () => {
   }, 500);
 });
   ipcMain.handle('updater:check', () => {
+    if (IS_WINDOWS_STORE) return { store: true, version: app.getVersion() }
     if (IS_NIGHTLY) return { nightly: true, version: app.getVersion() }
     autoUpdater.checkForUpdates()
     return { checking: true }
@@ -936,6 +940,7 @@ ipcMain.handle('updater:install', () => {
   ipcMain.handle('app:getVersion', () => {
     return app.getVersion()
   })
+  ipcMain.handle('app:isWindowsStore', () => IS_WINDOWS_STORE)
 
   // macOS: its window back from the Dock (hidden helper windows don't count).
   app.on('activate', () => {
@@ -962,6 +967,8 @@ ipcMain.handle('updater:install', () => {
 
   if (!app.isPackaged) {
     console.log('[updater] skipping in dev mode')
+  } else if (IS_WINDOWS_STORE) {
+    console.log('[updater] Microsoft Store build: updates come from the Store')
   } else if (IS_NIGHTLY) {
     console.log(`[updater] nightly build (${app.getVersion()}): not checking for stable updates`)
   } else if ((() => { try { return require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'auto_update'").get()?.value === '0' } catch { return false } })()) {

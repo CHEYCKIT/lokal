@@ -256,9 +256,51 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           node scripts/check-build-natives.cjs
 
+      # The Windows build also makes the Microsoft Store MSIX. Its identity
+      # comes from package.json (build.appx), matching Partner Center's
+      # Product identity; the MSIX_IDENTITY_NAME, MSIX_PUBLISHER and
+      # MSIX_PUBLISHER_DISPLAY_NAME repository variables override it if set.
+      # The MSIX is left unsigned: the Store signs it.
       - name: Build Application
         if: runner.os != 'macOS'
-        run: npm run build -- --publish never
+        shell: bash
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          ARGS=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ -n "$MSIX_IDENTITY_NAME" ]; then ARGS+=(-c.appx.identityName "$MSIX_IDENTITY_NAME"); fi
+            if [ -n "$MSIX_PUBLISHER" ]; then ARGS+=(-c.appx.publisher "$MSIX_PUBLISHER"); fi
+            if [ -n "$MSIX_PUBLISHER_DISPLAY_NAME" ]; then ARGS+=(-c.appx.publisherDisplayName "$MSIX_PUBLISHER_DISPLAY_NAME"); fi
+          fi
+          npm run build -- --publish never "${ARGS[@]}"
+
+      - name: Check the MSIX
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          msix=(release/*.msix)
+          [ ${#msix[@]} -gt 0 ] || { echo "::error::No .msix was built."; exit 1; }
+          ls -l "${msix[@]}"
+
+      # The MSIX is unsigned (the Store signs it), so Windows won't install a
+      # downloaded copy: it's kept as a workflow artifact for uploading to
+      # Partner Center, not published on the GitHub release.
+      - name: Upload the Store MSIX
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: store-msix
+          path: release/*.msix
+          if-no-files-found: error
+
+      - name: Keep the MSIX off the release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f release/*.msix
 
       - name: Verify AppImage libvips resolver tests
         if: runner.os == 'Linux'
@@ -443,6 +485,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: artifacts
+          pattern: release-*
 
       - name: Aggregate artifacts into release_all
         shell: bash

@@ -85,6 +85,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "fileAssociations": [
@@ -116,6 +122,18 @@
             "!*.pdb"
           ]
         }
+      ]
+    },
+    "appx": {
+      "artifactName": "${productName}-${version}-${arch}.msix",
+      "applicationId": "Lokal",
+      "identityName": "Sipbuu.LokalMusic",
+      "publisher": "CN=C9C2BE38-8ED4-4D74-9660-28C2ACA032D7",
+      "publisherDisplayName": "Sipbuu",
+      "displayName": "Lokal",
+      "backgroundColor": "transparent",
+      "languages": [
+        "en-US"
       ]
     },
     "mac": {

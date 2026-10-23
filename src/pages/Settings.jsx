@@ -441,6 +441,7 @@ export default function Settings() {
   // can't be a useRef here.
   const [appVersion, setAppVersionState] = useState(() => peekCache('settings:version') || '')
   const setAppVersion = (version) => { writeCache('settings:version', version); setAppVersionState(version) }
+  const [isWindowsStore, setIsWindowsStore] = useState(false)
   usePageReady(settingsLoaded && (!api.isElectron || (!!appVersion && !!toolsStatus)))
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateCheckResult, setUpdateCheckResult] = useState('')
@@ -604,6 +605,7 @@ export default function Settings() {
 
       api.getToolsStatus().then(setToolsStatus)
       api.getVersion().then(v => setAppVersion(v || '1.0.0'))
+      api.isWindowsStore().then(store => setIsWindowsStore(!!store)).catch(() => {})
 
     }
 
@@ -647,6 +649,12 @@ export default function Settings() {
     setUpdateCheckResult('')
     try {
       const result = await api.updaterCheck()
+      if (result?.store) {
+        setUpdateCheckResult('')
+        setCheckingUpdate(false)
+        await api.openExternal('ms-windows-store://downloadsandupdates')
+        return
+      }
       if (result?.nightly) {
         // Nightlies aren't offered the stable release; they update by hand.
         setUpdateCheckResult('')
@@ -1243,13 +1251,18 @@ activeCategory === 'data' ? usersTried
                 className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm text-muted hover:text-white hover:border-accent/30 disabled:opacity-40 transition-colors"
               >
                 <RefreshCcw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
-                {checkingUpdate ? t('Checking...') : /-nightly\./i.test(appVersion || '') ? t('Open Releases') : t('Check for updates')}
+                {checkingUpdate ? t('Checking...') : isWindowsStore ? t('Open Microsoft Store') : /-nightly\./i.test(appVersion || '') ? t('Open Releases') : t('Check for updates')}
               </button>
               {updateCheckResult && (
                 <span className="text-xs text-muted">{t(updateCheckResult)}</span>
               )}
             </div>
           </Row>
+          {isWindowsStore ? (
+            <Row label={t("Automatic Updates")} desc={t("This copy of Lokal came from the Microsoft Store, which keeps it up to date. Change this in the Microsoft Store's settings.")}>
+              <span className="text-xs text-muted">{t('Managed by the Microsoft Store')}</span>
+            </Row>
+          ) : (
           <Row label={t("Automatic Updates")} desc={t("Off: Lokal no longer looks for a new version when it starts. Check for updates above still works.")}>
             <button
               onClick={() => set('auto_update', settings.auto_update === '0' ? '1' : '0')}
@@ -1258,6 +1271,7 @@ activeCategory === 'data' ? usersTried
               {settings.auto_update !== '0' ? t('On') : t('Off')}
             </button>
           </Row>
+          )}
           <Row label={t("Debug Logs")} desc={t("Open the folder with Lokal's logs, to attach to a bug report.")}>
             <button 
               onClick={() => api.openLogs?.()}

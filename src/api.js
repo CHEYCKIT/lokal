@@ -686,6 +686,7 @@ export const api = {
   updaterInstall: () => isE() ? el().updaterInstall() : Promise.resolve(),
   updaterCheck: () => isE() ? el().updaterCheck() : Promise.resolve(),
   getVersion: () => isE() ? el().getVersion() : Promise.resolve('1.0.0'),
+  isWindowsStore: () => isE() && el().isWindowsStore ? el().isWindowsStore() : Promise.resolve(false),
   onUpdaterEvent: (fn) => { if (isE()) return el().onUpdaterEvent(fn); return () => {} },
   // Fill In Genres: starts (or joins) the background lookup; genresStatus reads its progress.
   fetchMissingGenres: () => isE() ? el().fetchMissingGenres() : apiFetch('/tracks/fetch-missing-genres', { method: 'POST' }),
