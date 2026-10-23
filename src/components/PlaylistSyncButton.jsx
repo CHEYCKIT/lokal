@@ -34,7 +34,7 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
     const toast = showLoadingToast(t('Syncing with {platform}…', { platform: status.platformLabel }))
     let message = ''
     try {
-      const result = await syncPlaylist(playlistId, { userId, onProgress: text => toast.update(text) })
+      const result = await syncPlaylist(playlistId, { userId, onProgress: (text, progress) => toast.update(text, progress?.percent) })
       message = result.error || result.message
       if (result.error) setError(result.error)
     } catch (e) {
