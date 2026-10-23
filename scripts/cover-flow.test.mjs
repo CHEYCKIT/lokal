@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -128,4 +128,30 @@ test('long-press selects the actual pressed cover rather than blank-stage hit te
   assert.ok(flow.includes('Number(pressedCover.dataset.coverFlowItem)'))
   assert.ok(flow.includes("pressedCover ? Number(pressedCover.dataset.coverFlowItem)"))
   assert.ok(flow.includes(': flowIndexAt('), 'blank-stage hit testing still uses the distance curve')
+})
+
+test('high-speed releases retain measured momentum but a paused pointer cannot fling', () => {
+  const samples = [
+    { x: 300, t: 1000 },
+    { x: 250, t: 1025 },
+    { x: 200, t: 1050 },
+    { x: 150, t: 1075 },
+  ]
+  assert.ok(flowReleaseVelocity(samples, 1080, 176) > 5)
+  assert.equal(flowReleaseVelocity(samples, 1250, 176), 0, 'finger stopped before releasing')
+  assert.equal(flowReleaseVelocity([{ x: 150, t: 1080 }], 1081, 176), 0)
+  assert.equal(flowReleaseVelocity(samples, 1080, 0), 0)
+  assert.equal(flowReleaseVelocity([{ x: 2000, t: 1000 }, { x: -2000, t: 1016 }], 1016, 176), 20, 'reject noisy spikes')
+})
+
+test('24-track shelves render only the nearby covers during long glides', () => {
+  assert.deepEqual(flowVisibleRange(12, 24), { start: 5, end: 20 })
+  assert.deepEqual(flowVisibleRange(0, 24), { start: 0, end: 8 })
+  assert.deepEqual(flowVisibleRange(23, 24), { start: 16, end: 24 })
+  assert.deepEqual(flowVisibleRange(1, 1), { start: 0, end: 1 })
+  assert.ok(flow.includes('picks.slice(visible.start, visible.end)'), 'do not mount every distant cover')
+  assert.ok(flow.includes("type: 'inertia'"), 'flick decelerates instead of snapping toward a distant spring target')
+  assert.ok(flow.includes('modifyTarget: target => clampIndex(Math.round(target), count)'), 'coast snaps to full covers')
+  assert.ok(flow.includes('bounceDamping: 28'), 'ends have a damped constraint')
+  assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
 })
