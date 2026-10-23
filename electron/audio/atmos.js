@@ -3,7 +3,7 @@
 // Dedicated E-AC-3 JOC bitstream route. Chromium's Web Audio graph decodes to
 // PCM and cannot preserve Atmos metadata, so never send JOC through <audio>.
 // mpv/FFmpeg exposes native WASAPI/ALSA HDMI compressed passthrough instead.
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
 const { hasAtmosMetadata } = require('../mornye/atmos')
@@ -45,7 +45,23 @@ function isConfirmedBitstream(logLine) {
   return /\bAO:.*\bspdif[-_]?eac3\b/i.test(logLine)
 }
 
+function nativeAtmosAvailable(platform = process.platform) {
+  if (!supportedHost(platform)) return false
+  try {
+    const checked = spawnSync('mpv', ['--version'], {
+      windowsHide: true,
+      timeout: 2000,
+      stdio: 'ignore',
+    })
+    return checked.status === 0
+  } catch { return false }
+}
+
 function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
+  ipcMain.handle('atmos:capabilities', () => ({
+    available: nativeAtmosAvailable(),
+    platform: process.platform,
+  }))
   const notify = (state) => broadcast?.('atmos:status', state)
   const stop = async () => {
     const old = active
@@ -80,6 +96,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   })
   ipcMain.handle('atmos:play', async (_, provider, id, device = '') => {
     if (!supportedHost()) return { error: 'Atmos native HDMI output is not supported on this operating system' }
+    if (!nativeAtmosAvailable()) return { error: 'Native Dolby Atmos playback requires mpv on your system PATH and an Atmos-capable HDMI output.' }
     if (typeof id !== 'string' || id.length > 200 || !/^[\w:.-]+$/.test(id)) return { error: 'Invalid track ID' }
     const options = outputOptions(process.platform, device)
     const sources = require('../online/sources')
@@ -150,4 +167,4 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   return stop
 }
 
-module.exports = { supportedHost, outputOptions, isConfirmedBitstream, registerAtmosHandlers }
+module.exports = { supportedHost, nativeAtmosAvailable, outputOptions, isConfirmedBitstream, registerAtmosHandlers }
