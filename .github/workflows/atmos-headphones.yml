@@ -1,0 +1,46 @@
+name: Windows Atmos headphone bridge
+
+on:
+  pull_request:
+    paths:
+      - 'native/smtc-bridge/**'
+      - 'electron/audio/atmos.js'
+      - 'electron/audio/headphones.js'
+      - 'src/components/AtmosPlayButton.jsx'
+      - 'src/components/AtmosTransport.jsx'
+      - 'scripts/atmos-output.test.mjs'
+      - 'scripts/atmos-transfer-progress.test.mjs'
+      - 'scripts/loading-toast-progress.test.mjs'
+      - 'src/components/Toaster.jsx'
+      - 'src/pages/Home.jsx'
+      - 'src/recommendations.js'
+      - 'src/onlineTracks.js'
+      - 'src/ghostDownloads.js'
+      - 'src/components/PlaylistSyncButton.jsx'
+      - '.github/workflows/atmos-headphones.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-atmos:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build Windows native audio bridge
+        run: cargo build --manifest-path native/smtc-bridge/Cargo.toml --release --target x86_64-pc-windows-msvc
+      - name: Stage the native bridge for Node
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force electron/native | Out-Null
+          Copy-Item native/smtc-bridge/target/x86_64-pc-windows-msvc/release/smtc_bridge.dll electron/native/smtc-bridge.win32-x64-msvc.node
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify Windows headphone bridge exports
+        run: node -e "const b=require('./electron/native/smtc-bridge.win32-x64-msvc.node'); for(const k of ['startAtmosHeadphones','stopAtmosHeadphones','atmosHeadphoneStatus','atmosHeadphoneCommand']) if(typeof b[k] !== 'function') throw Error('Missing export '+k)"
+      - name: Run Atmos routing tests
+        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs scripts/atmos-transfer-progress.test.mjs
+      - name: Verify shared desktop loading progress
+        run: node --test scripts/loading-toast-progress.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs

@@ -232,6 +232,17 @@ function SearchDrawer({ track, onClose, onSelect }) {
   )
 }
 
+// React owns the fallback so a same-ID artwork update can retry the original.
+function FullscreenStillArtwork({ track }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [track])
+  const full = trackFullArtURL(track) || trackArtURL(track)
+  const fallback = trackArtURL(track)
+  return <img src={failed ? fallback : full}
+    onError={() => { if (!failed && fallback && fallback !== full) setFailed(true) }}
+    className="absolute inset-0 w-full h-full object-cover" alt="" />
+}
+
 export default function FullscreenPlayer() {
   const performanceMode = usePerformanceMode()
   const { t } = useTranslation()
@@ -841,7 +852,7 @@ export default function FullscreenPlayer() {
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
-                        <img src={trackArtURL(track)} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                        <FullscreenStillArtwork track={track} />
                         {top && <MotionCover trackId={track?.id} only="square" onActive={setSquareMotionActive} off={coverOff} />}
                         {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>

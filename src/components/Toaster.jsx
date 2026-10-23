@@ -16,15 +16,26 @@ export function showToast(message) {
 }
 
 /** A request-owned loading toast stays visible until that request completes. */
-export function showLoadingToast(message) {
+export function showLoadingToast(message, progress = null) {
   const id = `loading:${Date.now()}:${Math.random()}`
   let closed = false
-  const send = (text, update = false) => {
-    if (!closed) window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { id, message: String(text), loading: true, update } }))
+  let currentProgress = null
+  const send = (text, update = false, nextProgress) => {
+    if (closed) return
+    // undefined preserves the previous measurement for phase/status messages;
+    // null explicitly resets it, and invalid numbers are never displayed.
+    if (nextProgress !== undefined) {
+      const percent = typeof nextProgress === 'number' ? nextProgress : nextProgress?.percent
+      currentProgress = Number.isFinite(percent) && percent >= 0 && percent <= 100
+        ? Math.round(percent) : null
+    }
+    window.dispatchEvent(new CustomEvent(TOAST_EVENT, {
+      detail: { id, message: String(text), loading: true, update, progress: currentProgress },
+    }))
   }
-  send(message)
+  send(message, false, progress)
   return {
-    update: text => send(text, true),
+    update: (text, nextProgress) => send(text, true, nextProgress),
     close: message => {
       if (closed) return
       closed = true
@@ -43,7 +54,7 @@ export default function Toaster() {
     const onToast = (event) => {
       const detail = event.detail || {}
       if (detail.update) {
-        setToast(previous => previous?.id === detail.id ? { ...previous, message: detail.message } : previous)
+        setToast(previous => previous?.id === detail.id ? { ...previous, message: detail.message, progress: detail.progress } : previous)
         return
       }
       if (detail.finish) {
@@ -57,7 +68,7 @@ export default function Toaster() {
         return
       }
       clearTimeout(timer.current)
-      setToast({ id: detail.id || ++seq, message: detail.message || '', loading: !!detail.loading })
+      setToast({ id: detail.id || ++seq, message: detail.message || '', loading: !!detail.loading, progress: detail.progress ?? null })
       if (!detail.loading) timer.current = setTimeout(() => setToast(null), VISIBLE_MS)
     }
     window.addEventListener(TOAST_EVENT, onToast)
@@ -79,6 +90,11 @@ export default function Toaster() {
           >
             {toast.loading ? <Loader2 size={13} className="flex-shrink-0 animate-spin text-accent" /> : <Check size={13} className="flex-shrink-0 text-accent" />}
             <span className="truncate">{toast.message}</span>
+            {toast.loading && Number.isFinite(toast.progress) && (
+              <span className="flex-shrink-0 tabular-nums font-semibold text-accent" aria-label={`Progress ${toast.progress} percent`}>
+                {toast.progress}%
+              </span>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

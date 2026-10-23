@@ -347,3 +347,187 @@ pub fn update_metadata(
         .Update()
         .map_err(|e| napi::Error::from_reason(format!("DisplayUpdater.Update failed: {e:?}")))
 }
+
+
+// Windows Media Foundation-backed headphone playback for E-AC-3 JOC.
+// This hands the original file to the OS media pipeline without passing it
+// through Chromium/FFmpeg PCM or trying to feed a compressed IEC61937 HDMI
+// bitstream to headphones. The installed Windows decoder and active Spatial
+// Sound renderer determine whether JOC objects are rendered. Opening the media
+// is NOT proof of an Atmos renderer: the JS UI must not claim that.
+use windows::Media::Core::MediaSource;
+use windows::Media::Playback::{
+    MediaPlayer, MediaPlayerFailedEventArgs,
+};
+
+#[derive(Default)]
+struct HeadphoneSession {
+    player: Option<MediaPlayer>,
+    generation: u64,
+    state: String,
+    error: String,
+}
+
+fn headphone_session() -> &'static Mutex<HeadphoneSession> {
+    static SESSION: OnceLock<Mutex<HeadphoneSession>> = OnceLock::new();
+    SESSION.get_or_init(|| Mutex::new(HeadphoneSession::default()))
+}
+
+fn headphone_update(generation: u64, state: &str, error: &str) {
+    if let Ok(mut session) = headphone_session().lock() {
+        if session.generation != generation {
+            return;
+        }
+        session.state = state.into();
+        session.error = error.into();
+    }
+}
+
+#[napi(object)]
+pub struct AtmosHeadphoneStatus {
+    pub state: String,
+    pub error: Option<String>,
+    pub position_secs: f64,
+    pub duration_secs: f64,
+}
+
+#[napi]
+pub fn start_atmos_headphones(file_uri: String) -> napi::Result<()> {
+    // The caller passes pathToFileURL() of a verified E-AC-3 JOC file.
+    // No network URLs and no arbitrary protocol invocation.
+    if !file_uri.starts_with("file:///") || file_uri.len() > 32768 {
+        return Err(napi::Error::from_reason("Expected a local file URL"));
+    }
+    stop_atmos_headphones()?;
+
+    let source_uri = Uri::CreateUri(&HSTRING::from(file_uri))
+        .map_err(|e| napi::Error::from_reason(format!("Invalid local audio URI: {e:?}")))?;
+    let media_source = MediaSource::CreateFromUri(&source_uri)
+        .map_err(|e| napi::Error::from_reason(format!("Windows cannot open the Atmos audio source: {e:?}")))?;
+    let player = MediaPlayer::new()
+        .map_err(|e| napi::Error::from_reason(format!("Windows MediaPlayer unavailable: {e:?}")))?;
+
+    // A second native SMTC session must not steal the transport controls
+    // from Lokal's existing Chromium player.
+    if let Ok(commands) = player.CommandManager() {
+        let _ = commands.SetIsEnabled(false);
+    }
+
+    let generation = {
+        let mut s = headphone_session().lock()
+            .map_err(|_| napi::Error::from_reason("Headphone state mutex poisoned"))?;
+        s.generation = s.generation.wrapping_add(1);
+        s.state = "loading".into();
+        s.error.clear();
+        s.generation
+    };
+
+    let on_open = TypedEventHandler::new(
+        move |_: &Option<MediaPlayer>, _: &Option<windows::core::IInspectable>| {
+            headphone_update(generation, "playing", "");
+            Ok(())
+        },
+    );
+    // MediaOpened uses IInspectable for the event argument on WinRT.
+    if let Err(err) = player.MediaOpened(&on_open) {
+        headphone_update(generation, "error", &format!("MediaOpened: {err:?}"));
+        return Err(napi::Error::from_reason("Windows media event registration failed"));
+    }
+    let on_failed = TypedEventHandler::new(
+        move |_: &Option<MediaPlayer>, args: &Option<MediaPlayerFailedEventArgs>| {
+            let detail = args.as_ref()
+                .and_then(|value| value.ErrorMessage().ok())
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "The Windows decoder could not play this E-AC-3 stream.".into());
+            headphone_update(generation, "error", &detail);
+            Ok(())
+        },
+    );
+    let _ = player.MediaFailed(&on_failed);
+    let on_ended = TypedEventHandler::new(
+        move |_: &Option<MediaPlayer>, _: &Option<windows::core::IInspectable>| {
+            headphone_update(generation, "ended", "");
+            Ok(())
+        },
+    );
+    let _ = player.MediaEnded(&on_ended);
+
+    if let Err(err) = player.SetSource(&media_source) {
+        headphone_update(generation, "error", &format!("SetSource: {err:?}"));
+        return Err(napi::Error::from_reason(format!("Windows could not set the Atmos source: {err:?}")));
+    }
+    if let Err(err) = player.Play() {
+        headphone_update(generation, "error", &format!("Play: {err:?}"));
+        return Err(napi::Error::from_reason(format!("Windows playback failed: {err:?}")));
+    }
+
+    headphone_session().lock()
+        .map_err(|_| napi::Error::from_reason("Headphone state mutex poisoned"))?
+        .player = Some(player);
+    Ok(())
+}
+
+#[napi]
+pub fn atmos_headphone_status() -> AtmosHeadphoneStatus {
+    let s = headphone_session().lock().unwrap();
+    let (mut position_secs, mut duration_secs) = (0.0, 0.0);
+    if let Some(player) = &s.player {
+        if let Ok(session) = player.PlaybackSession() {
+            position_secs = session.Position().map(|v| v.Duration as f64 / 10_000_000.0).unwrap_or(0.0);
+            duration_secs = session.NaturalDuration().map(|v| v.Duration as f64 / 10_000_000.0).unwrap_or(0.0);
+        }
+    }
+    AtmosHeadphoneStatus {
+        state: s.state.clone(),
+        error: if s.error.is_empty() { None } else { Some(s.error.clone()) },
+        position_secs, duration_secs,
+    }
+}
+
+#[napi]
+pub fn atmos_headphone_command(command: String) -> napi::Result<()> {
+    let mut s = headphone_session().lock()
+        .map_err(|_| napi::Error::from_reason("Headphone state mutex poisoned"))?;
+    let player = s.player.as_ref()
+        .ok_or_else(|| napi::Error::from_reason("No Windows headphone audio is running"))?;
+    match command.as_str() {
+        "cycle pause" => {
+            if s.state == "paused" {
+                player.Play().map_err(|e| napi::Error::from_reason(format!("Resume failed: {e:?}")))?;
+                s.state = "playing".into();
+            } else {
+                player.Pause().map_err(|e| napi::Error::from_reason(format!("Pause failed: {e:?}")))?;
+                s.state = "paused".into();
+            }
+        }
+        "seek 10 relative" | "seek -10 relative" => {
+            let session = player.PlaybackSession()
+                .map_err(|e| napi::Error::from_reason(format!("Seek unavailable: {e:?}")))?;
+            let delta: i64 = if command.starts_with("seek -") { -100_000_000 } else { 100_000_000 };
+            let current = session.Position()
+                .map_err(|e| napi::Error::from_reason(format!("Position unavailable: {e:?}")))?.Duration;
+            let max = session.NaturalDuration().map(|v| v.Duration).unwrap_or(i64::MAX);
+            session.SetPosition(TimeSpan { Duration: current.saturating_add(delta).clamp(0, max) })
+                .map_err(|e| napi::Error::from_reason(format!("Seek failed: {e:?}")))?;
+        }
+        _ => return Err(napi::Error::from_reason("Unknown headphone playback command")),
+    }
+    Ok(())
+}
+
+#[napi]
+pub fn stop_atmos_headphones() -> napi::Result<()> {
+    let player = {
+        let mut s = headphone_session().lock()
+            .map_err(|_| napi::Error::from_reason("Headphone state mutex poisoned"))?;
+        s.generation = s.generation.wrapping_add(1);
+        s.state = "stopped".into();
+        s.error.clear();
+        s.player.take()
+    };
+    if let Some(player) = player {
+        let _ = player.Pause();
+        let _ = player.Close();
+    }
+    Ok(())
+}
