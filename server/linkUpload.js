@@ -5,6 +5,7 @@ const { Transform } = require('stream')
 const { pipeline } = require('stream/promises')
 const { getDB, getStorageDir } = require('../electron/ipc/db')
 const { findPhonePlaceholder } = require('./linkUploadMatch')
+const { phoneFileName, reservePhoneDestination } = require('./phoneFileNaming')
 
 // The phone must opt in before using this endpoint. Only an individually
 // paired device can upload, and only newly created files are ever removed.
@@ -18,8 +19,8 @@ async function receivePhoneFile(req,res) {
   if(!['flac','mp3','m4a','aac','ogg','opus','wav','aiff','aif','alac','ape','wv','dsf','dff','webm'].includes(extension))return res.status(400).json({error:'Unsupported audio format.'})
   const directory=path.join(getStorageDir(),'phone-downloads')
   await fs.ensureDir(directory)
-  const id=randomUUID(),destination=path.join(directory,`${id}.${extension}`),partial=destination+'.part'
-  let stored=false,bytes=0
+  const id=randomUUID(),partial=path.join(directory,`.${id}.${extension}.part`)
+  let destination=null,stored=false,bytes=0
   const hash=createHash('sha256')
   const count=new Transform({transform(chunk,encoding,callback){bytes+=chunk.length;if(bytes>1024*1024*1024)return callback(new Error('File exceeds the 1 GiB limit.'));hash.update(chunk);callback(null,chunk)}})
   try {
@@ -40,12 +41,15 @@ async function receivePhoneFile(req,res) {
     const { parseFile }=await import('music-metadata')
     const parsed=await parseFile(partial,{duration:true})
     if(!Number.isFinite(parsed.format.duration)||parsed.format.duration<=0)throw new Error('The upload is not a playable audio file.')
-    await fs.rename(partial,destination)
     const clean=(value,fallback)=>typeof value==='string'&&value.trim()?value.trim().slice(0,1000):fallback
     const tags=parsed.common
+    const title=clean(metadata.title,clean(tags.title,'Unknown track')),artist=clean(metadata.artist,clean(tags.artist,'Unknown artist')),album=clean(metadata.album,clean(tags.album,''))
+    // Keep the phone's filename if supplied; older phones fall back to the
+    // embedded artist/title. Track IDs remain UUIDs, filenames do not.
+    const filename=phoneFileName({originalFilename:metadata.originalFilename,artist,title,extension})
+    destination=await reservePhoneDestination(partial,directory,filename)
     const concurrent=getDB().prepare("SELECT id,file_path FROM tracks WHERE file_hash=? AND file_path NOT LIKE 'ghost://%' LIMIT 1").get(digest)
     if(concurrent && await fs.pathExists(concurrent.file_path))return res.json({ok:true,trackId:concurrent.id,alreadyPresent:true})
-    const title=clean(metadata.title,clean(tags.title,'Unknown track')),artist=clean(metadata.artist,clean(tags.artist,'Unknown artist')),album=clean(metadata.album,clean(tags.album,''))
     // Promote a matching sync placeholder in place so its likes, playlist
     // membership and listening history continue to reference the playable row.
     const ghost=findPhonePlaceholder(db,title,artist,parsed.format.duration)
@@ -67,6 +71,6 @@ async function receivePhoneFile(req,res) {
     res.json({ok:true,trackId,file_hash:digest})
   } catch(error) {
     if(!res.headersSent&&!res.destroyed)res.status(400).json({error:error.message || 'The audio file could not be saved.'})
-  } finally {await fs.remove(partial);if(!stored)await fs.remove(destination)}
+  } finally {await fs.remove(partial);if(destination&&!stored)await fs.remove(destination)}
 }
 module.exports={receivePhoneFile}
