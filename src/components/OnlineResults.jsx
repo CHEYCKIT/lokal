@@ -136,7 +136,6 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
       ...target, atmosNative: true, atmosMode: mode,
       atmosProvider: item.provider, atmosSourceId: String(item.id),
     }
-    const previous = usePlayerStore.getState()
     saveRecentItem(recentTrackItem(target))
     playQueue(queue, indexInQueue, { type: 'search', id: q, name: `${providerLabel}: ${q}` })
     try {
@@ -155,31 +154,22 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
   }
 
   const play = async (item, index) => {
-    if (currentTrack && sameStream(currentTrack, item)) { togglePlay(); return }
-    saveRecentSearch(q)
-    if (atmosAvailable(item)) {
-      try {
-        const capabilities = await api.atmosCapabilities()
-        const mode = localStorage.getItem('lokal-atmos-output-mode') === 'headphones' ? 'headphones' : 'hdmi'
-        const nativeAvailable = mode === 'headphones' ? capabilities?.headphones?.available : capabilities?.mpvAvailable
-        if (nativeAvailable) {
-          const device = localStorage.getItem('lokal-atmos-output-device') || ''
-          const result = await playNativeAtmos(item, index, mode, device)
-          if (result?.ok) return
-          showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: result?.error || t('output refused') }))
-          return
-        }
-      } catch (error) {
-        showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: error?.message || String(error) }))
-        return
-      }
+    // Normal Play must always request the ordinary provider stream. An Atmos
+    // badge advertises an alternate version; only PLAY ATMOS activates native
+    // E-AC-3 JOC. Matching the same source while Atmos owns it must replace
+    // the audio backend, not toggle the native session's play/pause state.
+    if (currentTrack && !currentTrack.atmosNative && sameStream(currentTrack, item)) {
+      togglePlay()
+      return
     }
+    saveRecentSearch(q)
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
     saveRecentItem(recentTrackItem(target))
     const queue = rows.filter(Boolean)
-    playQueue(queue, queue.findIndex(t => t.id === target.id), { type: 'search', id: q, name: `${providerLabel}: ${q}` })
+    playQueue(queue, queue.findIndex(row => row.id === target.id),
+      { type: 'search', id: q, name: `${providerLabel}: ${q}` })
   }
 
   const addToPlaylist = async (item) => {
