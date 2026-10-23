@@ -22,6 +22,7 @@ import { contextLabel, isContextNavigable, navigateToContext } from '../playback
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
 import { usePerformanceMode } from '../performanceMode'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
@@ -29,6 +30,8 @@ const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
 // 6rem accounts for the cover stage's horizontal padding (px-12).
 const COVER_SIZE_WITH_PANEL = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem), calc(100vw - min(42vw, 780px) - 6rem))'
 const PANEL_WIDTH = 'min(42vw, 780px)'
+// Grow only the lyrics content left into the existing cover-side gutter.
+const LYRICS_LEFT_EXPANSION = 'clamp(18px, 2vw, 32px)'
 const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
 // long without the mouse moving.
@@ -269,6 +272,9 @@ export default function FullscreenPlayer() {
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()
   const [fsCanvas, setFsCanvas] = useState(false)
+  const [squareMotionActive, setSquareMotionActive] = useState(false)
+  const [windowHidden, setWindowHidden] = useState(isWindowHidden)
+  useEffect(() => onWindowVisibility(setWindowHidden), [])
   // Turned off for this song from the side panel.
   const [coverOff, setCoverOff] = useMotionCoverOff(currentTrack)
   // Whether the song has a Canvas / moving cover (asked even while it's
@@ -303,6 +309,11 @@ export default function FullscreenPlayer() {
   const lyricsMode = showLyricsFullscreen
   // Reduced motion: the views just crossfade (the cover doesn't fly).
   const reduceMotion = useReducedMotion()
+  const movingGradient = settings.fullscreen_moving_gradient === '1' && !performanceMode && !reduceMotion
+  const rotatingCd = settings.fullscreen_rotating_cd === '1' && !performanceMode && !reduceMotion
+  // A playing Canvas or animated album clip always takes priority over spinning artwork.
+  const spinCd = rotatingCd && !fsCanvas && !squareMotionActive
+  const animationRunning = showFullscreen && !lyricsMode && isPlaying && !windowHidden
   const playerLayerRef = useRef(null)
   const coverRef = useRef(null)
   useEffect(() => {
@@ -312,8 +323,8 @@ export default function FullscreenPlayer() {
   // coverFlight): a copy of it moves while the real ones stay hidden until it
   // lands. With a canvas playing, the copy keeps playing it and turns into
   // the cover on the way (the header shows the cover), without stretching
-  // from the card's 9:16 into the square. Both views are always laid out
-  // (just faded), so both ends can be measured right away.
+  // between aspect ratios: Spotify Canvas is cropped to the square card.
+  // Both views are always laid out (just faded) for correct measurements.
   const flightRef = useRef(null)
   const prevModeRef = useRef(null)
   useLayoutEffect(() => {
@@ -375,8 +386,12 @@ export default function FullscreenPlayer() {
   // and lyrics kept using whatever value was cached at launch. Re-fetching
   // whenever the overlay actually opens picks up the current saved value.
   useEffect(() => {
-    if (!showFullscreen) return
-    api.getSettings().then(s => setSettings(s || {}))
+    if (!showFullscreen) return undefined
+    let active = true
+    const refresh = () => api.getSettings().then(s => { if (active) setSettings(s || {}) }).catch(() => {})
+    refresh()
+    window.addEventListener('lokal:settings-saved', refresh)
+    return () => { active = false; window.removeEventListener('lokal:settings-saved', refresh) }
   }, [showFullscreen])
 
   // Leaving fullscreen only fades the *outer* overlay out over its own
@@ -659,9 +674,11 @@ export default function FullscreenPlayer() {
           <div className="absolute inset-0 bg-black">
             {/* Colours taken from the cover (see ArtworkBackdrop), or -- with
                 that switched off in Settings -- the plain blurred cover. */}
-            {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : backdropFx ? (
-              <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
-            ) : (
+            {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : (
+              // Translate the already baked background as one GPU layer, not a live blur.
+              <div className={movingGradient ? "fullscreen-gradient-drift absolute inset-[-6%]" : "absolute inset-0"}
+                style={movingGradient ? { animationPlayState: animationRunning ? "running" : "paused" } : undefined}>
+                {backdropFx ? <ArtworkBackdrop trackId={currentTrack?.id} blur={64} /> : (
               <AnimatePresence mode="wait">
                 {artSrc ? (
                   <motion.img
@@ -684,6 +701,8 @@ export default function FullscreenPlayer() {
                   />
                 )}
               </AnimatePresence>
+                )}
+              </div>
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
             {/* Lyrics read over a darker backdrop: the same one, dimmed. */}
@@ -767,25 +786,23 @@ export default function FullscreenPlayer() {
                 onMouseLeave={resetCoverPointer}
                 onPointerMove={handleCoverPointerMove}
                 onDoubleClick={doubleClickLike}
-                className="fullscreen-cover-stage group/cover relative select-none rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 flex-shrink-0 bg-white/5 flex items-center justify-center"
-                // A tall (9:16) canvas plays in the card itself, which grows to
-                // its shape. (It used to fill the whole screen behind the
-                // lyrics panel, whose blur then had to be redone every video
-                // frame -- slow, especially while the panel slid open.)
-                style={fsCanvas
-                  ? { height: 'min(38rem, 62vh)', aspectRatio: '9 / 16', transition: 'height 420ms ease' }
-                  : { width: coverSize, height: coverSize }}
+                className={"fullscreen-cover-stage group/cover relative select-none overflow-hidden flex-shrink-0 flex items-center justify-center " + (spinCd ? "rounded-full border border-transparent bg-transparent shadow-none" : "rounded-2xl shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/10 bg-white/5")}
+                // Keep the artwork box square, including for a 9:16 Spotify Canvas.
+                style={{ width: coverSize, height: coverSize }}
               >
+                <div className={spinCd ? "absolute inset-0 fullscreen-cd-disc" : "absolute inset-0"}
+                  style={spinCd ? { animationPlayState: animationRunning ? "running" : "paused" } : undefined}>
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
                         <img src={trackArtURL(track)} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                        {top && <MotionCover trackId={track?.id} only="square" off={coverOff} />}
+                        {top && <MotionCover trackId={track?.id} only="square" onActive={setSquareMotionActive} off={coverOff} />}
                         {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>
                     )} />
                   : <span className="text-white/10 text-7xl">♪</span>
                 }
+                </div>
 
                 {currentTrack && (
                   <div data-shown={controlsShown} className="group/controls absolute inset-0 z-10 flex flex-col justify-between">
@@ -868,7 +885,7 @@ export default function FullscreenPlayer() {
               // happen to exist; with lyrics missing, the panel shows its own
               // "no lyrics" state and search, same as windowed mode.
               <div
-                className={`relative z-10 flex flex-col overflow-hidden pt-24 pb-10 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`relative z-10 flex flex-col ${isPanelVisible && fullscreenPanel === 'lyrics' ? 'overflow-visible' : 'overflow-hidden'} pt-24 pb-10 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{ width: isPanelVisible ? PANEL_WIDTH : '0px' }}
               >
                 {(fullscreenPanel !== 'none' ? fullscreenPanel : lastPanelRef.current) === 'queue' ? (
@@ -883,7 +900,7 @@ export default function FullscreenPlayer() {
                         <Search size={15} />
                       </button>
                     </div>
-                    <div className="flex-1 min-h-0 pr-6">
+                    <div className="flex-1 min-h-0 pr-6" style={{ marginLeft: `calc(-1 * ${LYRICS_LEFT_EXPANSION})`, width: `calc(100% + ${LYRICS_LEFT_EXPANSION})` }}>
                       <LyricsPanel
                         key={`${currentTrack?.id}-${refreshKey}`}
                         track={currentTrack}
