@@ -5,7 +5,7 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion,
 import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowWheelSnapPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -89,7 +89,6 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const gesture = useRef(null)
   const pressTimer = useRef(null)
   const wheelTimer = useRef(null)
-  const wheelHandler = useRef(null)
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
@@ -215,34 +214,16 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     gesture.current = null
   }
   const wheel = e => {
-    // Classic iTunes accepts both the mouse wheel and two-finger trackpad
-    // scrolling. The OS supplies momentum deltas; do not add inertia on top.
-    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
-    if (!delta || count <= 1) return
+    const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0
+    if (!dx) return
     e.preventDefault()
     stopPress()
     rotateBack(false)
-    clearTimeout(wheelTimer.current)
     motion.current?.stop()
-    const pixels = delta * (e.deltaMode === 1 ? 36 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1)
-    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + pixels / pixelsPerCover)))
-    // Only the final fractional alignment is animated, briefly and without
-    // a second spring. Repeated wheel events remain direct and uninterrupted.
-    wheelTimer.current = setTimeout(() => {
-      const { target, duration } = flowWheelSnapPlan(position.get(), count)
-      moveTo(target, duration)
-    }, 80)
+    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
+    clearTimeout(wheelTimer.current)
+    wheelTimer.current = setTimeout(() => settle(position.get()), 170)
   }
-  wheelHandler.current = wheel
-  useEffect(() => {
-    const element = stageRef.current
-    if (!element) return undefined
-    // React delegates wheel as passive; this stage must consume wheel events
-    // without simultaneously scrolling the whole Home page.
-    const handle = event => wheelHandler.current?.(event)
-    element.addEventListener('wheel', handle, { passive: false })
-    return () => element.removeEventListener('wheel', handle)
-  }, [count])
   const select = index => {
     if (suppressClick.current) { suppressClick.current = false; return }
     rotateBack(false)
@@ -262,6 +243,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onDragStart={e => e.preventDefault()}
+      onWheel={wheel}
       onClickCapture={e => {
         if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false }
       }}
