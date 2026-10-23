@@ -48,23 +48,44 @@ The app's error states distinguish a missing mpv binary from HDMI output
 failure. It does **not** claim to know receiver support before attempting
 the stream.
 
-## Atmos for Headphones is different
+## Headphones through Windows Spatial Sound (Windows 10/11)
 
-Windows supports Dolby Atmos for Headphones through Dolby Access / Windows
-Spatial Sound; this is not the same as sending an E-AC-3 bitstream to HDMI.
-mpv's WASAPI compressed passthrough does **not** spatially render Atmos
-objects for headphones. It would be misleading to label an FFmpeg 5.1
-downmix as Atmos for Headphones.
+Lokal's **Atmos Setup** now has a **Headphones · Windows Spatial Sound**
+mode, independent of mpv and HDMI. On Windows this uses the native WinRT
+MediaPlayer/Media Foundation pipeline, handing it the original E-AC-3 JOC
+file without a preliminary FFmpeg downmix or conversion.
 
-A future native Windows playback route would use Microsoft Media Foundation
-with Windows Spatial Sound (or a licensed compatible renderer), preserve
-Atmos metadata until the OS renderer receives it, and validate actual
-headphone-output behavior. That is a separate implementation from this
-bitstream player, requiring Windows integration tests and compatible OS
-decoders. Simply enabling Windows spatial sound on the Chromium PCM path
-does not restore decoded-away Atmos object metadata.
+To configure:
+1. Connect the headphones and choose them as the Windows default audio output.
+2. Install Dolby Access from the Microsoft Store. A compatible license may
+   be needed for Dolby Atmos for Headphones.
+3. In Windows Settings > System > Sound > your headphones > Spatial sound,
+   choose **Dolby Atmos for Headphones**.
+4. In Lokal's Atmos Setup choose **Headphones · Windows Spatial Sound**.
+5. Click **Play Atmos** or **Open local Atmos file**.
 
-References:
-- https://mpv.io/manual/stable/#audio-spdif
+Lokal displays **Windows native headphone output**, not **verified Dolby
+Atmos rendering**, because successfully opening E-AC-3 does not reveal
+whether the actual JOC objects were rendered, or whether Windows decoded the
+5.1 bed / downmixed stereo. The selected Spatial Sound implementation must
+be configured in Windows; the app cannot set Dolby licensing, force its
+installation, or verify decoded objects through the public MediaPlayer API.
+
+Some fresh Windows 11 24H2 installations lack AC-3 decoding components by
+default. If Media Foundation fails with a codec error, this native path
+reports the failure rather than silently transcoding to stereo or pretending
+the source was Atmos rendered.
+
+The HDMI and headphone routes use the same original E-AC-3 JOC file and the
+same native playback controls, but use fundamentally different output APIs.
+Only the HDMI route reports a confirmed compressed E-AC-3 output. Windows
+headphones report a native decoding/playback session, not a verified
+object-rendering result.
+
+### Source references
+
 - https://learn.microsoft.com/windows/win32/coreaudio/spatial-sound
+- https://learn.microsoft.com/windows/apps/develop/media-playback/play-audio-and-video-with-mediaplayer
 - https://learn.microsoft.com/windows/win32/medfound/dolby-audio-decoder
+- https://support.microsoft.com/en-us/windows/hardware/drivers/how-to-turn-on-spatial-sound-in-windows
+
