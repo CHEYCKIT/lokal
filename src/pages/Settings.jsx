@@ -98,12 +98,12 @@ function fmtBytes(bytes) {
 
 // `stacked`: the control goes under the text, full width (a wide control
 // beside it would squeeze the description into a narrow column).
-function Row({ label, desc, children, stacked = false }) {
+function Row({ id, label, desc, children, stacked = false }) {
   const { t } = useTranslation()
   const { query } = useContext(SettingsSearchContext)
   const matches = !query || searchText(label, t(label), desc, t(desc)).includes(query)
   return (
-    <div data-settings-match={query && matches ? '' : undefined} className={`${stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'} ${matches ? '' : 'hidden'}`}>
+    <div id={id} data-settings-match={query && matches ? '' : undefined} className={`${stacked ? 'space-y-3' : 'flex items-center justify-between gap-6'} ${matches ? '' : 'hidden'}`}>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-white font-medium">{t(label)}</p>
         {desc && <p className="text-xs text-muted mt-0.5 leading-relaxed whitespace-pre-line">{t(desc)}</p>}
@@ -516,6 +516,19 @@ export default function Settings() {
   // the next one. Start each category at the top; layout effect so the new
   // content never paints at the old offset first.
   const rootRef = useRef(null)
+  const spotifyCookieJumpRef = useRef(false)
+  const openSpotifyCookieSettings = () => {
+    spotifyCookieJumpRef.current = true
+    setSettingsQuery('')
+    setActiveCategory('integrations')
+  }
+  useEffect(() => {
+    if (activeCategory !== 'integrations' || !spotifyCookieJumpRef.current) return
+    const target = rootRef.current?.querySelector('#spotify-cookie-settings')
+    if (!target) return
+    spotifyCookieJumpRef.current = false
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [activeCategory])
   const firstCategoryRef = useRef(true)
   useLayoutEffect(() => {
     if (firstCategoryRef.current) { firstCategoryRef.current = false; return }
@@ -1796,7 +1809,7 @@ activeCategory === 'data' ? usersTried
 
       {api.isElectron && inCategory('integrations') && (
       <Section title={t("Spotify")}>
-        <Row stacked label={t("Spotify Cookie")} desc={"Your Spotify sign-in, for Liked Songs here and Spotify Canvas covers: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
+        <Row id="spotify-cookie-settings" stacked label={t("Spotify Cookie")} desc={"Your Spotify sign-in, for Liked Songs here and Spotify Canvas covers: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify."}>
           <div className="flex flex-wrap items-center gap-2">
             <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
               placeholder={t("sp_dc value")} spellCheck={false} autoComplete="off" aria-label={t("Spotify cookie (sp_dc)")}
@@ -1809,6 +1822,12 @@ activeCategory === 'data' ? usersTried
               spotifyCheck.error
                 ? <p className="text-xs text-red-400">{t(spotifyCheck.error)}</p>
                 : <p className="text-xs text-green-400">{t("Signed in to Spotify.")}</p>
+            )}
+            {settings.spotify_sp_dc && (
+              <button type="button" onClick={() => { set('spotify_sp_dc', ''); setSpotifyCheck(null) }}
+                className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
+                {t('Remove')}
+              </button>
             )}
           </div>
         </Row>
@@ -2174,13 +2193,6 @@ activeCategory === 'data' ? usersTried
             {settings.fullscreen_rotating_cd === '1' ? t('On') : t('Off')}
           </button>
         </Row>
-        <Row label={t("Moving Fullscreen Gradient")} desc={t("Gently drift the fullscreen cover-coloured background while music plays.")}>
-          <button
-            onClick={() => set('fullscreen_moving_gradient', settings.fullscreen_moving_gradient === '1' ? '0' : '1')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fullscreen_moving_gradient === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
-            {settings.fullscreen_moving_gradient === '1' ? t('On') : t('Off')}
-          </button>
-        </Row>
         <Row label={t("Moving Covers")} desc={t("Play an album's animated cover in the side panel and full screen player, when there is one.")}>
           <button
             onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
@@ -2189,7 +2201,7 @@ activeCategory === 'data' ? usersTried
           </button>
         </Row>
         {settings.motion_covers !== '0' && (() => {
-          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['m8tec', 'm8tec Artwork', 'Apple Music animated covers found by artwork.m8tec.top'], ['spotify', 'Spotify Canvas', 'Needs your Spotify cookie (below)']]
+          const all = [['apple', 'Apple Music', 'Animated album covers'], ['tidal', 'Tidal', 'Video album covers'], ['community', 'Community list', 'Clips shared by other listeners'], ['m8tec', 'm8tec Artwork', 'Apple Music animated covers found by artwork.m8tec.top'], ['spotify', 'Spotify Canvas', 'Requires Spotify cookie: Settings → Integrations → Spotify']]
           let chosen = ['apple', 'tidal', 'community']
           try { const v = JSON.parse(settings.motion_cover_sources || 'null'); if (Array.isArray(v)) chosen = v } catch {}
           const toggle = (id) => set('motion_cover_sources', JSON.stringify(chosen.includes(id) ? chosen.filter(x => x !== id) : [...chosen, id]))
@@ -2207,11 +2219,19 @@ activeCategory === 'data' ? usersTried
             </Row>
             {chosen.includes('spotify') && (
               <>
-                <Row stacked label={t("Spotify Cookie")} desc={t("Spotify only shows Canvas to signed-in accounts. To sign in here: open open.spotify.com in your browser and sign in, press F12, go to Application (Storage in Firefox) › Cookies › open.spotify.com, and copy the value of sp_dc. It lasts about a year.\n\nIt stays on this computer and is only sent to Spotify.")}>
-                  <input type="password" value={settings.spotify_sp_dc || ''} onChange={e => { set('spotify_sp_dc', e.target.value); setSpotifyCheck(null) }}
-                    placeholder={t("sp_dc value")} spellCheck={false} autoComplete="off"
-                    className="w-full max-w-md bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
-                </Row>
+                <div className="space-y-2 rounded-lg border border-border/70 bg-card/40 px-3 py-3">
+                  <p className="text-xs text-muted leading-relaxed">
+                    {settings.spotify_sp_dc
+                      ? t('Spotify Canvas requires a valid Spotify cookie (sp_dc). You can test or replace it under Integrations → Spotify.')
+                      : t('Spotify Canvas requires a Spotify cookie (sp_dc). Add it under Integrations → Spotify before Canvas can load.')}
+                  </p>
+                  {api.isElectron && (
+                    <button type="button" onClick={openSpotifyCookieSettings}
+                      className="text-xs text-accent hover:underline focus-visible:underline focus-visible:outline-none">
+                      {t('Open Spotify Cookie settings →')}
+                    </button>
+                  )}
+                </div>
                 <Row label={t("Prioritize Spotify Canvas")} desc={t("Ask Spotify first. It has Canvas for many more songs, but they're tall videos, cropped to a square here.")}>
                   <button
                     onClick={() => set('spotify_canvas_first', settings.spotify_canvas_first === '1' ? '0' : '1')}
@@ -2219,28 +2239,6 @@ activeCategory === 'data' ? usersTried
                     {settings.spotify_canvas_first === '1' ? t('On') : t('Off')}
                   </button>
                 </Row>
-                <div className="flex items-center gap-3">
-                  <button onClick={testSpotifyCanvas} disabled={spotifyCheck?.loading}
-                    className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-accent/50 bg-accent/20 text-accent disabled:opacity-50">
-                    {spotifyCheck?.loading ? t('Checking...') : t('Save & Test')}
-                  </button>
-                  {settings.spotify_sp_dc && (
-                    <button onClick={async () => {
-                      const saved = await api.saveSettings({ spotify_sp_dc: '' }).catch(e => ({ error: e?.message || 'Save failed' }))
-                      if (saved?.error) { setSpotifyCheck({ error: `${t("Couldn't remove the cookie")}: ${saved.error}` }); return }
-                      set('spotify_sp_dc', ''); setSpotifyCheck(null)
-                      window.dispatchEvent(new Event('lokal:settings-saved'))
-                    }}
-                      className="px-3 py-1.5 rounded-lg text-xs border border-border text-muted hover:text-white transition-colors">
-                      {t('Remove')}
-                    </button>
-                  )}
-                  {spotifyCheck && !spotifyCheck.loading && (
-                    spotifyCheck.error
-                      ? <p className="text-xs text-red-400">{t(spotifyCheck.error)}</p>
-                      : <p className="text-xs text-green-400">{t("Signed in -- canvases will be looked up.")}</p>
-                  )}
-                </div>
               </>
             )}
             </>
