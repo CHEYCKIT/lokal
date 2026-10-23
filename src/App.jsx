@@ -2496,6 +2496,17 @@ export default function App() {
       else return
     }
 
+    if (currentTrack?.atmosNative) {
+      // Native Dolby playback owns the output. The regular React player still
+      // owns the queue/UI, but Chromium must never decode these JOC frames
+      // into PCM or play a second track over the exclusive HDMI endpoint.
+      for (const element of [audioRef.current, cfAudioRef.current]) {
+        if (!element) continue
+        try { element.pause(); element.removeAttribute('src'); element.load() } catch {}
+      }
+      return
+    }
+
     if (castActive) {
       // Casting: the TV plays. Both players are parked, so nothing here makes
       // a sound (a stray play() has no source to play).
@@ -2675,6 +2686,7 @@ export default function App() {
   useEffect(() => {
     if (isCrossfadingRef.current) return
     if (!audioRef.current || !cfAudioRef.current) return
+    if (usePlayerStore.getState().currentTrack?.atmosNative) return // native Atmos owns output
     if (usePlayerStore.getState().castActive) return // the TV plays (src/cast/useCastPlayback.js)
     
     const activeSide = usePlayerStore.getState().activeAudioElement
