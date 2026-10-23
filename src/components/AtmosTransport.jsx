@@ -1,75 +1,128 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { api } from '../api'
-import { showLoadingToast } from './Toaster'
-import { usePlayerStore } from '../store/player'
+import { showLoadingToast, showToast } from './Toaster'
+import { setOutputRoute, usePlayerStore } from '../store/player'
 
-/** Native Atmos session controls. HDMI confirms compressed bitstream output;
- * Windows headphones use Media Foundation and cannot verify JOC rendering. */
+/**
+ * Native Atmos is an output backend of the existing Lokal player, not a
+ * second transport. Bar/fullscreen/mini/SMTC all share the Zustand queue,
+ * playback state, clock and seek controls. JOC never enters Chromium PCM.
+ */
 export default function AtmosTransport() {
-  const [status, setStatus] = useState(null)
-  const [paused, setPaused] = useState(false)
-  const active = useRef(false)
-
   useEffect(() => {
+    let active = false
+    let paused = false
     let toast = null
+    let updatingFromBackend = false
+    const route = {
+      type: 'atmos',
+      seek: seconds => {
+        const clamped = Math.max(0, Math.min(999999, Number(seconds) || 0))
+        api.atmosCommand('seek ' + clamped.toFixed(2) + ' absolute').catch(() => {})
+      },
+      // Compressed passthrough volume belongs to the HDMI receiver; the
+      // Windows headphone renderer owns its system output volume.
+      setVolume: () => {},
+    }
+    const setPlayer = patch => {
+      updatingFromBackend = true
+      usePlayerStore.setState(patch)
+      updatingFromBackend = false
+    }
     const off = api.onAtmosStatus(next => {
-      active.current = next?.state === 'playing' || next?.state === 'loading'
-      setStatus(next)
-      if (next?.state === 'loading') {
+      const state = usePlayerStore.getState()
+      const current = state.currentTrack
+      // An old session can finish while a new track/stream is starting.
+      if (!current?.atmosNative) return
+      if (next?.id && String(next.id) !== String(current.atmosSourceId)) return
+      if (next.state === 'loading') {
+        active = true
+        paused = false
+        setOutputRoute(route)
+        setPlayer({ isBuffering: true })
         if (!toast) toast = showLoadingToast('Preparing Dolby Atmos…')
-        const pct = next.percent == null ? NaN : Number(next.percent)
-        const measurable = Number.isFinite(pct) && pct >= 0 && pct <= 100
-        // The percentage comes from received/total bytes or finished/total
-        // segments. Keep the subsequent decoding/output stage indeterminate:
-        // 100% downloaded does not imply the native player has started.
+        const percent = next.percent == null ? null : Number(next.percent)
+        const measured = Number.isFinite(percent) && percent >= 0 && percent <= 100
         const phase = /segments/i.test(next.message || '')
           ? 'Downloading Dolby Atmos segments'
-          : 'Downloading Dolby Atmos'
-        toast.update(measurable
-          ? `${phase} · ${Math.round(pct)}%`
-          : next.message || 'Preparing Dolby Atmos…')
-      } else {
+          : /download/i.test(next.message || '') || measured
+            ? 'Downloading Dolby Atmos' : (next.message || 'Preparing Dolby Atmos…')
+        toast.update(phase, measured ? Math.round(percent) : null)
+        return
+      }
+      if (next.state === 'playing') {
+        active = true
+        paused = false
+        setOutputRoute(route)
         toast?.close()
         toast = null
-        if (next?.state === 'playing') setPaused(false)
+        setPlayer({ isPlaying: true, isBuffering: false })
+        return
+      }
+      if (next.state === 'progress') {
+        if (!active) return
+        const position = Number(next.position)
+        const duration = Number(next.duration)
+        const update = {
+          ...(Number.isFinite(position) && position >= 0 ? { progress: position } : {}),
+          ...(Number.isFinite(duration) && duration > 0 ? { duration } : {}),
+        }
+        if (next.mode === 'headphones' && typeof next.paused === 'boolean') {
+          paused = next.paused
+          update.isPlaying = !paused
+        }
+        if (Object.keys(update).length) setPlayer(update)
+        return
+      }
+      if (next.state === 'error') {
+        toast?.close()
+        toast = null
+        active = false
+        setOutputRoute(null)
+        setPlayer({ isPlaying: false, isBuffering: false })
+        showToast(next.error || 'Native Dolby Atmos playback failed')
+        return
+      }
+      if (next.state === 'ended' || (next.state === 'stopped' && active)) {
+        toast?.close()
+        toast = null
+        active = false
+        setOutputRoute(null)
+        if (next.state === 'ended' && state.currentTrack?.atmosNative) {
+          // Same queue/repeat/shuffle rules as regular playback.
+          state.autoNext()
+        } else {
+          setPlayer({ isPlaying: false, isBuffering: false })
+        }
       }
     })
-    return () => { toast?.close(); off?.() }
-  }, [])
-
-  useEffect(() => usePlayerStore.subscribe((now, before) => {
-    // Starting normal Lokal playback must not mix PCM on top of the
-    // exclusive HDMI bitstream session.
-    if (active.current &&
-      (now.currentTrack?.id !== before.currentTrack?.id ||
-       (now.isPlaying && !before.isPlaying))) {
-      api.atmosStop().catch(() => {})
+    const unsubscribe = usePlayerStore.subscribe((now, before) => {
+      if (before.currentTrack?.atmosNative &&
+          (now.currentTrack?.id !== before.currentTrack?.id ||
+            now.currentTrack?.atmosNative !== before.currentTrack?.atmosNative)) {
+        active = false
+        setOutputRoute(null)
+        toast?.close()
+        toast = null
+        api.atmosStop().catch(() => {})
+        return
+      }
+      if (updatingFromBackend || !active || !now.currentTrack?.atmosNative) return
+      // Zustand's togglePlay handles every local/media-key/sleep-timer
+      // control, so forward only genuine user requested state transitions.
+      if (now.isPlaying !== before.isPlaying && paused === now.isPlaying) {
+        paused = !now.isPlaying
+        api.atmosCommand('cycle pause').catch(() => {
+          setPlayer({ isPlaying: before.isPlaying })
+        })
+      }
+    })
+    return () => {
+      unsubscribe()
+      off?.()
+      toast?.close()
+      setOutputRoute(null)
     }
-  }), [])
-
-  if (!active.current && status?.state !== 'playing' && status?.state !== 'loading') return null
-  const command = async text => {
-    const result = await api.atmosCommand(text)
-    if (result?.ok && text === 'cycle pause') setPaused(v => !v)
-  }
-  return (
-    <div role="region" aria-label="Dolby Atmos native output" className="fixed right-6 bottom-24 z-[100] flex max-w-[22rem] flex-col gap-2 rounded-xl border border-violet-400/25 bg-neutral-950/95 p-3 text-sm text-white shadow-xl">
-      <div className="font-semibold">{status?.state === 'playing'
-          ? status?.mode === 'headphones' ? 'E-AC-3 JOC · Windows headphone output' : 'E-AC-3 JOC · HDMI bitstream'
-          : 'Preparing Dolby Atmos…'}</div>
-      <div className="text-xs text-white/65">
-        {status?.state === 'playing'
-          ? status?.mode === 'headphones'
-            ? 'Windows native decoder / spatial processing. Enable Dolby Atmos for Headphones in Windows; object rendering is not independently verified.'
-            : 'Native HDMI passthrough. The receiver controls Atmos decoding and volume.'
-          : 'Requesting the original Atmos stream.'}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => command('seek -10 relative')} disabled={status?.state !== 'playing'} className="rounded bg-white/10 px-2 py-1 disabled:opacity-40">−10s</button>
-        <button onClick={() => command('cycle pause')} disabled={status?.state !== 'playing'} className="rounded bg-white/10 px-2 py-1 disabled:opacity-40">{paused ? 'Resume' : 'Pause'}</button>
-        <button onClick={() => command('seek 10 relative')} disabled={status?.state !== 'playing'} className="rounded bg-white/10 px-2 py-1 disabled:opacity-40">+10s</button>
-        <button onClick={() => api.atmosStop()} className="rounded bg-red-700/50 px-2 py-1">Stop</button>
-      </div>
-    </div>
-  )
+  }, [])
+  return null
 }
