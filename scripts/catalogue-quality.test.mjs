@@ -46,4 +46,5 @@ test('Atmos mode alone is not stereo catalogue quality', () => {
   assert.equal(advertisedQuality({ audio_quality: 'DOLBY_ATMOS' }), '')
   assert.equal(advertisedQuality({ quality: 'ATMOS' }), '')
   assert.equal(advertisedQuality({ quality: '24bit/96kHz', audio_quality: 'DOLBY_ATMOS' }), '24-bit / 96 kHz')
+  assert.equal(advertisedQuality({ audio_quality: 'DOLBY_ATMOS', bit_depth: 24, sample_rate: 96000 }), '24-bit / 96 kHz')
 })
