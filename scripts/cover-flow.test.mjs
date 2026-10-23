@@ -53,7 +53,9 @@ test('Cover Flow hit-testing matches mobile sine-spaced neighbors', () => {
 test('Home keeps its original play queue and menu while replacing the old cylinder carousel', () => {
   assert.ok(home.includes('onPlay={index => playQueue(pickTracks, index, madeForYouContext)}'))
   assert.ok(home.includes('onContextMenu={openPickMenu}'))
-  assert.ok(home.includes("onOpenFlow={() => goHome('flow')}"))
+  assert.ok(!home.includes('onOpenFlow={() => goHome(\'flow\')}'))
+  assert.ok(!shelf.includes('onOpenFlow'))
+  assert.ok(!flow.includes('onOpenFlow'))
   assert.ok(shelf.includes('<CoverFlow picks={picks} onPlay={onPlay}'))
   assert.ok(!shelf.includes('const ARC'))
   assert.ok(!shelf.includes('const wrap ='))
@@ -65,4 +67,21 @@ test('Home keeps its original play queue and menu while replacing the old cylind
   assert.ok(flow.includes('rotateBack(!flipped)'))
   assert.ok(flow.includes('scaleY(-1)'))
   assert.ok(flow.includes('perspective('))
+})
+
+test('Cover Flow is 45% larger and opens centered, without starting Flow', () => {
+  assert.ok(flow.includes('const MAX_SIZE = 320'), 'maximum square cover increases from 220 to 320 pixels')
+  assert.ok(flow.includes('Math.min(MAX_SIZE, stage.clientWidth * 0.52)'), 'covers still scale on narrow windows')
+  assert.ok(flow.includes('const middleIndex = Math.floor(count / 2)'), 'even/odd-length shelves start in the middle')
+  assert.ok(flow.includes('useMotionValue(middleIndex)'), 'the first rendered frame must be centered')
+  assert.ok(flow.includes('useState(middleIndex)'), 'track details match the centered cover')
+  assert.ok(flow.includes('position.set(middleIndex)'), 'reset selection when the shelf count changes')
+  assert.ok(!flow.includes('Open Flow'))
+})
+
+test('Cover Flow artwork cannot be natively dragged as a file', () => {
+  assert.ok(flow.includes('src={focused && !failed ? full : thumbnail} draggable={false}'))
+  assert.ok(flow.includes('<img src={artwork} alt="" draggable={false} loading="lazy"'))
+  assert.ok(flow.includes('onDragStart={e => e.preventDefault()}'), 'suppress browser drag image preview')
+  assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'keep gesture-controlled movement')
 })
