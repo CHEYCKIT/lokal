@@ -971,7 +971,12 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
               const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
               const atmos = atmosAvailable(track)
               if (tier === 'unknown' && !atmos) return <span title={t("Quality unknown")} className="text-center text-xs text-muted/50">—</span>
-              if (atmos) return <span title={ATMOS_AVAILABLE.hint} className={`justify-self-center rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] ${ATMOS_AVAILABLE.className}`}>ATMOS</span>
+              if (atmos) return (
+                <span className="justify-self-center flex flex-wrap items-center justify-center gap-1">
+                  <span title={ATMOS_AVAILABLE.hint} className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] ${ATMOS_AVAILABLE.className}`}>ATMOS</span>
+                  {tier !== 'unknown' && <span title={`${TIERS[tier].label}: ${TIERS[tier].desc}`} className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] ${TIERS[tier].className}`}>{TIERS[tier].label}</span>}
+                </span>
+              )
               const info = TIERS[tier]
               return (
                 <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
