@@ -19,7 +19,7 @@ function FlowArtwork({ track, focused }) {
   useEffect(() => setFailed(false), [track, focused])
   const thumbnail = trackArtURL(track)
   const full = trackFullArtURL(track) || thumbnail
-  return <FadeImg src={focused && !failed ? full : thumbnail}
+  return <FadeImg src={focused && !failed ? full : thumbnail} draggable={false}
     onError={() => { if (!failed && focused && full !== thumbnail) setFailed(true) }}
     className="h-full w-full object-cover" />
 }
@@ -66,7 +66,7 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
       style={{ top: size * 1.02, width: size, height: size * 0.32,
         maskImage: 'linear-gradient(to bottom,rgba(0,0,0,.28),transparent)',
         WebkitMaskImage: 'linear-gradient(to bottom,rgba(0,0,0,.28),transparent)' }}>
-      <img src={artwork} alt="" loading="lazy" className="block w-full object-cover"
+      <img src={artwork} alt="" draggable={false} loading="lazy" className="block w-full object-cover"
         style={{ height: size, transform: 'scaleY(-1)', transformOrigin: 'center' }} />
     </div>}
   </motion.div>
@@ -79,7 +79,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const reduced = reduceMotion || performanceMode
   const count = picks.length
   // Start in the middle of the shelf, including on its first painted frame.
-  const middleIndex = Math.floor(Math.max(0, count - 1) / 2)
+  const middleIndex = Math.floor(count / 2)
   const position = useMotionValue(middleIndex)
   const flip = useMotionValue(0)
   const stageRef = useRef(null)
@@ -224,6 +224,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         else if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(activeIndex) }
       }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+      onDragStart={e => e.preventDefault()}
       onWheel={wheel}
       onClickCapture={e => {
         if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false }
