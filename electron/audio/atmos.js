@@ -7,6 +7,7 @@ const { spawn, spawnSync } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
 const { hasAtmosMetadata } = require('../mornye/atmos')
+const headphones = require('./headphones')
 
 let active = null
 
@@ -125,7 +126,8 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   const capability = () => {
     const binary = findMpv()
     return { available: !!binary, mpvAvailable: !!binary, mpvPath: binary || null,
-      platform: process.platform, outputVerified: false, mode: 'hdmi-passthrough' }
+      platform: process.platform, outputVerified: false, mode: 'hdmi-passthrough',
+      headphones: headphones.headphoneCapability() }
   }
   ipcMain.handle('atmos:capabilities', capability)
   ipcMain.handle('atmos:devices', () => {
@@ -161,6 +163,10 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     active = null
     if (!old) return { ok: true }
     old.controller?.abort()
+    if (old.monitor) clearInterval(old.monitor)
+    if (old.mode === 'headphones') {
+      try { headphones.stopHeadphones() } catch {}
+    }
     if (old.proc && old.proc.exitCode === null) {
       const done = new Promise(resolve => {
         old.proc.once('exit', resolve)
@@ -178,15 +184,42 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   }
   ipcMain.handle('atmos:stop', stop)
   ipcMain.handle('atmos:command', async (_, command) => {
-    if (!active?.proc || !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command)) {
+    if (!active || !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command)) {
       return { error: 'No Atmos stream is running' }
     }
+    if (active.mode === 'headphones') {
+      try { headphones.headphoneCommand(command); return { ok: true } }
+      catch (err) { return { error: err.message || String(err) } }
+    }
+    if (!active.proc) return { error: 'No HDMI Atmos output is running' }
     active.proc.stdin.write(command + '\n')
     return { ok: true }
   })
 
-  const launchFile = async ({ filename, session, provider, id, device, binary }) => {
+  const launchFile = async ({ filename, session, provider, id, device, binary, mode }) => {
     if (!fs.existsSync(filename) || !path.isAbsolute(filename)) throw new Error('Atmos audio file is unavailable')
+    if (mode === 'headphones') {
+      session.mode = 'headphones'
+      await headphones.startHeadphones(filename, { signal: session.controller?.signal })
+      if (active !== session) throw new Error('Atmos request was cancelled')
+      // MediaPlayer can decode E-AC-3 even when Spatial Sound is switched
+      // off, so do not report "Atmos rendered" based on an opened source.
+      notify({ state: 'playing', provider, id, codec: 'E-AC-3 JOC',
+        mode: 'headphones', output: 'Windows native media / spatial processing unverified' })
+      session.monitor = setInterval(async () => {
+        if (active !== session) return
+        const status = headphones.headphoneStatus()
+        if (status.state === 'error' || status.state === 'ended' || status.state === 'stopped') {
+          await stop()
+          if (status.state === 'error') notify({ state: 'error',
+            error: status.error || 'Windows playback failed' })
+        }
+      }, 500)
+      session.monitor.unref?.()
+      return { ok: true, codec: 'E-AC-3 JOC', mode: 'headphones', spatialVerified: false,
+        output: 'Windows native media (verify Spatial Sound in Windows Settings)' }
+    }
+    session.mode = 'hdmi'
     const proc = spawn(binary, [...outputOptions(process.platform, device), filename], {
       stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     })
@@ -225,14 +258,18 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     return { ok: true, codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' }
   }
 
-  ipcMain.handle('atmos:play', async (_, provider, id, device = '') => {
-    if (!supportedHost()) return { error: 'Atmos HDMI passthrough is not available on this desktop OS.' }
-    const binary = findMpv()
-    if (!binary) return { error: 'mpv was not found. Install mpv or use Locate mpv in the Atmos controls. An HDMI receiver is checked separately when playback starts.' }
+  ipcMain.handle('atmos:play', async (_, provider, id, device = '', mode = 'hdmi') => {
+    if (!['hdmi', 'headphones'].includes(mode)) return { error: 'Invalid Atmos playback mode' }
+    if (!supportedHost()) return { error: 'Atmos native output is not available on this desktop OS.' }
+    if (mode === 'headphones' && !headphones.headphoneCapability().available) {
+      return { error: 'Windows Media Foundation headphone playback is unavailable. Install the Windows Lokal build with the native bridge.' }
+    }
+    const binary = mode === 'hdmi' ? findMpv() : null
+    if (mode === 'hdmi' && !binary) return { error: 'mpv was not found. Install mpv or use Locate mpv in the Atmos controls. An HDMI receiver is checked separately when playback starts.' }
     if (typeof id !== 'string' || id.length > 200 || !/^[\w:.-]+$/.test(id)) return { error: 'Invalid track ID' }
     let session
     try {
-      outputOptions(process.platform, device)
+      if (mode === 'hdmi') outputOptions(process.platform, device)
       const sources = require('../online/sources')
       const key = sources.addons.keyOfProvider(provider)
       const service = require('../mornye/packages').service(getDB())
@@ -257,7 +294,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       if (!hasAtmosMetadata(artifact.metadata) || artifact.info?.codec !== 'eac3') {
         throw new Error('Tidal supplied stereo instead of an E-AC-3 Atmos stream')
       }
-      return await launchFile({ filename: artifact.file, session, provider, id: String(id), device, binary })
+      return await launchFile({ filename: artifact.file, session, provider, id: String(id), device, binary, mode })
     } catch (error) {
       if (active === session) await stop()
       else { try { await session?.artifact?.cleanup() } catch {} }
@@ -265,12 +302,16 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     }
   })
 
-  ipcMain.handle('atmos:openFile', async (_, device = '') => {
-    const binary = findMpv()
-    if (!binary) return { error: 'mpv was not found. Install mpv or use Locate mpv in the Atmos controls.' }
+  ipcMain.handle('atmos:openFile', async (_, device = '', mode = 'hdmi') => {
+    if (!['hdmi', 'headphones'].includes(mode)) return { error: 'Invalid Atmos playback mode' }
+    if (mode === 'headphones' && !headphones.headphoneCapability().available) {
+      return { error: 'Windows Media Foundation headphone playback is unavailable in this build.' }
+    }
+    const binary = mode === 'hdmi' ? findMpv() : null
+    if (mode === 'hdmi' && !binary) return { error: 'mpv was not found. Install mpv or use Locate mpv in the Atmos controls.' }
     let session
     try {
-      outputOptions(process.platform, device)
+      if (mode === 'hdmi') outputOptions(process.platform, device)
       const { dialog } = require('electron')
       const chosen = await dialog.showOpenDialog({
         title: 'Open Dolby Atmos audio',
@@ -283,11 +324,11 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       const { findFfprobe } = require('../ipc/tools')
       inspectAtmosFile(filename, findFfprobe())
       await stop()
-      session = { proc: null, artifact: null }
+      session = { proc: null, artifact: null, controller: new AbortController() }
       active = session
       const id = 'local:' + path.basename(filename)
       notify({ state: 'loading', provider: 'local', id, message: 'Preparing local Atmos file…' })
-      return await launchFile({ filename, session, provider: 'local', id, device, binary })
+      return await launchFile({ filename, session, provider: 'local', id, device, binary, mode })
     } catch (error) {
       if (active === session) await stop()
       return { error: error.message || String(error) }
