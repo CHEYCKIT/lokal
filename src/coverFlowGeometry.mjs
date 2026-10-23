@@ -5,6 +5,8 @@ export const FLOW_SPRING = Object.freeze({ stiffness: 135, damping: 24, mass: 1 
 export const FLOW_FIRST = 0.52
 export const FLOW_STEP = 0.34
 export const clampIndex = (index, length) => Math.max(0, Math.min(Math.max(0, length - 1), index))
+// Gesture distances must match the spacing of the active rendering mode.
+export const flowPixelsPerCover = (size, reducedMotion = false) => Math.max(1, size * (reducedMotion ? 1.06 : 0.55))
 
 function innerDistance(distance) {
   const a = Math.abs(distance)
