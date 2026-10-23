@@ -357,7 +357,7 @@ pub fn update_metadata(
 // is NOT proof of an Atmos renderer: the JS UI must not claim that.
 use windows::Media::Core::MediaSource;
 use windows::Media::Playback::{
-    MediaPlayer, MediaPlayerFailedEventArgs, MediaPlayerState,
+    MediaPlayer, MediaPlayerFailedEventArgs,
 };
 
 #[derive(Default)]
