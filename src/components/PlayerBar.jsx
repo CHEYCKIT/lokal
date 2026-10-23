@@ -294,7 +294,7 @@ export default function PlayerBar() {
   const flowPlaying = usePlayerStore(s => s.playbackContext?.type === 'flow')
   const castStatusDevice = useCastStore(s => s.status?.device)
   const castDevice = castActive ? castStatusDevice : null
-  const qualityTier = currentTrack && !streamed && !station ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
+  const qualityTier = currentTrack && !station ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
   const quality = qualityTier !== 'unknown' ? { info: TIERS[qualityTier], format: formatLabel(currentTrack) } : null
 
   return (
@@ -363,9 +363,15 @@ export default function PlayerBar() {
                     </button>
                   )}
                   {streamed && !castDevice && (
-                    <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="mt-1 block truncate text-[9px] font-display uppercase tracking-wider text-accent">
-                      {streamLabel(currentTrack)}
-                    </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="text-[9px] font-display uppercase tracking-wider text-accent">
+                        {streamLabel(currentTrack)}
+                      </span>
+                      {quality && <span title={`Source-reported catalogue quality: ${quality.info.label}${quality.format ? ` (${quality.format})` : ''}. Actual stream may differ.`}
+                        className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase ${quality.info.className}`}>
+                        {quality.info.label}
+                      </span>}
+                    </div>
                   )}
                   {station && (
                     <span className="mt-1 block truncate text-[9px] font-display uppercase tracking-wider text-accent"
@@ -375,7 +381,7 @@ export default function PlayerBar() {
                   )}
                 </div>
               ) : <p className="text-xs text-muted">{t("No track playing")}</p>}
-              {quality && (
+              {quality && !streamed && (
                 // The Audio Quality page's pill (same colours), what it means on hover.
                 <button onClick={() => nav('/quality', { state: { tier: qualityTier } })}
                   title={`${quality.info.label}: ${quality.info.desc}${quality.format ? ` (${quality.format})` : ''}${quality.info.hint ? `\n${quality.info.hint}` : ''}`}
