@@ -155,3 +155,26 @@ test('24-track shelves render only the nearby covers during long glides', () => 
   assert.ok(flow.includes('bounceDamping: 28'), 'ends have a damped constraint')
   assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
 })
+
+test('Home Cover Flow has no visible heading but keeps its accessible shelf label', () => {
+  assert.ok(shelf.includes("aria-label={t('Made for you')}"), 'keep screen-reader context')
+  assert.ok(!shelf.includes('<h2'), 'remove visible Made for you heading')
+  assert.ok(!shelf.includes('Sparkles'), 'remove redundant heading icon')
+  assert.ok(shelf.includes('<CoverFlow picks={picks}'), 'retain playback shelf')
+})
+
+test('perspective-expanded side corners and reflections fit inside the stage', () => {
+  assert.ok(flow.includes('top: size * 0.18'), 'move artwork down from the clipping boundary')
+  assert.ok(flow.includes('height: size * 1.54'), 'grow stage to retain reflection space')
+  const inset = 0.18
+  const perspective = 5 // CSS perspective is 5 × cover size
+  for (const distance of [-4, -3, -2, -1, -.75, -.5, .5, .75, 1, 2, 3, 4]) {
+    const { angle, depth } = flowCoverGeometry(distance, 1)
+    // Outer edge comes toward the viewer by sin(angle), increasing apparent height.
+    const outerDepth = depth + Math.sin(Math.abs(angle) * Math.PI / 180)
+    const scale = perspective / (perspective - outerDepth)
+    const topRise = Math.max(0, (scale - 1) / 2)
+    assert.ok(topRise < inset, `side ${distance} upper corner must not clip`)
+  }
+  assert.ok(inset + 1.005 + .30 < 1.54, 'reflection also fits the enlarged stage')
+})
