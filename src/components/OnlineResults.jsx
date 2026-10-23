@@ -25,6 +25,7 @@ import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 import { useTranslation } from '../i18n'
 import { atmosAvailable, ATMOS_AVAILABLE } from '../quality'
 import AtmosPlayButton from './AtmosPlayButton'
+import { advertisedQuality } from '../catalogueQuality'
 import { showToast } from './Toaster'
 
 const DEBOUNCE_MS = 450
@@ -225,10 +226,15 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                   <p className="text-xs text-muted truncate">
                     {[item.artist, item.album].filter(Boolean).join(' · ')}
                     {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">{t('Video')}</span>}
-                    {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
-                    {atmosAvailable(item) && <span className={`ml-1.5 rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Dolby Atmos source available. Use Play Atmos to request the original JOC stream.">ATMOS AVAILABLE</span>}
+
                     {item.preview && <span title={t('SoundCloud only lets non-subscribers play 30 seconds of this track')} className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{t('30 s preview')}</span>}
                   </p>
+                  {(advertisedQuality(item) || atmosAvailable(item)) && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]" aria-label="Catalogue audio formats">
+                      {advertisedQuality(item) && <span className="rounded border border-border px-1.5 py-px text-muted" title="Catalogue quality (actual playback format can differ)">{advertisedQuality(item)}</span>}
+                      {atmosAvailable(item) && <span className={`rounded border px-1.5 py-px font-semibold ${ATMOS_AVAILABLE.className}`} title="Tidal catalogue offers an Atmos version. Playback depends on the stream and output.">DOLBY ATMOS</span>}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2.5">
                   {atmosAvailable(item) && <AtmosPlayButton track={item} />}
