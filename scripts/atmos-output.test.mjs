@@ -6,15 +6,17 @@ const require = createRequire(import.meta.url)
 const { isConfirmedBitstream, outputOptions, supportedHost } = require('../electron/audio/atmos.js')
 
 test('only native WASAPI or ALSA HDMI passthrough can be selected', () => {
-  assert.equal(supportedHost('darwin'), false)
+  assert.equal(supportedHost('darwin'), true)
   assert.equal(supportedHost('win32'), true)
   assert.deepEqual(
     outputOptions('win32', 'wasapi/{0.0.0.00000000}.{abcd}').filter(v => v.startsWith('--ao=') || v.startsWith('--audio-spdif=')),
-    ['--ao=wasapi', '--audio-spdif=eac3']
+    ['--audio-spdif=eac3']
   )
   assert.throws(() => outputOptions('linux', 'wasapi/abc'), /does not match/)
   assert.throws(() => outputOptions('win32', '--audio-device=foo'), /Choose/)
-  assert.throws(() => outputOptions('darwin'), /not available/)
+  assert.equal(outputOptions('darwin').includes('--ao=coreaudio'), true)
+  assert.equal(outputOptions('darwin', 'coreaudio/1').includes('--audio-spdif=eac3'), true)
+  assert.equal(outputOptions('linux').includes('--ao=alsa'), true)
 })
 
 test('only an explicitly reported compressed eac3 AO counts as Atmos bitstream', () => {
