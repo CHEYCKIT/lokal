@@ -205,19 +205,33 @@ export async function saveTracksToLibrary(tracks, { isCurrent = () => true, onPr
   isCurrent = downloadBatchCurrent(isCurrent)
   const result = { started: 0, existing: 0, failed: 0 }
   const seen = new Set()
+  // This measures tracks processed for the download queue, NOT bytes
+  // downloaded in the background (tracked by the download manager).
+  const queued = new Set((tracks || []).map(track => sourceRefKey(streamRef(track)) || track?.id).filter(Boolean))
+  const total = queued.size
+  let completed = 0
+  const report = message => onProgress?.(message, total > 1
+    ? { completed, total, percent: Math.floor(completed / total * 100) } : undefined)
   let refresh = false
   for (const track of tracks || []) {
     if (!isCurrent()) break
     const key = sourceRefKey(streamRef(track)) || track?.id
     if (!key || seen.has(key)) continue
     seen.add(key)
-    if (track.file_path && !isGhostTrack(track)) { result.existing++; continue }
-    onProgress?.(`Queuing download of “${track.title}”…`)
+    if (track.file_path && !isGhostTrack(track)) {
+      result.existing++
+      completed++
+      report('Queuing downloads…')
+      continue
+    }
+    report(`Queuing download of “${track.title}”…`)
     const response = await save(track, { isCurrent }).catch(error => ({ error: error.message }))
     if (response?.cancelled) break
     if (response?.alreadyInLibrary) { result.existing++; refresh = true }
     else if (response?.error) result.failed++
     else result.started++
+    completed++
+    report('Queuing downloads…')
   }
   if (refresh && typeof window !== 'undefined') window.dispatchEvent(new Event('lokal:refresh'))
   return result
