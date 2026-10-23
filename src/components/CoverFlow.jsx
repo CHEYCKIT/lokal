@@ -36,7 +36,9 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
   const artwork = trackArtURL(pick.track)
 
   return <motion.div data-cover-flow-item={index} style={{
-    position: 'absolute', left: '50%', top: size * 0.06, width: size, height: size,
+    // Perspective enlarges the upper outside corners of angled side covers.
+    // Keep them clear of the clipped stage without adding a separate header gap.
+    position: 'absolute', left: '50%', top: size * 0.18, width: size, height: size,
     marginLeft: -size / 2, transform, opacity, zIndex, transformOrigin: origin,
     transformStyle: 'preserve-3d',
   }}>
@@ -252,7 +254,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         select(flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced))
       }}
       className="relative isolate cursor-grab select-none overflow-hidden bg-black outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
-      style={{ height: size * 1.42, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
+      style={{ height: size * 1.54, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
       {picks.slice(visible.start, visible.end).map((pick, offset) => {
         const index = visible.start + offset
         return <FlowCover key={pick.track.id}
