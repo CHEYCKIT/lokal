@@ -45,6 +45,15 @@ test('desktop version replaces equivalent synced phone upload in All sources', (
   db.close()
 })
 
+test('desktop-owned downloads also supersede synced phone copies', () => {
+  const { db, insert } = fixture()
+  insert('desktop-downloaded', 'Track', 'Artist', 'Release', 210, 'yt')
+  insert('phone-upload', 'Track', 'Artist', 'Release', 210, 'mobile')
+  assert.deepEqual(visible(db), ['desktop-downloaded'])
+  assert.deepEqual(visible(db, { source: 'mobile' }), ['phone-upload'])
+  db.close()
+})
+
 test('different duration, album or artist do not hide distinct recordings', () => {
   const { db, insert } = fixture()
   insert('pc', 'Song', 'Artist', 'Album', 180, null)
