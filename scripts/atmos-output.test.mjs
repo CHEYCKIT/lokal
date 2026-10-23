@@ -64,6 +64,16 @@ test('device enumeration offers only host-compatible outputs', () => {
   assert.deepEqual(parseAudioDevices(output, 'linux'), [])
 })
 
-test('local files cannot be identified as Atmos without a codec/profile probe', () => {
-  assert.throws(() => inspectAtmosFile('anything.m4a', null), /FFprobe is required/)
+test('local files cannot be identified as Atmos without a codec/profile probe', async () => {
+  await assert.rejects(inspectAtmosFile('anything.m4a', null), /FFprobe is required/)
+})
+
+test('Windows headphone capabilities are distinct from native HDMI availability', () => {
+  const { headphoneCapability } = require('../electron/audio/headphones.js')
+  assert.deepEqual(headphoneCapability('linux'), {
+    available: false, mode: 'windows-media-foundation', rendererVerified: false,
+  })
+  assert.deepEqual(headphoneCapability('darwin'), {
+    available: false, mode: 'windows-media-foundation', rendererVerified: false,
+  })
 })
