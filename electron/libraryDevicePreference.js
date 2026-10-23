@@ -1,5 +1,5 @@
 // Default library visibility: when the desktop owns the same recording,
-// prefer it over an imported mobile copy. Both underlying rows survive.
+// prefer it over an imported mobile copy, including desktop-owned downloads. Both underlying rows survive.
 // A Mobile-only filter can still explicitly show uploaded phone tracks.
 function leadArtist(expression) {
   const comma = 'INSTR(' + expression + ", ',')";
@@ -16,7 +16,7 @@ function desktopPreferredLibraryClause() {
     "NOT (COALESCE(tracks.download_source, '') = 'mobile'",
     "AND COALESCE(tracks.duration, 0) > 0",
     "AND EXISTS (SELECT 1 FROM tracks AS desktop",
-    "WHERE desktop.download_source IS NULL",
+    "WHERE COALESCE(desktop.download_source, '') <> 'mobile'",
     "AND desktop.file_path NOT LIKE 'ghost://%'",
     "AND desktop.title = tracks.title COLLATE NOCASE",
     "AND COALESCE(desktop.duration, 0) > 0",
