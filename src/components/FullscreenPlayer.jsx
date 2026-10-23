@@ -841,7 +841,22 @@ export default function FullscreenPlayer() {
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
-                        <img src={trackArtURL(track)} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                        <img
+                          // The rotating CD can fill most of a desktop monitor. trackArtURL
+                          // may be a 150px cached WebP thumbnail, which becomes visibly
+                          // pixelated as soon as Spotify Canvas is hidden.
+                          src={trackFullArtURL(track) || trackArtURL(track)}
+                          onError={event => {
+                            // An unavailable embedded original must not leave a blank CD.
+                            // Only switch once, so a broken thumbnail doesn't loop errors.
+                            const fallback = trackArtURL(track)
+                            if (fallback && event.currentTarget.getAttribute('src') !== fallback) {
+                              event.currentTarget.src = fallback
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          alt=""
+                        />
                         {top && <MotionCover trackId={track?.id} only="square" onActive={setSquareMotionActive} off={coverOff} />}
                         {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>
