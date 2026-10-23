@@ -562,6 +562,11 @@ router.get('/', (req, res) => {
       sql += " AND LOWER(COALESCE(NULLIF(album_artist, ''), artist)) = LOWER(?)"
       params.push(albumArtist)
     }
+    // Album detail screens should follow the same device-first view as Songs.
+    const preference = require('../../electron/libraryDevicePreference')
+    if (preference.shouldPreferDesktop({ source, id, includeGhosts, problems })) {
+      sql += ' AND ' + preference.desktopPreferredLibraryClause()
+    }
     const tracks = db.prepare(sql).all(...params)
     res.json(normalizeAlbumTracks(tracks).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) })))
     return
