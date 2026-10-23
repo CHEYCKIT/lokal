@@ -217,7 +217,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) 
       onKeyDown={e => {
         if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1) }
-        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(activeIndex) }
+        else if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(activeIndex) }
       }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onWheel={wheel}
