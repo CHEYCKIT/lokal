@@ -66,20 +66,46 @@ export function flowDrag(position, deltaX, albumWidth, length) {
   const next = position + delta
   return next < 0 || next > length - 1 ? position + delta / 3 : next
 }
-export function flowTarget(position, velocity, length) {
-  return clampIndex(Math.round(position + velocity * 0.30), length)
+// Closely follows iCarousel's CoverFlow2 kinetic model (not Apple's private
+// implementation): 0.95 deceleration, multiplier 30, velocity threshold 2.
+// Integrate uniform deceleration and choose the destination ONCE. Finishing
+// with zero velocity avoids an inertia->spring handoff and the resulting jerk.
+export const FLOW_DECELERATION_RATE = 0.95
+export const FLOW_DECELERATION_MULTIPLIER = 30
+export const flowEaseOut = progress => 1 - (1 - progress) ** 2
+
+export function flowCoastPlan(position, velocity, length) {
+  const speed = Math.abs(velocity)
+  // Mouse releases are frequently below two covers/s. A hard threshold here
+  // made the same drag either coast or halt depending on a tiny velocity change.
+  const distance = velocity / (2 * FLOW_DECELERATION_MULTIPLIER * (1 - FLOW_DECELERATION_RATE))
+  const target = clampIndex(Math.round(position + distance), length)
+  const travel = target - position
+  // Match the initial easing slope to the release velocity when moving in its
+  // direction; finish with zero velocity, without an inertia/spring handoff.
+  const followsVelocity = travel * velocity > 0 && speed > .01
+  const duration = followsVelocity
+    ? Math.max(.12, Math.min(.70, 2 * Math.abs(travel) / speed))
+    : Math.max(.10, Math.min(.20, .10 + Math.abs(travel) * .20))
+  return { target, duration, distance }
 }
 
 
-/** Preserve a fast flick, but never fling if the pointer paused before release. */
+
+
+/** Estimate pointer velocity without a binary cutoff when the mouse pauses.
+ * Idle gaps smoothly attenuate momentum: a moving release coasts, a held
+ * mouse comes naturally to rest before final fractional alignment.
+ */
 export function flowReleaseVelocity(samples, releasedAt, pixelsPerCover) {
   if (!samples?.length || !(pixelsPerCover > 0)) return 0
   const last = samples[samples.length - 1]
-  if (releasedAt - last.t > 100) return 0
-  const first = samples.find(sample => sample.t >= last.t - 100) || samples[0]
+  const first = samples.find(sample => sample.t >= last.t - 120) || samples[0]
   const elapsed = last.t - first.t
   if (elapsed <= 0) return 0
-  const velocity = -(last.x - first.x) * 1000 / Math.max(16, elapsed) / pixelsPerCover
+  const measured = -(last.x - first.x) * 1000 / Math.max(16, elapsed) / pixelsPerCover
+  const idle = Math.max(0, releasedAt - last.t)
+  const velocity = measured * Math.exp(-idle / 85)
   return Math.max(-20, Math.min(20, velocity))
 }
 

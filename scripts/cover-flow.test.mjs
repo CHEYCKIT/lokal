@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -47,8 +47,8 @@ test('compact spacing is smooth across the first-neighbor boundary', () => {
 test('Cover Flow is bounded, rubber-bands at both ends and respects reduced motion', () => {
   assert.equal(clampIndex(-3, 12), 0)
   assert.equal(clampIndex(20, 12), 11)
-  assert.equal(flowTarget(10.1, 9, 12), 11)
-  assert.equal(flowTarget(0.1, -20, 12), 0)
+  assert.equal(flowCoastPlan(10.1, 9, 12).target, 11)
+  assert.equal(flowCoastPlan(0.1, -20, 12).target, 0)
   assert.ok(flowDrag(0, 50, 132, 12) < 0)
   assert.ok(flowDrag(11, -50, 132, 12) > 11)
   const reduced = flowCoverGeometry(1, 220, true)
@@ -138,7 +138,7 @@ test('high-speed releases retain measured momentum but a paused pointer cannot f
     { x: 150, t: 1075 },
   ]
   assert.ok(flowReleaseVelocity(samples, 1080, 176) > 5)
-  assert.equal(flowReleaseVelocity(samples, 1250, 176), 0, 'finger stopped before releasing')
+  assert.ok(flowReleaseVelocity(samples, 1250, 176) < 1.5, 'a paused mouse loses speed smoothly')
   assert.equal(flowReleaseVelocity([{ x: 150, t: 1080 }], 1081, 176), 0)
   assert.equal(flowReleaseVelocity(samples, 1080, 0), 0)
   assert.equal(flowReleaseVelocity([{ x: 2000, t: 1000 }, { x: -2000, t: 1016 }], 1016, 176), 20, 'reject noisy spikes')
@@ -150,9 +150,10 @@ test('24-track shelves render only the nearby covers during long glides', () => 
   assert.deepEqual(flowVisibleRange(23, 24), { start: 16, end: 24 })
   assert.deepEqual(flowVisibleRange(1, 1), { start: 0, end: 1 })
   assert.ok(flow.includes('picks.slice(visible.start, visible.end)'), 'do not mount every distant cover')
-  assert.ok(flow.includes("type: 'inertia'"), 'flick decelerates instead of snapping toward a distant spring target')
-  assert.ok(flow.includes('modifyTarget: target => clampIndex(Math.round(target), count)'), 'coast snaps to full covers')
-  assert.ok(flow.includes('bounceDamping: 28'), 'ends have a damped constraint')
+  assert.ok(flow.includes("type: 'tween', duration, ease: flowEaseOut"), 'one deceleration curve reaches its snapped target')
+  assert.ok(flow.includes('flowCoastPlan(position.get(), velocity, count)'), 'compute physical stopping position once')
+  assert.ok(!flow.includes("type: 'inertia'"), 'remove long OS-independent inertia')
+  assert.ok(!flow.includes("type: 'spring'"), 'no spring takeover after a flick')
   assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
 })
 
@@ -177,4 +178,52 @@ test('perspective-expanded side corners and reflections fit inside the stage', (
     assert.ok(topRise < inset, `side ${distance} upper corner must not clip`)
   }
   assert.ok(inset + 1.005 + .30 < 1.54, 'reflection also fits the enlarged stage')
+})
+
+test('iCarousel-inspired fixed deceleration finishes without a secondary snap', () => {
+  assert.equal(FLOW_DECELERATION_RATE, .95)
+  assert.equal(FLOW_DECELERATION_MULTIPLIER, 30)
+  const fast = flowCoastPlan(8, 12, 24)
+  assert.equal(fast.target, 12, '12 covers/s travels about four covers')
+  assert.ok(Math.abs(fast.duration - 2 / 3) < .001, 'approximately 2/3 second to stop')
+  const reverse = flowCoastPlan(12, -12, 24)
+  assert.equal(reverse.target, 8, 'reverses with symmetric timing')
+  assert.ok(Math.abs(reverse.duration - fast.duration) < 1e-9)
+  assert.equal(flowCoastPlan(8.2, 0, 24).target, 8, 'release without fling aligns nearest cover')
+  assert.ok(flowCoastPlan(8.2, 0, 24).duration <= .22, 'tiny alignment is quick')
+  assert.equal(flowCoastPlan(22, 20, 24).target, 23, 'end cannot overrun the last cover')
+  assert.ok(flowCoastPlan(22, 20, 24).duration < .25, 'end stops promptly')
+  assert.equal(flowEaseOut(0), 0)
+  assert.equal(flowEaseOut(1), 1)
+  assert.ok(flowEaseOut(.9) > .98, 'movement approaches zero continuously at the end')
+  assert.ok(flowCoastPlan(8, 8, 24).duration <= .7, 'flick never drags on')
+})
+
+test('mouse click-and-drag physics is independent of the unchanged wheel handler', () => {
+  assert.ok(flow.includes("onWheel={wheel}"), 'wheel handler remains unchanged')
+  assert.ok(flow.includes("e.shiftKey ? e.deltaY : 0"), 'shift wheel handling remains unchanged')
+  assert.ok(flow.includes('setTimeout(() => settle(position.get()), 170)'), 'original wheel settle timing is retained')
+  assert.ok(flow.includes('coast(velocity)'), 'mouse pointer release alone uses the new coast')
+  assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
+})
+
+test('mouse drag release has no velocity cliff or abrupt low-speed mode switch', () => {
+  const samples = [
+    { x: 400, t: 1000 }, { x: 340, t: 1030 },
+    { x: 280, t: 1060 }, { x: 220, t: 1090 },
+  ]
+  const immediately = flowReleaseVelocity(samples, 1090, 176)
+  const after99ms = flowReleaseVelocity(samples, 1189, 176)
+  const after101ms = flowReleaseVelocity(samples, 1191, 176)
+  assert.ok(immediately > after99ms)
+  assert.ok(after99ms > after101ms && after101ms > 0, 'no hard 100ms cutoff')
+  assert.ok(Math.abs(after99ms - after101ms) < .10, 'release velocity varies smoothly')
+  assert.equal(flowReleaseVelocity(samples, 2000, 176) < .001, true)
+  const before = flowCoastPlan(4.1, 1.99, 24)
+  const after = flowCoastPlan(4.1, 2.01, 24)
+  assert.ok(Math.abs(before.distance - after.distance) < .01, 'no 2-cover-per-second discontinuity')
+  assert.equal(before.target, after.target, 'similar mouse speeds reach same cover')
+  assert.ok(before.duration <= .70 && after.duration <= .70)
+  assert.ok(!flow.includes("type: 'inertia'"), 'no separate inertia animation')
+  assert.ok(!flow.includes("type: 'spring'"), 'no spring takeover on release')
 })

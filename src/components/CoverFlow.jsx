@@ -5,7 +5,7 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion,
 import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -84,7 +84,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const position = useMotionValue(middleIndex)
   const flip = useMotionValue(0)
   const stageRef = useRef(null)
-  const spring = useRef(null)
+  const motion = useRef(null)
   const flipSpring = useRef(null)
   const gesture = useRef(null)
   const pressTimer = useRef(null)
@@ -105,34 +105,32 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     if (reduced) flip.set(next ? 1 : 0)
     else flipSpring.current = animate(flip, next ? 1 : 0, { duration: 0.45 })
   }
-  const settle = (target, velocity = 0) => {
-    spring.current?.stop()
+  // One continuous deceleration curve from the current velocity to zero.
+  // Do not hand an inertia animation to a distant spring on release.
+  const moveTo = (target, duration) => {
+    motion.current?.stop()
     const to = clampIndex(Math.round(target), count)
-    if (reduced) position.set(to)
-    else spring.current = animate(position, to, { type: 'spring', ...FLOW_SPRING, velocity })
-  }
-  // Long flicks should coast through multiple covers rather than hit a
-  // distant spring target and brake abruptly. The inertia settles on a cover
-  // index and softly rebounds at the first / last one.
-  const coast = velocity => {
-    if (reduced || count <= 1 || Math.abs(velocity) < 1) {
-      settle(flowTarget(position.get(), velocity, count), velocity)
-      return
-    }
-    spring.current?.stop()
-    spring.current = animate(position, flowTarget(position.get(), velocity, count), {
-      type: 'inertia', velocity, power: 0.30, timeConstant: 550,
-      modifyTarget: target => clampIndex(Math.round(target), count),
-      min: 0, max: count - 1, bounceStiffness: 110, bounceDamping: 28,
+    if (reduced || duration === 0) position.set(to)
+    else motion.current = animate(position, to, {
+      type: 'tween', duration, ease: flowEaseOut,
     })
   }
-  const step = by => { rotateBack(false); settle(Math.round(position.get()) + by) }
+  const settle = target => moveTo(target, .23)
+  const coast = velocity => {
+    const { target, duration } = flowCoastPlan(position.get(), velocity, count)
+    moveTo(target, duration)
+  }
+  const step = by => {
+    clearTimeout(wheelTimer.current)
+    rotateBack(false)
+    settle(Math.round(position.get()) + by)
+  }
   useMotionValueEvent(position, 'change', value => {
     const next = clampIndex(Math.round(value), count)
     setActiveIndex(prev => prev === next ? prev : next)
   })
   useEffect(() => {
-    spring.current?.stop()
+    motion.current?.stop()
     flipSpring.current?.stop()
     position.set(middleIndex)
     flip.set(0)
@@ -140,7 +138,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     setFlipped(false)
   }, [count, middleIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => {
-    spring.current?.stop()
+    motion.current?.stop()
     flipSpring.current?.stop()
     clearTimeout(pressTimer.current)
     clearTimeout(wheelTimer.current)
@@ -169,7 +167,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
 
   const down = e => {
     if (e.button !== 0) return
-    spring.current?.stop()
+    motion.current?.stop()
+    clearTimeout(wheelTimer.current)
     suppressClick.current = false
     gesture.current = { id: e.pointerId, start: e.clientX, last: e.clientX,
       moved: false, samples: [{ x: e.clientX, t: performance.now() }] }
@@ -220,7 +219,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     e.preventDefault()
     stopPress()
     rotateBack(false)
-    spring.current?.stop()
+    motion.current?.stop()
     position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
     clearTimeout(wheelTimer.current)
     wheelTimer.current = setTimeout(() => settle(position.get()), 170)
