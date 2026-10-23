@@ -38,7 +38,10 @@ export function atmosAvailable(track) {
     [track?.audio_mode, track?.audioMode, track?.audio_quality, track?.audioQuality]
       .some(value => typeof value === 'string' && /^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(value.trim())) ||
     [track?.audio_modes, track?.audioModes]
-      .some(value => Array.isArray(value) && value.some(mode => /^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(String(mode).trim())))
+      .some(value => {
+        const modes = Array.isArray(value) ? value : [value]
+        return modes.some(mode => /^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(String(mode || '').trim()))
+      })
 }
 
 export const ATMOS_AVAILABLE = {
