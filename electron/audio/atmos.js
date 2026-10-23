@@ -207,7 +207,10 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   ipcMain.handle('atmos:command', async (_, command) => {
     const absoluteSeek = typeof command === 'string' &&
       /^seek (?:0|[1-9]\d{0,5})(?:\.\d{1,3})? absolute$/.test(command)
-    if (!active || (!absoluteSeek && !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command))) {
+    const headphoneVolume = typeof command === 'string' &&
+      /^volume (?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)$/.test(command)
+    if (!active || (!absoluteSeek && !(active.mode === 'headphones' && headphoneVolume) &&
+        !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command))) {
       return { error: 'No Atmos stream is running or invalid transport command' }
     }
     if (active.mode === 'headphones') {
@@ -253,6 +256,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     })
     session.proc = proc
     let output = ''
+    let responseBuffer = ''
     let lastPosition = -1
     let lastDuration = 0
     const reportPosition = (data) => {
@@ -268,7 +272,14 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
         }
       }
     }
-    proc.stdout.on('data', reportPosition)
+    proc.stdout.on('data', data => {
+      responseBuffer = (responseBuffer + String(data)).slice(-512)
+      reportPosition(responseBuffer)
+    })
+    proc.stderr.on('data', data => {
+      responseBuffer = (responseBuffer + String(data)).slice(-512)
+      reportPosition(responseBuffer)
+    })
     await new Promise((resolve, reject) => {
       let settled = false
       const finish = (error) => {
