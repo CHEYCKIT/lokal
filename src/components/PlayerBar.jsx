@@ -20,7 +20,7 @@ import Modal from './Modal'
 import AudioPipelineModal from './AudioPipelineModal'
 import { trackArtURL, isStreamed, streamLabel } from '../onlineTracks'
 import SaveToLibraryButton from './SaveToLibraryButton'
-import { TIERS, formatLabel, isSuspect, tierOf, atmosAvailable, ATMOS_AVAILABLE, losslessMenuItem } from '../quality'
+import { TIERS, formatLabel, isSuspect, tierOf, losslessMenuItem } from '../quality'
 import AudioOutputPicker from './AudioOutputPicker'
 import MixingMark from './MixingMark'
 import ContextMenu, { useContextMenu } from './ContextMenu'
@@ -375,12 +375,6 @@ export default function PlayerBar() {
                   )}
                 </div>
               ) : <p className="text-xs text-muted">{t("No track playing")}</p>}
-              {currentTrack && atmosAvailable(currentTrack) && !station && (
-                <span title={ATMOS_AVAILABLE.hint} aria-label="Dolby Atmos version available on Tidal; playback format not confirmed"
-                  className={`mt-1 block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] tracking-wide ${ATMOS_AVAILABLE.className}`}>
-                  ATMOS
-                </span>
-              )}
               {quality && (
                 // The Audio Quality page's pill (same colours), what it means on hover.
                 <button onClick={() => nav('/quality', { state: { tier: qualityTier } })}
