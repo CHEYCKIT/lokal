@@ -26,8 +26,10 @@ function findAtmosProbe() {
 }
 
 /** Returns 1 = verified Atmos, 0 = checked and not Atmos, null = not checked. */
-async function probeAtmosFile(filePath, { codec, ffprobe = findAtmosProbe(), runProbe = run } = {}) {
-  if (!atmosProbeCandidate(filePath, codec) || !ffprobe) return null
+async function probeAtmosFile(filePath, { codec, ffprobe, runProbe = run } = {}) {
+  if (!atmosProbeCandidate(filePath, codec)) return null
+  if (ffprobe === undefined) ffprobe = findAtmosProbe()
+  if (!ffprobe) return null
   try {
     const { stdout } = await runProbe(ffprobe,
       ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name,profile',
