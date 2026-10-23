@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { usePlayerStore } from '../store/player'
 
 // The HDMI route uses mpv compressed passthrough. Headphones use native
 // Windows MediaPlayer/Media Foundation with the installed Spatial Sound engine.
-export default function AtmosPlayButton({ track }) {
+export default function AtmosPlayButton({ track, onPlay }) {
   const [status, setStatus] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -22,6 +23,12 @@ export default function AtmosPlayButton({ track }) {
   })
 
   useEffect(() => api.onAtmosStatus(data => setStatus(data)), [])
+  useEffect(() => {
+    if (!setupOpen) return undefined
+    const closeOnEscape = event => { if (event.key === 'Escape') setSetupOpen(false) }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [setupOpen])
   const active = status?.state === 'playing' && status?.id === String(track?.id)
 
   const refreshSetup = useCallback(async () => {
@@ -60,7 +67,11 @@ export default function AtmosPlayButton({ track }) {
     setBusy(true)
     setError('')
     try {
-      if (active) return await api.atmosStop()
+      if (active) {
+        await api.atmosStop()
+        usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+        return
+      }
       const capabilities = await api.atmosCapabilities()
       if ((mode === 'hdmi' && !capabilities?.mpvAvailable) ||
           (mode === 'headphones' && !capabilities?.headphones?.available)) {
@@ -71,15 +82,10 @@ export default function AtmosPlayButton({ track }) {
           : 'Windows native headphone playback is unavailable in this Lokal build.')
         return
       }
-      const state = usePlayerStore.getState()
-      // Keep normal PCM off while the dedicated Atmos session plays.
-      const resumeTrack = state.currentTrack?.id
-      const wasPlaying = !!state.isPlaying
-      if (wasPlaying) state.togglePlay()
-      const result = await api.atmosPlay(track.provider, String(track.id), device, mode)
+      const result = onPlay
+        ? await onPlay(mode, device)
+        : { error: 'Atmos track cannot be inserted into the player queue' }
       if (!result?.ok) {
-        if (wasPlaying && usePlayerStore.getState().currentTrack?.id === resumeTrack &&
-            !usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
         setError(result?.error || 'Atmos playback failed')
         setSetupOpen(true)
         await refreshSetup()
@@ -115,17 +121,29 @@ export default function AtmosPlayButton({ track }) {
     <span className="inline-flex flex-wrap items-center gap-1" onClick={e => e.stopPropagation()}>
       <button type="button" disabled={busy} onClick={start}
         title={mode === 'headphones' ? 'Play original Tidal E-AC-3 JOC through Windows Media Foundation and Windows Spatial Sound (renderer must be enabled).' : 'Play original Tidal E-AC-3 JOC over HDMI with mpv passthrough.'}
-        className="rounded-full border border-violet-400/25 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold text-violet-200 disabled:opacity-50">
+        className="rounded-full border border-white/25 bg-black px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-50">
         {busy || status?.state === 'loading' ? 'PREPARING ATMOS…' : active ? 'STOP ATMOS' : mode === 'headphones' ? 'PLAY ATMOS · HEADPHONES' : 'PLAY ATMOS · HDMI'}
       </button>
       <button type="button" onClick={openSetup} aria-expanded={setupOpen}
         title="Choose Atmos output: Windows spatial headphones or HDMI receiver"
-        className="rounded-full border border-violet-400/25 px-2 py-0.5 text-[10px] text-violet-200">
+        className="rounded-full border border-border bg-black px-2 py-0.5 text-[10px] text-white">
         ATMOS SETUP
       </button>
       {error && <span title={error} className="max-w-[18rem] text-[10px] text-red-400">{error}</span>}
-      {setupOpen && (
-        <span className="flex w-full max-w-sm flex-col gap-2 rounded-lg border border-white/15 bg-neutral-950 p-3 text-[11px] text-white">
+      {setupOpen && createPortal((
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-4" onMouseDown={event => {
+          if (event.target === event.currentTarget) setSetupOpen(false)
+        }}>
+          <div role="dialog" aria-modal="true" aria-label="Dolby Atmos output settings"
+            className="flex w-full max-w-md max-h-[85vh] flex-col gap-3 overflow-y-auto rounded-xl border border-white/15 bg-neutral-950 p-5 text-xs text-white shadow-2xl"
+            onClick={event => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Dolby Atmos setup</h2>
+              <button type="button" onClick={() => setSetupOpen(false)}
+                className="rounded-md border border-white/20 px-3 py-1 text-white/80 hover:text-white" aria-label="Close Dolby Atmos setup">
+                Close
+              </button>
+            </div>
           <span className="font-semibold">Dolby Atmos output</span>
           <label htmlFor={'atmos-mode-' + String(track?.id)}>Output mode</label>
           <select id={'atmos-mode-' + String(track?.id)} value={mode} onChange={event => {
@@ -179,8 +197,9 @@ export default function AtmosPlayButton({ track }) {
               Open local Atmos file…
             </button>
           )}
-        </span>
-      )}
+          </div>
+        </div>
+      ), document.body)}
     </span>
   )
 }
