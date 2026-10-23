@@ -395,6 +395,16 @@ function streamQuality(format) {
   const text = String(format || '').trim()
   const out = { codec: null, lossless: null, bit_depth: null, sample_rate: null, bitrate: null }
   if (!text) return out
+  // Tidal Mornye often advertises "24bit" or "16bit/44.1kHz" rather
+  // than prefixing a codec. Preserve the catalogue tier but never infer an
+  // unreported sample rate or label it as measured output.
+  const tidalDepth = text.match(/\\b(16|24|32)\\s*-?\\s*bits?\\b/i)
+  if (tidalDepth) {
+    out.lossless = 1
+    out.bit_depth = Number(tidalDepth[1])
+    const khz = text.match(/\\b(44\\.1|48|88\\.2|96|176\\.4|192|384)\\s*k(?:hz)?\\b/i)
+    if (khz) out.sample_rate = Math.round(Number(khz[1]) * 1000)
+  }
   const codec = text.match(/^(flac|alac|wav|aiff|mp3|aac|opus|ogg|vorbis|m4a)\b/i)?.[1]?.toLowerCase()
   if (codec) {
     out.codec = codec
