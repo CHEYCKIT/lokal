@@ -85,6 +85,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "fileAssociations": [
@@ -116,6 +122,18 @@
             "!*.pdb"
           ]
         }
+      ]
+    },
+    "appx": {
+      "artifactName": "${productName}-${version}-${arch}.msix",
+      "applicationId": "Lokal",
+      "identityName": "sipbuu.Lokal",
+      "publisher": "CN=sipbuu",
+      "publisherDisplayName": "sipbuu",
+      "displayName": "Lokal",
+      "backgroundColor": "transparent",
+      "languages": [
+        "en-US"
       ]
     },
     "mac": {

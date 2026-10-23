@@ -647,6 +647,12 @@ export default function Settings() {
     setUpdateCheckResult('')
     try {
       const result = await api.updaterCheck()
+      if (result?.store) {
+        setUpdateCheckResult('')
+        setCheckingUpdate(false)
+        api.openExternal('ms-windows-store://downloadsandupdates')
+        return
+      }
       if (result?.nightly) {
         // Nightlies aren't offered the stable release; they update by hand.
         setUpdateCheckResult('')
