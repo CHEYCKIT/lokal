@@ -3,6 +3,8 @@
 export function advertisedQuality(track) {
   if (!track) return ''
   const q = String(track.quality ?? track.audio_quality ?? '').trim()
+  // A spatial audio mode supplies no PCM bit depth, sample rate or tier.
+  if (/^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(q)) return ''
   const bits = Number(track.bit_depth ?? track.bitDepth) ||
     Number(q.match(/\b(16|24|32)\s*(?:-?bit|bits?)\b/i)?.[1]) || 0
   const rawRate = Number(track.sample_rate ?? track.sampleRate) || 0
