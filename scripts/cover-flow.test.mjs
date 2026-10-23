@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowWheelSnapPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -47,8 +47,8 @@ test('compact spacing is smooth across the first-neighbor boundary', () => {
 test('Cover Flow is bounded, rubber-bands at both ends and respects reduced motion', () => {
   assert.equal(clampIndex(-3, 12), 0)
   assert.equal(clampIndex(20, 12), 11)
-  assert.equal(flowTarget(10.1, 9, 12), 11)
-  assert.equal(flowTarget(0.1, -20, 12), 0)
+  assert.equal(flowCoastPlan(10.1, 9, 12).target, 11)
+  assert.equal(flowCoastPlan(0.1, -20, 12).target, 0)
   assert.ok(flowDrag(0, 50, 132, 12) < 0)
   assert.ok(flowDrag(11, -50, 132, 12) > 11)
   const reduced = flowCoverGeometry(1, 220, true)
@@ -79,7 +79,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
   assert.ok(flow.includes('onPlay(index) // Mobile'))
   assert.ok(flow.includes('onContextMenu={e => onContextMenu?.(e, pick.track)}'))
   assert.ok(flow.includes('onPointerMove={move} onPointerUp={up}'))
-  assert.ok(flow.includes('onWheel={wheel}'))
+  assert.ok(flow.includes("element.addEventListener('wheel', handle, { passive: false })"))
   assert.ok(flow.includes('ArrowRight'))
   assert.ok(flow.includes('rotateBack(!flipped)'))
   assert.ok(flow.includes('scaleY(-1)'))
@@ -150,9 +150,10 @@ test('24-track shelves render only the nearby covers during long glides', () => 
   assert.deepEqual(flowVisibleRange(23, 24), { start: 16, end: 24 })
   assert.deepEqual(flowVisibleRange(1, 1), { start: 0, end: 1 })
   assert.ok(flow.includes('picks.slice(visible.start, visible.end)'), 'do not mount every distant cover')
-  assert.ok(flow.includes("type: 'inertia'"), 'flick decelerates instead of snapping toward a distant spring target')
-  assert.ok(flow.includes('modifyTarget: target => clampIndex(Math.round(target), count)'), 'coast snaps to full covers')
-  assert.ok(flow.includes('bounceDamping: 28'), 'ends have a damped constraint')
+  assert.ok(flow.includes("type: 'tween', duration, ease: flowEaseOut"), 'one deceleration curve reaches its snapped target')
+  assert.ok(flow.includes('flowCoastPlan(position.get(), velocity, count)'), 'compute physical stopping position once')
+  assert.ok(!flow.includes("type: 'inertia'"), 'remove long OS-independent inertia')
+  assert.ok(!flow.includes("type: 'spring'"), 'no spring takeover after a flick')
   assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
 })
 
@@ -177,4 +178,34 @@ test('perspective-expanded side corners and reflections fit inside the stage', (
     assert.ok(topRise < inset, `side ${distance} upper corner must not clip`)
   }
   assert.ok(inset + 1.005 + .30 < 1.54, 'reflection also fits the enlarged stage')
+})
+
+test('iCarousel-inspired fixed deceleration finishes without a secondary snap', () => {
+  assert.equal(FLOW_DECELERATION_RATE, .95)
+  assert.equal(FLOW_DECELERATION_MULTIPLIER, 30)
+  const fast = flowCoastPlan(8, 12, 24)
+  assert.equal(fast.target, 12, '12 covers/s travels about four covers')
+  assert.ok(Math.abs(fast.duration - 2 / 3) < .001, 'approximately 2/3 second to stop')
+  const reverse = flowCoastPlan(12, -12, 24)
+  assert.equal(reverse.target, 8, 'reverses with symmetric timing')
+  assert.ok(Math.abs(reverse.duration - fast.duration) < 1e-9)
+  assert.equal(flowCoastPlan(8.2, 0, 24).target, 8, 'release without fling aligns nearest cover')
+  assert.ok(flowCoastPlan(8.2, 0, 24).duration <= .22, 'tiny alignment is quick')
+  assert.equal(flowCoastPlan(22, 20, 24).target, 23, 'end cannot overrun the last cover')
+  assert.ok(flowCoastPlan(22, 20, 24).duration < .25, 'end stops promptly')
+  assert.equal(flowEaseOut(0), 0)
+  assert.equal(flowEaseOut(1), 1)
+  assert.ok(flowEaseOut(.9) > .98, 'movement approaches zero continuously at the end')
+  assert.ok(flowCoastPlan(8, 8, 24).duration <= .7, 'flick never drags on')
+})
+
+test('mouse wheel and trackpad share native scrub with a very short final alignment', () => {
+  assert.deepEqual(flowWheelSnapPlan(4.35, 24).target, 4)
+  assert.ok(flowWheelSnapPlan(4.35, 24).duration <= .22)
+  assert.deepEqual(flowWheelSnapPlan(4, 24), { target: 4, duration: 0 })
+  assert.equal(flowWheelSnapPlan(99, 24).target, 23)
+  assert.ok(flow.includes('Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY'), 'both wheel axes work')
+  assert.ok(flow.includes("element.addEventListener('wheel', handle, { passive: false })"), 'prevent page scrolling while browsing covers')
+  assert.ok(flow.includes("}, 80)"), 'short wheel-idle threshold')
+  assert.ok(flow.includes('flowWheelSnapPlan(position.get(), count)'))
 })
