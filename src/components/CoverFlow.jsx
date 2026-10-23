@@ -1,8 +1,7 @@
 // Desktop port of Lokal Mobile's iTunes-style Cover Flow.
 // Inner-edge hinges, outer-edge-forward panels, tight stacking and smooth dragging.
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion'
-import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
@@ -11,48 +10,73 @@ const MAX_SIZE = 320 // 45% larger than the original 220px covers; still respons
 const DRAG_THRESHOLD = 6
 const LONG_PRESS_MS = 500
 
-// Decode the original only for the facing cover; distant covers keep cached
-// thumbnails so rendering a 12-item shelf stays cheap on desktop.
-function FlowArtwork({ track, focused }) {
-  const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [track, focused])
+// Rapid sweeps must display the already-cached thumbnails without decoding
+// full-resolution files or restarting per-image fade transitions.
+function FlowArtwork({ track, highRes }) {
   const thumbnail = trackArtURL(track)
   const full = trackFullArtURL(track) || thumbnail
-  return <FadeImg src={focused && !failed ? full : thumbnail} draggable={false}
-    onError={() => { if (!failed && focused && full !== thumbnail) setFailed(true) }}
-    className="h-full w-full object-cover" />
+  const [decoded, setDecoded] = useState(null)
+
+  useEffect(() => {
+    if (!highRes || !full || full === thumbnail || decoded === full) return undefined
+    let live = true
+    // Defer extraction/decoding of the original cover until motion finishes.
+    // The thumbnail stays visible throughout; never fade/blank covers in flight.
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => { if (live && !image.decode) setDecoded(full) }
+    image.src = full
+    if (image.decode) image.decode().then(() => {
+      if (live) setDecoded(full)
+    }).catch(() => {})
+    return () => { live = false; image.onload = null }
+  }, [highRes, full, thumbnail, decoded])
+
+  return <>
+    <img src={thumbnail} draggable={false} loading="eager" decoding="async" alt=""
+      className="absolute inset-0 h-full w-full object-cover" />
+    {highRes && decoded === full && full !== thumbnail && (
+      <img src={full} draggable={false} loading="eager" decoding="async" alt=""
+        className="absolute inset-0 h-full w-full object-cover" />
+    )}
+  </>
 }
 
-function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, flipped, onSelect, onPlay, onContextMenu }) {
-  const transform = useTransform([position, flip], ([p, f]) => {
-    const { x, angle, depth } = flowCoverGeometry(index - p, size, reduced)
-    // Translate *outside* perspective (Flutter applies the same matrix order).
-    return 'translate3d(' + x + 'px,0,0) perspective(' + (size * 5) +
-      'px) translateZ(' + depth + 'px) rotateY(' + (angle + (index === activeIndex ? f * 180 : 0)) + 'deg)'
-  })
-  const origin = useTransform(position, p => flowCoverGeometry(index - p, size, reduced).pivot + '% 50%')
-  const opacity = useTransform(position, p => flowCoverGeometry(index - p, size, reduced).opacity)
+// Memoized covers do not reconcile when the selected label advances. Their
+// transforms subscribe directly to the animation MotionValue on the compositor.
+const FlowCover = React.memo(function FlowCover({
+  pick, index, position, flip, flipTarget, highRes, backVisible,
+  size, reduced, onSelect, onPlay, onContextMenu,
+}) {
+  const geometry = useTransform(position, p => flowCoverGeometry(index - p, size, reduced))
+  const transform = useTransform([geometry, flip], ([g, f]) =>
+    'translate3d(' + g.x + 'px,0,0) perspective(' + (size * 5) +
+    'px) translateZ(' + g.depth + 'px) rotateY(' + (g.angle + (flipTarget ? f * 180 : 0)) + 'deg)')
+  const origin = useTransform(geometry, g => g.pivot + '% 50%')
+  const opacity = useTransform(geometry, g => g.opacity)
   const zIndex = useTransform(position, p => 100 - Math.round(Math.abs(index - p) * 10))
   const artwork = trackArtURL(pick.track)
 
   return <motion.div data-cover-flow-item={index} style={{
-    // Perspective enlarges the upper outside corners of angled side covers.
-    // Keep them clear of the clipped stage without adding a separate header gap.
     position: 'absolute', left: '50%', top: size * 0.18, width: size, height: size,
     marginLeft: -size / 2, transform, opacity, zIndex, transformOrigin: origin,
-    transformStyle: 'preserve-3d',
+    transformStyle: 'preserve-3d', willChange: reduced ? 'auto' : 'transform',
   }}>
     <button type="button" onClick={e => { e.stopPropagation(); onSelect(index) }}
       onContextMenu={e => onContextMenu?.(e, pick.track)}
       aria-label={'Play ' + pick.track.title + ' by ' + pick.track.artist}
       className="absolute inset-0 overflow-hidden rounded-md bg-card outline-none shadow-[0_18px_40px_rgba(0,0,0,0.45)] focus-visible:ring-2 focus-visible:ring-accent"
-      style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-      {artwork ? <FlowArtwork track={pick.track} focused={index === activeIndex} /> :
+      style={{
+        backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+        // Chromium/Electron creates this reflection from the same GPU layer,
+        // rather than decoding/masking a second image for each visible cover.
+        WebkitBoxReflect: reduced || !artwork ? 'unset'
+          : 'below ' + (size * 0.005) + 'px linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)',
+      }}>
+      {artwork ? <FlowArtwork track={pick.track} highRes={highRes} /> :
         <span className="flex h-full w-full items-center justify-center text-5xl text-muted">♪</span>}
     </button>
-    {/* Long-press the focused cover to see its track listing, like mobile. */}
-    <div aria-hidden={!(flipped && index === activeIndex)}
-      inert={!(flipped && index === activeIndex)}
+    <div aria-hidden={!backVisible} inert={!backVisible}
       className="absolute inset-0 flex flex-col rounded-md border border-border bg-elevated p-3 shadow-lg"
       style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
       <p className="truncate text-sm font-semibold text-white">{pick.track.title}</p>
@@ -64,15 +88,8 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
       <button type="button" onClick={e => { e.stopPropagation(); onPlay(index) }}
         className="self-start rounded-xl bg-accent px-4 py-1.5 text-xs font-semibold text-base">PLAY</button>
     </div>
-    {!reduced && artwork && <div className="pointer-events-none absolute left-0 overflow-hidden"
-      style={{ top: size * 1.005, width: size, height: size * 0.30,
-        maskImage: 'linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)',
-        WebkitMaskImage: 'linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)' }}>
-      <img src={artwork} alt="" draggable={false} loading="lazy" className="block w-full object-cover"
-        style={{ height: size, transform: 'scaleY(-1)', transformOrigin: 'center' }} />
-    </div>}
   </motion.div>
-}
+})
 
 export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const reduceMotion = !!useReducedMotion()
@@ -94,13 +111,59 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
+  const activeRef = useRef(middleIndex)
+  const [renderCenter, setRenderCenter] = useState(middleIndex)
+  const renderCenterRef = useRef(middleIndex)
+  const [settled, setSettled] = useState(true)
+  const [flipIndex, setFlipIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
   const current = picks[clampIndex(activeIndex, count)] || picks[0]
-  const visible = flowVisibleRange(activeIndex, count)
+  // Move the render window only every few covers; avoids repeatedly mounting
+  // new image/reflection trees while a fling crosses each item boundary.
+  const visible = flowVisibleRange(renderCenter, count)
+  const handlers = useRef(null)
+  const warmed = useRef(new Map())
+  // Thumbnail assets are small. Decode them one at a time when Chromium is
+  // idle so a fast sweep doesn't need to fetch/decode them mid-animation.
+  useEffect(() => {
+    if (reduced) return undefined
+    const cache = warmed.current
+    const urls = [...new Set(picks.map(p => trackArtURL(p.track)).filter(Boolean))]
+    for (const url of cache.keys()) if (!urls.includes(url)) cache.delete(url)
+    let cancelled = false
+    let job
+    const schedule = () => {
+      if (cancelled) return
+      job = window.requestIdleCallback?.(warmNext)
+    }
+    const warmNext = async () => {
+      if (cancelled) return
+      const src = urls.find(url => !cache.has(url))
+      if (!src) return
+      const image = new Image()
+      image.decoding = 'async'
+      cache.set(src, image)
+      image.src = src
+      try { await image.decode?.() } catch { /* invalid art stays cached as failed */ }
+      schedule()
+    }
+    // Electron runs Chromium, which exposes requestIdleCallback. Avoid
+    // triggering a decoding wave synchronously during the first Home paint.
+    schedule()
+    return () => {
+      cancelled = true
+      if (job != null) window.cancelIdleCallback?.(job)
+    }
+  }, [picks, reduced])
+
+  const handleSelect = useCallback(index => handlers.current?.select(index), [])
+  const handlePlay = useCallback(index => handlers.current?.play(index), [])
+  const handleMenu = useCallback((event, track) => handlers.current?.menu?.(event, track), [])
 
   const stopPress = () => { clearTimeout(pressTimer.current); pressTimer.current = null }
   const rotateBack = next => {
     flipSpring.current?.stop()
+    if (next) setFlipIndex(activeIndex)
     setFlipped(next)
     if (reduced) flip.set(next ? 1 : 0)
     else flipSpring.current = animate(flip, next ? 1 : 0, { duration: 0.45 })
@@ -110,10 +173,16 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const moveTo = (target, duration) => {
     motion.current?.stop()
     const to = clampIndex(Math.round(target), count)
-    if (reduced || duration === 0) position.set(to)
-    else motion.current = animate(position, to, {
-      type: 'tween', duration, ease: flowEaseOut,
-    })
+    if (reduced || duration === 0 || position.get() === to) {
+      position.set(to)
+      setSettled(true)
+    } else {
+      setSettled(false)
+      motion.current = animate(position, to, {
+        type: 'tween', duration, ease: flowEaseOut,
+        onComplete: () => setSettled(true),
+      })
+    }
   }
   const settle = target => moveTo(target, .23)
   const coast = velocity => {
@@ -127,14 +196,26 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   }
   useMotionValueEvent(position, 'change', value => {
     const next = clampIndex(Math.round(value), count)
-    setActiveIndex(prev => prev === next ? prev : next)
+    if (next !== activeRef.current) {
+      activeRef.current = next
+      setActiveIndex(next)
+    }
+    if (Math.abs(next - renderCenterRef.current) >= 4) {
+      renderCenterRef.current = next
+      setRenderCenter(next)
+    }
   })
   useEffect(() => {
     motion.current?.stop()
     flipSpring.current?.stop()
     position.set(middleIndex)
     flip.set(0)
+    activeRef.current = middleIndex
+    renderCenterRef.current = middleIndex
     setActiveIndex(middleIndex)
+    setRenderCenter(middleIndex)
+    setSettled(true)
+    setFlipIndex(middleIndex)
     setFlipped(false)
   }, [count, middleIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => {
@@ -191,6 +272,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     if (!g || g.id !== e.pointerId) return
     if (!g.moved && Math.abs(e.clientX - g.start) > DRAG_THRESHOLD) {
       g.moved = true
+      setSettled(false)
       stopPress()
       rotateBack(false)
       e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -210,6 +292,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       suppressClick.current = true
       const velocity = flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)
       coast(velocity)
+    } else {
+      setSettled(true)
     }
     gesture.current = null
   }
@@ -219,6 +303,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     e.preventDefault()
     stopPress()
     rotateBack(false)
+    setSettled(false)
     motion.current?.stop()
     position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
     clearTimeout(wheelTimer.current)
@@ -230,6 +315,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     if (index !== activeIndex) settle(index)
     onPlay(index) // Mobile's onSelect starts playback on the first click.
   }
+  handlers.current = { select, play: onPlay, menu: onContextMenu }
   if (!count) return null
 
   return <div className="space-y-3">
@@ -258,8 +344,10 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         const index = visible.start + offset
         return <FlowCover key={pick.track.id}
           pick={pick} index={index} position={position} flip={flip}
-          activeIndex={activeIndex} size={size} reduced={reduced} flipped={flipped}
-          onSelect={select} onPlay={onPlay} onContextMenu={onContextMenu} />
+          flipTarget={index === flipIndex} backVisible={flipped && index === flipIndex}
+          highRes={settled && index === activeIndex}
+          size={size} reduced={reduced}
+          onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu} />
       })}
     </div>
     <div className="mx-auto max-w-lg text-center" aria-live="polite">

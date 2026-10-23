@@ -82,7 +82,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
   assert.ok(flow.includes('onWheel={wheel}'))
   assert.ok(flow.includes('ArrowRight'))
   assert.ok(flow.includes('rotateBack(!flipped)'))
-  assert.ok(flow.includes('scaleY(-1)'))
+  assert.ok(flow.includes('WebkitBoxReflect:'), 'Chromium reflects the cover without a second image')
   assert.ok(flow.includes('perspective('))
 })
 
@@ -96,17 +96,17 @@ test('Cover Flow is 45% larger and opens centered, without starting Flow', () =>
   assert.ok(!flow.includes('Open Flow'))
 })
 
-test('Cover Flow artwork cannot be natively dragged as a file', () => {
-  assert.ok(flow.includes('src={focused && !failed ? full : thumbnail} draggable={false}'))
-  assert.ok(flow.includes('<img src={artwork} alt="" draggable={false} loading="lazy"'))
+test('Cover Flow artwork cannot be dragged as an image file', () => {
+  assert.ok(flow.includes('src={thumbnail} draggable={false} loading="eager" decoding="async"'))
+  assert.ok(flow.includes('src={full} draggable={false} loading="eager" decoding="async"'))
   assert.ok(flow.includes('onDragStart={e => e.preventDefault()}'), 'suppress browser drag image preview')
   assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'keep gesture-controlled movement')
 })
 
 test('Cover Flow matches the tighter iTunes reflective stage on desktop', () => {
   assert.ok(flow.includes('transformOrigin: origin'), 'the artwork pivot interpolates with drag')
-  assert.ok(flow.includes('origin = useTransform(position'), 'pivot remains fluid between covers')
-  assert.ok(flow.includes('top: size * 1.005'), 'reflections touch the artwork')
+  assert.ok(flow.includes('origin = useTransform(geometry'), 'pivot uses a single per-frame geometry value')
+  assert.ok(flow.includes("below ' + (size * 0.005)"), 'CSS reflection sits directly under the cover')
   assert.ok(flow.includes('bg-black'), 'reflection stage is black like iTunes')
   assert.ok(flow.includes('flowPixelsPerCover(size, reduced)'), 'gesture scale follows the rendered mode')
 })
@@ -226,4 +226,30 @@ test('mouse drag release has no velocity cliff or abrupt low-speed mode switch',
   assert.ok(before.duration <= .70 && after.duration <= .70)
   assert.ok(!flow.includes("type: 'inertia'"), 'no separate inertia animation')
   assert.ok(!flow.includes("type: 'spring'"), 'no spring takeover on release')
+})
+
+test('fast multi-cover animation does not mount/decode full-resolution art on every index', () => {
+  assert.ok(flow.includes('const FlowCover = React.memo('), 'reuse cover subtrees across selection changes')
+  assert.ok(flow.includes('const geometry = useTransform(position'), 'calculate perspective geometry once per frame')
+  assert.ok(flow.includes('useTransform(geometry, g => g.pivot'), 'derive the pivot from cached geometry')
+  assert.ok(flow.includes('useTransform(geometry, g => g.opacity'), 'derive opacity from cached geometry')
+  assert.ok(flow.includes('highRes={settled && index === activeIndex}'), 'full resolution only at rest')
+  assert.ok(flow.includes('setSettled(false)'), 'drag and coast disable full-resolution extraction')
+  assert.ok(flow.includes('onComplete: () => setSettled(true)'), 'full resolution resumes after the animation')
+  assert.ok(flow.includes('const image = new Image()'), 'decode full artwork off DOM')
+  assert.ok(flow.includes('if (live) setDecoded(full)'), 'only display the decoded full cover')
+  assert.ok(flow.includes('src={thumbnail}'), 'small artwork stays visible underneath full art')
+})
+
+test('fast-flip window and reflection avoid repeated React and image work', () => {
+  assert.ok(flow.includes('Math.abs(next - renderCenterRef.current) >= 4'), 'shift mount window in batches')
+  assert.ok(flow.includes('if (next !== activeRef.current)'), 'skip unchanged frame-driven React updates')
+  assert.ok(flow.includes('flowVisibleRange(renderCenter, count)'), 'window is not recalculated around every new index')
+  assert.ok(flow.includes('onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu}'), 'stable callbacks keep React.memo effective')
+  assert.ok(flow.includes('WebkitBoxReflect:'), 'Chromium reflection reuses the source element')
+  assert.ok(!flow.includes('scaleY(-1)'), 'no duplicate image used to draw mirrored artwork')
+  assert.ok(flow.includes("window.requestIdleCallback?.(warmNext)"), 'prefetch decoding runs in idle time')
+  assert.ok(flow.includes('await image.decode?.()'), 'warm thumbnails asynchronously')
+  assert.ok(flow.includes("willChange: reduced ? 'auto' : 'transform'"), 'promote moving covers')
+  assert.deepEqual(flowVisibleRange(8, 24), {start: 1, end: 16})
 })
