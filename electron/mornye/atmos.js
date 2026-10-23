@@ -10,6 +10,7 @@ function hasAtmosMetadata(track) {
   const values = [
     track.audio_mode, track.audioMode, track.audio_quality, track.audioQuality,
     track.spatial_audio, track.spatialAudio,
+    track.audio_modes, track.audioModes,
     ...(Array.isArray(track.audio_modes) ? track.audio_modes : []),
     ...(Array.isArray(track.audioModes) ? track.audioModes : []),
   ]
