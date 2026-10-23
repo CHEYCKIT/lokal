@@ -28,12 +28,13 @@ function depthDistance(distance) {
 export function flowCoverGeometry(distance, size, reduceMotion = false) {
   const ad = Math.abs(distance)
   const near = Math.min(1, ad)
+  const hinge = near * near * (3 - 2 * near) // continuous slope at centre and first neighbor
   const side = Math.sign(distance)
   return {
     // The pivot moves from centre to inner edge as each panel turns.
     // Translate its inner edge just past the selected cover's side.
-    x: reduceMotion ? distance * size * 1.06 : side * size * (innerDistance(ad) + 0.5 * near),
-    pivot: reduceMotion ? 50 : 50 - side * 50 * near, // CSS transform-origin percentage
+    x: reduceMotion ? distance * size * 1.06 : side * size * (innerDistance(ad) + 0.5 * hinge),
+    pivot: reduceMotion ? 50 : 50 - side * 50 * hinge, // CSS transform-origin percentage
     // Positive Y rotation brings the left edge forward, negative the right.
     // Hence the OUTER edge of either side cover is the one facing the viewer.
     angle: reduceMotion ? 0 : -side * (2 * near - near * near) * 70,
