@@ -113,7 +113,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
             <div className="min-w-0">
               <p className={`truncate text-sm ${marked ? 'text-accent' : 'text-white'}`}>{track.title}</p>
               <p className="truncate text-xs text-muted">{track.artist}</p>
-              {atmosAvailable(track) && <span className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Tidal advertises an Atmos edition; use Play Atmos for original bitstream playback.">ATMOS AVAILABLE</span>
+              {atmosAvailable(track) && <span className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Tidal advertises an Atmos edition; use Play Atmos for original bitstream playback.">ATMOS AVAILABLE</span>}
             </div>
             {showAlbum && <p className="hidden truncate text-xs text-muted @lg:block">{track.album || ''}</p>}
             <span className="flex items-center justify-end gap-3">
