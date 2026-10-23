@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowWheelSnapPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -138,7 +138,7 @@ test('high-speed releases retain measured momentum but a paused pointer cannot f
     { x: 150, t: 1075 },
   ]
   assert.ok(flowReleaseVelocity(samples, 1080, 176) > 5)
-  assert.equal(flowReleaseVelocity(samples, 1250, 176), 0, 'finger stopped before releasing')
+  assert.ok(flowReleaseVelocity(samples, 1250, 176) < 1.5, 'a paused mouse loses speed smoothly')
   assert.equal(flowReleaseVelocity([{ x: 150, t: 1080 }], 1081, 176), 0)
   assert.equal(flowReleaseVelocity(samples, 1080, 0), 0)
   assert.equal(flowReleaseVelocity([{ x: 2000, t: 1000 }, { x: -2000, t: 1016 }], 1016, 176), 20, 'reject noisy spikes')
@@ -199,13 +199,31 @@ test('iCarousel-inspired fixed deceleration finishes without a secondary snap', 
   assert.ok(flowCoastPlan(8, 8, 24).duration <= .7, 'flick never drags on')
 })
 
-test('mouse wheel and trackpad share native scrub with a very short final alignment', () => {
-  assert.deepEqual(flowWheelSnapPlan(4.35, 24).target, 4)
-  assert.ok(flowWheelSnapPlan(4.35, 24).duration <= .22)
-  assert.deepEqual(flowWheelSnapPlan(4, 24), { target: 4, duration: 0 })
-  assert.equal(flowWheelSnapPlan(99, 24).target, 23)
-  assert.ok(flow.includes('Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY'), 'both wheel axes work')
-  assert.ok(flow.includes("element.addEventListener('wheel', handle, { passive: false })"), 'prevent page scrolling while browsing covers')
-  assert.ok(flow.includes("}, 80)"), 'short wheel-idle threshold')
-  assert.ok(flow.includes('flowWheelSnapPlan(position.get(), count)'))
+test('mouse click-and-drag physics is independent of the unchanged wheel handler', () => {
+  assert.ok(flow.includes("onWheel={wheel}"), 'wheel handler remains unchanged')
+  assert.ok(flow.includes("e.shiftKey ? e.deltaY : 0"), 'shift wheel handling remains unchanged')
+  assert.ok(flow.includes("}, 170)"), 'original wheel settle timing is retained')
+  assert.ok(flow.includes('coast(velocity)'), 'mouse pointer release alone uses the new coast')
+  assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
+})
+
+test('mouse drag release has no velocity cliff or abrupt low-speed mode switch', () => {
+  const samples = [
+    { x: 400, t: 1000 }, { x: 340, t: 1030 },
+    { x: 280, t: 1060 }, { x: 220, t: 1090 },
+  ]
+  const immediately = flowReleaseVelocity(samples, 1090, 176)
+  const after99ms = flowReleaseVelocity(samples, 1189, 176)
+  const after101ms = flowReleaseVelocity(samples, 1191, 176)
+  assert.ok(immediately > after99ms)
+  assert.ok(after99ms > after101ms && after101ms > 0, 'no hard 100ms cutoff')
+  assert.ok(Math.abs(after99ms - after101ms) < .10, 'release velocity varies smoothly')
+  assert.equal(flowReleaseVelocity(samples, 2000, 176) < .001, true)
+  const before = flowCoastPlan(4.1, 1.99, 24)
+  const after = flowCoastPlan(4.1, 2.01, 24)
+  assert.ok(Math.abs(before.distance - after.distance) < .01, 'no 2-cover-per-second discontinuity')
+  assert.equal(before.target, after.target, 'similar mouse speeds reach same cover')
+  assert.ok(before.duration <= .70 && after.duration <= .70)
+  assert.ok(!flow.includes("type: 'inertia'"), 'no separate inertia animation')
+  assert.ok(!flow.includes("type: 'spring'"), 'no spring takeover on release')
 })
