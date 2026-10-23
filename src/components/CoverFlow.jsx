@@ -89,6 +89,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const gesture = useRef(null)
   const pressTimer = useRef(null)
   const wheelTimer = useRef(null)
+  const wheelHandler = useRef(null)
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
@@ -232,6 +233,16 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       moveTo(target, duration)
     }, 80)
   }
+  wheelHandler.current = wheel
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element) return undefined
+    // React delegates wheel as passive; this stage must consume wheel events
+    // without simultaneously scrolling the whole Home page.
+    const handle = event => wheelHandler.current?.(event)
+    element.addEventListener('wheel', handle, { passive: false })
+    return () => element.removeEventListener('wheel', handle)
+  }, [count])
   const select = index => {
     if (suppressClick.current) { suppressClick.current = false; return }
     rotateBack(false)
@@ -251,7 +262,6 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onDragStart={e => e.preventDefault()}
-      onWheel={wheel}
       onClickCapture={e => {
         if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false }
       }}
