@@ -20,6 +20,7 @@ import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
 import { useAppStore, usePlayerStore } from '../store/player'
 import { api } from '../api'
+import { showToast } from './Toaster'
 import { losslessMenuItem, atmosAvailable, ATMOS_AVAILABLE } from '../quality'
 import AtmosPlayButton from './AtmosPlayButton'
 import { useTranslation } from '../i18n'
@@ -59,8 +60,13 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
           const result = await api.atmosPlay(source.provider, String(source.id), device)
           if (result?.ok) return
+          showToast(t("Dolby Atmos couldn't start: {error}. No other source selected.", { error: result?.error || t('output refused') }))
+          return
         }
-      } catch {}
+      } catch (error) {
+        showToast(t("Dolby Atmos couldn't start: {error}", { error: error?.message || String(error) }))
+        return
+      }
     }
     onPlay(track)
   }
