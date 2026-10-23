@@ -14,6 +14,21 @@ const wrap = (fn) => async (...args) => {
 }
 
 function registerQualityHandlers(ipcMain) {
+  // Older downloads were indexed before Lokal distinguished E-AC-3 JOC from
+  // conventional high-bitrate lossy files. Verify candidates quietly once
+  // startup settles, without blocking the Electron main event loop.
+  setTimeout(() => {
+    quality.backfillAtmos(getDB(), {
+      onChanged: () => {
+        try {
+          const { BrowserWindow } = require('electron')
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) win.webContents.send('library:updated', { reason: 'atmos-quality-reclassified' })
+          }
+        } catch {}
+      },
+    }).catch(() => {})
+  }, 12000).unref?.()
   ipcMain.handle('quality:summary', wrap(() => quality.summary(getDB())))
   ipcMain.handle('quality:list', wrap((_, opts) => quality.list(getDB(), opts || {})))
   ipcMain.handle('quality:status', wrap(() => quality.status()))
