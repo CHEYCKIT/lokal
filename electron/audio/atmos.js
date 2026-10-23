@@ -384,7 +384,8 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       active = session
       const id = 'local:' + path.basename(filename)
       notify({ state: 'loading', provider: 'local', id, message: 'Preparing local Atmos file…' })
-      return await launchFile({ filename, session, provider: 'local', id, device, binary, mode })
+      const launched = await launchFile({ filename, session, provider: 'local', id, device, binary, mode })
+      return { ...launched, id, title: path.parse(filename).name, file: filename, mode }
     } catch (error) {
       if (active === session) await stop()
       return { error: error.message || String(error) }
