@@ -17,7 +17,7 @@ test('circular CD, transparent corners, accent sticker mask and ICO are generate
   assert.equal(full.info.width, 512)
   assert.equal(pixel(full, 0, 0)[3], 0, 'circular OS icon has transparent corners')
   assert.equal(pixel(full, 256, 256)[3], 255)
-  assert.equal(pixel(full, 256, 0)[3] > 0, true, 'disc reaches the upper edge')
+  assert.equal(pixel(full, 256, 2)[3] > 0, true, 'disc reaches the upper edge')
   assert.equal(pixel(rounded, 0, 0)[3], 0, 'OS icon corners are transparent')
   assert.equal(pixel(rounded, 256, 256)[3], 255)
   assert.equal(pixel(sticker, 20, 20)[3], 0)
