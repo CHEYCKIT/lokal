@@ -1,0 +1,29 @@
+name: Windows Atmos headphone bridge
+
+on:
+  pull_request:
+    paths:
+      - 'native/smtc-bridge/**'
+      - 'electron/audio/atmos.js'
+      - 'electron/audio/headphones.js'
+      - 'src/components/AtmosPlayButton.jsx'
+      - 'src/components/AtmosTransport.jsx'
+      - 'scripts/atmos-output.test.mjs'
+      - '.github/workflows/atmos-headphones.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-atmos:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Compile native Windows audio bridge
+        run: cargo check --manifest-path native/smtc-bridge/Cargo.toml --target x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run Atmos routing tests
+        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs
