@@ -562,6 +562,16 @@ router.get('/', (req, res) => {
       sql += " AND LOWER(COALESCE(NULLIF(album_artist, ''), artist)) = LOWER(?)"
       params.push(albumArtist)
     }
+    // Album detail screens should follow the same device-first view as Songs.
+    const preference = require('../../electron/libraryDevicePreference')
+    // Only suppress a phone row when its desktop counterpart is also in this album view.
+    // Album-artist filtering can differ between synced metadata, so retain both there.
+    if (!albumArtist && preference.shouldPreferDesktop({ source, id, includeGhosts, problems })) {
+      sql += ' AND ' + preference.desktopPreferredLibraryClause().replace(
+        "AND desktop.title = tracks.title COLLATE NOCASE",
+        "AND desktop.album = tracks.album AND desktop.title = tracks.title COLLATE NOCASE"
+      )
+    }
     const tracks = db.prepare(sql).all(...params)
     res.json(normalizeAlbumTracks(tracks).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) })))
     return
@@ -589,7 +599,7 @@ router.get('/', (req, res) => {
     const searchWhere = wordsMatch(searchText, TRACK_COLUMNS)
     if (searchWhere) { where.push(searchWhere.sql); params.push(...searchWhere.params) }
   }
-  res.json(require('../../electron/trackErrors').listTracks(db, { sort, limit, offset, problems }, { where, params, exists: fs.existsSync }))
+  res.json(require('../../electron/trackErrors').listTracks(db, { sort, limit, offset, problems, source, id, includeGhosts, hasRestrictiveFilters: Boolean(artistName || artistId || genre || quality || format || searchText) }, { where, params, exists: fs.existsSync }))
 })
 
 router.post('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').recordTrackError(getDB(), req.params.id, req.body?.message) }))
