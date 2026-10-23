@@ -29,7 +29,7 @@ export default function AtmosTransport() {
       usePlayerStore.setState(patch)
       updatingFromBackend = false
     }
-    const off = api.onAtmosStatus(next => {
+    const handleStatus = next => {
       const state = usePlayerStore.getState()
       const current = state.currentTrack
       // An old session can finish while a new track/stream is starting.
@@ -95,7 +95,10 @@ export default function AtmosTransport() {
           setPlayer({ isPlaying: false, isBuffering: false })
         }
       }
-    })
+    }
+    const off = api.onAtmosStatus(handleStatus)
+    const localStarted = event => handleStatus(event.detail)
+    window.addEventListener('lokal:atmos-local-ready', localStarted)
     const unsubscribe = usePlayerStore.subscribe((now, before) => {
       if (before.currentTrack?.atmosNative &&
           (now.currentTrack?.id !== before.currentTrack?.id ||
@@ -120,6 +123,7 @@ export default function AtmosTransport() {
     return () => {
       unsubscribe()
       off?.()
+      window.removeEventListener('lokal:atmos-local-ready', localStarted)
       toast?.close()
       setOutputRoute(null)
     }
