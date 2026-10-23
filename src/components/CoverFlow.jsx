@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion'
 import FadeImg from './FadeImg'
-import { trackArtURL } from '../onlineTracks'
+import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
 import { useTranslation } from '../i18n'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_SPRING } from '../coverFlowGeometry.mjs'
@@ -11,6 +11,18 @@ import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_
 const MAX_SIZE = 220
 const DRAG_THRESHOLD = 6
 const LONG_PRESS_MS = 500
+
+// Decode the original only for the facing cover; distant covers keep cached
+// thumbnails so rendering a 12-item shelf stays cheap on desktop.
+function FlowArtwork({ track, focused }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [track, focused])
+  const thumbnail = trackArtURL(track)
+  const full = trackFullArtURL(track) || thumbnail
+  return <FadeImg src={focused && !failed ? full : thumbnail}
+    onError={() => { if (!failed && focused && full !== thumbnail) setFailed(true) }}
+    className="h-full w-full object-cover" />
+}
 
 function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, flipped, onSelect, onPlay, onContextMenu }) {
   const transform = useTransform([position, flip], ([p, f]) => {
@@ -33,7 +45,7 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
       aria-label={'Play ' + pick.track.title + ' by ' + pick.track.artist}
       className="absolute inset-0 overflow-hidden rounded-md bg-card outline-none shadow-[0_18px_40px_rgba(0,0,0,0.45)] focus-visible:ring-2 focus-visible:ring-accent"
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-      {artwork ? <FadeImg src={artwork} className="h-full w-full object-cover" /> :
+      {artwork ? <FlowArtwork track={pick.track} focused={index === activeIndex} /> :
         <span className="flex h-full w-full items-center justify-center text-5xl text-muted">♪</span>}
     </button>
     {/* Long-press the focused cover to see its track listing, like mobile. */}
