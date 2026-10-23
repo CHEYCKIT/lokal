@@ -60,11 +60,11 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
           const result = await api.atmosPlay(source.provider, String(source.id), device)
           if (result?.ok) return
-          showToast(`Dolby Atmos couldn't start: ${result?.error || 'output refused'}. No other source selected.`)
+          showToast(t("Dolby Atmos couldn't start: {error}. No other source selected.", { error: result?.error || t('output refused') }))
           return
         }
       } catch (error) {
-        showToast(`Dolby Atmos couldn't start: ${error?.message || error}`)
+        showToast(t("Dolby Atmos couldn't start: {error}", { error: error?.message || String(error) }))
         return
       }
     }
