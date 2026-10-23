@@ -21,7 +21,6 @@ import LyricsFullscreen, { FULLSCREEN_SWITCH, FULLSCREEN_IN, FULLSCREEN_OUT } fr
 import { api, wordSyncEnabled } from '../api'
 import { contextLabel, isContextNavigable, navigateToContext } from '../playbackContext'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
-import { atmosAvailable, ATMOS_AVAILABLE } from '../quality'
 import { useVolumeWheel } from '../volumeWheel'
 import { usePerformanceMode } from '../performanceMode'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
@@ -934,11 +933,6 @@ export default function FullscreenPlayer() {
               <h2 className="text-3xl font-bold text-white leading-tight truncate">{currentTrack?.title || '—'}</h2>
               <p className="mt-1.5 text-lg text-white/70 truncate">{currentTrack?.artist}</p>
               {currentTrack?.album && <p className="mt-0.5 text-sm text-white/40 truncate">{currentTrack.album}</p>}
-              {atmosAvailable(currentTrack) && (
-                <span className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title={ATMOS_AVAILABLE.hint} aria-label={ATMOS_AVAILABLE.hint}>
-                  ATMOS AVAILABLE
-                </span>
-              )}
             </motion.div>
           </div>
 
