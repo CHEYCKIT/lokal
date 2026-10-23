@@ -24,6 +24,7 @@ import AddonSetupNotice from './AddonSetupNotice'
 import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 import { useTranslation } from '../i18n'
 import { atmosAvailable, ATMOS_AVAILABLE } from '../quality'
+import AtmosPlayButton from './AtmosPlayButton'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -207,11 +208,12 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                     {[item.artist, item.album].filter(Boolean).join(' · ')}
                     {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">{t('Video')}</span>}
                     {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
-                    {atmosAvailable(item) && <span className={`ml-1.5 rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Atmos version offered by Tidal. Play uses the currently supported stereo stream, not Atmos.">ATMOS AVAILABLE</span>
+                    {atmosAvailable(item) && <span className={`ml-1.5 rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Dolby Atmos source available. Use Play Atmos to request the original JOC stream.">ATMOS AVAILABLE</span>
                     {item.preview && <span title={t('SoundCloud only lets non-subscribers play 30 seconds of this track')} className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{t('30 s preview')}</span>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
+                  {atmosAvailable(item) && <AtmosPlayButton track={item} />}
                   <button onClick={() => addToPlaylist(item)} title={t('Add to playlist')} aria-label={t('Add {title} to a playlist', { title: item.title })}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
                     <Plus size={15} />
