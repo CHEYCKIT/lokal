@@ -137,10 +137,12 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
           const result = await api.atmosPlay(item.provider, String(item.id), device)
           if (result?.ok) return
-          showToast(`Dolby Atmos unavailable (${result?.error || 'output refused'}). Playing stereo instead.`)
+          showToast(`Dolby Atmos couldn't start: ${result?.error || 'output refused'}. Stream not switched to a different provider.`)
+          return
         }
       } catch (error) {
-        showToast(`Dolby Atmos unavailable (${error?.message || error}). Playing stereo instead.`)
+        showToast(`Dolby Atmos couldn't start: ${error?.message || error}. Stream not switched to a different provider.`)
+        return
       }
     }
     const rows = await asTracks(results)
