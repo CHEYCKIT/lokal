@@ -399,7 +399,7 @@ function Loading() {
 
 export default function LyricsPanel({
   track: shownTrack, progress, fullscreen = false, wordSync = true, onLyricsAvailable, onSearchRequest, textScale = 1, isAutoSynced = false,
-  hideToolbar = false, compact = false,
+  hideToolbar = false, compact = false, stretchFullscreenWidth = false,
   // The full screen player hides the buttons along with its own after a few
   // seconds without the mouse moving.
   toolbarHidden = false,
@@ -829,7 +829,8 @@ export default function LyricsPanel({
           WebkitMaskImage: compact ? 'linear-gradient(to bottom, black 0, black 94%, transparent 100%)' : `linear-gradient(to bottom, transparent 0, black 9%, black ${fullscreen ? 82 : 94}%, transparent 100%)`,
         }}
       >
-        <div className={`w-full ${fullscreen ? 'max-w-3xl mx-auto px-6' : 'px-3'}`}>
+        <div className={`w-full ${fullscreen ? (stretchFullscreenWidth ? 'px-6' : 'max-w-3xl mx-auto px-6') : 'px-3'}`}>
+
           {loading && <div style={fullscreen ? FULLSCREEN_TOP : { height: '18%' }} />}
           {loading && <Loading />}
 
