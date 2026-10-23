@@ -61,6 +61,7 @@ import { handleStationTitle, resetStationDisplay } from './radio/radioNowPlaying
 import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
+import StreamLoadingToast from './components/StreamLoadingToast'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
@@ -406,6 +407,7 @@ export default function App() {
     recovery.pending = true
     recovery.failed.push(failedRef.provider)
     el.dataset.fallbackPending = '1'
+    el.dataset.fallbackRecoveryPending = '1'
     clearInterval(playTimerRef.current)
     playTimerRef.current = null
     el.pause()
@@ -441,6 +443,7 @@ export default function App() {
       toast.close()
       recovery.pending = false
       el.dataset.fallbackPending = ''
+      el.dataset.fallbackRecoveryPending = ''
     }
   }, [reportPlaybackError])
 
@@ -1791,6 +1794,7 @@ export default function App() {
         el.dataset.fallbackFor = ''
         el.dataset.fallbackSrc = ''
         el.dataset.fallbackPending = ''
+        el.dataset.fallbackRecoveryPending = ''
       }
       const retryQueue = Array.isArray(queue) && queue.some(item => item?.id === retryTrack.id)
         ? queue.map(item => item?.id === retryTrack.id ? retryTrack : item)
@@ -3207,6 +3211,7 @@ export default function App() {
             {renderYtDlpNotice()}
             {renderUpdateToast()}
             <Toaster />
+            <StreamLoadingToast />
             <AnimatePresence>
               {addonVerificationPrompt && (
                 <motion.div

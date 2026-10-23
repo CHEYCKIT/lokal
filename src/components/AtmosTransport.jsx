@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { showLoadingToast } from './Toaster'
 import { usePlayerStore } from '../store/player'
 
 /** Native compressed Atmos session controls. Separate from Web Audio's
@@ -9,11 +10,25 @@ export default function AtmosTransport() {
   const [paused, setPaused] = useState(false)
   const active = useRef(false)
 
-  useEffect(() => api.onAtmosStatus(next => {
-    active.current = next?.state === 'playing' || next?.state === 'loading'
-    setStatus(next)
-    if (next?.state === 'playing') setPaused(false)
-  }), [])
+  useEffect(() => {
+    let toast = null
+    const off = api.onAtmosStatus(next => {
+      active.current = next?.state === 'playing' || next?.state === 'loading'
+      setStatus(next)
+      if (next?.state === 'loading') {
+        if (!toast) toast = showLoadingToast('Preparing Dolby Atmos…')
+        const pct = Number(next.percent)
+        toast.update(Number.isFinite(pct) && next.percent != null
+          ? `Loading Dolby Atmos · ${Math.max(0, Math.min(100, pct))}%`
+          : next.message || 'Preparing Dolby Atmos…')
+      } else {
+        toast?.close()
+        toast = null
+        if (next?.state === 'playing') setPaused(false)
+      }
+    })
+    return () => { toast?.close(); off?.() }
+  }, [])
 
   useEffect(() => usePlayerStore.subscribe((now, before) => {
     // Starting normal Lokal playback must not mix PCM on top of the

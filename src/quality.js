@@ -26,8 +26,9 @@ export function codecName(codec) {
 export function tierOf(track) {
   if (!track || track.lossless === null || track.lossless === undefined) return 'unknown'
   if (Number(track.lossless) === 1) return Number(track.bit_depth) > 16 || Number(track.sample_rate) > 48000 ? 'hires' : 'lossless'
-  const kbps = Number(track.bitrate) || 0
-  return kbps && kbps >= (OPUS_LIKE.test(String(track.codec || '')) ? 160 : 256) ? 'high' : 'low'
+  const kbps = Number(track.bitrate)
+  if (!Number.isFinite(kbps) || kbps <= 0) return 'unknown'
+  return kbps >= (OPUS_LIKE.test(String(track.codec || '')) ? 160 : 256) ? 'high' : 'low'
 }
 
 /** Catalogue metadata only: never a statement about the active decoder/output.
