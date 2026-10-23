@@ -11,22 +11,23 @@ const { hasAtmosMetadata } = require('../mornye/atmos')
 let active = null
 
 function supportedHost(platform = process.platform) {
-  return platform === 'win32' || platform === 'linux'
+  return platform === 'win32' || platform === 'linux' || platform === 'darwin'
 }
 
 function outputOptions(platform, device) {
   if (!supportedHost(platform)) throw new Error('Native Atmos bitstream output is not available on this desktop OS')
-  if (device && (typeof device !== 'string' || device.length > 160 || !/^(wasapi|alsa)\//.test(device))) {
+  if (device && (typeof device !== 'string' || device.length > 160 || !/^(wasapi|alsa|coreaudio)\//.test(device))) {
     throw new Error('Choose a WASAPI or ALSA HDMI output device')
   }
-  if (device && !device.startsWith(platform === 'win32' ? 'wasapi/' : 'alsa/')) {
+  const prefix = platform === 'win32' ? 'wasapi/' : (platform === 'darwin' ? 'coreaudio/' : 'alsa/')
+  if (device && !device.startsWith(prefix)) {
     throw new Error('Selected output does not match this operating system')
   }
   // Never use a PCM mixer (PulseAudio, CoreAudio or WASAPI shared) for JOC.
   // mpv must confirm a spdif-eac3 AO before reporting playback.
   return [
-    `--ao=${platform === 'win32' ? 'wasapi' : 'alsa'}`,
-    ...(platform === 'win32' ? ['--audio-exclusive=yes'] : []),
+    `--ao=${platform === 'win32' ? 'wasapi' : (platform === 'darwin' ? 'coreaudio' : 'alsa')}`,
+    ...(['win32', 'darwin'].includes(platform) ? ['--audio-exclusive=yes'] : []),
     ...(device ? [`--audio-device=${device}`] : []),
     '--audio-spdif=eac3',
     '--audio-fallback-to-null=no',
