@@ -2668,7 +2668,7 @@ export default function App() {
     }
     start()
     return () => { cancelled = true; el.dataset.fallbackPending = ''; el.dataset.lokalTrackPending = '' }
-  }, [currentTrack?.id, currentTrack?.file_path, playbackRetryNonce, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
+  }, [currentTrack?.id, currentTrack?.file_path, currentTrack?.atmosNative, playbackRetryNonce, castActive, cancelCrossfade, beginLastfmPlayback, recoverOnlinePlayback, setIsBuffering, applyReplayGainToElement])
 
   useEffect(() => {
     if (!api.isElectron) return
