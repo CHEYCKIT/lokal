@@ -142,7 +142,18 @@ class ExtensionHost {
     const output = this.file(destination), dir = this.file(`${output}.segments`)
     await fsp.mkdir(dir, { recursive: true })
     const progress = new Map(); let completed = 0, serial = Promise.resolve()
-    const report = () => { serial = serial.then(() => callback(options.onProgress, [[...progress.values()].reduce((a,b) => a+b,0), 0, completed, segments.length])); return serial }
+    let lastCompleted = -1
+    const report = () => {
+      // Segment downloads do not expose a trustworthy total byte count.
+      // Their completion percentage is therefore based on finished segments,
+      // not assumed equal-byte chunks or a fabricated transfer total.
+      if (this.onProgress && completed !== lastCompleted) {
+        lastCompleted = completed
+        this.onProgress({ percent: Math.floor(completed / segments.length * 100), message: 'Downloading audio segments…' })
+      }
+      serial = serial.then(() => callback(options.onProgress, [[...progress.values()].reduce((a,b) => a+b,0), 0, completed, segments.length]))
+      return serial
+    }
     const width = Math.max(1, Math.min(8, Number(options.maxParallel || this.addon.manifest.capabilities?.downloadTransfer?.maxParallelSegments) || 3))
     try {
       const temp = this.file(`${output}.tmp`), fd = await fsp.open(temp, 'w', 0o600)
