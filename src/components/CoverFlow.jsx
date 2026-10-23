@@ -5,7 +5,7 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion,
 import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, FLOW_SPRING } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -94,6 +94,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const [activeIndex, setActiveIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
   const current = picks[clampIndex(activeIndex, count)] || picks[0]
+  const visible = flowVisibleRange(activeIndex, count)
 
   const stopPress = () => { clearTimeout(pressTimer.current); pressTimer.current = null }
   const rotateBack = next => {
@@ -107,6 +108,21 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     const to = clampIndex(Math.round(target), count)
     if (reduced) position.set(to)
     else spring.current = animate(position, to, { type: 'spring', ...FLOW_SPRING, velocity })
+  }
+  // Long flicks should coast through multiple covers rather than hit a
+  // distant spring target and brake abruptly. The inertia settles on a cover
+  // index and softly rebounds at the first / last one.
+  const coast = velocity => {
+    if (reduced || count <= 1 || Math.abs(velocity) < 1) {
+      settle(flowTarget(position.get(), velocity, count), velocity)
+      return
+    }
+    spring.current?.stop()
+    spring.current = animate(position, flowTarget(position.get(), velocity, count), {
+      type: 'inertia', velocity, power: 0.30, timeConstant: 550,
+      modifyTarget: target => clampIndex(Math.round(target), count),
+      min: 0, max: count - 1, bounceStiffness: 110, bounceDamping: 28,
+    })
   }
   const step = by => { rotateBack(false); settle(Math.round(position.get()) + by) }
   useMotionValueEvent(position, 'change', value => {
@@ -191,11 +207,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     stopPress()
     if (g.moved) {
       suppressClick.current = true
-      const first = g.samples[0]
-      const last = g.samples[g.samples.length - 1]
-      const seconds = Math.max(0.016, (last.t - first.t) / 1000)
-      const velocity = -((last.x - first.x) / seconds) / pixelsPerCover
-      settle(flowTarget(position.get(), velocity, count), velocity)
+      const velocity = flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)
+      coast(velocity)
     }
     gesture.current = null
   }
@@ -208,7 +221,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     spring.current?.stop()
     position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
     clearTimeout(wheelTimer.current)
-    wheelTimer.current = setTimeout(() => settle(position.get()), 120)
+    wheelTimer.current = setTimeout(() => settle(position.get()), 170)
   }
   const select = index => {
     if (suppressClick.current) { suppressClick.current = false; return }
@@ -240,10 +253,13 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       }}
       className="relative isolate cursor-grab select-none overflow-hidden bg-black outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
       style={{ height: size * 1.42, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
-      {picks.map((pick, index) => <FlowCover key={pick.track.id}
-        pick={pick} index={index} position={position} flip={flip}
-        activeIndex={activeIndex} size={size} reduced={reduced} flipped={flipped}
-        onSelect={select} onPlay={onPlay} onContextMenu={onContextMenu} />)}
+      {picks.slice(visible.start, visible.end).map((pick, offset) => {
+        const index = visible.start + offset
+        return <FlowCover key={pick.track.id}
+          pick={pick} index={index} position={position} flip={flip}
+          activeIndex={activeIndex} size={size} reduced={reduced} flipped={flipped}
+          onSelect={select} onPlay={onPlay} onContextMenu={onContextMenu} />
+      })}
     </div>
     <div className="mx-auto max-w-lg text-center" aria-live="polite">
       <p className="truncate text-[17px] font-semibold text-white">{current.track.title}</p>
