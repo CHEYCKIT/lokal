@@ -196,6 +196,22 @@ jobs:
           [ ${#msix[@]} -gt 0 ] || { echo "::error::No .msix was built."; exit 1; }
           ls -l "${msix[@]}"
 
+      # The MSIX is unsigned (the Store signs it), so Windows won't install a
+      # downloaded copy: it's kept as a workflow artifact for uploading to
+      # Partner Center, not published on the GitHub release.
+      - name: Upload the Store MSIX
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: store-msix
+          path: release/*.msix
+          if-no-files-found: error
+
+      - name: Keep the MSIX off the release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f release/*.msix
+
       - name: Verify AppImage libvips resolver tests
         if: runner.os == 'Linux'
         run: node --test scripts/check-linux-sharp-appimage.test.cjs
@@ -364,6 +380,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: artifacts
+          pattern: release-*
 
       - name: Aggregate artifacts into release_all
         shell: bash
@@ -443,7 +460,6 @@ jobs:
           prerelease: true
           files: |
             release_all/**/*.exe
-            release_all/**/*.msix
             release_all/**/*.dmg
             release_all/**/*.AppImage
             release_all/**/*.deb
@@ -492,7 +508,7 @@ jobs:
           # previous banner stays rather than leaving a broken image. (Written
           # for the runner's `bash -e -o pipefail`: a bare `[ -f ... ] && ...`
           # for the banner returned 1 and stopped the whole step.)
-          keep=$( { find release_all -type f \( -name '*.exe' -o -name '*.msix' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name 'latest*.yml' \) -printf '%f\n'; echo release-banner.png; } | sort -u )
+          keep=$( { find release_all -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name 'latest*.yml' \) -printf '%f\n'; echo release-banner.png; } | sort -u )
           if [ "$keep" = "release-banner.png" ]; then
             echo "No files from this run; leaving the release as it is."
             exit 0

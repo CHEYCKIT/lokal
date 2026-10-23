@@ -396,6 +396,7 @@ contextBridge.exposeInMainWorld('electron', {
   updaterInstall: () => invoke('updater:install'),
   updaterCheck: () => invoke('updater:check'),
   getVersion: () => invoke('app:getVersion'),
+  isWindowsStore: () => invoke('app:isWindowsStore'),
   onUpdaterEvent: (cb) => {
     ipcRenderer.on('updater:available', (_, info) => cb('available', info))
     ipcRenderer.on('updater:progress', (_, p) => cb('progress', p))

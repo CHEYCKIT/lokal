@@ -286,6 +286,22 @@ jobs:
           [ ${#msix[@]} -gt 0 ] || { echo "::error::No .msix was built."; exit 1; }
           ls -l "${msix[@]}"
 
+      # The MSIX is unsigned (the Store signs it), so Windows won't install a
+      # downloaded copy: it's kept as a workflow artifact for uploading to
+      # Partner Center, not published on the GitHub release.
+      - name: Upload the Store MSIX
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: store-msix
+          path: release/*.msix
+          if-no-files-found: error
+
+      - name: Keep the MSIX off the release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f release/*.msix
+
       - name: Verify AppImage libvips resolver tests
         if: runner.os == 'Linux'
         run: node --test scripts/check-linux-sharp-appimage.test.cjs
@@ -469,6 +485,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: artifacts
+          pattern: release-*
 
       - name: Aggregate artifacts into release_all
         shell: bash
@@ -609,7 +626,6 @@ jobs:
           tag_name: ${{ env.TAG }}
           files: |
             release_all/**/*.exe
-            release_all/**/*.msix
             release_all/**/*.dmg
             release_all/**/*.AppImage
             release_all/**/*.deb

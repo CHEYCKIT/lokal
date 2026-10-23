@@ -940,6 +940,7 @@ ipcMain.handle('updater:install', () => {
   ipcMain.handle('app:getVersion', () => {
     return app.getVersion()
   })
+  ipcMain.handle('app:isWindowsStore', () => IS_WINDOWS_STORE)
 
   // macOS: its window back from the Dock (hidden helper windows don't count).
   app.on('activate', () => {
