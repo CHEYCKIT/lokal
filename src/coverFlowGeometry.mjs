@@ -37,8 +37,8 @@ export function flowCoverGeometry(distance, size, reduceMotion = false) {
     pivot: reduceMotion ? 50 : 50 - side * 50 * hinge, // CSS transform-origin percentage
     // Positive Y rotation brings the left edge forward, negative the right.
     // Hence the OUTER edge of either side cover is the one facing the viewer.
-    angle: reduceMotion ? 0 : -side * (2 * near - near * near) * 70,
-    depth: reduceMotion ? 0 : -size * depthDistance(ad),
+    angle: reduceMotion || near === 0 ? 0 : -side * (2 * near - near * near) * 70,
+    depth: reduceMotion || ad === 0 ? 0 : -size * depthDistance(ad),
     opacity: Math.max(0, Math.min(1, 5 - ad)),
   }
 }
