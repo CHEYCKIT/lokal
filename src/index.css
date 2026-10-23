@@ -423,60 +423,6 @@ html.performance-mode *::after {
   pointer-events: none;
 }
 
-/* The backdrop mesh is pre-baked; gradients add visible movement using GPU
-   transforms only. No per-frame canvas work or full-screen blur is required. */
-@keyframes fullscreen-gradient-drift {
-  0%, 100% { transform: translate3d(-6%, -4%, 0) scale(1.12); }
-  50% { transform: translate3d(6%, 4%, 0) scale(1.17); }
-}
-.fullscreen-gradient-drift {
-  animation: fullscreen-gradient-drift 18s ease-in-out infinite;
-  pointer-events: none;
-  will-change: transform;
-}
-.fullscreen-gradient-flow {
-  pointer-events: none;
-  overflow: hidden;
-}
-.fullscreen-gradient-blob {
-  position: absolute;
-  width: 120%;
-  height: 165%;
-  border-radius: 50%;
-  pointer-events: none;
-  opacity: 0.68;
-  mix-blend-mode: screen;
-  will-change: transform;
-  animation-play-state: var(--fullscreen-flow-state, running);
-}
-.fullscreen-gradient-blob-a {
-  left: -35%;
-  top: -75%;
-  background: radial-gradient(ellipse at center, var(--fullscreen-flow-a) 0%, transparent 65%);
-  animation-name: fullscreen-gradient-flow-a;
-  animation-duration: 15s;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-.fullscreen-gradient-blob-b {
-  right: -40%;
-  bottom: -75%;
-  background: radial-gradient(ellipse at center, var(--fullscreen-flow-b) 0%, transparent 65%);
-  animation-name: fullscreen-gradient-flow-b;
-  animation-duration: 19s;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-@keyframes fullscreen-gradient-flow-a {
-  from { transform: translate3d(-4%, -6%, 0) scale(0.95); }
-  to { transform: translate3d(36%, 24%, 0) scale(1.14); }
-}
-@keyframes fullscreen-gradient-flow-b {
-  from { transform: translate3d(4%, 2%, 0) scale(1.08); }
-  to { transform: translate3d(-30%, -23%, 0) scale(0.92); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .fullscreen-cd-disc, .fullscreen-gradient-drift, .fullscreen-gradient-blob { animation: none !important; }
+  .fullscreen-cd-disc { animation: none !important; }
 }
