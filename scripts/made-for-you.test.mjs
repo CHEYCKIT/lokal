@@ -6,12 +6,12 @@ const mix = (id, n, from = 0) => ({ id, name: `Mix ${id}`, tracks: Array.from({ 
 let seed = 1
 const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
 
-test('two songs from each of six mixes: twelve, none twice, in mix order', () => {
+test('four songs from each of six mixes: 24, none twice, in mix order', () => {
   const mixes = [mix('a', 10, 0), mix('b', 10, 100), mix('c', 10, 200), mix('d', 10, 300), mix('e', 10, 400), mix('f', 10, 500), mix('g', 10, 600)]
   const picks = pickMadeForYou(mixes, { random })
-  assert.equal(picks.length, 12)
-  assert.equal(new Set(picks.map(p => p.track.id)).size, 12)
-  assert.deepEqual(picks.map(p => p.mix.id), ['a', 'a', 'b', 'b', 'c', 'c', 'd', 'd', 'e', 'e', 'f', 'f'])
+  assert.equal(picks.length, 24)
+  assert.equal(new Set(picks.map(p => p.track.id)).size, 24)
+  assert.deepEqual(picks.map(p => p.mix.id), ['a', 'b', 'c', 'd', 'e', 'f'].flatMap(id => Array(4).fill(id)))
   assert.ok(picks.every(p => mixes.find(m => m.id === p.mix.id).tracks.includes(p.track)))
 })
 
@@ -19,8 +19,8 @@ test('mixes sharing songs give others; small or few mixes give what they have', 
   const shared = [mix('a', 3, 0), mix('b', 3, 0), mix('c', 1, 50)]
   const picks = pickMadeForYou(shared, { random })
   assert.equal(new Set(picks.map(p => p.track.id)).size, picks.length)
-  assert.equal(picks.filter(p => p.mix.id === 'b').length, 1, 'only one song of b is left')
-  assert.equal(picks.length, 2 + 1 + 1)
+  assert.equal(picks.filter(p => p.mix.id === 'b').length, 0, 'all songs of b were already picked')
+  assert.equal(picks.length, 3 + 0 + 1)
   assert.deepEqual(pickMadeForYou([]), [])
 })
 
