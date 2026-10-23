@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Heart, Plus, Camera, FolderOpen, Trash2, Music, LibraryBig, Clock, ListEnd, GripVertical, X, Check, Edit2, Search, Download, AlertCircle, Gem, Disc3, User, ListMinus, MoreHorizontal, Globe, Radio, ChevronUp, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { showToast, showLoadingToast } from './Toaster'
-import { canGetLossless, openLossless, formatLabel, isSuspect, tierOf, TIERS, atmosAvailable, ATMOS_AVAILABLE, losslessMenuItem, losslessManyMenuItem } from '../quality'
+import { canGetLossless, openLossless, formatLabel, isSuspect, tierOf, TIERS, losslessMenuItem, losslessManyMenuItem } from '../quality'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { api, peekSettings } from '../api'
@@ -969,14 +969,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
             {layout.quality && (() => {
               // Same badge as the Audio Quality page; opens that page on its list.
               const tier = isStreamed(track) || isGhost ? 'unknown' : (isSuspect(track) ? 'suspect' : tierOf(track))
-              const atmos = atmosAvailable(track)
-              if (tier === 'unknown' && !atmos) return <span title={t("Quality unknown")} className="text-center text-xs text-muted/50">—</span>
-              if (atmos) return (
-                <span className="justify-self-center flex flex-wrap items-center justify-center gap-1">
-                  <span title={ATMOS_AVAILABLE.hint} className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] ${ATMOS_AVAILABLE.className}`}>ATMOS</span>
-                  {tier !== 'unknown' && <span title={`${TIERS[tier].label}: ${TIERS[tier].desc}`} className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase leading-[14px] ${TIERS[tier].className}`}>{TIERS[tier].label}</span>}
-                </span>
-              )
+              if (tier === 'unknown') return <span title={t("Quality unknown")} className="text-center text-xs text-muted/50">—</span>
               const info = TIERS[tier]
               return (
                 <button onClick={e => { e.stopPropagation(); navigate('/quality', { state: { tier } }) }}
