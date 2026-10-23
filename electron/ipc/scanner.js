@@ -2050,6 +2050,8 @@ async function indexSingleFile(filePath, opts = {}) {
       return { error: 'Downloaded audio duration does not match the requested track' }
     }
     if (titleOverride || artistOverride || albumOverride || currentMeta) {
+      const currentQuality = currentMeta ? quality.qualityFields(currentMeta) : null
+      if (currentQuality) currentQuality.atmos_verified = await quality.probeAtmosFile(filePath, { codec: currentQuality.codec })
       const updates = []
       const params = []
       if (titleOverride && existing.title !== titleOverride) { updates.push('title = ?'); params.push(titleOverride) }
@@ -2065,7 +2067,7 @@ async function indexSingleFile(filePath, opts = {}) {
           db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`).run(...params)
           if (artistOverride && existing.artist !== artistOverride) updateTrackArtistLinks(db, existing.id, artistOverride)
           if (currentMeta) {
-        quality.saveFields(db, existing.id, quality.qualityFields(currentMeta), { fileChanged: true })
+        quality.saveFields(db, existing.id, currentQuality, { fileChanged: true })
         addedDate.applyToRow(db, existing.id, addedDate.fromMeta(currentMeta))
       }
         })()
@@ -2129,6 +2131,8 @@ async function indexSingleFile(filePath, opts = {}) {
   }
 
   const replaygain = c.replaygain_track_gain || null
+  const audioQuality = quality.qualityFields(meta)
+  audioQuality.atmos_verified = await quality.probeAtmosFile(filePath, { codec: audioQuality.codec })
   const album = requestedAlbum || c.album?.trim() || 'Unknown Album'
   // A streamed (ghost) copy of the song isn't a copy in the library: the file
   // is added, and then takes the ghost's place.
@@ -2175,7 +2179,7 @@ async function indexSingleFile(filePath, opts = {}) {
       db.prepare(`INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, track_num, year, genre, duration, artwork_path, bitrate, last_modified, replaygain) VALUES (@id, @file_path, @file_hash, @title, @artist, @album, @album_artist, @track_num, @year, @genre, @duration, @artwork_path, @bitrate, @last_modified, @replaygain)`)
         .run(params)
     }
-    quality.saveFields(db, trackId, quality.qualityFields(meta), { fileChanged: true })
+    quality.saveFields(db, trackId, audioQuality, { fileChanged: true })
     db.prepare('DELETE FROM artist_track_links WHERE track_id = ?').run(trackId)
     const artistNames = splitArtists(artist)
     for (const name of artistNames) { 
