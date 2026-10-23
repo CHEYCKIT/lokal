@@ -49,7 +49,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
   const highlight = recommendationKey(highlightTitle)
 
   const playWithAtmos = async track => {
-    if (atmosAvailable(track)) {
+    if (isOnlineTrack(track) && atmosAvailable(track)) {
       const source = streamRef(track) || track
       try {
         const capability = await api.atmosCapabilities()
@@ -73,7 +73,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
   const openMenu = (event, track) => {
     const own = !isOnlineTrack(track)
     menu.open(event, [
-      { label: 'Play', icon: Play, onSelect: () => onPlay(track) },
+      { label: 'Play', icon: Play, onSelect: () => playWithAtmos(track) },
       { label: 'Play next', icon: Clock, onSelect: () => withResolved(track, playNextMany) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => withResolved(track, addToQueueMany) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
