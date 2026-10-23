@@ -90,9 +90,16 @@ export default function AtmosPlayButton({ track }) {
     setError('')
     try {
       const state = usePlayerStore.getState()
+      const resumeTrack = state.currentTrack?.id
+      const wasPlaying = !!state.isPlaying
+      // Exclusive HDMI playback cannot be established while Chromium is
+      // holding the same audio endpoint. Restore PCM if the dialog is
+      // cancelled or opening the native player fails.
+      if (wasPlaying) state.togglePlay()
       const result = await api.atmosOpenFile(device)
-      if (result?.ok && state.isPlaying) state.togglePlay()
-      else if (result?.error) setError(result.error)
+      if (!result?.ok && wasPlaying && usePlayerStore.getState().currentTrack?.id === resumeTrack &&
+          !usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
+      if (result?.error) setError(result.error)
     } catch (err) { setError(err.message || String(err)) }
     finally { setBusy(false) }
   }
