@@ -448,6 +448,7 @@ export const api = {
   youtubeAccountPlaylist: (playlistId) => isE() ? el().youtubeAccountPlaylist(playlistId) : apiFetch(`/online/account-playlist/${encodeURIComponent(playlistId)}`),
   youtubeRadio: (videoId) => isE() ? el().youtubeRadio(videoId) : apiFetch(`/online/radio/${encodeURIComponent(videoId)}`),
   youtubeSetLiked: (videoId, liked) => isE() ? el().youtubeSetLiked(videoId, liked) : apiFetch('/online/account-liked', { method: 'POST', body: { videoId, liked } }),
+  atmosCapabilities: () => isE() && el().atmosCapabilities ? el().atmosCapabilities() : Promise.resolve({ available: false }),
   atmosPlay: (provider, id, device = '') => isE() && el().atmosPlay
     ? el().atmosPlay(provider, id, device) : Promise.resolve({ error: 'Native Atmos HDMI output requires desktop Lokal' }),
   atmosStop: () => isE() && el().atmosStop ? el().atmosStop() : Promise.resolve({ ok: true }),
