@@ -11,7 +11,7 @@ import { peekCache, useCachedState, usePageReady, writeCache } from '../pageCach
 import AnimatedNumber from '../components/AnimatedNumber'
 import SectionSwap, { ReadyWhen } from '../components/SectionSwap'
 import { usePlayerStore } from '../store/player'
-import { TIERS, formatLabel, isSuspect, openLossless, tierOf, verdictText } from '../quality'
+import { TIERS, canGetLossless, formatLabel, isSuspect, openLossless, tierOf, verdictText } from '../quality'
 
 // Worst to best after "Worth upgrading".
 const FILTERS = [
@@ -21,6 +21,7 @@ const FILTERS = [
   ['high', 'High'],
   ['lossless', 'Lossless'],
   ['hires', 'Hi-res'],
+  ['atmos', 'Dolby Atmos'],
 ]
 const FILTER_IDS = new Set(FILTERS.map(([id]) => id))
 const PAGE = 200
@@ -212,7 +213,7 @@ export default function Quality() {
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 @sm:grid-cols-3 @lg:grid-cols-5">
-          {['hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
+          {['atmos', 'hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
             <StatTile key={tier} tier={tier} count={tiers[tier]} rollFrom={rollFrom(tiers[tier] || 0)} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
           ))}
         </div>
@@ -270,10 +271,12 @@ export default function Quality() {
                 <div className="grid grid-cols-[4.75rem_auto] items-center gap-2.5 @sm:grid-cols-[10rem_4.75rem_auto]">
                   <span className="hidden truncate text-right text-[11px] text-muted tabular-nums @sm:block" title={formatLabel(track)}>{formatLabel(track)}</span>
                   <span className={`justify-self-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${info.className}`}>{info.label}</span>
-                  <button onClick={() => openLossless(track)} title={t("Get it in lossless")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted opacity-70 transition-all hover:text-accent group-hover:opacity-100">
-                    <Gem size={12} /> Lossless
-                  </button>
+                  {canGetLossless(track) && (
+                    <button onClick={() => openLossless(track)} title={t("Get it in lossless")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted opacity-70 transition-all hover:text-accent group-hover:opacity-100">
+                      <Gem size={12} /> Lossless
+                    </button>
+                  )}
                 </div>
               </div>
             )
