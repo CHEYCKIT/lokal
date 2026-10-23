@@ -510,6 +510,20 @@ pub fn atmos_headphone_command(command: String) -> napi::Result<()> {
             session.SetPosition(TimeSpan { Duration: current.saturating_add(delta).clamp(0, max) })
                 .map_err(|e| napi::Error::from_reason(format!("Seek failed: {e:?}")))?;
         }
+        cmd if cmd.starts_with("seek ") && cmd.ends_with(" absolute") => {
+            let value = cmd.strip_prefix("seek ").unwrap()
+                .strip_suffix(" absolute").unwrap().trim()
+                .parse::<f64>().map_err(|_| napi::Error::from_reason("Invalid Atmos seek position"))?;
+            if !value.is_finite() || value < 0.0 {
+                return Err(napi::Error::from_reason("Invalid Atmos seek position"));
+            }
+            let session = player.PlaybackSession()
+                .map_err(|e| napi::Error::from_reason(format!("Seek unavailable: {e:?}")))?;
+            let max = session.NaturalDuration().map(|v| v.Duration).unwrap_or(i64::MAX);
+            let ticks = (value * 10_000_000.0).min(i64::MAX as f64) as i64;
+            session.SetPosition(TimeSpan { Duration: ticks.min(max) })
+                .map_err(|e| napi::Error::from_reason(format!("Seek failed: {e:?}")))?;
+        }
         _ => return Err(napi::Error::from_reason("Unknown headphone playback command")),
     }
     Ok(())
