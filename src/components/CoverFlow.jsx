@@ -5,7 +5,7 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion,
 import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_SPRING } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, FLOW_SPRING } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -89,7 +89,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const wheelTimer = useRef(null)
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
-  const pixelsPerCover = Math.max(1, size * (reduced ? 1.06 : 0.55))
+  const pixelsPerCover = flowPixelsPerCover(size, reduced)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
