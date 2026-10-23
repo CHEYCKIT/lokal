@@ -334,6 +334,7 @@ function HomeContent({ user }) {
     try {
       const tracks = await resolveRecommendedAlbum(album, (message, progress) => toast.update(message, progress?.percent))
       if (!tracks.length) { toast.close(); return }
+      toast.update('Saving playlist…', null)
       const playlist = await saveAsPlaylist(`${album.title} - ${today()}`, tracks, { userId: user?.id, description: `Recommended album by ${album.artist}` })
       toast.close(playlist ? `Saved “${album.title}” as a playlist.` : `Could not save “${album.title}”.`)
     } catch {
@@ -346,6 +347,7 @@ function HomeContent({ user }) {
     try {
       const tracks = await resolveRecommendedAlbum(album, (message, progress) => toast.update(message, progress?.percent))
       if (!tracks.length) { toast.close(); return }
+      toast.update('Queuing downloads…', null)
       const result = await saveTracksToLibrary(tracks, { onProgress: (message, progress) => toast.update(message, progress?.percent) })
       toast.close(libraryDownloadMessage(result))
     } catch {
@@ -468,10 +470,12 @@ function HomeContent({ user }) {
       if (!isCurrent()) { toast.close(); return }
       if (!tracks.length) { toast.close(`No matching songs were found in ${mix.title}.`); return }
       if (download) {
+        toast.update('Queuing downloads…', null)
         const result = await saveTracksToLibrary(tracks, { isCurrent, onProgress: (message, progress) => toast.update(message, progress?.percent) })
         result.failed += candidates.length - tracks.length
         toast.close(libraryDownloadMessage(result))
       } else {
+        toast.update('Saving playlist…', null)
         const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: `Mixed for you on ${sourceName(mix.source || 'youtube')}`, coverURL: secureImage(mix.artwork_url || mix.thumbnail) })
         toast.close(playlist ? `Saved “${mix.title}” as a playlist.` : `Could not save “${mix.title}”.`)
       }
