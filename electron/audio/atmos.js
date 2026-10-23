@@ -46,15 +46,20 @@ function isConfirmedBitstream(logLine) {
   return /\bAO:.*\bspdif[-_]?eac3\b/i.test(logLine)
 }
 
+let mpvProbeSucceeded = false
 function nativeAtmosAvailable(platform = process.platform) {
   if (!supportedHost(platform)) return false
+  // Avoid repeating a synchronous executable check on the Electron main
+  // thread. Cache success; failed probes are retried after mpv is installed.
+  if (mpvProbeSucceeded) return true
   try {
     const checked = spawnSync('mpv', ['--version'], {
       windowsHide: true,
       timeout: 2000,
       stdio: 'ignore',
     })
-    return checked.status === 0
+    mpvProbeSucceeded = checked.status === 0
+    return mpvProbeSucceeded
   } catch { return false }
 }
 
