@@ -20,10 +20,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Compile native Windows audio bridge
-        run: cargo check --manifest-path native/smtc-bridge/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Build Windows native audio bridge
+        run: cargo build --manifest-path native/smtc-bridge/Cargo.toml --release --target x86_64-pc-windows-msvc
+      - name: Stage the native bridge for Node
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force electron/native | Out-Null
+          Copy-Item native/smtc-bridge/target/x86_64-pc-windows-msvc/release/smtc_bridge.dll electron/native/smtc-bridge.win32-x64-msvc.node
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Verify Windows headphone bridge exports
+        run: node -e "const b=require('./electron/native/smtc-bridge.win32-x64-msvc.node'); for(const k of ['startAtmosHeadphones','stopAtmosHeadphones','atmosHeadphoneStatus','atmosHeadphoneCommand']) if(typeof b[k] !== 'function') throw Error('Missing export '+k)"
       - name: Run Atmos routing tests
         run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs
