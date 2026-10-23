@@ -120,6 +120,40 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   // new image/reflection trees while a fling crosses each item boundary.
   const visible = flowVisibleRange(renderCenter, count)
   const handlers = useRef(null)
+  const warmed = useRef(new Map())
+  // Thumbnail assets are small. Decode them one at a time when Chromium is
+  // idle so a fast sweep doesn't need to fetch/decode them mid-animation.
+  useEffect(() => {
+    if (reduced) return undefined
+    const cache = warmed.current
+    const urls = [...new Set(picks.map(p => trackArtURL(p.track)).filter(Boolean))]
+    for (const url of cache.keys()) if (!urls.includes(url)) cache.delete(url)
+    let cancelled = false
+    let job
+    const schedule = () => {
+      if (cancelled) return
+      job = window.requestIdleCallback?.(warmNext)
+    }
+    const warmNext = async () => {
+      if (cancelled) return
+      const src = urls.find(url => !cache.has(url))
+      if (!src) return
+      const image = new Image()
+      image.decoding = 'async'
+      cache.set(src, image)
+      image.src = src
+      try { await image.decode?.() } catch { /* invalid art stays cached as failed */ }
+      schedule()
+    }
+    // Electron runs Chromium, which exposes requestIdleCallback. Avoid
+    // triggering a decoding wave synchronously during the first Home paint.
+    schedule()
+    return () => {
+      cancelled = true
+      if (job != null) window.cancelIdleCallback?.(job)
+    }
+  }, [picks, reduced])
+
   const handleSelect = useCallback(index => handlers.current?.select(index), [])
   const handlePlay = useCallback(index => handlers.current?.play(index), [])
   const handleMenu = useCallback((event, track) => handlers.current?.menu?.(event, track), [])
