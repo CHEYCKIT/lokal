@@ -7,6 +7,11 @@ export default function AtmosPlayButton({ track }) {
   const [status, setStatus] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [device, setDevice] = useState(() => {
+    try { return localStorage.getItem('lokal-atmos-output-device') || '' }
+    catch { return '' }
+  })
+  const [showDevice, setShowDevice] = useState(false)
   useEffect(() => api.onAtmosStatus(data => setStatus(data)), [])
   const active = status?.state === 'playing' && status?.id === String(track?.id)
   const start = async event => {
@@ -20,18 +25,12 @@ export default function AtmosPlayButton({ track }) {
         await api.atmosStop()
         return
       }
-      // Alt-click sets mpv's HDMI endpoint (wasapi/... or alsa/...).
-      // Default endpoint works when HDMI/AVR is the OS's default output.
-      let device = ''
-      try {
-        device = localStorage.getItem('lokal-atmos-output-device') || ''
-        if (event.altKey) {
-          const selected = window.prompt('mpv HDMI output device (wasapi/... or alsa/...). Empty = system default.', device)
-          if (selected === null) return
-          device = selected.trim()
-          localStorage.setItem('lokal-atmos-output-device', device)
-        }
-      } catch {}
+      // Electron deliberately does not support window.prompt().
+      // Keep the device selection an in-app field with a persisted value.
+      if (event.altKey) {
+        setShowDevice(value => !value)
+        return
+      }
       const state = usePlayerStore.getState()
       if (state.isPlaying) state.togglePlay()
       const result = await api.atmosPlay(track.provider, String(track.id), device)
@@ -43,10 +42,25 @@ export default function AtmosPlayButton({ track }) {
     }
   }
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {showDevice && (
+        <input
+          aria-label="Atmos HDMI output device"
+          placeholder="wasapi/... · alsa/... · coreaudio/... (empty = default)"
+          title="Run mpv --audio-device=help to find a suitable HDMI receiver; leave blank for system default."
+          value={device}
+          onClick={event => event.stopPropagation()}
+          onChange={event => {
+            const next = event.target.value
+            setDevice(next)
+            try { localStorage.setItem('lokal-atmos-output-device', next) } catch {}
+          }}
+          className="w-56 rounded bg-neutral-900 px-2 py-1 text-[11px] text-white"
+        />
+      )}
       <button type="button" disabled={busy}
         onClick={start}
-        title="Play original Tidal E-AC-3 JOC over HDMI through mpv (Windows WASAPI or Linux ALSA). Requires an Atmos AVR and mpv installed. Alt-click to select HDMI device."
+        title="Play original Tidal E-AC-3 JOC over HDMI through mpv (Windows WASAPI, Linux ALSA or macOS CoreAudio). Requires an Atmos AVR and mpv installed. Alt-click to select HDMI device."
         className="rounded-full border border-violet-400/25 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold text-violet-200 disabled:opacity-50">
         {busy || status?.state === 'loading' ? 'PREPARING ATMOS…' : active ? 'STOP ATMOS' : 'PLAY ATMOS'}
       </button>
