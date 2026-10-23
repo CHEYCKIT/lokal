@@ -110,9 +110,29 @@ export default function AtmosPlayButton({ track, onPlay }) {
       // cancelled or opening the native player fails.
       if (wasPlaying) state.togglePlay()
       const result = await api.atmosOpenFile(device, mode)
-      if (!result?.ok && wasPlaying && usePlayerStore.getState().currentTrack?.id === resumeTrack &&
-          !usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
-      if (result?.error) setError(result.error)
+      if (result?.ok && result.file && result.id) {
+        const nativeTrack = {
+          id: `atmos:${result.id}`,
+          title: result.title || 'Dolby Atmos',
+          artist: '',
+          album: '',
+          file_path: result.file,
+          file_type: 'E-AC-3 JOC',
+          atmosNative: true,
+          atmosMode: mode,
+          atmosProvider: 'local',
+          atmosSourceId: result.id,
+        }
+        usePlayerStore.getState().playTrack(nativeTrack, [nativeTrack])
+        window.dispatchEvent(new CustomEvent('lokal:atmos-local-ready', {
+          detail: { state: 'playing', id: result.id, mode },
+        }))
+        setSetupOpen(false)
+      } else {
+        if (wasPlaying && usePlayerStore.getState().currentTrack?.id === resumeTrack &&
+            !usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
+        if (result?.error) setError(result.error)
+      }
     } catch (err) { setError(err.message || String(err)) }
     finally { setBusy(false) }
   }
