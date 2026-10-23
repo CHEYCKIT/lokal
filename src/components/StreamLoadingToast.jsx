@@ -40,14 +40,23 @@ export default function StreamLoadingToast() {
       }
       if (!toast) return
       const element = state.activeAudioElement === 'cf' ? state.cfAudioRef?.current : state.audioRef?.current
-      if (element?.dataset?.fallbackPending === '1') { close(); return }
+      if (element?.dataset?.fallbackRecoveryPending === '1') { close(); return }
       let percent = null
       const duration = Number(element?.duration)
       const buffered = element?.buffered
       if (buffered && Number.isFinite(duration) && duration > 0) {
-        let maxEnd = 0
-        for (let i = 0; i < buffered.length; i++) maxEnd = Math.max(maxEnd, buffered.end(i))
-        percent = Math.max(0, Math.min(100, Math.floor(maxEnd / duration * 100)))
+        // Seeking to a late range doesn't mean earlier audio is buffered.
+        // Sum non-overlapping buffered intervals rather than using the last
+        // endpoint, which might make 10 seconds look like 95% of a track.
+        let bufferedSeconds = 0
+        let previousEnd = 0
+        for (let i = 0; i < buffered.length; i++) {
+          const start = Math.max(0, buffered.start(i), previousEnd)
+          const end = Math.min(duration, buffered.end(i))
+          if (end > start) bufferedSeconds += end - start
+          previousEnd = Math.max(previousEnd, end)
+        }
+        percent = Math.max(0, Math.min(100, Math.floor(bufferedSeconds / duration * 100)))
       }
       const message = percent === null
         ? `Loading “${track.title}”…`
