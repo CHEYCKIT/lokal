@@ -1,0 +1,26 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const sharp = require('sharp')
+const { main } = require('./generate-brand-icons.cjs')
+const path = require('node:path')
+const fs = require('node:fs/promises')
+test('full square, transparent rounded corners, color mask and ICO are generated', async () => {
+  await main()
+  const dir = path.resolve(__dirname, '../public')
+  const full = await sharp(path.join(dir, 'lokal-icon.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const rounded = await sharp(path.join(dir, 'lokal-icon-rounded.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const sticker = await sharp(path.join(dir, 'lokal-icon-sticker.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  function pixel(r, x, y) {
+    const n = (y * r.info.width + x) * r.info.channels
+    return Array.from(r.data.subarray(n, n + r.info.channels))
+  }
+  assert.equal(full.info.width, 512)
+  assert.equal(pixel(full, 0, 0)[3], 255, 'square artwork fills the corners')
+  assert.equal(pixel(rounded, 0, 0)[3], 0, 'OS icon corners are transparent')
+  assert.equal(pixel(rounded, 256, 256)[3], 255)
+  assert.equal(pixel(sticker, 20, 20)[3], 0)
+  assert.equal(pixel(sticker, 450, 260)[3], 255, 'accent mask covers sticker')
+  const ico = await fs.readFile(path.join(dir, 'lokal-icon.ico'))
+  assert.equal(ico.readUInt16LE(2), 1)
+  assert.equal(ico.readUInt16LE(4), 7)
+})

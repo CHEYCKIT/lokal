@@ -330,8 +330,8 @@ const trayImage = image => image.resize(process.platform === 'win32' ? { width: 
 function loadTrayIcon() {
   if (accentIcon) return accentIcon
   const filenames = process.platform === 'win32'
-    ? ['lokal-icon.ico', 'lokal-icon.png']
-    : ['lokal-icon.png', 'lokal-icon.ico']
+    ? ['lokal-icon.ico', 'lokal-icon-rounded.png']
+    : ['lokal-icon-rounded.png', 'lokal-icon.ico']
   const roots = app.isPackaged
     ? [path.join(app.getAppPath(), 'dist'), path.join(process.resourcesPath, 'app.asar', 'dist')]
     : [path.join(__dirname, '../public'), path.join(app.getAppPath(), 'dist')]
@@ -444,7 +444,7 @@ function setPreferredMediaKeys(enabled) {
 function createWindow() {
   const saved = loadWindowState()
   mainWindow = new BrowserWindow({
-    icon: path.join(__dirname, process.platform === 'win32' ? '../public/lokal-icon.ico' : '../public/lokal-icon.png'),
+    icon: path.join(__dirname, process.platform === 'win32' ? '../public/lokal-icon.ico' : '../public/lokal-icon-rounded.png'),
     ...(saved?.bounds || { width: 1400, height: 860 }), minWidth: NORMAL_MIN_WIDTH, minHeight: NORMAL_MIN_HEIGHT,
     useContentSize: true,
     resizable: true,
