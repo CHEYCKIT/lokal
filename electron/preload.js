@@ -191,6 +191,7 @@ contextBridge.exposeInMainWorld('electron', {
   youtubeRadio: (videoId) => invoke('online:radio', videoId),
   youtubeSetLiked: (videoId, liked) => invoke('online:setAccountLiked', videoId, liked),
   onlineDownloadUrl: (provider, id) => invoke('online:downloadUrl', provider, id),
+  atmosCapabilities: () => invoke('atmos:capabilities'),
   atmosPlay: (provider, id, device) => invoke('atmos:play', provider, id, device),
   atmosStop: () => invoke('atmos:stop'),
   atmosCommand: command => invoke('atmos:command', command),
