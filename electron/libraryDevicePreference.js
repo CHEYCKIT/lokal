@@ -13,7 +13,7 @@ function leadArtist(expression) {
 
 function desktopPreferredLibraryClause() {
   return [
-    "NOT (tracks.download_source = 'mobile'",
+    "NOT (COALESCE(tracks.download_source, '') = 'mobile'",
     "AND COALESCE(tracks.duration, 0) > 0",
     "AND EXISTS (SELECT 1 FROM tracks AS desktop",
     "WHERE desktop.download_source IS NULL",
