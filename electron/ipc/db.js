@@ -381,6 +381,11 @@ function initDB() {
     } catch {}
   }
 
+  // Speed up desktop-vs-mobile recording checks for large linked libraries.
+  // The query compares titles case-insensitively before checking artist and
+  // duration, so a matching-title index prevents scanning the whole library.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_tracks_title_nocase ON tracks(title COLLATE NOCASE)') } catch {}
+
   // Older phone uploads predate source tracking; repair those identifiable
   // imports once while keeping explicit addon/download origins intact.
   try {
