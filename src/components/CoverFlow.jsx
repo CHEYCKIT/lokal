@@ -5,7 +5,6 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion,
 import FadeImg from './FadeImg'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { useTranslation } from '../i18n'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_SPRING } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
@@ -73,7 +72,6 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
 }
 
 export default function CoverFlow({ picks, onPlay, onContextMenu }) {
-  const { t } = useTranslation()
   const reduceMotion = !!useReducedMotion()
   const performanceMode = usePerformanceMode()
   const reduced = reduceMotion || performanceMode
