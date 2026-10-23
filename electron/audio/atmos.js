@@ -118,6 +118,15 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       const artifact = await service.download(key, id, {
         quality: 'DOLBY_ATMOS',
         purpose: 'download',
+        onProgress: ({ percent, message }) => {
+          if (active !== session) return
+          const value = Number(percent)
+          notify({
+            state: 'loading', provider, id: String(id),
+            percent: Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : null,
+            message: String(message || ''),
+          })
+        },
       })
       session.artifact = artifact
       if (active !== session) throw new Error('Atmos request was cancelled')
