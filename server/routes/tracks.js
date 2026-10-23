@@ -589,7 +589,7 @@ router.get('/', (req, res) => {
     const searchWhere = wordsMatch(searchText, TRACK_COLUMNS)
     if (searchWhere) { where.push(searchWhere.sql); params.push(...searchWhere.params) }
   }
-  res.json(require('../../electron/trackErrors').listTracks(db, { sort, limit, offset, problems }, { where, params, exists: fs.existsSync }))
+  res.json(require('../../electron/trackErrors').listTracks(db, { sort, limit, offset, problems, source, id, includeGhosts }, { where, params, exists: fs.existsSync }))
 })
 
 router.post('/:id/error', (req, res) => res.json({ ok: require('../../electron/trackErrors').recordTrackError(getDB(), req.params.id, req.body?.message) }))
