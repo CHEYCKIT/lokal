@@ -21,6 +21,7 @@ const FILTERS = [
   ['high', 'High'],
   ['lossless', 'Lossless'],
   ['hires', 'Hi-res'],
+  ['atmos', 'Dolby Atmos'],
 ]
 const FILTER_IDS = new Set(FILTERS.map(([id]) => id))
 const PAGE = 200
@@ -212,7 +213,7 @@ export default function Quality() {
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 @sm:grid-cols-3 @lg:grid-cols-5">
-          {['hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
+          {['atmos', 'hires', 'lossless', 'high', 'low', 'suspect'].map(tier => (
             <StatTile key={tier} tier={tier} count={tiers[tier]} rollFrom={rollFrom(tiers[tier] || 0)} share={shareText(tier)} active={filter === tier} onClick={() => setFilter(tier)} />
           ))}
         </div>
