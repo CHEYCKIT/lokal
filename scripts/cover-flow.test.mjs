@@ -242,7 +242,8 @@ test('fast multi-cover animation does not mount/decode full-resolution art on ev
 })
 
 test('fast-flip window and reflection avoid repeated React and image work', () => {
-  assert.ok(flow.includes('setRenderCenter(prev => Math.abs(next - prev) >= 4 ? next : prev)'), 'shift mount window in batches')
+  assert.ok(flow.includes('Math.abs(next - renderCenterRef.current) >= 4'), 'shift mount window in batches')
+  assert.ok(flow.includes('if (next !== activeRef.current)'), 'skip unchanged frame-driven React updates')
   assert.ok(flow.includes('flowVisibleRange(renderCenter, count)'), 'window is not recalculated around every new index')
   assert.ok(flow.includes('onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu}'), 'stable callbacks keep React.memo effective')
   assert.ok(flow.includes('WebkitBoxReflect:'), 'Chromium reflection reuses the source element')
