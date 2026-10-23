@@ -11,3 +11,11 @@ The LAN protocol uses `_lokal._tcp.local` discovery, sharing the multicast socke
 Device bearer tokens are random, hashed in desktop SQLite and kept in Android secure storage. They authorize the remote/media surface, not the general settings/filesystem API. Audio copies go through the bounded, checksummed `/api/remote/files` endpoint and promote matching placeholders in place. QR images are generated locally. The transport is intended for a trusted LAN; it does not add TLS to the existing HTTP server.
 
 The implementation has not been built or exercised on physical devices. CI, tests and builds were skipped at the user's request.
+
+## Phone → PC file names
+
+New uploads keep the Android source file's basename when it is available and valid, e.g. `02 - Love Somebody.flac`. Older mobile versions do not send filenames, so the desktop uses the imported artist and title, e.g. `The Motion Epic - Love Somebody.flac`. Names are sanitized for Windows and never overwrite existing music: conflicts receive a numbered suffix (` (2)`, ` (3)`, etc.). The checksum, audio tags, song ID, playlist membership, and likes are unchanged.
+
+Older phone uploads under `data/phone-downloads` used UUID-only names. During desktop database initialization, existing UUID-named imports in that exact folder are relinked to readable `Artist - Title.ext` names and their database paths updated in place. This process retains their existing track IDs, metadata, and audio bytes. Other library folders are not touched. If the original storage filesystem rejects hard links, it leaves the old file and path intact rather than risking loss.
+
+Regression checks: `npm run test:phone-copy`. The linked Android change adds `originalFilename` to the authenticated upload metadata before any temporary staging; the desktop fix remains compatible with older phones.
