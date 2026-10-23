@@ -3,8 +3,8 @@ import { api } from '../api'
 import { showLoadingToast } from './Toaster'
 import { usePlayerStore } from '../store/player'
 
-/** Native compressed Atmos session controls. Separate from Web Audio's
- * PCM signal chain; the latter must never claim to render Atmos objects. */
+/** Native Atmos session controls. HDMI confirms compressed bitstream output;
+ * Windows headphones use Media Foundation and cannot verify JOC rendering. */
 export default function AtmosTransport() {
   const [status, setStatus] = useState(null)
   const [paused, setPaused] = useState(false)
@@ -47,9 +47,15 @@ export default function AtmosTransport() {
   }
   return (
     <div role="region" aria-label="Dolby Atmos native output" className="fixed right-6 bottom-24 z-[100] flex max-w-[22rem] flex-col gap-2 rounded-xl border border-violet-400/25 bg-neutral-950/95 p-3 text-sm text-white shadow-xl">
-      <div className="font-semibold">{status?.state === 'playing' ? 'E-AC-3 JOC · HDMI bitstream' : 'Preparing Dolby Atmos…'}</div>
+      <div className="font-semibold">{status?.state === 'playing'
+          ? status?.mode === 'headphones' ? 'E-AC-3 JOC · Windows headphone output' : 'E-AC-3 JOC · HDMI bitstream'
+          : 'Preparing Dolby Atmos…'}</div>
       <div className="text-xs text-white/65">
-        {status?.state === 'playing' ? 'Native HDMI passthrough. The receiver controls Atmos decoding and volume.' : 'Requesting the original Atmos stream.'}
+        {status?.state === 'playing'
+          ? status?.mode === 'headphones'
+            ? 'Windows native decoder / spatial processing. Enable Dolby Atmos for Headphones in Windows; object rendering is not independently verified.'
+            : 'Native HDMI passthrough. The receiver controls Atmos decoding and volume.'
+          : 'Requesting the original Atmos stream.'}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => command('seek -10 relative')} disabled={status?.state !== 'playing'} className="rounded bg-white/10 px-2 py-1 disabled:opacity-40">−10s</button>
