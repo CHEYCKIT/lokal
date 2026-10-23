@@ -69,3 +69,24 @@ export function flowDrag(position, deltaX, albumWidth, length) {
 export function flowTarget(position, velocity, length) {
   return clampIndex(Math.round(position + velocity * 0.30), length)
 }
+
+
+/** Preserve a fast flick, but never fling if the pointer paused before release. */
+export function flowReleaseVelocity(samples, releasedAt, pixelsPerCover) {
+  if (!samples?.length || !(pixelsPerCover > 0)) return 0
+  const last = samples[samples.length - 1]
+  if (releasedAt - last.t > 100) return 0
+  const first = samples.find(sample => sample.t >= last.t - 100) || samples[0]
+  const elapsed = last.t - first.t
+  if (elapsed <= 0) return 0
+  const velocity = -(last.x - first.x) * 1000 / Math.max(16, elapsed) / pixelsPerCover
+  return Math.max(-20, Math.min(20, velocity))
+}
+
+/** Mount only covers close enough to enter the reflection / opacity window. */
+export function flowVisibleRange(index, count, overscan = 7) {
+  return {
+    start: Math.max(0, index - overscan),
+    end: Math.min(count, index + overscan + 1),
+  }
+}
