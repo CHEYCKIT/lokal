@@ -294,8 +294,23 @@ export default function PlayerBar() {
   const flowPlaying = usePlayerStore(s => s.playbackContext?.type === 'flow')
   const castStatusDevice = useCastStore(s => s.status?.device)
   const castDevice = castActive ? castStatusDevice : null
-  const qualityTier = currentTrack && !station ? (isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)) : 'unknown'
-  const quality = qualityTier !== 'unknown' ? { info: TIERS[qualityTier], format: formatLabel(currentTrack) } : null
+  const nativeAtmos = currentTrack?.atmosNative === true
+  // Native output status is distinct from a search result's Atmos availability.
+  // The active output backend has received the original JOC stream, while a
+  // library file is tagged Atmos only after ffprobe confirms its JOC profile.
+  const qualityTier = currentTrack && !station
+    ? nativeAtmos ? 'atmos' : isSuspect(currentTrack) ? 'suspect' : tierOf(currentTrack)
+    : 'unknown'
+  const quality = qualityTier !== 'unknown'
+    ? { info: TIERS[qualityTier], format: nativeAtmos ? 'E-AC-3 JOC' : formatLabel(currentTrack) }
+    : null
+  const nativeAtmosHint = nativeAtmos
+    ? isBuffering || !isPlaying
+      ? 'Dolby Atmos source selected; native output not yet playing.'
+      : currentTrack.atmosMode === 'headphones'
+        ? 'E-AC-3 JOC playing through Windows native headphones. Spatial object rendering is not independently verified.'
+        : 'E-AC-3 JOC is playing over native HDMI passthrough.'
+    : null
 
   return (
     <>
@@ -367,7 +382,7 @@ export default function PlayerBar() {
                       <span title={`Streaming from ${streamLabel(currentTrack)}, not in your library`} className="text-[9px] font-display uppercase tracking-wider text-accent">
                         {streamLabel(currentTrack)}
                       </span>
-                      {quality && <span title={`Source-reported catalogue quality: ${quality.info.label}${quality.format ? ` (${quality.format})` : ''}. Actual stream may differ.`}
+                      {quality && <span title={nativeAtmosHint || `Source-reported catalogue quality: ${quality.info.label}${quality.format ? ` (${quality.format})` : ''}. Actual stream may differ.`}
                         className={`rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase ${quality.info.className}`}>
                         {quality.info.label}
                       </span>}
