@@ -841,10 +841,9 @@ export default function FullscreenPlayer() {
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
+                        {/* Fullscreen CD must use the original artwork, not the 150px
+                            cached thumbnail exposed after Spotify Canvas is hidden. */}
                         <img
-                          // The rotating CD can fill most of a desktop monitor. trackArtURL
-                          // may be a 150px cached WebP thumbnail, which becomes visibly
-                          // pixelated as soon as Spotify Canvas is hidden.
                           src={trackFullArtURL(track) || trackArtURL(track)}
                           onError={event => {
                             // An unavailable embedded original must not leave a blank CD.
