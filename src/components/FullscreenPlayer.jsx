@@ -22,6 +22,7 @@ import { contextLabel, isContextNavigable, navigateToContext } from '../playback
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
 import { usePerformanceMode } from '../performanceMode'
+import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
@@ -29,6 +30,8 @@ const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
 // 6rem accounts for the cover stage's horizontal padding (px-12).
 const COVER_SIZE_WITH_PANEL = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem), calc(100vw - min(42vw, 780px) - 6rem))'
 const PANEL_WIDTH = 'min(42vw, 780px)'
+// Grow only the lyrics content left into the existing cover-side gutter.
+const LYRICS_LEFT_EXPANSION = 'clamp(18px, 2vw, 32px)'
 const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
 // long without the mouse moving.
@@ -269,6 +272,9 @@ export default function FullscreenPlayer() {
   const [bgLoaded, setBgLoaded] = useState(false)
   const backdropFx = useArtworkBackdropEnabled()
   const [fsCanvas, setFsCanvas] = useState(false)
+  const [squareMotionActive, setSquareMotionActive] = useState(false)
+  const [windowHidden, setWindowHidden] = useState(isWindowHidden)
+  useEffect(() => onWindowVisibility(setWindowHidden), [])
   // Turned off for this song from the side panel.
   const [coverOff, setCoverOff] = useMotionCoverOff(currentTrack)
   // Whether the song has a Canvas / moving cover (asked even while it's
@@ -303,6 +309,11 @@ export default function FullscreenPlayer() {
   const lyricsMode = showLyricsFullscreen
   // Reduced motion: the views just crossfade (the cover doesn't fly).
   const reduceMotion = useReducedMotion()
+  const movingGradient = settings.fullscreen_moving_gradient === '1' && !performanceMode && !reduceMotion
+  const rotatingCd = settings.fullscreen_rotating_cd === '1' && !performanceMode && !reduceMotion
+  // A playing Canvas or animated album clip always takes priority over spinning artwork.
+  const spinCd = rotatingCd && !fsCanvas && !squareMotionActive
+  const animationRunning = showFullscreen && !lyricsMode && isPlaying && !windowHidden
   const playerLayerRef = useRef(null)
   const coverRef = useRef(null)
   useEffect(() => {
@@ -312,8 +323,8 @@ export default function FullscreenPlayer() {
   // coverFlight): a copy of it moves while the real ones stay hidden until it
   // lands. With a canvas playing, the copy keeps playing it and turns into
   // the cover on the way (the header shows the cover), without stretching
-  // from the card's 9:16 into the square. Both views are always laid out
-  // (just faded), so both ends can be measured right away.
+  // between aspect ratios: Spotify Canvas is cropped to the square card.
+  // Both views are always laid out (just faded) for correct measurements.
   const flightRef = useRef(null)
   const prevModeRef = useRef(null)
   useLayoutEffect(() => {
@@ -375,8 +386,12 @@ export default function FullscreenPlayer() {
   // and lyrics kept using whatever value was cached at launch. Re-fetching
   // whenever the overlay actually opens picks up the current saved value.
   useEffect(() => {
-    if (!showFullscreen) return
-    api.getSettings().then(s => setSettings(s || {}))
+    if (!showFullscreen) return undefined
+    let active = true
+    const refresh = () => api.getSettings().then(s => { if (active) setSettings(s || {}) }).catch(() => {})
+    refresh()
+    window.addEventListener('lokal:settings-saved', refresh)
+    return () => { active = false; window.removeEventListener('lokal:settings-saved', refresh) }
   }, [showFullscreen])
 
   // Leaving fullscreen only fades the *outer* overlay out over its own
