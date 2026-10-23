@@ -8,7 +8,7 @@ import { usePerformanceMode } from '../performanceMode'
 import { useTranslation } from '../i18n'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_SPRING } from '../coverFlowGeometry.mjs'
 
-const MAX_SIZE = 220
+const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
 const LONG_PRESS_MS = 500
 
@@ -72,12 +72,15 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
   </motion.div>
 }
 
-export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) {
+export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const { t } = useTranslation()
   const reduceMotion = !!useReducedMotion()
   const performanceMode = usePerformanceMode()
   const reduced = reduceMotion || performanceMode
-  const position = useMotionValue(0)
+  const count = picks.length
+  // Start in the middle of the shelf, including on its first painted frame.
+  const middleIndex = Math.floor(Math.max(0, count - 1) / 2)
+  const position = useMotionValue(middleIndex)
   const flip = useMotionValue(0)
   const stageRef = useRef(null)
   const spring = useRef(null)
@@ -88,9 +91,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) 
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
-  const count = picks.length
   const current = picks[clampIndex(activeIndex, count)] || picks[0]
 
   const stopPress = () => { clearTimeout(pressTimer.current); pressTimer.current = null }
@@ -112,11 +114,13 @@ export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) 
     setActiveIndex(prev => prev === next ? prev : next)
   })
   useEffect(() => {
-    position.set(0)
+    spring.current?.stop()
+    flipSpring.current?.stop()
+    position.set(middleIndex)
     flip.set(0)
-    setActiveIndex(0)
+    setActiveIndex(middleIndex)
     setFlipped(false)
-  }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [count, middleIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => {
     spring.current?.stop()
     flipSpring.current?.stop()
@@ -240,11 +244,5 @@ export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) 
       <p className="truncate text-[17px] font-semibold text-white">{current.track.title}</p>
       <p className="mt-0.5 truncate text-sm text-muted">{current.track.artist}</p>
     </div>
-    {onOpenFlow && <div className="flex justify-center">
-      <button type="button" onClick={onOpenFlow}
-        className="rounded-full border border-border bg-elevated px-5 py-2 text-xs font-display tracking-widest text-white/80 transition-colors hover:border-accent/40 hover:text-accent">
-        {t('Open Flow')}
-      </button>
-    </div>}
   </div>
 }
