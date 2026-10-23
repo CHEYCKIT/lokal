@@ -2153,6 +2153,20 @@ activeCategory === 'data' ? usersTried
             {settings.artwork_backdrop !== '0' ? t('On') : t('Off')}
           </button>
         </Row>
+        <Row label={t("Rotating CD")} desc={t("Rotate the album cover like a CD in fullscreen while music plays. Animated covers take priority.")}>
+          <button
+            onClick={() => set('fullscreen_rotating_cd', settings.fullscreen_rotating_cd === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fullscreen_rotating_cd === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.fullscreen_rotating_cd === '1' ? t('On') : t('Off')}
+          </button>
+        </Row>
+        <Row label={t("Moving Fullscreen Gradient")} desc={t("Gently drift the fullscreen cover-coloured background while music plays.")}>
+          <button
+            onClick={() => set('fullscreen_moving_gradient', settings.fullscreen_moving_gradient === '1' ? '0' : '1')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.fullscreen_moving_gradient === '1' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.fullscreen_moving_gradient === '1' ? t('On') : t('Off')}
+          </button>
+        </Row>
         <Row label={t("Moving Covers")} desc={t("Play an album's animated cover in the side panel and full screen player, when there is one.")}>
           <button
             onClick={() => set('motion_covers', settings.motion_covers === '0' ? '1' : '0')}
