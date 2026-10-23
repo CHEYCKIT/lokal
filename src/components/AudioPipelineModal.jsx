@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from '../i18n'
 import { usePlayerStore } from '../store/player'
 import Modal from './Modal'
-import { codecName } from '../quality'
+import { codecName, atmosAvailable } from '../quality'
 import {
   downloadSourceLabel,
   loadAddonNames,
@@ -189,6 +189,7 @@ export default function AudioPipelineModal({ open, onClose, track }) {
       values: [
         [t('Format'), format || t('Not reported')],
         [t('Sources'), sourceName || t('Not reported')],
+        ...(atmosAvailable(track) ? [[t('Dolby Atmos'), t('Available in catalogue; active stream not verified')]] : []),
       ],
     },
     {
