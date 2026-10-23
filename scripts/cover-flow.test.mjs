@@ -79,7 +79,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
   assert.ok(flow.includes('onPlay(index) // Mobile'))
   assert.ok(flow.includes('onContextMenu={e => onContextMenu?.(e, pick.track)}'))
   assert.ok(flow.includes('onPointerMove={move} onPointerUp={up}'))
-  assert.ok(flow.includes("element.addEventListener('wheel', handle, { passive: false })"))
+  assert.ok(flow.includes('onWheel={wheel}'))
   assert.ok(flow.includes('ArrowRight'))
   assert.ok(flow.includes('rotateBack(!flipped)'))
   assert.ok(flow.includes('scaleY(-1)'))
@@ -202,7 +202,7 @@ test('iCarousel-inspired fixed deceleration finishes without a secondary snap', 
 test('mouse click-and-drag physics is independent of the unchanged wheel handler', () => {
   assert.ok(flow.includes("onWheel={wheel}"), 'wheel handler remains unchanged')
   assert.ok(flow.includes("e.shiftKey ? e.deltaY : 0"), 'shift wheel handling remains unchanged')
-  assert.ok(flow.includes("}, 170)"), 'original wheel settle timing is retained')
+  assert.ok(flow.includes('setTimeout(() => settle(position.get()), 170)'), 'original wheel settle timing is retained')
   assert.ok(flow.includes('coast(velocity)'), 'mouse pointer release alone uses the new coast')
   assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
 })
