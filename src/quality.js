@@ -144,6 +144,9 @@ export function storeSearches({ artist, title }) {
 export function canGetLossless(track) {
   const path = String(track?.file_path || '')
   if (!track?.id || !path || path.startsWith('ghost://') || track.missing) return false
+  // Atmos is a distinct spatial presentation, not a conventional low-quality
+  // recording that should automatically be replaced with stereo FLAC.
+  if (Number(track.atmos_verified) === 1) return false
   if (peekSettings()?.get_lossless_any_song === '1') return true
   return Number(track.lossless) !== 1 || isSuspect(track)
 }
