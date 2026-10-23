@@ -82,5 +82,5 @@ test('preference skips explicit record and diagnostic lookups', () => {
   assert.equal(shouldPreferDesktop({ problems: 'true' }), false)
   assert.equal(shouldPreferDesktop({ includeGhosts: true }), false)
   assert.equal(shouldPreferDesktop({ source: 'all' }), true)
-  assert.match(desktopPreferredLibraryClause(), /NOT \(tracks.download_source/)
+  assert.match(desktopPreferredLibraryClause(), /NOT \(COALESCE\(tracks\.download_source/)
 })
