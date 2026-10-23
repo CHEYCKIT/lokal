@@ -74,9 +74,10 @@ let lastProbeAt = 0
 async function findMpvBinary({ platform = process.platform, customPath = '', env = process.env, resourcesPath = process.resourcesPath, userBin = '' } = {}) {
   if (!supportedHost(platform)) return null
   const candidates = mpvCandidates({ platform, customPath, env, resourcesPath, userBin })
-  if (lastValidatedMpv && candidates.includes(lastValidatedMpv) &&
-      Date.now() - lastProbeAt < 10000 &&
-      (!path.isAbsolute(lastValidatedMpv) || fs.existsSync(lastValidatedMpv))) return lastValidatedMpv
+  // PATH resolution can change without notification: never reuse an alias
+  // probe, only a previously validated absolute executable that still exists.
+  if (path.isAbsolute(lastValidatedMpv) && candidates.includes(lastValidatedMpv) &&
+      Date.now() - lastProbeAt < 10000 && fs.existsSync(lastValidatedMpv)) return lastValidatedMpv
   for (const binary of candidates) {
     if (path.isAbsolute(binary) && !fs.existsSync(binary)) continue
     try {
