@@ -210,7 +210,7 @@ export default function Sidebar() {
         <div className={`flex items-center gap-2 ${collapsed ? 'flex-col' : ''}`}>
           {/* The logo's sticker takes the theme's accent colour: an accent
               layer cut to the sticker's shape (lokal-icon-sticker.png) over it. */}
-          <div className="relative w-7 h-7 flex-shrink-0">
+          <div className="relative w-7 h-7 flex-shrink-0 rounded-full overflow-hidden">
             <img src="lokal-icon.png" alt={t("Lokal")} className="w-7 h-7" />
             <span
               aria-hidden="true"
