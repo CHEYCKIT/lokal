@@ -51,7 +51,18 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     const old = active
     active = null
     if (!old) return { ok: true }
-    old.proc?.kill()
+    if (old.proc) {
+      const proc = old.proc
+      const exited = proc.exitCode !== null
+      if (!exited) {
+        const done = new Promise(resolve => {
+          proc.once('exit', resolve)
+          setTimeout(resolve, 3000).unref?.()
+        })
+        proc.kill()
+        await done
+      }
+    }
     if (old.artifact) {
       try { await old.artifact.cleanup() } catch {}
       old.artifact = null
@@ -79,7 +90,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     await stop()
     const session = { proc: null, artifact: null }
     active = session
-    notify({ state: 'loading' })
+    notify({ state: 'loading', provider, id: String(id) })
     try {
       const artifact = await service.download(key, id, {
         quality: 'DOLBY_ATMOS',
@@ -121,7 +132,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
         proc.once('exit', code => finish(new Error(`Atmos output closed (mpv exit ${code})`)))
       })
       if (active !== session) throw new Error('Atmos request was cancelled')
-      notify({ state: 'playing', codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' })
+      notify({ state: 'playing', provider, id: String(id), codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' })
       proc.once('exit', () => {
         if (active !== session) return
         active = null
@@ -135,6 +146,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       return { error: error.message || String(error) }
     }
   })
+  process.once('exit', () => { try { active?.proc?.kill() } catch {} })
   return stop
 }
 
