@@ -76,35 +76,36 @@ export const flowEaseOut = progress => 1 - (1 - progress) ** 2
 
 export function flowCoastPlan(position, velocity, length) {
   const speed = Math.abs(velocity)
-  const distance = speed >= 2
-    ? velocity / (2 * FLOW_DECELERATION_MULTIPLIER * (1 - FLOW_DECELERATION_RATE))
-    : 0
+  // Mouse releases are frequently below two covers/s. A hard threshold here
+  // made the same drag either coast or halt depending on a tiny velocity change.
+  const distance = velocity / (2 * FLOW_DECELERATION_MULTIPLIER * (1 - FLOW_DECELERATION_RATE))
   const target = clampIndex(Math.round(position + distance), length)
-  const moved = Math.abs(target - position)
-  // A cap keeps low-speed / short-distance snapping from feeling lethargic.
-  const duration = speed >= 2 && moved > .1
-    ? Math.max(.14, Math.min(.70, 2 * moved / speed))
-    : Math.max(.10, Math.min(.22, .12 + moved * .12))
+  const travel = target - position
+  // Match the initial easing slope to the release velocity when moving in its
+  // direction; finish with zero velocity, without an inertia/spring handoff.
+  const followsVelocity = travel * velocity > 0 && speed > .01
+  const duration = followsVelocity
+    ? Math.max(.12, Math.min(.70, 2 * Math.abs(travel) / speed))
+    : Math.max(.10, Math.min(.20, .10 + Math.abs(travel) * .20))
   return { target, duration, distance }
 }
 
-/** Brief wheel/trackpad-end alignment; scrolling is controlled by wheel events. */
-export function flowWheelSnapPlan(position, length) {
-  const target = clampIndex(Math.round(position), length)
-  const distance = Math.abs(target - position)
-  return { target, duration: distance < 0.001 ? 0 : Math.min(.22, .10 + distance * .20) }
-}
 
 
-/** Preserve a fast flick, but never fling if the pointer paused before release. */
+
+/** Estimate pointer velocity without a binary cutoff when the mouse pauses.
+ * Idle gaps smoothly attenuate momentum: a moving release coasts, a held
+ * mouse comes naturally to rest before final fractional alignment.
+ */
 export function flowReleaseVelocity(samples, releasedAt, pixelsPerCover) {
   if (!samples?.length || !(pixelsPerCover > 0)) return 0
   const last = samples[samples.length - 1]
-  if (releasedAt - last.t > 100) return 0
-  const first = samples.find(sample => sample.t >= last.t - 100) || samples[0]
+  const first = samples.find(sample => sample.t >= last.t - 120) || samples[0]
   const elapsed = last.t - first.t
   if (elapsed <= 0) return 0
-  const velocity = -(last.x - first.x) * 1000 / Math.max(16, elapsed) / pixelsPerCover
+  const measured = -(last.x - first.x) * 1000 / Math.max(16, elapsed) / pixelsPerCover
+  const idle = Math.max(0, releasedAt - last.t)
+  const velocity = measured * Math.exp(-idle / 85)
   return Math.max(-20, Math.min(20, velocity))
 }
 
