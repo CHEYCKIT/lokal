@@ -1073,9 +1073,6 @@ class DownloadManager {
       await fs.copy(artifact.file, target, { overwrite: false, errorOnExist: true })
       if (controller.signal.aborted) { await fs.remove(target); controller.signal.throwIfAborted() }
       const meta = artifact.metadata || {}
-      // Catalogue Atmos is not proof of immersive output: the add-on may
-      // select/convert a stereo fallback during transfer.
-      job.opts.atmosAvailable = require('../mornye/atmos').hasAtmosMetadata(meta)
       job.opts.tags = mergePackageDownloadTags(meta, job.opts.tags || {})
       job.filepaths.push(target); job.exited = true; job.exitCode = 0
       this.afterFile(job, target)
@@ -1437,16 +1434,6 @@ class DownloadManager {
             : 'UPDATE tracks SET download_source = COALESCE(download_source, ?), source_ref = COALESCE(source_ref, ?) WHERE id = ?')
             .run(jobSourceLabel(job), job.sourceRef || null, result.id)
         } catch {}
-        // Preserve Atmos *availability* for Mornye downloads after the ghost
-        // entry is replaced with the actual indexed file. PCM codec metadata
-        // continues to describe the file that was really downloaded.
-        if (job.opts?.atmosAvailable) {
-          try {
-            const db = this.db()
-            require('../online/sources').ensureSourceAlbumIdColumn(db)
-            db.prepare('UPDATE tracks SET atmos_available = 1 WHERE id = ?').run(result.id)
-          } catch {}
-        }
         // No cover inside the file (common on Soulseek, where the art is a
         // separate cover.jpg in the uploader's folder): use the one the
         // library just found for the track (online artwork), so the row in
