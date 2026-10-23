@@ -407,6 +407,7 @@ export default function App() {
     recovery.pending = true
     recovery.failed.push(failedRef.provider)
     el.dataset.fallbackPending = '1'
+    el.dataset.fallbackRecoveryPending = '1'
     clearInterval(playTimerRef.current)
     playTimerRef.current = null
     el.pause()
@@ -442,6 +443,7 @@ export default function App() {
       toast.close()
       recovery.pending = false
       el.dataset.fallbackPending = ''
+      el.dataset.fallbackRecoveryPending = ''
     }
   }, [reportPlaybackError])
 
@@ -1792,6 +1794,7 @@ export default function App() {
         el.dataset.fallbackFor = ''
         el.dataset.fallbackSrc = ''
         el.dataset.fallbackPending = ''
+        el.dataset.fallbackRecoveryPending = ''
       }
       const retryQueue = Array.isArray(queue) && queue.some(item => item?.id === retryTrack.id)
         ? queue.map(item => item?.id === retryTrack.id ? retryTrack : item)
