@@ -7,24 +7,41 @@ const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.me
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
 const home = readFileSync(new URL('../src/pages/Home.jsx', import.meta.url), 'utf8')
 
-test('mobile Cover Flow: centre faces forwards; neighbors tilt +/-70° and sink behind', () => {
-  const centre = flowCoverGeometry(0, 220)
+test('iTunes Cover Flow: outside edges face forward and inside hinges align tightly', () => {
+  const size = 220
+  const centre = flowCoverGeometry(0, size)
   assert.equal(centre.angle, 0)
+  assert.equal(centre.pivot, 50)
   assert.equal(centre.x, 0)
   assert.equal(centre.depth, 0)
   assert.equal(centre.opacity, 1)
-  const right = flowCoverGeometry(1, 220)
-  const left = flowCoverGeometry(-1, 220)
-  assert.equal(right.angle, -70)
-  assert.equal(left.angle, 70)
-  assert.ok(Math.abs(right.x - 180.4) < 0.001)
+  const right = flowCoverGeometry(1, size)
+  const left = flowCoverGeometry(-1, size)
+  assert.equal(right.angle, -70, 'right-side outer edge faces forward')
+  assert.equal(left.angle, 70, 'left-side outer edge faces forward')
+  assert.equal(right.pivot, 0, 'right-side hinge is its inside/left edge')
+  assert.equal(left.pivot, 100, 'left-side hinge is its inside/right edge')
+  assert.ok(Math.abs((right.x - size / 2) - size * .52) < 0.001)
+  assert.ok(Math.abs((left.x + size / 2) + size * .52) < 0.001)
   assert.equal(left.x, -right.x)
-  assert.ok(Math.abs(right.depth + 48.4) < 0.001)
-  const farther = flowCoverGeometry(2, 220)
-  assert.ok(farther.x > right.x && farther.depth < right.depth)
-  assert.equal(FLOW_SPRING.stiffness, 170)
-  assert.equal(FLOW_SPRING.damping, 26)
+  assert.ok(Math.abs(right.depth + size * .15) < 0.001)
+  const farther = flowCoverGeometry(2, size)
+  assert.ok(Math.abs((farther.x - right.x) / size - .34) < 0.001)
+  assert.ok(farther.depth < right.depth)
+  assert.equal(FLOW_SPRING.stiffness, 135)
+  assert.equal(FLOW_SPRING.damping, 24)
   assert.equal(FLOW_SPRING.mass, 1)
+})
+
+test('compact spacing is smooth across the first-neighbor boundary', () => {
+  const size = 220
+  const epsilon = 0.0001
+  const x0 = flowCoverGeometry(1, size).x
+  const before = (x0 - flowCoverGeometry(1 - epsilon, size).x) / (size * epsilon)
+  const after = (flowCoverGeometry(1 + epsilon, size).x - x0) / (size * epsilon)
+  assert.ok(Math.abs(before - after) < .001, 'no sudden jump in swipe velocity')
+  assert.equal(flowCoverGeometry(-1, size).angle, 70)
+  assert.equal(flowCoverGeometry(1, size).angle, -70)
 })
 
 test('Cover Flow is bounded, rubber-bands at both ends and respects reduced motion', () => {
@@ -45,8 +62,8 @@ test('Cover Flow hit-testing matches mobile sine-spaced neighbors', () => {
   const size = 220
   const centre = width / 2
   assert.equal(flowIndexAt(centre, width, size, 5, 12), 5)
-  assert.equal(flowIndexAt(centre + size * 0.82, width, size, 5, 12), 6)
-  assert.equal(flowIndexAt(centre - size * 0.82, width, size, 5, 12), 4)
+  assert.equal(flowIndexAt(centre + size * 0.69, width, size, 5, 12), 6)
+  assert.equal(flowIndexAt(centre - size * 0.69, width, size, 5, 12), 4)
   assert.equal(flowIndexAt(centre + size * 5, width, size, 11, 12), 11)
 })
 
@@ -84,4 +101,12 @@ test('Cover Flow artwork cannot be natively dragged as a file', () => {
   assert.ok(flow.includes('<img src={artwork} alt="" draggable={false} loading="lazy"'))
   assert.ok(flow.includes('onDragStart={e => e.preventDefault()}'), 'suppress browser drag image preview')
   assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'keep gesture-controlled movement')
+})
+
+test('Cover Flow matches the tighter iTunes reflective stage on desktop', () => {
+  assert.ok(flow.includes('transformOrigin: origin'), 'the artwork pivot interpolates with drag')
+  assert.ok(flow.includes('origin = useTransform(position'), 'pivot remains fluid between covers')
+  assert.ok(flow.includes('top: size * 1.005'), 'reflections touch the artwork')
+  assert.ok(flow.includes('bg-black'), 'reflection stage is black like iTunes')
+  assert.ok(flow.includes('size * 0.55'), 'drag units align with new spacing')
 })
