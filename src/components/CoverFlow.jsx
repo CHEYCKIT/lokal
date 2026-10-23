@@ -111,7 +111,9 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
+  const activeRef = useRef(middleIndex)
   const [renderCenter, setRenderCenter] = useState(middleIndex)
+  const renderCenterRef = useRef(middleIndex)
   const [settled, setSettled] = useState(true)
   const [flipIndex, setFlipIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
@@ -194,14 +196,22 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   }
   useMotionValueEvent(position, 'change', value => {
     const next = clampIndex(Math.round(value), count)
-    setActiveIndex(prev => prev === next ? prev : next)
-    setRenderCenter(prev => Math.abs(next - prev) >= 4 ? next : prev)
+    if (next !== activeRef.current) {
+      activeRef.current = next
+      setActiveIndex(next)
+    }
+    if (Math.abs(next - renderCenterRef.current) >= 4) {
+      renderCenterRef.current = next
+      setRenderCenter(next)
+    }
   })
   useEffect(() => {
     motion.current?.stop()
     flipSpring.current?.stop()
     position.set(middleIndex)
     flip.set(0)
+    activeRef.current = middleIndex
+    renderCenterRef.current = middleIndex
     setActiveIndex(middleIndex)
     setRenderCenter(middleIndex)
     setSettled(true)
