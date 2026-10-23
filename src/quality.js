@@ -30,6 +30,26 @@ export function tierOf(track) {
   return kbps && kbps >= (OPUS_LIKE.test(String(track.codec || '')) ? 160 : 256) ? 'high' : 'low'
 }
 
+/** Catalogue metadata only: never a statement about the active decoder/output.
+ * Distinct from hi-res/lossless tiers (Atmos is spatial presentation).
+ */
+export function atmosAvailable(track) {
+  return track?.atmos_available === true || Number(track?.atmos_available) === 1 ||
+    [track?.audio_mode, track?.audioMode, track?.audio_quality, track?.audioQuality]
+      .some(value => typeof value === 'string' && /^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(value.trim())) ||
+    [track?.audio_modes, track?.audioModes]
+      .some(value => {
+        const modes = Array.isArray(value) ? value : [value]
+        return modes.some(mode => /^(?:DOLBY[_ -]?ATMOS|ATMOS)$/i.test(String(mode || '').trim()))
+      })
+}
+
+export const ATMOS_AVAILABLE = {
+  label: 'Dolby Atmos',
+  hint: 'Dolby Atmos version advertised by Tidal. Does not mean the current stream or output is Atmos.',
+  className: 'bg-violet-500/15 text-violet-300 border-violet-400/25',
+}
+
 /** Did the spectrum check say this lossless file came from a lossy one? */
 export function isSuspect(track) {
   // Only a confirmed lossy source ("likely-lossy" is shown, not counted).

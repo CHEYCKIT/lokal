@@ -18,8 +18,10 @@ import { navigateToTrackAlbum } from '../playbackContext'
 import { artistPath } from '../releaseActions'
 import { openRadio } from '../radioActions'
 import { recommendationKey } from '../recommendations'
-import { useAppStore } from '../store/player'
-import { losslessMenuItem } from '../quality'
+import { useAppStore, usePlayerStore } from '../store/player'
+import { api } from '../api'
+import { losslessMenuItem, atmosAvailable, ATMOS_AVAILABLE } from '../quality'
+import AtmosPlayButton from './AtmosPlayButton'
 import { useTranslation } from '../i18n'
 
 /** A song to tell its album or artist by (an addon's own result, when it's from one). */
@@ -46,6 +48,23 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
   const userId = useAppStore(state => state.user?.id)
   const highlight = recommendationKey(highlightTitle)
 
+  const playWithAtmos = async track => {
+    if (isOnlineTrack(track) && atmosAvailable(track)) {
+      const source = streamRef(track) || track
+      try {
+        const capability = await api.atmosCapabilities()
+        if (capability.available) {
+          const state = usePlayerStore.getState()
+          if (state.isPlaying) state.togglePlay()
+          const device = localStorage.getItem('lokal-atmos-output-device') || ''
+          const result = await api.atmosPlay(source.provider, String(source.id), device)
+          if (result?.ok) return
+        }
+      } catch {}
+    }
+    onPlay(track)
+  }
+
   const withResolved = async (track, action) => {
     if (!isOnlineTrack(track)) { action([track]); return }
     const [row] = await resolveOnline([track])
@@ -54,7 +73,7 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
   const openMenu = (event, track) => {
     const own = !isOnlineTrack(track)
     menu.open(event, [
-      { label: 'Play', icon: Play, onSelect: () => onPlay(track) },
+      { label: 'Play', icon: Play, onSelect: () => playWithAtmos(track) },
       { label: 'Play next', icon: Clock, onSelect: () => withResolved(track, playNextMany) },
       { label: 'Add to queue', icon: ListEnd, onSelect: () => withResolved(track, addToQueueMany) },
       { label: 'Add to playlist…', icon: Plus, onSelect: () => withResolved(track, addToPlaylistMany) },
@@ -78,8 +97,8 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
             role="button"
             tabIndex={0}
             aria-label={`${track.title} by ${track.artist}`}
-            onDoubleClick={() => onPlay(track)}
-            onKeyDown={event => { if (event.key === 'Enter') onPlay(track) }}
+            onDoubleClick={() => playWithAtmos(track)}
+            onKeyDown={event => { if (event.key === 'Enter') playWithAtmos(track) }}
             onContextMenu={event => openMenu(event, track)}
             // A fixed last column when it can hold the "In library" badge, so
             // every row's columns line up.
@@ -89,14 +108,16 @@ export default function OnlineSongList({ tracks, onPlay, numbered = false, showA
               {numbered
                 ? <span className={`text-xs tabular-nums group-hover:opacity-0 ${marked ? 'text-accent' : 'text-muted'}`}>{track.track_num || track.trackNumber || index + 1}</span>
                 : <div className="h-8 w-8 overflow-hidden rounded group-hover:opacity-40"><DiscoveryImage item={track} src={track.artwork_url} lookup className="h-full w-full object-cover" /></div>}
-              <button onClick={() => onPlay(track)} aria-label={`Play ${track.title}`} className="absolute inset-0 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"><Play size={14} fill="currentColor" /></button>
+              <button onClick={() => playWithAtmos(track)} aria-label={`Play ${track.title}`} className="absolute inset-0 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"><Play size={14} fill="currentColor" /></button>
             </div>
             <div className="min-w-0">
               <p className={`truncate text-sm ${marked ? 'text-accent' : 'text-white'}`}>{track.title}</p>
               <p className="truncate text-xs text-muted">{track.artist}</p>
+              {atmosAvailable(track) && <span className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Tidal advertises an Atmos edition; use Play Atmos for original bitstream playback.">ATMOS AVAILABLE</span>}
             </div>
             {showAlbum && <p className="hidden truncate text-xs text-muted @lg:block">{track.album || ''}</p>}
             <span className="flex items-center justify-end gap-3">
+              {atmosAvailable(track) && <AtmosPlayButton track={{ ...track, ...anchorOf(track) }} />}
               {own && <span title={t('In your library')} className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-accent"><CheckCircle2 size={11} /> {t('In library')}</span>}
               {markOwned && !own && <button type="button" onClick={event => { event.stopPropagation(); downloadOnline([track]) }} title={t('Download {title}', { title: track.title })} aria-label={t('Download {title}', { title: track.title })} className="text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100 focus:opacity-100"><Download size={14} /></button>}
               <span className="text-xs tabular-nums text-subtle">{time(track.duration)}</span>

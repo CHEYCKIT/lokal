@@ -14,6 +14,7 @@ import { MemoryRouter as Router, Routes, Route, Navigate, useLocation, useNaviga
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import Sidebar from './components/Sidebar'
 import PlayerBar from './components/PlayerBar'
+import AtmosTransport from './components/AtmosTransport'
 import TitleBar from './components/TitleBar'
 import { usePageWidth } from './pageWidth'
 import RightSidebar from './components/RightSidebar'
@@ -3176,6 +3177,7 @@ export default function App() {
               {!exclusiveSidePanels && <LyricsSidePanel />}
             </div>
             <PlayerBar />
+            <AtmosTransport />
             {/* Also full-screen lyrics: one overlay, two layouts. */}
             <FullscreenPlayer />
             <FullscreenVisualizer />

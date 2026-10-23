@@ -5,17 +5,20 @@ import { readFileSync } from 'node:fs'
 const player = readFileSync(new URL('../src/components/FullscreenPlayer.jsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('../src/pages/Settings.jsx', import.meta.url), 'utf8')
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
-const flowingGradient = readFileSync(new URL('../src/components/FullscreenGradientFlow.jsx', import.meta.url), 'utf8')
 
-test('fullscreen CD and gradient settings are independent and default off', () => {
-  for (const key of ['fullscreen_rotating_cd', 'fullscreen_moving_gradient']) {
-    assert.ok(settings.includes("set('" + key + "'"))
-    assert.ok(settings.includes("settings." + key + " === '1'"))
-    assert.ok(player.includes("settings." + key + " === '1' && !performanceMode && !reduceMotion"))
-  }
-  assert.ok(player.includes("onWindowVisibility(setWindowHidden)"))
-  assert.ok(player.includes("showFullscreen && !lyricsMode && isPlaying && !windowHidden"))
+test('fullscreen CD stays optional; moving gradient setting and renderer are removed', () => {
+  assert.ok(settings.includes("set('fullscreen_rotating_cd'"))
+  assert.ok(settings.includes("settings.fullscreen_rotating_cd === '1'"))
+  assert.ok(player.includes("settings.fullscreen_rotating_cd === '1' && !performanceMode && !reduceMotion"))
+  assert.ok(player.includes('onWindowVisibility(setWindowHidden)'))
+  assert.ok(player.includes('showFullscreen && !lyricsMode && isPlaying && !windowHidden'))
+  assert.ok(player.includes('<ArtworkBackdrop trackId={currentTrack?.id} blur={64} />'))
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'))
+  assert.ok(!settings.includes('fullscreen_moving_gradient'))
+  assert.ok(!player.includes('fullscreen_moving_gradient'))
+  assert.ok(!player.includes('FullscreenGradientFlow'))
+  assert.ok(!css.includes('fullscreen-gradient-flow'))
+  assert.ok(!css.includes('fullscreen-gradient-drift'))
 })
 
 test('Spotify Canvas fills the square cover without expanding the card', () => {
@@ -39,17 +42,21 @@ test('side lyrics expand their invisible left boundary without changing artwork 
   assert.ok(!player.includes('LYRICS_LEFT_EXPANSION'))
 })
 
-test('fullscreen gradient visibly flows while playback is paused, but stops when hidden', () => {
-  assert.ok(player.includes('const gradientRunning = open && !windowHidden'))
-  assert.ok(player.includes('<FullscreenGradientFlow trackId={currentTrack?.id} running={gradientRunning} />'))
-  assert.ok(player.includes('animationPlayState: gradientRunning ? "running" : "paused"'))
-  assert.ok(flowingGradient.includes('loadMesh(trackId)'))
-  assert.ok(flowingGradient.includes("'--fullscreen-flow-state': running ? 'running' : 'paused'"))
-  assert.ok(css.includes('fullscreen-gradient-flow-a'))
-  assert.ok(css.includes('fullscreen-gradient-flow-b'))
-  assert.ok(css.includes('mix-blend-mode: screen'))
+test('Spotify cookie editor is only in Integrations; Canvas links to it', () => {
+  const cookieEditors = settings.match(/<Row\b[^>]*label=\{t\("Spotify Cookie"\)\}/g) || []
+  assert.equal(cookieEditors.length, 1)
+  assert.ok(settings.includes('id="spotify-cookie-settings"'))
+  assert.ok(settings.includes("setActiveCategory('integrations')"))
+  assert.ok(settings.includes("setSettingsQuery('')"))
+  assert.ok(settings.includes("target.scrollIntoView({ behavior: 'smooth', block: 'center' })"))
+  assert.ok(settings.includes('onClick={openSpotifyCookieSettings}'))
+  assert.ok(settings.includes('Requires Spotify cookie: Settings → Integrations → Spotify'))
+  const appearanceSection = settings.split('<Section title={t("Now Playing")}>')[1]?.split('</Section>')[0]
+  assert.ok(appearanceSection)
+  assert.ok(!appearanceSection.includes('type="password"'))
+  assert.ok(!appearanceSection.includes('testSpotifyCanvas'))
+  assert.ok(!appearanceSection.includes('fullscreen_moving_gradient'))
 })
-
 test('rotating disc matches reference: white rim, white label circle and punched center hole', () => {
   assert.ok(player.includes('fullscreen-cd-artwork'))
   assert.ok(player.includes('fullscreen-cd-hole-outline'))

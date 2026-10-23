@@ -8,7 +8,6 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import { cacheLyrics, hasLyricLines, peekLyrics } from '../lyrics/lyricsCache'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
-import FullscreenGradientFlow from './FullscreenGradientFlow'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
@@ -309,13 +308,10 @@ export default function FullscreenPlayer() {
   const lyricsMode = showLyricsFullscreen
   // Reduced motion: the views just crossfade (the cover doesn't fly).
   const reduceMotion = useReducedMotion()
-  const movingGradient = settings.fullscreen_moving_gradient === '1' && !performanceMode && !reduceMotion
   const rotatingCd = settings.fullscreen_rotating_cd === '1' && !performanceMode && !reduceMotion
   // A playing Canvas or animated album clip always takes priority over spinning artwork.
   const spinCd = rotatingCd && !fsCanvas && !squareMotionActive
   const animationRunning = showFullscreen && !lyricsMode && isPlaying && !windowHidden
-  // The reference video keeps its gradient moving even while playback is paused.
-  const gradientRunning = open && !windowHidden
   const playerLayerRef = useRef(null)
   const coverRef = useRef(null)
   const coverStageRef = useRef(null)
@@ -727,11 +723,9 @@ export default function FullscreenPlayer() {
           <div className="absolute inset-0 bg-black">
             {/* Colours taken from the cover (see ArtworkBackdrop), or -- with
                 that switched off in Settings -- the plain blurred cover. */}
-            {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : (
-              // Translate the already baked background as one GPU layer, not a live blur.
-              <div className={movingGradient ? "fullscreen-gradient-drift absolute inset-[-12%]" : "absolute inset-0"}
-                style={movingGradient ? { animationPlayState: gradientRunning ? "running" : "paused" } : undefined}>
-                {backdropFx ? <ArtworkBackdrop trackId={currentTrack?.id} blur={64} /> : (
+            {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : backdropFx ? (
+              <ArtworkBackdrop trackId={currentTrack?.id} blur={64} />
+            ) : (
               <AnimatePresence mode="wait">
                 {artSrc ? (
                   <motion.img
@@ -754,10 +748,7 @@ export default function FullscreenPlayer() {
                   />
                 )}
               </AnimatePresence>
-                )}
-              </div>
             )}
-            {movingGradient && <FullscreenGradientFlow trackId={currentTrack?.id} running={gradientRunning} />}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
             {/* Lyrics read over a darker backdrop: the same one, dimmed. */}
             <motion.div className="absolute inset-0 bg-black" initial={false}

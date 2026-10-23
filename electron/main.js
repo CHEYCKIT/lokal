@@ -41,6 +41,7 @@ const { setRemoteState, setRemoteCommandHandler, getRemoteConnectionInfo } = req
 const { updateThumbarButtons, registerThumbarHandlers } = require('./ipc/thumbar')
 const { registerSmtcHandlers, updateSmtcState, stopSmtcBridge } = require('./ipc/smtc')
 const { registerOnlineHandlers, registerStreamScheme, registerStreamProtocol } = require('./ipc/online')
+const { registerAtmosHandlers } = require('./audio/atmos')
 const { registerSpotifyLikesHandlers } = require('./ipc/spotifyLikes')
 const { registerAutomixHandlers } = require('./ipc/automix')
 const { registerFlowHandlers } = require('./ipc/flow')
@@ -595,6 +596,16 @@ app.whenReady().then(() => {
   try { registerFollowedArtistsHandlers(ipcMain) } catch (e) { console.error('registerFollowedArtistsHandlers:', e.message) }
   try { registerCacheHandlers(ipcMain) } catch (e) { console.error('registerCacheHandlers:', e.message) }
   try { registerOnlineHandlers(ipcMain) } catch (e) { console.error('registerOnlineHandlers:', e.message) }
+  try {
+    registerAtmosHandlers(ipcMain, {
+      getDB,
+      broadcast: (channel, payload) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send(channel, payload)
+        }
+      },
+    })
+  } catch (e) { console.error('registerAtmosHandlers:', e.message) }
   try { registerSpotifyLikesHandlers(ipcMain) } catch (e) { console.error('registerSpotifyLikesHandlers:', e.message) }
   try { registerAutomixHandlers(ipcMain) } catch (e) { console.error('registerAutomixHandlers:', e.message) }
   try { registerFlowHandlers(ipcMain) } catch (e) { console.error('registerFlowHandlers:', e.message) }
