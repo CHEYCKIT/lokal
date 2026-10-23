@@ -28,6 +28,20 @@ test('Spotify Canvas fills the square cover without expanding the card', () => {
   assert.ok(player.includes('rotatingCd && !fsCanvas && !squareMotionActive'))
 })
 
+test('fullscreen artwork stays high resolution when Canvas is hidden for the spinning CD', () => {
+  const perTrackCover = player.split('<MixCovers track={currentTrack} render={(track, { top }) => (')[1]
+  assert.ok(perTrackCover, 'fullscreen cover must render each mix layer')
+  assert.ok(perTrackCover.includes('src={trackFullArtURL(track) || trackArtURL(track)}'),
+    'use full artwork for each track, not the 150px WebP thumbnail')
+  assert.ok(perTrackCover.includes('onError={event => {'),
+    'fall back gracefully for tracks without accessible full artwork')
+  assert.ok(perTrackCover.includes("event.currentTarget.getAttribute('src') !== fallback"),
+    'fallback should not retry a failed thumbnail forever')
+  assert.ok(perTrackCover.includes('only="tall" onActive={setFsCanvas}'),
+    'keep Spotify Canvas support intact')
+  assert.ok(perTrackCover.includes('fullscreen-cd-hole-outline'),
+    'keep the rotating CD treatment intact')
+})
 test('side lyrics expand their invisible left boundary without changing artwork or font size', () => {
   const lyrics = readFileSync(new URL('../src/components/LyricsPanel.jsx', import.meta.url), 'utf8')
   assert.ok(player.includes('computeFullscreenLyricsExpansion'))
