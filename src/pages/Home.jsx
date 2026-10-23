@@ -558,8 +558,7 @@ function HomeContent({ user }) {
   const localHome = <>
     {picks.length > 0 && <MadeForYou picks={picks}
       onPlay={index => playQueue(pickTracks, index, madeForYouContext)}
-      onContextMenu={openPickMenu}
-      onOpenFlow={() => goHome('flow')} />}
+      onContextMenu={openPickMenu} />}
     {mixes.length > 0 && <section><div className="flex items-center gap-2 mb-4"><Radio size={14} className="text-accent" /><h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Your Mixes")}</h2></div><div className="grid grid-cols-2 @md:grid-cols-3 gap-3">{mixes.slice(0, 6).map(mix => <MixCard key={mix.id} mix={mix} onClick={() => playQueue(mix.tracks, 0)} onSave={() => saveMix(mix)} saving={saving === `mix:${mix.id}`} onContextMenu={event => openMixMenu(event, mix)} />)}</div></section>}
     {suggestions.length > 0 && <section><div className="flex items-center gap-2 mb-4"><Sparkles size={14} className="text-accent" /><h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Suggested for You")}</h2><button onClick={() => saveList('suggestions', `Suggested for You - ${today()}`, suggestions, 'Suggested for you on Home')} disabled={!!saving} className="ml-auto inline-flex items-center gap-1 text-xs text-accent disabled:opacity-50"><ListPlus size={13} />{t("Save as playlist")}</button></div><TrackList tracks={suggestions.slice(0, 8)} reduceMotion /></section>}
     {recentTracks.length > 0 && <section><div className="flex items-center justify-between mb-4"><h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Recently Added")}</h2><button onClick={() => playQueue(recentTracks, 0)} className="text-xs text-accent hover:text-accent/70">{t("Play All")}</button></div><TrackList tracks={recentTracks} reduceMotion /></section>}
