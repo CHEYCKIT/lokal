@@ -5,9 +5,9 @@
   "author": "sipbuu <97703296+sipbuu@users.noreply.github.com>",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "dev:web": "concurrently \"vite\" \"node server/start.js\"",
-    "build": "vite build && npm run native:prepare && electron-builder",
+    "dev": "npm run gen:icons && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:web": "npm run gen:icons && concurrently \"vite\" \"node server/start.js\"",
+    "build": "npm run gen:icons && vite build && npm run native:prepare && electron-builder",
     "server": "node server/start.js",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "rebuild:electron": "electron-rebuild",
@@ -23,7 +23,9 @@
     "test:added-date": "node --test scripts/added-date.test.mjs",
     "test:download-folder": "node --test scripts/download-folder.test.mjs",
     "test:visualizer-analyser-startup": "node --test scripts/visualizer-analyser-startup.test.mjs",
-    "test:fullscreen-visualizer-settings": "node --test scripts/fullscreen-visualizer-settings.test.mjs"
+    "test:fullscreen-visualizer-settings": "node --test scripts/fullscreen-visualizer-settings.test.mjs",
+    "gen:icons": "node scripts/generate-brand-icons.cjs",
+    "test:brand-icons": "node --test scripts/brand-icons.test.cjs"
   },
   "build": {
     "appId": "com.lokal.music",
@@ -37,7 +39,8 @@
       "public/remote.html",
       "public/remote-manifest.json",
       "public/remote-sw.js",
-      "public/lokal-icon.png"
+      "public/lokal-icon.png",
+      "public/lokal-icon-rounded.png"
     ],
     "extraResources": [
       {
@@ -119,7 +122,7 @@
       ]
     },
     "mac": {
-      "icon": "public/lokal-icon.png",
+      "icon": "public/lokal-icon-rounded.png",
       "target": [
         "dmg",
         "zip"
@@ -127,7 +130,7 @@
       "category": "public.app-category-music"
     },
     "linux": {
-      "icon": "public/lokal-icon.png",
+      "icon": "public/lokal-icon-rounded.png",
       "target": [
         "AppImage",
         "deb"
