@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import LyricsPanel from './LyricsPanel'
 import { cacheLyrics, hasLyricLines, peekLyrics } from '../lyrics/lyricsCache'
 import ArtworkBackdrop, { useArtworkBackdropEnabled } from './ArtworkBackdrop'
+import FullscreenGradientFlow from './FullscreenGradientFlow'
 import MotionCover, { loadMotionCover } from './MotionCover'
 import LikeBurst from './LikeBurst'
 import { useMotionCoverOff } from '../motionCoverPrefs'
@@ -23,6 +24,7 @@ import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { useVolumeWheel } from '../volumeWheel'
 import { usePerformanceMode } from '../performanceMode'
 import { isWindowHidden, onWindowVisibility } from '../windowVisibility'
+import { computeFullscreenLyricsExpansion } from '../fullscreenLyricsLayout.mjs'
 
 // The cover's size (square), and the lyrics/queue panel's width beside it.
 const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
@@ -30,8 +32,6 @@ const COVER_SIZE = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem))'
 // 6rem accounts for the cover stage's horizontal padding (px-12).
 const COVER_SIZE_WITH_PANEL = 'min(60rem, 78vh, calc(100vw - 8rem), calc(110vh - 25rem), calc(100vw - min(42vw, 780px) - 6rem))'
 const PANEL_WIDTH = 'min(42vw, 780px)'
-// Grow only the lyrics content left into the existing cover-side gutter.
-const LYRICS_LEFT_EXPANSION = 'clamp(18px, 2vw, 32px)'
 const FULLSCREEN_LYRICS_WAIT_MS = 1500 // lyrics found after this don't open the panel on their own
 // The header and the cover's controls hide (and the cursor too) after this
 // long without the mouse moving.
@@ -314,8 +314,61 @@ export default function FullscreenPlayer() {
   // A playing Canvas or animated album clip always takes priority over spinning artwork.
   const spinCd = rotatingCd && !fsCanvas && !squareMotionActive
   const animationRunning = showFullscreen && !lyricsMode && isPlaying && !windowHidden
+  // The reference video keeps its gradient moving even while playback is paused.
+  const gradientRunning = open && !windowHidden
   const playerLayerRef = useRef(null)
   const coverRef = useRef(null)
+  const coverStageRef = useRef(null)
+  const lyricsPanelRef = useRef(null)
+  const [lyricsLeftExpansion, setLyricsLeftExpansion] = useState(0)
+
+  // The previous 18–32px negative margin barely affected the real artwork-to-
+  // lyrics gap, and LyricsPanel's centred max-width cancelled part of it.
+  // Measure the *untransformed* square artwork's right edge and the panel's
+  // fixed left edge, then extend just the lyrics content 40% into that gap.
+  // A separate width option in LyricsPanel removes the internal max-width;
+  // no textScale, cover position or panel right edge is changed.
+  useLayoutEffect(() => {
+    if (!showFullscreen || fullscreenPanel !== 'lyrics') {
+      setLyricsLeftExpansion(value => value === 0 ? value : 0)
+      return undefined
+    }
+    const stage = coverStageRef.current
+    const cover = coverRef.current
+    const panel = lyricsPanelRef.current
+    if (!stage || !cover || !panel) return undefined
+
+    const measure = () => {
+      // offsetLeft/offsetWidth ignore the cover's entrance and pointer-tilt
+      // transforms; its bounding rect would otherwise make the text jitter.
+      const coverRight = stage.getBoundingClientRect().left + cover.offsetLeft + cover.offsetWidth
+      const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16
+      const lyricRow = panel.querySelector('[data-lyrics-auto-follow] [data-row] > div')
+      const rowPadding = lyricRow && Number.parseFloat(window.getComputedStyle(lyricRow).paddingLeft)
+      // LyricsPanel uses px-6 (1.5rem); the rows add their own inset.
+      const textInset = rootFontSize * 1.5 + (Number.isFinite(rowPadding) ? rowPadding : rootFontSize * 0.83)
+      const next = computeFullscreenLyricsExpansion({
+        panelLeft: panel.getBoundingClientRect().left,
+        coverRight,
+        textInset,
+      })
+      setLyricsLeftExpansion(value => value === next ? value : next)
+    }
+
+    let frame = 0
+    const scheduleMeasure = () => {
+      if (!frame) frame = window.requestAnimationFrame(() => { frame = 0; measure() })
+    }
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleMeasure) : null
+    for (const node of [stage, cover, panel]) observer?.observe(node)
+    window.addEventListener('resize', scheduleMeasure)
+    measure()
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', scheduleMeasure)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [showFullscreen, fullscreenPanel, currentTrack?.id])
   useEffect(() => {
     if (playerLayerRef.current) playerLayerRef.current.inert = lyricsMode
   }, [lyricsMode, open])
@@ -676,8 +729,8 @@ export default function FullscreenPlayer() {
                 that switched off in Settings -- the plain blurred cover. */}
             {performanceMode ? <div className="absolute inset-0 bg-neutral-950" /> : (
               // Translate the already baked background as one GPU layer, not a live blur.
-              <div className={movingGradient ? "fullscreen-gradient-drift absolute inset-[-6%]" : "absolute inset-0"}
-                style={movingGradient ? { animationPlayState: animationRunning ? "running" : "paused" } : undefined}>
+              <div className={movingGradient ? "fullscreen-gradient-drift absolute inset-[-12%]" : "absolute inset-0"}
+                style={movingGradient ? { animationPlayState: gradientRunning ? "running" : "paused" } : undefined}>
                 {backdropFx ? <ArtworkBackdrop trackId={currentTrack?.id} blur={64} /> : (
               <AnimatePresence mode="wait">
                 {artSrc ? (
@@ -704,6 +757,7 @@ export default function FullscreenPlayer() {
                 )}
               </div>
             )}
+            {movingGradient && <FullscreenGradientFlow trackId={currentTrack?.id} running={gradientRunning} />}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
             {/* Lyrics read over a darker backdrop: the same one, dimmed. */}
             <motion.div className="absolute inset-0 bg-black" initial={false}
@@ -773,7 +827,7 @@ export default function FullscreenPlayer() {
           {/* The cover, with the controls over it (shown while the pointer is
               on it), then the progress, the title and the artist. Clear of
               the header, so a tall canvas doesn't run into "Playing from". */}
-          <div className={`relative z-10 flex flex-col items-center justify-center flex-1 min-w-0 px-12 pt-24 pb-12 ${showFullscreen ? 'transition-all duration-500' : ''}`}>
+          <div ref={coverStageRef} className={`relative z-10 flex flex-col items-center justify-center flex-1 min-w-0 px-12 pt-24 pb-12 ${showFullscreen ? 'transition-all duration-500' : ''}`}>
             {/* One card for every song (never swapped, so never waiting on an
                 exit while the window is minimized): the artwork changes inside
                 it (MixCovers: AutoMix's cloudy dissolve, else a short fade). */}
@@ -792,6 +846,7 @@ export default function FullscreenPlayer() {
               >
                 <div className={spinCd ? "absolute inset-0 fullscreen-cd-disc" : "absolute inset-0"}
                   style={spinCd ? { animationPlayState: animationRunning ? "running" : "paused" } : undefined}>
+                <div className={spinCd ? "fullscreen-cd-artwork absolute inset-0" : "absolute inset-0"}>
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
@@ -800,8 +855,10 @@ export default function FullscreenPlayer() {
                         {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>
                     )} />
-                  : <span className="text-white/10 text-7xl">♪</span>
+                  : <span className="absolute inset-0 flex items-center justify-center text-white/10 text-7xl">♪</span>
                 }
+                </div>
+                {spinCd && <div className="fullscreen-cd-hole-outline" aria-hidden="true" />}
                 </div>
 
                 {currentTrack && (
@@ -885,6 +942,7 @@ export default function FullscreenPlayer() {
               // happen to exist; with lyrics missing, the panel shows its own
               // "no lyrics" state and search, same as windowed mode.
               <div
+                ref={lyricsPanelRef}
                 className={`relative z-10 flex flex-col ${isPanelVisible && fullscreenPanel === 'lyrics' ? 'overflow-visible' : 'overflow-hidden'} pt-24 pb-10 ${showFullscreen ? 'transition-all duration-500' : ''} ${isPanelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 style={{ width: isPanelVisible ? PANEL_WIDTH : '0px' }}
               >
@@ -900,7 +958,7 @@ export default function FullscreenPlayer() {
                         <Search size={15} />
                       </button>
                     </div>
-                    <div className="flex-1 min-h-0 pr-6" style={{ marginLeft: `calc(-1 * ${LYRICS_LEFT_EXPANSION})`, width: `calc(100% + ${LYRICS_LEFT_EXPANSION})` }}>
+                    <div className="flex-1 min-h-0 pr-6" style={{ marginLeft: -lyricsLeftExpansion, width: `calc(100% + ${lyricsLeftExpansion}px)` }}>
                       <LyricsPanel
                         key={`${currentTrack?.id}-${refreshKey}`}
                         track={currentTrack}
@@ -910,6 +968,7 @@ export default function FullscreenPlayer() {
                         wordSync={wordSync}
                         onSearchRequest={() => setShowSearch(true)}
                         textScale={1.6}
+                        stretchFullscreenWidth
                         toolbarHidden={chromeHidden}
                         isAutoSynced={isAutoSynced}
                       />
