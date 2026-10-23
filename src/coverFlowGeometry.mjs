@@ -84,7 +84,7 @@ export function flowReleaseVelocity(samples, releasedAt, pixelsPerCover) {
 }
 
 /** Mount only covers close enough to enter the reflection / opacity window. */
-export function flowVisibleRange(index, count, overscan = 6) {
+export function flowVisibleRange(index, count, overscan = 7) {
   return {
     start: Math.max(0, index - overscan),
     end: Math.min(count, index + overscan + 1),
