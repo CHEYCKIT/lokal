@@ -123,7 +123,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
           const value = Number(percent)
           notify({
             state: 'loading', provider, id: String(id),
-            percent: Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : null,
+            percent: percent != null && Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : null,
             message: String(message || ''),
           })
         },
