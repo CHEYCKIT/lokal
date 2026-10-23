@@ -650,7 +650,7 @@ export default function Settings() {
       if (result?.store) {
         setUpdateCheckResult('')
         setCheckingUpdate(false)
-        api.openExternal('ms-windows-store://downloadsandupdates')
+        await api.openExternal('ms-windows-store://downloadsandupdates')
         return
       }
       if (result?.nightly) {
