@@ -167,11 +167,10 @@ jobs:
           echo "Building nightly version $(node -p "require('./package.json').version")"
 
       # The Windows build also makes the Microsoft Store MSIX. Its identity
-      # must match the app's reservation in Partner Center (Product identity):
-      # set the MSIX_IDENTITY_NAME, MSIX_PUBLISHER and
-      # MSIX_PUBLISHER_DISPLAY_NAME repository variables to those values.
-      # Without them the package.json placeholders are used, which the Store
-      # rejects. The MSIX is left unsigned: the Store signs it.
+      # comes from package.json (build.appx), matching Partner Center's
+      # Product identity; the MSIX_IDENTITY_NAME, MSIX_PUBLISHER and
+      # MSIX_PUBLISHER_DISPLAY_NAME repository variables override it if set.
+      # The MSIX is left unsigned: the Store signs it.
       - name: Build Application
         if: runner.os != 'macOS'
         shell: bash
@@ -185,9 +184,6 @@ jobs:
             if [ -n "$MSIX_IDENTITY_NAME" ]; then ARGS+=(-c.appx.identityName "$MSIX_IDENTITY_NAME"); fi
             if [ -n "$MSIX_PUBLISHER" ]; then ARGS+=(-c.appx.publisher "$MSIX_PUBLISHER"); fi
             if [ -n "$MSIX_PUBLISHER_DISPLAY_NAME" ]; then ARGS+=(-c.appx.publisherDisplayName "$MSIX_PUBLISHER_DISPLAY_NAME"); fi
-            if [ -z "$MSIX_IDENTITY_NAME" ] || [ -z "$MSIX_PUBLISHER" ]; then
-              echo "::warning::MSIX_IDENTITY_NAME / MSIX_PUBLISHER aren't set; the MSIX uses placeholder identity values the Microsoft Store won't accept."
-            fi
           fi
           npm run build -- --publish never "${ARGS[@]}"
 

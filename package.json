@@ -127,9 +127,9 @@
     "appx": {
       "artifactName": "${productName}-${version}-${arch}.msix",
       "applicationId": "Lokal",
-      "identityName": "sipbuu.Lokal",
-      "publisher": "CN=sipbuu",
-      "publisherDisplayName": "sipbuu",
+      "identityName": "Sipbuu.LokalMusic",
+      "publisher": "CN=C9C2BE38-8ED4-4D74-9660-28C2ACA032D7",
+      "publisherDisplayName": "Sipbuu",
       "displayName": "Lokal",
       "backgroundColor": "transparent",
       "languages": [
