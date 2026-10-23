@@ -106,7 +106,7 @@ test('Cover Flow artwork cannot be dragged as an image file', () => {
 test('Cover Flow matches the tighter iTunes reflective stage on desktop', () => {
   assert.ok(flow.includes('transformOrigin: origin'), 'the artwork pivot interpolates with drag')
   assert.ok(flow.includes('origin = useTransform(geometry'), 'pivot uses a single per-frame geometry value')
-  assert.ok(flow.includes('top: size * 1.005'), 'reflections touch the artwork')
+  assert.ok(flow.includes("below ' + (size * 0.005)"), 'CSS reflection sits directly under the cover')
   assert.ok(flow.includes('bg-black'), 'reflection stage is black like iTunes')
   assert.ok(flow.includes('flowPixelsPerCover(size, reduced)'), 'gesture scale follows the rendered mode')
 })
