@@ -1,0 +1,101 @@
+name: Build Store MSIX
+
+# Actions > Build Store MSIX > Run workflow: builds only the Microsoft Store
+# MSIX for a version that's already released, without making a new release.
+# The MSIX is attached to the run as the "store-msix" artifact, for uploading
+# to Partner Center.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag, branch or commit to build (empty: the latest stable vX.Y.Z tag)'
+        required: false
+        default: ''
+
+jobs:
+  msix:
+    name: Build MSIX
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check out the version to build
+        shell: bash
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          if [ -z "$REF" ]; then
+            REF=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            [ -n "$REF" ] || { echo "::error::No vX.Y.Z tag found."; exit 1; }
+          fi
+          git checkout -q "$REF"
+          echo "Building $REF ($(node -p "require('./package.json').version"))"
+          # Versions from before MSIX support have no Store identity or tile
+          # assets, and would run the GitHub updater inside the Store app.
+          if [ "$(node -p "!!require('./package.json').build.appx")" != "true" ] || [ ! -d build/appx ]; then
+            echo "::error::$REF predates MSIX support (no build.appx in package.json or no build/appx). Build a newer version."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust (for Windows SMTC bridge)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup .NET (for the Windows sign-in helper)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Check the build tools' native parts
+        shell: bash
+        run: |
+          node scripts/check-build-natives.cjs && exit 0
+          echo "::warning::A native build package is missing after npm install; installing again."
+          npm install --ignore-scripts --no-audit --no-fund
+          node scripts/check-build-natives.cjs
+
+      - name: Build the MSIX
+        shell: bash
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          ARGS=()
+          if [ -n "$MSIX_IDENTITY_NAME" ]; then ARGS+=(-c.appx.identityName "$MSIX_IDENTITY_NAME"); fi
+          if [ -n "$MSIX_PUBLISHER" ]; then ARGS+=(-c.appx.publisher "$MSIX_PUBLISHER"); fi
+          if [ -n "$MSIX_PUBLISHER_DISPLAY_NAME" ]; then ARGS+=(-c.appx.publisherDisplayName "$MSIX_PUBLISHER_DISPLAY_NAME"); fi
+          npx vite build
+          npm run native:prepare
+          npx electron-builder --win appx --x64 --publish never "${ARGS[@]}"
+
+      - name: Check the MSIX
+        shell: bash
+        run: |
+          shopt -s nullglob
+          msix=(release/*.msix)
+          [ ${#msix[@]} -gt 0 ] || { echo "::error::No .msix was built."; exit 1; }
+          ls -l "${msix[@]}"
+
+      - name: Upload the Store MSIX
+        uses: actions/upload-artifact@v6
+        with:
+          name: store-msix
+          path: release/*.msix
+          if-no-files-found: error
