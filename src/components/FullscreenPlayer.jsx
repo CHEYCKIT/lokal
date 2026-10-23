@@ -232,6 +232,17 @@ function SearchDrawer({ track, onClose, onSelect }) {
   )
 }
 
+// React owns the fallback so a same-ID artwork update can retry the original.
+function FullscreenStillArtwork({ track }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [track])
+  const full = trackFullArtURL(track) || trackArtURL(track)
+  const fallback = trackArtURL(track)
+  return <img src={failed ? fallback : full}
+    onError={() => { if (!failed && fallback && fallback !== full) setFailed(true) }}
+    className="absolute inset-0 w-full h-full object-cover" alt="" />
+}
+
 export default function FullscreenPlayer() {
   const performanceMode = usePerformanceMode()
   const { t } = useTranslation()
@@ -841,21 +852,7 @@ export default function FullscreenPlayer() {
                 {artSrc
                   ? <MixCovers track={currentTrack} render={(track, { top }) => (
                       <>
-                        {/* Fullscreen CD must use the original artwork, not the 150px
-                            cached thumbnail exposed after Spotify Canvas is hidden. */}
-                        <img
-                          src={trackFullArtURL(track) || trackArtURL(track)}
-                          onError={event => {
-                            // An unavailable embedded original must not leave a blank CD.
-                            // Only switch once, so a broken thumbnail doesn't loop errors.
-                            const fallback = trackArtURL(track)
-                            if (fallback && event.currentTarget.getAttribute('src') !== fallback) {
-                              event.currentTarget.src = fallback
-                            }
-                          }}
-                          className="absolute inset-0 w-full h-full object-cover"
-                          alt=""
-                        />
+                        <FullscreenStillArtwork track={track} />
                         {top && <MotionCover trackId={track?.id} only="square" onActive={setSquareMotionActive} off={coverOff} />}
                         {top && <MotionCover trackId={track?.id} only="tall" onActive={setFsCanvas} off={coverOff} />}
                       </>
