@@ -26,7 +26,7 @@ function outputOptions(platform, device) {
   // Never use a PCM mixer (PulseAudio, CoreAudio or WASAPI shared) for JOC.
   // mpv must confirm a spdif-eac3 AO before reporting playback.
   return [
-    `--ao=${platform === 'win32' ? 'wasapi' : (platform === 'darwin' ? 'coreaudio' : 'alsa')}`,
+    ...(!device ? [`--ao=${platform === 'win32' ? 'wasapi' : (platform === 'darwin' ? 'coreaudio' : 'alsa')}`] : []),
     ...(['win32', 'darwin'].includes(platform) ? ['--audio-exclusive=yes'] : []),
     ...(device ? [`--audio-device=${device}`] : []),
     '--audio-spdif=eac3',
