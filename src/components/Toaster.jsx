@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Check, Loader2 } from 'lucide-react'
+import { applyLoadingToastEvent, currentLoadingToast } from '../loadingToastState.mjs'
 
 // A short confirmation that slides up above the player bar ("Added to
 // queue"), from anywhere: showToast('...') and the one <Toaster /> in App
@@ -53,24 +54,14 @@ export default function Toaster() {
 
   useEffect(() => {
     let seq = 0
-    const syncLoading = () => setLoadingToast([...pendingLoading.current.values()].at(-1) || null)
+    const syncLoading = () => setLoadingToast(currentLoadingToast(pendingLoading.current))
     const onToast = (event) => {
       const detail = event.detail || {}
-      if (detail.finish) {
-        pendingLoading.current.delete(detail.finish)
+      const update = applyLoadingToastEvent(pendingLoading.current, detail)
+      if (update.handled) {
         syncLoading()
-        if (!detail.message) return
-      } else if (detail.loading && detail.id) {
-        if (detail.update && !pendingLoading.current.has(detail.id)) return
-        // Keep the request's original ID. Other toast notifications never
-        // hide this layer or cause it to animate out on each progress tick.
-        pendingLoading.current.set(detail.id, {
-          id: detail.id, message: detail.message, loading: true,
-          progress: detail.progress ?? null,
-        })
-        syncLoading()
-        return
-      } else if (detail.update) return
+        if (!update.confirmation) return
+      }
       clearTimeout(timer.current)
       const id = ++seq
       setToast({ id, message: detail.message || '' })
