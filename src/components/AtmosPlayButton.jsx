@@ -172,7 +172,6 @@ export default function AtmosPlayButton({ track }) {
               <span className="text-white/55">Use the HDMI-connected receiver. mpv confirms bitstream output when playback starts.</span>
               {deviceError && <span className="text-red-400">{deviceError}</span>}
             </>
-            </>
           )}
           {(mode === 'headphones' ? capability?.headphones?.available : capability?.mpvAvailable) && (
             <button type="button" onClick={openFile} disabled={busy}
