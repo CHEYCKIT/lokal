@@ -46,7 +46,7 @@ function listTracks(db, opts, { where, params, exists }) {
   // Hide phone uploads only if this desktop already has the same recording.
   // Filter in SQL, before LIMIT/OFFSET, to keep pagination consistent.
   const { shouldPreferDesktop, desktopPreferredLibraryClause } = require('./libraryDevicePreference')
-  if (shouldPreferDesktop(opts)) clauses.push(desktopPreferredLibraryClause())
+  if (shouldPreferDesktop(opts) && !opts.hasRestrictiveFilters) clauses.push(desktopPreferredLibraryClause())
   if (problems) clauses.push("(file_path NOT LIKE 'ghost://%' OR id IN (SELECT track_id FROM track_errors))")
   let sql = 'SELECT * FROM tracks'
   if (clauses.length) sql += ' WHERE ' + clauses.join(' AND ')
