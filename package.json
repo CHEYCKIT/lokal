@@ -25,7 +25,7 @@
     "test:visualizer-analyser-startup": "node --test scripts/visualizer-analyser-startup.test.mjs",
     "test:fullscreen-visualizer-settings": "node --test scripts/fullscreen-visualizer-settings.test.mjs",
     "gen:icons": "node scripts/generate-brand-icons.cjs",
-    "test:brand-icons": "node --test scripts/brand-icons.test.mjs"
+    "test:brand-icons": "node --test scripts/brand-icons.test.cjs"
   },
   "build": {
     "appId": "com.lokal.music",
