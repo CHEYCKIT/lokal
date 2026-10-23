@@ -25,11 +25,18 @@ test('Spotify Canvas fills the square cover without expanding the card', () => {
   assert.ok(player.includes('rotatingCd && !fsCanvas && !squareMotionActive'))
 })
 
-test('lyrics width grows left without shifting the fullscreen cover', () => {
-  assert.ok(player.includes("LYRICS_LEFT_EXPANSION = 'clamp(18px, 2vw, 32px)'"))
+test('side lyrics expand their invisible left boundary without changing artwork or font size', () => {
+  const lyrics = readFileSync(new URL('../src/components/LyricsPanel.jsx', import.meta.url), 'utf8')
+  assert.ok(player.includes('computeFullscreenLyricsExpansion'))
+  assert.ok(player.includes('ref={coverStageRef}'))
+  assert.ok(player.includes('ref={lyricsPanelRef}'))
   assert.ok(player.includes("width: isPanelVisible ? PANEL_WIDTH : '0px'"))
-  assert.ok(player.includes('marginLeft: `calc(-1 * ${LYRICS_LEFT_EXPANSION})`'))
-  assert.ok(player.includes('width: `calc(100% + ${LYRICS_LEFT_EXPANSION})`'))
+  assert.ok(player.includes('marginLeft: -lyricsLeftExpansion'))
+  assert.ok(player.includes('width: `calc(100% + ${lyricsLeftExpansion}px)`'))
+  assert.ok(player.includes('stretchFullscreenWidth'))
+  assert.ok(player.includes('textScale={1.6}'))
+  assert.ok(lyrics.includes("stretchFullscreenWidth ? 'px-6' : 'max-w-3xl mx-auto px-6'"))
+  assert.ok(!player.includes('LYRICS_LEFT_EXPANSION'))
 })
 
 test('fullscreen gradient visibly flows while playback is paused, but stops when hidden', () => {
