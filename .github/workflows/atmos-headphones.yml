@@ -8,6 +8,12 @@ on:
       - 'electron/audio/headphones.js'
       - 'src/components/AtmosPlayButton.jsx'
       - 'src/components/AtmosTransport.jsx'
+      - 'src/components/OnlineResults.jsx'
+      - 'src/quality.js'
+      - 'src/store/player.js'
+      - 'src/App.jsx'
+      - 'src/loadingToastState.mjs'
+      - 'scripts/loading-toast-persistence.test.mjs'
       - 'scripts/atmos-output.test.mjs'
       - 'scripts/atmos-transfer-progress.test.mjs'
       - 'scripts/loading-toast-progress.test.mjs'
@@ -43,4 +49,8 @@ jobs:
       - name: Run Atmos routing tests
         run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs scripts/atmos-transfer-progress.test.mjs
       - name: Verify shared desktop loading progress
-        run: node --test scripts/loading-toast-progress.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs
+        run: node --test scripts/loading-toast-progress.test.mjs scripts/loading-toast-persistence.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Compile desktop React player UI
+        run: npx vite build

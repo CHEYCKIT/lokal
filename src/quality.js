@@ -48,7 +48,7 @@ export function atmosAvailable(track) {
 export const ATMOS_AVAILABLE = {
   label: 'Dolby Atmos',
   hint: 'Dolby Atmos version advertised by Tidal. Does not mean the current stream or output is Atmos.',
-  className: 'bg-violet-500/15 text-violet-300 border-violet-400/25',
+  className: 'bg-black text-white border-white/25',
 }
 
 /** Did the spectrum check say this lossless file came from a lossy one? */
