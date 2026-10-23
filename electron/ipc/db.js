@@ -397,6 +397,13 @@ function initDB() {
     }
   } catch (error) { console.warn('mobile source migration:', error.message) }
 
+  // Upgrade historical phone downloads whose filenames were random UUIDs.
+  // Only files inside data/phone-downloads are touched, and track IDs remain intact.
+  try {
+    const count = require('../phoneCopyFilenames').repairPhoneCopyFilenames(db, getStorageDir())
+    if (count) console.log(`[phone-copy] Repaired ${count} legacy filenames`)
+  } catch (error) { console.warn('phone filename migration:', error.message) }
+
   try {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('lyrics_auto_translate', '0')").run()
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('lyrics_translate_target', 'en')").run()
