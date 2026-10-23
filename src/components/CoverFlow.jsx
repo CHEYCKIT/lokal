@@ -89,6 +89,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const wheelTimer = useRef(null)
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
+  const pixelsPerCover = Math.max(1, size * (reduced ? 1.06 : 0.55))
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
@@ -156,7 +157,11 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       moved: false, samples: [{ x: e.clientX, t: performance.now() }] }
     stopPress()
     const rect = e.currentTarget.getBoundingClientRect()
-    const touched = flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced)
+    // Artwork can overlap the neighbouring hit zone. Prefer the actual
+    // pressed cover; use the geometry only for gaps in the stage.
+    const pressedCover = e.target.closest?.('[data-cover-flow-item]')
+    const touched = pressedCover ? Number(pressedCover.dataset.coverFlowItem)
+      : flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced)
     if (touched === activeIndex) pressTimer.current = setTimeout(() => {
       if (!gesture.current?.moved) {
         suppressClick.current = true
@@ -174,7 +179,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       e.currentTarget.setPointerCapture?.(e.pointerId)
     }
     if (g.moved) {
-      position.set(flowDrag(position.get(), e.clientX - g.last, Math.max(1, size * 0.55), count))
+      position.set(flowDrag(position.get(), e.clientX - g.last, pixelsPerCover, count))
       g.samples.push({ x: e.clientX, t: performance.now() })
       if (g.samples.length > 5) g.samples.shift()
     }
@@ -189,7 +194,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       const first = g.samples[0]
       const last = g.samples[g.samples.length - 1]
       const seconds = Math.max(0.016, (last.t - first.t) / 1000)
-      const velocity = -((last.x - first.x) / seconds) / Math.max(1, size * 0.55)
+      const velocity = -((last.x - first.x) / seconds) / pixelsPerCover
       settle(flowTarget(position.get(), velocity, count), velocity)
     }
     gesture.current = null
@@ -201,7 +206,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     stopPress()
     rotateBack(false)
     spring.current?.stop()
-    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / Math.max(1, size * 0.55))))
+    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
     clearTimeout(wheelTimer.current)
     wheelTimer.current = setTimeout(() => settle(position.get()), 120)
   }
