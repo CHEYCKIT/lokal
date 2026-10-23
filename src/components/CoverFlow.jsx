@@ -111,13 +111,23 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
+  const [renderCenter, setRenderCenter] = useState(middleIndex)
+  const [settled, setSettled] = useState(true)
+  const [flipIndex, setFlipIndex] = useState(middleIndex)
   const [flipped, setFlipped] = useState(false)
   const current = picks[clampIndex(activeIndex, count)] || picks[0]
-  const visible = flowVisibleRange(activeIndex, count)
+  // Move the render window only every few covers; avoids repeatedly mounting
+  // new image/reflection trees while a fling crosses each item boundary.
+  const visible = flowVisibleRange(renderCenter, count)
+  const handlers = useRef(null)
+  const handleSelect = useCallback(index => handlers.current?.select(index), [])
+  const handlePlay = useCallback(index => handlers.current?.play(index), [])
+  const handleMenu = useCallback((event, track) => handlers.current?.menu?.(event, track), [])
 
   const stopPress = () => { clearTimeout(pressTimer.current); pressTimer.current = null }
   const rotateBack = next => {
     flipSpring.current?.stop()
+    if (next) setFlipIndex(activeIndex)
     setFlipped(next)
     if (reduced) flip.set(next ? 1 : 0)
     else flipSpring.current = animate(flip, next ? 1 : 0, { duration: 0.45 })
@@ -127,10 +137,16 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const moveTo = (target, duration) => {
     motion.current?.stop()
     const to = clampIndex(Math.round(target), count)
-    if (reduced || duration === 0) position.set(to)
-    else motion.current = animate(position, to, {
-      type: 'tween', duration, ease: flowEaseOut,
-    })
+    if (reduced || duration === 0 || position.get() === to) {
+      position.set(to)
+      setSettled(true)
+    } else {
+      setSettled(false)
+      motion.current = animate(position, to, {
+        type: 'tween', duration, ease: flowEaseOut,
+        onComplete: () => setSettled(true),
+      })
+    }
   }
   const settle = target => moveTo(target, .23)
   const coast = velocity => {
@@ -145,6 +161,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   useMotionValueEvent(position, 'change', value => {
     const next = clampIndex(Math.round(value), count)
     setActiveIndex(prev => prev === next ? prev : next)
+    setRenderCenter(prev => Math.abs(next - prev) >= 4 ? next : prev)
   })
   useEffect(() => {
     motion.current?.stop()
@@ -152,6 +169,9 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     position.set(middleIndex)
     flip.set(0)
     setActiveIndex(middleIndex)
+    setRenderCenter(middleIndex)
+    setSettled(true)
+    setFlipIndex(middleIndex)
     setFlipped(false)
   }, [count, middleIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => {
@@ -208,6 +228,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     if (!g || g.id !== e.pointerId) return
     if (!g.moved && Math.abs(e.clientX - g.start) > DRAG_THRESHOLD) {
       g.moved = true
+      setSettled(false)
       stopPress()
       rotateBack(false)
       e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -227,6 +248,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       suppressClick.current = true
       const velocity = flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)
       coast(velocity)
+    } else {
+      setSettled(true)
     }
     gesture.current = null
   }
@@ -236,6 +259,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     e.preventDefault()
     stopPress()
     rotateBack(false)
+    setSettled(false)
     motion.current?.stop()
     position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
     clearTimeout(wheelTimer.current)
@@ -247,6 +271,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     if (index !== activeIndex) settle(index)
     onPlay(index) // Mobile's onSelect starts playback on the first click.
   }
+  handlers.current = { select, play: onPlay, menu: onContextMenu }
   if (!count) return null
 
   return <div className="space-y-3">
@@ -275,8 +300,10 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         const index = visible.start + offset
         return <FlowCover key={pick.track.id}
           pick={pick} index={index} position={position} flip={flip}
-          activeIndex={activeIndex} size={size} reduced={reduced} flipped={flipped}
-          onSelect={select} onPlay={onPlay} onContextMenu={onContextMenu} />
+          flipTarget={index === flipIndex} backVisible={flipped && index === flipIndex}
+          highRes={settled && index === activeIndex}
+          size={size} reduced={reduced}
+          onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu} />
       })}
     </div>
     <div className="mx-auto max-w-lg text-center" aria-live="polite">
