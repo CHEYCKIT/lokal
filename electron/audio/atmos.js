@@ -206,7 +206,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   })
   ipcMain.handle('atmos:command', async (_, command) => {
     const absoluteSeek = typeof command === 'string' &&
-      /^seek (?:0|[1-9]\\d{0,5})(?:\\.\\d{1,3})? absolute$/.test(command)
+      /^seek (?:0|[1-9]\d{0,5})(?:\.\d{1,3})? absolute$/.test(command)
     if (!active || (!absoluteSeek && !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command))) {
       return { error: 'No Atmos stream is running or invalid transport command' }
     }
@@ -256,8 +256,8 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     let lastPosition = -1
     let lastDuration = 0
     const reportPosition = (data) => {
-      const position = String(data).match(/ANS_time-pos=(\\d+(?:\\.\\d+)?)/)
-      const duration = String(data).match(/ANS_duration=(\\d+(?:\\.\\d+)?)/)
+      const position = String(data).match(/ANS_time-pos=(\d+(?:\.\d+)?)/)
+      const duration = String(data).match(/ANS_duration=(\d+(?:\.\d+)?)/)
       if (duration) lastDuration = Number(duration[1])
       if (position) {
         const next = Number(position[1])
@@ -296,7 +296,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' })
     session.positionPoll = setInterval(() => {
       if (active !== session || !proc.stdin.writable || proc.exitCode != null) return
-      try { proc.stdin.write('get_property time-pos\\nget_property duration\\n') } catch {}
+      try { proc.stdin.write('get_property time-pos\nget_property duration\n') } catch {}
     }, 700)
     session.positionPoll.unref?.()
     proc.once('exit', () => {
