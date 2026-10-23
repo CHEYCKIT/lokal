@@ -66,8 +66,33 @@ export function flowDrag(position, deltaX, albumWidth, length) {
   const next = position + delta
   return next < 0 || next > length - 1 ? position + delta / 3 : next
 }
-export function flowTarget(position, velocity, length) {
-  return clampIndex(Math.round(position + velocity * 0.30), length)
+// Closely follows iCarousel's CoverFlow2 kinetic model (not Apple's private
+// implementation): 0.95 deceleration, multiplier 30, velocity threshold 2.
+// Integrate uniform deceleration and choose the destination ONCE. Finishing
+// with zero velocity avoids an inertia->spring handoff and the resulting jerk.
+export const FLOW_DECELERATION_RATE = 0.95
+export const FLOW_DECELERATION_MULTIPLIER = 30
+export const flowEaseOut = progress => 1 - (1 - progress) ** 2
+
+export function flowCoastPlan(position, velocity, length) {
+  const speed = Math.abs(velocity)
+  const distance = speed >= 2
+    ? velocity / (2 * FLOW_DECELERATION_MULTIPLIER * (1 - FLOW_DECELERATION_RATE))
+    : 0
+  const target = clampIndex(Math.round(position + distance), length)
+  const moved = Math.abs(target - position)
+  // A cap keeps low-speed / short-distance snapping from feeling lethargic.
+  const duration = speed >= 2 && moved > .1
+    ? Math.max(.14, Math.min(.70, 2 * moved / speed))
+    : Math.max(.10, Math.min(.22, .12 + moved * .12))
+  return { target, duration, distance }
+}
+
+/** Brief wheel/trackpad-end alignment; scrolling is controlled by wheel events. */
+export function flowWheelSnapPlan(position, length) {
+  const target = clampIndex(Math.round(position), length)
+  const distance = Math.abs(target - position)
+  return { target, duration: distance < 0.001 ? 0 : Math.min(.22, .10 + distance * .20) }
 }
 
 
