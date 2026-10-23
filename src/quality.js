@@ -10,6 +10,7 @@ export function codecName(codec) {
   const c = String(codec || '')
   if (!c) return ''
   if (/layer\s*3|mp3/i.test(c)) return 'MP3'
+  if (/e-?ac-?3|ec-?3|joc/i.test(c)) return 'E-AC-3'
   if (/aac|mp4a/i.test(c)) return 'AAC'
   if (/opus/i.test(c)) return 'Opus'
   if (/vorbis/i.test(c)) return 'Vorbis'
@@ -24,6 +25,7 @@ export function codecName(codec) {
 
 /** hires | lossless | high | low | unknown */
 export function tierOf(track) {
+  if (Number(track?.atmos_verified) === 1) return 'atmos'
   if (!track || track.lossless === null || track.lossless === undefined) return 'unknown'
   if (Number(track.lossless) === 1) return Number(track.bit_depth) > 16 || Number(track.sample_rate) > 48000 ? 'hires' : 'lossless'
   const kbps = Number(track.bitrate)
@@ -58,6 +60,7 @@ export function isSuspect(track) {
 }
 
 export const TIERS = {
+  atmos: { label: 'Dolby Atmos', desc: 'Verified E-AC-3 JOC spatial file', hint: 'Atmos metadata was verified in this downloaded or local audio file.', className: 'bg-black text-white border-white/25' },
   hires: { label: 'Hi-res', desc: 'Above CD quality', hint: 'Lossless, more than 16-bit or 48 kHz', className: 'bg-violet-500/15 text-violet-300 border-violet-400/25' },
   lossless: { label: 'Lossless', desc: 'CD quality', hint: 'Lossless, 16-bit up to 48 kHz', className: 'bg-green-500/15 text-green-300 border-green-400/25' },
   high: { label: 'High', desc: 'Lossy, 256 kbps and up', hint: 'MP3/AAC at 256 kbps or more, Opus/Vorbis at 160 kbps or more', className: 'bg-sky-500/15 text-sky-300 border-sky-400/25' },
@@ -68,6 +71,7 @@ export const TIERS = {
 
 /** "FLAC · 24-bit / 96 kHz", "MP3 · 128 kbps"... */
 export function formatLabel(track) {
+  if (Number(track?.atmos_verified) === 1) return 'E-AC-3 JOC · Dolby Atmos'
   const name = codecName(track?.codec)
   if (!name) return track?.bitrate ? `${track.bitrate} kbps` : ''
   if (Number(track.lossless) === 1) {
