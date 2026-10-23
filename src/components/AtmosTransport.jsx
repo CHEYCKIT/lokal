@@ -17,9 +17,16 @@ export default function AtmosTransport() {
       setStatus(next)
       if (next?.state === 'loading') {
         if (!toast) toast = showLoadingToast('Preparing Dolby Atmos…')
-        const pct = Number(next.percent)
-        toast.update(Number.isFinite(pct) && next.percent != null
-          ? `Loading Dolby Atmos · ${Math.max(0, Math.min(100, pct))}%`
+        const pct = next.percent == null ? NaN : Number(next.percent)
+        const measurable = Number.isFinite(pct) && pct >= 0 && pct <= 100
+        // The percentage comes from received/total bytes or finished/total
+        // segments. Keep the subsequent decoding/output stage indeterminate:
+        // 100% downloaded does not imply the native player has started.
+        const phase = /segments/i.test(next.message || '')
+          ? 'Downloading Dolby Atmos segments'
+          : 'Downloading Dolby Atmos'
+        toast.update(measurable
+          ? `${phase} · ${Math.round(pct)}%`
           : next.message || 'Preparing Dolby Atmos…')
       } else {
         toast?.close()
