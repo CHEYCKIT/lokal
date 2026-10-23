@@ -100,12 +100,12 @@ const TIER_SQL = {
   lossless: "lossless = 1 AND COALESCE(atmos_verified, 0) != 1 AND NOT (IFNULL(bit_depth, 0) > 16 OR IFNULL(sample_rate, 0) > 48000)",
   high: "lossless = 0 AND COALESCE(atmos_verified, 0) != 1 AND bitrate >= (CASE WHEN LOWER(IFNULL(codec, '')) LIKE 'opus%' OR LOWER(IFNULL(codec, '')) LIKE 'vorbis%' THEN 160 ELSE 256 END)",
   low: "lossless = 0 AND COALESCE(atmos_verified, 0) != 1 AND (bitrate IS NULL OR bitrate < (CASE WHEN LOWER(IFNULL(codec, '')) LIKE 'opus%' OR LOWER(IFNULL(codec, '')) LIKE 'vorbis%' THEN 160 ELSE 256 END))",
-  unknown: 'lossless IS NULL',
+  unknown: 'lossless IS NULL AND COALESCE(atmos_verified, 0) != 1',
   // Only a confirmed lossy source: "likely-lossy" (a cut-off some real
   // masters have too) is shown on the track but not counted against it.
-  suspect: "lossless = 1 AND spectral_verdict = 'lossy'",
+  suspect: "lossless = 1 AND COALESCE(atmos_verified, 0) != 1 AND spectral_verdict = 'lossy'",
   // What's worth replacing: lossy files and suspect lossless ones.
-  upgradable: "(lossless = 0) OR (lossless = 1 AND spectral_verdict = 'lossy')",
+  upgradable: "COALESCE(atmos_verified, 0) != 1 AND ((lossless = 0) OR (lossless = 1 AND spectral_verdict = 'lossy'))",
 }
 
 const REAL_FILE = "file_path NOT LIKE 'ghost://%'"
@@ -208,6 +208,35 @@ function startReading(db, { all = false } = {}) {
     saveFields(db, row.id, fields)
     return true
   })
+}
+
+/**
+ * Repair previously indexed E-AC-3 files without rescanning an entire library.
+ * Once verified, each file is reclassified independently of its bitrate.
+ * Unverifiable files remain unchanged and can be retried next launch.
+ */
+async function backfillAtmos(db, { limit = 1000, onChanged } = {}) {
+  ensureColumns(db)
+  const rows = db.prepare(`SELECT id, file_path, codec FROM tracks WHERE ${REAL_FILE}
+    AND atmos_verified IS NULL AND
+    (LOWER(IFNULL(codec, '')) LIKE '%e-ac-3%' OR
+     LOWER(IFNULL(codec, '')) LIKE '%eac3%' OR
+     LOWER(IFNULL(codec, '')) LIKE '%ec-3%' OR
+     LOWER(file_path) LIKE '%.atmos.m4a' OR
+     LOWER(file_path) LIKE '%.ec3' OR
+     LOWER(file_path) LIKE '%.eac3')
+    LIMIT ?`).all(Math.min(5000, Math.max(1, Number(limit) || 1000)))
+  let changed = 0
+  for (const row of rows) {
+    if (!fs.existsSync(row.file_path)) continue
+    const verified = await probeAtmosFile(row.file_path, { codec: row.codec })
+    if (verified === null) continue
+    const result = db.prepare('UPDATE tracks SET atmos_verified = ? WHERE id = ? AND atmos_verified IS NULL')
+      .run(verified, row.id)
+    changed += result.changes || 0
+  }
+  if (changed) onChanged?.(changed)
+  return { checked: rows.length, updated: changed }
 }
 
 // ---------------------------------------------------------------- spectrum
@@ -368,6 +397,6 @@ async function checkOne(db, trackId, { ffmpeg = null } = {}) {
 
 module.exports = {
   normalizeIsrc, qualityFields, ensureColumns, saveFields, readFile, probeAtmosFile,
-  tierOf, tierFilter, summary, list, status, cancel, startReading,
+  tierOf, tierFilter, summary, list, status, cancel, startReading, backfillAtmos,
   verdictFromLevels, measureBands, spectralCheck, startChecking, checkOne, findFfmpeg, BANDS,
 }
