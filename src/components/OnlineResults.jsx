@@ -124,6 +124,23 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
   const play = async (item, index) => {
     if (currentTrack && sameStream(currentTrack, item)) { togglePlay(); return }
     saveRecentSearch(q)
+    // Prefer the original E-AC-3 JOC whenever native HDMI passthrough is
+    // available. Ordinary lossless/stereo is the explicit fallback, never
+    // labeled Atmos in Now Playing.
+    if (atmosAvailable(item)) {
+      try {
+        const capabilities = await api.atmosCapabilities()
+        if (capabilities.available) {
+          if (usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
+          const device = localStorage.getItem('lokal-atmos-output-device') || ''
+          const result = await api.atmosPlay(item.provider, String(item.id), device)
+          if (result?.ok) return
+          setError(`Dolby Atmos unavailable (${result?.error || 'output refused'}). Playing stereo instead.`)
+        }
+      } catch (error) {
+        setError(`Dolby Atmos unavailable (${error?.message || error}). Playing stereo instead.`)
+      }
+    }
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
