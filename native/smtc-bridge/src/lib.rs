@@ -490,6 +490,16 @@ pub fn atmos_headphone_command(command: String) -> napi::Result<()> {
         .map_err(|_| napi::Error::from_reason("Headphone state mutex poisoned"))?;
     let player = s.player.as_ref()
         .ok_or_else(|| napi::Error::from_reason("No Windows headphone audio is running"))?;
+    if let Some(level) = command.strip_prefix("volume ") {
+        let value = level.parse::<f64>()
+            .map_err(|_| napi::Error::from_reason("Invalid headphone volume"))?;
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(napi::Error::from_reason("Invalid headphone volume"));
+        }
+        player.SetVolume(value)
+            .map_err(|e| napi::Error::from_reason(format!("Windows volume failed: {e:?}")))?;
+        return Ok(());
+    }
     match command.as_str() {
         "cycle pause" => {
             if s.state == "paused" {
