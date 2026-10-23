@@ -14,7 +14,7 @@ const loadImage = src => new Promise((resolve, reject) => {
 })
 
 async function draw(accent) {
-  const [logo, sticker] = await Promise.all([loadImage('lokal-icon.png'), loadImage('lokal-icon-sticker.png')])
+  const [logo, sticker] = await Promise.all([loadImage('lokal-icon-rounded.png'), loadImage('lokal-icon-sticker.png')])
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = SIZE
   const ctx = canvas.getContext('2d')

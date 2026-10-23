@@ -1,0 +1,75 @@
+#!/usr/bin/env node
+// Derive every desktop icon from the same CD master. The photo has no disc
+// outline or jewel case; rounded OS icons clip the photo's actual pixels so
+// there is NO white/opaque background in the corners.
+//
+// npm run gen:icons (automatically invoked by dev and build)
+const fs = require('node:fs/promises')
+const path = require('node:path')
+const sharp = require('sharp')
+
+const root = path.resolve(__dirname, '..')
+const target = path.join(root, 'public')
+const source = path.join(target, 'lokal-cd-source.webp')
+const S = 512
+const DEFAULT_ACCENT = '#C8FF57'
+
+// Relative sticker bounds are tied to the image master. Keep this mask in
+// sync with mobile's tool/gen_lokal_launcher_icons.py.
+const stickerRect = { x: 0.703, y: 0.358, width: 0.287, height: 0.270, radius: 0.050 }
+const roundedRadius = 0.120
+
+function rectSvg(fill, { x, y, width, height, radius }, size = S) {
+  return Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 1 1">' +
+    '<rect x="' + x + '" y="' + y + '" width="' + width + '" height="' + height +
+    '" rx="' + radius + '" ry="' + radius + '" fill="' + fill + '" /></svg>'
+  )
+}
+function roundSvg(size = S) {
+  return rectSvg('white', { x: 0, y: 0, width: 1, height: 1, radius: roundedRadius }, size)
+}
+function ico(pngs) {
+  const count = pngs.length
+  const header = Buffer.alloc(6 + 16 * count)
+  header.writeUInt16LE(1, 2)
+  header.writeUInt16LE(count, 4)
+  let offset = header.length
+  for (let i = 0; i < count; i++) {
+    const { size, bytes } = pngs[i]
+    const at = 6 + i * 16
+    header.writeUInt8(size === 256 ? 0 : size, at)
+    header.writeUInt8(size === 256 ? 0 : size, at + 1)
+    header.writeUInt16LE(1, at + 4)
+    header.writeUInt16LE(32, at + 6)
+    header.writeUInt32LE(bytes.length, at + 8)
+    header.writeUInt32LE(offset, at + 12)
+    offset += bytes.length
+  }
+  return Buffer.concat([header, ...pngs.map(p => p.bytes)])
+}
+
+async function main() {
+  const full = await sharp(source).resize(S, S).ensureAlpha().png().toBuffer()
+  const stickerMask = await sharp(rectSvg('white', stickerRect)).png().toBuffer()
+  const stickerColor = rectSvg(DEFAULT_ACCENT, stickerRect)
+  const square = await sharp(full).composite([{ input: stickerColor }]).png().toBuffer()
+  const rounded = await sharp(square).composite([{ input: roundSvg(), blend: 'dest-in' }]).png().toBuffer()
+
+  await Promise.all([
+    fs.writeFile(path.join(target, 'lokal-icon.png'), square),
+    fs.writeFile(path.join(target, 'lokal-icon-rounded.png'), rounded),
+    fs.writeFile(path.join(target, 'lokal-icon-sticker.png'), stickerMask),
+    fs.writeFile(path.join(target, 'icon-512.png'), square),
+    fs.writeFile(path.join(target, 'icon-192.png'), await sharp(square).resize(192).png().toBuffer()),
+  ])
+
+  const pngs = await Promise.all([16, 24, 32, 48, 64, 128, 256].map(async size => ({
+    size, bytes: await sharp(rounded).resize(size).png().toBuffer(),
+  })))
+  await fs.writeFile(path.join(target, 'lokal-icon.ico'), ico(pngs))
+  console.log('[branding] square, transparent rounded, sticker mask and ICO updated')
+}
+
+if (require.main === module) main().catch(err => { console.error(err); process.exitCode = 1 })
+module.exports = { main, stickerRect, roundedRadius }
