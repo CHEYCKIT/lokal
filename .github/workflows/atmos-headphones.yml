@@ -9,6 +9,7 @@ on:
       - 'src/components/AtmosPlayButton.jsx'
       - 'src/components/AtmosTransport.jsx'
       - 'scripts/atmos-output.test.mjs'
+      - 'scripts/atmos-transfer-progress.test.mjs'
       - '.github/workflows/atmos-headphones.yml'
   workflow_dispatch:
 
@@ -33,4 +34,4 @@ jobs:
       - name: Verify Windows headphone bridge exports
         run: node -e "const b=require('./electron/native/smtc-bridge.win32-x64-msvc.node'); for(const k of ['startAtmosHeadphones','stopAtmosHeadphones','atmosHeadphoneStatus','atmosHeadphoneCommand']) if(typeof b[k] !== 'function') throw Error('Missing export '+k)"
       - name: Run Atmos routing tests
-        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs
+        run: node --test scripts/atmos-output.test.mjs scripts/tidal-atmos-metadata.test.mjs scripts/atmos-transfer-progress.test.mjs
