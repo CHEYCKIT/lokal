@@ -61,6 +61,7 @@ import { handleStationTitle, resetStationDisplay } from './radio/radioNowPlaying
 import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
+import StreamLoadingToast from './components/StreamLoadingToast'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
@@ -3207,6 +3208,7 @@ export default function App() {
             {renderYtDlpNotice()}
             {renderUpdateToast()}
             <Toaster />
+            <StreamLoadingToast />
             <AnimatePresence>
               {addonVerificationPrompt && (
                 <motion.div
