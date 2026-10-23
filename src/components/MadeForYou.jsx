@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react'
 import CoverFlow from './CoverFlow'
 import { useTranslation } from '../i18n'
 
-export default function MadeForYou({ picks, onPlay, onContextMenu, onOpenFlow }) {
+export default function MadeForYou({ picks, onPlay, onContextMenu }) {
   const { t } = useTranslation()
   if (!picks.length) return null
   return <section aria-roledescription="carousel" aria-label={t('Made for you')}>
@@ -12,6 +12,6 @@ export default function MadeForYou({ picks, onPlay, onContextMenu, onOpenFlow })
       <Sparkles size={14} className="text-accent" />
       <h2 className="text-xs font-display uppercase tracking-widest text-accent">{t('Made for you')}</h2>
     </div>
-    <CoverFlow picks={picks} onPlay={onPlay} onContextMenu={onContextMenu} onOpenFlow={onOpenFlow} />
+    <CoverFlow picks={picks} onPlay={onPlay} onContextMenu={onContextMenu} />
   </section>
 }
