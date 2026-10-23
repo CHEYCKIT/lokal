@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowTarget, flowPixelsPerCover, FLOW_SPRING } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -108,5 +108,24 @@ test('Cover Flow matches the tighter iTunes reflective stage on desktop', () => 
   assert.ok(flow.includes('origin = useTransform(position'), 'pivot remains fluid between covers')
   assert.ok(flow.includes('top: size * 1.005'), 'reflections touch the artwork')
   assert.ok(flow.includes('bg-black'), 'reflection stage is black like iTunes')
-  assert.ok(flow.includes('size * 0.55'), 'drag units align with new spacing')
+  assert.ok(flow.includes('flowPixelsPerCover(size, reduced)'), 'gesture scale follows the rendered mode')
+})
+
+test('drag, fling, and trackpad use one-cover spacing in both rendering modes', () => {
+  const size = 220
+  assert.equal(flowPixelsPerCover(size, true), size * 1.06)
+  assert.equal(flowPixelsPerCover(size, false), size * 0.55)
+  for (const reduced of [true, false]) {
+    const unit = flowPixelsPerCover(size, reduced)
+    assert.equal(flowDrag(4, -unit, unit, 12), 5, 'one cover moved = one index')
+  }
+  assert.ok(flow.includes('flowDrag(position.get(), e.clientX - g.last, pixelsPerCover, count)'))
+  assert.ok(flow.includes('/ pixelsPerCover'), 'release velocity and wheel use the same mode-aware scale')
+})
+
+test('long-press selects the actual pressed cover rather than blank-stage hit testing', () => {
+  assert.ok(flow.includes("e.target.closest?.('[data-cover-flow-item]')"))
+  assert.ok(flow.includes('Number(pressedCover.dataset.coverFlowItem)'))
+  assert.ok(flow.includes("pressedCover ? Number(pressedCover.dataset.coverFlowItem)"))
+  assert.ok(flow.includes(': flowIndexAt('), 'blank-stage hit testing still uses the distance curve')
 })
