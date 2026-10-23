@@ -8,6 +8,7 @@ const { hasAtmosMetadata } = require('../electron/mornye/atmos.js')
 test('recognizes Tidal Atmos modes from source metadata', () => {
   for (const input of [
     { audio_modes: ['STEREO', 'DOLBY_ATMOS'] },
+    { audio_modes: 'DOLBY_ATMOS' }, // Tidal-web Mornye extension shape
     { audioModes: ['DOLBY_ATMOS'] },
     { audio_mode: 'DOLBY_ATMOS' },
     { audioMode: 'DOLBY ATMOS' },
