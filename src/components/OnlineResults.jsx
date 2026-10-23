@@ -23,6 +23,9 @@ import AddonCollections from './AddonCollections'
 import AddonSetupNotice from './AddonSetupNotice'
 import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 import { useTranslation } from '../i18n'
+import { atmosAvailable, ATMOS_AVAILABLE } from '../quality'
+import AtmosPlayButton from './AtmosPlayButton'
+import { showToast } from './Toaster'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -122,6 +125,23 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
   const play = async (item, index) => {
     if (currentTrack && sameStream(currentTrack, item)) { togglePlay(); return }
     saveRecentSearch(q)
+    // Prefer the original E-AC-3 JOC whenever native HDMI passthrough is
+    // available. Ordinary lossless/stereo is the explicit fallback, never
+    // labeled Atmos in Now Playing.
+    if (atmosAvailable(item)) {
+      try {
+        const capabilities = await api.atmosCapabilities()
+        if (capabilities.available) {
+          if (usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
+          const device = localStorage.getItem('lokal-atmos-output-device') || ''
+          const result = await api.atmosPlay(item.provider, String(item.id), device)
+          if (result?.ok) return
+          showToast(`Dolby Atmos unavailable (${result?.error || 'output refused'}). Playing stereo instead.`)
+        }
+      } catch (error) {
+        showToast(`Dolby Atmos unavailable (${error?.message || error}). Playing stereo instead.`)
+      }
+    }
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
@@ -206,10 +226,12 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                     {[item.artist, item.album].filter(Boolean).join(' · ')}
                     {item.kind === 'video' && <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">{t('Video')}</span>}
                     {item.quality && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{item.quality}</span>}
+                    {atmosAvailable(item) && <span className={`ml-1.5 rounded-full border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${ATMOS_AVAILABLE.className}`} title="Dolby Atmos source available. Use Play Atmos to request the original JOC stream.">ATMOS AVAILABLE</span>}
                     {item.preview && <span title={t('SoundCloud only lets non-subscribers play 30 seconds of this track')} className="ml-1.5 text-[10px] uppercase tracking-wide text-accent/80">{t('30 s preview')}</span>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
+                  {atmosAvailable(item) && <AtmosPlayButton track={item} />}
                   <button onClick={() => addToPlaylist(item)} title={t('Add to playlist')} aria-label={t('Add {title} to a playlist', { title: item.title })}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
                     <Plus size={15} />
