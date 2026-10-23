@@ -564,18 +564,13 @@ router.get('/', (req, res) => {
     }
     // Album detail screens should follow the same device-first view as Songs.
     const preference = require('../../electron/libraryDevicePreference')
-    if (preference.shouldPreferDesktop({ source, id, includeGhosts, problems })) {
-      sql += ' AND ' + preference.desktopPreferredLibraryClause() +
-        ' AND (COALESCE(tracks.download_source, \'\') <> \'mobile\' OR EXISTS (' +
-        'SELECT 1 FROM tracks AS matching_desktop WHERE matching_desktop.album = tracks.album' +
-        ' AND COALESCE(matching_desktop.download_source, \'\') <> \'mobile\'' +
-        ' AND matching_desktop.file_path NOT LIKE \'ghost://%\'' +
-        ' AND matching_desktop.title = tracks.title COLLATE NOCASE' +
-        ' AND COALESCE(matching_desktop.duration, 0) > 0' +
-        ' AND ABS(matching_desktop.duration - tracks.duration) <= 2' +
-        (albumArtist ? ' AND LOWER(COALESCE(NULLIF(matching_desktop.album_artist, \'\'), matching_desktop.artist)) = LOWER(?)' : '') +
-        '))'
-      if (albumArtist) params.push(albumArtist)
+    // Only suppress a phone row when its desktop counterpart is also in this album view.
+    // Album-artist filtering can differ between synced metadata, so retain both there.
+    if (!albumArtist && preference.shouldPreferDesktop({ source, id, includeGhosts, problems })) {
+      sql += ' AND ' + preference.desktopPreferredLibraryClause().replace(
+        "AND desktop.title = tracks.title COLLATE NOCASE",
+        "AND desktop.album = tracks.album AND desktop.title = tracks.title COLLATE NOCASE"
+      )
     }
     const tracks = db.prepare(sql).all(...params)
     res.json(normalizeAlbumTracks(tracks).map(track => ({ ...track, missing: !fs.existsSync(track.file_path) })))
