@@ -20,9 +20,13 @@ export default function AtmosTransport() {
         const clamped = Math.max(0, Math.min(999999, Number(seconds) || 0))
         api.atmosCommand('seek ' + clamped.toFixed(2) + ' absolute').catch(() => {})
       },
-      // Compressed passthrough volume belongs to the HDMI receiver; the
-      // Windows headphone renderer owns its system output volume.
-      setVolume: () => {},
+      // HDMI compressed passthrough is volume-controlled by the receiver.
+      // The Windows native headphone renderer accepts a normal 0..1 gain.
+      setVolume: level => {
+        if (usePlayerStore.getState().currentTrack?.atmosMode !== 'headphones') return
+        const value = Math.max(0, Math.min(1, Number(level) || 0))
+        api.atmosCommand('volume ' + value.toFixed(3)).catch(() => {})
+      },
     }
     const setPlayer = patch => {
       updatingFromBackend = true
