@@ -217,7 +217,10 @@ function startReading(db, { all = false } = {}) {
  */
 async function backfillAtmos(db, { limit = 1000, onChanged } = {}) {
   ensureColumns(db)
-  const rows = db.prepare(`SELECT id, file_path, codec FROM tracks WHERE ${REAL_FILE}
+  // Keyset pagination visits all candidates once. Missing files and unavailable
+  // FFprobe results stay NULL, but cannot block later pages.
+  const batchSize = Math.min(5000, Math.max(1, Number(limit) || 1000))
+  const select = db.prepare(`SELECT id, file_path, codec FROM tracks WHERE ${REAL_FILE}
     AND atmos_verified IS NULL AND
     (LOWER(IFNULL(codec, '')) LIKE '%e-ac-3%' OR
      LOWER(IFNULL(codec, '')) LIKE '%eac3%' OR
@@ -226,18 +229,29 @@ async function backfillAtmos(db, { limit = 1000, onChanged } = {}) {
      LOWER(file_path) LIKE '%.atmos.m4a' OR
      LOWER(file_path) LIKE '%.ec3' OR
      LOWER(file_path) LIKE '%.eac3')
-    LIMIT ?`).all(Math.min(5000, Math.max(1, Number(limit) || 1000)))
+    AND id > ?
+    ORDER BY id LIMIT ?`)
+  const update = db.prepare('UPDATE tracks SET atmos_verified = ? WHERE id = ? AND atmos_verified IS NULL')
+  let cursor = ''
+  let checked = 0
   let changed = 0
-  for (const row of rows) {
-    if (!fs.existsSync(row.file_path)) continue
-    const verified = await probeAtmosFile(row.file_path, { codec: row.codec })
-    if (verified === null) continue
-    const result = db.prepare('UPDATE tracks SET atmos_verified = ? WHERE id = ? AND atmos_verified IS NULL')
-      .run(verified, row.id)
-    changed += result.changes || 0
+  while (true) {
+    const rows = select.all(cursor, batchSize)
+    if (!rows.length) break
+    cursor = rows[rows.length - 1].id
+    checked += rows.length
+    let updatedInBatch = 0
+    for (const row of rows) {
+      if (!fs.existsSync(row.file_path)) continue
+      const verified = await probeAtmosFile(row.file_path, { codec: row.codec })
+      if (verified === null) continue
+      updatedInBatch += update.run(verified, row.id).changes || 0
+    }
+    changed += updatedInBatch
+    if (updatedInBatch) onChanged?.(updatedInBatch)
+    if (rows.length < batchSize) break
   }
-  if (changed) onChanged?.(changed)
-  return { checked: rows.length, updated: changed }
+  return { checked, updated: changed }
 }
 
 // ---------------------------------------------------------------- spectrum
