@@ -263,7 +263,7 @@ function HomeContent({ user }) {
     try {
       const started = await playRecommendationPool(pool, {
         selected: track, context: { type: 'discovery', name: context }, isCurrent,
-        onProgress: message => { if (isCurrent()) toast.update(message) },
+        onProgress: (message, progress) => { if (isCurrent()) toast.update(message, progress?.percent) },
         onProviderFailure: failure => { if (isCurrent()) { if (failure.detail) detail = failure.detail; toast.update(playbackFallbackMessage(failure)) } },
       })
       toast.close(isCurrent() && started === false ? detail ? `Could not play “${track.title}”. ${detail}` : `No matching playback source was found for ${track.title}.` : '')
@@ -283,7 +283,7 @@ function HomeContent({ user }) {
     const artist = type === 'artist' ? item.name : item.artist
     const toast = showLoadingToast(type === 'album' ? `Loading ${item.title}…` : `Loading songs by ${artist}…`)
     try {
-      const progress = message => { if (isCurrent()) toast.update(message) }
+      const progress = (message, info) => { if (isCurrent()) toast.update(message, info?.percent) }
       const skipSources = []
       let detail = ''
       while (catalogueCurrent()) {
@@ -332,8 +332,9 @@ function HomeContent({ user }) {
   const saveRecommendedAlbum = async album => {
     const toast = showLoadingToast(`Loading ${album.title}…`)
     try {
-      const tracks = await resolveRecommendedAlbum(album, message => toast.update(message))
+      const tracks = await resolveRecommendedAlbum(album, (message, progress) => toast.update(message, progress?.percent))
       if (!tracks.length) { toast.close(); return }
+      toast.update('Saving playlist…', null)
       const playlist = await saveAsPlaylist(`${album.title} - ${today()}`, tracks, { userId: user?.id, description: `Recommended album by ${album.artist}` })
       toast.close(playlist ? `Saved “${album.title}” as a playlist.` : `Could not save “${album.title}”.`)
     } catch {
@@ -344,9 +345,10 @@ function HomeContent({ user }) {
   const downloadRecommendedAlbum = async album => {
     const toast = showLoadingToast(`Loading ${album.title}…`)
     try {
-      const tracks = await resolveRecommendedAlbum(album, message => toast.update(message))
+      const tracks = await resolveRecommendedAlbum(album, (message, progress) => toast.update(message, progress?.percent))
       if (!tracks.length) { toast.close(); return }
-      const result = await saveTracksToLibrary(tracks, { onProgress: message => toast.update(message) })
+      toast.update('Queuing downloads…', null)
+      const result = await saveTracksToLibrary(tracks, { onProgress: (message, progress) => toast.update(message, progress?.percent) })
       toast.close(libraryDownloadMessage(result))
     } catch {
       toast.close(`Could not download “${album.title}”.`)
@@ -414,7 +416,7 @@ function HomeContent({ user }) {
     const isCurrent = () => account === session.getSnapshot().account
     const toast = showLoadingToast(`Finding “${track.title}”…`)
     try {
-      const [resolved] = await resolveRecommendationTracks([track], api, { isCurrent, prepareStreams: false, onProgress: message => { if (isCurrent()) toast.update(message) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
+      const [resolved] = await resolveRecommendationTracks([track], api, { isCurrent, prepareStreams: false, onProgress: (message, progress) => { if (isCurrent()) toast.update(message, progress?.percent) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
       toast.close(!resolved && isCurrent() ? `No matching source was found for ${track.title}.` : '')
       return isCurrent() ? resolved : null
     } catch { toast.close(isCurrent() ? `Could not load “${track.title}”.` : ''); return null }
@@ -449,7 +451,7 @@ function HomeContent({ user }) {
     try {
       const tracks = await loadProviderMix(mix)
       if (!isCurrent() || usePlayerStore.getState().playbackGeneration !== version) { toast.close(); return }
-      const started = await playRecommendationPool(tracks, { firstPlayable: true, context: { type: 'discovery', name: mix.title }, isCurrent, onProgress: message => { if (isCurrent()) toast.update(message) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
+      const started = await playRecommendationPool(tracks, { firstPlayable: true, context: { type: 'discovery', name: mix.title }, isCurrent, onProgress: (message, progress) => { if (isCurrent()) toast.update(message, progress?.percent) }, onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) } })
       toast.close(started === false && isCurrent() ? `No playable songs were found in ${mix.title}.` : '')
     } catch (error) { toast.close(isCurrent() ? error.message || `Could not load ${mix.title}.` : '') }
     finally { if (request === playRequestRef.current) pendingPlayRef.current = null }
@@ -462,16 +464,18 @@ function HomeContent({ user }) {
       const candidates = await loadProviderMix(mix)
       const tracks = await resolveRecommendationTracks(candidates, api, {
         isCurrent, prepareStreams: false,
-        onProgress: message => { if (isCurrent()) toast.update(message) },
+        onProgress: (message, progress) => { if (isCurrent()) toast.update(message, progress?.percent) },
         onAddonVerificationRequired: error => dispatchAddonVerificationRequired(error, () => saveProviderMix(mix, download)),
       })
       if (!isCurrent()) { toast.close(); return }
       if (!tracks.length) { toast.close(`No matching songs were found in ${mix.title}.`); return }
       if (download) {
-        const result = await saveTracksToLibrary(tracks, { isCurrent, onProgress: message => toast.update(message) })
+        toast.update('Queuing downloads…', null)
+        const result = await saveTracksToLibrary(tracks, { isCurrent, onProgress: (message, progress) => toast.update(message, progress?.percent) })
         result.failed += candidates.length - tracks.length
         toast.close(libraryDownloadMessage(result))
       } else {
+        toast.update('Saving playlist…', null)
         const playlist = await saveAsPlaylist(`${mix.title} - ${today()}`, tracks, { userId: user?.id, description: `Mixed for you on ${sourceName(mix.source || 'youtube')}`, coverURL: secureImage(mix.artwork_url || mix.thumbnail) })
         toast.close(playlist ? `Saved “${mix.title}” as a playlist.` : `Could not save “${mix.title}”.`)
       }

@@ -71,6 +71,20 @@ class ExtensionHost {
     const attempts = Math.max(1, Math.min(6, Number(options.maxAttempts || this.addon.manifest.capabilities?.downloadTransfer?.maxAttempts) || 3))
     const resume = options.resume !== false
     let validator = '', written = 0, total = 0
+    // Some Mornye add-ons never invoke their own onProgress callback. Report
+    // the actual received/expected bytes directly to Lokal as well, when the
+    // server supplies a trustworthy Content-Length / Content-Range.
+    // This percentage covers the transfer, not subsequent decryption or output
+    // initialization. Avoid reporting each chunk (potentially thousands/sec).
+    let lastTransferPercent = null
+    const reportTransfer = () => {
+      if (segment || !this.onProgress || !Number.isFinite(total) || total <= 0 ||
+          !Number.isFinite(written) || written < 0 || written > total) return
+      const percent = Math.max(0, Math.min(100, Math.floor(written / total * 100)))
+      if (percent === lastTransferPercent) return
+      lastTransferPercent = percent
+      this.onProgress({ percent, message: 'Downloading audio…' })
+    }
     if (options.persistentCheckpoint && resume) {
       try { const saved = JSON.parse(await fsp.readFile(checkpoint, 'utf8')); if (saved.urlHash === crypto.createHash('sha256').update(url).digest('hex')) validator = saved.validator } catch {}
     }
@@ -97,13 +111,16 @@ class ExtensionHost {
         if (options.persistentCheckpoint) await fsp.writeFile(checkpoint, JSON.stringify({ urlHash: crypto.createHash('sha256').update(url).digest('hex'), validator }), { mode: 0o600 })
         output = await fsp.open(part, offset ? 'a' : 'w', 0o600)
         written = offset
+        lastTransferPercent = null // A retry/resume gets its own byte range.
         live?.({ part, file, total, written })
+        reportTransfer()
         for await (const chunk of response) {
           this.signal.throwIfAborted()
           let done = 0; while (done < chunk.length) done += (await output.write(chunk, done, chunk.length - done)).bytesWritten
           written += chunk.length
           if (written > 4 * 1024 ** 3) throw new Error('Addon audio exceeds the file size limit')
           live?.({ part, file, total, written })
+          reportTransfer()
           await onProgress(written, total)
         }
         if (!written || total && written !== total) throw new Error('Incomplete addon audio download')
@@ -125,7 +142,18 @@ class ExtensionHost {
     const output = this.file(destination), dir = this.file(`${output}.segments`)
     await fsp.mkdir(dir, { recursive: true })
     const progress = new Map(); let completed = 0, serial = Promise.resolve()
-    const report = () => { serial = serial.then(() => callback(options.onProgress, [[...progress.values()].reduce((a,b) => a+b,0), 0, completed, segments.length])); return serial }
+    let lastCompleted = -1
+    const report = () => {
+      // Segment downloads do not expose a trustworthy total byte count.
+      // Their completion percentage is therefore based on finished segments,
+      // not assumed equal-byte chunks or a fabricated transfer total.
+      if (this.onProgress && completed !== lastCompleted) {
+        lastCompleted = completed
+        this.onProgress({ percent: Math.floor(completed / segments.length * 100), message: 'Downloading audio segments…' })
+      }
+      serial = serial.then(() => callback(options.onProgress, [[...progress.values()].reduce((a,b) => a+b,0), 0, completed, segments.length]))
+      return serial
+    }
     const width = Math.max(1, Math.min(8, Number(options.maxParallel || this.addon.manifest.capabilities?.downloadTransfer?.maxParallelSegments) || 3))
     try {
       const temp = this.file(`${output}.tmp`), fd = await fsp.open(temp, 'w', 0o600)

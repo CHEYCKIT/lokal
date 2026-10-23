@@ -89,7 +89,7 @@ export async function downloadGhostSongs(ghosts, { client = api, save = saveToLi
       result.failed++
     } finally {
       done++
-      onProgress?.(`Finding and queuing songs… ${done}/${list.length}`)
+      if (isCurrent()) onProgress?.(`Finding and queuing songs… ${done}/${list.length}`, { completed: done, total: list.length, percent: Math.floor(done / list.length * 100) })
     }
   }, concurrency)
   if (!isCurrent()) result.cancelled = true

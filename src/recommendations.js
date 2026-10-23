@@ -260,8 +260,11 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
   const requestedStart = startFromProvider ? ordered.findIndex(source => source.id === startFromProvider) : -1
   const start = requestedStart >= 0 ? requestedStart : afterProvider ? ordered.findIndex(source => source.id === afterProvider) + 1 : 0
   const sources = ordered.slice(start).filter(source => (requestedStart >= 0 || source.id !== afterProvider) && !skipProviders.includes(source.id))
+  const unique = uniqueSongs(candidates)
+  let completed = 0
   try {
-    return (await mapLimited(uniqueSongs(candidates), async candidate => {
+    return (await mapLimited(unique, async candidate => {
+    try {
     if (!isCurrent()) return null
     if (reusePlayable && playableRecommendation(candidate)) return candidate
     const videoId = recommendationVideoId(candidate)
@@ -365,6 +368,17 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
     } catch (error) {
       if (isAddonVerificationRequiredError(error)) throw error
       return null
+    }
+    } finally {
+      completed++
+      // One completed candidate is observable progress. Provider searches
+      // inside a candidate have no fixed work count, so don't invent one.
+      if (unique.length > 1 && isCurrent()) {
+        onProgress?.(`Resolving tracks…`, {
+          completed, total: unique.length,
+          percent: Math.floor(completed / unique.length * 100),
+        })
+      }
     }
     })).filter(Boolean)
   } catch (error) {
