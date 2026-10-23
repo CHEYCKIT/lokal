@@ -532,6 +532,7 @@ function streamContentType(upstreamType, mime) {
 module.exports = {
   streamContentType,
   streamQuality,
+  ensureSourceAlbumIdColumn,
   cancellableBody,
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
