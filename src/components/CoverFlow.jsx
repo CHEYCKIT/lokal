@@ -62,7 +62,9 @@ function FlowCover({ pick, index, position, flip, activeIndex, size, reduced, fl
 
 export default function CoverFlow({ picks, onPlay, onContextMenu, onOpenFlow }) {
   const { t } = useTranslation()
-  const reduced = !!useReducedMotion() || usePerformanceMode()
+  const reduceMotion = !!useReducedMotion()
+  const performanceMode = usePerformanceMode()
+  const reduced = reduceMotion || performanceMode
   const position = useMotionValue(0)
   const flip = useMotionValue(0)
   const stageRef = useRef(null)
