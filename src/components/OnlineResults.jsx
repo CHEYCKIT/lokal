@@ -25,6 +25,7 @@ import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 import { useTranslation } from '../i18n'
 import { atmosAvailable, ATMOS_AVAILABLE } from '../quality'
 import AtmosPlayButton from './AtmosPlayButton'
+import { showToast } from './Toaster'
 
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
@@ -135,10 +136,10 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
           const result = await api.atmosPlay(item.provider, String(item.id), device)
           if (result?.ok) return
-          setError(`Dolby Atmos unavailable (${result?.error || 'output refused'}). Playing stereo instead.`)
+          showToast(`Dolby Atmos unavailable (${result?.error || 'output refused'}). Playing stereo instead.`)
         }
       } catch (error) {
-        setError(`Dolby Atmos unavailable (${error?.message || error}). Playing stereo instead.`)
+        showToast(`Dolby Atmos unavailable (${error?.message || error}). Playing stereo instead.`)
       }
     }
     const rows = await asTracks(results)
