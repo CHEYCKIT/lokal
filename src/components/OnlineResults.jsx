@@ -123,19 +123,48 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     return Array.isArray(rows) ? rows : []
   }
 
+  // Atmos is a native output engine, not a second player UI. Place the real
+  // track in the same queue/currentTrack that drives bar, fullscreen, mini,
+  // SMTC and keyboard transports before asking the native backend to play.
+  const playNativeAtmos = async (item, index, mode, device) => {
+    const rows = await asTracks(results)
+    const target = rows[index]
+    if (!target) return { error: 'Could not add the Atmos track to the player' }
+    const queue = rows.filter(Boolean)
+    const indexInQueue = queue.findIndex(row => row.id === target.id)
+    queue[indexInQueue] = {
+      ...target, atmosNative: true, atmosMode: mode,
+      atmosProvider: item.provider, atmosSourceId: String(item.id),
+    }
+    const previous = usePlayerStore.getState()
+    saveRecentItem(recentTrackItem(target))
+    playQueue(queue, indexInQueue, { type: 'search', id: q, name: `${providerLabel}: ${q}` })
+    try {
+      const result = await api.atmosPlay(item.provider, String(item.id), device, mode)
+      if (!result?.ok) {
+        // Leave the selected track in Now Playing, but never pretend it is
+        // running as an ordinary PCM/AAC recording after a native failure.
+        usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+        return result || { error: 'Native Atmos output was refused' }
+      }
+      return result
+    } catch (error) {
+      usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+      return { error: error?.message || String(error) }
+    }
+  }
+
   const play = async (item, index) => {
     if (currentTrack && sameStream(currentTrack, item)) { togglePlay(); return }
     saveRecentSearch(q)
-    // Prefer the original E-AC-3 JOC whenever native HDMI passthrough is
-    // available. Ordinary lossless/stereo is the explicit fallback, never
-    // labeled Atmos in Now Playing.
     if (atmosAvailable(item)) {
       try {
         const capabilities = await api.atmosCapabilities()
-        if (capabilities.available) {
-          if (usePlayerStore.getState().isPlaying) usePlayerStore.getState().togglePlay()
+        const mode = localStorage.getItem('lokal-atmos-output-mode') === 'headphones' ? 'headphones' : 'hdmi'
+        const nativeAvailable = mode === 'headphones' ? capabilities?.headphones?.available : capabilities?.mpvAvailable
+        if (nativeAvailable) {
           const device = localStorage.getItem('lokal-atmos-output-device') || ''
-          const result = await api.atmosPlay(item.provider, String(item.id), device)
+          const result = await playNativeAtmos(item, index, mode, device)
           if (result?.ok) return
           showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: result?.error || t('output refused') }))
           return
@@ -148,7 +177,6 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
-    // Shows up in Recent on the Search page, and plays again from there.
     saveRecentItem(recentTrackItem(target))
     const queue = rows.filter(Boolean)
     playQueue(queue, queue.findIndex(t => t.id === target.id), { type: 'search', id: q, name: `${providerLabel}: ${q}` })
@@ -239,7 +267,7 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
                   )}
                 </div>
                 <div className="flex items-center gap-2.5">
-                  {atmosAvailable(item) && <AtmosPlayButton track={item} />}
+                  {atmosAvailable(item) && <AtmosPlayButton track={item} onPlay={(mode, device) => playNativeAtmos(item, i, mode, device)} />}
                   <button onClick={() => addToPlaylist(item)} title={t('Add to playlist')} aria-label={t('Add {title} to a playlist', { title: item.title })}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted hover:text-accent transition-all">
                     <Plus size={15} />

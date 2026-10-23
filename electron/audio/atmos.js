@@ -181,6 +181,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     if (!old) return { ok: true }
     old.controller?.abort()
     if (old.monitor) clearInterval(old.monitor)
+    if (old.positionPoll) clearInterval(old.positionPoll)
     if (old.mode === 'headphones') {
       try { headphones.stopHeadphones() } catch {}
     }
@@ -204,8 +205,13 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     return stop()
   })
   ipcMain.handle('atmos:command', async (_, command) => {
-    if (!active || !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command)) {
-      return { error: 'No Atmos stream is running' }
+    const absoluteSeek = typeof command === 'string' &&
+      /^seek (?:0|[1-9]\d{0,5})(?:\.\d{1,3})? absolute$/.test(command)
+    const headphoneVolume = typeof command === 'string' &&
+      /^volume (?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)$/.test(command)
+    if (!active || (!absoluteSeek && !(active.mode === 'headphones' && headphoneVolume) &&
+        !['cycle pause', 'seek 10 relative', 'seek -10 relative'].includes(command))) {
+      return { error: 'No Atmos stream is running or invalid transport command' }
     }
     if (active.mode === 'headphones') {
       try { headphones.headphoneCommand(command); return { ok: true } }
@@ -229,6 +235,11 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       session.monitor = setInterval(async () => {
         if (active !== session) return
         const status = headphones.headphoneStatus()
+        if (status.state === 'playing' || status.state === 'paused') {
+          notify({ state: 'progress', provider, id, mode: 'headphones',
+            position: status.position_secs, duration: status.duration_secs,
+            paused: status.state === 'paused' })
+        }
         if (status.state === 'error' || status.state === 'ended' || status.state === 'stopped') {
           await stop()
           if (status.state === 'error') notify({ state: 'error',
@@ -245,6 +256,30 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     })
     session.proc = proc
     let output = ''
+    let responseBuffer = ''
+    let lastPosition = -1
+    let lastDuration = 0
+    const reportPosition = (data) => {
+      const position = String(data).match(/ANS_time-pos=(\d+(?:\.\d+)?)/)
+      const duration = String(data).match(/ANS_duration=(\d+(?:\.\d+)?)/)
+      if (duration) lastDuration = Number(duration[1])
+      if (position) {
+        const next = Number(position[1])
+        if (next !== lastPosition && active === session) {
+          lastPosition = next
+          notify({ state: 'progress', provider, id, mode: 'hdmi',
+            position: next, duration: lastDuration, paused: false })
+        }
+      }
+    }
+    proc.stdout.on('data', data => {
+      responseBuffer = (responseBuffer + String(data)).slice(-512)
+      reportPosition(responseBuffer)
+    })
+    proc.stderr.on('data', data => {
+      responseBuffer = (responseBuffer + String(data)).slice(-512)
+      reportPosition(responseBuffer)
+    })
     await new Promise((resolve, reject) => {
       let settled = false
       const finish = (error) => {
@@ -268,12 +303,19 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       proc.once('exit', code => finish(new Error('HDMI Atmos output failed (mpv exit ' + code + '). Check your selected HDMI receiver and exclusive-mode support.')))
     })
     if (active !== session) throw new Error('Atmos request was cancelled')
-    notify({ state: 'playing', provider, id, codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' })
+    notify({ state: 'playing', provider, id, mode: 'hdmi',
+      codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' })
+    session.positionPoll = setInterval(() => {
+      if (active !== session || !proc.stdin.writable || proc.exitCode != null) return
+      try { proc.stdin.write('get_property time-pos\nget_property duration\n') } catch {}
+    }, 700)
+    session.positionPoll.unref?.()
     proc.once('exit', () => {
+      if (session.positionPoll) clearInterval(session.positionPoll)
       if (active !== session) return
       active = null
       Promise.resolve(session.artifact?.cleanup()).catch(() => {})
-      notify({ state: 'stopped' })
+      notify({ state: 'ended', provider, id, mode: 'hdmi' })
     })
     return { ok: true, codec: 'E-AC-3 JOC', output: 'compressed HDMI passthrough' }
   }
@@ -353,7 +395,8 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       active = session
       const id = 'local:' + path.basename(filename)
       notify({ state: 'loading', provider: 'local', id, message: 'Preparing local Atmos file…' })
-      return await launchFile({ filename, session, provider: 'local', id, device, binary, mode })
+      const launched = await launchFile({ filename, session, provider: 'local', id, device, binary, mode })
+      return { ...launched, id, title: path.parse(filename).name, file: filename, mode }
     } catch (error) {
       if (active === session) await stop()
       return { error: error.message || String(error) }
