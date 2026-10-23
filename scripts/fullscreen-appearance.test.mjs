@@ -28,6 +28,20 @@ test('Spotify Canvas fills the square cover without expanding the card', () => {
   assert.ok(player.includes('rotatingCd && !fsCanvas && !squareMotionActive'))
 })
 
+test('fullscreen cover retries original after same-ID artwork updates', () => {
+  const cover = player.split('function FullscreenStillArtwork({ track }) {')[1]?.split('export default function FullscreenPlayer()')[0]
+  assert.ok(cover, 'each fullscreen artwork layer must have its own fallback state')
+  assert.ok(cover.includes('const full = trackFullArtURL(track) || trackArtURL(track)'))
+  assert.ok(cover.includes('useEffect(() => setFailed(false), [track])'),
+    'updated track objects must retry the original even when the original URL stays unchanged')
+  assert.ok(cover.includes('src={failed ? fallback : full}'))
+  assert.ok(cover.includes('fallback !== full'), 'avoid retry loops when both URLs coincide')
+  assert.ok(!cover.includes('currentTarget.src'), 'do not mutate React-owned image sources')
+  const perTrackCover = player.split('<MixCovers track={currentTrack} render={(track, { top }) => (')[1]
+  assert.ok(perTrackCover.includes('<FullscreenStillArtwork track={track} />'))
+  assert.ok(perTrackCover.includes('only="tall" onActive={setFsCanvas}'), 'preserve Canvas')
+  assert.ok(perTrackCover.includes('fullscreen-cd-hole-outline'), 'preserve rotating CD')
+})
 test('side lyrics expand their invisible left boundary without changing artwork or font size', () => {
   const lyrics = readFileSync(new URL('../src/components/LyricsPanel.jsx', import.meta.url), 'utf8')
   assert.ok(player.includes('computeFullscreenLyricsExpansion'))
