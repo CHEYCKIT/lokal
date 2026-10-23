@@ -421,7 +421,6 @@ function ensureSourceAlbumIdColumn(db) {
   if (sourceAlbumColumnDatabases.has(db)) return
   const columns = db.pragma('table_info(tracks)')
   if (!columns.some(column => column.name === 'source_album_id')) db.exec('ALTER TABLE tracks ADD COLUMN source_album_id TEXT')
-  if (!columns.some(column => column.name === 'atmos_available')) db.exec('ALTER TABLE tracks ADD COLUMN atmos_available INTEGER')
   sourceAlbumColumnDatabases.add(db)
 }
 
@@ -442,9 +441,9 @@ function saveOnlineTracks(db, items = []) {
   // quality...) is kept for the details panel; it fills in, never erases.
   const upsert = db.prepare(`
     INSERT INTO tracks (id, file_path, file_hash, title, artist, album, album_artist, duration, source_url, artwork_url, last_modified,
-      year, track_num, genre, isrc, codec, lossless, bit_depth, sample_rate, bitrate, source_album_id, atmos_available)
+      year, track_num, genre, isrc, codec, lossless, bit_depth, sample_rate, bitrate, source_album_id)
     VALUES (@id, @file_path, @id, @title, @artist, @album, @album_artist, @duration, @source_url, @artwork_url, @now,
-      @year, @track_num, @genre, @isrc, @codec, @lossless, @bit_depth, @sample_rate, @bitrate, @source_album_id, @atmos_available)
+      @year, @track_num, @genre, @isrc, @codec, @lossless, @bit_depth, @sample_rate, @bitrate, @source_album_id)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title, artist = excluded.artist, album = excluded.album,
       album_artist = excluded.album_artist, duration = excluded.duration,
@@ -454,8 +453,7 @@ function saveOnlineTracks(db, items = []) {
       codec = COALESCE(excluded.codec, tracks.codec), lossless = COALESCE(excluded.lossless, tracks.lossless),
       bit_depth = COALESCE(excluded.bit_depth, tracks.bit_depth), sample_rate = COALESCE(excluded.sample_rate, tracks.sample_rate),
       bitrate = COALESCE(excluded.bitrate, tracks.bitrate),
-      source_album_id = COALESCE(excluded.source_album_id, tracks.source_album_id),
-       atmos_available = COALESCE(excluded.atmos_available, tracks.atmos_available)
+      source_album_id = COALESCE(excluded.source_album_id, tracks.source_album_id)
     WHERE tracks.file_path LIKE 'ghost://%'
   `)
   const get = db.prepare('SELECT * FROM tracks WHERE id = ?')
@@ -476,7 +474,6 @@ function saveOnlineTracks(db, items = []) {
       duration: Number(item.duration) > 0 ? Number(item.duration) : null,
       source_url: p.sourceUrl(itemId),
       source_album_id: sourceAlbumIdOf(item),
-      atmos_available: item.atmos_available === 1 || item.atmos_available === true ? 1 : null,
       // Search results call it thumbnail; a row played again (a fallback to
       // another source) has artwork_url: keep its cover either way.
       artwork_url: [item.thumbnail, item.artwork_url].map(value => String(value || '')).find(value => /^https:\/\//.test(value))?.slice(0, 1000) || null,
@@ -532,7 +529,6 @@ function streamContentType(upstreamType, mime) {
 module.exports = {
   streamContentType,
   streamQuality,
-  ensureSourceAlbumIdColumn,
   cancellableBody,
   PROVIDERS, providerOf, validId, ghostPath, addons,
   search, resolveStream, fetchStream,
