@@ -62,7 +62,7 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
   // With `buttonClassName`: icon buttons (the playlist toolbar), the details in their tooltips.
   const pill = 'flex items-center gap-2 px-5 py-2.5 bg-elevated border border-border text-white/80 rounded-full font-medium text-sm hover:text-white hover:border-accent/30 transition-colors disabled:opacity-40'
   const syncTitle = t('Sync with {platform}{title} · {ago}. Adds songs added there since the last sync; nothing is removed.', { platform: status.platformLabel, title: status.title ? ` · ${status.title}` : '', ago: ago(status.syncedAt, t) })
-  const linkTitle = t('Link to a playlist on Spotify, Tidal, Apple Music, Qobuz or YouTube Music')
+  const linkTitle = t('Link to a playlist on Spotify, Tidal, Apple Music, Qobuz, Deezer or YouTube Music')
   return <>
     {buttonClassName
       ? <>
@@ -86,7 +86,7 @@ export default function PlaylistSyncButton({ playlistId, userId, className = '',
           {status.error && <p className="text-xs text-red">{status.error}</p>}
           <button onClick={unlink} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted hover:text-red"><Unlink size={13} />{t("Unlink")}</button>
         </> : <>
-          <p className="text-xs leading-relaxed text-muted">{t('Paste the link of a playlist on Spotify, Tidal, Apple Music, Qobuz or YouTube Music (yours or anyone’s). Each sync adds the songs added there since the last one, then downloads them through your sources. Removals are never synced. YouTube Music works as is; the others need the matching SpotiFLAC add-on (Spotify Web, Tidal, Apple Music or Qobuz) from Settings → Add-ons.')}</p>
+          <p className="text-xs leading-relaxed text-muted">{t('Paste the link of a playlist on Spotify, Tidal, Apple Music, Qobuz, Deezer or YouTube Music (yours or anyone’s). Each sync adds the songs added there since the last one, then downloads them through your sources. Removals are never synced. Use the full Deezer playlist URL. YouTube Music and Deezer work as is; the others need the matching SpotiFLAC add-on (Spotify Web, Tidal, Apple Music or Qobuz) from Settings → Add-ons.')}</p>
           <input autoFocus value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url.trim() && link()} placeholder={t('Paste playlist link')} spellCheck={false}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-text outline-none focus:border-accent/50" />
           {error && <p className="text-xs text-red">{error}</p>}
