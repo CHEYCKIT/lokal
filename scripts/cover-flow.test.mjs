@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP, FLOW_DEPTH, FLOW_FAN_ANGLE, FLOW_PERSPECTIVE, FLOW_VANISH_Y, flowProjectedCorners, flowResponsiveSpread } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP, FLOW_DEPTH, FLOW_FAN_ANGLE, FLOW_PERSPECTIVE, FLOW_VANISH_Y, flowProjectedCorners, flowResponsiveSpread, flowWheelPixels, flowWheelTarget, flowWheelEase } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -107,7 +107,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
   assert.ok(flow.includes('onPlay(index) // Mobile'))
   assert.ok(flow.includes('onContextMenu={e => onContextMenu?.(e, pick.track)}'))
   assert.ok(flow.includes('onPointerMove={move} onPointerUp={up}'))
-  assert.ok(flow.includes('onWheel={wheel}'))
+  assert.ok(flow.includes("stage.addEventListener('wheel', handleWheel, { passive: false })"))
   assert.ok(flow.includes('ArrowRight'))
   assert.ok(flow.includes('rotateBack(!flipped)'))
   assert.ok(!flow.includes('WebkitBoxReflect'), 'Cover Flow must not render any reflection')
@@ -149,7 +149,7 @@ test('drag, fling, and trackpad use one-cover spacing in both rendering modes', 
     assert.equal(flowDrag(4, -unit, unit, 12), 5, 'one cover moved = one index')
   }
   assert.ok(flow.includes('flowDrag(position.get(), e.clientX - g.last, pixelsPerCover, count)'))
-  assert.ok(flow.includes('/ pixelsPerCover'), 'release velocity and wheel use the same mode-aware scale')
+  assert.ok(flow.includes('flowWheelTarget(position.get(), wheelGoal.current, delta, pixelsPerCover, count)'), 'wheel and drag use the same mode-aware spacing')
 })
 
 test('long-press selects the actual pressed cover rather than blank-stage hit testing', () => {
@@ -228,12 +228,43 @@ test('iCarousel-inspired fixed deceleration finishes without a secondary snap', 
   assert.ok(flowCoastPlan(8, 8, 24).duration <= .7, 'flick never drags on')
 })
 
-test('mouse click-and-drag physics is independent of the unchanged wheel handler', () => {
-  assert.ok(flow.includes("onWheel={wheel}"), 'wheel handler remains unchanged')
-  assert.ok(flow.includes("e.shiftKey ? e.deltaY : 0"), 'shift wheel handling remains unchanged')
-  assert.ok(flow.includes('setTimeout(() => settle(position.get()), 170)'), 'original wheel settle timing is retained')
-  assert.ok(flow.includes('coast(velocity)'), 'mouse pointer release alone uses the new coast')
+test('wheel scrolling is non-passive and its easing cannot interfere with mouse drag physics', () => {
+  assert.ok(flow.includes("stage.addEventListener('wheel', handleWheel, { passive: false })"))
+  assert.ok(flow.includes("stage.removeEventListener('wheel', handleWheel)"))
+  assert.ok(!flow.includes('onWheel={wheel}'), 'avoid Chromium passive React wheel delegation')
+  assert.ok(flow.includes('e.preventDefault()'), 'the native listener consumes page scrolling')
+  assert.ok(flow.includes('if (e.ctrlKey || e.metaKey || count < 2) return'), 'pinch-to-zoom stays available')
+  assert.ok(flow.includes('wheelGoal.current = flowWheelTarget('), 'accumulate destination across wheel events')
+  assert.ok(flow.includes('requestAnimationFrame(followWheel)'), 'one smoothly updated animation')
+  assert.ok(flow.includes('wheelGoal.current = clampIndex(Math.round(wheelGoal.current), count)'), 'settle on the same curve')
+  assert.ok(flow.includes('stopWheel()'), 'wheel animation is canceled by pointer/keyboard and on unmount')
+  assert.ok(flow.includes('coast(velocity)'), 'mouse pointer release retains original coast')
   assert.ok(flow.includes('flowReleaseVelocity(g.samples, performance.now(), pixelsPerCover)'))
+})
+
+test('high-resolution trackpad and coarse mouse ticks accumulate smoothly in both directions', () => {
+  const unit = flowPixelsPerCover(220, false)
+  assert.equal(flowWheelPixels(0, 4, 0), 4)
+  assert.equal(flowWheelPixels(9, 4, 0), 9, 'dominant horizontal trackpad axis')
+  assert.equal(flowWheelPixels(4, -9, 0), -9, 'dominant vertical wheel axis')
+  assert.equal(flowWheelPixels(0, 3, 1), 48, 'line deltas convert to pixels')
+  assert.equal(flowWheelPixels(0, 1, 2, 680), 680, 'page deltas convert to pixels')
+  let goal = null
+  goal = flowWheelTarget(6, goal, unit * .42, unit, 20)
+  const laggingPosition = flowWheelEase(6, goal, 16)
+  assert.ok(laggingPosition > 6 && laggingPosition < goal)
+  goal = flowWheelTarget(laggingPosition, goal, unit * .42, unit, 20)
+  assert.ok(Math.abs(goal - 6.84) < 1e-10,
+    'next wheel tick adds to destination, not to lagging painted position')
+  goal = flowWheelTarget(laggingPosition, goal, -unit * .25, unit, 20)
+  assert.ok(Math.abs(goal - 6.59) < 1e-10, 'reverse direction remains continuous')
+  assert.equal(flowWheelTarget(0, null, -unit, unit, 20), 0)
+  assert.equal(flowWheelTarget(19, null, unit, unit, 20), 19)
+  const first = flowWheelEase(0, 1, 16)
+  assert.ok(Math.abs(flowWheelEase(first, 1, 16) - flowWheelEase(0, 1, 32)) < 1e-12,
+    'easing follows real frame time instead of a fixed frame rate')
+  assert.ok(flowWheelEase(.3, 1, 16) > .3 && flowWheelEase(.3, 1, 16) < 1,
+    'end-of-gesture snap smoothly approaches its cover without jumping')
 })
 
 test('mouse drag release has no velocity cliff or abrupt low-speed mode switch', () => {
