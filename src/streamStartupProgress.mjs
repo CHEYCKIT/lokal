@@ -1,13 +1,31 @@
-// Progress here measures completion of observable *startup milestones*, not
-// whole-song download completion. Some add-ons are chunked/live and omit
-// Content-Length and media buffered ranges. Never show an invented byte %.
+// Progress counts actual observable startup milestones, not whole-song
+// buffering or byte download completion. Mornye preparation supplies a REAL
+// percentage (worker transfer/conversion); interpolate it into the preparation
+// phase so the entire startup indicator remains monotonic per source.
 export const STARTUP_STAGES = Object.freeze({
-  preparing: 10, searching: 20, resolving: 30, fetching: 45,
-  headers: 65, receiving: 80, decoding: 90, ready: 100,
+  preparing: 10, searching: 20, resolving: 30, fetching: 70,
+  headers: 80, receiving: 90, decoding: 95, ready: 100,
 })
 
-export function startupProgress(phase) {
+export function startupProgress(phase, addonPercent = null) {
+  if (phase === 'preparing' && Number.isFinite(addonPercent) &&
+      addonPercent > 0 && addonPercent <= 100) {
+    return 10 + Math.round(55 * addonPercent / 100)
+  }
   return STARTUP_STAGES[phase] ?? null
+}
+
+export function withPreparationProgress(load, status, message = '') {
+  if (!load) return null
+  const value = Number(status?.progress ?? status?.percent)
+  const real = (status?.progress != null || status?.percent != null) &&
+    Number.isFinite(value) && value >= 0 && value <= 100 ? value : null
+  const addonPercent = real === null ? load.addonPercent
+    : Math.max(load.addonPercent ?? 0, real)
+  return {
+    ...load, phase: 'preparing', addonPercent,
+    message: message || String(status?.message || '').slice(0, 160),
+  }
 }
 
 // A new playback generation is a new loading session. Provider fallbacks keep
@@ -20,7 +38,7 @@ export function loadingSession(current, { generation, sourceKey, phase = 'prepar
     : same ? current.attempt + (changedSource ? 1 : 0) : 1
   return {
     generation, sourceKey: source, attempt: nextAttempt,
-    phase, message, recovering,
+    phase, message, recovering, addonPercent: null,
   }
 }
 
@@ -30,9 +48,9 @@ export function acceptStreamSignal(load, signal, currentSourceKey) {
       (load.sourceKey && load.sourceKey !== currentSourceKey)) return null
   const incoming = startupProgress(signal.phase)
   if (incoming == null || signal.phase === 'ready') return null
-  const old = startupProgress(load.phase) ?? 0
+  const old = startupProgress(load.phase, load.addonPercent) ?? 0
   // Ranges/seek retries and cancelled requests often resolve out of order.
   // Never rewind the startup indicator for the *same* attempt.
   if (incoming <= old) return null
-  return { ...load, phase: signal.phase, sourceKey: currentSourceKey }
+  return { ...load, phase: signal.phase, addonPercent: null, sourceKey: currentSourceKey }
 }
