@@ -53,7 +53,7 @@ export function loadingSession(current, { generation, sourceKey, phase = 'prepar
     : same ? current.attempt + (changedSource ? 1 : 0) : 1
   return {
     generation, sourceKey: source, attempt: nextAttempt,
-    phase, message, recovering, addonPercent: null,
+    phase, message, recovering, addonPercent: null, request: 0,
   }
 }
 
@@ -63,9 +63,17 @@ export function acceptStreamSignal(load, signal, currentSourceKey) {
       (load.sourceKey && load.sourceKey !== currentSourceKey)) return null
   const incoming = startupProgress(signal.phase)
   if (incoming == null || signal.phase === 'ready') return null
+  const request = Number(signal.request)
+  const hasRequest = Number.isSafeInteger(request) && request > 0
+  const seen = load.request || 0
+  if (hasRequest && request < seen) return null
+  const latest = hasRequest ? Math.max(seen, request) : seen
   const old = startupProgress(load.phase, load.addonPercent) ?? 0
-  // Ranges/seek retries and cancelled requests often resolve out of order.
-  // Never rewind the startup indicator for the *same* attempt.
-  if (incoming <= old) return null
-  return { ...load, phase: signal.phase, addonPercent: null, sourceKey: currentSourceKey }
+  // A higher-numbered Range request might restart resolution, but progress
+  // must not decrease. Record its token anyway: late bytes from the
+  // superseded request must NOT finish this new request's progress.
+  if (incoming <= old) {
+    return latest > seen ? { ...load, request: latest } : null
+  }
+  return { ...load, request: latest, phase: signal.phase, addonPercent: null, sourceKey: currentSourceKey }
 }
