@@ -28,6 +28,21 @@ export function withPreparationProgress(load, status, message = '') {
   }
 }
 
+// next()/autoNext() update the queue position without advancing the store's
+// playbackGeneration. Pair it with the logical queue slot and original song
+// identity: switching tracks resets attempts, changing providers for the same
+// song preserves them. Avoid provider-specific track IDs, which change on fallback.
+export function streamLoadKey(state) {
+  const track = state?.currentTrack
+  if (!track) return null
+  const slot = state.shuffle ? state.shuffleIndex : state.queueIndex
+  return JSON.stringify([
+    state.playbackGeneration ?? 0, state.shuffle ? 'shuffle' : 'queue', slot,
+    String(track.title || '').trim().toLowerCase(),
+    String(track.artist || '').trim().toLowerCase(),
+  ])
+}
+
 // A new playback generation is a new loading session. Provider fallbacks keep
 // that generation, increment the attempt and restart that source's milestones.
 export function loadingSession(current, { generation, sourceKey, phase = 'preparing', message = '', attempt, recovering = false } = {}) {
