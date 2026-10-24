@@ -58,7 +58,7 @@ test('Cover Flow no longer reads Windows Reduced Motion but keeps app Performanc
   assert.ok(!coverFlow.includes('useReducedMotion'))
   assert.ok(coverFlow.includes('const reduced = usePerformanceMode()'))
   assert.ok(!coverFlow.includes('WebkitBoxReflect'), '3D artwork stays intact without any reflections')
-  assert.ok(coverFlow.includes('flowCoverGeometry(index - p, size, reduced)'))
+  assert.ok(coverFlow.includes('flowCoverGeometry(index - p, size, reduced, spread)'))
 })
 
 test('both choices use identical song picks and playback and neither restores a heading', () => {
