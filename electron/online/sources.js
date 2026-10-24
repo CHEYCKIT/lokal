@@ -111,7 +111,9 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
   const attempt = async (force) => {
     let stream
     try {
+      opts.onPhase?.('resolving')
       stream = await resolveStream(provider, id, { ...opts, force, signal })
+      opts.onPhase?.('fetching')
     } catch (error) {
       throw withStreamErrorStage(error, 'resolve')
     }
