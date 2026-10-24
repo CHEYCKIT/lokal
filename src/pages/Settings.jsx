@@ -266,6 +266,9 @@ export default function Settings() {
   const panelFreeform = usePanelWidths(s => s.freeform)
   const setPanelFreeform = (freeform) => usePanelWidths.getState().set({ freeform })
   const replayGainMode = usePlayerStore(s => s.replayGainMode)
+  const [autoplayEnabled, setAutoplayEnabled] = useState(() => {
+    try { return localStorage.getItem('lokal-autoplay') !== '0' } catch { return true }
+  })
   const playbackSpeed = usePlaybackSpeed(s => s.speed)
   const setPlaybackSpeed = usePlaybackSpeed(s => s.setSpeed)
   // Seeded from the settings already read (and the version / tools found on
@@ -1602,6 +1605,15 @@ activeCategory === 'data' ? usersTried
 
       {inCategory('playback') && (
       <Section title={t("Playback")}>
+        <Row label={t("Autoplay")} desc={t("Play the next song automatically. Turn off to stop when the current song ends.")}>
+          <button type="button" aria-pressed={autoplayEnabled} onClick={() => {
+            const enabled = !autoplayEnabled
+            setAutoplayEnabled(enabled)
+            try { localStorage.setItem('lokal-autoplay', enabled ? '1' : '0') } catch {}
+          }} className="px-4 py-1.5 rounded-lg text-xs border border-border">
+            {autoplayEnabled ? t("On") : t("Off")}
+          </button>
+        </Row>
         <OutputPrecisionSettings />
         <Row label={t("ReplayGain")} desc={t("Use embedded ReplayGain tags to bring tracks closer in loudness. Peak tags limit boosts; tracks without tags are unchanged.")}>
           <select aria-label={t("ReplayGain mode")} value={settings.replaygain_mode ?? replayGainMode ?? 'off'} onChange={e => set('replaygain_mode', e.target.value)}
