@@ -115,7 +115,11 @@ export default function AtmosTransport() {
         // Zustand subscribers fire synchronously on track selection.
         // Register the output-release barrier now; App must await it before
         // asking Chromium to load/play the next (possibly same-ID) stream.
-        beginAtmosOutputRelease(() => api.atmosStop()).catch(() => {})
+        api.log?.('info', '[atmos-handoff] releasing native Atmos output')
+        beginAtmosOutputRelease(() => api.atmosStop())
+          .then(() => api.log?.('info', '[atmos-handoff] native Atmos output released'))
+          .catch(error => api.log?.('warn', '[atmos-handoff] native output release failed: ' +
+            (error?.name || 'unknown')))
         return
       }
       if (updatingFromBackend || !active || !now.currentTrack?.atmosNative) return
