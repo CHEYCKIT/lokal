@@ -127,6 +127,32 @@ async function inspectAtmosFile(filename, ffprobeBinary) {
   return { codec: 'E-AC-3 JOC' }
 }
 
+// Offer a guided, opt-in repair only for Windows native headphone decoding
+// failures. HDMI passthrough failures are receiver/output issues, not missing
+// Windows codecs. Never download or execute an unverified third-party installer.
+const WINDOWS_CODEC_GUIDE = 'https://www.majorgeeks.com/files/details/dolby_ac_3ac_4_installer.html'
+function isWindowsDecoderError(error, mode, platform = process.platform) {
+  if (platform !== 'win32' || mode !== 'headphones') return false
+  const message = String(error?.message || error || '')
+  return /Windows Media Foundation could not play this Dolby Atmos file|Windows audio did not start|E-AC-3 decoder/i.test(message)
+}
+async function offerWindowsCodecHelp(error, mode, platform = process.platform, electron = null) {
+  if (!isWindowsDecoderError(error, mode, platform)) return false
+  const { dialog, shell } = electron || require('electron')
+  const response = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Dolby audio needs attention',
+    message: 'Windows could not decode this Dolby Atmos track.',
+    detail: 'Your PC may be missing an E-AC-3 decoder. You can review the codec installation guide, then return to Lokal and retry the track. Dolby Access and Spatial Sound settings may also need configuration. Installing a codec does not guarantee Atmos rendering.\n\nTechnical details: ' + String(error?.message || error).slice(0, 600),
+    buttons: ['Open codec installation guide', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (response.response === 0) await shell.openExternal(WINDOWS_CODEC_GUIDE)
+  return true
+}
+
 function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
   const notify = (state) => broadcast?.('atmos:status', state)
   const savedMpv = () => {
@@ -242,8 +268,11 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
         }
         if (status.state === 'error' || status.state === 'ended' || status.state === 'stopped') {
           await stop()
-          if (status.state === 'error') notify({ state: 'error',
-            error: status.error || 'Windows playback failed' })
+          if (status.state === 'error') {
+            const failure = new Error(headphones.headphoneDecoderFailure(status.error))
+            notify({ state: 'error', error: failure.message })
+            offerWindowsCodecHelp(failure, 'headphones').catch(() => {})
+          }
         }
       }, 500)
       session.monitor.unref?.()
@@ -363,6 +392,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
     } catch (error) {
       if (active === session) await stop()
       else { try { await session?.artifact?.cleanup() } catch {} }
+      await offerWindowsCodecHelp(error, mode).catch(() => {})
       return { error: error.message || String(error) }
     }
   })
@@ -399,6 +429,7 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
       return { ...launched, id, title: path.parse(filename).name, file: filename, mode }
     } catch (error) {
       if (active === session) await stop()
+      await offerWindowsCodecHelp(error, mode).catch(() => {})
       return { error: error.message || String(error) }
     }
   })
@@ -412,5 +443,5 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
 
 module.exports = {
   supportedHost, nativeAtmosAvailable, outputOptions, isConfirmedBitstream,
-  mpvCandidates, findMpvBinary, parseAudioDevices, inspectAtmosFile, registerAtmosHandlers,
+  mpvCandidates, findMpvBinary, parseAudioDevices, inspectAtmosFile, registerAtmosHandlers,\n  isWindowsDecoderError, offerWindowsCodecHelp,
 }
