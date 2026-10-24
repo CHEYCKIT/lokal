@@ -1068,7 +1068,7 @@ export default function Settings() {
     if (toolsLoading) return
     // The general image picker excludes executable files by default.
     const fp = reset ? '' : await api.openFile({
-      filters: [{ name: 'Executables', extensions: ['exe', 'bin', 'sh', 'AppImage', '*'] }],
+      filters: [{ name: 'Executables', extensions: ['exe', 'bin', 'sh', 'AppImage'] }, { name: 'All Files', extensions: ['*'] }],
     })
     if (!reset && !fp) return
     setToolsLoading(true)
