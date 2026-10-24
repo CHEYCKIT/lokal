@@ -27,7 +27,7 @@ function centerDistance(a) {
 }
 
 function depthDistance(a) {
-  if (a >= 1) return FLOW_DEPTH + (a - 1) * .01
+  if (a >= 1) return FLOW_DEPTH
   // Keep the central artwork precisely on the front plane, tapering
   // smoothly to the recessed side-cover plane.
   return FLOW_DEPTH * a * a * (3 - 2 * a)
