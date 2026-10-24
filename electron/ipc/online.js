@@ -893,23 +893,12 @@ function registerStreamProtocol(protocol, net) {
         durationMs: Date.now() - startedAt,
       }, res.ok ? 'info' : 'warn')
       report(res.ok ? 'headers' : 'error', { status: res.status })
-      const sourceBody = sources.cancellableBody(res.body, () => upstream.abort())
       const total = Number(res.headers.get('content-length'))
-      let loaded = 0
-      let lastReport = 0
-      const monitoredBody = sourceBody?.pipeThrough && res.ok ? sourceBody.pipeThrough(new TransformStream({
-        transform(chunk, controller) {
-          controller.enqueue(chunk)
-          loaded += chunk?.byteLength || 0
-          const now = Date.now()
-          // Don't put every audio packet over IPC.
-          if (loaded && (loaded === chunk.byteLength || now - lastReport >= 250)) {
-            lastReport = now
-            report('receiving', { loaded, total: total > 0 ? total : null })
-          }
-        },
-      })) : sourceBody
-      return new Response(monitoredBody, { status: res.status, headers })
+      const sourceBody = sources.cancellableBody(
+        res.body, () => upstream.abort(),
+        res.ok ? bytes => report('receiving', { loaded: bytes, total: total > 0 ? total : null }) : undefined,
+      )
+      return new Response(sourceBody, { status: res.status, headers })
     } catch (e) {
       const cancelled = !!upstream?.signal.aborted
       logAddonStream(diagnostic, cancelled ? 'cancelled' : 'failure', {
