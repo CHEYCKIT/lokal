@@ -435,11 +435,28 @@ pub fn start_atmos_headphones(file_uri: String) -> napi::Result<()> {
     }
     let on_failed = TypedEventHandler::new(
         move |_: &Option<MediaPlayer>, args: &Option<MediaPlayerFailedEventArgs>| {
+            // ErrorMessage may be blank even when MediaFailed fires. Keep
+            // the actual WinRT MediaPlayerError and extended HRESULT so a
+            // missing codec can be distinguished from an invalid container
+            // or an output failure on the affected Windows installation.
             let detail = args.as_ref()
                 .and_then(|value| value.ErrorMessage().ok())
                 .map(|value| value.to_string())
-                .unwrap_or_else(|| "The Windows decoder could not play this E-AC-3 stream.".into());
-            headphone_update(generation, "error", &detail);
+                .filter(|message| !message.trim().is_empty())
+                .unwrap_or_else(|| "Windows could not decode the E-AC-3 JOC source.".into());
+            let category = args.as_ref()
+                .and_then(|value| value.Error().ok())
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_else(|| "unknown".into());
+            let hresult = args.as_ref()
+                .and_then(|value| value.ExtendedErrorCode().ok())
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_else(|| "unknown".into());
+            headphone_update(
+                generation,
+                "error",
+                &format!("{detail} [MediaPlayerError={category}; HRESULT={hresult}]"),
+            );
             Ok(())
         },
     );
