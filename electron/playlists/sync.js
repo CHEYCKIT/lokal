@@ -11,7 +11,7 @@ const PLATFORMS = [
   { id: 'tidal', label: 'Tidal', hosts: /(^|\.)tidal\.com$/, addon: 'Tidal' },
   { id: 'apple', label: 'Apple Music', hosts: /^music\.apple\.com$/, addon: 'Apple Music' },
   { id: 'qobuz', label: 'Qobuz', hosts: /(^|\.)qobuz\.com$/, addon: 'Qobuz' },
-  { id: 'deezer', label: 'Deezer', hosts: /(^|\.)deezer\.com$|^deezer\.page\.link$/, addon: 'Deezer' },
+  { id: 'deezer', label: 'Deezer', hosts: /^(?:www\.)?deezer\.com$/, builtin: true },
   // Read with the playlist import's own reader (helpers.readPlaylist).
   { id: 'youtube-music', label: 'YouTube Music', hosts: /^music\.youtube\.com$/, builtin: true },
 ]
@@ -26,6 +26,10 @@ function platformOf(raw) {
   if (url.protocol !== 'https:') return null
   const host = url.hostname.toLowerCase()
   const platform = PLATFORMS.find(p => p.hosts.test(host))
+  if (platform?.id === 'deezer') {
+    const id = require('./deezer').playlistId(url.href)
+    return id ? { ...platform, url: `https://www.deezer.com/playlist/${id}` } : null
+  }
   return platform && /playlist/i.test(url.pathname) ? { ...platform, url: url.href } : null
 }
 
@@ -99,7 +103,10 @@ async function sync(db, playlistId, { packages, helpers, userId = 'guest' }) {
   const platform = PLATFORMS.find(p => p.id === row.platform)
   const fail = message => { db.prepare('UPDATE playlist_sync SET error = ? WHERE playlist_id = ?').run(message, playlistId); return { error: message } }
   let result
-  if (platform?.builtin) {
+  if (platform?.id === 'deezer') {
+    try { result = await (helpers.readDeezerPlaylist || require('./deezer').readPlaylist)(row.url) }
+    catch (error) { return fail(error.message) }
+  } else if (platform?.builtin) {
     // YouTube Music: the same reader as pasting a playlist link to import it.
     let read
     try { read = await helpers.readPlaylist(row.url) } catch (error) { return fail(error.message) }
