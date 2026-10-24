@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
 const home = readFileSync(new URL('../src/pages/Home.jsx', import.meta.url), 'utf8')
 
-test('iTunes Cover Flow: outside edges face forward and inside hinges align tightly', () => {
+test('iTunes Cover Flow: angled neighbors tuck behind the facing artwork', () => {
   const size = 220
   const centre = flowCoverGeometry(0, size)
   assert.equal(centre.angle, 0)
@@ -21,25 +21,46 @@ test('iTunes Cover Flow: outside edges face forward and inside hinges align tigh
   assert.equal(left.angle, 70, 'left-side outer edge faces forward')
   assert.equal(right.pivot, 0, 'right-side hinge is its inside/left edge')
   assert.equal(left.pivot, 100, 'left-side hinge is its inside/right edge')
-  assert.ok(Math.abs((right.x - size / 2) - size * .52) < 0.001)
-  assert.ok(Math.abs((left.x + size / 2) + size * .52) < 0.001)
+  assert.equal(FLOW_FIRST, .42)
+  assert.equal(FLOW_OVERLAP, .08)
+  assert.equal(FLOW_STEP, .34)
+  const rightHinge = right.x - size / 2
+  const leftHinge = left.x + size / 2
+  assert.ok(Math.abs(rightHinge - size * FLOW_FIRST) < .001)
+  assert.ok(Math.abs(leftHinge + size * FLOW_FIRST) < .001)
+  // The selected cover spans [-.5,+.5] size, so both neighboring INNER
+  // hinges lie underneath it (rather than beside its border at ±.52).
+  assert.ok(rightHinge < size / 2 - size * .07, 'right cover disappears behind front artwork')
+  assert.ok(leftHinge > -size / 2 + size * .07, 'left cover disappears behind front artwork')
   assert.equal(left.x, -right.x)
   assert.ok(Math.abs(right.depth + size * .15) < 0.001)
   const farther = flowCoverGeometry(2, size)
-  assert.ok(Math.abs((farther.x - right.x) / size - .34) < 0.001)
+  assert.ok(Math.abs((farther.x - right.x) / size - FLOW_STEP) < 0.001)
   assert.ok(farther.depth < right.depth)
   assert.equal(FLOW_SPRING.stiffness, 135)
   assert.equal(FLOW_SPRING.damping, 24)
   assert.equal(FLOW_SPRING.mass, 1)
 })
 
-test('compact spacing is smooth across the first-neighbor boundary', () => {
+test('overlapping neighbor spacing is smooth across both center and first-neighbor boundaries', () => {
   const size = 220
   const epsilon = 0.0001
   const x0 = flowCoverGeometry(1, size).x
   const before = (x0 - flowCoverGeometry(1 - epsilon, size).x) / (size * epsilon)
   const after = (flowCoverGeometry(1 + epsilon, size).x - x0) / (size * epsilon)
   assert.ok(Math.abs(before - after) < .001, 'no sudden jump in swipe velocity')
+  const first = flowCoverGeometry(0, size).x
+  const beforeCenter = (first - flowCoverGeometry(-epsilon, size).x) / (size * epsilon)
+  const afterCenter = (flowCoverGeometry(epsilon, size).x - first) / (size * epsilon)
+  assert.ok(Math.abs(beforeCenter - afterCenter) < .001, 'inset applies continuously as cover leaves center')
+  // The nearest panel increasingly retreats behind the center as it turns,
+  // rather than jumping there when its index rounds to the next item.
+  for (const d of [.1, .25, .5, .75, .9, 1]) {
+    const g = flowCoverGeometry(d, size)
+    const mirror = flowCoverGeometry(-d, size)
+    assert.ok(Math.abs(g.x + mirror.x) < 1e-9, 'left/right geometric symmetry')
+    assert.ok(g.depth <= 0, 'neighbor stays behind facing artwork')
+  }
   assert.equal(flowCoverGeometry(-1, size).angle, 70)
   assert.equal(flowCoverGeometry(1, size).angle, -70)
 })
@@ -264,4 +285,23 @@ test('reflection implementation and its Home-specific paint layering are complet
   assert.ok(!home.includes('{suggestions.length > 0 && <section className="relative z-10">'), 'suggestions no longer need mirror-tail stacking')
   assert.ok(!home.includes('{recentTracks.length > 0 && <section className="relative z-10">'), 'recent tracks no longer need mirror-tail stacking')
   assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'drag mechanics remain intact')
+})
+
+test('3D projected hit testing follows the inset hinges, not the retired 0.52 border alignment', () => {
+  const size = 220
+  const stage = 1000
+  const center = stage / 2
+  const pos = 6
+  assert.equal(flowIndexAt(center, stage, size, pos, 20), pos)
+  assert.equal(flowIndexAt(center + size * .59, stage, size, pos, 20), pos + 1)
+  assert.equal(flowIndexAt(center - size * .59, stage, size, pos, 20), pos - 1)
+  assert.equal(flowIndexAt(center + size * (.59 + .34), stage, size, pos, 20), pos + 2)
+  assert.equal(flowIndexAt(center - size * (.59 + .34), stage, size, pos, 20), pos - 2)
+  assert.equal(flowIndexAt(center + size * .35, stage, size, pos, 20), pos)
+  assert.equal(flowIndexAt(center + size * .40, stage, size, pos, 20), pos + 1)
+  assert.equal(flowIndexAt(center + size * 1.06, stage, size, pos, 20, true), pos + 1,
+    'Performance Mode retains its separate flat layout')
+  assert.ok(flow.includes('100 - Math.round(Math.abs(index - p) * 10)'),
+    'central cover paints over the tucked-in side artwork')
+  assert.ok(flow.includes('transformStyle: \'preserve-3d\''), 'preserve actual depth transformation')
 })
