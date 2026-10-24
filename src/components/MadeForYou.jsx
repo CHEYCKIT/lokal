@@ -11,7 +11,8 @@ export default function MadeForYou({ picks, onPlay, onContextMenu }) {
   const coverFlow = useAppearanceFlag('home_cover_flow')
   if (!picks.length) return null
   if (!coverFlow) return <ClassicMadeForYou picks={picks} onPlay={onPlay} onContextMenu={onContextMenu} />
-  return <section aria-roledescription="carousel" aria-label={t('Made for you')}>
+  // Keep the shelf below the Home content so its reflection can fade behind it.
+  return <section className="relative z-0" aria-roledescription="carousel" aria-label={t('Made for you')}>
     <CoverFlow picks={picks} onPlay={onPlay} onContextMenu={onContextMenu} />
   </section>
 }
