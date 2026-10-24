@@ -4,7 +4,7 @@ const events = new (require('events').EventEmitter)()
 function getRemoteConnectionInfo() {
   const port = Number(process.env.PORT) || 3421
   const urls = []
-  for (const entries of Object.values(os.networkInterfaces())) {
+  for (const entries of Object.entries(os.networkInterfaces()).sort(([a], [b]) => Number(/vbox|virtualbox|vmware|docker|wsl/i.test(a)) - Number(/vbox|virtualbox|vmware|docker|wsl/i.test(b))).map(([, entries]) => entries)) {
     for (const info of entries || []) {
       if (!info || info.internal || info.family !== 'IPv4' || String(info.address).startsWith('169.254.')) continue
       urls.push(`http://${info.address}:${port}/remote`)

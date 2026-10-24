@@ -307,7 +307,9 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     gesture.current = null
   }
   const wheel = e => {
-    const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0
+    // Standard mouse wheels emit deltaY; trackpads may emit either axis. 
+    // Prefer the dominant axis so diagonal gestures do not move twice. 
+    const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
     if (!dx) return
     e.preventDefault()
     stopPress()
