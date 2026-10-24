@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_PERSPECTIVE, FLOW_VANISH_Y } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -50,8 +50,14 @@ const FlowCover = React.memo(function FlowCover({
 }) {
   const geometry = useTransform(position, p => flowCoverGeometry(index - p, size, reduced))
   const transform = useTransform([geometry, flip], ([g, f]) =>
-    'translate3d(' + g.x + 'px,0,0) perspective(' + (size * 5) +
-    'px) translateZ(' + g.depth + 'px) rotateY(' + (g.angle + (flipTarget ? f * 180 : 0)) + 'deg)')
+    // The translated 3D panel must be INSIDE perspective division; otherwise
+    // the outer and inner edges cannot reproduce the tapered iTunes triangles.
+    // Shifting the vanishing point slightly below center produces the
+    // reference's unequal top/bottom diagonal slopes.
+    'translateY(' + (size * FLOW_VANISH_Y) + 'px) perspective(' +
+    (size * FLOW_PERSPECTIVE) + 'px) translate3d(' + g.x + 'px,' +
+    (-size * FLOW_VANISH_Y) + 'px,' + g.depth + 'px) rotateY(' +
+    (g.angle + (flipTarget ? f * 180 : 0)) + 'deg)')
   const origin = useTransform(geometry, g => g.pivot + '% 50%')
   const opacity = useTransform(geometry, g => g.opacity)
   const zIndex = useTransform(position, p => 100 - Math.round(Math.abs(index - p) * 10))
