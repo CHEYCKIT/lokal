@@ -71,7 +71,7 @@ const FlowCover = React.memo(function FlowCover({
         // Chromium/Electron creates this reflection from the same GPU layer,
         // rather than decoding/masking a second image for each visible cover.
         WebkitBoxReflect: reduced || !artwork ? 'unset'
-          : 'below ' + (size * 0.005) + 'px linear-gradient(to bottom,rgba(0,0,0,.42),transparent 88%)',
+          : 'below ' + (size * 0.005) + 'px linear-gradient(to bottom,rgba(0,0,0,.42) 0%,rgba(0,0,0,.32) 24%,rgba(0,0,0,.17) 62%,transparent 100%)',
       }}>
       {artwork ? <FlowArtwork track={pick.track} highRes={highRes} /> :
         <span className="flex h-full w-full items-center justify-center text-5xl text-muted">♪</span>}
@@ -318,7 +318,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   handlers.current = { select, play: onPlay, menu: onContextMenu }
   if (!count) return null
 
-  return <div className="space-y-3">
+  return <div className="relative isolate space-y-3">
     <div ref={stageRef} tabIndex={0} role="group" aria-roledescription="cover flow"
       aria-label={'Cover Flow. ' + current.track.title + ' by ' + current.track.artist}
       aria-valuetext={(activeIndex + 1) + ' of ' + count}
@@ -338,7 +338,10 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         const rect = e.currentTarget.getBoundingClientRect()
         select(flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced))
       }}
-      className="relative isolate cursor-grab select-none overflow-hidden bg-black outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
+      // Clip covers at the stage's horizontal boundaries, but NOT the mirrored
+      // artwork vertically. A normal overflow-hidden stage cut the reflection
+      // mid-fade just above the title / Your Mixes section.
+      className="relative z-0 isolate cursor-grab select-none overflow-x-clip overflow-y-visible bg-black outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-accent/40"
       style={{ height: size * 1.54, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
       {picks.slice(visible.start, visible.end).map((pick, offset) => {
         const index = visible.start + offset
@@ -350,7 +353,8 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
           onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu} />
       })}
     </div>
-    <div className="mx-auto max-w-lg text-center" aria-live="polite">
+    {/* The title sits above reflections which extend below the stage box. */}
+    <div className="relative z-10 mx-auto max-w-lg text-center" aria-live="polite">
       <p className="truncate text-[17px] font-semibold text-white">{current.track.title}</p>
       <p className="mt-0.5 truncate text-sm text-muted">{current.track.artist}</p>
     </div>
