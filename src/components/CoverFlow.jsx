@@ -46,9 +46,10 @@ function FlowArtwork({ track, highRes }) {
 // transforms subscribe directly to the animation MotionValue on the compositor.
 const FlowCover = React.memo(function FlowCover({
   pick, index, position, flip, flipTarget, highRes, backVisible,
-  size, reduced, spread, onSelect, onPlay, onContextMenu,
+  size, reduced, spreadValue, onSelect, onPlay, onContextMenu,
 }) {
-  const geometry = useTransform(position, p => flowCoverGeometry(index - p, size, reduced, spread))
+  const geometry = useTransform([position, spreadValue], ([p, spread]) =>
+    flowCoverGeometry(index - p, size, reduced, spread))
   const transform = useTransform([geometry, flip], ([g, f]) =>
     // The translated 3D panel must be INSIDE perspective division; otherwise
     // the outer and inner edges cannot reproduce the tapered iTunes triangles.
@@ -100,6 +101,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const middleIndex = Math.floor(count / 2)
   const position = useMotionValue(middleIndex)
   const flip = useMotionValue(0)
+  const spreadValue = useMotionValue(1)
   const stageRef = useRef(null)
   const motion = useRef(null)
   const flipSpring = useRef(null)
@@ -110,6 +112,9 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const [size, setSize] = useState(MAX_SIZE)
   const [stageWidth, setStageWidth] = useState(0)
   const spread = flowResponsiveSpread(stageWidth, size, count, reduced)
+  // Width changes (including animated sidebar collapse) update existing
+  // cover transforms, without remounting image elements or 3D layers.
+  useLayoutEffect(() => { spreadValue.set(spread) }, [spread, spreadValue])
   const pixelsPerCover = flowPixelsPerCover(size, reduced)
   const [bleed, setBleed] = useState({ left: 0, right: 0 })
   const [activeIndex, setActiveIndex] = useState(middleIndex)
@@ -348,11 +353,11 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       style={{ height: size * 1.36, marginLeft: -bleed.left, marginRight: -bleed.right, touchAction: 'pan-y' }}>
       {picks.slice(visible.start, visible.end).map((pick, offset) => {
         const index = visible.start + offset
-        return <FlowCover key={pick.track.id + '-' + spread.toFixed(3)}
+        return <FlowCover key={pick.track.id}
           pick={pick} index={index} position={position} flip={flip}
           flipTarget={index === flipIndex} backVisible={flipped && index === flipIndex}
           highRes={settled && index === activeIndex}
-          size={size} reduced={reduced} spread={spread}
+          size={size} reduced={reduced} spreadValue={spreadValue}
           onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu} />
       })}
     </div>
