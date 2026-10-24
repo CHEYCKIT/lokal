@@ -294,6 +294,32 @@ test('reflection implementation and its Home-specific paint layering are complet
   assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'drag mechanics remain intact')
 })
 
+test('fractional drags select the nearest rendered cover center, not rounded inverse index', () => {
+  const width = 960, size = 220, center = width / 2, count = 24
+  const projected = d => {
+    const g = flowCoverGeometry(d, 1)
+    return g.x / (1 - g.depth / FLOW_PERSPECTIVE)
+  }
+  for (const position of [2.1, 4.25, 8.49, 10.75, 15.9]) {
+    for (const index of [Math.floor(position) - 1, Math.floor(position),
+                          Math.ceil(position), Math.ceil(position) + 1]) {
+      if (index < 0 || index >= count) continue
+      const x = center + size * projected(index - position)
+      assert.equal(flowIndexAt(x, width, size, position, count), index,
+        `cover ${index} must select at its painted center when position=${position}`)
+      if (index + 1 >= count) continue
+      const nextX = center + size * projected(index + 1 - position)
+      const midpoint = (x + nextX) / 2
+      assert.equal(flowIndexAt(midpoint - .05, width, size, position, count), index,
+        'left of actual projected-center midpoint selects left artwork')
+      assert.equal(flowIndexAt(midpoint + .05, width, size, position, count), index + 1,
+        'right of actual projected-center midpoint selects right artwork')
+    }
+  }
+  assert.equal(flowIndexAt(center, width, size, .5, count), 0,
+    'equal-distance tie chooses the earlier cover deterministically')
+})
+
 test('hit testing inverts the actual projected centers, not the retired hinge estimate', () => {
   const stage = 1000, size = 220, center = stage / 2, pos = 6
   const actualCenter = d => {
