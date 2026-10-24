@@ -1064,12 +1064,27 @@ export default function Settings() {
     else if (toolsErrorTool === 'ffmpeg') downloadFfmpegTool()
   }
 
-  const setCustomToolPath = async (tool) => {
-    const fp = await api.openFile()
-    if (fp) {
-      await api.setCustomToolPath(tool, fp)
-      api.getToolsStatus().then(setToolsStatus)
-    }
+  const setCustomToolPath = async (tool, reset = false) => {
+    if (toolsLoading) return
+    // The general image picker excludes executable files by default.
+    const fp = reset ? '' : await api.openFile({
+      filters: [{ name: 'Executables', extensions: ['exe', 'bin', 'sh', 'AppImage', '*'] }],
+    })
+    if (!reset && !fp) return
+    setToolsLoading(true)
+    setToolsError('')
+    setToolsErrorTool(null)
+    try {
+      const result = await api.setCustomToolPath(tool, fp)
+      if (result?.error) {
+        setToolsError(`${tool}: ${result.error}`)
+        return
+      }
+      const status = await api.getToolsStatus()
+      if (status && !status.error) setToolsStatus(status)
+    } catch (error) {
+      setToolsError(`${tool}: ${error?.message || 'Could not select this executable'}`)
+    } finally { setToolsLoading(false) }
   }
 
   const handlePlatformFileSelect = async () => {
@@ -1917,7 +1932,10 @@ activeCategory === 'data' ? usersTried
                 <button onClick={() => downloadYtDlpTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
                   {toolsLoading ? progressLabel('yt-dlp') : toolsStatus?.ytdlp?.found ? t('Update / Re-download') : t('Download')}
                 </button>
-                <button onClick={() => setCustomToolPath('yt-dlp')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">{t("Custom Path")}</button>
+                <button onClick={() => setCustomToolPath('yt-dlp')} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">{t("Custom Path")}</button>
+                {toolsStatus?.ytdlp?.customPath && (
+                  <button onClick={() => setCustomToolPath('yt-dlp', true)} disabled={toolsLoading} className="px-2 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">{t("Automatic")}</button>
+                )}
               </div>
             </div>
             {toolsStatus?.ytdlp?.path && (
@@ -1936,7 +1954,10 @@ activeCategory === 'data' ? usersTried
                 <button onClick={() => downloadFfmpegTool()} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
                   {toolsLoading ? progressLabel('ffmpeg') : toolsStatus?.ffmpeg?.found ? t('Re-download') : t('Download')}
                 </button>
-                <button onClick={() => setCustomToolPath('ffmpeg')} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white">{t("Custom Path")}</button>
+                <button onClick={() => setCustomToolPath('ffmpeg')} disabled={toolsLoading} className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">{t("Custom Path")}</button>
+                {toolsStatus?.ffmpeg?.customPath && (
+                  <button onClick={() => setCustomToolPath('ffmpeg', true)} disabled={toolsLoading} className="px-2 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">{t("Automatic")}</button>
+                )}
               </div>
             </div>
             {toolsStatus?.ffmpeg?.path && (
