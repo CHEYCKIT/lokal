@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { usePlayerStore } from '../store/player'
 import { streamRef } from '../onlineTracks'
 import { showLoadingToast } from './Toaster'
-import { acceptStreamSignal, startupProgress } from '../streamStartupProgress.mjs'
+import { acceptStreamSignal, startupProgress, streamLoadKey } from '../streamStartupProgress.mjs'
 
 // This percentage counts observed *stream startup milestones* (source search,
 // media connection, headers, bytes, decoder readiness). It deliberately does
@@ -36,7 +36,7 @@ export default function StreamLoadingToast() {
       // While seeking another provider the previous audio element is stopped,
       // but the *track* is still loading. Do not dismiss its progress here.
       if (!load || !ref || state.castActive ||
-          load.generation !== state.playbackGeneration ||
+          load.generation !== streamLoadKey(state) ||
           (!state.isBuffering && !load.recovering)) {
         close()
         return
@@ -83,7 +83,7 @@ export default function StreamLoadingToast() {
     const onStreamStartup = window.electron?.onStreamStartup?.(signal => {
       const state = usePlayerStore.getState()
       const ref = streamRef(state.currentTrack)
-      if (!ref || state.streamLoading?.generation !== state.playbackGeneration) return
+      if (!ref || state.streamLoading?.generation !== streamLoadKey(state)) return
       const key = `${ref.provider}:${ref.id}`
       const next = acceptStreamSignal(state.streamLoading, signal, key)
       if (next) state.setStreamLoading(next)
