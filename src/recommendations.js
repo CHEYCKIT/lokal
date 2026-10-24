@@ -201,13 +201,13 @@ export function playbackFallbackMessage({ candidate, source, nextSource, reason,
 
 // Search metadata alone cannot tell whether a full stream is available (in
 // particular, SoundCloud may only report its Go+ preview during resolution).
-export async function playbackAvailability(match, provider, client = api, timeoutMs = 35000, onError = () => {}) {
+export async function playbackAvailability(match, provider, client = api, timeoutMs = 35000, onError = () => {}, onProgress = () => {}) {
   if (match.preview) return 'preview'
   if (typeof client.onlinePrepare !== 'function') return null
   const controller = new AbortController()
   let prepared
   try {
-    prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.')
+    prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal, onProgress }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.')
   } catch (error) {
     onError(error?.message || error)
     return 'unavailable'
@@ -254,7 +254,7 @@ function addonVerificationError(provider, value, candidate) {
 }
 
 export async function resolveRecommendationTracks(candidates, client = api, options = {}) {
-  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, startFromProvider, skipProviders = [], onProviderFailure, onProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
+  const { searchLocal = true, reusePlayable = true, isCurrent = () => true, timeoutMs = 15000, prepareTimeoutMs = 35000, afterProvider, startFromProvider, skipProviders = [], onProviderFailure, onProgress, onPreparationProgress, onAddonVerificationRequired, prepareStreams = true, preserveMatchMetadata = false, sources: configuredSources } = options
   if (!Array.isArray(candidates) || !candidates.length || !isCurrent()) return []
   const ordered = configuredSources || await playbackSources(client, timeoutMs)
   const requestedStart = startFromProvider ? ordered.findIndex(source => source.id === startFromProvider) : -1
@@ -333,7 +333,11 @@ export async function resolveRecommendationTracks(candidates, client = api, opti
             if (!match) { failed('not-found'); continue }
             matchFound = true
             let detail
-            const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(match, source.id, client, prepareTimeoutMs, message => { detail = message }) : null
+            const unavailable = match.preview ? 'preview' : prepareStreams || source.id === 'sc' ? await playbackAvailability(
+              match, source.id, client, prepareTimeoutMs,
+              message => { detail = message },
+              status => { if (isCurrent()) onPreparationProgress?.({ source, candidate, status }) },
+            ) : null
             if (!isCurrent()) return null
             if (unavailable) {
               if (requiresAddonVerification(source.id, detail)) throw addonVerificationError(source.id, detail, candidate)

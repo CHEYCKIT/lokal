@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { api } from '../api'
 import { showLoadingToast, showToast } from './Toaster'
 import { setOutputRoute, usePlayerStore } from '../store/player'
+import { beginAtmosOutputRelease } from '../audio/atmosHandoff.mjs'
 
 /**
  * Native Atmos is an output backend of the existing Lokal player, not a
@@ -111,7 +112,14 @@ export default function AtmosTransport() {
         setOutputRoute(null)
         toast?.close()
         toast = null
-        api.atmosStop().catch(() => {})
+        // Zustand subscribers fire synchronously on track selection.
+        // Register the output-release barrier now; App must await it before
+        // asking Chromium to load/play the next (possibly same-ID) stream.
+        api.log?.('info', '[atmos-handoff] releasing native Atmos output')
+        beginAtmosOutputRelease(() => api.atmosStop())
+          .then(() => api.log?.('info', '[atmos-handoff] native Atmos output released'))
+          .catch(error => api.log?.('warn', '[atmos-handoff] native output release failed: ' +
+            (error?.name || 'unknown')))
         return
       }
       if (updatingFromBackend || !active || !now.currentTrack?.atmosNative) return

@@ -4,6 +4,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { Readable } = require('stream')
 const { service } = require('./packages')
+const { stereoPlaybackQuality } = require('./playbackQuality')
 
 const jobs = new WeakMap()
 const MIME = { flac:'audio/flac',mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'audio/mp4',ogg:'audio/ogg',opus:'audio/ogg',wav:'audio/wav',webm:'audio/webm',aac:'audio/aac' }
@@ -16,7 +17,7 @@ function logFailure(db,key,id,error){
   }catch{}
 }
 function state(db) {let value=jobs.get(db);if(!value){value=new Map();jobs.set(db,value)}return value}
-function cacheKey(db,key,id){const addon=service(db).find(key);if(!addon?.enabled)throw new Error('Addon is not available');return crypto.createHash('sha256').update(JSON.stringify([key,id,addon.digest,service(db).settings(addon).downloadQuality])).digest('hex')}
+function cacheKey(db,key,id){const addon=service(db).find(key);if(!addon?.enabled)throw new Error('Addon is not available');const quality=stereoPlaybackQuality(addon,service(db).settings(addon));return crypto.createHash('sha256').update(JSON.stringify([key,id,addon.digest,quality || null])).digest('hex')}
 function cached(db,key,id){
   const hash=cacheKey(db,key,id),dir=path.join(service(db).root,'audio-cache')
   for(const ext of Object.keys(MIME)){const file=path.join(dir,`${hash}.${ext}`);try{if(fs.statSync(file).size){const now=new Date();fs.utimesSync(file,now,now);return {type:'file',file,mime:MIME[ext],headers:{},format:ext}}}catch{}}
@@ -29,7 +30,9 @@ function prepare(db,key,id,{force=false}={}){
   if(existing)return {pending:true,operationId:existing.id}
   const job={id:crypto.randomUUID(),hash,key,itemId:id,status:'running',progress:0,controller:new AbortController()};map.set(job.id,job)
   job.liveReady=new Promise(resolve=>{job.markLive=resolve})
-  const fetchAudio=()=>service(db).download(key,id,{purpose:'playback',signal:job.controller.signal,onLive:info=>liveUpdate(job,info),onProgress:update=>{job.progress=update.percent ?? job.progress;job.message=job.live?.ready?'Playing while it downloads…':update.message || 'Preparing audio…'}})
+  const addon=service(db).find(key)
+  const quality=stereoPlaybackQuality(addon,service(db).settings(addon))
+  const fetchAudio=()=>service(db).download(key,id,{purpose:'playback',quality,signal:job.controller.signal,onLive:info=>liveUpdate(job,info),onProgress:update=>{job.progress=update.percent ?? job.progress;job.message=job.live?.ready?'Playing while it downloads…':update.message || 'Preparing audio…'}})
   // A worker that ran out of memory is retried once, in a fresh worker.
   job.promise=fetchAudio().catch(error=>{if(job.controller.signal.aborted||!/memory limit|out of memory/i.test(error?.message))throw error;logFailure(db,key,id,error);job.message='Retrying…';return fetchAudio()}).then(async result=>{
     try{

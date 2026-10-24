@@ -13,6 +13,7 @@ import { api } from '../api'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { sameStream } from '../onlineTracks'
+import { awaitAtmosOutputRelease, shouldToggleNormalStream } from '../audio/atmosHandoff.mjs'
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
@@ -28,6 +29,7 @@ import AtmosPlayButton from './AtmosPlayButton'
 import { advertisedQuality } from '../catalogueQuality'
 import { showToast } from './Toaster'
 
+let atmosRequestSerial = 0
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
 // Built-in sources; installed addons are added from the backend (online:providers).
@@ -132,54 +134,61 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     if (!target) return { error: 'Could not add the Atmos track to the player' }
     const queue = rows.filter(Boolean)
     const indexInQueue = queue.findIndex(row => row.id === target.id)
+    const requestId = ++atmosRequestSerial
     queue[indexInQueue] = {
       ...target, atmosNative: true, atmosMode: mode,
       atmosProvider: item.provider, atmosSourceId: String(item.id),
+      atmosRequestId: requestId,
     }
-    const previous = usePlayerStore.getState()
     saveRecentItem(recentTrackItem(target))
     playQueue(queue, indexInQueue, { type: 'search', id: q, name: `${providerLabel}: ${q}` })
+    const selected = () => {
+      const current = usePlayerStore.getState().currentTrack
+      return current?.atmosNative === true &&
+        current.atmosSourceId === String(item.id) &&
+        current.atmosProvider === item.provider &&
+        current.atmosRequestId === requestId
+    }
     try {
+      await awaitAtmosOutputRelease()
+      if (!selected()) return { error: 'Atmos request was superseded by a newer track' }
       const result = await api.atmosPlay(item.provider, String(item.id), device, mode)
       if (!result?.ok) {
-        // Leave the selected track in Now Playing, but never pretend it is
-        // running as an ordinary PCM/AAC recording after a native failure.
-        usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+        // A late native failure must not pause the stereo/other-provider song
+        // that the user has already switched to.
+        if (selected()) usePlayerStore.setState({ isPlaying: false, isBuffering: false })
         return result || { error: 'Native Atmos output was refused' }
+      }
+      if (!selected()) {
+        // Backend generations and the queued release barrier already cancel
+        // this session. An unconditional stop here could kill a *newer*
+        // Atmos request that has since taken the same player/source.
+        return { error: 'Atmos request was superseded by a newer track' }
       }
       return result
     } catch (error) {
-      usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+      if (selected()) usePlayerStore.setState({ isPlaying: false, isBuffering: false })
       return { error: error?.message || String(error) }
     }
   }
 
   const play = async (item, index) => {
-    if (currentTrack && sameStream(currentTrack, item)) { togglePlay(); return }
-    saveRecentSearch(q)
-    if (atmosAvailable(item)) {
-      try {
-        const capabilities = await api.atmosCapabilities()
-        const mode = localStorage.getItem('lokal-atmos-output-mode') === 'headphones' ? 'headphones' : 'hdmi'
-        const nativeAvailable = mode === 'headphones' ? capabilities?.headphones?.available : capabilities?.mpvAvailable
-        if (nativeAvailable) {
-          const device = localStorage.getItem('lokal-atmos-output-device') || ''
-          const result = await playNativeAtmos(item, index, mode, device)
-          if (result?.ok) return
-          showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: result?.error || t('output refused') }))
-          return
-        }
-      } catch (error) {
-        showToast(t("Dolby Atmos couldn't start: {error}. Stream not switched to a different provider.", { error: error?.message || String(error) }))
-        return
-      }
+    // Normal Play must always request the ordinary provider stream. An Atmos
+    // badge advertises an alternate version; only PLAY ATMOS activates native
+    // E-AC-3 JOC. Matching the same source while Atmos owns it must replace
+    // the audio backend, not toggle the native session's play/pause state.
+    if (shouldToggleNormalStream(currentTrack, sameStream(currentTrack, item))) {
+      togglePlay()
+      return
     }
+    saveRecentSearch(q)
     const rows = await asTracks(results)
     const target = rows[index]
     if (!target) return
     saveRecentItem(recentTrackItem(target))
     const queue = rows.filter(Boolean)
-    playQueue(queue, queue.findIndex(t => t.id === target.id), { type: 'search', id: q, name: `${providerLabel}: ${q}` })
+    playQueue(queue, queue.findIndex(row => row.id === target.id),
+      { type: 'search', id: q, name: `${providerLabel}: ${q}` })
   }
 
   const addToPlaylist = async (item) => {

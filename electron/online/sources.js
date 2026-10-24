@@ -111,7 +111,9 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
   const attempt = async (force) => {
     let stream
     try {
+      opts.onPhase?.('resolving')
       stream = await resolveStream(provider, id, { ...opts, force, signal })
+      opts.onPhase?.('fetching')
     } catch (error) {
       throw withStreamErrorStage(error, 'resolve')
     }
@@ -142,15 +144,24 @@ async function fetchStream(provider, id, { range, fetchImpl = fetch, signal, ...
  * stream: skipped, seeked, ended) calls `abort`. Cancelling the body alone
  * doesn't close the request it came from.
  */
-function cancellableBody(body, abort) {
+function cancellableBody(body, abort, onFirstChunk) {
   if (!body?.getReader) return body
   const reader = body.getReader()
+  let reported = false
   return new ReadableStream({
     async pull(controller) {
       try {
         const { done, value } = await reader.read()
         if (done) controller.close()
-        else controller.enqueue(value)
+        else {
+          // One startup event only. Avoid streaming IPC updates (and a second
+          // TransformStream) for every packet throughout the entire song.
+          if (!reported && value?.byteLength) {
+            reported = true
+            try { onFirstChunk?.(value.byteLength) } catch {}
+          }
+          controller.enqueue(value)
+        }
       } catch (e) { controller.error(e) }
     },
     cancel(reason) {

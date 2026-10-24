@@ -62,9 +62,11 @@ import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
 import StreamLoadingToast from './components/StreamLoadingToast'
+import { loadingSession, withPreparationProgress, streamLoadKey } from './streamStartupProgress.mjs'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
+import { awaitAtmosOutputRelease } from './audio/atmosHandoff.mjs'
 import { playbackLog } from './playbackLog'
 import TvController from './tv/TvController'
 
@@ -412,14 +414,49 @@ export default function App() {
     playTimerRef.current = null
     el.pause()
     const isCurrent = () => streamRecoveryRef.current === recovery && usePlayerStore.getState().currentTrack === failedTrack && el === activeEl()
-    const toast = showLoadingToast(reason === 'preview'
-      ? `${providerLabel(failedRef.provider)} only has a preview of “${failedTrack.title}”. Trying the next playback source.`
-      : `“${failedTrack.title}” couldn't play on ${providerLabel(failedRef.provider)}${detail ? ` (${detail})` : ''}. Trying the next playback source.`)
+    // Keep the SAME playback loading session visible across failed providers.
+    // Resolving another source is still part of loading this song.
+    const loadingStore = usePlayerStore.getState()
+    const prior = loadingStore.streamLoading
+    const generation = streamLoadKey(loadingStore)
+    loadingStore.setIsBuffering(true)
+    loadingStore.setStreamLoading(loadingSession(prior, {
+      generation, sourceKey: '', phase: 'searching',
+      attempt: Math.max(2, (prior?.attempt || 1) + 1), recovering: true,
+      message: reason === 'preview'
+        ? `${providerLabel(failedRef.provider)} only has a preview. Trying another source…`
+        : `Couldn't play on ${providerLabel(failedRef.provider)}. Trying another source…`,
+    }))
     try {
       const [replacement] = await resolveRecommendationTracks([failedTrack], api, {
         reusePlayable: false, afterProvider: failedRef.provider, skipProviders: recovery.failed, isCurrent,
-        onProgress: message => { if (isCurrent()) toast.update(message) },
-        onProviderFailure: failure => { if (isCurrent()) toast.update(playbackFallbackMessage(failure)) },
+        onProgress: message => {
+          if (!isCurrent()) return
+          const player = usePlayerStore.getState()
+          player.setStreamLoading({
+            ...player.streamLoading, generation, phase: 'searching',
+            addonPercent: null, recovering: true, message,
+          })
+        },
+        onPreparationProgress: ({ source, status }) => {
+          if (!isCurrent()) return
+          const player = usePlayerStore.getState()
+          if (player.streamLoading?.generation !== generation) return
+          player.setStreamLoading(withPreparationProgress(
+            player.streamLoading, status,
+            status?.message || `Preparing audio from ${source.label || providerLabel(source.id)}…`,
+          ))
+        },
+        onProviderFailure: failure => {
+          if (!isCurrent()) return
+          const player = usePlayerStore.getState()
+          player.setStreamLoading({
+            ...player.streamLoading, generation, phase: 'searching',
+            addonPercent: null, recovering: true,
+            attempt: (player.streamLoading?.attempt || 2) + (failure.nextSource ? 1 : 0),
+            message: playbackFallbackMessage(failure),
+          })
+        },
       })
       if (!isCurrent()) return
       if (replacement) {
@@ -428,7 +465,10 @@ export default function App() {
         usePlayerStore.getState().replaceCurrentTrack(failedTrack.id, replacement)
       } else {
         if (['discovery', 'mix', 'flow'].includes(usePlayerStore.getState().playbackContext?.type)) {
-          toast.update(`“${failedTrack.title}” is unavailable. Trying the next song…`)
+          usePlayerStore.getState().setStreamLoading({
+            ...usePlayerStore.getState().streamLoading,
+            phase: 'searching', message: `“${failedTrack.title}” is unavailable. Trying the next song…`,
+          })
           if (await skipUnavailableRecommendation(failedTrack)) { setStreamError(null); return }
           if (!isCurrent()) return
         }
@@ -437,10 +477,20 @@ export default function App() {
         const message = 'No full-length stream was found in your playback sources.'
         setStreamError({ title: failedTrack.title, message })
         reportPlaybackError(failedTrack, message)
-        toast.close(message)
+        usePlayerStore.getState().setStreamLoading(null)
+        showToast(message)
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        const message = String(error?.message || 'No playback source could be loaded.').slice(0, 240)
+        usePlayerStore.getState().setIsBuffering(false)
+        usePlayerStore.getState().setIsPlaying(false)
+        usePlayerStore.getState().setStreamLoading(null)
+        setStreamError({ title: failedTrack.title, message })
+        reportPlaybackError(failedTrack, message)
+        showToast(message)
       }
     } finally {
-      toast.close()
       recovery.pending = false
       el.dataset.fallbackPending = ''
       el.dataset.fallbackRecoveryPending = ''
@@ -2532,7 +2582,23 @@ export default function App() {
       return
     }
 
-    setIsBuffering(!!streamRef(currentTrack))
+    const loadRef = currentTrack && !currentTrack.atmosNative && streamRef(currentTrack)
+    const loadPlayer = usePlayerStore.getState()
+    if (loadRef) {
+      const sourceKey = `${loadRef.provider}:${loadRef.id}`
+      const current = loadPlayer.streamLoading
+      const session = streamLoadKey(loadPlayer)
+      // A provider replacement keeps this queued song's key. next()/autoNext()
+      // change the queue position without incrementing playbackGeneration.
+      loadPlayer.setStreamLoading(loadingSession(current, {
+        generation: session, sourceKey,
+        phase: 'preparing', recovering: false,
+        attempt: current?.generation === session ? current.attempt : 1,
+      }))
+    } else {
+      loadPlayer.setStreamLoading(null)
+    }
+    setIsBuffering(!!loadRef)
     if (!audioRef.current || !currentTrack) return
     if (streamRecoveryRef.current.track !== currentTrack) streamRecoveryRef.current = { track: currentTrack, pending: false, failed: [] }
 
@@ -2624,6 +2690,11 @@ export default function App() {
     const resumeFrom = takeResumePosition(currentTrack.id)
     let cancelled = false
     const start = async () => {
+      // The previous Atmos backend can still hold exclusive HDMI/Windows audio
+      // output after the store changes to a normal track (including the same
+      // Tidal song ID). Do not resolve/play PCM until native shutdown finishes.
+      await awaitAtmosOutputRelease()
+      if (cancelled) return
       // The radio player lets go of the element first (it would otherwise
       // put its own silent clip back on it after this song's source).
       if (leavingRadio) await releaseRadio()
@@ -2632,7 +2703,19 @@ export default function App() {
       const generation = usePlayerStore.getState().playbackGeneration
       const ref = streamRef(currentTrack)
       let addonError = ''
-      const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider, api, undefined, error => { addonError = String(error || '') }).catch(() => 'unavailable') : null
+      const unavailable = ref ? await playbackAvailability(
+        { id: ref.id }, ref.provider, api, undefined,
+        error => { addonError = String(error || '') },
+        status => {
+          const player = usePlayerStore.getState()
+          if (cancelled || player.playbackGeneration !== generation ||
+              player.currentTrack?.file_path !== currentTrack.file_path ||
+              player.streamLoading?.generation !== streamLoadKey(player)) return
+          player.setStreamLoading(withPreparationProgress(
+            player.streamLoading, status, status?.message || 'Preparing audio…',
+          ))
+        },
+      ).catch(() => 'unavailable') : null
       const live = usePlayerStore.getState()
       if (cancelled || live.playbackGeneration !== generation || live.currentTrack?.id !== currentTrack.id || live.currentTrack?.file_path !== currentTrack.file_path) return
       await replayGainReady
@@ -2672,6 +2755,13 @@ export default function App() {
       }
       if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable, detail); return }
       el.dataset.fallbackPending = ''
+      // Let the actual protocol resolution/HTTP request report its phases;
+      // the media server has not been contacted at this point.
+      const player = usePlayerStore.getState()
+      if (ref && player.streamLoading?.generation === streamLoadKey(player) &&
+          player.streamLoading.recovering) {
+        player.setStreamLoading({ ...player.streamLoading, recovering: false })
+      }
       replaceAudioSource(el, src)
       if (resumeFrom > 0) { try { el.currentTime = resumeFrom } catch {} }
       else beginLastfmPlayback(live.currentTrack)
@@ -2826,6 +2916,18 @@ export default function App() {
     if (!pending) return
     el.dataset.lokalTrackId = pending
     el.dataset.lokalTrackPending = ''
+    const player = usePlayerStore.getState()
+    if (streamRef(player.currentTrack) && String(player.currentTrack?.id) === pending &&
+        player.streamLoading?.generation === streamLoadKey(player)) {
+      if (!player.isPlaying) {
+        // A user who paused during loading has a ready decoder but should not
+        // retain a 100% loading toast until they resume playback.
+        player.setIsBuffering(false)
+        player.setStreamLoading(null)
+      } else {
+        player.setStreamLoading({ ...player.streamLoading, phase: 'ready', addonPercent: null, recovering: false })
+      }
+    }
     // The element's play event came while it was still pending and was
     // ignored: start what it would have (the listening timer, ListenBrainz
     // now playing), or an auto-advanced song is never counted.
@@ -3327,7 +3429,7 @@ export default function App() {
           onSuspend={(e) => logAddonMediaEvent('suspend', e, 'primary')}
           onAbort={(e) => logAddonMediaEvent('abort', e, 'primary')}
           onEmptied={(e) => logAddonMediaEvent('emptied', e, 'primary')}
-          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'primary'); if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
+          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'primary'); if (isEventFromActive(e)) { setIsBuffering(false); usePlayerStore.getState().setStreamLoading(null); clearPlaybackError() } }}
           onPlay={(e) => { logAddonMediaEvent('play', e, 'primary'); if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { logAddonMediaEvent('pause', e, 'primary'); if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
@@ -3348,7 +3450,7 @@ export default function App() {
           onSuspend={(e) => logAddonMediaEvent('suspend', e, 'cf')}
           onAbort={(e) => logAddonMediaEvent('abort', e, 'cf')}
           onEmptied={(e) => logAddonMediaEvent('emptied', e, 'cf')}
-          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'cf'); if (isEventFromActive(e)) { setIsBuffering(false); clearPlaybackError() } }}
+          onPlaying={(e) => { logAddonMediaEvent('playing', e, 'cf'); if (isEventFromActive(e)) { setIsBuffering(false); usePlayerStore.getState().setStreamLoading(null); clearPlaybackError() } }}
           onPlay={(e) => { logAddonMediaEvent('play', e, 'cf'); if (!isEventFromActive(e) || usePlayerStore.getState().castActive) return; setIsPlaying(true); startTimer(); sendListenBrainzNowPlaying() }}
           onPause={(e) => { logAddonMediaEvent('pause', e, 'cf'); if (pauseSuppressRef.current || usePlayerStore.getState().castActive) return; if (!isEventFromActive(e)) return; if (ignoreElementPause(e.currentTarget)) return; setIsPlaying(false); stopTimer() }}
         />
