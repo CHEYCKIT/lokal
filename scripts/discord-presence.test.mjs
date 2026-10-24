@@ -314,7 +314,7 @@ test('generated fallback art retries after five minutes and catalogue art keeps 
 test('Discord artwork resolves Big Data Dangerous when catalogue title includes Joywave credit', async () => {
   const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
   const requests = []
-  const resolve = createArtworkResolver({ fetchImpl: async url => {
+  const resolve = createArtworkResolver({ discordScoring: true, fetchImpl: async url => {
     requests.push(url)
     return { ok: true, json: async () => url.includes('deezer.com/search?')
       ? { data: [
@@ -332,7 +332,7 @@ test('Discord artwork resolves Big Data Dangerous when catalogue title includes 
 
 test('Discord artwork matching does not treat remix variants as original recordings', async () => {
   const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
-  const resolve = createArtworkResolver({ fetchImpl: async url => ({
+  const resolve = createArtworkResolver({ discordScoring: true, fetchImpl: async url => ({
     ok: true,
     json: async () => url.includes('deezer.com/search?')
       ? { data: [{ title: 'Dangerous (Oliver Remix)', artist: { name: 'Big Data' },
