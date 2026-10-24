@@ -1,3 +1,5 @@
+const { scoreDiscordArtwork, MIN_DISCORD_ARTWORK_SCORE } = require('./discord/artworkMatch')
+
 const key = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 const imageUrl = value => {
   const url = String(value || '').replace(/^http:/, 'https:')
@@ -15,7 +17,7 @@ async function json(url, fetchImpl) {
 }
 
 /** Resolve only artwork for provider metadata; never change recommendation identity. */
-function createArtworkResolver({ getDB = () => null, isElectron = false, fetchImpl = fetch, searchArtists, searchSongs } = {}) {
+function createArtworkResolver({ getDB = () => null, isElectron = false, fetchImpl = fetch, searchArtists, searchSongs, discordScoring = false } = {}) {
   const cache = new Map()
   const pending = new Map()
   const local = item => {
@@ -37,6 +39,10 @@ function createArtworkResolver({ getDB = () => null, isElectron = false, fetchIm
   const remote = async item => {
     const allowed = value => { const image = imageUrl(value); return image && image !== item.exclude ? image : '' }
     const firstImage = (...values) => values.map(allowed).find(Boolean) || ''
+    const highestConfidence = (rows, mapCandidate, imageOf) => rows.map(row => ({
+      row, score: scoreDiscordArtwork(item, mapCandidate(row)),
+    })).filter(candidate => candidate.score >= MIN_DISCORD_ARTWORK_SCORE && imageOf(candidate.row))
+      .sort((a, b) => b.score - a.score)[0]?.row
     if (item.type === 'artist') {
       const deezer = await json(`https://api.deezer.com/search/artist?q=${encodeURIComponent(item.artist)}&limit=10`, fetchImpl)
       const match = (deezer?.data || []).find(row => key(row.name) === key(item.artist) && firstImage(row.picture_xl, row.picture_big))
@@ -56,29 +62,49 @@ function createArtworkResolver({ getDB = () => null, isElectron = false, fetchIm
     const query = album ? `artist:"${item.artist}" album:"${item.title}"` : `artist:"${item.artist}" track:"${item.title}"`
     const deezer = await json(`https://api.deezer.com/search${album ? '/album' : ''}?q=${encodeURIComponent(query)}&limit=15`, fetchImpl)
     const coverOf = row => album ? firstImage(row?.cover_xl, row?.cover_big) : firstImage(row?.album?.cover_xl, row?.album?.cover_big)
-    const match = (deezer?.data || []).find(row => key(row.title) === key(item.title) && key(row.artist?.name) === key(item.artist) && coverOf(row))
+    const deezerRows = deezer?.data || []
+    const match = discordScoring
+      ? highestConfidence(deezerRows, row => ({
+          type: item.type, title: row.title, artist: row.artist?.name,
+          album: album ? row.title : row.album?.title, duration: row.duration,
+        }), coverOf)
+      : deezerRows.find(row => (album ? key(row.title) === key(item.title) : key(row.title) === key(item.title)) && key(row.artist?.name) === key(item.artist) && coverOf(row))
     const cover = coverOf(match)
     if (cover) return cover
     const itunes = await json(`https://itunes.apple.com/search?term=${encodeURIComponent(`${item.artist} ${item.title}`)}&entity=${album ? 'album' : 'song'}&limit=15`, fetchImpl)
     const appleImage = row => allowed(row?.artworkUrl100?.replace(/100x100bb/, '600x600bb'))
-    const apple = (itunes?.results || []).find(row => key(album ? row.collectionName : row.trackName) === key(item.title) && key(row.artistName) === key(item.artist) && appleImage(row))
+    const itunesRows = itunes?.results || []
+    const apple = discordScoring
+      ? highestConfidence(itunesRows, row => ({
+          type: item.type, title: album ? row.collectionName : row.trackName,
+          artist: row.artistName, album: row.collectionName,
+          duration: row.trackTimeMillis ? row.trackTimeMillis / 1000 : undefined,
+        }), appleImage)
+      : itunesRows.find(row => (album ? key(row.collectionName) === key(item.title) : key(row.trackName) === key(item.title)) && key(row.artistName) === key(item.artist) && appleImage(row))
     const appleCover = appleImage(apple)
     if (appleCover) return appleCover
     if (!album && searchSongs) {
       const songs = await searchSongs(`${item.artist} ${item.title}`).catch(() => [])
-      const song = songs.find(row => key(row.title) === key(item.title) && (row.artists || [row.artist]).some(artist => key(artist) === key(item.artist)) && allowed(row.thumbnail))
+      const song = discordScoring
+        ? highestConfidence(songs, row => ({
+            type: 'track', title: row.title, artist: row.artist || row.artists?.[0],
+            album: row.album, duration: row.duration,
+          }), row => allowed(row.thumbnail))
+        : songs.find(row => key(row.title) === key(item.title) && (row.artists || [row.artist]).some(artist => key(artist) === key(item.artist)) && allowed(row.thumbnail))
       return allowed(song?.thumbnail)
     }
     return ''
   }
   const resolve = async raw => {
     const item = { type: ['artist', 'album', 'track'].includes(raw?.type) ? raw.type : 'track', title: String(raw?.title || '').slice(0, 300), artist: String(raw?.artist || '').slice(0, 300), image: raw?.image, exclude: raw?.exclude }
+    item.album = discordScoring ? String(raw?.album || '').slice(0, 300) : ''
+    item.duration = discordScoring ? Math.max(0, Number(raw?.duration) || 0) : 0
     item.exclude = imageUrl(item.exclude) || item.exclude
     if (!item.artist || (item.type !== 'artist' && !item.title)) return { image: '' }
     if (imageUrl(item.image) && imageUrl(item.image) !== item.exclude) return { image: imageUrl(item.image) }
     const localImage = local(item)
     if (localImage && localImage !== item.exclude) return { image: localImage }
-    const id = `${item.type}\0${key(item.artist)}\0${key(item.title)}\0${item.exclude || ''}`
+    const id = `${item.type}\0${key(item.artist)}\0${key(item.title)}\0${item.exclude || ''}\0${key(item.album)}\0${item.duration}`
     const cached = cache.get(id)
     if (cached && Date.now() - cached.at < (cached.image ? 86400000 : 300000)) return { image: cached.image }
     if (!pending.has(id)) {

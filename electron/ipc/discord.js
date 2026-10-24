@@ -2,7 +2,7 @@ const { buildActivity, artworkUrl, fallbackArtwork } = require('../discord/activ
 const { createArtworkResolver } = require('../discoveryArtwork')
 
 // Discord needs public image URLs; local files must never be used or uploaded.
-const resolveArtwork = createArtworkResolver({ fetchImpl: (...args) => fetch(...args) })
+const resolveArtwork = createArtworkResolver({ fetchImpl: (...args) => fetch(...args), discordScoring: true })
 
 let rpcClient = null
 let connectionGeneration = 0
@@ -58,12 +58,12 @@ async function fetchArtwork(track) {
   const artist = getFirstArtist(track.album_artist || track.artist)
   if (!artist) return 'lokal_music'
   // Album identity can still resolve when a song is unavailable in a catalog.
-  if (track.album) {
+  if (track.album && !/^unknown(?: album)?$/i.test(track.album.trim())) {
     const [album] = await resolveArtwork([{ type: 'album', title: track.album, artist }])
     const image = artworkUrl({ artwork_url: album?.image })
     if (image) return image
   }
-  const [song] = await resolveArtwork([{ type: 'track', title: track.title, artist: getFirstArtist(track.artist) }])
+  const [song] = await resolveArtwork([{ type: 'track', title: track.title, artist: getFirstArtist(track.artist), album: track.album, duration: track.duration }])
   return artworkUrl({ artwork_url: song?.image }) || fallbackArtwork(track)
 }
 

@@ -310,3 +310,88 @@ test('generated fallback art retries after five minutes and catalogue art keeps 
   await request()
   assert.equal(calls, 2)
 })
+
+test('Discord artwork resolves Big Data Dangerous when catalogue title includes Joywave credit', async () => {
+  const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
+  const requests = []
+  const resolve = createArtworkResolver({ discordScoring: true, fetchImpl: async url => {
+    requests.push(url)
+    return { ok: true, json: async () => url.includes('deezer.com/search?')
+      ? { data: [
+          { title: 'Dangerous (feat. Joywave)', artist: { name: 'Big Data' },
+            album: { cover_big: 'https://covers.example/big-data.jpg' } },
+          { title: 'Dangerous', artist: { name: 'David Guetta' },
+            album: { cover_big: 'https://covers.example/wrong.jpg' } },
+        ] }
+      : { data: [], results: [] } }
+  } })
+  const [result] = await resolve([{ type: 'track', title: 'Dangerous', artist: 'Big Data' }])
+  assert.equal(result.image, 'https://covers.example/big-data.jpg')
+  assert.equal(requests.length, 1)
+})
+
+test('Discord artwork matching does not treat remix variants as original recordings', async () => {
+  const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
+  const resolve = createArtworkResolver({ discordScoring: true, fetchImpl: async url => ({
+    ok: true,
+    json: async () => url.includes('deezer.com/search?')
+      ? { data: [{ title: 'Dangerous (Oliver Remix)', artist: { name: 'Big Data' },
+          album: { cover_big: 'https://covers.example/remix.jpg' } }] }
+      : { results: [] },
+  }) })
+  const [result] = await resolve([{ type: 'track', title: 'Dangerous', artist: 'Big Data' }])
+  assert.equal(result.image, '')
+})
+
+test('Discord graded matching calculates the actual Big Data / Joywave credit mismatch', () => {
+  const { scoreDiscordArtwork, MIN_DISCORD_ARTWORK_SCORE } = require('../electron/discord/artworkMatch.js')
+  const wanted = { type: 'track', title: 'Dangerous', artist: 'Big Data' }
+  const apple = { title: 'Dangerous', artist: 'Big Data & Joywave', album: '2.0', duration: 280 }
+  assert.equal(scoreDiscordArtwork(wanted, apple), 98)
+  assert.equal(scoreDiscordArtwork({ ...wanted, album: '2.0', duration: 280 }, apple), 100)
+  assert.ok(scoreDiscordArtwork(wanted, apple) >= MIN_DISCORD_ARTWORK_SCORE)
+  assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous (Oliver Remix)' }), 0)
+  assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous 2' }), 0)
+  assert.equal(scoreDiscordArtwork(wanted, { ...apple, artist: 'David Guetta' }), 0)
+  assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous feat. Joywave' }), 98)
+  assert.equal(scoreDiscordArtwork(
+    { type: 'track', title: 'September', artist: 'Earth, Wind & Fire' },
+    { title: 'September', artist: 'Earth' },
+  ), 0)
+  assert.equal(scoreDiscordArtwork(
+    { type: 'track', title: 'EARFQUAKE', artist: 'Tyler, The Creator' },
+    { title: 'EARFQUAKE', artist: 'Tyler' },
+  ), 0)
+  // The earlier Knuckle G regression: a small title variation should pass,
+  // but only if the primary artist matches.
+  assert.equal(scoreDiscordArtwork(
+    { type: 'track', title: 'Biggest in the City', artist: 'Knuckle G' },
+    { title: 'Biggest of the City', artist: 'Knuckle G' },
+  ), 93)
+})
+
+test('Discord republishes a public Apple cover for Big Data when artist includes Joywave', async () => {
+  const sent = []
+  class Client extends EventEmitter {
+    async login() { this.user = { id: 'fixture' } }
+    async request(command, args) { sent.push(args.activity) }
+    async clearActivity() {}
+    async destroy() {}
+  }
+  const calls = []
+  const call = service({ rpc: { Client }, fetchImpl: async url => {
+    calls.push(url)
+    if (url.startsWith('https://api.deezer.com/')) return { ok: true, json: async () => ({ data: [] }) }
+    return { ok: true, json: async () => ({ results: [{
+      trackName: 'Dangerous', artistName: 'Big Data & Joywave',
+      collectionName: '2.0', trackTimeMillis: 280000,
+      artworkUrl100: 'https://is1-ssl.mzstatic.com/image/thumb/test/100x100bb.jpg',
+    }] }) }
+  } })
+  await call('connect', '123')
+  await call('setActivity', { ...song, title: 'Dangerous', artist: 'Big Data', album: 'Unknown Album', duration: 280 }, true)
+  await flush()
+  assert.ok(calls.some(url => url.startsWith('https://itunes.apple.com/search?')))
+  assert.equal(sent.at(-1).assets.large_image, 'https://is1-ssl.mzstatic.com/image/thumb/test/600x600bb.jpg')
+  await call('disconnect')
+})
