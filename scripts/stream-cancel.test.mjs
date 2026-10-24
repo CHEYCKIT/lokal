@@ -33,3 +33,29 @@ test('YouTube and SoundCloud media requests carry the abort signal too', async t
   assert.equal(seen[0].signal, signal)
   assert.equal(seen[0].headers.Range, 'bytes=0-')
 })
+
+test('startup reports exactly the first received bytes without affecting read or cancel', async () => {
+  let aborted = 0
+  const events = []
+  const chunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4])]
+  const upstream = new ReadableStream({
+    pull(c) { const chunk = chunks.shift(); if (chunk) c.enqueue(chunk); else c.close() },
+  })
+  const body = sources.cancellableBody(upstream, () => { aborted++ }, size => events.push(size))
+  assert.deepEqual([...new Uint8Array(await new Response(body).arrayBuffer())], [1, 2, 3, 4])
+  assert.deepEqual(events, [2], 'only the first chunk advances startup progress')
+  assert.equal(aborted, 0, 'natural stream completion is not cancellation')
+})
+
+test('cancel before any received bytes emits no false receiving progress', async () => {
+  const events = []
+  let aborted = 0
+  const upstream = new ReadableStream({
+    start() {},
+    cancel() {},
+  })
+  const body = sources.cancellableBody(upstream, () => { aborted++ }, size => events.push(size))
+  await body.cancel('skip')
+  assert.deepEqual(events, [])
+  assert.equal(aborted, 1)
+})

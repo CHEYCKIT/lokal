@@ -3,6 +3,7 @@
 // protocol the player streams from. See electron/online/sources.js.
 
 const crypto = require('node:crypto')
+const { BrowserWindow } = require('electron')
 const log = require('electron-log')
 const { getDB } = require('./db')
 const { findYtDlp } = require('./tools')
@@ -805,6 +806,19 @@ function videoStreamBase() {
   return videoServer
 }
 
+// Progress is scoped to a provider/id and one protocol request, so the
+// renderer can discard prefetches, outdated failures and earlier sources.
+let streamLoadRequest = 0
+function emitStreamStartup(data) {
+  for (const win of BrowserWindow?.getAllWindows?.() || []) {
+    try {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('online:streamStartup', data)
+      }
+    } catch {}
+  }
+}
+
 /** lokal-stream://<provider>/<id>: a song's audio (YouTube, SoundCloud), with Range support for seeking; ytv: a music video's picture. */
 function registerStreamProtocol(protocol, net) {
   protocol.handle(SCHEME, async (request) => {
@@ -852,8 +866,16 @@ function registerStreamProtocol(protocol, net) {
         ? (u, init) => netFetch(net, u, init)
         : (u, init) => net.fetch(u, init)
       const range = request.headers.get('Range')
+      const loadRequest = ++streamLoadRequest
+      const report = (phase, extra = {}) => emitStreamStartup({ provider, id, request: loadRequest, phase, ...extra })
+      // Media element Range reads and seek retries share the same source key.
+      // Only the renderer's currently selected source can show these events.
+      report('resolving')
       logAddonStream(diagnostic, 'request', { method: request.method, range: range || null })
-      const { res, mime } = await sources.fetchStream(provider, id, { ...streamOptions(), range, signal: upstream.signal, fetchImpl })
+      const { res, mime } = await sources.fetchStream(provider, id, {
+        ...streamOptions(), range, signal: upstream.signal, fetchImpl,
+        onPhase: phase => report(phase),
+      })
       const headers = new Headers()
       for (const name of PASS_HEADERS) { const v = res.headers.get(name); if (v) headers.set(name, v) }
       const upstreamType = res.headers.get('content-type')
@@ -870,7 +892,13 @@ function registerStreamProtocol(protocol, net) {
         acceptRanges: res.headers.get('accept-ranges') || null,
         durationMs: Date.now() - startedAt,
       }, res.ok ? 'info' : 'warn')
-      return new Response(sources.cancellableBody(res.body, () => upstream.abort()), { status: res.status, headers })
+      report(res.ok ? 'headers' : 'error', { status: res.status })
+      const total = Number(res.headers.get('content-length'))
+      const sourceBody = sources.cancellableBody(
+        res.body, () => upstream.abort(),
+        res.ok ? bytes => report('receiving', { loaded: bytes, total: total > 0 ? total : null }) : undefined,
+      )
+      return new Response(sourceBody, { status: res.status, headers })
     } catch (e) {
       const cancelled = !!upstream?.signal.aborted
       logAddonStream(diagnostic, cancelled ? 'cancelled' : 'failure', {
