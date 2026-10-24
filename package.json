@@ -5,6 +5,8 @@
   "author": "sipbuu <97703296+sipbuu@users.noreply.github.com>",
   "main": "electron/main.js",
   "scripts": {
+    "prebuild": "node scripts/check-electron-syntax.cjs",
+    "test:electron-syntax": "node scripts/check-electron-syntax.cjs",
     "dev": "npm run gen:icons && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:web": "npm run gen:icons && concurrently \"vite\" \"node server/start.js\"",
     "build": "npm run gen:icons && vite build && npm run native:prepare && electron-builder",
