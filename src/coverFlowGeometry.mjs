@@ -127,6 +127,29 @@ export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion 
   return nearest
 }
 
+// Normalize pixel, line and page wheel events. Choose the dominant axis so
+// diagonal trackpad movement never moves twice as far.
+export function flowWheelPixels(deltaX, deltaY, deltaMode = 0, pageHeight = 800) {
+  const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY
+  if (!Number.isFinite(delta)) return 0
+  const multiplier = deltaMode === 1 ? 16 : deltaMode === 2 ? Math.max(1, pageHeight) : 1
+  return delta * multiplier
+}
+
+// Accumulate wheel inputs against the destination, not the lagging visual
+// position, otherwise high-resolution trackpads lose most small increments.
+export function flowWheelTarget(position, target, deltaPixels, pixelsPerCover, count) {
+  if (!(count > 0) || !(pixelsPerCover > 0) || !Number.isFinite(deltaPixels)) return 0
+  return clampIndex((target === null ? position : target) + deltaPixels / pixelsPerCover, count)
+}
+
+// Frame-rate-independent wheel following, with no per-event animation restarts.
+// The same curve follows incoming deltas and the final rounded destination.
+export function flowWheelEase(position, target, deltaTimeMs) {
+  const elapsed = Math.max(0, Math.min(48, deltaTimeMs))
+  return position + (target - position) * (1 - Math.exp(-elapsed / 75))
+}
+
 export function flowDrag(position, deltaX, albumWidth, length) {
   if (albumWidth <= 0) return position
   const delta = -deltaX / albumWidth
