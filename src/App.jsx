@@ -471,6 +471,16 @@ export default function App() {
         usePlayerStore.getState().setStreamLoading(null)
         showToast(message)
       }
+    } catch (error) {
+      if (isCurrent()) {
+        const message = String(error?.message || 'No playback source could be loaded.').slice(0, 240)
+        usePlayerStore.getState().setIsBuffering(false)
+        usePlayerStore.getState().setIsPlaying(false)
+        usePlayerStore.getState().setStreamLoading(null)
+        setStreamError({ title: failedTrack.title, message })
+        reportPlaybackError(failedTrack, message)
+        showToast(message)
+      }
     } finally {
       recovery.pending = false
       el.dataset.fallbackPending = ''
