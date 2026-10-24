@@ -443,5 +443,6 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
 
 module.exports = {
   supportedHost, nativeAtmosAvailable, outputOptions, isConfirmedBitstream,
-  mpvCandidates, findMpvBinary, parseAudioDevices, inspectAtmosFile, registerAtmosHandlers,\n  isWindowsDecoderError, offerWindowsCodecHelp,
+  mpvCandidates, findMpvBinary, parseAudioDevices, inspectAtmosFile, registerAtmosHandlers,
+  isWindowsDecoderError, offerWindowsCodecHelp,
 }
