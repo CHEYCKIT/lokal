@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP, FLOW_DEPTH, FLOW_FAN_ANGLE, FLOW_PERSPECTIVE, FLOW_VANISH_Y, flowProjectedCorners } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP, FLOW_DEPTH, FLOW_FAN_ANGLE, FLOW_PERSPECTIVE, FLOW_VANISH_Y, flowProjectedCorners, flowResponsiveSpread } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
@@ -116,7 +116,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
 
 test('Cover Flow is 45% larger and opens centered, without starting Flow', () => {
   assert.ok(flow.includes('const MAX_SIZE = 320'), 'maximum square cover increases from 220 to 320 pixels')
-  assert.ok(flow.includes('Math.min(MAX_SIZE, stage.clientWidth * 0.52)'), 'covers still scale on narrow windows')
+  assert.ok(flow.includes('Math.min(MAX_SIZE, width * 0.52)'), 'covers still scale on narrow windows')
   assert.ok(flow.includes('const middleIndex = Math.floor(count / 2)'), 'even/odd-length shelves start in the middle')
   assert.ok(flow.includes('useMotionValue(middleIndex)'), 'the first rendered frame must be centered')
   assert.ok(flow.includes('useState(middleIndex)'), 'track details match the centered cover')
@@ -259,7 +259,7 @@ test('mouse drag release has no velocity cliff or abrupt low-speed mode switch',
 
 test('fast multi-cover animation does not mount/decode full-resolution art on every index', () => {
   assert.ok(flow.includes('const FlowCover = React.memo('), 'reuse cover subtrees across selection changes')
-  assert.ok(flow.includes('const geometry = useTransform(position'), 'calculate perspective geometry once per frame')
+  assert.ok(flow.includes('const geometry = useTransform([position, spreadValue]'), 'calculate perspective geometry once per frame')
   assert.ok(flow.includes('useTransform(geometry, g => g.pivot'), 'derive the pivot from cached geometry')
   assert.ok(flow.includes('useTransform(geometry, g => g.opacity'), 'derive opacity from cached geometry')
   assert.ok(flow.includes('highRes={settled && index === activeIndex}'), 'full resolution only at rest')
@@ -335,4 +335,60 @@ test('hit testing inverts the actual projected centers, not the retired hinge es
   assert.ok(flow.includes('100 - Math.round(Math.abs(index - p) * 10)'),
     'selected artwork draws in front of both side panels')
   assert.ok(flow.includes("transformStyle: 'preserve-3d'"))
+})
+
+test('collapsed desktop sidebars spread distant covers to the stage edges', () => {
+  const size = 320, count = 24
+  const narrow = flowResponsiveSpread(1080, size, count)
+  const wide = flowResponsiveSpread(1490, size, count)
+  const widest = flowResponsiveSpread(1600, size, count)
+  assert.ok(wide > narrow && widest > wide, 'spread increases as both sidebars retract')
+  const oldFar = flowProjectedCorners(4, size).topRight.x
+  const wideFar = flowProjectedCorners(4, size, false, wide).topRight.x
+  const wideLeft = flowProjectedCorners(-4, size, false, wide).topLeft.x
+  assert.ok(Math.abs(wideFar + wideLeft) < .00001, 'both gutters are filled symmetrically')
+  assert.ok(1490 / 2 - wideFar < 60, 'right gutter reaches less than 60 px')
+  assert.ok(1490 / 2 + wideLeft < 60, 'left gutter reaches less than 60 px')
+  assert.ok(wideFar - oldFar > 150, 'remove at least 150 px of old empty margin per side')
+  assert.ok(flowResponsiveSpread(800, 320, count) === 1, 'small desktop width retains normal fan')
+  assert.equal(flowResponsiveSpread(1490, size, 8), 1, 'never stretch a sparse shelf')
+  assert.equal(flowResponsiveSpread(1490, size, count, true), 1,
+    'Performance Mode keeps its flat layout unchanged')
+})
+
+test('responsive gutters preserve central iTunes triangle corners and drag continuity', () => {
+  const size = 320, spread = flowResponsiveSpread(1490, size, 24)
+  for (const d of [-1, 0, 1]) {
+    const before = flowProjectedCorners(d, size)
+    const after = flowProjectedCorners(d, size, false, spread)
+    assert.deepEqual(after, before, 'facing and first angled covers remain reference matched')
+  }
+  const epsilon = .00001
+  const x = d => flowCoverGeometry(d, size, false, spread).x
+  const below = (x(1) - x(1 - epsilon)) / epsilon
+  const above = (x(1 + epsilon) - x(1)) / epsilon
+  assert.ok(Math.abs(below - above) < .02, 'no movement-speed discontinuity at first side cover')
+  for (const pos of [2.1, 6.25, 12.5]) {
+    for (const index of [Math.floor(pos), Math.ceil(pos), Math.ceil(pos) + 1,
+                         Math.ceil(pos) + 2, Math.ceil(pos) + 3]) {
+      const geometry = flowCoverGeometry(index - pos, 1, false, spread)
+      const projected = geometry.x / (1 - geometry.depth / FLOW_PERSPECTIVE)
+      const clientX = 1490 / 2 + size * projected
+      assert.equal(flowIndexAt(clientX, 1490, size, pos, 24, false, spread), index,
+        'selection uses expanded projected positions during sidebar collapse')
+    }
+  }
+})
+
+test('changing sidebar width updates MotionValues without recreating artwork', () => {
+  assert.ok(flow.includes('const [stageWidth, setStageWidth] = useState(0)'))
+  assert.ok(flow.includes('flowResponsiveSpread(stageWidth, size, count, reduced)'))
+  assert.ok(flow.includes('setStageWidth(old => Math.abs(old - width) < 1 ? old : width)'))
+  assert.ok(flow.includes('useTransform([position, spreadValue]'), 'reactive 3D geometry')
+  assert.ok(flow.includes('spreadValue.set(spread)'), 'motion value updates with ResizeObserver')
+  assert.ok(flow.includes('key={pick.track.id}'), 'resize does not remount covers')
+  assert.ok(!flow.includes('key={pick.track.id +'), 'avoid animated sidebar remount jank')
+  assert.ok(flow.includes('flowIndexAt(e.clientX - rect.left, rect.width, size, position.get(), count, reduced, spread)'),
+    'gap clicks and drag hit testing use responsive geometry')
+  assert.ok(!flow.includes('WebkitBoxReflect'), 'no reflection reintroduced')
 })
