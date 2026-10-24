@@ -37,7 +37,7 @@ test('classic fallback is original cylindrical carousel, not flattened Cover Flo
     'const MIN_SCALE = 0.72',
     'const SLOTS = [9, 7, 5]',
     'wrap(index - s, count)',
-    'const centreAt =',
+    'function centreAt(',
     'onPointerDown={onPointerDown}',
     'onPointerMove={onPointerMove}',
     'onPointerUp={onPointerUp}',
