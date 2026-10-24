@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, flowResponsiveSpread, FLOW_PERSPECTIVE, FLOW_VANISH_Y } from '../coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, flowResponsiveSpread, flowWheelPixels, flowWheelTarget, flowWheelEase, FLOW_PERSPECTIVE, FLOW_VANISH_Y } from '../coverFlowGeometry.mjs'
 
 const MAX_SIZE = 320 // 45% larger than the original 220px covers; still responsive
 const DRAG_THRESHOLD = 6
@@ -108,6 +108,11 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const gesture = useRef(null)
   const pressTimer = useRef(null)
   const wheelTimer = useRef(null)
+  const wheelFrame = useRef(null)
+  const wheelStamp = useRef(null)
+  const wheelGoal = useRef(null)
+  const wheelSnapping = useRef(false)
+  const wheelHandler = useRef(null)
   const suppressClick = useRef(false)
   const [size, setSize] = useState(MAX_SIZE)
   const [stageWidth, setStageWidth] = useState(0)
@@ -196,8 +201,16 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     const { target, duration } = flowCoastPlan(position.get(), velocity, count)
     moveTo(target, duration)
   }
-  const step = by => {
+  const stopWheel = () => {
     clearTimeout(wheelTimer.current)
+    if (wheelFrame.current !== null) cancelAnimationFrame(wheelFrame.current)
+    wheelFrame.current = null
+    wheelStamp.current = null
+    wheelGoal.current = null
+    wheelSnapping.current = false
+  }
+  const step = by => {
+    stopWheel()
     rotateBack(false)
     settle(Math.round(position.get()) + by)
   }
@@ -213,6 +226,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     }
   })
   useEffect(() => {
+    stopWheel()
     motion.current?.stop()
     flipSpring.current?.stop()
     position.set(middleIndex)
@@ -229,7 +243,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     motion.current?.stop()
     flipSpring.current?.stop()
     clearTimeout(pressTimer.current)
-    clearTimeout(wheelTimer.current)
+    stopWheel()
   }, [])
 
   useLayoutEffect(() => {
@@ -258,7 +272,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   const down = e => {
     if (e.button !== 0) return
     motion.current?.stop()
-    clearTimeout(wheelTimer.current)
+    stopWheel()
     suppressClick.current = false
     gesture.current = { id: e.pointerId, start: e.clientX, last: e.clientX,
       moved: false, samples: [{ x: e.clientX, t: performance.now() }] }
@@ -306,20 +320,59 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
     }
     gesture.current = null
   }
-  const wheel = e => {
-    // Standard mouse wheels emit deltaY; trackpads may emit either axis. 
-    // Prefer the dominant axis so diagonal gestures do not move twice. 
-    const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
-    if (!dx) return
-    e.preventDefault()
-    stopPress()
-    rotateBack(false)
-    setSettled(false)
-    motion.current?.stop()
-    position.set(Math.max(-0.35, Math.min(count - 0.65, position.get() + dx / pixelsPerCover)))
-    clearTimeout(wheelTimer.current)
-    wheelTimer.current = setTimeout(() => settle(position.get()), 170)
+  // Wheel and trackpad events update one destination. A single RAF follower
+  // eases the rendered cover toward it, avoiding jumps on coarse wheel ticks.
+  const followWheel = now => {
+    wheelFrame.current = null
+    const target = wheelGoal.current
+    if (target === null) return
+    const elapsed = wheelStamp.current === null ? 16.7 : now - wheelStamp.current
+    wheelStamp.current = now
+    const next = flowWheelEase(position.get(), target, elapsed)
+    position.set(next)
+    if (Math.abs(target - next) > 0.001) {
+      wheelFrame.current = requestAnimationFrame(followWheel)
+    } else {
+      position.set(target)
+      if (wheelSnapping.current) {
+        stopWheel()
+        setSettled(true)
+      }
+    }
   }
+  const wheel = e => {
+    // React's delegated wheel listeners may be passive in Chromium; this
+    // handler is attached natively with { passive: false } below.
+    if (e.ctrlKey || e.metaKey || count < 2) return
+    const delta = flowWheelPixels(e.deltaX, e.deltaY, e.deltaMode, stageRef.current?.clientHeight || size * 1.36)
+    if (!delta) return
+    e.preventDefault()
+    if (wheelGoal.current === null) {
+      stopPress()
+      rotateBack(false)
+      setSettled(false)
+      motion.current?.stop()
+    }
+    wheelSnapping.current = false
+    wheelGoal.current = flowWheelTarget(position.get(), wheelGoal.current, delta, pixelsPerCover, count)
+    if (wheelFrame.current === null) wheelFrame.current = requestAnimationFrame(followWheel)
+    clearTimeout(wheelTimer.current)
+    wheelTimer.current = setTimeout(() => {
+      // Snap with the SAME interpolation, rather than switching to a new
+      // tween that can abruptly change speed at the gesture's end.
+      wheelSnapping.current = true
+      wheelGoal.current = clampIndex(Math.round(wheelGoal.current), count)
+      if (wheelFrame.current === null) wheelFrame.current = requestAnimationFrame(followWheel)
+    }, 180)
+  }
+  wheelHandler.current = wheel
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return undefined
+    const handleWheel = event => wheelHandler.current?.(event)
+    stage.addEventListener('wheel', handleWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', handleWheel)
+  }, [count])
   const select = index => {
     if (suppressClick.current) { suppressClick.current = false; return }
     rotateBack(false)
@@ -340,7 +393,6 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
       }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onDragStart={e => e.preventDefault()}
-      onWheel={wheel}
       onClickCapture={e => {
         if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false }
       }}
