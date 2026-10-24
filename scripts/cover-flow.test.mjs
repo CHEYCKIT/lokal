@@ -164,7 +164,7 @@ test('Home Cover Flow has no visible heading but keeps its accessible shelf labe
   assert.ok(shelf.includes('<CoverFlow picks={picks}'), 'retain playback shelf')
 })
 
-test('perspective-expanded side corners and reflections fit inside the stage', () => {
+test('side-cover corners fit the stage while reflections may continue below its bottom edge', () => {
   assert.ok(flow.includes('top: size * 0.18'), 'move artwork down from the clipping boundary')
   assert.ok(flow.includes('height: size * 1.54'), 'grow stage to retain reflection space')
   const inset = 0.18
@@ -177,7 +177,12 @@ test('perspective-expanded side corners and reflections fit inside the stage', (
     const topRise = Math.max(0, (scale - 1) / 2)
     assert.ok(topRise < inset, `side ${distance} upper corner must not clip`)
   }
-  assert.ok(inset + 1.005 + .30 < 1.54, 'reflection also fits the enlarged stage')
+  const reflectionStart = inset + 1.005
+  const reflectionEnd = reflectionStart + 1
+  assert.ok(reflectionStart < 1.54, 'reflection begins above the stage bottom')
+  assert.ok(reflectionEnd > 1.54, 'reflection must continue beneath the track label')
+  assert.ok(flow.includes('overflow-x-clip overflow-y-visible'), 'clip only the horizontal artwork, never its vertical reflection')
+  assert.ok(flow.includes('height: size * 1.54'), 'do not add a huge blank space before Your Mixes')
 })
 
 test('iCarousel-inspired fixed deceleration finishes without a secondary snap', () => {
@@ -252,4 +257,18 @@ test('fast-flip window and reflection avoid repeated React and image work', () =
   assert.ok(flow.includes('await image.decode?.()'), 'warm thumbnails asynchronously')
   assert.ok(flow.includes("willChange: reduced ? 'auto' : 'transform'"), 'promote moving covers')
   assert.deepEqual(flowVisibleRange(8, 24), {start: 1, end: 16})
+})
+
+test('reflections fade fully into black and are layered behind track text and Home content', () => {
+  assert.ok(flow.includes('rgba(0,0,0,.42) 0%'), 'reflection keeps its soft top opacity')
+  assert.ok(flow.includes('transparent 100%'), 'fade runs to full transparency, not a cropped boundary')
+  assert.ok(!flow.includes('transparent 88%'), 'do not truncate the mirrored gradient prematurely')
+  assert.ok(flow.includes('relative z-0 isolate cursor-grab select-none overflow-x-clip overflow-y-visible'), 'stage stays in a lower stacking context')
+  assert.ok(flow.includes('className="relative z-10 mx-auto max-w-lg text-center"'), 'selected track text remains above reflection')
+  assert.ok(shelf.includes('className="relative z-0"'), 'Cover Flow shelf stays below subsequent sections')
+  assert.ok(home.includes('{mixes.length > 0 && <section className="relative z-10">'), 'Your Mixes paints in front of the reflection tail')
+  assert.ok(home.includes('{suggestions.length > 0 && <section className="relative z-10">'), 'suggested tracks also paint above the tail')
+  assert.ok(home.includes('{recentTracks.length > 0 && <section className="relative z-10">'), 'other Home sections paint above the tail')
+  assert.ok(flow.includes("WebkitBoxReflect:"), 'keep the single GPU-friendly Chromium reflection')
+  assert.ok(flow.includes("onPointerDown={down} onPointerMove={move} onPointerUp={up}"), 'drag remains unchanged')
 })
