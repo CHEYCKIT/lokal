@@ -26,6 +26,18 @@ function headphoneBridge(platform = process.platform) {
   return bridge
 }
 
+// MediaFailed may return no readable ErrorMessage; include the native WinRT
+// error category/HRESULT when available, never replace it with a vague toast.
+// Missing Windows E-AC-3 decoding cannot be fixed by silently downmixing: that
+// would discard JOC spatial objects while claiming Atmos playback succeeded.
+function headphoneDecoderFailure(nativeError) {
+  const detail = String(nativeError ?? '').trim()
+  const cause = detail || 'The Windows decoder could not open the E-AC-3 JOC audio source.'
+  return 'Windows Media Foundation could not play this Dolby Atmos file: ' +
+    cause + ' Check Windows E-AC-3 codec support and Dolby Access / Spatial Sound in Atmos Setup. ' +
+    'If the OS cannot decode it, use normal Play (stereo) or HDMI passthrough with an Atmos-capable receiver.'
+}
+
 function headphoneCapability(platform = process.platform) {
   return { available: !!headphoneBridge(platform),
     mode: 'windows-media-foundation',
@@ -49,7 +61,7 @@ async function startHeadphones(filename, { signal, timeoutMs = 15000, onStatus }
         onStatus?.(state)
         return state
       }
-      if (state.state === 'error') throw new Error('Windows Media Foundation: ' + (state.error || 'The decoder could not open the Atmos file'))
+      if (state.state === 'error') throw new Error(headphoneDecoderFailure(state.error))
       if (state.state === 'ended' || state.state === 'stopped') throw new Error('Windows native playback stopped before it started')
       await new Promise(resolve => setTimeout(resolve, 180))
     }
@@ -74,4 +86,4 @@ function headphoneCommand(command) {
   native.atmosHeadphoneCommand(command)
 }
 
-module.exports = { headphoneBridge, headphoneCapability, startHeadphones, stopHeadphones, headphoneCommand, headphoneStatus }
+module.exports = { headphoneBridge, headphoneCapability, headphoneDecoderFailure, startHeadphones, stopHeadphones, headphoneCommand, headphoneStatus }

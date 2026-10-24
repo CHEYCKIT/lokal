@@ -71,10 +71,40 @@ whether the actual JOC objects were rendered, or whether Windows decoded the
 be configured in Windows; the app cannot set Dolby licensing, force its
 installation, or verify decoded objects through the public MediaPlayer API.
 
-Some fresh Windows 11 24H2 installations lack AC-3 decoding components by
-default. If Media Foundation fails with a codec error, this native path
-reports the failure rather than silently transcoding to stereo or pretending
-the source was Atmos rendered.
+**If "Dolby Atmos for Headphones" is already selected in Windows but Lokal
+shows a Windows Media Foundation decoder error:** that setting enables the
+spatial *renderer*; it does not independently prove that the file's E-AC-3 JOC
+codec is available to Media Foundation. Do not ask the user to repeat the
+Spatial Sound setup.
+
+1. Save the original Atmos track or open the same verified .m4a/.mp4 file
+   through Lokal's **Open local Atmos file…** action. Try that exact file in
+   Windows Media Player (not VLC/mpv: those can bundle independent decoders).
+   If Windows Media Player also fails, investigate this system's Windows codec
+   installation or OEM decoder package, not the Atmos toggle.
+2. With FFprobe installed, verify the actual downloaded file's stream:
+   `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,profile -of json "track.m4a"`.
+   Expect `eac3` and an Atmos/JOC profile. A non-JOC track or invalid MP4 is
+   a different source issue.
+3. Report the **MediaPlayerError** category and **HRESULT** shown by Lokal's
+   native bridge. These distinguish unsupported format/codec failures from
+   corrupt files or other media errors. Also report the Windows build number.
+4. If a valid file opens in Windows Media Player but not Lokal, investigate
+   the Electron/WinRT media bridge, rather than telling the user to reinstall
+   Dolby Access.
+5. Check Windows Update. Microsoft documented a separate September 2026 issue
+   in some Windows 11 24H2/25H2/26H2 builds affecting applications which use
+   Windows AC-3 decoding. Their release notes say it was resolved by updates
+   on or after **October 13, 2026** (e.g. KB5127648). This is relevant to
+   troubleshooting but does not prove the reporter has the same failure:
+   https://support.microsoft.com/en-us/servicing/os/windows-11/2026/09/kb5124010-windows-11-24h2-25h2-update
+
+Windows 11 24H2 and later no longer bundle the older AC-3 decoder by default
+on fresh installations, though OEM images and upgrades may retain it.
+**AC-3 is not the same as E-AC-3 JOC**, so this change alone does not prove
+the cause of an Atmos failure. For Windows N editions, check the Microsoft
+Media Feature Pack separately. This native route reports failures instead of
+silently transcoding to stereo or falsely claiming object-based Atmos rendering.
 
 The HDMI and headphone routes use the same original E-AC-3 JOC file and the
 same native playback controls, but use fundamentally different output APIs.

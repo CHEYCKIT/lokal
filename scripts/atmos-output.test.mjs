@@ -77,3 +77,17 @@ test('Windows headphone capabilities are distinct from native HDMI availability'
     available: false, mode: 'windows-media-foundation', rendererVerified: false,
   })
 })
+
+
+test('Windows headphone decoder failures retain native diagnostics and never claim Atmos', () => {
+  const { headphoneDecoderFailure } = require('../electron/audio/headphones.js')
+  const detailed = headphoneDecoderFailure(
+    'Unsupported video type [MediaPlayerError=SourceNotSupported; HRESULT=0xC00D36C4]'
+  )
+  assert.match(detailed, /Windows Media Foundation/)
+  assert.match(detailed, /SourceNotSupported/)
+  assert.match(detailed, /0xC00D36C4/)
+  assert.match(detailed, /E-AC-3/)
+  assert.doesNotMatch(detailed, /Atmos (?:rendered|enabled successfully)/i)
+  assert.match(headphoneDecoderFailure(''), /decoder could not open/i)
+})

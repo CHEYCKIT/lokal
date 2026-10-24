@@ -1961,6 +1961,19 @@ activeCategory === 'data' ? usersTried
       </Section>
       )}
       {inCategory('appearance') && (
+      <Section title={t("Home")}>
+        <Row label={t("Cover Flow")} desc={t("Show classic iTunes-style Cover Flow on Home → Local. Turn this off to restore the original cylindrical carousel. This choice is independent of Windows animation settings.")}>
+          <button type="button"
+            aria-label={t("Enable Cover Flow on Home")}
+            aria-pressed={settings.home_cover_flow !== '0'}
+            onClick={() => set('home_cover_flow', settings.home_cover_flow === '0' ? '1' : '0')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border transition-colors ${settings.home_cover_flow !== '0' ? 'bg-accent/20 border-accent/50 text-accent' : 'border-border text-muted hover:text-white'}`}>
+            {settings.home_cover_flow !== '0' ? t('On') : t('Off')}
+          </button>
+        </Row>
+      </Section>
+      )}
+      {inCategory('appearance') && (
       <Section title={t("Theme")}>
         <div className="space-y-4">
           <div>
