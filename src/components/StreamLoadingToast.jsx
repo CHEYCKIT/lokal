@@ -69,7 +69,7 @@ export default function StreamLoadingToast() {
       // Source status percentage measures actual *completed startup stages*
       // rather than buffered media time, which can remain 0 for all of an
       // add-on's preparation before playback begins.
-      const percent = startupProgress(load.phase)
+      const percent = startupProgress(load.phase, load.addonPercent)
       const message = `“${track.title}” · ${prefix}${detail} · startup`
       if (message !== lastMessage || percent !== lastPercent) {
         toast.update(message, percent)
