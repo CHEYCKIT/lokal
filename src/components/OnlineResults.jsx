@@ -29,6 +29,7 @@ import AtmosPlayButton from './AtmosPlayButton'
 import { advertisedQuality } from '../catalogueQuality'
 import { showToast } from './Toaster'
 
+let atmosRequestSerial = 0
 const DEBOUNCE_MS = 450
 const PROVIDER_KEY = 'lokal-online-provider'
 // Built-in sources; installed addons are added from the backend (online:providers).
@@ -133,9 +134,11 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     if (!target) return { error: 'Could not add the Atmos track to the player' }
     const queue = rows.filter(Boolean)
     const indexInQueue = queue.findIndex(row => row.id === target.id)
+    const requestId = ++atmosRequestSerial
     queue[indexInQueue] = {
       ...target, atmosNative: true, atmosMode: mode,
       atmosProvider: item.provider, atmosSourceId: String(item.id),
+      atmosRequestId: requestId,
     }
     saveRecentItem(recentTrackItem(target))
     playQueue(queue, indexInQueue, { type: 'search', id: q, name: `${providerLabel}: ${q}` })
@@ -143,7 +146,8 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
       const current = usePlayerStore.getState().currentTrack
       return current?.atmosNative === true &&
         current.atmosSourceId === String(item.id) &&
-        current.atmosProvider === item.provider
+        current.atmosProvider === item.provider &&
+        current.atmosRequestId === requestId
     }
     try {
       await awaitAtmosOutputRelease()
@@ -156,8 +160,9 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
         return result || { error: 'Native Atmos output was refused' }
       }
       if (!selected()) {
-        // A newer selection owns the output; don't leave a stale JOC session.
-        await api.atmosStop().catch(() => {})
+        // Backend generations and the queued release barrier already cancel
+        // this session. An unconditional stop here could kill a *newer*
+        // Atmos request that has since taken the same player/source.
         return { error: 'Atmos request was superseded by a newer track' }
       }
       return result
