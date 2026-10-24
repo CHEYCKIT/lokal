@@ -353,6 +353,15 @@ test('Discord graded matching calculates the actual Big Data / Joywave credit mi
   assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous (Oliver Remix)' }), 0)
   assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous 2' }), 0)
   assert.equal(scoreDiscordArtwork(wanted, { ...apple, artist: 'David Guetta' }), 0)
+  assert.equal(scoreDiscordArtwork(wanted, { ...apple, title: 'Dangerous feat. Joywave' }), 98)
+  assert.equal(scoreDiscordArtwork(
+    { type: 'track', title: 'September', artist: 'Earth, Wind & Fire' },
+    { title: 'September', artist: 'Earth' },
+  ), 0)
+  assert.equal(scoreDiscordArtwork(
+    { type: 'track', title: 'EARFQUAKE', artist: 'Tyler, The Creator' },
+    { title: 'EARFQUAKE', artist: 'Tyler' },
+  ), 0)
   // The earlier Knuckle G regression: a small title variation should pass,
   // but only if the primary artist matches.
   assert.equal(scoreDiscordArtwork(
