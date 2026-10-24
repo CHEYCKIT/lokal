@@ -1,8 +1,10 @@
 // iTunes Cover Flow geometry shared with Lokal Mobile's LokalCoverFlow.
-// At the first neighbor the INNER artwork edge is .52 covers from centre;
-// farther covers stack at .34-cover increments, with continuous velocity.
+// The adjacent cover's INNER hinge sits inside the selected square: the
+// front cover occludes 8% of its width, as in original iTunes Cover Flow.
+// Farther covers still stack at .34-cover intervals with C1-smooth movement.
 export const FLOW_SPRING = Object.freeze({ stiffness: 135, damping: 24, mass: 1 })
-export const FLOW_FIRST = 0.52
+export const FLOW_OVERLAP = 0.08 // inside the selected artwork edge, in cover widths
+export const FLOW_FIRST = 0.50 - FLOW_OVERLAP
 export const FLOW_STEP = 0.34
 export const clampIndex = (index, length) => Math.max(0, Math.min(Math.max(0, length - 1), index))
 // Gesture distances must match the spacing of the active rendering mode.
@@ -10,8 +12,11 @@ export const flowPixelsPerCover = (size, reducedMotion = false) => Math.max(1, s
 
 function innerDistance(distance) {
   const a = Math.abs(distance)
+  // Smoothstep moves the inside hinge back without introducing a drag-speed
+  // discontinuity at 0 or 1 cover. Both endpoint derivatives remain unchanged.
   return a >= 1 ? FLOW_FIRST + (a - 1) * FLOW_STEP
     : 0.66 * a - 0.10 * a * a - 0.04 * a * a * a
+      - 0.10 * (3 * a * a - 2 * a * a * a)
 }
 
 // Projected side artwork center, also used for matching blank-stage taps.
@@ -34,7 +39,7 @@ export function flowCoverGeometry(distance, size, reduceMotion = false) {
   const side = Math.sign(distance)
   return {
     // The pivot moves from centre to inner edge as each panel turns.
-    // Translate its inner edge just past the selected cover's side.
+    // Place its inner edge behind the selected cover, not flush beside it.
     x: reduceMotion ? distance * size * 1.06 : side * size * (innerDistance(ad) + 0.5 * hinge),
     pivot: reduceMotion ? 50 : 50 - side * 50 * hinge, // CSS transform-origin percentage
     // Positive Y rotation brings the left edge forward, negative the right.
@@ -50,7 +55,8 @@ export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion 
   if (reduceMotion) return clampIndex(Math.round(position + offset / (size * 1.06)), length)
   const normalized = Math.abs(offset) / size
   let lo = 0
-  let hi = normalized > 0.69 ? 1 + (normalized - 0.69) / FLOW_STEP : 1
+  const firstProjected = FLOW_FIRST + 0.17
+  let hi = normalized > firstProjected ? 1 + (normalized - firstProjected) / FLOW_STEP : 1
   // Invert the C1 spacing curve, not the old discontinuous sine curve.
   for (let step = 0; step < 20; step++) {
     const mid = (lo + hi) / 2
@@ -109,7 +115,7 @@ export function flowReleaseVelocity(samples, releasedAt, pixelsPerCover) {
   return Math.max(-20, Math.min(20, velocity))
 }
 
-/** Mount only covers close enough to enter the reflection / opacity window. */
+/** Mount only covers close enough to enter the visible / opacity window. */
 export function flowVisibleRange(index, count, overscan = 7) {
   return {
     start: Math.max(0, index - overscan),
