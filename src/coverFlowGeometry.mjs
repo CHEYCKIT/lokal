@@ -12,6 +12,29 @@ export const FLOW_FAN_ANGLE = 60 // degrees from the facing plane
 export const FLOW_PERSPECTIVE = 1.92 // focal length in cover widths
 export const FLOW_VANISH_Y = 0.16 // vanishing point below artwork center
 const toRad = Math.PI / 180
+// Farther side covers can fill a wide desktop stage without changing the
+// facing cover or its first angled neighbors. The 3D outside edge of the
+// fourth neighbor should sit near the stage gutter on wide layouts. On
+// narrow layouts, or with too few covers, retain the reference geometry.
+export function flowResponsiveSpread(stageWidth, size, count, reducedMotion = false) {
+  if (reducedMotion || count < 9 || !Number.isFinite(stageWidth) ||
+      !Number.isFinite(size) || size <= 0) return 1
+  const sideInset = Math.max(32, Math.min(60, stageWidth * .035))
+  const goal = (stageWidth / 2 - sideInset) / size
+  const angle = FLOW_FAN_ANGLE * Math.PI / 180
+  // The outside edge of the right panel is at x=+size/2, rotated -60°.
+  // Invert the perspective projection to find the translation that puts
+  // that edge at the desired location on the stage.
+  const outsideX = Math.cos(angle) / 2
+  const outsideZ = -FLOW_DEPTH + Math.sin(angle) / 2
+  const divisor = 1 - outsideZ / FLOW_PERSPECTIVE
+  const targetWorldCenter = goal * divisor - outsideX
+  const step = (targetWorldCenter - FLOW_FIRST) / 3
+  // Maintain some overlap between neighboring angled covers even on
+  // ultra-wide windows; do not turn the fan into disconnected panels.
+  return Math.min(4, Math.max(1, step / FLOW_STEP))
+}
+
 export const FLOW_OVERLAP = 0.5 -
   (FLOW_FIRST - Math.cos(FLOW_FAN_ANGLE * toRad) / 2) /
   (1 + (FLOW_DEPTH + Math.sin(FLOW_FAN_ANGLE * toRad) / 2) / FLOW_PERSPECTIVE)
@@ -19,11 +42,13 @@ export const clampIndex = (index, length) => Math.max(0, Math.min(Math.max(0, le
 export const flowPixelsPerCover = (size, reducedMotion = false) =>
   Math.max(1, size * (reducedMotion ? 1.06 : 0.55))
 
-function centerDistance(a) {
-  if (a >= 1) return FLOW_FIRST + (a - 1) * FLOW_STEP
-  // Cubic Hermite with f(0)=0, f(1)=.91, f'(0)=.90, f'(1)=.18.
-  // Keeps movement smooth as the first side cover joins the distant stack.
-  return .90 * a + .75 * a * a - .74 * a * a * a
+function centerDistance(a, spread = 1) {
+  const step = FLOW_STEP * spread
+  if (a >= 1) return FLOW_FIRST + (a - 1) * step
+  // Hermite interpolation keeps the centered artwork and first neighbor
+  // unchanged while joining the wider distant stack without a velocity
+  // kink at distance one (derivative = step on BOTH sides).
+  return .90 * a + (.93 - step) * a * a + (step - .92) * a * a * a
 }
 
 function depthDistance(a) {
@@ -33,12 +58,12 @@ function depthDistance(a) {
   return FLOW_DEPTH * a * a * (3 - 2 * a)
 }
 
-export function flowCoverGeometry(distance, size, reduceMotion = false) {
+export function flowCoverGeometry(distance, size, reduceMotion = false, spread = 1) {
   const a = Math.abs(distance)
   const near = Math.min(1, a)
   const side = Math.sign(distance)
   return {
-    x: reduceMotion ? distance * size * 1.06 : side * size * centerDistance(a),
+    x: reduceMotion ? distance * size * 1.06 : side * size * centerDistance(a, spread),
     // Rotate around the CENTER of the panel, not its inset inner hinge.
     // This is essential to match the visible upper/lower iTunes triangles.
     pivot: 50,
@@ -52,8 +77,8 @@ export function flowCoverGeometry(distance, size, reduceMotion = false) {
  *  Mirrors the desktop CSS projection and Flutter Matrix4 setup exactly.
  *  Coordinates are pixels relative to the facing cover's center.
  */
-export function flowProjectedCorners(distance, size = 1, reduceMotion = false) {
-  const g = flowCoverGeometry(distance, size, reduceMotion)
+export function flowProjectedCorners(distance, size = 1, reduceMotion = false, spread = 1) {
+  const g = flowCoverGeometry(distance, size, reduceMotion, spread)
   const theta = g.angle * toRad
   const perspective = FLOW_PERSPECTIVE * size
   const vanish = FLOW_VANISH_Y * size
@@ -77,12 +102,12 @@ export function flowProjectedCorners(distance, size = 1, reduceMotion = false) {
 // The center of a 3D side face is projected through the same camera as its
 // corners. Approximate hit distances used the old hinge and selected the
 // wrong cover after the triangle/perspective correction.
-function projectedCenter(distance) {
-  const g = flowCoverGeometry(distance, 1)
+function projectedCenter(distance, spread = 1) {
+  const g = flowCoverGeometry(distance, 1, false, spread)
   return g.x / (1 - g.depth / FLOW_PERSPECTIVE)
 }
 
-export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion = false) {
+export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion = false, spread = 1) {
   const offset = x - stageWidth / 2
   if (reduceMotion) return clampIndex(Math.round(position + offset / (size * 1.06)), length)
   // Choose the closest DISPLAYED center, not the nearest integer to the
@@ -93,7 +118,7 @@ export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion 
   let nearest = 0
   let nearestDistance = Infinity
   for (let index = 0; index < length; index++) {
-    const distance = Math.abs(projectedCenter(index - position) - target)
+    const distance = Math.abs(projectedCenter(index - position, spread) - target)
     if (distance < nearestDistance) {
       nearestDistance = distance
       nearest = index
