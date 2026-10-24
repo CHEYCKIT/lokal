@@ -3,9 +3,10 @@
 const normalize = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '')
   .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
-const cleanTitle = value => String(value || '')
-  .replace(/\s*[([{]\s*(?:feat(?:uring)?\.?|ft\.?)\s+[^)\]}]+[)\]}]\s*$/i, '')
+const cleanTitle = value => String(value || '').slice(0, 300)
   .replace(/\s*[([{]\s*(?:explicit|clean)\s*[)\]}]\s*$/i, '')
+  .replace(/\s*[([{]\s*(?:feat(?:uring)?\.?|ft\.?)\s+[^)\]}]+[)\]}]\s*$/i, '')
+  .replace(/\s+(?:feat(?:uring)?\.?|ft\.?)\s+.+$/i, '')
   .trim()
 
 // A remix, live performance or alternate recording must not inherit artwork
@@ -45,8 +46,11 @@ function titleConfidence(wanted, found) {
 }
 
 function primaryArtist(value) {
-  return String(value || '').split(/\s+(?:feat(?:uring)?\.?|ft\.?|&|and|with|x|vs\.?)\s+/i)[0]
-    .split(/,\s+/)[0].trim()
+  const name = String(value || '').split(/\s+(?:feat(?:uring)?\.?|ft\.?)\s+/i)[0].trim()
+  // Names containing commas are often bands (Earth, Wind & Fire; Tyler,
+  // The Creator), not lists of credited guests. Don't truncate them.
+  if (name.includes(',')) return name
+  return name.split(/\s+(?:&|and|with|x|vs\.?)\s+/i)[0].trim()
 }
 
 function artistConfidence(wanted, found) {
