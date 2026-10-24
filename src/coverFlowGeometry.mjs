@@ -1,70 +1,105 @@
-// iTunes Cover Flow geometry shared with Lokal Mobile's LokalCoverFlow.
-// The adjacent cover's INNER hinge sits inside the selected square: the
-// front cover occludes 8% of its width, as in original iTunes Cover Flow.
-// Farther covers still stack at .34-cover intervals with C1-smooth movement.
+// Desktop and Flutter share this calibrated iTunes 7 Cover Flow projection.
+// Measured against the supplied iTunes reference (central artwork = 1 unit):
+// first neighbor outside edge x=±1.067, half-height=.460;
+// inner edge x=±.429, half-height=.325 and shifted downward .056.
+// The exposed upper/lower triangles are a perspective phenomenon: an 8%
+// horizontal inset alone cannot reproduce their sloping top/bottom edges.
 export const FLOW_SPRING = Object.freeze({ stiffness: 135, damping: 24, mass: 1 })
-export const FLOW_OVERLAP = 0.08 // inside the selected artwork edge, in cover widths
-export const FLOW_FIRST = 0.50 - FLOW_OVERLAP
-const FLOW_HINGE_SHIFT = 0.52 - FLOW_FIRST
-export const FLOW_STEP = 0.34
+export const FLOW_FIRST = 0.91 // first side panel's 3D center translation
+export const FLOW_STEP = 0.18 // farther panels stack more tightly in screen space
+export const FLOW_DEPTH = 0.60 // side cover's center moves behind the facing plane
+export const FLOW_FAN_ANGLE = 60 // degrees from the facing plane
+export const FLOW_PERSPECTIVE = 1.92 // focal length in cover widths
+export const FLOW_VANISH_Y = 0.16 // vanishing point below artwork center
+const toRad = Math.PI / 180
+export const FLOW_OVERLAP = 0.5 -
+  (FLOW_FIRST - Math.cos(FLOW_FAN_ANGLE * toRad) / 2) /
+  (1 + (FLOW_DEPTH + Math.sin(FLOW_FAN_ANGLE * toRad) / 2) / FLOW_PERSPECTIVE)
 export const clampIndex = (index, length) => Math.max(0, Math.min(Math.max(0, length - 1), index))
-// Gesture distances must match the spacing of the active rendering mode.
-export const flowPixelsPerCover = (size, reducedMotion = false) => Math.max(1, size * (reducedMotion ? 1.06 : 0.55))
+export const flowPixelsPerCover = (size, reducedMotion = false) =>
+  Math.max(1, size * (reducedMotion ? 1.06 : 0.55))
 
-function innerDistance(distance) {
-  const a = Math.abs(distance)
-  // Smoothstep moves the inside hinge back without introducing a drag-speed
-  // discontinuity at 0 or 1 cover. Both endpoint derivatives remain unchanged.
-  return a >= 1 ? FLOW_FIRST + (a - 1) * FLOW_STEP
-    : 0.66 * a - 0.10 * a * a - 0.04 * a * a * a
-      - FLOW_HINGE_SHIFT * (3 * a * a - 2 * a * a * a)
+function centerDistance(a) {
+  if (a >= 1) return FLOW_FIRST + (a - 1) * FLOW_STEP
+  // Cubic Hermite with f(0)=0, f(1)=.91, f'(0)=.90, f'(1)=.18.
+  // Keeps movement smooth as the first side cover joins the distant stack.
+  return .90 * a + .75 * a * a - .74 * a * a * a
 }
 
-// Projected side artwork center, also used for matching blank-stage taps.
-function hitDistance(distance) {
-  const a = Math.abs(distance)
-  const t = Math.min(1, a)
-  return innerDistance(a) + 0.17 * (2 * t - t * t)
-}
-
-function depthDistance(distance) {
-  const a = Math.abs(distance)
-  return a >= 1 ? 0.15 + (a - 1) * 0.055
-    : 0.20 * a - 0.005 * a * a - 0.045 * a * a * a
+function depthDistance(a) {
+  if (a >= 1) return FLOW_DEPTH
+  // Keep the central artwork precisely on the front plane, tapering
+  // smoothly to the recessed side-cover plane.
+  return FLOW_DEPTH * a * a * (3 - 2 * a)
 }
 
 export function flowCoverGeometry(distance, size, reduceMotion = false) {
-  const ad = Math.abs(distance)
-  const near = Math.min(1, ad)
-  const hinge = near * near * (3 - 2 * near) // continuous slope at centre and first neighbor
+  const a = Math.abs(distance)
+  const near = Math.min(1, a)
   const side = Math.sign(distance)
   return {
-    // The pivot moves from centre to inner edge as each panel turns.
-    // Place its inner edge behind the selected cover, not flush beside it.
-    x: reduceMotion ? distance * size * 1.06 : side * size * (innerDistance(ad) + 0.5 * hinge),
-    pivot: reduceMotion ? 50 : 50 - side * 50 * hinge, // CSS transform-origin percentage
-    // Positive Y rotation brings the left edge forward, negative the right.
-    // Hence the OUTER edge of either side cover is the one facing the viewer.
-    angle: reduceMotion || near === 0 ? 0 : -side * (2 * near - near * near) * 70,
-    depth: reduceMotion || ad === 0 ? 0 : -size * depthDistance(ad),
-    opacity: Math.max(0, Math.min(1, 5 - ad)),
+    x: reduceMotion ? distance * size * 1.06 : side * size * centerDistance(a),
+    // Rotate around the CENTER of the panel, not its inset inner hinge.
+    // This is essential to match the visible upper/lower iTunes triangles.
+    pivot: 50,
+    angle: reduceMotion || near === 0 ? 0 : -side * (2 * near - near * near) * FLOW_FAN_ANGLE,
+    depth: reduceMotion || a === 0 ? 0 : -size * depthDistance(a),
+    opacity: Math.max(0, Math.min(1, 5 - a)),
   }
+}
+
+/** Four actual projected corners in centered-cover coordinates.
+ *  Mirrors the desktop CSS projection and Flutter Matrix4 setup exactly.
+ *  Coordinates are pixels relative to the facing cover's center.
+ */
+export function flowProjectedCorners(distance, size = 1, reduceMotion = false) {
+  const g = flowCoverGeometry(distance, size, reduceMotion)
+  const theta = g.angle * toRad
+  const perspective = FLOW_PERSPECTIVE * size
+  const vanish = FLOW_VANISH_Y * size
+  const corners = []
+  for (const yy of [-size / 2, size / 2]) {
+    for (const xx of [-size / 2, size / 2]) {
+      const worldX = g.x + Math.cos(theta) * xx
+      const worldZ = g.depth - Math.sin(theta) * xx
+      const scale = reduceMotion ? 1 : 1 / (1 - worldZ / perspective)
+      const x = worldX * scale
+      const y = reduceMotion ? yy : vanish + (yy - vanish) * scale
+      corners.push({ x, y, scale })
+    }
+  }
+  return {
+    topLeft: corners[0], topRight: corners[1],
+    bottomLeft: corners[2], bottomRight: corners[3],
+  }
+}
+
+// The center of a 3D side face is projected through the same camera as its
+// corners. Approximate hit distances used the old hinge and selected the
+// wrong cover after the triangle/perspective correction.
+function projectedCenter(distance) {
+  const g = flowCoverGeometry(distance, 1)
+  return g.x / (1 - g.depth / FLOW_PERSPECTIVE)
 }
 
 export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion = false) {
   const offset = x - stageWidth / 2
   if (reduceMotion) return clampIndex(Math.round(position + offset / (size * 1.06)), length)
-  const normalized = Math.abs(offset) / size
-  let lo = 0
-  const firstProjected = FLOW_FIRST + 0.17
-  let hi = normalized > firstProjected ? 1 + (normalized - firstProjected) / FLOW_STEP : 1
-  // Invert the C1 spacing curve, not the old discontinuous sine curve.
-  for (let step = 0; step < 20; step++) {
-    const mid = (lo + hi) / 2
-    if (hitDistance(mid) < normalized) lo = mid
-    else hi = mid
+  // Choose the closest DISPLAYED center, not the nearest integer to the
+  // inverse curve. During a fractional drag the projected centers are
+  // nonlinear, so rounding index-space distances selects the wrong album
+  // around the gaps between visible covers.
+  const target = offset / size
+  let nearest = 0
+  let nearestDistance = Infinity
+  for (let index = 0; index < length; index++) {
+    const distance = Math.abs(projectedCenter(index - position) - target)
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearest = index
+    }
   }
-  return clampIndex(Math.round(position + Math.sign(offset) * (lo + hi) / 2), length)
+  return nearest
 }
 
 export function flowDrag(position, deltaX, albumWidth, length) {

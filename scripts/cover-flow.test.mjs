@@ -1,42 +1,49 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP } from '../src/coverFlowGeometry.mjs'
+import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, FLOW_SPRING, FLOW_DECELERATION_RATE, FLOW_DECELERATION_MULTIPLIER, FLOW_FIRST, FLOW_OVERLAP, FLOW_STEP, FLOW_DEPTH, FLOW_FAN_ANGLE, FLOW_PERSPECTIVE, FLOW_VANISH_Y, flowProjectedCorners } from '../src/coverFlowGeometry.mjs'
 
 const shelf = readFileSync(new URL('../src/components/MadeForYou.jsx', import.meta.url), 'utf8')
 const flow = readFileSync(new URL('../src/components/CoverFlow.jsx', import.meta.url), 'utf8')
 const home = readFileSync(new URL('../src/pages/Home.jsx', import.meta.url), 'utf8')
 
-test('iTunes Cover Flow: angled neighbors tuck behind the facing artwork', () => {
-  const size = 220
-  const centre = flowCoverGeometry(0, size)
-  assert.equal(centre.angle, 0)
-  assert.equal(centre.pivot, 50)
-  assert.equal(centre.x, 0)
-  assert.equal(centre.depth, 0)
-  assert.equal(centre.opacity, 1)
-  const right = flowCoverGeometry(1, size)
-  const left = flowCoverGeometry(-1, size)
-  assert.equal(right.angle, -70, 'right-side outer edge faces forward')
-  assert.equal(left.angle, 70, 'left-side outer edge faces forward')
-  assert.equal(right.pivot, 0, 'right-side hinge is its inside/left edge')
-  assert.equal(left.pivot, 100, 'left-side hinge is its inside/right edge')
-  assert.equal(FLOW_FIRST, .42)
-  assert.equal(FLOW_OVERLAP, .08)
-  assert.equal(FLOW_STEP, .34)
-  const rightHinge = right.x - size / 2
-  const leftHinge = left.x + size / 2
-  assert.ok(Math.abs(rightHinge - size * FLOW_FIRST) < .001)
-  assert.ok(Math.abs(leftHinge + size * FLOW_FIRST) < .001)
-  // The selected cover spans [-.5,+.5] size, so both neighboring INNER
-  // hinges lie underneath it (rather than beside its border at ±.52).
-  assert.ok(rightHinge < size / 2 - size * .07, 'right cover disappears behind front artwork')
-  assert.ok(leftHinge > -size / 2 + size * .07, 'left cover disappears behind front artwork')
-  assert.equal(left.x, -right.x)
-  assert.ok(Math.abs(right.depth + size * .15) < 0.001)
-  const farther = flowCoverGeometry(2, size)
-  assert.ok(Math.abs((farther.x - right.x) / size - FLOW_STEP) < 0.001)
-  assert.ok(farther.depth < right.depth)
+test('projected Cover Flow triangle corners match the traced original iTunes artwork', () => {
+  const center = flowCoverGeometry(0, 1)
+  assert.equal(center.angle, 0)
+  assert.equal(center.x, 0)
+  assert.equal(center.depth, 0)
+  assert.equal(center.pivot, 50)
+  assert.equal(FLOW_FIRST, .91)
+  assert.equal(FLOW_STEP, .18)
+  assert.equal(FLOW_DEPTH, .60)
+  assert.equal(FLOW_FAN_ANGLE, 60)
+  assert.equal(FLOW_PERSPECTIVE, 1.92)
+  assert.equal(FLOW_VANISH_Y, .16)
+  assert.ok(Math.abs(FLOW_OVERLAP - .071) < .002, 'actual projected inner edge is hidden 7% by the center')
+  const left = flowProjectedCorners(-1)
+  const right = flowProjectedCorners(1)
+  const expected = [
+    ['outside top x', left.topLeft.x, -1.067],
+    ['outside top y', left.topLeft.y, -.447],
+    ['outside bottom y', left.bottomLeft.y, .473],
+    ['inside top x', left.topRight.x, -.429],
+    ['inside top y', left.topRight.y, -.269],
+    ['inside bottom y', left.bottomRight.y, .381],
+    ['opposite outside top x', right.topRight.x, 1.067],
+    ['opposite inside top x', right.topLeft.x, .429],
+  ]
+  for (const [label, actual, target] of expected) {
+    assert.ok(Math.abs(actual - target) < .004, label + ': ' + actual + ' != ' + target)
+  }
+  assert.ok(left.topRight.x > -.5 && right.topLeft.x < .5, 'both inner edges are behind the main image')
+  assert.ok(left.topLeft.y < left.topRight.y, 'visible upper triangular wedge rises toward the outside')
+  assert.ok(left.bottomLeft.y > left.bottomRight.y, 'visible lower triangular wedge falls toward the outside')
+  assert.ok(left.bottomLeft.y - left.topLeft.y > left.bottomRight.y - left.topRight.y,
+    'outer edge is taller than inner edge')
+  assert.ok(Math.abs(left.topLeft.x + right.topRight.x) < 1e-8, 'perfect left/right symmetry')
+  assert.equal(flowCoverGeometry(1, 220).pivot, 50, 'rotate the panel about center for proper perspective')
+  assert.equal(flowCoverGeometry(1, 220).angle, -60)
+  assert.equal(flowCoverGeometry(-1, 220).angle, 60)
   assert.equal(FLOW_SPRING.stiffness, 135)
   assert.equal(FLOW_SPRING.damping, 24)
   assert.equal(FLOW_SPRING.mass, 1)
@@ -61,8 +68,8 @@ test('overlapping neighbor spacing is smooth across both center and first-neighb
     assert.ok(Math.abs(g.x + mirror.x) < 1e-9, 'left/right geometric symmetry')
     assert.ok(g.depth <= 0, 'neighbor stays behind facing artwork')
   }
-  assert.equal(flowCoverGeometry(-1, size).angle, 70)
-  assert.equal(flowCoverGeometry(1, size).angle, -70)
+  assert.equal(flowCoverGeometry(-1, size).angle, 60)
+  assert.equal(flowCoverGeometry(1, size).angle, -60)
 })
 
 test('Cover Flow is bounded, rubber-bands at both ends and respects reduced motion', () => {
@@ -186,20 +193,20 @@ test('Home Cover Flow has no visible heading but keeps its accessible shelf labe
   assert.ok(shelf.includes('<CoverFlow picks={picks}'), 'retain playback shelf')
 })
 
-test('3D cover edges fit within a shorter, non-reflective stage', () => {
-  assert.ok(flow.includes('top: size * 0.18'), 'give artwork clearance at the top')
-  assert.ok(flow.includes('height: size * 1.36'), 'stage retains symmetric clearance but no unused mirrored region')
-  const inset = 0.18
-  const perspective = 5 // CSS perspective is 5 × cover size
-  for (const distance of [-4, -3, -2, -1, -.75, -.5, .5, .75, 1, 2, 3, 4]) {
-    const { angle, depth } = flowCoverGeometry(distance, 1)
-    const outerDepth = depth + Math.sin(Math.abs(angle) * Math.PI / 180)
-    const scale = perspective / (perspective - outerDepth)
-    const rise = Math.max(0, (scale - 1) / 2)
-    assert.ok(rise < inset, `side ${distance} top and bottom corners must not clip`)
+test('the calibrated corner projection fits the reflection-free stage even while scrolling', () => {
+  assert.ok(flow.includes('top: size * 0.18'))
+  assert.ok(flow.includes('height: size * 1.36'))
+  for (const d of [-4, -3, -2, -1, -.75, -.5, 0, .5, .75, 1, 2, 3, 4]) {
+    const corners = flowProjectedCorners(d)
+    for (const corner of Object.values(corners)) {
+      const stageY = .18 + .5 + corner.y
+      assert.ok(stageY > 0 && stageY < 1.36, 'cover edge must fit stage at ' + d + ': ' + stageY)
+    }
   }
-  assert.ok(flow.includes('overflow-hidden bg-black'), 'stage clips 3D artwork without any vertical reflection bleed')
-  assert.ok(!flow.includes('overflow-y-visible'), 'no need to expose content below the stage')
+  assert.ok(flow.includes('overflow-hidden bg-black'), 'no cover overflow or reflected copy')
+  assert.ok(flow.includes('translateY('), 'vanishing point is shifted below center like the model')
+  assert.ok(flow.includes('FLOW_PERSPECTIVE'), 'CSS uses the same measured perspective as numeric test')
+  assert.ok(!flow.includes('WebkitBoxReflect'), 'desktop remains reflection-free')
 })
 
 test('iCarousel-inspired fixed deceleration finishes without a secondary snap', () => {
@@ -287,21 +294,45 @@ test('reflection implementation and its Home-specific paint layering are complet
   assert.ok(flow.includes('onPointerDown={down} onPointerMove={move} onPointerUp={up}'), 'drag mechanics remain intact')
 })
 
-test('3D projected hit testing follows the inset hinges, not the retired 0.52 border alignment', () => {
-  const size = 220
-  const stage = 1000
-  const center = stage / 2
-  const pos = 6
-  assert.equal(flowIndexAt(center, stage, size, pos, 20), pos)
-  assert.equal(flowIndexAt(center + size * .59, stage, size, pos, 20), pos + 1)
-  assert.equal(flowIndexAt(center - size * .59, stage, size, pos, 20), pos - 1)
-  assert.equal(flowIndexAt(center + size * (.59 + .34), stage, size, pos, 20), pos + 2)
-  assert.equal(flowIndexAt(center - size * (.59 + .34), stage, size, pos, 20), pos - 2)
-  assert.equal(flowIndexAt(center + size * .35, stage, size, pos, 20), pos)
-  assert.equal(flowIndexAt(center + size * .40, stage, size, pos, 20), pos + 1)
-  assert.equal(flowIndexAt(center + size * 1.06, stage, size, pos, 20, true), pos + 1,
-    'Performance Mode retains its separate flat layout')
+test('fractional drags select the nearest rendered cover center, not rounded inverse index', () => {
+  const width = 960, size = 220, center = width / 2, count = 24
+  const projected = d => {
+    const g = flowCoverGeometry(d, 1)
+    return g.x / (1 - g.depth / FLOW_PERSPECTIVE)
+  }
+  for (const position of [2.1, 4.25, 8.49, 10.75, 15.9]) {
+    for (const index of [Math.floor(position) - 1, Math.floor(position),
+                          Math.ceil(position), Math.ceil(position) + 1]) {
+      if (index < 0 || index >= count) continue
+      const x = center + size * projected(index - position)
+      assert.equal(flowIndexAt(x, width, size, position, count), index,
+        `cover ${index} must select at its painted center when position=${position}`)
+      if (index + 1 >= count) continue
+      const nextX = center + size * projected(index + 1 - position)
+      const midpoint = (x + nextX) / 2
+      assert.equal(flowIndexAt(midpoint - .05, width, size, position, count), index,
+        'left of actual projected-center midpoint selects left artwork')
+      assert.equal(flowIndexAt(midpoint + .05, width, size, position, count), index + 1,
+        'right of actual projected-center midpoint selects right artwork')
+    }
+  }
+  assert.equal(flowIndexAt(center, width, size, .5, count), 0,
+    'equal-distance tie chooses the earlier cover deterministically')
+})
+
+test('hit testing inverts the actual projected centers, not the retired hinge estimate', () => {
+  const stage = 1000, size = 220, center = stage / 2, pos = 6
+  const actualCenter = d => {
+    const geo = flowCoverGeometry(d, 1)
+    return geo.x / (1 - geo.depth / FLOW_PERSPECTIVE)
+  }
+  for (const d of [0, .5, 1, 2, 3]) {
+    const projected = actualCenter(d)
+    assert.equal(flowIndexAt(center + size * projected, stage, size, pos, 20), pos + Math.round(d))
+    assert.equal(flowIndexAt(center - size * projected, stage, size, pos, 20), pos - Math.round(d))
+  }
+  assert.equal(flowIndexAt(center + size * 1.06, stage, size, pos, 20, true), pos + 1)
   assert.ok(flow.includes('100 - Math.round(Math.abs(index - p) * 10)'),
-    'central cover paints over the tucked-in side artwork')
-  assert.ok(flow.includes('transformStyle: \'preserve-3d\''), 'preserve actual depth transformation')
+    'selected artwork draws in front of both side panels')
+  assert.ok(flow.includes("transformStyle: 'preserve-3d'"))
 })
