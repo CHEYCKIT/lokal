@@ -2915,7 +2915,14 @@ export default function App() {
     const player = usePlayerStore.getState()
     if (streamRef(player.currentTrack) && String(player.currentTrack?.id) === pending &&
         player.streamLoading?.generation === player.playbackGeneration) {
-      player.setStreamLoading({ ...player.streamLoading, phase: 'ready', recovering: false })
+      if (!player.isPlaying) {
+        // A user who paused during loading has a ready decoder but should not
+        // retain a 100% loading toast until they resume playback.
+        player.setIsBuffering(false)
+        player.setStreamLoading(null)
+      } else {
+        player.setStreamLoading({ ...player.streamLoading, phase: 'ready', addonPercent: null, recovering: false })
+      }
     }
     // The element's play event came while it was still pending and was
     // ignored: start what it would have (the listening timer, ListenBrainz
