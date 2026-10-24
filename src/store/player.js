@@ -230,6 +230,8 @@ export const usePlayerStore = create((set, get) => ({
   playNextIds: [],
   playbackContext: null,
   isPlaying: false, isBuffering: false, progress: 0, duration: 0,
+  // Request-scoped startup progress; survives provider fallback within one queue entry.
+  streamLoading: null,
   volume: parseFloat(localStorage.getItem('lokal-volume') || '0.8'),
   shuffle: false, repeat: 'none',
   showLyrics: false, showLyricsFullscreen: false,
@@ -947,6 +949,7 @@ export const usePlayerStore = create((set, get) => ({
 
   setProgress: (v) => set({ progress: v }),
   setIsBuffering: (v) => set({ isBuffering: !!v }),
+  setStreamLoading: (value) => set({ streamLoading: value }),
   setProgressWithAudioUpdate: (v) => {
     if (isStationTrack(get().currentTrack)) return // live radio: nothing to seek
     if (outputRoute) { outputRoute.seek(v); set({ progress: v }); return }
