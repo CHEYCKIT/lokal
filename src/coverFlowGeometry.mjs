@@ -43,7 +43,7 @@ export function flowCoverGeometry(distance, size, reduceMotion = false) {
     // This is essential to match the visible upper/lower iTunes triangles.
     pivot: 50,
     angle: reduceMotion || near === 0 ? 0 : -side * (2 * near - near * near) * FLOW_FAN_ANGLE,
-    depth: reduceMotion ? 0 : -size * depthDistance(a),
+    depth: reduceMotion || a === 0 ? 0 : -size * depthDistance(a),
     opacity: Math.max(0, Math.min(1, 5 - a)),
   }
 }
