@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { loadingSession, acceptStreamSignal, startupProgress } from '../src/streamStartupProgress.mjs'
+import { loadingSession, acceptStreamSignal, startupProgress, withPreparationProgress } from '../src/streamStartupProgress.mjs'
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const toast = readFileSync(new URL('../src/components/StreamLoadingToast.jsx', import.meta.url), 'utf8')
@@ -9,10 +9,11 @@ const store = readFileSync(new URL('../src/store/player.js', import.meta.url), '
 const backend = readFileSync(new URL('../electron/ipc/online.js', import.meta.url), 'utf8')
 const sources = readFileSync(new URL('../electron/online/sources.js', import.meta.url), 'utf8')
 const preload = readFileSync(new URL('../electron/preload.js', import.meta.url), 'utf8')
+const recommendations = readFileSync(new URL('../src/recommendations.js', import.meta.url), 'utf8')
 
 test('all startup milestones are observable and progress never pretends to be song download percent', () => {
   const progress = ['preparing', 'searching', 'resolving', 'fetching', 'headers', 'receiving', 'decoding', 'ready'].map(startupProgress)
-  assert.deepEqual(progress, [10, 20, 30, 45, 65, 80, 90, 100])
+  assert.deepEqual(progress, [10, 20, 30, 70, 80, 90, 95, 100])
   assert.ok(progress.every(p => p > 0))
   assert.equal(startupProgress('unknown'), null)
   assert.match(toast, /startup.*stages|startup.*milestones|startup/si)
@@ -77,4 +78,55 @@ test('provider stream plumbing emits resolve, fetch, headers, bytes and decoder-
   assert.ok(toast.includes('acceptStreamSignal(state.streamLoading, signal, key)'))
   assert.ok(app.includes("phase: 'ready'"), 'decoder readiness is an explicit milestone')
   assert.ok(app.includes('setStreamLoading(null); clearPlaybackError()'), 'close on playback start')
+})
+
+test('measured Mornye worker percentage advances startup monotonically before streaming', () => {
+  let load = loadingSession(null, { generation: 5, sourceKey: 'a-1234567890:song' })
+  assert.equal(startupProgress(load.phase, load.addonPercent), 10)
+  const measured = []
+  for (const pct of [0, 1, 18, 45, 80, 100]) {
+    load = withPreparationProgress(load, { progress: pct, message: 'Preparing audio' })
+    measured.push(startupProgress(load.phase, load.addonPercent))
+  }
+  assert.deepEqual(measured, [10, 11, 20, 35, 54, 65])
+  assert.equal(load.message, 'Preparing audio')
+  assert.equal(startupProgress('fetching'), 70, 'connecting follows completed worker without going backwards')
+  assert.equal(startupProgress('headers'), 80)
+  assert.equal(startupProgress('receiving'), 90)
+  assert.equal(startupProgress('decoding'), 95)
+  assert.equal(startupProgress('ready'), 100)
+  const retry = loadingSession(load, { generation: 5, sourceKey: 'sc:song', attempt: 2 })
+  assert.equal(retry.addonPercent, null, 'a second source never inherits the first source percentage')
+  assert.equal(startupProgress(retry.phase, retry.addonPercent), 10)
+})
+
+test('invalid worker progress is ignored and status cannot regress within an attempt', () => {
+  let load = loadingSession(null, { generation: 2, sourceKey: 'a-1234567890:track' })
+  load = withPreparationProgress(load, { progress: 55 })
+  assert.equal(load.addonPercent, 55)
+  load = withPreparationProgress(load, { progress: 20 })
+  assert.equal(load.addonPercent, 55)
+  load = withPreparationProgress(load, { progress: NaN, message: 'Resolving' })
+  assert.equal(load.addonPercent, 55)
+  load = withPreparationProgress(load, { progress: 900 })
+  assert.equal(load.addonPercent, 55)
+  assert.equal(withPreparationProgress(null, { progress: 90 }), null)
+})
+
+test('addon preparation polling and both playback paths forward real progress', () => {
+  assert.ok(recommendations.includes('onError = () => {}, onProgress = () => {}'))
+  assert.ok(recommendations.includes('signal: controller.signal, onProgress'))
+  assert.ok(recommendations.includes('onPreparationProgress?.({ source, candidate, status })'))
+  assert.ok(app.includes('onPreparationProgress: ({ source, status }) =>'), 'all fallback providers report worker progress')
+  assert.ok(app.includes('withPreparationProgress('), 'primary and fallback statuses advance the state')
+  assert.ok(app.includes("status?.message || 'Preparing audio…'"))
+  assert.ok(app.includes('addonPercent: null, recovering: true'), 'new fallback sources cannot inherit prior %')
+  assert.ok(toast.includes('startupProgress(load.phase, load.addonPercent)'))
+})
+
+test('resolver exceptions and terminal exhaustion close the same loading session', () => {
+  assert.ok(app.includes('} catch (error) {\n      if (isCurrent()) {'), 'thrown retries must be caught')
+  assert.ok(app.includes('setStreamLoading(null)'), 'terminal errors reset source progress')
+  assert.ok(app.includes('setIsBuffering(false)'), 'terminal errors cannot leave a spinner indefinitely')
+  assert.ok(app.includes('showToast(message)'), 'terminal errors remain visible to the user')
 })
