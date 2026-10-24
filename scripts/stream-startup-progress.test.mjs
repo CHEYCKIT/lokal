@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { loadingSession, acceptStreamSignal, startupProgress, withPreparationProgress } from '../src/streamStartupProgress.mjs'
+import { loadingSession, acceptStreamSignal, startupProgress, withPreparationProgress, streamLoadKey } from '../src/streamStartupProgress.mjs'
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const toast = readFileSync(new URL('../src/components/StreamLoadingToast.jsx', import.meta.url), 'utf8')
@@ -131,4 +131,54 @@ test('resolver exceptions and terminal exhaustion close the same loading session
   assert.ok(app.includes('setStreamLoading(null)'), 'terminal errors reset source progress')
   assert.ok(app.includes('setIsBuffering(false)'), 'terminal errors cannot leave a spinner indefinitely')
   assert.ok(app.includes('showToast(message)'), 'terminal errors remain visible to the user')
+})
+
+test('queue navigation starts a fresh loading session even when playbackGeneration is unchanged', () => {
+  const base = {
+    playbackGeneration: 4, queueIndex: 1, shuffle: false, shuffleIndex: 0,
+    currentTrack: { id: 'a', title: 'Same Song', artist: 'A' },
+  }
+  const key = streamLoadKey(base)
+  assert.equal(key, streamLoadKey({ ...base, currentTrack: { id: 'other-provider', title: 'Same Song', artist: 'A' } }),
+    'a provider fallback preserves the logical song session')
+  assert.notEqual(key, streamLoadKey({ ...base, queueIndex: 2 }), 'next() changes the queue slot')
+  assert.notEqual(key, streamLoadKey({ ...base, currentTrack: { id: 'b', title: 'Different Song', artist: 'A' } }))
+  const shuffle = { ...base, shuffle: true, shuffleIndex: 2 }
+  assert.notEqual(streamLoadKey(shuffle), streamLoadKey({ ...shuffle, shuffleIndex: 3 }),
+    'autoNext through shuffle also gets a fresh session')
+  const next = loadingSession(loadingSession(null, { generation: key, sourceKey: 'yt:a', attempt: 4 }), {
+    generation: streamLoadKey({ ...base, queueIndex: 2 }), sourceKey: 'yt:b',
+  })
+  assert.equal(next.attempt, 1)
+  assert.equal(streamLoadKey({ ...base, currentTrack: null }), null)
+  assert.ok(app.includes('streamLoadKey(loadPlayer)'))
+  assert.ok(toast.includes('load.generation !== streamLoadKey(state)'))
+})
+
+test('request order suppresses late bytes from older HTTP Range requests', () => {
+  const key = 'a-1234567890:track'
+  const packet = (request, phase) => ({ request, phase, provider: 'a-1234567890', id: 'track' })
+  let load = loadingSession(null, { generation: 'song', sourceKey: key })
+  load = acceptStreamSignal(load, packet(14, 'resolving'), key)
+  assert.equal(load.request, 14)
+  load = acceptStreamSignal(load, packet(14, 'headers'), key)
+  assert.equal(load.phase, 'headers')
+  load = acceptStreamSignal(load, packet(15, 'resolving'), key)
+  assert.equal(load.request, 15, 'newer request advances token without rewinding stage')
+  assert.equal(load.phase, 'headers')
+  assert.equal(acceptStreamSignal(load, packet(14, 'receiving'), key), null,
+    'old request may not advance a new media request')
+  load = acceptStreamSignal(load, packet(15, 'receiving'), key)
+  assert.equal(load.phase, 'receiving')
+  assert.equal(load.request, 15)
+  assert.equal(acceptStreamSignal(load, packet(13, 'receiving'), key), null)
+  const nextSource = loadingSession(load, { generation: 'song', sourceKey: 'sc:next' })
+  assert.equal(nextSource.request, 0, 'source fallback resets the range-request token')
+})
+
+test('HTTP connection label is only emitted by actual protocol phases', () => {
+  assert.ok(!app.includes("phase: 'fetching'"), 'renderer must not preempt actual URL resolution')
+  assert.ok(sources.includes("opts.onPhase?.('resolving')"))
+  assert.ok(sources.includes("opts.onPhase?.('fetching')"))
+  assert.ok(backend.includes("onPhase: phase => report(phase)"))
 })
