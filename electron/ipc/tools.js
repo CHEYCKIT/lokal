@@ -219,7 +219,9 @@ async function getYtDlpVersionStatus() {
   if (installLock) await installLock
 
   const ytdlpPath = findYtDlp()
-  const installedVersion = await getExecutableVersion(ytdlpPath)
+  const cachedVersion = cache().get('ytdlp', ytdlpPath)
+  const installedVersion = cachedVersion || await getExecutableVersion(ytdlpPath)
+  if (installedVersion && !cachedVersion) cache().set('ytdlp', ytdlpPath, installedVersion)
 
   const result = {
     found: !!ytdlpPath,
