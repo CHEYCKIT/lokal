@@ -4,6 +4,9 @@ const fs = require('fs-extra')
 const https = require('https')
 const { execFile } = require('child_process')
 const AdmZip = require('adm-zip')
+const { createToolHealthCache, findExecutableOnPath } = require('./toolHealthCache')
+let healthCache
+const cache = () => healthCache || (healthCache = createToolHealthCache(path.join(app.getPath('userData'), 'tool-health.json')))
 
 
 function getPlatformFolder() {
@@ -31,10 +34,8 @@ function getBundledBin() {
 
 function fileExists(fp) {
   try {
-    return fs.existsSync(fp)
-  } catch {
-    return false
-  }
+    return typeof fp === 'string' && fs.statSync(fp).isFile() && fs.statSync(fp).size > 0
+  } catch { return false }
 }
 
 function normalizePathCase(fp) {
@@ -54,31 +55,25 @@ function ensureExecutable(fp) {
   return fp;
 }
 
-function findYtDlp() {
-  const ext = process.platform === 'win32' ? '.exe' : ''
-
-  
-  const userDataPath = path.join(getUserDataBin(), `yt-dlp${ext}`)
-  if (fileExists(userDataPath)) return userDataPath
-
-  
-  const bundledPath = path.join(getBundledBin(), `yt-dlp${ext}`)
-  if (fileExists(bundledPath)) return ensureExecutable(bundledPath);
-
-  
+// A user-selected executable must override an automatically downloaded one.
+function customBinary(key) {
   try {
     const db = require('./db').getDB()
-    const customPath = db.prepare('SELECT value FROM settings WHERE key = ?').get('custom_ytdlp_path')
-    if (customPath && fileExists(customPath.value)) return customPath.value
+    const configured = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value
+    if (fileExists(configured)) return configured
   } catch {}
-
-  
-  try {
-    require('child_process').execSync(`yt-dlp --version`, { stdio: 'pipe' })
-    return 'yt-dlp' + (process.platform === 'win32' ? '.exe' : '')
-  } catch {}
-
   return null
+}
+
+function findYtDlp() {
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const user = customBinary('custom_ytdlp_path')
+  if (user) return user
+  const installed = path.join(getUserDataBin(), `yt-dlp${ext}`)
+  if (fileExists(installed)) return ensureExecutable(installed)
+  const bundled = path.join(getBundledBin(), `yt-dlp${ext}`)
+  if (fileExists(bundled)) return ensureExecutable(bundled)
+  return findExecutableOnPath([`yt-dlp${ext}`])
 }
 
 function getYtDlpSource(ytdlpPath) {
@@ -98,71 +93,27 @@ function getYtDlpSource(ytdlpPath) {
 
 function findFfmpeg() {
   const ext = process.platform === 'win32' ? '.exe' : ''
-  const candidates = process.platform === 'win32' 
-    ? ['ffmpeg.exe', 'ffmpeg-mac-static.exe']
-    : ['ffmpeg']
-
-  
-  const userDataPath = path.join(getUserDataBin(), `ffmpeg${ext}`)
-  if (fileExists(userDataPath)) return userDataPath
-
-  
-  const bundledPath = path.join(getBundledBin(), `ffmpeg${ext}`)
-  if (fileExists(bundledPath)) return bundledPath
-
-  
-  try {
-    const db = require('./db').getDB()
-    const customPath = db.prepare('SELECT value FROM settings WHERE key = ?').get('custom_ffmpeg_path')
-    if (customPath && fileExists(customPath.value)) return customPath.value
-  } catch {}
-
-  
-  for (const c of candidates) {
-    try {
-      require('child_process').execSync(`${c} -version`, { stdio: 'pipe' })
-      return c
-    } catch {}
-  }
-
-  return null
+  const custom = customBinary('custom_ffmpeg_path')
+  if (custom) return custom
+  const installed = path.join(getUserDataBin(), `ffmpeg${ext}`)
+  if (fileExists(installed)) return ensureExecutable(installed)
+  const bundled = path.join(getBundledBin(), `ffmpeg${ext}`)
+  if (fileExists(bundled)) return ensureExecutable(bundled)
+  return findExecutableOnPath(process.platform === 'win32' ? ['ffmpeg.exe', 'ffmpeg-mac-static.exe'] : ['ffmpeg'])
 }
-
 
 function findFfprobe() {
   const ext = process.platform === 'win32' ? '.exe' : ''
-  const candidates = process.platform === 'win32' 
-    ? ['ffprobe.exe']
-    : ['ffprobe']
-
-  
-  const userDataPath = path.join(getUserDataBin(), `ffprobe${ext}`)
-  if (fileExists(userDataPath)) return userDataPath
-
-  
-  const bundledPath = path.join(getBundledBin(), `ffprobe${ext}`)
-  if (fileExists(bundledPath)) return bundledPath
-
-  
-  try {
-    const db = require('./db').getDB()
-    const customPath = db.prepare('SELECT value FROM settings WHERE key = ?').get('custom_ffmpeg_path')
-    // Check in custom ffmpeg directory
-    if (customPath && fileExists(customPath.value)) {
-      const ffprobeInCustomDir = path.join(path.dirname(customPath.value), `ffprobe${ext}`)
-      if (fileExists(ffprobeInCustomDir)) return ffprobeInCustomDir
-    }
-  } catch {}
-
-  
-  for (const c of candidates) {
-    try {
-      require('child_process').execSync(`${c} -version`, { stdio: 'pipe' })
-      return c
-    } catch {}
+  const customFfmpeg = customBinary('custom_ffmpeg_path')
+  if (customFfmpeg) {
+    const sibling = path.join(path.dirname(customFfmpeg), `ffprobe${ext}`)
+    if (fileExists(sibling)) return ensureExecutable(sibling)
   }
-
-  return null
+  const installed = path.join(getUserDataBin(), `ffprobe${ext}`)
+  if (fileExists(installed)) return ensureExecutable(installed)
+  const bundled = path.join(getBundledBin(), `ffprobe${ext}`)
+  if (fileExists(bundled)) return ensureExecutable(bundled)
+  return findExecutableOnPath([`ffprobe${ext}`])
 }
 
 function parseYtDlpVersion(version) {
@@ -205,84 +156,26 @@ function getVersionDaysBehind(installedVersion, latestVersion) {
 // made the update window report "Unknown" and offer the update again forever.
 const VERSION_TIMEOUT_MS = process.platform === 'darwin' ? 60000 : 10000
 
-function getExecutableVersion(executable, args = ['--version'], retries = 3) {
-  return new Promise(resolve => {
-    if (!executable) {
-      resolve(null)
-      return
-    }
-
-    function trySpawn(attemptsLeft) {
-      // execFile/spawn can throw synchronously on Windows for a corrupt/truncated
-      // exe (e.g. a 0-byte file left behind by a failed download), not just via the
-      // callback or 'error' event. Uncaught, that throw becomes an unhandled
-      // rejection that crashes the whole ipcMain handler.
-      let child
+// Do not remove binaries on a failed probe. Windows Defender and macOS
+// quarantine can cause transient spawn failures; the old probe could even
+// delete a user-specified executable that Lokal did not install.
+async function getExecutableVersion(executable, args = ['--version'], retries = 2) {
+  if (!executable) return null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const version = await new Promise(resolve => {
       try {
-        child = execFile(executable, args, { windowsHide: true, timeout: VERSION_TIMEOUT_MS }, (error, stdout) => {
-          if (error && !stdout) {
-            if (isBusyError(error) && attemptsLeft > 0) {
-              console.warn(`[Version Check] Executable busy, retrying... (${attemptsLeft} attempts left)`);
-              setTimeout(() => trySpawn(attemptsLeft - 1), 500);
-              return;
-            }
-            if (isCorruptBinaryError(error)) {
-              console.error(`[Version Check] Executable appears corrupt (code=${error.code}), file=${executable}`);
-              if (attemptsLeft > 0) {
-                console.warn(`[Version Check] Trying to remove corrupt binary before retry... (${attemptsLeft} attempts left)`);
-                try {
-                  require('fs').unlinkSync(executable);
-                  console.log(`[Version Check] Removed corrupt binary: ${executable}`);
-                } catch (removeErr) {
-                  console.error(`[Version Check] Could not remove corrupt binary: ${removeErr.message}`);
-                }
-                setTimeout(() => trySpawn(attemptsLeft - 1), 800);
-                return;
-              }
-            }
-            resolve(null)
-            return
-          }
-          const version = String(stdout || '').trim().split(/\r?\n/).find(Boolean) || null
-          resolve(version)
+        execFile(executable, args, {
+          windowsHide: true, timeout: VERSION_TIMEOUT_MS, maxBuffer: 1024 * 1024,
+        }, (error, stdout) => {
+          if (error) { resolve(null); return }
+          resolve(String(stdout || '').trim().split(/\r?\n/).find(Boolean) || null)
         })
-      } catch (err) {
-        console.error(`[Version Check] Synchronous spawn failure (code=${err?.code}), file=${executable}: ${err.message}`);
-        if (isCorruptBinaryError(err) && attemptsLeft > 0) {
-          try {
-            require('fs').unlinkSync(executable);
-            console.log(`[Version Check] Removed corrupt binary: ${executable}`);
-          } catch (removeErr) {
-            console.error(`[Version Check] Could not remove corrupt binary: ${removeErr.message}`);
-          }
-          setTimeout(() => trySpawn(attemptsLeft - 1), 800);
-          return;
-        }
-        resolve(null)
-        return
-      }
-
-      child.on('error', (err) => {
-        if (isBusyError(err) && attemptsLeft > 0) {
-          console.warn(`[Version Check] Spawn busy error caught, retrying...`);
-          setTimeout(() => trySpawn(attemptsLeft - 1), 500);
-        } else if (isCorruptBinaryError(err) && attemptsLeft > 0) {
-          console.error(`[Version Check] Spawn error suggests corrupt binary (code=${err.code}), file=${executable}`);
-          try {
-            require('fs').unlinkSync(executable);
-            console.log(`[Version Check] Removed corrupt binary: ${executable}`);
-          } catch (removeErr) {
-            console.error(`[Version Check] Could not remove corrupt binary: ${removeErr.message}`);
-          }
-          setTimeout(() => trySpawn(attemptsLeft - 1), 800);
-        } else {
-          resolve(null);
-        }
-      });
-    }
-
-    trySpawn(retries);
-  })
+      } catch { resolve(null) }
+    })
+    if (version) return version
+    if (attempt < retries) await wait(500 * (attempt + 1))
+  }
+  return null
 }
 
 function fetchJson(url) {
@@ -326,7 +219,9 @@ async function getYtDlpVersionStatus() {
   if (installLock) await installLock
 
   const ytdlpPath = findYtDlp()
-  const installedVersion = await getExecutableVersion(ytdlpPath)
+  const cachedVersion = cache().get('ytdlp', ytdlpPath)
+  const installedVersion = cachedVersion || await getExecutableVersion(ytdlpPath)
+  if (installedVersion && !cachedVersion) cache().set('ytdlp', ytdlpPath, installedVersion)
 
   const result = {
     found: !!ytdlpPath,
@@ -507,21 +402,27 @@ function validateDownloadedExecutable(filePath) {
   return stat.size
 }
 
-// Confirms a discovered tool path isn't just "a file that exists" but actually
-// runs. Reuses getExecutableVersion's corrupt-binary detection/auto-removal, then
-// re-resolves via findFn (bundled/custom/system) if the unhealthy copy got deleted.
-async function verifyToolHealth(findFn, candidatePath, versionArgs) {
+// Persist a successful version check keyed to the actual executable file.
+// Subsequent startup/status calls do not spawn yt-dlp/ffmpeg again unless the
+// executable changed. A failed probe never deletes the selected user binary.
+async function verifyToolHealth(findFn, candidatePath, versionArgs, kind) {
   if (!candidatePath) return { path: null, healthy: false, version: null }
-
+  const saved = cache().get(kind, candidatePath)
+  if (saved) return { path: candidatePath, healthy: true, version: saved }
   const version = await getExecutableVersion(candidatePath, versionArgs)
-  if (version) return { path: candidatePath, healthy: true, version }
-
-  const fallbackPath = findFn()
-  if (!fallbackPath) return { path: null, healthy: false, version: null }
-  if (fallbackPath === candidatePath) return { path: fallbackPath, healthy: false, version: null }
-
-  const fallbackVersion = await getExecutableVersion(fallbackPath, versionArgs)
-  return { path: fallbackPath, healthy: !!fallbackVersion, version: fallbackVersion }
+  if (version) {
+    cache().set(kind, candidatePath, version)
+    return { path: candidatePath, healthy: true, version }
+  }
+  const fallback = findFn()
+  if (fallback && fallback !== candidatePath) {
+    const other = cache().get(kind, fallback) || await getExecutableVersion(fallback, versionArgs)
+    if (other) {
+      cache().set(kind, fallback, other)
+      return { path: fallback, healthy: true, version: other }
+    }
+  }
+  return { path: candidatePath, healthy: false, version: null }
 }
 
 function isBusyError(err) {
@@ -653,6 +554,7 @@ async function downloadYtDlp(progressCallback) {
       if (progressCallback) progressCallback({ status: 'installing', message: 'Checking yt-dlp starts...' })
       const version = await getExecutableVersion(dest, ['--version'], 0)
       if (!version) throw new Error('yt-dlp was downloaded but does not start on this computer. Try again, or set a custom path in Settings → External Tools.')
+      cache().set('ytdlp', dest, version)
 
       return dest
     } catch (err) {
@@ -849,9 +751,9 @@ function registerToolsHandlers(ipcMain) {
     // disk - a "found" file that fails to spawn gets auto-cleaned and the
     // status falls back to the next available copy (bundled/custom/system).
     const [ytdlpHealth, ffmpegHealth, ffprobeHealth] = await Promise.all([
-      verifyToolHealth(findYtDlp, findYtDlp(), ['--version']),
-      verifyToolHealth(findFfmpeg, findFfmpeg(), ['-version']),
-      verifyToolHealth(findFfprobe, findFfprobe(), ['-version']),
+      verifyToolHealth(findYtDlp, findYtDlp(), ['--version'], 'ytdlp'),
+      verifyToolHealth(findFfmpeg, findFfmpeg(), ['-version'], 'ffmpeg'),
+      verifyToolHealth(findFfprobe, findFfprobe(), ['-version'], 'ffprobe'),
     ])
 
     let customYtDlp = null
@@ -920,26 +822,32 @@ function registerToolsHandlers(ipcMain) {
 
   
   ipcMain.handle('tools:setCustomPath', async (_, { tool, customPath }) => {
-    if (!fileExists(customPath)) {
-      return { error: 'File does not exist' }
+    if (tool !== 'yt-dlp' && tool !== 'ffmpeg') return { error: 'Unknown tool' }
+    const key = tool === 'yt-dlp' ? 'custom_ytdlp_path' : 'custom_ffmpeg_path'
+    const kind = tool === 'yt-dlp' ? 'ytdlp' : 'ffmpeg'
+    const selected = typeof customPath === 'string' ? customPath.trim() : ''
+    if (selected && !fileExists(selected)) return { error: 'Select an existing executable file' }
+    if (selected && process.platform === 'win32' && path.extname(selected).toLowerCase() !== '.exe') {
+      return { error: 'Select the .exe executable, not its folder' }
     }
-
+    if (selected) {
+      const version = await getExecutableVersion(selected, tool === 'yt-dlp' ? ['--version'] : ['-version'], 1)
+      if (!version || (tool === 'yt-dlp' ? !parseYtDlpVersion(version) : !/^ffmpeg version\s/i.test(version))) {
+        return { error: `The chosen file does not run as ${tool}. Select its executable.` }
+      }
+      try { cache().set(kind, selected, version) } catch {}
+    }
     try {
       const db = getDB()
-      const key = tool === 'yt-dlp' ? 'custom_ytdlp_path' : 'custom_ffmpeg_path'
-      
-      
-      const existing = db.prepare('SELECT key FROM settings WHERE key = ?').get(key)
-      if (existing) {
-        db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(customPath, key)
-      } else {
-        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, customPath)
+      if (!selected) db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+      else {
+        const old = db.prepare('SELECT key FROM settings WHERE key = ?').get(key)
+        if (old) db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(selected, key)
+        else db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, selected)
       }
-      
-      return { success: true, path: customPath }
-    } catch (err) {
-      return { error: err.message }
-    }
+      if (!selected) cache().clear(kind)
+      return { success: true, path: selected || null }
+    } catch (err) { return { error: err.message } }
   })
 
   
