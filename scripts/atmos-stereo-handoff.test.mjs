@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { beginAtmosOutputRelease, awaitAtmosOutputRelease } from '../src/audio/atmosHandoff.mjs'
+import { beginAtmosOutputRelease, awaitAtmosOutputRelease, shouldToggleNormalStream } from '../src/audio/atmosHandoff.mjs'
 
 const require = createRequire(import.meta.url)
 const { stereoPlaybackQuality, isAtmosQuality } = require('../electron/mornye/playbackQuality.js')
@@ -65,4 +65,11 @@ test('rapid Atmos release requests serialize rather than overlap', async () => {
   unblock()
   await Promise.all([first, second])
   assert.deepEqual(calls, ['stop_one_start', 'stop_one_end', 'stop_two'])
+})
+
+test('same Tidal track after Atmos changes engine instead of pausing native session', () => {
+  const sameSource = true
+  assert.equal(shouldToggleNormalStream({ id: 42, atmosNative: true }, sameSource), false)
+  assert.equal(shouldToggleNormalStream({ id: 42, atmosNative: false }, sameSource), true)
+  assert.equal(shouldToggleNormalStream({ id: 42, atmosNative: false }, false), false)
 })
