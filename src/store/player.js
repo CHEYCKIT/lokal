@@ -523,7 +523,7 @@ export const usePlayerStore = create((set, get) => ({
     })
   },
 
-  autoNext: () => {
+  autoNext: () => {\n    if (typeof localStorage !== 'undefined' && localStorage.getItem('lokal-autoplay') === '0') {\n      set({ isPlaying: false, progress: 0 })\n      return\n    }
     const { shuffle, shuffleQueue, shuffleIndex, queue, queueIndex, repeat, playHistory } = get()
     
     if (shuffle && shuffleQueue.length > 0) {
