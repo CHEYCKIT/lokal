@@ -5,6 +5,7 @@
 export const FLOW_SPRING = Object.freeze({ stiffness: 135, damping: 24, mass: 1 })
 export const FLOW_OVERLAP = 0.08 // inside the selected artwork edge, in cover widths
 export const FLOW_FIRST = 0.50 - FLOW_OVERLAP
+const FLOW_HINGE_SHIFT = 0.52 - FLOW_FIRST
 export const FLOW_STEP = 0.34
 export const clampIndex = (index, length) => Math.max(0, Math.min(Math.max(0, length - 1), index))
 // Gesture distances must match the spacing of the active rendering mode.
@@ -16,7 +17,7 @@ function innerDistance(distance) {
   // discontinuity at 0 or 1 cover. Both endpoint derivatives remain unchanged.
   return a >= 1 ? FLOW_FIRST + (a - 1) * FLOW_STEP
     : 0.66 * a - 0.10 * a * a - 0.04 * a * a * a
-      - 0.10 * (3 * a * a - 2 * a * a * a)
+      - FLOW_HINGE_SHIFT * (3 * a * a - 2 * a * a * a)
 }
 
 // Projected side artwork center, also used for matching blank-stage taps.
