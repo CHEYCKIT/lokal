@@ -810,7 +810,7 @@ function videoStreamBase() {
 // renderer can discard prefetches, outdated failures and earlier sources.
 let streamLoadRequest = 0
 function emitStreamStartup(data) {
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of BrowserWindow?.getAllWindows?.() || []) {
     try {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send('online:streamStartup', data)
