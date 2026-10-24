@@ -268,8 +268,11 @@ function registerAtmosHandlers(ipcMain, { getDB, broadcast }) {
         }
         if (status.state === 'error' || status.state === 'ended' || status.state === 'stopped') {
           await stop()
-          if (status.state === 'error') notify({ state: 'error',
-            error: status.error || 'Windows playback failed' })
+          if (status.state === 'error') {
+            const failure = new Error(headphones.headphoneDecoderFailure(status.error))
+            notify({ state: 'error', error: failure.message })
+            offerWindowsCodecHelp(failure, 'headphones').catch(() => {})
+          }
         }
       }, 500)
       session.monitor.unref?.()
