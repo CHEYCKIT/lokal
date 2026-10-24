@@ -13,7 +13,7 @@ import { api } from '../api'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { sameStream } from '../onlineTracks'
-import { awaitAtmosOutputRelease } from '../audio/atmosHandoff.mjs'
+import { awaitAtmosOutputRelease, shouldToggleNormalStream } from '../audio/atmosHandoff.mjs'
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
@@ -172,7 +172,7 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     // badge advertises an alternate version; only PLAY ATMOS activates native
     // E-AC-3 JOC. Matching the same source while Atmos owns it must replace
     // the audio backend, not toggle the native session's play/pause state.
-    if (currentTrack && !currentTrack.atmosNative && sameStream(currentTrack, item)) {
+    if (shouldToggleNormalStream(currentTrack, sameStream(currentTrack, item))) {
       togglePlay()
       return
     }
