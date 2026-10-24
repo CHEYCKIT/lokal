@@ -62,7 +62,7 @@ import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
 import StreamLoadingToast from './components/StreamLoadingToast'
-import { loadingSession, withPreparationProgress } from './streamStartupProgress.mjs'
+import { loadingSession, withPreparationProgress, streamLoadKey } from './streamStartupProgress.mjs'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
@@ -418,7 +418,7 @@ export default function App() {
     // Resolving another source is still part of loading this song.
     const loadingStore = usePlayerStore.getState()
     const prior = loadingStore.streamLoading
-    const generation = loadingStore.playbackGeneration
+    const generation = streamLoadKey(loadingStore)
     loadingStore.setIsBuffering(true)
     loadingStore.setStreamLoading(loadingSession(prior, {
       generation, sourceKey: '', phase: 'searching',
@@ -2587,12 +2587,13 @@ export default function App() {
     if (loadRef) {
       const sourceKey = `${loadRef.provider}:${loadRef.id}`
       const current = loadPlayer.streamLoading
-      // A fallback does not increment playbackGeneration; retain its attempt.
+      const session = streamLoadKey(loadPlayer)
+      // A provider replacement keeps this queued song's key. next()/autoNext()
+      // change the queue position without incrementing playbackGeneration.
       loadPlayer.setStreamLoading(loadingSession(current, {
-        generation: loadPlayer.playbackGeneration, sourceKey,
+        generation: session, sourceKey,
         phase: 'preparing', recovering: false,
-        attempt: current?.generation === loadPlayer.playbackGeneration
-          ? current.attempt : 1,
+        attempt: current?.generation === session ? current.attempt : 1,
       }))
     } else {
       loadPlayer.setStreamLoading(null)
@@ -2709,7 +2710,7 @@ export default function App() {
           const player = usePlayerStore.getState()
           if (cancelled || player.playbackGeneration !== generation ||
               player.currentTrack?.file_path !== currentTrack.file_path ||
-              player.streamLoading?.generation !== generation) return
+              player.streamLoading?.generation !== streamLoadKey(player)) return
           player.setStreamLoading(withPreparationProgress(
             player.streamLoading, status, status?.message || 'Preparing audio…',
           ))
@@ -2754,9 +2755,12 @@ export default function App() {
       }
       if (unavailable) { await recoverOnlinePlayback(el, live.currentTrack, ref, unavailable, detail); return }
       el.dataset.fallbackPending = ''
-      if (ref && usePlayerStore.getState().streamLoading?.generation === generation) {
-        const player = usePlayerStore.getState()
-        player.setStreamLoading({ ...player.streamLoading, phase: 'fetching', addonPercent: null, recovering: false })
+      // Let the actual protocol resolution/HTTP request report its phases;
+      // the media server has not been contacted at this point.
+      const player = usePlayerStore.getState()
+      if (ref && player.streamLoading?.generation === streamLoadKey(player) &&
+          player.streamLoading.recovering) {
+        player.setStreamLoading({ ...player.streamLoading, recovering: false })
       }
       replaceAudioSource(el, src)
       if (resumeFrom > 0) { try { el.currentTime = resumeFrom } catch {} }
@@ -2914,7 +2918,7 @@ export default function App() {
     el.dataset.lokalTrackPending = ''
     const player = usePlayerStore.getState()
     if (streamRef(player.currentTrack) && String(player.currentTrack?.id) === pending &&
-        player.streamLoading?.generation === player.playbackGeneration) {
+        player.streamLoading?.generation === streamLoadKey(player)) {
       if (!player.isPlaying) {
         // A user who paused during loading has a ready decoder but should not
         // retain a 100% loading toast until they resume playback.
