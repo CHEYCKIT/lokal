@@ -256,7 +256,7 @@ test('fast-flip window avoids repeated React and image work without a reflection
 })
 
 test('reflection implementation and its Home-specific paint layering are completely removed', () => {
-  assert.ok(!/reflecti(on|ve)|WebkitBoxReflect|box-reflect|scaleY\\(-1\\)/i.test(flow), 'no reflection code remains')
+  assert.ok(!/reflecti(on|ve)|WebkitBoxReflect|box-reflect/i.test(flow) && !flow.includes('scaleY(-1)'), 'no reflection code remains')
   assert.ok(!flow.includes('overflow-y-visible'), 'artwork remains inside the stage')
   assert.ok(!flow.includes('height: size * 1.54'), 'remove reflection-only stage height')
   assert.ok(!shelf.includes('className="relative z-0"'), 'the shelf no longer needs mirror-tail stacking')
