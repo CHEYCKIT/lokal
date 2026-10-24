@@ -1,9 +1,6 @@
 const { scoreDiscordArtwork, MIN_DISCORD_ARTWORK_SCORE } = require('./discord/artworkMatch')
 
 const key = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-// Featured-artist credits are often present in catalogue titles but absent
-// from local file tags. Strip only explicit trailing credits, never remixes.
-const recordingKey = value => key(String(value || '').replace(/\s*[([{]\s*(?:feat(?:uring)?\.?|ft\.?)\s+[^)\]}]+[)\]}]\s*$/i, ''))
 const imageUrl = value => {
   const url = String(value || '').replace(/^http:/, 'https:')
   return /^https:\/\//.test(url) && !/2a96cbd8|default_album|noimage|\/artist\/\//i.test(url) ? url : ''
@@ -71,7 +68,7 @@ function createArtworkResolver({ getDB = () => null, isElectron = false, fetchIm
           type: item.type, title: row.title, artist: row.artist?.name,
           album: album ? row.title : row.album?.title, duration: row.duration,
         }), coverOf)
-      : deezerRows.find(row => (album ? key(row.title) === key(item.title) : recordingKey(row.title) === recordingKey(item.title)) && key(row.artist?.name) === key(item.artist) && coverOf(row))
+      : deezerRows.find(row => (album ? key(row.title) === key(item.title) : key(row.title) === key(item.title)) && key(row.artist?.name) === key(item.artist) && coverOf(row))
     const cover = coverOf(match)
     if (cover) return cover
     const itunes = await json(`https://itunes.apple.com/search?term=${encodeURIComponent(`${item.artist} ${item.title}`)}&entity=${album ? 'album' : 'song'}&limit=15`, fetchImpl)
@@ -83,7 +80,7 @@ function createArtworkResolver({ getDB = () => null, isElectron = false, fetchIm
           artist: row.artistName, album: row.collectionName,
           duration: row.trackTimeMillis ? row.trackTimeMillis / 1000 : undefined,
         }), appleImage)
-      : itunesRows.find(row => (album ? key(row.collectionName) === key(item.title) : recordingKey(row.trackName) === recordingKey(item.title)) && key(row.artistName) === key(item.artist) && appleImage(row))
+      : itunesRows.find(row => (album ? key(row.collectionName) === key(item.title) : key(row.trackName) === key(item.title)) && key(row.artistName) === key(item.artist) && appleImage(row))
     const appleCover = appleImage(apple)
     if (appleCover) return appleCover
     if (!album && searchSongs) {
@@ -93,7 +90,7 @@ function createArtworkResolver({ getDB = () => null, isElectron = false, fetchIm
             type: 'track', title: row.title, artist: row.artist || row.artists?.[0],
             album: row.album, duration: row.duration,
           }), row => allowed(row.thumbnail))
-        : songs.find(row => recordingKey(row.title) === recordingKey(item.title) && (row.artists || [row.artist]).some(artist => key(artist) === key(item.artist)) && allowed(row.thumbnail))
+        : songs.find(row => key(row.title) === key(item.title) && (row.artists || [row.artist]).some(artist => key(artist) === key(item.artist)) && allowed(row.thumbnail))
       return allowed(song?.thumbnail)
     }
     return ''
