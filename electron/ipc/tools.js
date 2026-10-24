@@ -34,7 +34,7 @@ function getBundledBin() {
 
 function fileExists(fp) {
   try {
-    return typeof fp === 'string' && fs.statSync(fp).isFile()
+    return typeof fp === 'string' && fs.statSync(fp).isFile() && fs.statSync(fp).size > 0
   } catch { return false }
 }
 
@@ -554,6 +554,7 @@ async function downloadYtDlp(progressCallback) {
       if (progressCallback) progressCallback({ status: 'installing', message: 'Checking yt-dlp starts...' })
       const version = await getExecutableVersion(dest, ['--version'], 0)
       if (!version) throw new Error('yt-dlp was downloaded but does not start on this computer. Try again, or set a custom path in Settings → External Tools.')
+      cache().set('ytdlp', dest, version)
 
       return dest
     } catch (err) {
