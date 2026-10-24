@@ -85,15 +85,21 @@ function projectedCenter(distance) {
 export function flowIndexAt(x, stageWidth, size, position, length, reduceMotion = false) {
   const offset = x - stageWidth / 2
   if (reduceMotion) return clampIndex(Math.round(position + offset / (size * 1.06)), length)
-  const target = Math.abs(offset) / size
-  let lo = 0
-  let hi = Math.max(1, length)
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2
-    if (projectedCenter(mid) < target) lo = mid
-    else hi = mid
+  // Choose the closest DISPLAYED center, not the nearest integer to the
+  // inverse curve. During a fractional drag the projected centers are
+  // nonlinear, so rounding index-space distances selects the wrong album
+  // around the gaps between visible covers.
+  const target = offset / size
+  let nearest = 0
+  let nearestDistance = Infinity
+  for (let index = 0; index < length; index++) {
+    const distance = Math.abs(projectedCenter(index - position) - target)
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearest = index
+    }
   }
-  return clampIndex(Math.round(position + Math.sign(offset) * (lo + hi) / 2), length)
+  return nearest
 }
 
 export function flowDrag(position, deltaX, albumWidth, length) {
