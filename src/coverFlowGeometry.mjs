@@ -42,7 +42,7 @@ export function flowCoverGeometry(distance, size, reduceMotion = false) {
     // Rotate around the CENTER of the panel, not its inset inner hinge.
     // This is essential to match the visible upper/lower iTunes triangles.
     pivot: 50,
-    angle: reduceMotion ? 0 : -side * (2 * near - near * near) * FLOW_FAN_ANGLE,
+    angle: reduceMotion || near === 0 ? 0 : -side * (2 * near - near * near) * FLOW_FAN_ANGLE,
     depth: reduceMotion ? 0 : -size * depthDistance(a),
     opacity: Math.max(0, Math.min(1, 5 - a)),
   }
