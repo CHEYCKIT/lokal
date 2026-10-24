@@ -13,6 +13,7 @@ import { api } from '../api'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { sameStream } from '../onlineTracks'
+import { awaitAtmosOutputRelease } from '../audio/atmosHandoff.mjs'
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
@@ -138,17 +139,30 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
     }
     saveRecentItem(recentTrackItem(target))
     playQueue(queue, indexInQueue, { type: 'search', id: q, name: `${providerLabel}: ${q}` })
+    const selected = () => {
+      const current = usePlayerStore.getState().currentTrack
+      return current?.atmosNative === true &&
+        current.atmosSourceId === String(item.id) &&
+        current.atmosProvider === item.provider
+    }
     try {
+      await awaitAtmosOutputRelease()
+      if (!selected()) return { error: 'Atmos request was superseded by a newer track' }
       const result = await api.atmosPlay(item.provider, String(item.id), device, mode)
       if (!result?.ok) {
-        // Leave the selected track in Now Playing, but never pretend it is
-        // running as an ordinary PCM/AAC recording after a native failure.
-        usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+        // A late native failure must not pause the stereo/other-provider song
+        // that the user has already switched to.
+        if (selected()) usePlayerStore.setState({ isPlaying: false, isBuffering: false })
         return result || { error: 'Native Atmos output was refused' }
+      }
+      if (!selected()) {
+        // A newer selection owns the output; don't leave a stale JOC session.
+        await api.atmosStop().catch(() => {})
+        return { error: 'Atmos request was superseded by a newer track' }
       }
       return result
     } catch (error) {
-      usePlayerStore.setState({ isPlaying: false, isBuffering: false })
+      if (selected()) usePlayerStore.setState({ isPlaying: false, isBuffering: false })
       return { error: error?.message || String(error) }
     }
   }
