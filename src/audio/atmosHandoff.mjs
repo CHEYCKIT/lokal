@@ -16,3 +16,8 @@ export function beginAtmosOutputRelease(stop) {
 export function awaitAtmosOutputRelease() {
   return releaseChain
 }
+
+/** The normal play button switches from native Atmos even for the same ID. */
+export function shouldToggleNormalStream(currentTrack, matchingSource) {
+  return !!currentTrack && !currentTrack.atmosNative && !!matchingSource
+}
