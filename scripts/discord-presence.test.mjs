@@ -310,3 +310,35 @@ test('generated fallback art retries after five minutes and catalogue art keeps 
   await request()
   assert.equal(calls, 2)
 })
+
+test('Discord artwork resolves Big Data Dangerous when catalogue title includes Joywave credit', async () => {
+  const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
+  const requests = []
+  const resolve = createArtworkResolver({ fetchImpl: async url => {
+    requests.push(url)
+    return { ok: true, json: async () => url.includes('deezer.com/search?')
+      ? { data: [
+          { title: 'Dangerous (feat. Joywave)', artist: { name: 'Big Data' },
+            album: { cover_big: 'https://covers.example/big-data.jpg' } },
+          { title: 'Dangerous', artist: { name: 'David Guetta' },
+            album: { cover_big: 'https://covers.example/wrong.jpg' } },
+        ] }
+      : { data: [], results: [] } }
+  } })
+  const [result] = await resolve([{ type: 'track', title: 'Dangerous', artist: 'Big Data' }])
+  assert.equal(result.image, 'https://covers.example/big-data.jpg')
+  assert.equal(requests.length, 1)
+})
+
+test('Discord artwork matching does not treat remix variants as original recordings', async () => {
+  const { createArtworkResolver } = require('../electron/discoveryArtwork.js')
+  const resolve = createArtworkResolver({ fetchImpl: async url => ({
+    ok: true,
+    json: async () => url.includes('deezer.com/search?')
+      ? { data: [{ title: 'Dangerous (Oliver Remix)', artist: { name: 'Big Data' },
+          album: { cover_big: 'https://covers.example/remix.jpg' } }] }
+      : { results: [] },
+  }) })
+  const [result] = await resolve([{ type: 'track', title: 'Dangerous', artist: 'Big Data' }])
+  assert.equal(result.image, '')
+})
