@@ -92,6 +92,12 @@ Spatial Sound setup.
 4. If a valid file opens in Windows Media Player but not Lokal, investigate
    the Electron/WinRT media bridge, rather than telling the user to reinstall
    Dolby Access.
+5. Check Windows Update. Microsoft documented a separate September 2026 issue
+   in some Windows 11 24H2/25H2/26H2 builds affecting applications which use
+   Windows AC-3 decoding. Their release notes say it was resolved by updates
+   on or after **October 13, 2026** (e.g. KB5127648). This is relevant to
+   troubleshooting but does not prove the reporter has the same failure:
+   https://support.microsoft.com/en-us/servicing/os/windows-11/2026/09/kb5124010-windows-11-24h2-25h2-update
 
 Windows 11 24H2 and later no longer bundle the older AC-3 decoder by default
 on fresh installations, though OEM images and upgrades may retain it.
