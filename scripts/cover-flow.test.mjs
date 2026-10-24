@@ -116,7 +116,7 @@ test('Home keeps its original play queue and menu while replacing the old cylind
 
 test('Cover Flow is 45% larger and opens centered, without starting Flow', () => {
   assert.ok(flow.includes('const MAX_SIZE = 320'), 'maximum square cover increases from 220 to 320 pixels')
-  assert.ok(flow.includes('Math.min(MAX_SIZE, stage.clientWidth * 0.52)'), 'covers still scale on narrow windows')
+  assert.ok(flow.includes('Math.min(MAX_SIZE, width * 0.52)'), 'covers still scale on narrow windows')
   assert.ok(flow.includes('const middleIndex = Math.floor(count / 2)'), 'even/odd-length shelves start in the middle')
   assert.ok(flow.includes('useMotionValue(middleIndex)'), 'the first rendered frame must be centered')
   assert.ok(flow.includes('useState(middleIndex)'), 'track details match the centered cover')
@@ -259,7 +259,7 @@ test('mouse drag release has no velocity cliff or abrupt low-speed mode switch',
 
 test('fast multi-cover animation does not mount/decode full-resolution art on every index', () => {
   assert.ok(flow.includes('const FlowCover = React.memo('), 'reuse cover subtrees across selection changes')
-  assert.ok(flow.includes('const geometry = useTransform(position'), 'calculate perspective geometry once per frame')
+  assert.ok(flow.includes('const geometry = useTransform([position, spreadValue]'), 'calculate perspective geometry once per frame')
   assert.ok(flow.includes('useTransform(geometry, g => g.pivot'), 'derive the pivot from cached geometry')
   assert.ok(flow.includes('useTransform(geometry, g => g.opacity'), 'derive opacity from cached geometry')
   assert.ok(flow.includes('highRes={settled && index === activeIndex}'), 'full resolution only at rest')
