@@ -65,6 +65,7 @@ import StreamLoadingToast from './components/StreamLoadingToast'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
+import { awaitAtmosOutputRelease } from './audio/atmosHandoff.mjs'
 import { playbackLog } from './playbackLog'
 import TvController from './tv/TvController'
 
@@ -2624,6 +2625,11 @@ export default function App() {
     const resumeFrom = takeResumePosition(currentTrack.id)
     let cancelled = false
     const start = async () => {
+      // The previous Atmos backend can still hold exclusive HDMI/Windows audio
+      // output after the store changes to a normal track (including the same
+      // Tidal song ID). Do not resolve/play PCM until native shutdown finishes.
+      await awaitAtmosOutputRelease()
+      if (cancelled) return
       // The radio player lets go of the element first (it would otherwise
       // put its own silent clip back on it after this song's source).
       if (leavingRadio) await releaseRadio()
