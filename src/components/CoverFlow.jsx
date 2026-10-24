@@ -1,7 +1,7 @@
 // Desktop port of Lokal Mobile's iTunes-style Cover Flow.
 // Inner-edge hinges, outer-edge-forward panels, tight stacking and smooth dragging.
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion'
+import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
 import { usePerformanceMode } from '../performanceMode'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange } from '../coverFlowGeometry.mjs'
@@ -92,9 +92,10 @@ const FlowCover = React.memo(function FlowCover({
 })
 
 export default function CoverFlow({ picks, onPlay, onContextMenu }) {
-  const reduceMotion = !!useReducedMotion()
-  const performanceMode = usePerformanceMode()
-  const reduced = reduceMotion || performanceMode
+  // OS accessibility preferences do not silently change the home carousel.
+  // The explicit Appearance toggle selects Cover Flow or the classic carousel.
+  // Performance Mode is the app's separate, opt-in rendering optimization.
+  const reduced = usePerformanceMode()
   const count = picks.length
   // Start in the middle of the shelf, including on its first painted frame.
   const middleIndex = Math.floor(count / 2)
