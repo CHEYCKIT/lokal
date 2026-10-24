@@ -1,6 +1,6 @@
 # ![Lokal](https://i.imgur.com/O9SwX2c.png) <img src="public/lokal-icon.png" alt="lokal icon" width="115"> ![convient photo of toro](https://i.imgur.com/KgjwTvk.png)
 
-1
+
 
 
 **Your music, your files, a modern player.** Lokal is a local-first music player built with Electron and React, for people with big local libraries who want the polish of a streaming app without the subscription: word-by-word synced lyrics, official music videos synced to your files, new releases from the artists you follow, listening recaps, recommendations from Last.fm or YouTube Music, smart playlists, an audio-quality checker, and one search bar that finds, streams and downloads.
