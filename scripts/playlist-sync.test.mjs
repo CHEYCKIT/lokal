@@ -161,3 +161,24 @@ test('YouTube Music playlists sync without an addon, through the built-in reader
   const second = await sync.sync(db, 'p1', { packages: { list: () => [], find: () => null }, helpers })
   assert.equal(second.added, 1)
 })
+
+test('Deezer sync uses its built-in reader without packages and remembers seen IDs', async t => {
+  const { db, helpers } = setup({ list: [] })
+  t.after(() => db.close())
+  assert.equal(sync.link(db, 'p1', 'https://www.deezer.com/fr/playlist/123').platform, 'deezer')
+  let tracks = [{ id: 1, name: 'Owned', artists: 'Band' }]
+  helpers.readDeezerPlaylist = async url => {
+    assert.equal(url, 'https://www.deezer.com/playlist/123')
+    return { name: 'Deezer mix', tracks }
+  }
+  const packages = { list: () => { throw new Error('Deezer needs no addon') } }
+  assert.equal((await sync.sync(db, 'p1', { packages, helpers })).added, 1)
+  assert.equal((await sync.sync(db, 'p1', { packages, helpers })).added, 0)
+  tracks = [...tracks, { id: 2, name: 'Fresh', artists: 'Other' }]
+  assert.equal((await sync.sync(db, 'p1', { packages, helpers })).added, 1)
+  assert.deepEqual(songs(db), ['Owned', 'Fresh'])
+  const before = db.prepare('SELECT seen_json FROM playlist_sync').get().seen_json
+  helpers.readDeezerPlaylist = async () => { throw new Error('Deezer unavailable') }
+  assert.match((await sync.sync(db, 'p1', { packages, helpers })).error, /unavailable/)
+  assert.equal(db.prepare('SELECT seen_json FROM playlist_sync').get().seen_json, before)
+})
