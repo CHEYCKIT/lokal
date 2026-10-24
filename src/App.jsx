@@ -62,7 +62,7 @@ import { radioBufferSeconds, useRadioStore } from './store/radio'
 import { createDiscordPublisher } from './discord'
 import Toaster, { showLoadingToast, showToast } from './components/Toaster'
 import StreamLoadingToast from './components/StreamLoadingToast'
-import { loadingSession } from './streamStartupProgress.mjs'
+import { loadingSession, withPreparationProgress } from './streamStartupProgress.mjs'
 import ReleaseRefreshBanner from './components/ReleaseRefreshBanner'
 import { PageReadyContext, PageShownContext, PAGE_READY_TIMEOUT_MS } from './pageCache'
 import { audioSrcFor, isAddonProvider, providerLabel, streamRef } from './onlineTracks'
@@ -435,15 +435,24 @@ export default function App() {
           const player = usePlayerStore.getState()
           player.setStreamLoading({
             ...player.streamLoading, generation, phase: 'searching',
-            recovering: true, message,
+            addonPercent: null, recovering: true, message,
           })
+        },
+        onPreparationProgress: ({ source, status }) => {
+          if (!isCurrent()) return
+          const player = usePlayerStore.getState()
+          if (player.streamLoading?.generation !== generation) return
+          player.setStreamLoading(withPreparationProgress(
+            player.streamLoading, status,
+            status?.message || `Preparing audio from ${source.label || providerLabel(source.id)}…`,
+          ))
         },
         onProviderFailure: failure => {
           if (!isCurrent()) return
           const player = usePlayerStore.getState()
           player.setStreamLoading({
             ...player.streamLoading, generation, phase: 'searching',
-            recovering: true,
+            addonPercent: null, recovering: true,
             attempt: (player.streamLoading?.attempt || 2) + (failure.nextSource ? 1 : 0),
             message: playbackFallbackMessage(failure),
           })
@@ -2693,7 +2702,19 @@ export default function App() {
       const generation = usePlayerStore.getState().playbackGeneration
       const ref = streamRef(currentTrack)
       let addonError = ''
-      const unavailable = ref ? await playbackAvailability({ id: ref.id }, ref.provider, api, undefined, error => { addonError = String(error || '') }).catch(() => 'unavailable') : null
+      const unavailable = ref ? await playbackAvailability(
+        { id: ref.id }, ref.provider, api, undefined,
+        error => { addonError = String(error || '') },
+        status => {
+          const player = usePlayerStore.getState()
+          if (cancelled || player.playbackGeneration !== generation ||
+              player.currentTrack?.file_path !== currentTrack.file_path ||
+              player.streamLoading?.generation !== generation) return
+          player.setStreamLoading(withPreparationProgress(
+            player.streamLoading, status, status?.message || 'Preparing audio…',
+          ))
+        },
+      ).catch(() => 'unavailable') : null
       const live = usePlayerStore.getState()
       if (cancelled || live.playbackGeneration !== generation || live.currentTrack?.id !== currentTrack.id || live.currentTrack?.file_path !== currentTrack.file_path) return
       await replayGainReady
@@ -2735,7 +2756,7 @@ export default function App() {
       el.dataset.fallbackPending = ''
       if (ref && usePlayerStore.getState().streamLoading?.generation === generation) {
         const player = usePlayerStore.getState()
-        player.setStreamLoading({ ...player.streamLoading, phase: 'fetching', recovering: false })
+        player.setStreamLoading({ ...player.streamLoading, phase: 'fetching', addonPercent: null, recovering: false })
       }
       replaceAudioSource(el, src)
       if (resumeFrom > 0) { try { el.currentTime = resumeFrom } catch {} }
