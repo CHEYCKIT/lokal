@@ -41,7 +41,9 @@ export default function StreamLoadingToast() {
         close()
         return
       }
-      const id = String(load.generation) + ':' + String(track.title || '')
+      // Fallback may supply different title metadata, but it is still the same
+      // playback request. Never remount the toast on a provider/title change.
+      const id = String(load.generation)
       if (currentId !== id) {
         close()
         currentId = id
