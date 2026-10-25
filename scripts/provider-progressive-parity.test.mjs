@@ -71,11 +71,16 @@ test('ready Qobuz transfer survives metadata availability and remains readable',
   const part = path.join(dir, 'audio.flac.part')
   const finished = path.join(dir, 'audio.flac')
   const first = Buffer.concat([flacHeader(),Buffer.alloc(65536 - 42)])
-  await fs.writeFile(part, first)
   let signalled = false
   const job = { status:'running', markLive:()=>{signalled=true}, promise:Promise.resolve(),
     message:'' }
   try {
+    // First callback can race a Windows file rename/open. Don't disable
+    // early streaming permanently just because the initial probe could not
+    // open its in-progress file.
+    media.liveUpdate(job,{part,file:finished,total:100000,written:first.length})
+    assert.equal(job.live.checked,false)
+    await fs.writeFile(part, first)
     media.liveUpdate(job,{part,file:finished,total:100000,written:first.length})
     assert.equal(job.live.ready, true)
     assert.equal(signalled, true)
