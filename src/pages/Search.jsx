@@ -425,7 +425,13 @@ export default function Search() {
             </div>
           )}
 
-          {showOnline && showSongs && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} showLibraryHint={scope !== 'online'} />}
+          {/* The old provider search was a duplicate song catalogue below
+              Global; retain it only when a user explicitly invokes
+              “Find on source” / Soulseek replacement from a track menu. */}
+          {showOnline && showSongs && (findOnRequest || soulseekFor) && <OnlineResults
+            query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest}
+            showLibraryHint={scope !== 'online'}
+          />}
         </>
       )}
     </div>
