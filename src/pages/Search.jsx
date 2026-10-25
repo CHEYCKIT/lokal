@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useSearchStore } from '../store/search'
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
+import GlobalCatalogueResults from '../components/GlobalCatalogueResults'
 import LinkDownload from '../components/LinkDownload'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
@@ -382,6 +383,7 @@ export default function Search() {
             </div>
           )}
 
+          {searchOnline && <GlobalCatalogueResults query={onlineQuery} />}
           {searchOnline && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} />}
         </>
       )}
