@@ -380,7 +380,7 @@ export default function Search() {
             </section>
           )}
 
-          <GlobalCatalogueResults
+          {!showLyrics && <GlobalCatalogueResults
             query={showOnline ? onlineQuery : query}
             category={resultCategory}
             enableOnline={showOnline}
@@ -388,7 +388,7 @@ export default function Search() {
             localAlbums={showLibrary ? albums : []}
             onLocalArtistClick={handleArtistClick}
             onLocalAlbumClick={handleAlbumClick}
-          />
+          />}
 
           {showLibrary && showLyrics && lyricMatches.length > 0 && (
             <section>
