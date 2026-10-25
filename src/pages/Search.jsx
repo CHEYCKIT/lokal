@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useSearchStore } from '../store/search'
+import { SEARCH_SCOPES, searchesLibrary, searchesOnline, scopeDescription } from '../searchScope.mjs'
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
 import GlobalCatalogueResults from '../components/GlobalCatalogueResults'
@@ -25,7 +26,10 @@ export default function Search() {
   const { t } = useTranslation()
   const query = useSearchStore(s => s.query)
   const setQuery = useSearchStore(s => s.setQuery)
-  const searchOnline = useSearchStore(s => s.online)
+  const scope = useSearchStore(s => s.scope)
+  const setScope = useSearchStore(s => s.setScope)
+  const showLibrary = searchesLibrary(scope)
+  const showOnline = searchesOnline(scope)
   // A source search from a streamed song or a lossless request. The selected
   // source receives the same query and can replace the original ghost track.
   const location = useLocation()
@@ -36,7 +40,12 @@ export default function Search() {
     const request = location.state?.findOn || (legacySoulseek ? { ...legacySoulseek, provider: 'slsk' } : null)
     setFindOnRequest(request)
     setSoulseekFor(request?.provider === 'slsk' ? request : null)
-    if (request) setQuery(request.query || '')
+    if (request) {
+      // Explicitly invoking Find on a provider must show those results,
+      // even if the saved scope is Library.
+      setScope('online')
+      setQuery(request.query || '')
+    }
   }, [location.key]) // eslint-disable-line react-hooks/exhaustive-deps
   const [tracks, setTracks] = useState([])
   const [artists, setArtists] = useState([])
@@ -68,6 +77,13 @@ export default function Search() {
   const doSearch = useCallback(async (q) => {
     const seq = ++searchSeqRef.current
     if (!q.trim()) { setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([]); setSearching(false); setCorrection(null); setOnlineQuery(''); return }
+    if (!showLibrary) {
+      // Source scope is authoritative: do not query the local DB in Online
+      // mode or leave previous Library results visible when switching.
+      setTracks([]); setArtists([]); setAlbums([]); setLyricMatches([])
+      setCorrection(null); setOnlineQuery(q); setSearching(false)
+      return
+    }
     setSearching(true)
     let res, albumRes, lyricsRes
     const searchLibrary = text => Promise.all([api.searchTracks(text), api.searchAlbums(text), api.searchLyrics(text)])
@@ -100,28 +116,28 @@ export default function Search() {
     setAlbums(Array.isArray(albumRes) ? albumRes : [])
     setLyricMatches(Array.isArray(lyricsRes) ? lyricsRes : [])
     setSearching(false)
-  }, [])
+  }, [showLibrary])
 
   // Results follow the text as it's typed. A new query makes any search
   // still in flight stale straight away, not only when the debounce ends.
   useEffect(() => {
     if (!query.trim() || link) { doSearch(''); return }
     searchSeqRef.current++
-    setSearching(true)
+    setSearching(showLibrary)
     const t = setTimeout(() => doSearch(query), 200)
     return () => clearTimeout(t)
-  }, [query, link, doSearch])
+  }, [query, link, doSearch, showLibrary])
 
   useEffect(() => {
     const handleRefresh = () => {
-      if (query.trim() && !asLink(query)) {
+      if (showLibrary && query.trim() && !asLink(query)) {
         doSearch(query)
       }
       setRecentItems(getRecentItems())
     }
     window.addEventListener('lokal:refresh', handleRefresh)
     return () => window.removeEventListener('lokal:refresh', handleRefresh)
-  }, [query, doSearch])
+  }, [query, doSearch, showLibrary])
 
   const artSrc = (a) => a.image_path ? (api.isElectron ? `file://${a.image_path}` : null) : null
   // By the album's cover track in the web app (an album has no id of its own).
@@ -212,6 +228,21 @@ export default function Search() {
 
   return (
     <div className="p-6 space-y-6 pb-10">
+      <div className="flex flex-col items-start gap-2">
+        <div role="group" aria-label={t('Search sources')}
+          className="inline-flex max-w-full items-center rounded-xl border border-border bg-elevated/50 p-1 gap-1">
+          {SEARCH_SCOPES.map(value => (
+            <button key={value} type="button"
+              onClick={() => setScope(value)}
+              aria-pressed={scope === value}
+              title={t(scopeDescription(value))}
+              className={`min-w-[5.25rem] rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${scope === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white hover:bg-card'}`}>
+              {t(value === 'all' ? 'All' : value === 'library' ? 'Library' : 'Online')}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted">{t(scopeDescription(scope))}</p>
+      </div>
       {!showSearchResults && (
         <div className="space-y-6">
           {recentItems.length > 0 && (
@@ -298,7 +329,7 @@ export default function Search() {
             </p>
           )}
 
-          {artists.length > 0 && (
+          {showLibrary && artists.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Artists")}</h2>
               <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
@@ -315,7 +346,7 @@ export default function Search() {
             </section>
           )}
 
-          {albums.length > 0 && (
+          {showLibrary && albums.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Albums")}</h2>
               <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
@@ -336,7 +367,7 @@ export default function Search() {
             </section>
           )}
 
-          {tracks.length > 0 && (
+          {showLibrary && tracks.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Tracks")}</h2>
@@ -346,7 +377,7 @@ export default function Search() {
             </section>
           )}
 
-          {lyricMatches.length > 0 && (
+          {showLibrary && lyricMatches.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Lyrics Matches")}</h2>
               <div className="space-y-2">
@@ -376,15 +407,15 @@ export default function Search() {
             </section>
           )}
 
-          {query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
+          {showLibrary && query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
             <div className="flex items-center gap-3 py-3 text-muted">
               <Music size={18} className="opacity-40" />
               <p className="text-sm">Nothing in your library for "{correction?.from === query.trim() ? correction.to : query}"</p>
             </div>
           )}
 
-          {searchOnline && <GlobalCatalogueResults query={onlineQuery} />}
-          {searchOnline && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} />}
+          {showOnline && <GlobalCatalogueResults query={onlineQuery} />}
+          {showOnline && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} showLibraryHint={scope !== 'online'} />}
         </>
       )}
     </div>
