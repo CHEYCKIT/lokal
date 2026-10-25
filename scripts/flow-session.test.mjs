@@ -71,11 +71,11 @@ test('a Flow opens with its first online finds among its first songs', async () 
   const find = async (context, pool, count, isCurrent, queued) => { asked.push({ count, queued: queued.length }); return [online(1), online(2)] }
   const started = await startFlow({ userId: 'u', tuner: adventurous, find })
   const { queue } = store.getState()
-  assert.equal(started, 12)
-  assert.deepEqual(asked, [{ count: 2, queued: 10 }], 'two waited for; the Flow\'s own songs not offered again')
+  assert.equal(started, 3, 'one library anchor and two opening radio finds')
+  assert.deepEqual(asked, [{ count: 2, queued: 1 }], 'online slots replace local slots rather than inflating the total')
   assert.ok(!queue[0].id.startsWith('yt:'), 'a library song first, playing at once')
   const at = ['yt:1', 'yt:2'].map(id => queue.findIndex(track => track.id === id))
-  assert.ok(at.every(i => i >= 1 && i <= 7), `finds among the first songs (${at})`)
+  assert.ok(at.every(i => i >= 1 && i <= 3), `finds among the first songs (${at})`)
 })
 
 test('finds too slow for the opening join when they come', async () => {
@@ -83,7 +83,7 @@ test('finds too slow for the opening join when they come', async () => {
   let deliver
   const find = () => new Promise(resolve => { deliver = resolve })
   const started = await startFlow({ userId: 'u', tuner: adventurous, find, openingWaitMs: 20 })
-  assert.equal(started, 10, 'started without them')
+  assert.equal(started, 1, 'local anchor starts even while radio is slow')
   assert.ok(!store.getState().queue.some(track => track.id.startsWith('yt:')))
   store.getState().next()
   deliver([online(3)])
@@ -105,7 +105,7 @@ test('one opening find of two: the background search looks for the rest', async 
   const find = async (context, pool, count) => { asked.push(count); return asked.length === 1 ? [online(5)] : [] }
   await startFlow({ userId: 'u', tuner: adventurous, find })
   await new Promise(resolve => setTimeout(resolve, 10))
-  assert.deepEqual(asked, [2, 7], 'eight in all: one found at the start, seven more')
+  assert.deepEqual(asked, [2, 8], 'one found at start, eight more targeted online slots')
 })
 
 test('the song playing picked again while a Flow waits for its finds: that stays', async () => {
