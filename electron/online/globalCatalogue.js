@@ -51,7 +51,7 @@ async function globalSearch(query, { country = 'US', offset = 0, limit = 25, fet
     ['albums', 'album', 12],
     ['artists', 'musicArtist', 12],
   ]
-  const values = await Promise.all(entries.map(async ([name, entity, count]) => {
+  const values = await Promise.allSettled(entries.map(async ([name, entity, count]) => {
     const url = new URL(ENDPOINT)
     url.search = new URLSearchParams({ term, media: 'music', entity, country: sf, limit: String(Math.min(200, count)) }).toString()
     const controller = new AbortController()
@@ -64,7 +64,16 @@ async function globalSearch(query, { country = 'US', offset = 0, limit = 25, fet
       return [name, name === 'tracks' ? rows.slice(start, start + size) : rows]
     } finally { clearTimeout(timer) }
   }))
-  const value = Object.fromEntries(values)
+  if (values.every(entry => entry.status === 'rejected')) {
+    throw new Error('Global catalogue unavailable. Try again.')
+  }
+  const value = { tracks: [], albums: [], artists: [] }
+  for (const entry of values) {
+    if (entry.status === 'fulfilled') {
+      const [name, rows] = entry.value
+      value[name] = rows
+    }
+  }
   cache.set(key, { expires: now() + TTL_MS, value })
   while (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value)
   return value
