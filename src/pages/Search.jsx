@@ -261,7 +261,7 @@ export default function Search() {
               aria-pressed={scope === value}
               title={t(scopeDescription(value))}
               className={`min-w-[5.25rem] rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${scope === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white hover:bg-card'}`}>
-              {t(value === 'all' ? 'All' : value === 'library' ? 'Library' : 'Online')}
+              {t(value === 'library' ? 'Library' : 'Online')}
             </button>
           ))}
         </div>
@@ -425,7 +425,13 @@ export default function Search() {
             </div>
           )}
 
-          {showOnline && showSongs && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} showLibraryHint={scope !== 'online'} />}
+          {/* The old provider search was a duplicate song catalogue below
+              Global; retain it only when a user explicitly invokes
+              “Find on source” / Soulseek replacement from a track menu. */}
+          {showOnline && showSongs && (findOnRequest || soulseekFor) && <OnlineResults
+            query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest}
+            showLibraryHint={scope !== 'online'}
+          />}
         </>
       )}
     </div>

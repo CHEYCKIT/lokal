@@ -15,16 +15,16 @@ const SCOPE_KEY = 'lokal-search-scope'
 const CATEGORY_KEY = 'lokal-search-result-category'
 const readCategory = () => {
   try { return normalizeResultCategory(localStorage.getItem(CATEGORY_KEY)) }
-  catch { return 'all' }
+  catch { return 'songs' }
 }
-// Keep users' previous "online on/off" preference when upgrading to the
-// three-way selector. In particular, "online off" maps to Library, not All.
+// Retired All-source selections migrate to Library; the category-type All
+// still remains. Explicit Online survives upgrades.
 const readScope = () => {
   try {
     const saved = localStorage.getItem(SCOPE_KEY)
-    if (saved === 'all' || saved === 'library' || saved === 'online') return saved
-    return localStorage.getItem('lokal-online-search') === '0' ? 'library' : 'all'
-  } catch { return 'all' }
+    if (saved === 'library' || saved === 'online') return saved
+    return 'library'
+  } catch { return 'library' }
 }
 const initialScope = readScope()
 
@@ -46,7 +46,7 @@ export const useSearchStore = create((set) => ({
     set({ scope, online: searchesOnline(scope) })
   },
   setOnline: (value) => {
-    const scope = value ? 'all' : 'library'
+    const scope = value ? 'online' : 'library'
     try { localStorage.setItem(SCOPE_KEY, scope) } catch {}
     set({ scope, online: searchesOnline(scope) })
   },

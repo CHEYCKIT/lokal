@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Disc3, Music, Play, User } from 'lucide-react'
+import { Disc3, Music, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { playRecommendationPool } from '../recommendationPlayback'
@@ -7,6 +7,7 @@ import { showToast, showLoadingToast } from './Toaster'
 import { onlineAlbumPath } from '../onlineBrowse'
 import { useSearchStore } from '../store/search'
 import QualityImage from './QualityImage'
+import SearchArtistPortrait from './SearchArtistPortrait'
 import { includesResultCategory, mergeSearchArtists, mergeSearchAlbums } from '../searchResultCategory.mjs'
 import { plural } from '../plural'
 
@@ -113,19 +114,22 @@ export default function GlobalCatalogueResults({
   const albums = mergeSearchAlbums(localAlbums, enableOnline ? results.albums : [])
   const hasResults = (showSongs && enableOnline && results.tracks.length > 0) ||
     (showArtists && artists.length > 0) || (showAlbums && albums.length > 0)
-  const showCatalogueHeading = enableOnline && showSongs
+  const catalogueName = catalogue === 'spotify' ? 'Spotify' : 'Apple Music'
+  const subtitle = `${catalogueName} catalogue · plays through your configured sources`
+  const heading = (kind, categoryName) => (
+    <div className="mb-2">
+      <h2 className="text-xs font-display uppercase tracking-widest text-white">{enableOnline ? 'Online ' + categoryName : kind}</h2>
+      {enableOnline && <p className="mt-1 text-[11px] text-muted">{subtitle}</p>}
+    </div>
+  )
   return <section className="space-y-3">
-    {showCatalogueHeading && <div>
-      <h2 className="text-xs font-display uppercase tracking-widest text-white">Global</h2>
-      <p className="mt-1 text-[11px] text-muted">{catalogue === 'spotify' ? 'Spotify' : 'Apple Music'} catalogue · audio resolved in your Playback Source Priority order</p>
-    </div>}
     {enableOnline && notice && <p className="text-xs text-amber-400" role="status">{notice}</p>}
     {enableOnline && busy && <p className="text-xs text-muted" role="status">Searching the global catalogue…</p>}
     {enableOnline && error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
     {enableOnline && !busy && !error && !hasResults &&
       <p className="text-xs text-muted">No catalogue matches found.</p>}
-    {enableOnline && showSongs && results.tracks.length > 0 && <div>
-      <p className="mb-1 text-[11px] font-medium uppercase text-muted">Songs</p>
+    {enableOnline && showSongs && <div>
+      {heading('Songs', 'songs')}
       <div className="space-y-0.5">
         {(expanded ? results.tracks : results.tracks.slice(0, 8)).map(row => <button key={row.id} disabled={!!playing} onClick={() => play(row)}
           className="w-full flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.06] disabled:opacity-60">
@@ -138,8 +142,8 @@ export default function GlobalCatalogueResults({
       {expanded && hasMore && <button disabled={loadingMore} onClick={more} className="mt-2 text-xs text-accent hover:underline disabled:opacity-50">{loadingMore ? 'Loading…' : 'Load more global songs'}</button>}
       {expanded && <button onClick={() => setExpanded(false)} className="ml-4 text-xs text-muted hover:underline">Show fewer</button>}
     </div>}
-    {showAlbums && albums.length > 0 && <div>
-      <h2 className="mb-2 text-xs font-display text-muted uppercase tracking-widest">Albums</h2>
+    {showAlbums && (enableOnline || albums.length > 0) && <div>
+      {heading('Albums', 'albums')}
       <div className="grid grid-cols-3 @sm:grid-cols-5 gap-2">
         {albums.map(({ origin, item: row, key }) => (
           <button key={origin + ':' + key} className="min-w-0 text-left"
@@ -159,19 +163,19 @@ export default function GlobalCatalogueResults({
         ))}
       </div>
     </div>}
-    {showArtists && artists.length > 0 && <div>
-      <h2 className="mb-2 text-xs font-display text-muted uppercase tracking-widest">Artists</h2>
+    {showArtists && (enableOnline || artists.length > 0) && <div>
+      {heading('Artists', 'artists')}
       <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
         {artists.map(({ origin, item: row, key }) => (
           <button key={origin + ':' + key}
             onClick={() => origin === 'library' ? onLocalArtistClick?.(row) : useSearchStore.getState().setQuery(row.title)}
             className="flex flex-col items-center gap-2 group min-w-0">
             <span className="w-full aspect-square rounded-full bg-elevated border border-border overflow-hidden flex items-center justify-center text-muted group-hover:border-accent/40">
-              {origin === 'library' && row.image_path && api.isElectron
-                ? <img src={`file://${row.image_path}`} alt="" className="w-full h-full object-cover" />
-                : row.artwork_url
-                  ? <QualityImage src={row.artwork_url} className="w-full h-full object-cover" />
-                  : <User size={20}/>}
+              <SearchArtistPortrait
+                name={row.name || row.title}
+                localPath={origin === 'library' ? row.image_path : null}
+                imageUrl={row.artwork_url}
+              />
             </span>
             <span className="text-xs text-center text-muted group-hover:text-white truncate w-full">{row.name || row.title}</span>
           </button>
