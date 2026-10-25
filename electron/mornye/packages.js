@@ -80,6 +80,7 @@ function albumIdOf(track) {
 }
 
 const { hasAtmosMetadata } = require('./atmos')
+const { skipPlaybackEnrichment } = require('./providerFastPath')
 
 /** Keep album metadata string-valued before passing it into file taggers. */
 function normalizeTrackMetadata(track) {
@@ -435,13 +436,15 @@ class PackageService {
     const runtime=this.createRuntime(addon,fs.readFileSync(path.join(this.root,'packages',key,'index.js'),'utf8'),{grants:[staged],onProgress,onTransfer,signal:combined,heapMb:512})
     try{
       await runtime.ready;await runtime.invoke('initialize',[this.settings(addon)],{signal:combined})
-      let track=JSON.parse(this.db.prepare('SELECT metadata_json FROM mornye_tracks WHERE provider=? AND id=?').get(`a-${key}`,String(id))?.metadata_json || 'null')
+      const rememberedRow=this.db.prepare('SELECT metadata_json FROM mornye_tracks WHERE provider=? AND id=?').get(`a-${key}`,String(id))
+      let track=JSON.parse(rememberedRow?.metadata_json || 'null')
       if(!track&&runtime.methods.includes('getTrack'))track=await runtime.invoke('getTrack',[String(id)],{signal:combined})
       track ||= {id:String(id),name:'',artists:'',duration_ms:0,provider_id:addon.name}
       // Search results may be sparse; Mornye providers such as Amazon
       // expose enrichTrack() to resolve canonical release metadata before the
       // availability check and prepared download context are built.
-      if(runtime.methods.includes('enrichTrack')) {
+      if(!skipPlaybackEnrichment({ addon, track, remembered:!!rememberedRow, purpose }) &&
+          runtime.methods.includes('enrichTrack')) {
         try {
           const enriched=await runtime.invoke('enrichTrack',[track],{timeoutMs:60000,signal:combined})
           if(enriched && typeof enriched==='object' && !Array.isArray(enriched)) {
