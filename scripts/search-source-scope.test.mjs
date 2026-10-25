@@ -103,7 +103,7 @@ test('the desktop has one artist/album presentation and one responsive category 
   assert.match(results, /showAlbums && \(enableOnline \|\| albums\.length > 0\)/)
   assert.match(results, /showArtists && \(enableOnline \|\| artists\.length > 0\)/)
   assert.match(results, /enableOnline && showSongs/)
-  assert.match(page, /showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
+  assert.match(page, /showOnline && showSongs && <OnlineResults/)
   assert.doesNotMatch(page, /\{showLibrary && artists\.length > 0/)
   assert.doesNotMatch(page, /\{showLibrary && albums\.length > 0/)
 })
@@ -137,9 +137,9 @@ test('online categories each show a consistent heading and catalogue-specific su
   assert.doesNotMatch(results, />Global<\/h2>/)
 })
 
-test('the legacy provider search is not shown under normal Online or Library results', () => {
+test('normal Online Songs shows provider and addon results', () => {
   const source = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
-  assert.match(source, /showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
+  assert.match(source, /showOnline && showSongs && <OnlineResults/)
   assert.match(source, /<GlobalCatalogueResults/)
 })
 
