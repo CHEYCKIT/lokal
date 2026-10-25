@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { globalSearch, normalise } = require('../electron/online/globalCatalogue.js')
+const { globalSearch, preferredGlobalSearch, normalise } = require('../electron/online/globalCatalogue.js')
 
 const apple = [
   { wrapperType: 'track', kind: 'song', trackId: 100, trackName: 'A Song',
@@ -53,4 +53,48 @@ test('Invalid regions default to US and all results remain metadata-only', async
   }
   await globalSearch('Other Query', { country: 'a/b', fetchImpl })
   assert.ok(seen.every(u => u.searchParams.get('country') === 'US'))
+})
+
+
+test('Spotify preference reuses supplied cookie only inside backend and does not change playable sources', async () => {
+  let called = 0
+  const result = await preferredGlobalSearch('search in spotify', {
+    source: 'spotify', rawCookie: 'a private cookie', offset: 0,
+    spotifySearch: async (cookie, term) => {
+      called++
+      assert.equal(cookie, 'a private cookie')
+      assert.equal(term, 'search in spotify')
+      return { tracks: [{ id: 'abcd', title: 'Track', artist: 'Artist', catalogue: 'spotify' }], albums: [], artists: [] }
+    },
+  })
+  assert.equal(called, 1)
+  assert.equal(result.catalogue, 'spotify')
+  assert.equal(result.tracks[0].provider, undefined)
+  assert.equal(JSON.stringify(result).includes('private cookie'), false)
+})
+
+test('Spotify session failure falls back to Apple and shows the active catalogue', async () => {
+  const calls = []
+  const result = await preferredGlobalSearch('apple fallback query', {
+    source: 'spotify', rawCookie: 'connected-cookie',
+    spotifySearch: async () => { throw new Error('HTTP 403') },
+    fetchImpl: async url => {
+      calls.push(url)
+      return { ok: true, json: async () => ({ results: apple }) }
+    },
+  })
+  assert.equal(result.catalogue, 'apple')
+  assert.equal(result.fallback, true)
+  assert.match(result.notice, /Spotify.*Apple Music/)
+  assert.equal(calls.length, 3)
+})
+
+test('Apple setting never touches the Spotify session', async () => {
+  const result = await preferredGlobalSearch('explicit apple only', {
+    source: 'apple', rawCookie: 'this-must-not-be-used',
+    spotifySearch: () => { throw new Error('Spotify should not run') },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ results: [] }) }),
+  })
+  assert.equal(result.catalogue, 'apple')
+  assert.equal(result.fallback, undefined)
 })
