@@ -4,19 +4,18 @@ import { readFileSync } from 'node:fs'
 import { SEARCH_SCOPES, normalizeSearchScope, searchesLibrary, searchesOnline, scopeDescription } from '../src/searchScope.mjs'
 import { SEARCH_RESULT_CATEGORIES, normalizeResultCategory, includesResultCategory, mergeSearchArtists, mergeSearchAlbums } from '../src/searchResultCategory.mjs'
 
-test('source scope is exclusive and defaults safely to All', () => {
-  assert.deepEqual(SEARCH_SCOPES, ['all', 'library', 'online'])
-  assert.equal(normalizeSearchScope(null), 'all')
+test('source scope is exclusive and defaults safely to Library', () => {
+  assert.deepEqual(SEARCH_SCOPES, ['library', 'online'])
+  assert.equal(normalizeSearchScope(null), 'library')
   assert.equal(normalizeSearchScope('library'), 'library')
   assert.equal(normalizeSearchScope('online'), 'online')
-  assert.equal(normalizeSearchScope('incorrect'), 'all')
+  assert.equal(normalizeSearchScope('incorrect'), 'library')
 })
 
 test('source scope selects which catalogues actually run', () => {
   assert.deepEqual(SEARCH_SCOPES.map(scope => [
     scope, searchesLibrary(scope), searchesOnline(scope),
   ]), [
-    ['all', true, true],
     ['library', true, false],
     ['online', false, true],
   ])
@@ -38,7 +37,7 @@ test('desktop search applies scope to both querying and rendered result sections
   assert.match(page, /\{showLibrary && showSongs && tracks\.length > 0/)
   assert.match(page, /\{showLibrary && showSongs && lyricMatches\.length > 0/)
   assert.match(page, /enableOnline=\{showOnline\}/)
-  assert.match(page, /\{showOnline && showSongs && <OnlineResults/)
+  assert.match(page, /\{showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
   assert.match(page, /setScope\('online'\)/) // Find on provider
   assert.match(page, /aria-pressed=\{scope === value\}/)
 
