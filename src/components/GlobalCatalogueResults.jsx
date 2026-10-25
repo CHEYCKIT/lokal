@@ -79,7 +79,7 @@ export default function GlobalCatalogueResults({ query }) {
       ))
       const selected = candidates.find(row => row.id === song.id)
       const ok = await playRecommendationPool(candidates, {
-        selected, context: { type: 'search', id: q, name: 'Global: ' + q },
+        selected, context: { type: 'global', id: q, name: 'Global: ' + q },
         returnAfterStart: true,
       })
       toast.close()
