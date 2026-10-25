@@ -17,7 +17,6 @@ import { awaitAtmosOutputRelease, shouldToggleNormalStream } from '../audio/atmo
 import { recentTrackItem, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
-import OnlineCollections from './OnlineCollections'
 import DownloadNotices from './DownloadNotices'
 import SourceIcon from './SourceIcon'
 import AddonCollections from './AddonCollections'
@@ -296,7 +295,6 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
             )
           })}
         </div>
-        {provider === 'yt' && <OnlineCollections query={q} />}
         {providers.find(source => source.id === provider)?.package && <AddonCollections key={provider} query={q} source={providers.find(source => source.id === provider)} />}
         </>
       )}
