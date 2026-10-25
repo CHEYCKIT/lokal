@@ -86,6 +86,7 @@ import { usePerformanceMode } from './performanceMode'
 import { isWindowHidden, onWindowVisibility } from './windowVisibility'
 import { startSpotifyLikesSync } from './spotifyLikes'
 import { continueFlow, flowNeedsMore } from './flow/session'
+import { buildRadio } from './radioActions'
 import { playbackSpeed, usePlaybackSpeed } from './playbackSpeed.mjs'
 import { useCastPlayback, takeResumePosition } from './cast/useCastPlayback'
 
@@ -2202,11 +2203,31 @@ export default function App() {
     const { queue, queueIndex, _fetchingRelated } = state
     if (['discovery', 'mix', 'library-folder', RADIO_CONTEXT].includes(state.playbackContext?.type) || isStationTrack(currentTrackRef.current) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
     const generation = state.playbackGeneration
+    const seed = currentTrackRef.current
+    const userId = userRef.current?.id
+    const context = state.playbackContext
+    const current = () => {
+      const now = usePlayerStore.getState()
+      return now.playbackGeneration === generation && now.playbackContext === context &&
+        now.currentTrack?.id === seed.id
+    }
     state.setFetchingRelated(true)
-    api.getRelated(currentTrackRef.current.id, userRef.current?.id).then(related => {
-      if (usePlayerStore.getState().playbackGeneration === generation && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
-      usePlayerStore.getState().setFetchingRelated(false)
-    }).catch(() => usePlayerStore.getState().setFetchingRelated(false))
+    // BitChord-style online radio is the primary queue-end source. Use Lokal's
+    // existing provider resolution and stream fallback; do not download a
+    // random batch of library songs and call that "recommendations".
+    buildRadio(seed, userId, api, {
+      limit: 9,
+      isCurrent: current,
+      onTracks: tracks => { if (current()) usePlayerStore.getState().appendRelated(tracks) },
+    }).then(async tracks => {
+      if (!current() || tracks.some(track => track.id !== seed.id)) return
+      // Offline/provider failure: leave the established local related-track
+      // fallback in place rather than stopping playback at queue end.
+      const related = await api.getRelated(seed.id, userId).catch(() => [])
+      if (current() && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
+    }).catch(() => {}).finally(() => {
+      if (current()) usePlayerStore.getState().setFetchingRelated(false)
+    })
   }, [])
 
   useCastPlayback({ startTimer, stopTimer, beginLastfmPlayback, sendListenBrainzNowPlaying, flushTime, topUpRelated })
