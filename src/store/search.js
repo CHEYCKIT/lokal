@@ -8,16 +8,35 @@
 import { create } from 'zustand'
 
 /** Shared search state: the header's query and focus requests. */
-const ONLINE_KEY = 'lokal-online-search'
-const readOnline = () => { try { return localStorage.getItem(ONLINE_KEY) !== '0' } catch { return true } }
+import { normalizeSearchScope, searchesOnline } from '../searchScope.mjs'
+
+const SCOPE_KEY = 'lokal-search-scope'
+// Keep users' previous "online on/off" preference when upgrading to the
+// three-way selector. In particular, "online off" maps to Library, not All.
+const readScope = () => {
+  try {
+    const saved = localStorage.getItem(SCOPE_KEY)
+    if (saved === 'all' || saved === 'library' || saved === 'online') return saved
+    return localStorage.getItem('lokal-online-search') === '0' ? 'library' : 'all'
+  } catch { return 'all' }
+}
+const initialScope = readScope()
 
 export const useSearchStore = create((set) => ({
   query: '',
-  // Search also looks online (YouTube, addons...): the header's globe button.
-  online: readOnline(),
-  setOnline: (online) => {
-    try { localStorage.setItem(ONLINE_KEY, online ? '1' : '0') } catch {}
-    set({ online })
+  scope: initialScope,
+  // Deprecated compatibility shape for components still checking the old
+  // globe setting. The search screen uses scope exclusively.
+  online: searchesOnline(initialScope),
+  setScope: (value) => {
+    const scope = normalizeSearchScope(value)
+    try { localStorage.setItem(SCOPE_KEY, scope) } catch {}
+    set({ scope, online: searchesOnline(scope) })
+  },
+  setOnline: (value) => {
+    const scope = value ? 'all' : 'library'
+    try { localStorage.setItem(SCOPE_KEY, scope) } catch {}
+    set({ scope, online: searchesOnline(scope) })
   },
   focusSeq: 0,
   submitSeq: 0,
