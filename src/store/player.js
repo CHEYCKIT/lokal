@@ -274,6 +274,7 @@ export const usePlayerStore = create((set, get) => ({
 
   ...(savedQueueState || {}),
   playbackGeneration: 0,
+  queueResetRevision: 0,
 
   setAudioRef: (ref) => set({ audioRef: ref }),
   setCfAudioRef: (ref) => set({ cfAudioRef: ref }),
@@ -826,6 +827,7 @@ export const usePlayerStore = create((set, get) => ({
       ...(shuffled ? { shuffleQueue: trimmed } : {}),
       ...(state.originalQueue.length ? { originalQueue: state.originalQueue.filter(keep) } : {}),
       playNextIds: [],
+      queueResetRevision: (state.queueResetRevision || 0) + 1,
     })
   },
 
