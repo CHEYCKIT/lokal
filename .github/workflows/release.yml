@@ -192,6 +192,9 @@ jobs:
     # Runs for a pushed tag (prepare skipped) or a tag prepare just made.
     if: ${{ !cancelled() && ((needs.prepare.result == 'skipped' && startsWith(github.ref, 'refs/tags/')) || (needs.prepare.result == 'success' && needs.prepare.outputs.tag != '')) }}
     strategy:
+      # A Windows bootstrap/network failure must not cancel the Linux and
+      # macOS artifacts. The release still waits for all builds to succeed.
+      fail-fast: false
       matrix:
         # Linux stays on a fixed, older Ubuntu: native modules compiled here
         # only run on systems at least this new, so a newer image would
@@ -232,13 +235,47 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Setup .NET (for the Windows sign-in helper)
-        # npm install builds tools/webview2-signin (the YouTube Music
-        # sign-in window in Microsoft Edge WebView2) through native:prepare.
+      - name: Check preinstalled .NET 8 SDK
+        # windows-latest includes .NET 8. Avoid an unconditional
+        # setup-dotnet download: run 40229927366 failed before npm install
+        # because both the 10.0 runtime and 8.0 SDK blob URLs returned 409.
+        # This also detects image changes, preserving a conditional fallback.
         if: matrix.os == 'windows-latest'
+        id: dotnet_sdk
+        shell: pwsh
+        run: |
+          # Treat a missing/broken dotnet CLI as "not installed" so the
+          # conditional setup-dotnet fallback can restore it.
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            "installed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $installed = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0) {
+            "installed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $installed | ForEach-Object { Write-Host $_ }
+          $has8 = @($installed | Where-Object { $_ -match '^8\.0\.\d+\s' }).Count -gt 0
+          "installed=$($has8.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Install .NET 8 only when missing
+        # npm install builds tools/webview2-signin via native:prepare.
+        if: matrix.os == 'windows-latest' && steps.dotnet_sdk.outputs.installed != 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
+
+      - name: Verify Windows .NET SDK
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $sdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0 -or -not @($sdks | Where-Object { $_ -match '^8\.0\.\d+\s' }).Count) {
+            throw '.NET 8 SDK is required to build the Windows WebView2 sign-in helper'
+          }
+          Write-Host "Using preinstalled or restored .NET 8 SDK:"
+          $sdks | Where-Object { $_ -match '^8\.0\.\d+\s' }
 
       - name: Install Dependencies
         run: npm install
