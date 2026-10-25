@@ -109,3 +109,20 @@ test('the desktop has one artist/album presentation and one responsive category 
   assert.doesNotMatch(page, /\{showLibrary && artists\.length > 0/)
   assert.doesNotMatch(page, /\{showLibrary && albums\.length > 0/)
 })
+
+test('Recent history follows selected scope and category rather than bypassing Online-only', () => {
+  const page = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
+  assert.match(page, /scope === 'online' \? \[\] : recentItems\.filter/)
+  assert.match(page, /scope === 'library' && item\.type === 'track' && isStreamed\(item\)/)
+  assert.match(page, /resultCategory === 'artists' && item\.type === 'artist'/)
+  assert.match(page, /resultCategory === 'albums' && item\.type === 'album'/)
+  assert.match(page, /visibleRecentItems\.map\(\(item, i\) =>/)
+  assert.match(page, /visibleRecentItems\.filter\(entry => entry\.type === 'track'\)/)
+})
+
+test('in-flight searches invalidate synchronously on source change', () => {
+  const page = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
+  assert.match(page, /searchSeqRef\.current\+\+\s+setScope\('online'\)/)
+  assert.match(page, /onClick=\{\(\) => \{[\s\S]*?value !== scope[\s\S]*?searchSeqRef\.current\+\+[\s\S]*?setScope\(value\)/)
+  assert.match(page, /setCorrection\(null\)[\s\S]*?setOnlineQuery\(query\)/)
+})
