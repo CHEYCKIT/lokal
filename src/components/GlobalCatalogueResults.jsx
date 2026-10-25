@@ -5,6 +5,7 @@ import { api } from '../api'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { showToast, showLoadingToast } from './Toaster'
 import { onlineAlbumPath } from '../onlineBrowse'
+import { useSearchStore } from '../store/search'
 import QualityImage from './QualityImage'
 
 const EMPTY = { tracks: [], albums: [], artists: [] }
@@ -21,11 +22,13 @@ export default function GlobalCatalogueResults({ query }) {
   const [playing, setPlaying] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [retry, setRetry] = useState(0)
   const seq = useRef(0)
   const locale = (typeof navigator !== 'undefined' ? navigator.language : 'en-US').split('-')[1] || 'US'
   useEffect(() => {
     const version = ++seq.current
-    setResults(EMPTY); setError(''); setHasMore(false)
+    setResults(EMPTY); setError(''); setHasMore(false); setExpanded(false)
     if (q.length < 2) { setBusy(false); return }
     setBusy(true)
     const timer = setTimeout(async () => {
@@ -46,7 +49,7 @@ export default function GlobalCatalogueResults({ query }) {
       }
     }, 350)
     return () => { clearTimeout(timer); seq.current++ }
-  }, [q, locale])
+  }, [q, locale, retry])
 
   const more = async () => {
     if (loadingMore) return
@@ -94,20 +97,22 @@ export default function GlobalCatalogueResults({ query }) {
       <p className="mt-1 text-[11px] text-muted">Apple Music catalogue · audio resolved in your Playback Source Priority order</p>
     </div>
     {busy && <p className="text-xs text-muted" role="status">Searching the global catalogue…</p>}
-    {error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => { const old = q; setError(''); api.globalCatalogueSearch(old, { country: locale }).then(setResults).catch(e => setError(e.message)) }}>Retry</button></p>}
+    {error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
     {!busy && !error && !results.tracks.length && !results.albums.length && !results.artists.length &&
       <p className="text-xs text-muted">No catalogue matches found.</p>}
     {results.tracks.length > 0 && <div>
       <p className="mb-1 text-[11px] font-medium uppercase text-muted">Songs</p>
       <div className="space-y-0.5">
-        {results.tracks.map(row => <button key={row.id} disabled={!!playing} onClick={() => play(row)}
+        {(expanded ? results.tracks : results.tracks.slice(0, 8)).map(row => <button key={row.id} disabled={!!playing} onClick={() => play(row)}
           className="w-full flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.06] disabled:opacity-60">
           <span className="h-11 w-11 overflow-hidden rounded-md bg-card shrink-0">{row.artwork_url ? <QualityImage src={row.artwork_url} className="w-full h-full object-cover" /> : <span className="flex h-full items-center justify-center"><Music size={18}/></span>}</span>
           <span className="min-w-0 flex-1"><span className="block truncate text-sm text-white">{row.title}</span><span className="block truncate text-xs text-muted">{row.artist}{row.album ? ' · ' + row.album : ''}</span></span>
           <Play size={15} className="text-muted shrink-0"/>
         </button>)}
       </div>
-      {hasMore && <button disabled={loadingMore} onClick={more} className="mt-2 text-xs text-accent hover:underline disabled:opacity-50">{loadingMore ? 'Loading…' : 'More global songs'}</button>}
+      {!expanded && results.tracks.length > 8 && <button onClick={() => setExpanded(true)} className="mt-2 text-xs text-accent hover:underline">Show more global songs</button>}
+      {expanded && hasMore && <button disabled={loadingMore} onClick={more} className="mt-2 text-xs text-accent hover:underline disabled:opacity-50">{loadingMore ? 'Loading…' : 'Load more global songs'}</button>}
+      {expanded && <button onClick={() => setExpanded(false)} className="ml-4 text-xs text-muted hover:underline">Show fewer</button>}
     </div>}
     {results.albums.length > 0 && <div>
       <p className="mb-2 text-[11px] font-medium uppercase text-muted">Albums</p>
@@ -120,7 +125,7 @@ export default function GlobalCatalogueResults({ query }) {
     {results.artists.length > 0 && <div>
       <p className="mb-2 text-[11px] font-medium uppercase text-muted">Artists</p>
       <div className="flex flex-wrap gap-2">{results.artists.slice(0, 10).map(row =>
-        <button key={row.id} onClick={() => nav('/releases', { state: { artist: row.title } })}
+        <button key={row.id} onClick={() => useSearchStore.getState().setQuery(row.title)}
           className="rounded-full bg-elevated border border-border px-3 py-1.5 text-xs text-muted hover:text-white"><User size={12} className="inline mr-1"/>{row.title}</button>)}</div>
     </div>}
   </section>
