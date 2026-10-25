@@ -124,13 +124,14 @@ export async function onlineFinds(source, { count, exclude = new Set(), isCurren
 }
 
 /**
- * How many of `count` songs come from online: from 10% (a personal tuner) to
- * 80% (all the way adventurous), none for the library alone.
+ * Target share of the *entire upcoming batch* supplied by online radio/Discovery.
+ * The remaining slots are library anchors, not a second full library batch.
+ * Preserve one local anchor so playback can begin immediately if the network is slow.
  */
 export function onlineShare(tuner, count) {
-  if (!tuner?.source || tuner.source === 'library') return 0
+  if (!tuner?.source || tuner.source === 'library' || count <= 1) return 0
   const adventurous = Math.min(1, Math.max(0, Number(tuner.adventurous) || 0))
-  return Math.max(1, Math.round(count * (0.1 + 0.7 * adventurous)))
+  return Math.min(count - 1, Math.max(1, Math.round(count * (0.55 + 0.35 * adventurous))))
 }
 
 // ---------------------------------------------------------------- moods
