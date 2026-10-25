@@ -6,6 +6,7 @@ import { usePlayerStore } from '../store/player'
 import { useShallow } from 'zustand/react/shallow'
 import { useSearchStore } from '../store/search'
 import { SEARCH_SCOPES, searchesLibrary, searchesOnline, scopeDescription } from '../searchScope.mjs'
+import { SEARCH_RESULT_CATEGORIES, includesResultCategory, categoryLabel } from '../searchResultCategory.mjs'
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
 import GlobalCatalogueResults from '../components/GlobalCatalogueResults'
@@ -13,7 +14,6 @@ import LinkDownload from '../components/LinkDownload'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
 import { isStreamed } from '../onlineTracks'
-import { plural } from '../plural'
 import { asLink } from '../downloadLinks'
 import { useTranslation } from '../i18n'
 
@@ -28,6 +28,11 @@ export default function Search() {
   const setQuery = useSearchStore(s => s.setQuery)
   const scope = useSearchStore(s => s.scope)
   const setScope = useSearchStore(s => s.setScope)
+  const resultCategory = useSearchStore(s => s.resultCategory)
+  const setResultCategory = useSearchStore(s => s.setResultCategory)
+  const showSongs = includesResultCategory(resultCategory, 'songs')
+  const showArtists = includesResultCategory(resultCategory, 'artists')
+  const showAlbums = includesResultCategory(resultCategory, 'albums')
   const showLibrary = searchesLibrary(scope)
   const showOnline = searchesOnline(scope)
   // A source search from a streamed song or a lossless request. The selected
@@ -44,6 +49,7 @@ export default function Search() {
       // Explicitly invoking Find on a provider must show those results,
       // even if the saved scope is Library.
       setScope('online')
+      setResultCategory('songs')
       setQuery(request.query || '')
     }
   }, [location.key]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -141,7 +147,6 @@ export default function Search() {
 
   const artSrc = (a) => a.image_path ? (api.isElectron ? `file://${a.image_path}` : null) : null
   // By the album's cover track in the web app (an album has no id of its own).
-  const albumArt = (a) => api.albumArtURL(a)
 
   /** Open an artist from the results and remember it. */
   const handleArtistClick = (artist) => {
@@ -223,7 +228,9 @@ export default function Search() {
     playTrack(track, [track])
   }
 
-  // With a query, the results page: library matches, then online songs.
+  // Source scope and result type are orthogonal, like mobile.
+  const hasVisibleLibraryResults = (showSongs && (tracks.length || lyricMatches.length)) ||
+    (showArtists && artists.length) || (showAlbums && albums.length)
   const showSearchResults = isSearchStarted
 
   return (
@@ -242,6 +249,17 @@ export default function Search() {
           ))}
         </div>
         <p className="text-[11px] text-muted">{t(scopeDescription(scope))}</p>
+        <div role="group" aria-label={t('Search result type')}
+          className="flex max-w-full flex-wrap items-center gap-1">
+          {SEARCH_RESULT_CATEGORIES.map(value => (
+            <button key={value} type="button"
+              onClick={() => setResultCategory(value)}
+              aria-pressed={resultCategory === value}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${resultCategory === value ? 'bg-accent/20 border-accent/40 text-accent' : 'border-border bg-elevated/50 text-muted hover:text-white hover:bg-card'}`}>
+              {t(categoryLabel(value))}
+            </button>
+          ))}
+        </div>
       </div>
       {!showSearchResults && (
         <div className="space-y-6">
@@ -329,45 +347,7 @@ export default function Search() {
             </p>
           )}
 
-          {showLibrary && artists.length > 0 && (
-            <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Artists")}</h2>
-              <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
-                {artists.map((a, i) => (
-                  <motion.button key={a.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.04 }}
-                    onClick={() => handleArtistClick(a)} className="flex flex-col items-center gap-2 group">
-                    <div className="w-full aspect-square rounded-full bg-elevated border border-border overflow-hidden flex items-center justify-center text-muted group-hover:border-accent/40 transition-colors">
-                      {artSrc(a) ? <img src={artSrc(a)} className="w-full h-full object-cover" /> : <Music size={20} />}
-                    </div>
-                    <p className="text-xs text-center text-muted group-hover:text-white truncate w-full">{a.name}</p>
-                  </motion.button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {showLibrary && albums.length > 0 && (
-            <section>
-              <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Albums")}</h2>
-              <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-5 gap-3">
-                {albums.map((a, i) => (
-                  <motion.button key={`${a.title}-${i}`} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }}
-                    onClick={() => handleAlbumClick(a)}
-                    whileHover={{ scale: 1.04 }} className="flex flex-col gap-2 text-left group">
-                    <div className="w-full aspect-square rounded-xl bg-elevated border border-border overflow-hidden flex items-center justify-center">
-                      {albumArt(a) ? <img src={albumArt(a)} className="w-full h-full object-cover" /> : <Disc3 size={28} className="text-muted" />}
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-white truncate">{a.title}</p>
-                      <p className="text-xs text-muted">{plural(a.track_count, 'track')}</p>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {showLibrary && tracks.length > 0 && (
+          {showLibrary && showSongs && tracks.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-display text-muted uppercase tracking-widest">{t("Tracks")}</h2>
@@ -377,7 +357,17 @@ export default function Search() {
             </section>
           )}
 
-          {showLibrary && lyricMatches.length > 0 && (
+          <GlobalCatalogueResults
+            query={showOnline ? onlineQuery : query}
+            category={resultCategory}
+            enableOnline={showOnline}
+            localArtists={showLibrary ? artists : []}
+            localAlbums={showLibrary ? albums : []}
+            onLocalArtistClick={handleArtistClick}
+            onLocalAlbumClick={handleAlbumClick}
+          />
+
+          {showLibrary && showSongs && lyricMatches.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Lyrics Matches")}</h2>
               <div className="space-y-2">
@@ -407,15 +397,14 @@ export default function Search() {
             </section>
           )}
 
-          {showLibrary && query && !searching && !tracks.length && !artists.length && !albums.length && !lyricMatches.length && (
+          {scope === 'library' && query && !searching && !hasVisibleLibraryResults && (
             <div className="flex items-center gap-3 py-3 text-muted">
               <Music size={18} className="opacity-40" />
               <p className="text-sm">Nothing in your library for "{correction?.from === query.trim() ? correction.to : query}"</p>
             </div>
           )}
 
-          {showOnline && <GlobalCatalogueResults query={onlineQuery} />}
-          {showOnline && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} showLibraryHint={scope !== 'online'} />}
+          {showOnline && showSongs && <OnlineResults query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest} showLibraryHint={scope !== 'online'} />}
         </>
       )}
     </div>
