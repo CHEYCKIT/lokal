@@ -15,7 +15,7 @@ import { api } from '../api.js'
 import { usePlayerStore } from '../store/player.js'
 import { DEFAULT_TUNER, FLOW_MOODS, familiarity, flowEligible, flowSongKey, flowSource, genreWeight, isFresh, moodScore, normalizeTuner, pickFlow } from './engine.js'
 import { songKey } from '../recommendations.js'
-import { moodFinds, moodSeeds, onlineFinds, onlineShare } from './online.js'
+import { moodFinds, moodSeeds, onlineFinds, onlineShare, radioFinds } from './online.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
@@ -212,7 +212,7 @@ async function weaveOnline(context, pool, count, find = findOnline) {
   weaving.add(context.id)
   try {
     const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-    const found = await find(context, pool, count, isCurrent)
+    const found = await Promise.resolve(find(context, pool, count, isCurrent)).catch(() => [])
     if (!isCurrent()) return
     if (found.length) usePlayerStore.getState().insertUpcoming(found, context)
     // Online may be unavailable (offline, missing account, provider throttled).
@@ -244,7 +244,18 @@ async function findOnline(context, pool, count, isCurrent, queued = []) {
   const mood = context.mood || 'flow'
   let found
   if (mood === 'flow') {
-    found = await onlineFinds(source, { count, exclude, isCurrent })
+    // Provider home recommendations are useful, but can be unavailable for
+    // signed-out listeners. Augment them with public, track-seeded radio.
+    const homeCount = Math.ceil(count / 2)
+    found = await onlineFinds(source, { count: homeCount, exclude, isCurrent })
+    if (found.length < count && isCurrent()) {
+      const seeds = moodSeeds(pool, {
+        mood: 'flow', fits: () => 1,
+        favour: track => familiarity(track, { recent: normalizeTuner(context.tuner).recent }),
+      })
+      const radio = await radioFinds({ seeds, count: count - found.length, exclude, isCurrent })
+      found = [...found, ...radio]
+    }
   } else {
     // A mood: songs like the library's songs that fit it, each heard before it's offered.
     const tuner = normalizeTuner(context.tuner)
@@ -255,6 +266,13 @@ async function findOnline(context, pool, count, isCurrent, queued = []) {
     })
     const log = message => { try { console.info(message) } catch {} }
     found = await moodFinds(source, { mood, seeds, count, exclude, isCurrent, log })
+    if (found.length < count && isCurrent()) {
+      // Last.fm can return no similarly tagged songs. Online radio still
+      // follows the selected mood's local seed instead of random downloads.
+      found = [...found, ...await radioFinds({
+        seeds, count: count - found.length, exclude, isCurrent,
+      })]
+    }
   }
   return found
 }
