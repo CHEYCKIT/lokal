@@ -18,6 +18,8 @@ function normalise(kind, rows) {
     const id = kind === 'tracks' ? row.trackId : kind === 'albums' ? row.collectionId : row.artistId
     const title = kind === 'tracks' ? row.trackName : kind === 'albums' ? row.collectionName : row.artistName
     if (id == null || !String(title || '').trim() || keys.has(String(id))) continue
+    // Global music results should not contain video or podcast snippets.
+    if (kind === 'tracks' && row.kind && row.kind !== 'song') continue
     if (kind !== 'artists' && !String(row.artistName || '').trim()) continue
     keys.add(String(id))
     out.push({
