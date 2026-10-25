@@ -139,37 +139,42 @@ export function onlineShare(tuner, count) {
  * Reuses the provider resolver used by Discovery and explicit Radio.
  */
 export async function radioFinds({ seeds = [], count, exclude = new Set(), isCurrent = () => true,
-  client = api, resolve = (rows, options) => resolveRecommendationTracks(rows, client, options) } = {}) {
+  client = api, accept = async () => true,
+  resolve = (rows, options) => resolveRecommendationTracks(rows, client, options) } = {}) {
   if (!(count > 0) || !seeds.length) return []
   const started = generation
   const live = () => isCurrent() && started === generation
-  const lists = await Promise.all(seeds.slice(0, 3).map(seed =>
+  const selected = seeds.slice(0, 3)
+  const lists = await Promise.all(selected.map(seed =>
     similarTo('youtube', seed, client).catch(() => [])))
   if (!live()) return []
   const candidates = []
   const seen = new Set()
   for (let i = 0; lists.some(list => i < list.length); i++) {
-    for (const list of lists) {
-      const track = list[i]
+    for (let j = 0; j < lists.length; j++) {
+      const track = lists[j][i]
       const key = songKey(track)
       if (key && !seen.has(key) && !exclude.has(key)) {
         seen.add(key)
-        candidates.push(track)
+        candidates.push({ track, seed: selected[j] })
       }
     }
   }
   const result = []
   const artists = new Map()
-  for (const candidate of candidates.slice(0, count * 8)) {
+  for (const { track, seed } of candidates.slice(0, count * 8)) {
     if (!live() || result.length >= count) break
-    const [song] = await Promise.resolve(resolve([candidate], { isCurrent: live })).catch(() => [])
+    const [song] = await Promise.resolve(resolve([track], { isCurrent: live })).catch(() => [])
     if (!song || !live()) continue
     const key = songKey(song)
-    const artist = String(song.artist || '').toLowerCase().split(/,|&| feat\.? | ft\.? /)[0].trim()
+    const artist = String(song.artist || '').toLowerCase().split(/,|&| feat\\.? | ft\\.? /)[0].trim()
     if (!key || exclude.has(key) || (artists.get(artist) || 0) >= 2) continue
+    // Unlike the plain Flow, a mood must reject online radio candidates that
+    // do not match its seed in AutoMix tempo/loudness analysis.
+    if (!await Promise.resolve(accept(song, seed)).catch(() => false) || !live()) continue
     artists.set(artist, (artists.get(artist) || 0) + 1)
     exclude.add(key)
-    result.push({ ...song, flowFind: 'youtube' })
+    result.push({ ...song, flowFind: 'youtube', flowSeed: seed.id })
   }
   return live() ? result : []
 }
