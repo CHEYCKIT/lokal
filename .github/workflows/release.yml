@@ -244,9 +244,16 @@ jobs:
         id: dotnet_sdk
         shell: pwsh
         run: |
+          # Treat a missing/broken dotnet CLI as "not installed" so the
+          # conditional setup-dotnet fallback can restore it.
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            "installed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
           $installed = @(dotnet --list-sdks)
           if ($LASTEXITCODE -ne 0) {
-            throw 'Could not enumerate installed .NET SDKs on Windows runner'
+            "installed=false" >> $env:GITHUB_OUTPUT
+            exit 0
           }
           $installed | ForEach-Object { Write-Host $_ }
           $has8 = @($installed | Where-Object { $_ -match '^8\.0\.\d+\s' }).Count -gt 0
