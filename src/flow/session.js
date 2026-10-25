@@ -85,12 +85,14 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER, 
     return start !== starts || now.playbackGeneration !== before.playbackGeneration || now.playbackContext !== before.playbackContext || now.currentTrack?.id !== before.currentTrack?.id
   }
   const pool = await flowPool(userId, { force: true })
-  const tracks = pickFlow(pool, { count: START_COUNT, mood, tuner })
-  if (!tracks.length) return 0
   const source = await sourceFor(tuner)
   if (stale()) return null
-  const context = flowContext(userId, mood, tuner, source)
+  // Online tracks replace library slots instead of being appended to a full
+  // local queue (the old "80% online" setting actually meant 8 of 18).
   const share = onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT)
+  const tracks = pickFlow(pool, { count: START_COUNT - share, mood, tuner })
+  if (!tracks.length) return 0
+  const context = flowContext(userId, mood, tuner, source)
   // Its first online finds, waited for a moment so the Flow opens with them.
   // Too slow: it starts without them, and they join when they're found.
   let playing = false
@@ -145,7 +147,8 @@ export async function retuneFlow({ userId, mood, tuner }) {
   if (now.playbackContext?.id !== state.playbackContext.id || !now.currentTrack) return false
   const order = playOrder(now)
   const played = order.slice(0, order.length - upcoming(now).length)
-  const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
+  const onlineCount = onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT - 1)
+  const tracks = pickFlow(pool, { count: START_COUNT - 1 - onlineCount, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
   const context = flowContext(userId, mood, tuner, source)
   const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context, { expect: state.playbackContext.id })
   if (replaced) weaveOnline(context, pool, onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT)).catch(() => {})
@@ -176,7 +179,8 @@ export function continueFlow() {
     // Everything this Flow has played or queued is in its queue: none of it again.
     const exclude = new Set(now.queue.map(flowSongKey))
     const lastTracks = playOrder(now).slice(-3)
-    let tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude, lastTracks })
+    const share = onlineShare({ ...tuner, source: context.source }, MORE_COUNT)
+    let tracks = pickFlow(pool, { count: MORE_COUNT - share, mood: context.mood, tuner, exclude, lastTracks })
     if (!tracks.length && pool.length) {
       // Played it all: the songs heard longest ago come round again. Only the
       // last few stay held back (fewer for a small library, so some are left).
@@ -184,12 +188,12 @@ export function continueFlow() {
       usePlayerStore.getState().dropPlayed(Math.min(RECENT_HELD, Math.floor(eligible / 2)))
       const trimmed = usePlayerStore.getState()
       if (trimmed.playbackContext?.id !== context.id) return
-      tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
+      tracks = pickFlow(pool, { count: MORE_COUNT - share, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
     }
     usePlayerStore.getState().extendQueue(tracks, context)
     // Online finds join in the background: the library's songs are queued
     // already, and the next refill doesn't wait for slow lookups.
-    weaveOnline(context, pool, onlineShare({ ...tuner, source: context.source || await sourceFor(context.tuner) }, MORE_COUNT)).catch(() => {})
+    weaveOnline(context, pool, share).catch(() => {})
   })().finally(() => { adding = null })
   return adding
 }
@@ -209,7 +213,19 @@ async function weaveOnline(context, pool, count, find = findOnline) {
   try {
     const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
     const found = await find(context, pool, count, isCurrent)
-    if (found.length && isCurrent()) usePlayerStore.getState().insertUpcoming(found, context)
+    if (!isCurrent()) return
+    if (found.length) usePlayerStore.getState().insertUpcoming(found, context)
+    // Online may be unavailable (offline, missing account, provider throttled).
+    // Backfill only its missing slots, preserving uninterrupted playback.
+    const missing = count - found.length
+    if (missing > 0) {
+      const state = usePlayerStore.getState()
+      const fallback = pickFlow(pool, {
+        count: missing, mood: context.mood, tuner: context.tuner,
+        exclude: new Set(state.queue.map(flowSongKey)), lastTracks: playOrder(state).slice(-3),
+      })
+      if (fallback.length && isCurrent()) state.extendQueue(fallback, context)
+    }
   } finally { weaving.delete(context.id) }
 }
 
