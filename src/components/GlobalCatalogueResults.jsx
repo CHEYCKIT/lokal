@@ -7,13 +7,18 @@ import { showToast, showLoadingToast } from './Toaster'
 import { onlineAlbumPath } from '../onlineBrowse'
 import { useSearchStore } from '../store/search'
 import QualityImage from './QualityImage'
+import { includesResultCategory, mergeSearchArtists, mergeSearchAlbums } from '../searchResultCategory.mjs'
+import { plural } from '../plural'
 
 const EMPTY = { tracks: [], albums: [], artists: [] }
 const PAGE_SIZE = 25
 
 /** Global metadata never chooses a streaming provider. A clicked title is
  * matched through Playback > Source Priority by the existing resolver. */
-export default function GlobalCatalogueResults({ query }) {
+export default function GlobalCatalogueResults({
+  query, category = 'all', enableOnline = true,
+  localArtists = [], localAlbums = [], onLocalArtistClick, onLocalAlbumClick,
+}) {
   const nav = useNavigate()
   const q = String(query || '').trim()
   const [results, setResults] = useState(EMPTY)
@@ -31,7 +36,7 @@ export default function GlobalCatalogueResults({ query }) {
   useEffect(() => {
     const version = ++seq.current
     setResults(EMPTY); setError(''); setNotice(''); setHasMore(false); setExpanded(false); setLoadingMore(false)
-    if (q.length < 2) { setBusy(false); return }
+    if (!enableOnline || q.length < 2) { setBusy(false); return }
     setBusy(true)
     const timer = setTimeout(async () => {
       try {
@@ -53,7 +58,7 @@ export default function GlobalCatalogueResults({ query }) {
       }
     }, 350)
     return () => { clearTimeout(timer); seq.current++ }
-  }, [q, locale, retry])
+  }, [q, locale, retry, enableOnline])
   useEffect(() => {
     const changed = () => setRetry(value => value + 1)
     window.addEventListener('lokal:settings-saved', changed)
@@ -100,18 +105,26 @@ export default function GlobalCatalogueResults({ query }) {
     } finally { setPlaying('') }
   }
 
-  if (q.length < 2) return null
+  if (!q.length) return null
+  const showSongs = includesResultCategory(category, 'songs')
+  const showArtists = includesResultCategory(category, 'artists')
+  const showAlbums = includesResultCategory(category, 'albums')
+  const artists = mergeSearchArtists(localArtists, enableOnline ? results.artists : [])
+  const albums = mergeSearchAlbums(localAlbums, enableOnline ? results.albums : [])
+  const hasResults = (showSongs && enableOnline && results.tracks.length > 0) ||
+    (showArtists && artists.length > 0) || (showAlbums && albums.length > 0)
+  const showCatalogueHeading = enableOnline && showSongs
   return <section className="space-y-3">
-    <div>
+    {showCatalogueHeading && <div>
       <h2 className="text-xs font-display uppercase tracking-widest text-white">Global</h2>
       <p className="mt-1 text-[11px] text-muted">{catalogue === 'spotify' ? 'Spotify' : 'Apple Music'} catalogue · audio resolved in your Playback Source Priority order</p>
-    </div>
-    {notice && <p className="text-xs text-amber-400" role="status">{notice}</p>}
-    {busy && <p className="text-xs text-muted" role="status">Searching the global catalogue…</p>}
-    {error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
-    {!busy && !error && !results.tracks.length && !results.albums.length && !results.artists.length &&
+    </div>}
+    {enableOnline && notice && <p className="text-xs text-amber-400" role="status">{notice}</p>}
+    {enableOnline && busy && <p className="text-xs text-muted" role="status">Searching the global catalogue…</p>}
+    {enableOnline && error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
+    {enableOnline && !busy && !error && !hasResults &&
       <p className="text-xs text-muted">No catalogue matches found.</p>}
-    {results.tracks.length > 0 && <div>
+    {enableOnline && showSongs && results.tracks.length > 0 && <div>
       <p className="mb-1 text-[11px] font-medium uppercase text-muted">Songs</p>
       <div className="space-y-0.5">
         {(expanded ? results.tracks : results.tracks.slice(0, 8)).map(row => <button key={row.id} disabled={!!playing} onClick={() => play(row)}
@@ -125,19 +138,45 @@ export default function GlobalCatalogueResults({ query }) {
       {expanded && hasMore && <button disabled={loadingMore} onClick={more} className="mt-2 text-xs text-accent hover:underline disabled:opacity-50">{loadingMore ? 'Loading…' : 'Load more global songs'}</button>}
       {expanded && <button onClick={() => setExpanded(false)} className="ml-4 text-xs text-muted hover:underline">Show fewer</button>}
     </div>}
-    {results.albums.length > 0 && <div>
-      <p className="mb-2 text-[11px] font-medium uppercase text-muted">Albums</p>
-      <div className="grid grid-cols-3 @sm:grid-cols-5 gap-2">{results.albums.slice(0, 10).map(row =>
-        <button key={row.id} className="min-w-0 text-left" onClick={() => nav(onlineAlbumPath({ artist: row.artist, album: row.title }), { state: { artwork: row.artwork_url } })}>
-          <span className="block aspect-square rounded-md overflow-hidden bg-card">{row.artwork_url ? <QualityImage src={row.artwork_url} className="w-full h-full object-cover"/> : <span className="h-full flex items-center justify-center"><Disc3 size={20}/></span>}</span>
-          <span className="block truncate text-xs mt-1">{row.title}</span><span className="block truncate text-[11px] text-muted">{row.artist}</span>
-        </button>)}</div>
+    {showAlbums && albums.length > 0 && <div>
+      <h2 className="mb-2 text-xs font-display text-muted uppercase tracking-widest">Albums</h2>
+      <div className="grid grid-cols-3 @sm:grid-cols-5 gap-2">
+        {albums.map(({ origin, item: row, key }) => (
+          <button key={origin + ':' + key} className="min-w-0 text-left"
+            onClick={() => origin === 'library'
+              ? onLocalAlbumClick?.(row)
+              : nav(onlineAlbumPath({ artist: row.artist, album: row.title }), { state: { artwork: row.artwork_url } })}>
+            <span className="block aspect-square rounded-md overflow-hidden bg-card">
+              {origin === 'library'
+                ? (api.albumArtURL(row) ? <img src={api.albumArtURL(row)} alt="" className="w-full h-full object-cover" /> : <span className="h-full flex items-center justify-center"><Disc3 size={20}/></span>)
+                : (row.artwork_url ? <QualityImage src={row.artwork_url} className="w-full h-full object-cover"/> : <span className="h-full flex items-center justify-center"><Disc3 size={20}/></span>)}
+            </span>
+            <span className="block truncate text-xs mt-1">{row.title || row.name}</span>
+            <span className="block truncate text-[11px] text-muted">
+              {origin === 'library' ? plural(row.track_count ?? 0, 'track') : row.artist}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>}
-    {results.artists.length > 0 && <div>
-      <p className="mb-2 text-[11px] font-medium uppercase text-muted">Artists</p>
-      <div className="flex flex-wrap gap-2">{results.artists.slice(0, 10).map(row =>
-        <button key={row.id} onClick={() => useSearchStore.getState().setQuery(row.title)}
-          className="rounded-full bg-elevated border border-border px-3 py-1.5 text-xs text-muted hover:text-white"><User size={12} className="inline mr-1"/>{row.title}</button>)}</div>
+    {showArtists && artists.length > 0 && <div>
+      <h2 className="mb-2 text-xs font-display text-muted uppercase tracking-widest">Artists</h2>
+      <div className="grid grid-cols-3 @sm:grid-cols-5 @md:grid-cols-6 gap-3">
+        {artists.map(({ origin, item: row, key }) => (
+          <button key={origin + ':' + key}
+            onClick={() => origin === 'library' ? onLocalArtistClick?.(row) : useSearchStore.getState().setQuery(row.title)}
+            className="flex flex-col items-center gap-2 group min-w-0">
+            <span className="w-full aspect-square rounded-full bg-elevated border border-border overflow-hidden flex items-center justify-center text-muted group-hover:border-accent/40">
+              {origin === 'library' && row.image_path && api.isElectron
+                ? <img src={`file://${row.image_path}`} alt="" className="w-full h-full object-cover" />
+                : row.artwork_url
+                  ? <QualityImage src={row.artwork_url} className="w-full h-full object-cover" />
+                  : <User size={20}/>}
+            </span>
+            <span className="text-xs text-center text-muted group-hover:text-white truncate w-full">{row.name || row.title}</span>
+          </button>
+        ))}
+      </div>
     </div>}
   </section>
 }
