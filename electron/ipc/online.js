@@ -128,6 +128,7 @@ function registerOnlineHandlers(ipcMain) {
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
   setTimeout(() => genres.backfillOnlineGenres(getDB()), 20000).unref?.()
   ipcMain.handle('online:search', (_, query, provider) => search(query, provider))
+  ipcMain.handle('online:globalSearch', (_, query, options) => require('../online/globalCatalogue').globalSearch(query, options || {}))
   ipcMain.handle('online:save', (_, items) => {
     try {
       const rows = sources.saveOnlineTracks(getDB(), items)
