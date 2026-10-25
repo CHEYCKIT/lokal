@@ -47,7 +47,7 @@ export default function TitleBar() {
       <div className="flex items-center gap-1 justify-end">
         <button
           type="button"
-          onClick={() => api.openExternal('https://discord.gg/Wv3zfpG6UT')}
+          onClick={() => api.openExternal('https://discord.com/invite/8bUGWChwpG')}
           title="Discord"
           aria-label="Discord"
           className="w-7 h-7 flex-shrink-0 rounded flex items-center justify-center text-muted hover:text-text hover:bg-elevated transition-colors"
