@@ -167,7 +167,7 @@ export async function radioFinds({ seeds = [], count, exclude = new Set(), isCur
     const [song] = await Promise.resolve(resolve([track], { isCurrent: live })).catch(() => [])
     if (!song || !live()) continue
     const key = songKey(song)
-    const artist = String(song.artist || '').toLowerCase().split(/,|&| feat\\.? | ft\\.? /)[0].trim()
+    const artist = String(song.artist || '').toLowerCase().split(/,|&| feat\.? | ft\.? /)[0].trim()
     if (!key || exclude.has(key) || (artists.get(artist) || 0) >= 2) continue
     // Unlike the plain Flow, a mood must reject online radio candidates that
     // do not match its seed in AutoMix tempo/loudness analysis.
