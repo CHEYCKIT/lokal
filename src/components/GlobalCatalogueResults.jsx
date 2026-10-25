@@ -18,6 +18,8 @@ export default function GlobalCatalogueResults({ query }) {
   const q = String(query || '').trim()
   const [results, setResults] = useState(EMPTY)
   const [error, setError] = useState('')
+  const [catalogue, setCatalogue] = useState('apple')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [playing, setPlaying] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
@@ -28,7 +30,7 @@ export default function GlobalCatalogueResults({ query }) {
   const locale = (typeof navigator !== 'undefined' ? navigator.language : 'en-US').split('-')[1] || 'US'
   useEffect(() => {
     const version = ++seq.current
-    setResults(EMPTY); setError(''); setHasMore(false); setExpanded(false)
+    setResults(EMPTY); setError(''); setNotice(''); setHasMore(false); setExpanded(false)
     if (q.length < 2) { setBusy(false); return }
     setBusy(true)
     const timer = setTimeout(async () => {
@@ -42,6 +44,8 @@ export default function GlobalCatalogueResults({ query }) {
           artists: Array.isArray(found?.artists) ? found.artists : [],
         }
         setResults(clean); setHasMore(clean.tracks.length === PAGE_SIZE)
+        setCatalogue(found.catalogue === 'spotify' ? 'spotify' : 'apple')
+        setNotice(found.fallback ? found.notice || 'Spotify unavailable; showing Apple Music.' : '')
       } catch (e) {
         if (version === seq.current) setError(e?.message || 'Global catalogue unavailable.')
       } finally {
@@ -50,6 +54,11 @@ export default function GlobalCatalogueResults({ query }) {
     }, 350)
     return () => { clearTimeout(timer); seq.current++ }
   }, [q, locale, retry])
+  useEffect(() => {
+    const changed = () => setRetry(value => value + 1)
+    window.addEventListener('lokal:settings-saved', changed)
+    return () => window.removeEventListener('lokal:settings-saved', changed)
+  }, [])
 
   const more = async () => {
     if (loadingMore) return
@@ -94,8 +103,9 @@ export default function GlobalCatalogueResults({ query }) {
   return <section className="space-y-3">
     <div>
       <h2 className="text-xs font-display uppercase tracking-widest text-white">Global</h2>
-      <p className="mt-1 text-[11px] text-muted">Apple Music catalogue · audio resolved in your Playback Source Priority order</p>
+      <p className="mt-1 text-[11px] text-muted">{catalogue === 'spotify' ? 'Spotify' : 'Apple Music'} catalogue · audio resolved in your Playback Source Priority order</p>
     </div>
+    {notice && <p className="text-xs text-amber-400" role="status">{notice}</p>}
     {busy && <p className="text-xs text-muted" role="status">Searching the global catalogue…</p>}
     {error && <p className="text-xs text-muted" role="status">{error} <button className="underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
     {!busy && !error && !results.tracks.length && !results.albums.length && !results.artists.length &&
