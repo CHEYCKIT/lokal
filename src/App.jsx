@@ -1584,7 +1584,7 @@ export default function App() {
         return { ok: true, count: ordered.length }
       }
       if (action === 'playQueueIndex') { const list=state.shuffle&&state.shuffleQueue.length?state.shuffleQueue:state.queue; const index=Number(command.value);if(!Number.isInteger(index)||!list[index])return {error:'Queue entry is unavailable'};state.playQueue(list,index);return {ok:true} }
-      if (action === 'clearQueue') { const queue=state.currentTrack?[state.currentTrack]:[];usePlayerStore.setState({queue,queueIndex:queue.length?0:-1,originalQueue:queue,shuffleQueue:state.shuffle?queue:[],shuffleIndex:queue.length?0:-1});return {ok:true} }
+      if (action === 'clearQueue') { const queue=state.currentTrack?[state.currentTrack]:[];usePlayerStore.setState({queue,queueIndex:queue.length?0:-1,originalQueue:queue,shuffleQueue:state.shuffle?queue:[],shuffleIndex:queue.length?0:-1,queueResetRevision:(state.queueResetRevision||0)+1});return {ok:true} }
       if (action === 'queueFromMetadata') {
         const wanted=command.value?.track;if(!wanted)return {error:'No track was supplied'};
         const result=await api.getTracks({limit:100000,includeGhosts:'1'});const rows=(Array.isArray(result)?result:result?.items||[]).filter(track=>!String(track.file_path||'').startsWith('ghost://'));
@@ -2203,13 +2203,14 @@ export default function App() {
     const { queue, queueIndex, _fetchingRelated } = state
     if (['discovery', 'mix', 'library-folder', RADIO_CONTEXT].includes(state.playbackContext?.type) || isStationTrack(currentTrackRef.current) || queue.length - queueIndex - 1 >= 3 || !currentTrackRef.current || _fetchingRelated) return
     const generation = state.playbackGeneration
+    const queueRevision = state.queueResetRevision || 0
     const seed = currentTrackRef.current
     const userId = userRef.current?.id
     const context = state.playbackContext
     const current = () => {
       const now = usePlayerStore.getState()
       return now.playbackGeneration === generation && now.playbackContext === context &&
-        now.currentTrack?.id === seed.id
+        (now.queueResetRevision || 0) === queueRevision && now.currentTrack?.id === seed.id
     }
     state.setFetchingRelated(true)
     // BitChord-style online radio is the primary queue-end source. Use Lokal's
@@ -2227,7 +2228,15 @@ export default function App() {
       if (usePlayerStore.getState().queue.length > beforeCount) return
       const related = await api.getRelated(seed.id, userId).catch(() => [])
       if (current() && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
-    }).catch(() => {}).finally(() => {
+    }).catch(async () => {
+      // Failed provider discovery must still refill from established library
+      // recommendations when the user has not changed or cleared the queue.
+      if (!current()) return
+      const related = await api.getRelated(seed.id, userId).catch(() => [])
+      if (current() && Array.isArray(related) && related.length) {
+        usePlayerStore.getState().appendRelated(related)
+      }
+    }).finally(() => {
       // An automatic track transition makes current() false. Clearing still
       // matters: the next track must be allowed to ask for recommendations.
       usePlayerStore.getState().setFetchingRelated(false)
