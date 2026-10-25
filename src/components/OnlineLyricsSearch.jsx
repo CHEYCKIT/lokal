@@ -55,8 +55,12 @@ export default function OnlineLyricsSearch({ query }) {
         album: row.albumName || '', duration: Number(row.duration) || 0,
       }))
       const selected = candidates.find(row => row.id === 'lrclib:' + record.id)
-      const ok = await playRecommendationPool(candidates, {
-        selected, context: { type: 'search', name: 'Online lyrics: ' + q }, returnAfterStart: true,
+      if (!selected) throw new Error('Selected lyric record is no longer in the results.')
+      // Playback matches metadata and can collapse the same title/artist across
+      // album editions. Put the clicked record first so its album wins.
+      const ordered = [selected, ...candidates.filter(row => row.id !== selected.id)]
+      const ok = await playRecommendationPool(ordered, {
+        selected, context: { type: 'global', id: q, name: 'Online lyrics: ' + q }, returnAfterStart: true,
       })
       toast.close()
       if (ok === false) showToast('Could not resolve this song through playback sources.')
