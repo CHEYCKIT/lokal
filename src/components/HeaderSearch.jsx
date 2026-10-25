@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Clock, Globe, Home, Search as SearchIcon, Shuffle, X } from 'lucide-react'
+import { Clock, Home, Search as SearchIcon, Shuffle, X } from 'lucide-react'
 import { useSearchStore } from '../store/search'
 import { usePlayerStore, useAppStore } from '../store/player'
 import { readFlowSettings, saveFlowSettings, startFlow } from '../flow/session'
@@ -71,8 +71,6 @@ export default function HeaderSearch() {
   const focusSeq = useSearchStore(s => s.focusSeq)
   const requestFocus = useSearchStore(s => s.requestFocus)
   const submit = useSearchStore(s => s.submit)
-  const online = useSearchStore(s => s.online)
-  const setOnline = useSearchStore(s => s.setOnline)
   const playQueue = usePlayerStore(s => s.playQueue)
   const userId = useAppStore(s => s.user?.id)
 
@@ -211,16 +209,6 @@ export default function HeaderSearch() {
 
   return (
     <div className="flex items-center gap-1.5 min-w-0 w-full justify-center" style={{ WebkitAppRegion: 'no-drag' }}>
-      <button
-        type="button"
-        onClick={() => setOnline(!online)}
-        title={online ? t('Online search on: results from your online sources too') : t('Online search off: your library only')}
-        aria-label={t('Online search')}
-        aria-pressed={online}
-        className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-card ${online ? 'bg-accent/15 text-accent' : 'bg-elevated text-muted hover:text-text'}`}
-      >
-        <Globe size={14} />
-      </button>
       <button
         onClick={() => nav('/')}
         title={t("Home")}
