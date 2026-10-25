@@ -19,7 +19,6 @@ import SaveToLibraryButton from './SaveToLibraryButton'
 import SoulseekSearch from './SoulseekSearch'
 import DownloadNotices from './DownloadNotices'
 import SourceIcon from './SourceIcon'
-import AddonCollections from './AddonCollections'
 import AddonSetupNotice from './AddonSetupNotice'
 import { DEFAULT_SEARCH_SOURCES, orderedFindOnSources } from '../findOnSources'
 import { useTranslation } from '../i18n'
@@ -295,7 +294,6 @@ export default function OnlineResults({ query, soulseekFor = null, findOn = null
             )
           })}
         </div>
-        {providers.find(source => source.id === provider)?.package && <AddonCollections key={provider} query={q} source={providers.find(source => source.id === provider)} />}
         </>
       )}
     </section>

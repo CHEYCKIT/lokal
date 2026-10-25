@@ -11,6 +11,7 @@ import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
 import GlobalCatalogueResults from '../components/GlobalCatalogueResults'
 import OnlineLyricsSearch from '../components/OnlineLyricsSearch'
+import LyricsSearchResult from '../components/LyricsSearchResult'
 import LinkDownload from '../components/LinkDownload'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
@@ -395,26 +396,12 @@ export default function Search() {
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Lyrics Matches")}</h2>
               <div className="space-y-2">
                 {lyricMatches.map((track, i) => (
-                  <motion.button
+                  <LyricsSearchResult
                     key={`${track.id}-lyrics-${i}`}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.02 }}
-                    onClick={() => handleLyricMatchPlay(track)}
-                    className="w-full text-left rounded-xl border border-border bg-elevated/70 hover:border-accent/30 hover:bg-card transition-colors px-4 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm text-white truncate">{track.title}</p>
-                        <p className="text-xs text-muted truncate">{track.artist}{track.album ? ` · ${track.album}` : ''}</p>
-                      </div>
-                      <div className="flex items-center gap-2 text-accent flex-shrink-0">
-                        <span className="text-[10px] font-display uppercase tracking-[0.22em]">{t("Play")}</span>
-                        <Play size={13} fill="currentColor" />
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted mt-2 truncate">{track.lyricSnippet}</p>
-                  </motion.button>
+                    title={track.title} artist={track.artist} album={track.album}
+                    snippet={track.lyricSnippet} index={i} playLabel={t('Play')}
+                    onPlay={() => handleLyricMatchPlay(track)}
+                  />
                 ))}
               </div>
             </section>
