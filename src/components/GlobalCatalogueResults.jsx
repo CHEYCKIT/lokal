@@ -30,7 +30,7 @@ export default function GlobalCatalogueResults({ query }) {
   const locale = (typeof navigator !== 'undefined' ? navigator.language : 'en-US').split('-')[1] || 'US'
   useEffect(() => {
     const version = ++seq.current
-    setResults(EMPTY); setError(''); setNotice(''); setHasMore(false); setExpanded(false)
+    setResults(EMPTY); setError(''); setNotice(''); setHasMore(false); setExpanded(false); setLoadingMore(false)
     if (q.length < 2) { setBusy(false); return }
     setBusy(true)
     const timer = setTimeout(async () => {
@@ -45,7 +45,7 @@ export default function GlobalCatalogueResults({ query }) {
         }
         setResults(clean); setHasMore(clean.tracks.length === PAGE_SIZE)
         setCatalogue(found.catalogue === 'spotify' ? 'spotify' : 'apple')
-        setNotice(found.fallback ? found.notice || 'Spotify unavailable; showing Apple Music.' : '')
+        setNotice(found.fallback ? found.notice || 'Spotify unavailable; showing Apple Music.' : found.partial ? 'Spotify currently supplies only song results through this session.' : '')
       } catch (e) {
         if (version === seq.current) setError(e?.message || 'Global catalogue unavailable.')
       } finally {
@@ -67,6 +67,7 @@ export default function GlobalCatalogueResults({ query }) {
     try {
       const found = await api.globalCatalogueSearch(q, { country: locale, limit: PAGE_SIZE, offset: results.tracks.length })
       if (version !== seq.current) return
+      if (found?.error) throw new Error(found.error)
       const rows = Array.isArray(found?.tracks) ? found.tracks : []
       const known = new Set(results.tracks.map(t => t.id))
       setResults(state => ({ ...state, tracks: [...state.tracks, ...rows.filter(t => !known.has(t.id))] }))
