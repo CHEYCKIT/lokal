@@ -1,6 +1,6 @@
 // Search source (Library/Online/All) and result type are independent,
 // single-choice controls, matching the mobile search filters.
-export const SEARCH_RESULT_CATEGORIES = Object.freeze(['songs', 'artists', 'albums'])
+export const SEARCH_RESULT_CATEGORIES = Object.freeze(['songs', 'artists', 'albums', 'lyrics'])
 export const normalizeResultCategory = category =>
   SEARCH_RESULT_CATEGORIES.includes(category) ? category : 'songs'
 export const includesResultCategory = (selected, category) => {
@@ -8,7 +8,7 @@ export const includesResultCategory = (selected, category) => {
   return filter === category
 }
 export const categoryLabel = category => ({
-  songs: 'Songs', artists: 'Artists', albums: 'Albums',
+  songs: 'Songs', artists: 'Artists', albums: 'Albums', lyrics: 'Lyrics',
 })[normalizeResultCategory(category)]
 
 // Local entries win over matching catalogue metadata. Do not merge recordings

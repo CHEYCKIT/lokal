@@ -35,9 +35,9 @@ test('desktop search applies scope to both querying and rendered result sections
   assert.match(page, /localArtists=\{showLibrary \? artists : \[\]\}/)
   assert.match(page, /localAlbums=\{showLibrary \? albums : \[\]\}/)
   assert.match(page, /\{showLibrary && showSongs && tracks\.length > 0/)
-  assert.match(page, /\{showLibrary && showSongs && lyricMatches\.length > 0/)
+  assert.match(page, /\{showLibrary && showLyrics && lyricMatches\.length > 0/)
   assert.match(page, /enableOnline=\{showOnline\}/)
-  assert.match(page, /\{showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
+  assert.match(page, /\{showOnline && showSongs && <OnlineResults/)
   assert.match(page, /setScope\('online'\)/) // Find on provider
   assert.match(page, /aria-pressed=\{scope === value\}/)
 
@@ -51,9 +51,9 @@ test('desktop search applies scope to both querying and rendered result sections
 })
 
 test('category subfilter is single-choice and independent of source selection', () => {
-  assert.deepEqual(SEARCH_RESULT_CATEGORIES, ['songs', 'artists', 'albums'])
+  assert.deepEqual(SEARCH_RESULT_CATEGORIES, ['songs', 'artists', 'albums', 'lyrics'])
   assert.equal(normalizeResultCategory('unknown'), 'songs')
-  for (const category of ['songs', 'artists', 'albums']) {
+  for (const category of ['songs', 'artists', 'albums', 'lyrics']) {
     assert.equal(includesResultCategory(category, category), true)
     assert.equal(SEARCH_RESULT_CATEGORIES.filter(sel =>
       includesResultCategory(sel, category)).length, 1)
@@ -103,7 +103,7 @@ test('the desktop has one artist/album presentation and one responsive category 
   assert.match(results, /showAlbums && \(enableOnline \|\| albums\.length > 0\)/)
   assert.match(results, /showArtists && \(enableOnline \|\| artists\.length > 0\)/)
   assert.match(results, /enableOnline && showSongs/)
-  assert.match(page, /showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
+  assert.match(page, /showOnline && showSongs && <OnlineResults/)
   assert.doesNotMatch(page, /\{showLibrary && artists\.length > 0/)
   assert.doesNotMatch(page, /\{showLibrary && albums\.length > 0/)
 })
@@ -137,9 +137,9 @@ test('online categories each show a consistent heading and catalogue-specific su
   assert.doesNotMatch(results, />Global<\/h2>/)
 })
 
-test('the legacy provider search is not shown under normal Online or Library results', () => {
+test('normal Online Songs shows provider and addon results', () => {
   const source = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
-  assert.match(source, /showOnline && showSongs && \(findOnRequest \|\| soulseekFor\) && <OnlineResults/)
+  assert.match(source, /showOnline && showSongs && <OnlineResults/)
   assert.match(source, /<GlobalCatalogueResults/)
 })
 
@@ -150,4 +150,27 @@ test('artist portrait lookup avoids album covers and only accepts matching artis
   assert.match(source, /if \(!known && \(!localPath \|\| !api\.isElectron \|\| brokenLocal\)\)/)
   const results = readFileSync(new URL('../src/components/GlobalCatalogueResults.jsx', import.meta.url), 'utf8')
   assert.match(results, /<SearchArtistPortrait/)
+})
+
+
+test('provider/addon streaming search remains in Online Songs and trailing legacy collections are absent', () => {
+  const page = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
+  const provider = readFileSync(new URL('../src/components/OnlineResults.jsx', import.meta.url), 'utf8')
+  assert.match(page, /\{showOnline && showSongs && <OnlineResults/)
+  assert.match(provider, /orderedFindOnSources\(loaded\)/)
+  assert.match(provider, /<AddonCollections/)
+  assert.match(provider, /api\.onlineSearch\(q, provider\)/)
+  assert.doesNotMatch(provider, /<OnlineCollections/)
+})
+
+test('Lyrics gets dedicated category and actual lyric records, not relabeled songs', () => {
+  const page = readFileSync(new URL('../src/pages/Search.jsx', import.meta.url), 'utf8')
+  const filter = readFileSync(new URL('../src/searchResultCategory.mjs', import.meta.url), 'utf8')
+  const remote = readFileSync(new URL('../src/components/OnlineLyricsSearch.jsx', import.meta.url), 'utf8')
+  assert.match(filter, /'lyrics'/)
+  assert.match(page, /showLibrary && showLyrics && lyricMatches\.length > 0/)
+  assert.match(page, /showOnline && showLyrics && <OnlineLyricsSearch/)
+  assert.match(remote, /lrclib\.net\/api\/search/)
+  assert.match(remote, /r\.plainLyrics \|\| r\.syncedLyrics/)
+  assert.match(remote, /playRecommendationPool/)
 })

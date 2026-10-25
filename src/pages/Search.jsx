@@ -10,6 +10,7 @@ import { SEARCH_RESULT_CATEGORIES, includesResultCategory, categoryLabel } from 
 import TrackList from '../components/TrackList'
 import OnlineResults from '../components/OnlineResults'
 import GlobalCatalogueResults from '../components/GlobalCatalogueResults'
+import OnlineLyricsSearch from '../components/OnlineLyricsSearch'
 import LinkDownload from '../components/LinkDownload'
 import { api } from '../api'
 import { HISTORY_EVENT, getRecentItems, saveRecentItem, saveRecentSearch } from '../searchHistory'
@@ -33,6 +34,7 @@ export default function Search() {
   const showSongs = includesResultCategory(resultCategory, 'songs')
   const showArtists = includesResultCategory(resultCategory, 'artists')
   const showAlbums = includesResultCategory(resultCategory, 'albums')
+  const showLyrics = includesResultCategory(resultCategory, 'lyrics')
   const showLibrary = searchesLibrary(scope)
   const showOnline = searchesOnline(scope)
   // A source search from a streamed song or a lossless request. The selected
@@ -230,14 +232,14 @@ export default function Search() {
   }
 
   // Source scope and result type are orthogonal, like mobile.
-  const hasVisibleLibraryResults = (showSongs && (tracks.length || lyricMatches.length)) ||
-    (showArtists && artists.length) || (showAlbums && albums.length)
+  const hasVisibleLibraryResults = (showSongs && tracks.length) ||
+    (showArtists && artists.length) || (showAlbums && albums.length) ||
+    (showLyrics && lyricMatches.length)
   // Recents are local navigational history; don't leak them into Online-only
   // search, and don't show streams while explicitly searching only Library.
   const visibleRecentItems = scope === 'online' ? [] : recentItems.filter(item => {
     if (scope === 'library' && item.type === 'track' && isStreamed(item)) return false
-    return resultCategory === 'all' ||
-      (resultCategory === 'songs' && item.type === 'track') ||
+    return (resultCategory === 'songs' && item.type === 'track') ||
       (resultCategory === 'artists' && item.type === 'artist') ||
       (resultCategory === 'albums' && item.type === 'album')
   })
@@ -378,7 +380,7 @@ export default function Search() {
             </section>
           )}
 
-          <GlobalCatalogueResults
+          {!showLyrics && <GlobalCatalogueResults
             query={showOnline ? onlineQuery : query}
             category={resultCategory}
             enableOnline={showOnline}
@@ -386,9 +388,9 @@ export default function Search() {
             localAlbums={showLibrary ? albums : []}
             onLocalArtistClick={handleArtistClick}
             onLocalAlbumClick={handleAlbumClick}
-          />
+          />}
 
-          {showLibrary && showSongs && lyricMatches.length > 0 && (
+          {showLibrary && showLyrics && lyricMatches.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3">{t("Lyrics Matches")}</h2>
               <div className="space-y-2">
@@ -418,6 +420,7 @@ export default function Search() {
             </section>
           )}
 
+          {showOnline && showLyrics && <OnlineLyricsSearch query={onlineQuery} />}
           {scope === 'library' && query && !searching && !hasVisibleLibraryResults && (
             <div className="flex items-center gap-3 py-3 text-muted">
               <Music size={18} className="opacity-40" />
@@ -425,10 +428,9 @@ export default function Search() {
             </div>
           )}
 
-          {/* The old provider search was a duplicate song catalogue below
-              Global; retain it only when a user explicitly invokes
-              “Find on source” / Soulseek replacement from a track menu. */}
-          {showOnline && showSongs && (findOnRequest || soulseekFor) && <OnlineResults
+          {/* Provider/add-on searches are real streaming results, not duplicates
+              of metadata-only Global catalogue suggestions. */}
+          {showOnline && showSongs && <OnlineResults
             query={onlineQuery} soulseekFor={soulseekFor} findOn={findOnRequest}
             showLibraryHint={scope !== 'online'}
           />}
