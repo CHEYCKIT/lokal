@@ -28,6 +28,25 @@ const box = (kind, bytes = Buffer.alloc(0)) => {
   head.write(kind, 4)
   return Buffer.concat([head, bytes])
 }
+const validM4aMoov = () => {
+  // A real sample-table hierarchy: moov/trak/mdia/hdlr + minf/stbl/stsd
+  // with a complete audio sample entry and valid channel/sample widths.
+  const entry = Buffer.alloc(36)
+  entry.writeUInt32BE(entry.length)
+  entry.write('mp4a', 4)
+  entry.writeUInt16BE(1, 14)  // data reference index
+  entry.writeUInt16BE(2, 24)  // channels
+  entry.writeUInt16BE(16, 26) // bit depth
+  const count = Buffer.alloc(4)
+  count.writeUInt32BE(1)
+  const stsd = box('stsd', Buffer.concat([Buffer.alloc(4), count, entry]))
+  const stbl = box('stbl', stsd)
+  const minf = box('minf', stbl)
+  const handler = Buffer.alloc(12)
+  handler.write('soun', 8)
+  const mdia = box('mdia', Buffer.concat([box('hdlr', handler), minf]))
+  return box('moov', box('trak', mdia))
+}
 
 test('validated Qobuz, Deezer and Tidal direct FLAC can be played while growing', () => {
   const head = Buffer.concat([flacHeader(), Buffer.alloc(65536 - 42)])
@@ -42,11 +61,19 @@ test('validated Qobuz, Deezer and Tidal direct FLAC can be played while growing'
 
 test('M4A must have complete fast-start init; encrypted/segmented media waits for validation', () => {
   const ftyp = box('ftyp', Buffer.from('M4A \0\0\0\0'))
-  const moov = box('moov', Buffer.concat([Buffer.alloc(8),Buffer.from('mp4a'),Buffer.alloc(8)]))
+  const moov = validM4aMoov()
   const start = Buffer.concat([ftyp, moov, Buffer.alloc(65536 - ftyp.length - moov.length)])
   assert.deepEqual(progressiveMedia(start, 'audio.m4a'), {
     format: 'm4a', mime: 'audio/mp4',
   })
+  // A "mp4a" byte sequence without a complete sample description is never
+  // sufficient. No playback source should be handed to Chromium in this case.
+  assert.equal(progressiveMedia(Buffer.concat([
+    ftyp, box('moov', Buffer.from('mp4a and alac are just arbitrary text')),
+  ]),'audio.m4a'), null)
+  assert.equal(progressiveMedia(Buffer.concat([
+    ftyp, box('moov', box('mvex')),
+  ]),'audio.m4a'), null)
   assert.equal(progressiveMedia(Buffer.concat([ftyp,box('moov',Buffer.from('mp4asinf'))]),'audio.m4a'), null)
   assert.equal(progressiveMedia(Buffer.concat([ftyp,box('mdat',Buffer.from('mp4a'))]),'audio.m4a'), null)
   const incomplete = Buffer.concat([ftyp, Buffer.from([0,1,0,0]), Buffer.from('moov')])
@@ -101,7 +128,7 @@ test('provider lookups skip only canonical remembered playback tracks', () => {
   const entry = (name,manifest={}) => ({ name, manifest })
   assert.equal(skipPlaybackEnrichment({
     addon:entry('qobuz-web',{skipMetadataEnrichment:true}),
-    track:{id:'123',name:'Track'},remembered:true,purpose:'playback',
+    track:{id:'123',name:'Track',provider_id:'qobuz'},remembered:true,purpose:'playback',
   }),true)
   for (const provider of ['tidal-web','deezer','amazon']) {
     const id = provider === 'amazon' ? 'B012345678' : '12345'
@@ -111,6 +138,11 @@ test('provider lookups skip only canonical remembered playback tracks', () => {
       remembered:true,purpose:'playback',
     }),true,provider)
   }
+  assert.equal(skipPlaybackEnrichment({
+    addon:entry('qobuz-web',{skipMetadataEnrichment:true}),
+    track:{id:'123',name:'Track',provider_id:'tidal'},
+    remembered:true,purpose:'playback',
+  }),false)
   assert.equal(skipPlaybackEnrichment({
     addon:entry('deezer'),track:{id:'123',name:'Track',provider_id:'spotify'},
     remembered:true,purpose:'playback',
