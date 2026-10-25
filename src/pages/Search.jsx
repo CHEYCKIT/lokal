@@ -261,7 +261,7 @@ export default function Search() {
               aria-pressed={scope === value}
               title={t(scopeDescription(value))}
               className={`min-w-[5.25rem] rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${scope === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white hover:bg-card'}`}>
-              {t(value === 'all' ? 'All' : value === 'library' ? 'Library' : 'Online')}
+              {t(value === 'library' ? 'Library' : 'Online')}
             </button>
           ))}
         </div>
