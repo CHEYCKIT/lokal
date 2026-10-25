@@ -86,7 +86,12 @@ function liveUpdate(job,{part,file,total,written,done}){
       job.message='Playing while it downloads…'
       job.markLive()
     }
-  }catch{}
+  }catch{
+    // On Windows the writer can rename/swap its .part just as this probe
+    // opens it. An I/O race must not permanently disable streaming for this
+    // track: retry on the next actual byte-progress callback.
+    live.checked=false
+  }
 }
 async function liveResponse(job,{range,signal,mime='audio/flac'}={}){
   const live=job.live,size=live.total,slice=rangeOf(range,size)
