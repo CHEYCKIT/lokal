@@ -19,6 +19,7 @@ import { ONLINE_SOURCES, onlineError, subscribeOnline } from '../flow/online'
 import { MOOD_ICONS } from '../flow/moodIcons'
 import { api } from '../api'
 import { flowName, flowPool, readFlowSettings, retuneFlow, saveFlowSettings, startFlow, upcoming } from '../flow/session'
+import { flowPlaylistTracks } from '../flow/playlist'
 
 const MOOD_HINTS = {
   flow: 'Everything you love, and more',
@@ -195,7 +196,7 @@ export default function FlowPanel({ userId }) {
     if (savingList || !flowOn) return
     setSavingList(true)
     try {
-      const tracks = [currentTrack, ...coming].filter(Boolean)
+      const tracks = flowPlaylistTracks([currentTrack, ...coming])
       const name = `${flowName(context.mood)} - ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`
       const playlist = await saveAsPlaylist(name, tracks, { userId, description: 'Saved from Flow' })
       showToast(playlist ? `Saved "${name}" (${plural(tracks.length, 'song')})` : 'Could not create playlist')
