@@ -47,6 +47,15 @@ async function youtubeFallback(query) {
   }))
 }
 
+router.get('/global', async (req, res) => {
+  try {
+    const { globalSearch } = require('../../electron/online/globalCatalogue')
+    res.json(await globalSearch(req.query.q, { country: req.query.country, limit: req.query.limit, offset: req.query.offset }))
+  } catch (error) {
+    res.status(502).json({ error: String(error.message || error), tracks: [], albums: [], artists: [] })
+  }
+})
+
 router.get('/search', async (req, res) => {
   const q = String(req.query.q || '').slice(0, 200)
   const provider = sources.providerOf(String(req.query.provider || '')) ? String(req.query.provider) : 'yt'
