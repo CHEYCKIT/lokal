@@ -9,8 +9,10 @@ function skipPlaybackEnrichment({ addon, track, remembered, purpose } = {}) {
   const provider = String(addon?.name || '').toLowerCase().replace(/-web$/, '')
   const owner = String(track?.provider_id || '').toLowerCase().replace(/-web$/, '')
   const id = String(track.id)
-  if (addon?.manifest?.skipMetadataEnrichment === true) return true
+  // Even a manifest optimization must not bypass ownership checks for
+  // remembered rows supplied by a different source.
   if (owner !== provider) return false
+  if (addon?.manifest?.skipMetadataEnrichment === true) return true
   if (provider === 'tidal' || provider === 'deezer' || provider === 'qobuz')
     return /^[1-9][0-9]{0,19}$/.test(id)
   if (provider === 'amazon')
