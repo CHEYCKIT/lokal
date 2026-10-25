@@ -19,7 +19,7 @@ test('Global tracks contain Apple metadata but no playback source identity', () 
   assert.deepEqual(result[0], {
     id: '100', title: 'A Song', artist: 'An Artist', album: 'Album',
     duration: 234.5,
-    artwork_url: 'https://is1-ssl.mzstatic.com/image/thumb/foo/1200x1200bb.jpg',
+    artwork_url: 'https://is1-ssl.mzstatic.com/image/thumb/foo/100x100bb.jpg',
     catalogue: 'apple', catalogue_id: '100',
   })
   assert.equal(result[0].provider, undefined)
