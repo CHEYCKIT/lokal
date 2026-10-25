@@ -213,7 +213,16 @@ async function weaveOnline(context, pool, count, find = findOnline) {
   weaving.add(context.id)
   try {
     const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-    const found = await Promise.resolve(find(context, pool, count, isCurrent)).catch(() => [])
+    // A slow catalogue/add-on must not leave reserved queue slots empty
+    // indefinitely. Late answers are ignored; the fallback owns those slots.
+    let deadline
+    const fallback = new Promise(resolve => {
+      deadline = setTimeout(() => resolve([]), 7000)
+    })
+    const found = await Promise.race([
+      Promise.resolve().then(() => find(context, pool, count, isCurrent)).catch(() => []),
+      fallback,
+    ]).finally(() => clearTimeout(deadline))
     if (!isCurrent()) return
     if (found.length) usePlayerStore.getState().insertUpcoming(found, context)
     // Online may be unavailable (offline, missing account, provider throttled).
