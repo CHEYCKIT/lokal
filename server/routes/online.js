@@ -49,8 +49,13 @@ async function youtubeFallback(query) {
 
 router.get('/global', async (req, res) => {
   try {
-    const { globalSearch } = require('../../electron/online/globalCatalogue')
-    res.json(await globalSearch(req.query.q, { country: req.query.country, limit: req.query.limit, offset: req.query.offset }))
+    const { preferredGlobalSearch } = require('../../electron/online/globalCatalogue')
+    const saved = settings()
+    res.json(await preferredGlobalSearch(req.query.q, {
+      country: req.query.country, limit: req.query.limit, offset: req.query.offset,
+      source: saved.global_catalogue_source === 'spotify' ? 'spotify' : 'apple',
+      rawCookie: saved.spotify_sp_dc || '',
+    }))
   } catch (error) {
     res.status(502).json({ error: String(error.message || error), tracks: [], albums: [], artists: [] })
   }
