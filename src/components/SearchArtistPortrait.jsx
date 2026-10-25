@@ -35,11 +35,15 @@ export default function SearchArtistPortrait({ name, localPath, imageUrl, classN
     ? (api.isElectron ? `file://${localPath}` : null) : null
   const known = /^https:\/\//.test(String(imageUrl || '')) ? imageUrl : ''
   useEffect(() => {
-    let alive = true
     setExternal(''); setBrokenLocal(false); setBrokenRemote(false)
-    if (!known && !localPath) portrait(name).then(value => { if (alive) setExternal(value) })
-    return () => { alive = false }
   }, [name, localPath, known])
+  useEffect(() => {
+    let alive = true
+    if (!known && (!localPath || !api.isElectron || brokenLocal)) {
+      portrait(name).then(value => { if (alive) setExternal(value) })
+    }
+    return () => { alive = false }
+  }, [name, known, localPath, brokenLocal])
   if (local) return <img src={local} alt={name} className={className} onError={() => setBrokenLocal(true)} />
   const url = known || external
   return url && !brokenRemote
