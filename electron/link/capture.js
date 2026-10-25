@@ -48,15 +48,50 @@ function installCapture(store, currentUser) {
   db.exec(`CREATE TRIGGER IF NOT EXISTS link_history_insert AFTER INSERT ON listening_events WHEN link_enabled()=1 AND NEW.event_type='qualified_play' BEGIN
     INSERT OR IGNORE INTO history_events(event_id,user_id,device_id,track_key,file_hash,played_at,ms_played,source,track_json) ${historySelect} AND e.id=NEW.id;
   END;`)
+  const alreadyBootstrapped = !!db.prepare("SELECT value FROM link_meta WHERE key='library_bootstrap_v1'").get()
   if (!db.prepare("SELECT value FROM link_meta WHERE key='library_bootstrap_v1'").get()) db.transaction(() => {
     for (const row of db.prepare('SELECT p.*,p.uuid AS entity_id FROM playlists p').all()) store.appendOp({entity:'playlist',entity_id:row.entity_id,op:'playlist.create',fields:{name:row.name}},row.user_id)
     for (const row of db.prepare('SELECT l.user_id,t.* FROM user_likes l JOIN tracks t ON t.id=l.track_id').all()) store.appendOp({entity:'like',entity_id:trackKey(row),op:'like',fields:{file_hash:row.file_hash}},row.user_id)
     for (const row of db.prepare('SELECT p.user_id,p.uuid,pt.position,t.* FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id JOIN tracks t ON t.id=pt.track_id').all()) store.appendOp({entity:'playlist',entity_id:row.uuid,op:'playlist.add',fields:{track_key:trackKey(row),file_hash:row.file_hash,position:row.position,
       title:row.title,artist:row.artist,album:row.album,duration:row.duration,
       online_ref:String(row.file_path || '').startsWith('ghost://') && !String(row.file_path || '').startsWith('ghost://link/'),
-      source_ref:String(row.file_path || '').startsWith('ghost://youtube/online/') ? 'yt:' + row.file_path.slice('ghost://youtube/online/'.length) : null,
+      source_ref:String(row.file_path || '').startsWith('ghost://youtube/online/') ? 'yt:' + row.file_path.slice('ghost://youtube/online/'.length) : String(row.file_path || '').startsWith('ghost://soundcloud/online/') ? 'sc:' + row.file_path.slice('ghost://soundcloud/online/'.length) : null,
       artwork_url:row.artwork_url}},row.user_id)
     db.prepare("INSERT INTO link_meta VALUES ('library_bootstrap_v1','1')").run()
   })()
+
+  // Existing installations have historical playlist operations without
+  // catalogue metadata. Re-emit enriched member positions ONCE, so a newly
+  // paired device can reconstruct playable online references even when it
+  // replays operations captured before this update.
+  const backfillKey = 'playlist_online_refs_backfill_v3'
+  if (!db.prepare('SELECT 1 FROM link_meta WHERE key=?').get(backfillKey)) {
+    db.transaction(() => {
+      if (alreadyBootstrapped) {
+        const entries = db.prepare(
+          "SELECT p.user_id,p.uuid,pt.position,t.* FROM playlist_tracks pt " +
+          "JOIN playlists p ON p.id=pt.playlist_id JOIN tracks t ON t.id=pt.track_id " +
+          "WHERE t.file_path LIKE 'ghost://youtube/online/%' " +
+          "OR t.file_path LIKE 'ghost://soundcloud/online/%'"
+        ).all()
+        for (const row of entries) {
+          const path = String(row.file_path || '')
+          const source = path.startsWith('ghost://youtube/online/')
+            ? 'yt:' + path.slice('ghost://youtube/online/'.length)
+            : 'sc:' + path.slice('ghost://soundcloud/online/'.length)
+          store.appendOp({
+            entity: 'playlist', entity_id: row.uuid, op: 'playlist.move',
+            fields: {
+              track_key: trackKey(row), file_hash: row.file_hash,
+              position: row.position, title: row.title, artist: row.artist,
+              album: row.album, duration: row.duration, online_ref: true,
+              source_ref: source, artwork_url: row.artwork_url,
+            },
+          }, row.user_id)
+        }
+      }
+      db.prepare('INSERT OR REPLACE INTO link_meta VALUES (?, ?)').run(backfillKey, '1')
+    })()
+  }
 }
 module.exports = { installCapture }
