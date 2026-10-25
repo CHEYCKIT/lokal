@@ -45,8 +45,12 @@ export function artworkCandidates(raw) {
   if (!upgraded && ['i.ytimg.com', 'img.youtube.com'].includes(host)) {
     const match = path.match(/\/(?:default|mqdefault|hqdefault|sddefault|hq720)\.jpg$/i)
     if (match) {
-      const base = raw.replace(match[0], '')
-      return [...new Set([base + '/maxresdefault.jpg', base + '/sddefault.jpg', raw])]
+      const upgraded = size => {
+        const url = new URL(raw)
+        url.pathname = url.pathname.replace(match[0], '/' + size + '.jpg')
+        return url.href
+      }
+      return [...new Set([upgraded('maxresdefault'), upgraded('sddefault'), raw])]
     }
   }
   return [...new Set([upgraded, raw].filter(Boolean))]
