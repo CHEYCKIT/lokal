@@ -47,6 +47,20 @@ async function youtubeFallback(query) {
   }))
 }
 
+router.get('/global', async (req, res) => {
+  try {
+    const { preferredGlobalSearch } = require('../../electron/online/globalCatalogue')
+    const saved = settings()
+    res.json(await preferredGlobalSearch(req.query.q, {
+      country: req.query.country, limit: req.query.limit, offset: req.query.offset,
+      source: saved.global_catalogue_source === 'spotify' ? 'spotify' : 'apple',
+      rawCookie: saved.spotify_sp_dc || '',
+    }))
+  } catch (error) {
+    res.status(502).json({ error: String(error.message || error), tracks: [], albums: [], artists: [] })
+  }
+})
+
 router.get('/search', async (req, res) => {
   const q = String(req.query.q || '').slice(0, 200)
   const provider = sources.providerOf(String(req.query.provider || '')) ? String(req.query.provider) : 'yt'

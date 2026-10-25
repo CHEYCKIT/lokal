@@ -15,7 +15,8 @@ import { api } from '../api.js'
 import { usePlayerStore } from '../store/player.js'
 import { DEFAULT_TUNER, FLOW_MOODS, familiarity, flowEligible, flowSongKey, flowSource, genreWeight, isFresh, moodScore, normalizeTuner, pickFlow } from './engine.js'
 import { songKey } from '../recommendations.js'
-import { moodFinds, moodSeeds, onlineFinds, onlineShare } from './online.js'
+import { moodFinds, moodSeeds, onlineFinds, onlineShare, radioFinds } from './online.js'
+import { fitsMood } from './moodFit.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
@@ -85,12 +86,14 @@ export async function startFlow({ userId, mood = 'flow', tuner = DEFAULT_TUNER, 
     return start !== starts || now.playbackGeneration !== before.playbackGeneration || now.playbackContext !== before.playbackContext || now.currentTrack?.id !== before.currentTrack?.id
   }
   const pool = await flowPool(userId, { force: true })
-  const tracks = pickFlow(pool, { count: START_COUNT, mood, tuner })
-  if (!tracks.length) return 0
   const source = await sourceFor(tuner)
   if (stale()) return null
-  const context = flowContext(userId, mood, tuner, source)
+  // Online tracks replace library slots instead of being appended to a full
+  // local queue (the old "80% online" setting actually meant 8 of 18).
   const share = onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT)
+  const tracks = pickFlow(pool, { count: START_COUNT - share, mood, tuner })
+  if (!tracks.length) return 0
+  const context = flowContext(userId, mood, tuner, source)
   // Its first online finds, waited for a moment so the Flow opens with them.
   // Too slow: it starts without them, and they join when they're found.
   let playing = false
@@ -145,10 +148,11 @@ export async function retuneFlow({ userId, mood, tuner }) {
   if (now.playbackContext?.id !== state.playbackContext.id || !now.currentTrack) return false
   const order = playOrder(now)
   const played = order.slice(0, order.length - upcoming(now).length)
-  const tracks = pickFlow(pool, { count: START_COUNT - 1, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
+  const onlineCount = onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT - 1)
+  const tracks = pickFlow(pool, { count: START_COUNT - 1 - onlineCount, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
   const context = flowContext(userId, mood, tuner, source)
   const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context, { expect: state.playbackContext.id })
-  if (replaced) weaveOnline(context, pool, onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT)).catch(() => {})
+  if (replaced) weaveOnline(context, pool, onlineCount).catch(() => {})
   return replaced
 }
 
@@ -176,7 +180,8 @@ export function continueFlow() {
     // Everything this Flow has played or queued is in its queue: none of it again.
     const exclude = new Set(now.queue.map(flowSongKey))
     const lastTracks = playOrder(now).slice(-3)
-    let tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude, lastTracks })
+    const share = onlineShare({ ...tuner, source: context.source }, MORE_COUNT)
+    let tracks = pickFlow(pool, { count: MORE_COUNT - share, mood: context.mood, tuner, exclude, lastTracks })
     if (!tracks.length && pool.length) {
       // Played it all: the songs heard longest ago come round again. Only the
       // last few stay held back (fewer for a small library, so some are left).
@@ -184,12 +189,12 @@ export function continueFlow() {
       usePlayerStore.getState().dropPlayed(Math.min(RECENT_HELD, Math.floor(eligible / 2)))
       const trimmed = usePlayerStore.getState()
       if (trimmed.playbackContext?.id !== context.id) return
-      tracks = pickFlow(pool, { count: MORE_COUNT, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
+      tracks = pickFlow(pool, { count: MORE_COUNT - share, mood: context.mood, tuner, exclude: new Set(trimmed.queue.map(flowSongKey)), lastTracks })
     }
     usePlayerStore.getState().extendQueue(tracks, context)
     // Online finds join in the background: the library's songs are queued
     // already, and the next refill doesn't wait for slow lookups.
-    weaveOnline(context, pool, onlineShare({ ...tuner, source: context.source || await sourceFor(context.tuner) }, MORE_COUNT)).catch(() => {})
+    weaveOnline(context, pool, share).catch(() => {})
   })().finally(() => { adding = null })
   return adding
 }
@@ -208,8 +213,29 @@ async function weaveOnline(context, pool, count, find = findOnline) {
   weaving.add(context.id)
   try {
     const isCurrent = () => usePlayerStore.getState().playbackContext?.id === context.id
-    const found = await find(context, pool, count, isCurrent)
-    if (found.length && isCurrent()) usePlayerStore.getState().insertUpcoming(found, context)
+    // A slow catalogue/add-on must not leave reserved queue slots empty
+    // indefinitely. Late answers are ignored; the fallback owns those slots.
+    let deadline
+    const fallback = new Promise(resolve => {
+      deadline = setTimeout(() => resolve([]), 7000)
+    })
+    const found = await Promise.race([
+      Promise.resolve().then(() => find(context, pool, count, isCurrent)).catch(() => []),
+      fallback,
+    ]).finally(() => clearTimeout(deadline))
+    if (!isCurrent()) return
+    if (found.length) usePlayerStore.getState().insertUpcoming(found, context)
+    // Online may be unavailable (offline, missing account, provider throttled).
+    // Backfill only its missing slots, preserving uninterrupted playback.
+    const missing = count - found.length
+    if (missing > 0) {
+      const state = usePlayerStore.getState()
+      const fallback = pickFlow(pool, {
+        count: missing, mood: context.mood, tuner: context.tuner,
+        exclude: new Set(state.queue.map(flowSongKey)), lastTracks: playOrder(state).slice(-3),
+      })
+      if (fallback.length && isCurrent()) state.extendQueue(fallback, context)
+    }
   } finally { weaving.delete(context.id) }
 }
 
@@ -228,7 +254,18 @@ async function findOnline(context, pool, count, isCurrent, queued = []) {
   const mood = context.mood || 'flow'
   let found
   if (mood === 'flow') {
-    found = await onlineFinds(source, { count, exclude, isCurrent })
+    // Provider home recommendations are useful, but can be unavailable for
+    // signed-out listeners. Augment them with public, track-seeded radio.
+    const homeCount = Math.ceil(count / 2)
+    found = await onlineFinds(source, { count: homeCount, exclude, isCurrent })
+    if (found.length < count && isCurrent()) {
+      const seeds = moodSeeds(pool, {
+        mood: 'flow', fits: () => 1,
+        favour: track => familiarity(track, { recent: normalizeTuner(context.tuner).recent }),
+      })
+      const radio = await radioFinds({ seeds, count: count - found.length, exclude, isCurrent })
+      found = [...found, ...radio]
+    }
   } else {
     // A mood: songs like the library's songs that fit it, each heard before it's offered.
     const tuner = normalizeTuner(context.tuner)
@@ -239,6 +276,20 @@ async function findOnline(context, pool, count, isCurrent, queued = []) {
     })
     const log = message => { try { console.info(message) } catch {} }
     found = await moodFinds(source, { mood, seeds, count, exclude, isCurrent, log })
+    if (found.length < count && isCurrent()) {
+      // Last.fm can return no similarly tagged songs. Online radio still
+      // follows the selected mood's local seed instead of random downloads.
+      found = [...found, ...await radioFinds({
+        seeds, count: count - found.length, exclude, isCurrent,
+        accept: async (candidate, seed) => {
+          const [mine, theirs] = await Promise.all([
+            Promise.resolve(api.automixAnalyze(candidate)).catch(() => null),
+            Promise.resolve(api.automixAnalyze(seed)).catch(() => null),
+          ])
+          return fitsMood({ mood, candidate: mine, seed: theirs }).fit
+        },
+      })]
+    }
   }
   return found
 }

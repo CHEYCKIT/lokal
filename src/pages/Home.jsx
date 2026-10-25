@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, ChevronUp, Clock, Disc3, Download, History, 
 import { usePlayerStore, useAppStore } from '../store/player'
 import TrackList from '../components/TrackList'
 import FadeImg from '../components/FadeImg'
+import QualityImage from '../components/QualityImage'
 import DiscoveryImage from '../components/DiscoveryImage'
 import SaveToLibraryButton from '../components/SaveToLibraryButton'
 import SectionSwap from '../components/SectionSwap'
@@ -74,8 +75,8 @@ function MixCard({ mix, onClick, onSave, saving, onContextMenu }) {
       <motion.button whileTap={{ scale: 0.98 }} onClick={onClick} className="w-full flex flex-col gap-3 p-3 bg-elevated border border-border rounded-xl hover:border-accent/30 transition-all text-left">
         <div className="w-full aspect-square rounded-lg overflow-hidden bg-card relative">
           {arts.length === 0 && <div className="w-full h-full flex items-center justify-center text-subtle"><Radio size={36} /></div>}
-          {arts.length === 1 && <FadeImg src={trackArtURL(arts[0])} className="w-full h-full object-cover" />}
-          {arts.length > 1 && <div className="w-full h-full grid grid-cols-2">{arts.map((track, index) => <FadeImg key={index} src={trackArtURL(track)} className="w-full h-full object-cover" />)}</div>}
+          {arts.length === 1 && <QualityImage src={trackArtURL(arts[0])} className="w-full h-full object-cover" />}
+          {arts.length > 1 && <div className="w-full h-full grid grid-cols-2">{arts.map((track, index) => <QualityImage key={index} src={trackArtURL(track)} className="w-full h-full object-cover" />)}</div>}
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center shadow-xl"><Play size={16} fill="currentColor" className="text-base translate-x-0.5" /></div></div>
         </div>
         <div><p className="text-sm font-medium text-white truncate">{mix.name}</p><p className="text-xs text-muted">{plural(mix.tracks.length, 'track')} · {mixTitle(mix)}</p></div>

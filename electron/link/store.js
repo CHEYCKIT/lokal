@@ -83,10 +83,37 @@ class LinkStore {
     return this.db.prepare("SELECT * FROM tracks WHERE link_normalize(title)=? AND link_normalize(artist)=? AND abs(COALESCE(duration,0)-?)<=2 ORDER BY CASE WHEN file_path LIKE 'ghost://%' THEN 1 ELSE 0 END, abs(COALESCE(duration,0)-?) LIMIT 1").get(title, artist, duration, duration) || alias || null
   }
   ensureTrack(fields, key) {
-    const existing=this.matchTrack({...fields,track_key:key});if(existing)return existing;
+    const existing=this.matchTrack({...fields,track_key:key});
     const parts=String(key).split('|'),duration=Number(parts.pop())||0,title=parts.pop()||'Unknown track',artist=parts.join('|')||'Unknown artist';
     const id='link_'+hash(key);
-    this.db.prepare('INSERT OR IGNORE INTO tracks (id,file_path,file_hash,title,artist,album,duration) VALUES (?,?,?,?,?,?,?)').run(id,'ghost://link/'+id,text(fields.file_hash)||id,text(fields.title)||title,text(fields.artist)||artist,text(fields.album),duration);
+    const source = String(fields.source_ref || '')
+    const youtube = fields.online_ref && /^yt:[a-zA-Z0-9_-]{11}$/.test(source)
+    const soundcloud = fields.online_ref && /^sc:\d+$/.test(source)
+    // A cross-device catalogue reference stays playable after synchronization.
+    // Never reuse or store a provider-signed media URL from a remote device.
+    const filePath = youtube ? 'ghost://youtube/online/'+source.slice(3)
+      : soundcloud ? 'ghost://soundcloud/online/'+source.slice(3)
+      : 'ghost://link/'+id
+    const image = String(fields.artwork_url || '')
+    const artwork = /^https:\/\//.test(image) && !/[?&](?:token|signature|expires|auth)=/i.test(image)
+      ? image.slice(0, 2000) : null
+    // The provider's stable recording may already be in the local DB under
+    // a different song ID. Reuse it rather than INSERT OR IGNORE silently
+    // skipping the new row because file_path is UNIQUE.
+    if (youtube || soundcloud) {
+      const byPath=this.db.prepare('SELECT * FROM tracks WHERE file_path=?').get(filePath)
+      if (byPath) return byPath
+      // Repair old metadata-only link placeholders when a newer paired
+      // device finally supplies a stable provider identity.
+      if (existing && String(existing.file_path).startsWith('ghost://link/')) {
+        this.db.prepare('UPDATE tracks SET file_path=?,source_ref=?,artwork_url=COALESCE(artwork_url,?) WHERE id=?')
+          .run(filePath,source,artwork,existing.id)
+        return this.db.prepare('SELECT * FROM tracks WHERE id=?').get(existing.id)
+      }
+    }
+    if (existing) return existing;
+    this.db.prepare('INSERT OR IGNORE INTO tracks (id,file_path,file_hash,title,artist,album,duration,source_ref,artwork_url) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(id,filePath,text(fields.file_hash)||id,text(fields.title)||title,text(fields.artist)||artist,text(fields.album),duration,youtube||soundcloud ? source : null,artwork);
     return this.db.prepare('SELECT * FROM tracks WHERE id=?').get(id);
   }
   pushHistory(items, userId, deviceId) {

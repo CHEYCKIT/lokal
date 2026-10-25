@@ -75,12 +75,15 @@ export async function youtubeRadioSeed(seed, mode, client) {
  * start playing with its first songs and fill in after. isCurrent() false
  * stops the work (the radio was left or rebuilt).
  */
-export async function buildRadio(seed, userId, client = api, { onTracks, isCurrent = () => true } = {}) {
+export async function buildRadio(seed, userId, client = api, { onTracks, isCurrent = () => true, limit = RADIO_MAX } = {}) {
   if (!seed?.artist && !seed?.title) return []
   const mode = seed.type || (!seed.title || normalize(seed.title) === normalize(seed.artist) ? 'artist' : 'track')
   const found = seed.id ? [seed] : []
-  const list = () => uniqueTracks(found)
-  const enough = () => list().length >= RADIO_MAX
+  // Queue-end autoplay only needs a small refill; don't resolve a 50-track
+  // station on every transition. Explicit radio keeps the full default.
+  const maximum = Math.max(1, Math.min(RADIO_MAX, Math.floor(Number(limit) || RADIO_MAX)))
+  const list = () => uniqueTracks(found).slice(0, maximum)
+  const enough = () => list().length >= maximum
   const add = tracks => {
     if (!isCurrent() || !tracks?.length) return
     found.push(...tracks)
@@ -100,7 +103,7 @@ export async function buildRadio(seed, userId, client = api, { onTracks, isCurre
     : []
   const candidates = [...(Array.isArray(radio) ? radio : []), ...similarTracks]
   if (candidates.length || similarArtists.length) {
-    const sources = await playbackSources(client)
+    const sources = await playbackSources(client).catch(() => [])
     // Each song is announced as soon as it's found (four looked up at a time),
     // instead of after the whole list.
     await mapLimited(candidates, async candidate => {

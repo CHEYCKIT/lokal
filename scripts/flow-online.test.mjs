@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} }
-const { onlineFinds, onlineShare, onlineError, resetOnline } = await import('../src/flow/online.js')
+const { onlineFinds, onlineShare, onlineError, resetOnline, radioFinds } = await import('../src/flow/online.js')
 const { usePlayerStore: store } = await import('../src/store/player.js')
 const { songKey } = await import('../src/recommendations.js')
 
@@ -73,8 +73,9 @@ test('shuffled: finds go after the song playing in the unshuffled order too', ()
 test('how many come from online', () => {
   assert.equal(onlineShare({ source: 'library', adventurous: 1 }, 10), 0)
   assert.equal(onlineShare({ adventurous: 1 }, 10), 0)
-  assert.equal(onlineShare({ source: 'lastfm', adventurous: 0 }, 10), 1)
-  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 8)
+  assert.equal(onlineShare({ source: 'lastfm', adventurous: 0 }, 10), 6)
+  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 9)
+  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 1), 0, 'keep the local anchor')
 })
 
 test('finds are woven among the songs to come, never before the next one', () => {
@@ -93,4 +94,18 @@ test('finds are woven among the songs to come, never before the next one', () =>
   assert.ok(at[1] - at[0] > 1, 'spread out')
   store.getState().insertUpcoming([{ id: 'yt:9', title: 'X', artist: 'C', file_path: 'stream://9' }], { type: 'flow', id: 'other' })
   assert.ok(!store.getState().queue.some(track => track.id === 'yt:9'), 'only for the Flow playing')
+})
+
+test('YouTube seed radio supplies unseen recordings with bounded artist repetition', async () => {
+  resetOnline()
+  const seeds = [{ videoId: '12345678901', title: 'Seed song', artist: 'Seed artist' }]
+  const client = { youtubeRadio: async () => [
+    { title: 'Seed song', artist: 'Seed artist', videoId: '12345678901' },
+    ...Array.from({ length: 7 }, (_, i) => ({ title: 'Track ' + i, artist: 'One artist', videoId: 'abcdefghij' + i })),
+    { title: 'Different', artist: 'Different artist', videoId: 'zzzzzzzzzzz' },
+  ] }
+  const resolve = async rows => rows.map(track => ({ ...track, id: 'yt:' + track.videoId, file_path: 'stream://' + track.videoId }))
+  const found = await radioFinds({ seeds, count: 6, client, resolve, exclude: new Set([songKey({ title: 'Track 0', artist: 'One artist' })]) })
+  assert.deepEqual(found.map(track => track.title), ['Track 1', 'Track 2', 'Different'])
+  assert.ok(found.every(track => track.flowFind === 'youtube'))
 })

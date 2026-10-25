@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion'
 import { trackArtURL, trackFullArtURL } from '../onlineTracks'
+import { artworkCandidates } from '../artworkQuality.mjs'
 import { usePerformanceMode } from '../performanceMode'
 import { clampIndex, flowCoverGeometry, flowIndexAt, flowDrag, flowCoastPlan, flowEaseOut, flowPixelsPerCover, flowReleaseVelocity, flowVisibleRange, flowResponsiveSpread, flowWheelPixels, flowWheelTarget, flowWheelEase, FLOW_PERSPECTIVE, FLOW_VANISH_Y } from '../coverFlowGeometry.mjs'
 
@@ -10,42 +11,77 @@ const MAX_SIZE = 320 // 45% larger than the original 220px covers; still respons
 const DRAG_THRESHOLD = 6
 const LONG_PRESS_MS = 500
 
-// Rapid sweeps must display the already-cached thumbnails without decoding
-// full-resolution files or restarting per-image fade transitions.
-function FlowArtwork({ track, highRes }) {
+// A small shared high-resolution decode cache. Covers mount/unmount while
+// flinging; an in-flight image must not refetch for every intermediate panel.
+const fullArtworkCache = new Map()
+const MAX_CACHED_ARTWORK = 80
+function loadCoverSources(sources) {
+  const key = sources.join('\n')
+  if (!key) return Promise.resolve(null)
+  if (fullArtworkCache.has(key)) return fullArtworkCache.get(key)
+  const load = async () => {
+    for (const src of sources) {
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = src
+      try {
+        if (image.decode) await image.decode()
+        else await new Promise((resolve, reject) => {
+          image.onload = resolve
+          image.onerror = reject
+        })
+        if (image.naturalWidth > 0) return src
+      } catch { /* Try the next size, including the known original URL. */ }
+    }
+    return null
+  }
+  const job = load()
+  fullArtworkCache.set(key, job)
+  while (fullArtworkCache.size > MAX_CACHED_ARTWORK) {
+    fullArtworkCache.delete(fullArtworkCache.keys().next().value)
+  }
+  return job
+}
+
+export function coverFlowArtworkSources(track) {
   const thumbnail = trackArtURL(track)
   const full = trackFullArtURL(track) || thumbnail
+  if (!full) return []
+  // Locally generated .webp thumbnails need the full artwork extraction.
+  // Online Amazon, Google and YouTube variants have their own fallbacks.
+  return artworkCandidates(full).concat(
+    thumbnail && thumbnail !== full ? [thumbnail] : [],
+  ).filter((url, index, all) => all.indexOf(url) === index)
+}
+
+function FlowArtwork({ track }) {
+  const thumbnail = trackArtURL(track)
+  const sources = coverFlowArtworkSources(track)
+  const sourceKey = sources.join('\n')
   const [decoded, setDecoded] = useState(null)
-
   useEffect(() => {
-    if (!highRes || !full || full === thumbnail || decoded === full) return undefined
-    let live = true
-    // Defer extraction/decoding of the original cover until motion finishes.
-    // The thumbnail stays visible throughout; never fade/blank covers in flight.
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => { if (live && !image.decode) setDecoded(full) }
-    image.src = full
-    if (image.decode) image.decode().then(() => {
-      if (live) setDecoded(full)
-    }).catch(() => {})
-    return () => { live = false; image.onload = null }
-  }, [highRes, full, thumbnail, decoded])
-
+    let active = true
+    setDecoded(null)
+    // Every visible 3D panel requests full-resolution art, not just the
+    // focused one after motion stops. The thumbnail is only a fallback.
+    loadCoverSources(sources).then(src => {
+      if (active) setDecoded(src)
+    })
+    return () => { active = false }
+  }, [sourceKey])
   return <>
-    <img src={thumbnail} draggable={false} loading="eager" decoding="async" alt=""
-      className="absolute inset-0 h-full w-full object-cover" />
-    {highRes && decoded === full && full !== thumbnail && (
-      <img src={full} draggable={false} loading="eager" decoding="async" alt=""
-        className="absolute inset-0 h-full w-full object-cover" />
-    )}
+    {thumbnail && <img src={thumbnail} draggable={false} loading="eager"
+      decoding="async" alt="" className="absolute inset-0 h-full w-full object-cover" />}
+    {decoded && decoded !== thumbnail && <img src={decoded} draggable={false}
+      loading="eager" decoding="async" alt=""
+      className="absolute inset-0 h-full w-full object-cover" />}
   </>
 }
 
 // Memoized covers do not reconcile when the selected label advances. Their
 // transforms subscribe directly to the animation MotionValue on the compositor.
 const FlowCover = React.memo(function FlowCover({
-  pick, index, position, flip, flipTarget, highRes, backVisible,
+  pick, index, position, flip, flipTarget, backVisible,
   size, reduced, spreadValue, onSelect, onPlay, onContextMenu,
 }) {
   const geometry = useTransform([position, spreadValue], ([p, spread]) =>
@@ -74,7 +110,7 @@ const FlowCover = React.memo(function FlowCover({
       aria-label={'Play ' + pick.track.title + ' by ' + pick.track.artist}
       className="absolute inset-0 overflow-hidden rounded-md bg-card outline-none shadow-[0_18px_40px_rgba(0,0,0,0.45)] focus-visible:ring-2 focus-visible:ring-accent"
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-      {artwork ? <FlowArtwork track={pick.track} highRes={highRes} /> :
+      {artwork ? <FlowArtwork track={pick.track} /> :
         <span className="flex h-full w-full items-center justify-center text-5xl text-muted">♪</span>}
     </button>
     <div aria-hidden={!backVisible} inert={!backVisible}
@@ -134,39 +170,31 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   // artwork trees while a fling crosses each item boundary.
   const visible = flowVisibleRange(renderCenter, count)
   const handlers = useRef(null)
-  const warmed = useRef(new Map())
-  // Thumbnail assets are small. Decode them one at a time when Chromium is
-  // idle so a fast sweep doesn't need to fetch/decode them mid-animation.
+  // Decode full-resolution covers using a strict two-request background
+  // budget, not an unbounded train of idle callbacks that competes with the
+  // visible artwork loads during a fast Cover Flow fling.
   useEffect(() => {
-    if (reduced) return undefined
-    const cache = warmed.current
-    const urls = [...new Set(picks.map(p => trackArtURL(p.track)).filter(Boolean))]
-    for (const url of cache.keys()) if (!urls.includes(url)) cache.delete(url)
     let cancelled = false
-    let job
-    const schedule = () => {
+    let timer = null
+    let idle = null
+    const batches = picks.map(pick => coverFlowArtworkSources(pick.track))
+    let cursor = 0
+    const warm = async () => {
       if (cancelled) return
-      job = window.requestIdleCallback?.(warmNext)
+      const batch = batches.slice(cursor, cursor + 2)
+      cursor += batch.length
+      await Promise.all(batch.map(urls => loadCoverSources(urls)))
+      if (cancelled || cursor >= batches.length) return
+      if (window.requestIdleCallback) idle = window.requestIdleCallback(warm)
+      else timer = window.setTimeout(warm, 20)
     }
-    const warmNext = async () => {
-      if (cancelled) return
-      const src = urls.find(url => !cache.has(url))
-      if (!src) return
-      const image = new Image()
-      image.decoding = 'async'
-      cache.set(src, image)
-      image.src = src
-      try { await image.decode?.() } catch { /* invalid art stays cached as failed */ }
-      schedule()
-    }
-    // Electron runs Chromium, which exposes requestIdleCallback. Avoid
-    // triggering a decoding wave synchronously during the first Home paint.
-    schedule()
+    void warm()
     return () => {
       cancelled = true
-      if (job != null) window.cancelIdleCallback?.(job)
+      if (idle !== null) window.cancelIdleCallback?.(idle)
+      if (timer !== null) window.clearTimeout(timer)
     }
-  }, [picks, reduced])
+  }, [picks])
 
   const handleSelect = useCallback(index => handlers.current?.select(index), [])
   const handlePlay = useCallback(index => handlers.current?.play(index), [])
@@ -410,8 +438,7 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
         return <FlowCover key={pick.track.id}
           pick={pick} index={index} position={position} flip={flip}
           flipTarget={index === flipIndex} backVisible={flipped && index === flipIndex}
-          highRes={settled && index === activeIndex}
-          size={size} reduced={reduced} spreadValue={spreadValue}
+                    size={size} reduced={reduced} spreadValue={spreadValue}
           onSelect={handleSelect} onPlay={handlePlay} onContextMenu={handleMenu} />
       })}
     </div>

@@ -1970,6 +1970,18 @@ activeCategory === 'data' ? usersTried
       )}
 
       {inCategory('addons') && (
+      <Section title={t("Global catalogue")}>
+        <Row label={t("Global search results")} desc={t("Choose where Lokal finds songs, albums and artists. Playback still follows Playback Source Priority; Spotify uses your existing cookie, and Apple Music works without an account.")}>
+          <select value={settings.global_catalogue_source === 'spotify' ? 'spotify' : 'apple'} onChange={e => set('global_catalogue_source', e.target.value)}
+            aria-label={t("Global search catalogue")} className="min-w-40 rounded-lg border border-border bg-card px-3 py-2 text-sm text-white outline-none focus:border-accent/50">
+            <option value="apple">{t("Apple Music")}</option>
+            <option value="spotify">{t("Spotify")}</option>
+          </select>
+        </Row>
+        {settings.global_catalogue_source === 'spotify' && !settings.spotify_sp_dc && <p className="text-xs text-muted">{t("Spotify needs a connected account in Integrations. Until then, Global results use Apple Music.")}</p>}
+      </Section>
+      )}
+      {inCategory('addons') && (
       <Section title={t("Addons")}>
         <AddonsSettings />
       </Section>

@@ -128,6 +128,13 @@ function registerOnlineHandlers(ipcMain) {
   // Streamed songs' genres (see genres.js): those already played, once the app has settled.
   setTimeout(() => genres.backfillOnlineGenres(getDB()), 20000).unref?.()
   ipcMain.handle('online:search', (_, query, provider) => search(query, provider))
+  ipcMain.handle('online:globalSearch', (_, query, options) => {
+    const saved = settings()
+    const source = saved.global_catalogue_source === 'spotify' ? 'spotify' : 'apple'
+    return require('../online/globalCatalogue').preferredGlobalSearch(query, {
+      ...options, source, rawCookie: saved.spotify_sp_dc || '',
+    })
+  })
   ipcMain.handle('online:save', (_, items) => {
     try {
       const rows = sources.saveOnlineTracks(getDB(), items)
