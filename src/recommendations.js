@@ -206,12 +206,20 @@ export async function playbackAvailability(match, provider, client = api, timeou
   if (typeof client.onlinePrepare !== 'function') return null
   const controller = new AbortController()
   let prepared
+  let completed = false
   try {
     prepared = await timed(() => client.onlinePrepare(provider, String(match.id), false, { signal: controller.signal, onProgress }), /^a-/.test(provider) ? Math.max(timeoutMs, 15 * 60 * 1000) : timeoutMs, 'Audio preparation timed out. Try again.')
+    completed = true
   } catch (error) {
     onError(error?.message || error)
     return 'unavailable'
-  } finally { controller.abort() }
+  } finally {
+    // onlinePrepare resolves as soon as a verified growing stream is playable.
+    // Aborting the signal on *success* cancels that still-running Morneye
+    // download before lokal-stream:// can attach to it. Only cancel a prepare
+    // that timed out or failed; playback takes ownership of a ready stream.
+    if (!completed) controller.abort()
+  }
   if (prepared?.preview) return 'preview'
   if (prepared?.error) onError(addonErrorText(prepared.error))
   return prepared?.ok && !prepared.error ? null : 'unavailable'
