@@ -103,7 +103,7 @@ export async function buildRadio(seed, userId, client = api, { onTracks, isCurre
     : []
   const candidates = [...(Array.isArray(radio) ? radio : []), ...similarTracks]
   if (candidates.length || similarArtists.length) {
-    const sources = await playbackSources(client)
+    const sources = await playbackSources(client).catch(() => [])
     // Each song is announced as soon as it's found (four looked up at a time),
     // instead of after the whole list.
     await mapLimited(candidates, async candidate => {
