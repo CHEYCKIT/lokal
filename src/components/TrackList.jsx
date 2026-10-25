@@ -26,6 +26,7 @@ import TrackColumnPicker from './TrackColumnPicker'
 import { TrackSourceIcon } from './SourceIcon'
 import { openRadio } from '../radioActions'
 import DiscoveryImage from './DiscoveryImage'
+import QualityImage from './QualityImage'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { playbackFallbackMessage } from '../recommendations'
 import { navigateToTrackAlbum } from '../playbackContext'
@@ -920,7 +921,7 @@ export default function TrackList({ tracks = [], showQuality = false, onRemove =
 
             <div className="min-w-0 flex items-center gap-2.5">
               {columns.artwork ? <div className="w-8 h-8 rounded flex-shrink-0 overflow-hidden bg-card relative">
-                {resolveTracks ? <DiscoveryImage item={track} src={src} className="w-full h-full object-cover" /> : src ? <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center text-muted"><Music size={11} /></div>}
+                {resolveTracks ? <DiscoveryImage item={track} src={src} className="w-full h-full object-cover" /> : src ? <QualityImage src={src} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-muted"><Music size={11} /></div>}
                 {!layout.number && <button onClick={e => handlePlay(track, e)} aria-label={`${isCurrent && isPlaying ? 'Pause' : 'Play'} ${track.title}`}
                   className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 text-white">
                   {isCurrent && isPlaying ? <Pause size={14} /> : <Play size={14} />}
