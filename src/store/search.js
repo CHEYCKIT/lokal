@@ -9,8 +9,14 @@ import { create } from 'zustand'
 
 /** Shared search state: the header's query and focus requests. */
 import { normalizeSearchScope, searchesOnline } from '../searchScope.mjs'
+import { normalizeResultCategory } from '../searchResultCategory.mjs'
 
 const SCOPE_KEY = 'lokal-search-scope'
+const CATEGORY_KEY = 'lokal-search-result-category'
+const readCategory = () => {
+  try { return normalizeResultCategory(localStorage.getItem(CATEGORY_KEY)) }
+  catch { return 'all' }
+}
 // Keep users' previous "online on/off" preference when upgrading to the
 // three-way selector. In particular, "online off" maps to Library, not All.
 const readScope = () => {
@@ -25,6 +31,12 @@ const initialScope = readScope()
 export const useSearchStore = create((set) => ({
   query: '',
   scope: initialScope,
+  resultCategory: readCategory(),
+  setResultCategory: (value) => {
+    const resultCategory = normalizeResultCategory(value)
+    try { localStorage.setItem(CATEGORY_KEY, resultCategory) } catch {}
+    set({ resultCategory })
+  },
   // Deprecated compatibility shape for components still checking the old
   // globe setting. The search screen uses scope exclusively.
   online: searchesOnline(initialScope),
