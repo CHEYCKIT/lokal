@@ -69,4 +69,38 @@ async function globalSearch(query, { country = 'US', offset = 0, limit = 25, fet
   while (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value)
   return value
 }
-module.exports = { globalSearch, normalise }
+
+const spotifyCache = new Map()
+/** Global's catalogue selection does not modify user playback source order.
+ * Inject spotifySearch in tests so no browser cookie/token flow is required. */
+async function preferredGlobalSearch(query, {
+  source = 'apple', rawCookie = '', spotifySearch, ...options
+} = {}) {
+  if (source === 'spotify') {
+    try {
+      if (!rawCookie) throw new Error('Spotify is not connected.')
+      const crypto = require('node:crypto')
+      const key = JSON.stringify([crypto.createHash('sha256').update(rawCookie).digest('hex'),
+        String(query || '').trim().toLowerCase(), options.offset || 0, options.limit || 25])
+      const cached = spotifyCache.get(key)
+      if (cached && Date.now() < cached.until)
+        return { ...cached.result, catalogue: 'spotify' }
+      const request = spotifySearch || require('../artwork/spotify').catalogueSearch
+      const result = await request(rawCookie, query, options)
+      if (!result || !Array.isArray(result.tracks))
+        throw new Error('Invalid Spotify catalogue response.')
+      spotifyCache.set(key, { until: Date.now() + 2 * 60 * 1000, result })
+      while (spotifyCache.size > 75) spotifyCache.delete(spotifyCache.keys().next().value)
+      return { ...result, catalogue: 'spotify' }
+    } catch (error) {
+      // A stale sp_dc or unsupported web-token operation is a search
+      // problem, not a reason to break playback or expose credentials.
+      const apple = await globalSearch(query, options)
+      return { ...apple, catalogue: 'apple', fallback: true,
+        notice: 'Spotify search is unavailable. Showing Apple Music results.' }
+    }
+  }
+  return { ...await globalSearch(query, options), catalogue: 'apple' }
+}
+
+module.exports = { globalSearch, preferredGlobalSearch, normalise }
