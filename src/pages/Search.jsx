@@ -48,6 +48,7 @@ export default function Search() {
     if (request) {
       // Explicitly invoking Find on a provider must show those results,
       // even if the saved scope is Library.
+      searchSeqRef.current++
       setScope('online')
       setResultCategory('songs')
       setQuery(request.query || '')
@@ -199,7 +200,7 @@ export default function Search() {
       // clicked (Previous goes back up it). On its own, autoplay followed the
       // song with unrelated library songs.
       const selectionId = ++recentTrackSelectionRef.current
-      const items = recentItems.filter(entry => entry.type === 'track')
+      const items = visibleRecentItems.filter(entry => entry.type === 'track')
       const tracks = await Promise.all(items.map(recentTrack))
       if (selectionId !== recentTrackSelectionRef.current) return
       const list = []
@@ -231,6 +232,15 @@ export default function Search() {
   // Source scope and result type are orthogonal, like mobile.
   const hasVisibleLibraryResults = (showSongs && (tracks.length || lyricMatches.length)) ||
     (showArtists && artists.length) || (showAlbums && albums.length)
+  // Recents are local navigational history; don't leak them into Online-only
+  // search, and don't show streams while explicitly searching only Library.
+  const visibleRecentItems = scope === 'online' ? [] : recentItems.filter(item => {
+    if (scope === 'library' && item.type === 'track' && isStreamed(item)) return false
+    return resultCategory === 'all' ||
+      (resultCategory === 'songs' && item.type === 'track') ||
+      (resultCategory === 'artists' && item.type === 'artist') ||
+      (resultCategory === 'albums' && item.type === 'album')
+  })
   const showSearchResults = isSearchStarted
 
   return (
@@ -240,7 +250,14 @@ export default function Search() {
           className="inline-flex max-w-full items-center rounded-xl border border-border bg-elevated/50 p-1 gap-1">
           {SEARCH_SCOPES.map(value => (
             <button key={value} type="button"
-              onClick={() => setScope(value)}
+              onClick={() => {
+                if (value !== scope) {
+                  searchSeqRef.current++
+                  setCorrection(null)
+                  setOnlineQuery(query)
+                }
+                setScope(value)
+              }}
               aria-pressed={scope === value}
               title={t(scopeDescription(value))}
               className={`min-w-[5.25rem] rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${scope === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white hover:bg-card'}`}>
@@ -263,13 +280,13 @@ export default function Search() {
       </div>
       {!showSearchResults && (
         <div className="space-y-6">
-          {recentItems.length > 0 && (
+          {visibleRecentItems.length > 0 && (
             <section>
               <h2 className="text-xs font-display text-muted uppercase tracking-widest mb-3 flex items-center gap-2">
                 <Clock size={12} /> Recent
               </h2>
               <div className="grid grid-cols-3 @sm:grid-cols-5 gap-3">
-                {recentItems.map((item, i) => (
+                {visibleRecentItems.map((item, i) => (
                   <motion.button
                     key={`${item.id}-${i}`}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -324,10 +341,14 @@ export default function Search() {
             </section>
           )}
           
-          {recentItems.length === 0 && (
+          {visibleRecentItems.length === 0 && (
             <div className="text-center py-16 text-muted">
               <SearchIcon size={36} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">{t("Search your library, and online, from the bar at the top.")}</p>
+              <p className="text-sm">{scope === 'online'
+                ? t("Search online catalogues and playback sources from the bar at the top.")
+                : scope === 'library'
+                  ? t("Search your library from the bar at the top.")
+                  : t("Search your library, and online, from the bar at the top.")}</p>
               <p className="text-xs mt-1 opacity-70">{t("Or just start typing anywhere in Lokal. Paste a link to download it.")}</p>
             </div>
           )}
