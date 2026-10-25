@@ -2215,18 +2215,22 @@ export default function App() {
     // BitChord-style online radio is the primary queue-end source. Use Lokal's
     // existing provider resolution and stream fallback; do not download a
     // random batch of library songs and call that "recommendations".
+    const beforeCount = state.queue.length
     buildRadio(seed, userId, api, {
       limit: 9,
       isCurrent: current,
       onTracks: tracks => { if (current()) usePlayerStore.getState().appendRelated(tracks) },
-    }).then(async tracks => {
-      if (!current() || tracks.some(track => track.id !== seed.id)) return
-      // Offline/provider failure: leave the established local related-track
-      // fallback in place rather than stopping playback at queue end.
+    }).then(async () => {
+      if (!current()) return
+      // The station can return only songs already queued. Measure the actual
+      // append, not the number of radio candidates, before skipping fallback.
+      if (usePlayerStore.getState().queue.length > beforeCount) return
       const related = await api.getRelated(seed.id, userId).catch(() => [])
       if (current() && Array.isArray(related) && related.length) usePlayerStore.getState().appendRelated(related)
     }).catch(() => {}).finally(() => {
-      if (current()) usePlayerStore.getState().setFetchingRelated(false)
+      // An automatic track transition makes current() false. Clearing still
+      // matters: the next track must be allowed to ask for recommendations.
+      usePlayerStore.getState().setFetchingRelated(false)
     })
   }, [])
 
