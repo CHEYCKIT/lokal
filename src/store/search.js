@@ -15,7 +15,7 @@ const SCOPE_KEY = 'lokal-search-scope'
 const CATEGORY_KEY = 'lokal-search-result-category'
 const readCategory = () => {
   try { return normalizeResultCategory(localStorage.getItem(CATEGORY_KEY)) }
-  catch { return 'all' }
+  catch { return 'songs' }
 }
 // Retired All-source selections migrate to Library; the category-type All
 // still remains. Explicit Online survives upgrades.
