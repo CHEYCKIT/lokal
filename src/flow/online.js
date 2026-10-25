@@ -134,6 +134,46 @@ export function onlineShare(tuner, count) {
   return Math.min(count - 1, Math.max(1, Math.round(count * (0.55 + 0.35 * adventurous))))
 }
 
+/** A bounded YouTube Music radio batch, seeded from songs the listener
+ * actually plays/likes, not from the contents of their downloads directory.
+ * Reuses the provider resolver used by Discovery and explicit Radio.
+ */
+export async function radioFinds({ seeds = [], count, exclude = new Set(), isCurrent = () => true,
+  client = api, resolve = (rows, options) => resolveRecommendationTracks(rows, client, options) } = {}) {
+  if (!(count > 0) || !seeds.length) return []
+  const started = generation
+  const live = () => isCurrent() && started === generation
+  const lists = await Promise.all(seeds.slice(0, 3).map(seed =>
+    similarTo('youtube', seed, client).catch(() => [])))
+  if (!live()) return []
+  const candidates = []
+  const seen = new Set()
+  for (let i = 0; lists.some(list => i < list.length); i++) {
+    for (const list of lists) {
+      const track = list[i]
+      const key = songKey(track)
+      if (key && !seen.has(key) && !exclude.has(key)) {
+        seen.add(key)
+        candidates.push(track)
+      }
+    }
+  }
+  const result = []
+  const artists = new Map()
+  for (const candidate of candidates.slice(0, count * 8)) {
+    if (!live() || result.length >= count) break
+    const [song] = await Promise.resolve(resolve([candidate], { isCurrent: live })).catch(() => [])
+    if (!song || !live()) continue
+    const key = songKey(song)
+    const artist = String(song.artist || '').toLowerCase().split(/,|&| feat\.? | ft\.? /)[0].trim()
+    if (!key || exclude.has(key) || (artists.get(artist) || 0) >= 2) continue
+    artists.set(artist, (artists.get(artist) || 0) + 1)
+    exclude.add(key)
+    result.push({ ...song, flowFind: 'youtube' })
+  }
+  return live() ? result : []
+}
+
 // ---------------------------------------------------------------- moods
 
 const SEEDS_PER_ASK = 3
