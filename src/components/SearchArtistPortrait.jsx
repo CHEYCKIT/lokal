@@ -37,7 +37,7 @@ export default function SearchArtistPortrait({ name, localPath, imageUrl, classN
   useEffect(() => {
     let alive = true
     setExternal(''); setBrokenLocal(false); setBrokenRemote(false)
-    if (!known) portrait(name).then(value => { if (alive) setExternal(value) })
+    if (!known && !localPath) portrait(name).then(value => { if (alive) setExternal(value) })
     return () => { alive = false }
   }, [name, localPath, known])
   if (local) return <img src={local} alt={name} className={className} onError={() => setBrokenLocal(true)} />
