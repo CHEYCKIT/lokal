@@ -16,6 +16,7 @@ import { usePlayerStore } from '../store/player.js'
 import { DEFAULT_TUNER, FLOW_MOODS, familiarity, flowEligible, flowSongKey, flowSource, genreWeight, isFresh, moodScore, normalizeTuner, pickFlow } from './engine.js'
 import { songKey } from '../recommendations.js'
 import { moodFinds, moodSeeds, onlineFinds, onlineShare, radioFinds } from './online.js'
+import { fitsMood } from './moodFit.js'
 
 const POOL_TTL_MS = 5 * 60 * 1000
 const START_COUNT = 10
@@ -271,6 +272,13 @@ async function findOnline(context, pool, count, isCurrent, queued = []) {
       // follows the selected mood's local seed instead of random downloads.
       found = [...found, ...await radioFinds({
         seeds, count: count - found.length, exclude, isCurrent,
+        accept: async (candidate, seed) => {
+          const [mine, theirs] = await Promise.all([
+            Promise.resolve(api.automixAnalyze(candidate)).catch(() => null),
+            Promise.resolve(api.automixAnalyze(seed)).catch(() => null),
+          ])
+          return fitsMood({ mood, candidate: mine, seed: theirs }).fit
+        },
       })]
     }
   }
