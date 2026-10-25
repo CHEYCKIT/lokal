@@ -705,4 +705,101 @@ async function playlistTracks(rawCookie, uri, { query, max = 200 } = {}) {
   return { title, tracks: tracks.slice(0, max) }
 }
 
-module.exports = { madeForYou, playlistTracks, homeMixes, playlistEntry, fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, TransientError }
+
+/**
+ * Search Spotify's catalogue using the existing private sp_dc web-player
+ * session; token/cookie values never cross into renderer or playlist data.
+ */
+async function catalogueSearch(rawCookie, query, { offset = 0, limit = 25, fetchImpl = request } = {}) {
+  if (!cookieValue(rawCookie)) throw new Error('Connect Spotify in Integrations to search its catalogue.')
+  const q = String(query || '').trim().slice(0, 160)
+  if (q.length < 2) return { tracks: [], albums: [], artists: [] }
+  const start = Math.max(0, Math.min(150, Number(offset) || 0))
+  const count = Math.max(1, Math.min(50, Number(limit) || 25))
+  let t = await getTokens(rawCookie)
+  if (!t?.accessToken) throw new Error('Spotify session expired. Update your cookie.')
+  const url = new URL('https://api.spotify.com/v1/search')
+  url.search = new URLSearchParams({
+    q, type: 'track,album,artist', limit: String(count), offset: String(start),
+  }).toString()
+  const load = token => fetchImpl(url.toString(), {
+    headers: {
+      Authorization: 'Bearer ' + token.accessToken,
+      Accept: 'application/json', 'User-Agent': UA, 'App-Platform': 'WebPlayer',
+      Origin: 'https://open.spotify.com',
+      ...(token.clientToken && token.clientExp > Date.now()
+        ? { 'client-token': token.clientToken } : {}),
+    },
+  })
+  let res = await load(t)
+  if (res.status === 401) {
+    t = await getTokens(rawCookie, { force: true })
+    if (!t) throw new Error('Spotify session expired.')
+    res = await load(t)
+  }
+  if (!res.ok) {
+    const fallback = await searchCataloguePathfinder(t, q, start, count, fetchImpl)
+    if (fallback.tracks.length) return { ...fallback, partial: true }
+    throw new Error('Spotify catalogue unavailable (HTTP ' + res.status + ').')
+  }
+  const json = await res.json()
+  const photo = item => {
+    const first = item?.images?.[0]?.url || item?.coverArt?.sources?.[0]?.url || ''
+    return typeof first === 'string' && /^https:\/\//.test(first) ? first : ''
+  }
+  const tracks = (json?.tracks?.items || []).filter(item => item?.id && item?.name)
+    .map(item => ({
+      id: String(item.id), title: item.name,
+      artist: (item.artists || []).map(a => a?.name).filter(Boolean).join(', '),
+      album: item.album?.name || '',
+      duration: Number(item.duration_ms) / 1000 || null,
+      artwork_url: photo(item.album), catalogue: 'spotify',
+      catalogue_id: String(item.id),
+    })).filter(item => item.artist)
+  const albums = (json?.albums?.items || []).filter(item => item?.id && item?.name)
+    .map(item => ({
+      id: String(item.id), title: item.name,
+      artist: (item.artists || []).map(a => a?.name).filter(Boolean).join(', '),
+      artwork_url: photo(item), catalogue: 'spotify', catalogue_id: String(item.id),
+    }))
+  const artists = (json?.artists?.items || []).filter(item => item?.id && item?.name)
+    .map(item => ({
+      id: String(item.id), title: item.name, artist: item.name,
+      artwork_url: photo(item), catalogue: 'spotify', catalogue_id: String(item.id),
+    }))
+  return { tracks, albums, artists }
+}
+
+/** Older cookie-backed WebPlayer tokens can use Pathfinder even when REST
+ * search refuses them. That operation currently supplies track rows only. */
+async function searchCataloguePathfinder(token, term, offset, limit, fetchImpl = request) {
+  const variables = { searchTerm: term, offset, limit, numberOfTopResults: 5,
+    includeAudiobooks: false, includePreReleases: false }
+  const extensions = { persistedQuery: { version: 1, sha256Hash: hashFor('searchTracks') } }
+  const url = 'https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchTracks&variables=' +
+    encodeURIComponent(JSON.stringify(variables)) + '&extensions=' + encodeURIComponent(JSON.stringify(extensions))
+  const headers = { Authorization: 'Bearer ' + token.accessToken,
+    Accept: 'application/json', 'App-Platform': 'WebPlayer', 'User-Agent': UA }
+  if (token.clientToken && token.clientExp > Date.now()) headers['client-token'] = token.clientToken
+  const res = await fetchImpl(url, { headers }).catch(() => null)
+  if (!res?.ok) return { tracks: [], albums: [], artists: [] }
+  const json = await res.json().catch(() => ({}))
+  return {
+    tracks: (json?.data?.searchV2?.tracksV2?.items || []).map(item => item?.item?.data)
+      .filter(Boolean).map(item => {
+        const id = String(item.uri || '').split(':').at(-1)
+        const artwork = item.albumOfTrack?.coverArt?.sources?.[0]?.url || ''
+        return {
+          id, title: item.name || '', artist: (item.artists?.items || [])
+            .map(a => a?.profile?.name).filter(Boolean).join(', '),
+          album: item.albumOfTrack?.name || '',
+          duration: Number(item.duration?.totalMilliseconds) / 1000 || null,
+          artwork_url: /^https:\/\//.test(artwork) ? artwork : '',
+          catalogue: 'spotify', catalogue_id: id,
+        }
+      }).filter(item => item.id && item.title && item.artist),
+    albums: [], artists: [],
+  }
+}
+
+module.exports = { madeForYou, playlistTracks, homeMixes, playlistEntry, fromSpotify, checkSpotify, findSpotifyTrackId, parseCanvases, cookieValue, followedArtists, likedSince, likeOnSpotify, likedEntry, catalogueSearch, TransientError }
