@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Music, Play } from 'lucide-react'
+import LyricsSearchResult from './LyricsSearchResult'
+import { lyricsSearchSnippet } from '../lyricsSearchSnippet.mjs'
+import { useTranslation } from '../i18n'
 import { playRecommendationPool } from '../recommendationPlayback'
 import { showLoadingToast, showToast } from './Toaster'
 
@@ -7,6 +9,7 @@ import { showLoadingToast, showToast } from './Toaster'
  * index lyric-line text. Never pretend a keyword search checked the words
  * inside the lyrics. Only show records containing actual lyrics. */
 export default function OnlineLyricsSearch({ query }) {
+  const { t } = useTranslation()
   const q = String(query || '').trim()
   const [records, setRecords] = useState([])
   const [status, setStatus] = useState('idle')
@@ -77,17 +80,12 @@ export default function OnlineLyricsSearch({ query }) {
     {status === 'loading' && <p role="status" className="text-xs text-muted">Searching online lyrics…</p>}
     {status === 'error' && <p role="alert" className="text-xs text-muted">{error}</p>}
     {status === 'ready' && !records.length && <p className="text-xs text-muted">No matching lyrics records found.</p>}
-    <div className="space-y-1">
-      {records.map(row => <button key={row.id} onClick={() => play(row)}
-        disabled={playing}
-        className="w-full text-left flex items-center gap-3 rounded-lg p-2 hover:bg-elevated disabled:opacity-50">
-        <span className="h-10 w-10 rounded-md bg-card flex items-center justify-center"><Music size={17}/></span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm truncate">{row.trackName}</span>
-          <span className="block text-xs text-muted truncate">{row.artistName}{row.albumName ? ' · ' + row.albumName : ''}</span>
-        </span>
-        <Play size={15} className="text-muted" />
-      </button>)}
+    <div className="space-y-2">
+      {records.map((row, index) => <LyricsSearchResult
+        key={row.id} title={row.trackName} artist={row.artistName} album={row.albumName}
+        snippet={lyricsSearchSnippet(row, q)} index={index} playLabel={t('Play')}
+        disabled={playing} onPlay={() => play(row)}
+      />)}
     </div>
   </section>
 }

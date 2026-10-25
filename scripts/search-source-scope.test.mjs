@@ -44,7 +44,7 @@ test('desktop search applies scope to both querying and rendered result sections
   // The old independent globe would contradict the single-choice selector.
   assert.doesNotMatch(header, /setOnline\(!online\)/)
   assert.match(store, /lokal-search-scope/)
-  assert.match(store, /lokal-online-search/)
+  assert.match(store, /online: searchesOnline\(initialScope\)/)
   assert.match(online, /showLibraryHint \? t\(' · not in your library'\) : ''/)
   assert.match(page, /showLibraryHint=\{scope !== 'online'\}/)
   assert.match(page, /setResultCategory\('songs'\)/) // Find on source resets subfilter
@@ -158,7 +158,7 @@ test('provider/addon streaming search remains in Online Songs and trailing legac
   const provider = readFileSync(new URL('../src/components/OnlineResults.jsx', import.meta.url), 'utf8')
   assert.match(page, /\{showOnline && showSongs && <OnlineResults/)
   assert.match(provider, /orderedFindOnSources\(loaded\)/)
-  assert.match(provider, /<AddonCollections/)
+  assert.doesNotMatch(provider, /AddonCollections/)
   assert.match(provider, /api\.onlineSearch\(q, provider\)/)
   assert.doesNotMatch(provider, /<OnlineCollections/)
 })
