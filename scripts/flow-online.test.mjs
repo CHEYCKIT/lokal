@@ -73,8 +73,9 @@ test('shuffled: finds go after the song playing in the unshuffled order too', ()
 test('how many come from online', () => {
   assert.equal(onlineShare({ source: 'library', adventurous: 1 }, 10), 0)
   assert.equal(onlineShare({ adventurous: 1 }, 10), 0)
-  assert.equal(onlineShare({ source: 'lastfm', adventurous: 0 }, 10), 1)
-  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 8)
+  assert.equal(onlineShare({ source: 'lastfm', adventurous: 0 }, 10), 6)
+  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 10), 9)
+  assert.equal(onlineShare({ source: 'youtube', adventurous: 1 }, 1), 0, 'keep the local anchor')
 })
 
 test('finds are woven among the songs to come, never before the next one', () => {
