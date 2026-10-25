@@ -5,8 +5,9 @@ const TTL_MS = 5 * 60 * 1000
 const MAX_CACHE = 80
 const cache = new Map()
 const safeCountry = value => /^[A-Za-z]{2}$/.test(String(value || '')) ? String(value).toUpperCase() : 'US'
-const art = value => typeof value === 'string' && /^https:\/\//.test(value)
-  ? value.replace(/\/\d{2,4}x\d{2,4}bb\./, '/1200x1200bb.') : ''
+// Keep Apple's known-valid thumbnail; the UI upgrades the CDN dimensions
+// before attempting to display it and falls back to this original on failure.
+const art = value => typeof value === 'string' && /^https:\/\//.test(value) ? value : ''
 
 /** Validates rows without confusing Apple catalogue IDs for playback IDs. */
 function normalise(kind, rows) {
