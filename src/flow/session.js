@@ -152,7 +152,7 @@ export async function retuneFlow({ userId, mood, tuner }) {
   const tracks = pickFlow(pool, { count: START_COUNT - 1 - onlineCount, mood, tuner, exclude: new Set(played.map(flowSongKey)), lastTracks: played.slice(-3) })
   const context = flowContext(userId, mood, tuner, source)
   const replaced = usePlayerStore.getState().replaceUpcoming(tracks, context, { expect: state.playbackContext.id })
-  if (replaced) weaveOnline(context, pool, onlineShare({ ...normalizeTuner(tuner), source }, START_COUNT)).catch(() => {})
+  if (replaced) weaveOnline(context, pool, onlineCount).catch(() => {})
   return replaced
 }
 
