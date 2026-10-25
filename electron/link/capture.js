@@ -19,8 +19,19 @@ function installCapture(store, currentUser) {
   trigger('link_playlist_insert','INSERT','playlists',`UPDATE playlists SET uuid=COALESCE(NEW.uuid,link_uuid()) WHERE id=NEW.id;`+log('NEW.user_id','playlist','(SELECT uuid FROM playlists WHERE id=NEW.id)','playlist.create',"json_object('name',NEW.name)"))
   trigger('link_playlist_rename','UPDATE OF name','playlists',log('NEW.user_id','playlist','NEW.uuid','playlist.rename',"json_object('name',NEW.name)"))
   trigger('link_playlist_delete','DELETE','playlists',log('OLD.user_id','playlist','OLD.uuid','playlist.delete',"'{}'"))
+  // Upgrade capture triggers once. CREATE IF NOT EXISTS alone would leave
+  // old installations sending position/key only, losing online-only covers
+  // and provider identities during desktop/mobile playlist synchronization.
+  if (!db.prepare("SELECT 1 FROM link_meta WHERE key='playlist_online_refs_v2'").get()) {
+    for (const op of ['add', 'move', 'remove'])
+      db.exec('DROP TRIGGER IF EXISTS link_member_' + op)
+    db.prepare("INSERT OR REPLACE INTO link_meta VALUES ('playlist_online_refs_v2', '1')").run()
+  }
   for (const [event, alias, op] of [['INSERT','NEW','add'],['DELETE','OLD','remove'],['UPDATE OF position','NEW','move']]) {
-    const fields=`json_object('track_key',(SELECT ${key('t')} FROM tracks t WHERE t.id=${alias}.track_id),'file_hash',(SELECT file_hash FROM tracks WHERE id=${alias}.track_id),'position',${alias}.position)`
+    const id = `${alias}.track_id`
+    const val = column => `(SELECT ${column} FROM tracks WHERE id=${id})`
+    const fromYoutube = `(SELECT CASE WHEN file_path LIKE 'ghost://youtube/online/%' THEN 'yt:' || substr(file_path, length('ghost://youtube/online/')+1) WHEN file_path LIKE 'ghost://soundcloud/online/%' THEN 'sc:' || substr(file_path, length('ghost://soundcloud/online/')+1) END FROM tracks WHERE id=${id})`
+    const fields=`json_object('track_key',(SELECT ${key('t')} FROM tracks t WHERE t.id=${id}),'file_hash',${val('file_hash')},'position',${alias}.position,'title',${val('title')},'artist',${val('artist')},'album',${val('album')},'duration',${val('duration')},'online_ref',(SELECT CASE WHEN file_path LIKE 'ghost://%' AND file_path NOT LIKE 'ghost://link/%' THEN 1 ELSE 0 END FROM tracks WHERE id=${id}),'source_ref',${fromYoutube},'artwork_url',${val('artwork_url')})`
     trigger('link_member_'+op,event,'playlist_tracks',log(`(SELECT user_id FROM playlists WHERE id=${alias}.playlist_id)`,'playlist',`(SELECT uuid FROM playlists WHERE id=${alias}.playlist_id)`,'playlist.'+op,fields))
   }
   trigger('link_track_edit','UPDATE OF title,artist,album,album_artist,genre,year,track_num','tracks',`INSERT OR IGNORE INTO link_track_aliases VALUES (${key('OLD')},OLD.id);`+log('link_user()','track',key('OLD'),'track.edit',"(SELECT json_group_object(j.key,j.value) FROM json_each(json_object('file_hash',NEW.file_hash,'title',NEW.title,'artist',NEW.artist,'album',NEW.album,'album_artist',NEW.album_artist,'genre',NEW.genre,'year',NEW.year,'track_num',NEW.track_num)) j WHERE CASE j.key WHEN 'title' THEN OLD.title IS NOT NEW.title WHEN 'artist' THEN OLD.artist IS NOT NEW.artist WHEN 'album' THEN OLD.album IS NOT NEW.album WHEN 'album_artist' THEN OLD.album_artist IS NOT NEW.album_artist WHEN 'genre' THEN OLD.genre IS NOT NEW.genre WHEN 'year' THEN OLD.year IS NOT NEW.year WHEN 'track_num' THEN OLD.track_num IS NOT NEW.track_num ELSE 1 END)"))
@@ -40,7 +51,11 @@ function installCapture(store, currentUser) {
   if (!db.prepare("SELECT value FROM link_meta WHERE key='library_bootstrap_v1'").get()) db.transaction(() => {
     for (const row of db.prepare('SELECT p.*,p.uuid AS entity_id FROM playlists p').all()) store.appendOp({entity:'playlist',entity_id:row.entity_id,op:'playlist.create',fields:{name:row.name}},row.user_id)
     for (const row of db.prepare('SELECT l.user_id,t.* FROM user_likes l JOIN tracks t ON t.id=l.track_id').all()) store.appendOp({entity:'like',entity_id:trackKey(row),op:'like',fields:{file_hash:row.file_hash}},row.user_id)
-    for (const row of db.prepare('SELECT p.user_id,p.uuid,pt.position,t.* FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id JOIN tracks t ON t.id=pt.track_id').all()) store.appendOp({entity:'playlist',entity_id:row.uuid,op:'playlist.add',fields:{track_key:trackKey(row),file_hash:row.file_hash,position:row.position}},row.user_id)
+    for (const row of db.prepare('SELECT p.user_id,p.uuid,pt.position,t.* FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id JOIN tracks t ON t.id=pt.track_id').all()) store.appendOp({entity:'playlist',entity_id:row.uuid,op:'playlist.add',fields:{track_key:trackKey(row),file_hash:row.file_hash,position:row.position,
+      title:row.title,artist:row.artist,album:row.album,duration:row.duration,
+      online_ref:String(row.file_path || '').startsWith('ghost://') && !String(row.file_path || '').startsWith('ghost://link/'),
+      source_ref:String(row.file_path || '').startsWith('ghost://youtube/online/') ? 'yt:' + row.file_path.slice('ghost://youtube/online/'.length) : null,
+      artwork_url:row.artwork_url}},row.user_id)
     db.prepare("INSERT INTO link_meta VALUES ('library_bootstrap_v1','1')").run()
   })()
 }
