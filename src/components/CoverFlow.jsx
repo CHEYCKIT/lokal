@@ -170,24 +170,29 @@ export default function CoverFlow({ picks, onPlay, onContextMenu }) {
   // artwork trees while a fling crosses each item boundary.
   const visible = flowVisibleRange(renderCenter, count)
   const handlers = useRef(null)
-  // Prewarm originals as well as thumbnails; two requests per idle slice
-  // avoid blocking frame compositing but keep a long fling sharp.
+  // Decode full-resolution covers using a strict two-request background
+  // budget, not an unbounded train of idle callbacks that competes with the
+  // visible artwork loads during a fast Cover Flow fling.
   useEffect(() => {
     let cancelled = false
-    let job
-    const urls = picks.map(pick => coverFlowArtworkSources(pick.track))
-    let at = 0
-    const warm = () => {
+    let timer = null
+    let idle = null
+    const batches = picks.map(pick => coverFlowArtworkSources(pick.track))
+    let cursor = 0
+    const warm = async () => {
       if (cancelled) return
-      for (let n = 0; n < 2 && at < urls.length; n++, at++) {
-        void loadCoverSources(urls[at])
-      }
-      if (at < urls.length) job = window.requestIdleCallback?.(warm)
+      const batch = batches.slice(cursor, cursor + 2)
+      cursor += batch.length
+      await Promise.all(batch.map(urls => loadCoverSources(urls)))
+      if (cancelled || cursor >= batches.length) return
+      if (window.requestIdleCallback) idle = window.requestIdleCallback(warm)
+      else timer = window.setTimeout(warm, 20)
     }
-    warm()
+    void warm()
     return () => {
       cancelled = true
-      if (job != null) window.cancelIdleCallback?.(job)
+      if (idle !== null) window.cancelIdleCallback?.(idle)
+      if (timer !== null) window.clearTimeout(timer)
     }
   }, [picks])
 
