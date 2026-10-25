@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Music } from 'lucide-react'
 import { api } from '../api'
-import FadeImg from './FadeImg'
+import QualityImage from './QualityImage'
 
 /**
  * @param lookup  with no `src` at all, look a cover up too (Last.fm's album
@@ -27,5 +27,5 @@ export default function DiscoveryImage({ item, type = 'track', src, className = 
     return () => { request.current++ }
   }, [src, lookup, item?.title]) // eslint-disable-line react-hooks/exhaustive-deps
   if ((!src && !replacement) || failed) return fallback || <div className="flex h-full w-full items-center justify-center text-muted"><Music size={28} /></div>
-  return <FadeImg src={replacement || src} className={className} onError={retry} />
+  return <QualityImage src={replacement || src} className={className} onError={retry} />
 }
