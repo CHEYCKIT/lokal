@@ -170,19 +170,27 @@ export default function RightSidebar() {
     } catch { return 'independent' }
   })
   const sidebarLayoutRequest = useRef(0)
+  const sidebarLayoutPendingChoice = useRef(null)
   useEffect(() => {
     let mounted = true
     const load = () => {
       const request = ++sidebarLayoutRequest.current
       api.getSettings().then(saved => {
-        if (mounted && request === sidebarLayoutRequest.current) {
-          setSidebarCardLayout(normalizeSidebarCardLayout(saved?.sidebar_card_layout))
+        if (mounted && request === sidebarLayoutRequest.current && saved && !saved.error) {
+          const stored = normalizeSidebarCardLayout(saved.sidebar_card_layout)
+          // An unrelated settings save can complete while this selection's
+          // write is still pending. Never flash back to the older mode.
+          if (sidebarLayoutPendingChoice.current && sidebarLayoutPendingChoice.current !== stored) return
+          sidebarLayoutPendingChoice.current = null
+          setSidebarCardLayout(stored)
         }
       }).catch(() => {})
     }
     const changed = event => {
       sidebarLayoutRequest.current++
-      setSidebarCardLayout(normalizeSidebarCardLayout(event.detail))
+      const chosen = normalizeSidebarCardLayout(event.detail)
+      sidebarLayoutPendingChoice.current = chosen
+      setSidebarCardLayout(chosen)
     }
     load()
     window.addEventListener('lokal:sidebar-card-layout-changed', changed)
