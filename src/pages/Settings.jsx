@@ -407,6 +407,9 @@ export default function Settings() {
       touchedSettingsRef.current.add(key)
       setSettings(previous => ({ ...previous, [key]: result.root || '' }))
       setStorageLocations(previous => ({ ...previous, [kind]: result.root || '' }))
+      // Keep the shared settings snapshot consistent with this separately
+      // validated IPC write; other screens consult it without reopening Settings.
+      await Promise.resolve(api.getSettings?.()).catch(() => {})
       if (kind === 'cache') refreshCache()
     } catch (error) {
       setStorageError(error?.message || String(error))
@@ -2717,15 +2720,15 @@ activeCategory === 'data' ? usersTried
           </div>
           {!!storageError && <p role="alert" className="text-xs text-red-400">{storageError}</p>}
         </Row>
-         <Row label={t("Cache Size Limit")} desc={t("Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.")}>
+         <Row label={t("Cache Size Limit")} desc={t("Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos use your selected download drive (or the Videos folder by default).")}>
           <select aria-label={t("Cache size limit")} value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
           </select>
         </Row>
-         <Row label={t("In Use")} desc={cacheInfo ? t('Older video downloads {video} · Moving covers {covers} · Playable copies {playback} · Web cache {web}', { video: fmtBytes(cacheInfo.musicVideo), covers: fmtBytes(cacheInfo.motion), playback: fmtBytes(cacheInfo.playback), web: fmtBytes(cacheInfo.web) }) : t('Measuring…')}>
+         <Row label={t("In Use")} desc={cacheInfo ? t('Video cache {video} · Moving covers {covers} · Playable copies {playback} · Add-on audio {addons} · Web cache {web}', { video: fmtBytes(cacheInfo.musicVideo), covers: fmtBytes(cacheInfo.motion), playback: fmtBytes(cacheInfo.playback), addons: fmtBytes(cacheInfo.addonAudio), web: fmtBytes(cacheInfo.web) }) : t('Measuring…')}>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.addonAudio || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
             <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
               {cacheInfo?.busy ? t('Clearing…') : t('Clear Cache')}
