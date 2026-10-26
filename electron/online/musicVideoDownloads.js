@@ -33,13 +33,16 @@ function safePart(value, fallback) {
   return /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? `_${name}` : name
 }
 
+function systemVideosDir() {
+  try { return require('electron').app.getPath('videos') }
+  catch { return path.join(os.homedir(), 'Videos') }
+}
+
 function videosDir(options = {}) {
   if (options.videosDir) return options.videosDir
-  // Download destination covers saved music videos too, without mixing video
-  // files into the user's audio artist/album layout.
+  // Keep downloaded videos separate from the audio artist/album layout.
   const downloadRoot = require('../storageLocations').savedRoot('downloads')
-  if (downloadRoot) return path.join(downloadRoot, 'Music Videos')
-  try { return require('electron').app.getPath('videos') } catch { return path.join(os.homedir(), 'Videos') }
+  return downloadRoot ? path.join(downloadRoot, 'Music Videos') : systemVideosDir()
 }
 
 function durablePath(dir, artist, title, videoId, height, ext) {
@@ -48,10 +51,72 @@ function durablePath(dir, artist, title, videoId, height, ext) {
 }
 
 function durableCandidates(options, videoId, height) {
-  const dir = path.join(videosDir(options), safePart(options.artist, 'Unknown Artist'))
-  try {
-    return fs.readdirSync(dir).filter(name => new RegExp(` - ${videoId} - ${height}(?: \\(\\d+\\))?\\.(?:mp4|webm)$`, 'i').test(name)).map(name => path.join(dir, name))
-  } catch { return [] }
+  const selected = videosDir(options)
+  // Previously downloaded videos remain findable after changing drives;
+  // never move or delete them behind the user's back.
+  const roots = options.videosDir ? [selected] : [...new Set([selected, systemVideosDir()])]
+  const pattern = new RegExp(` - ${videoId} - ${height}(?: \\(\\d+\\))?\\.(?:mp4|webm)// Downloaded music videos. A local file is much more reliable than keeping a
+// <video> element attached to YouTube's short-lived, range-sensitive URL.
+
+const fs = require('fs')
+const path = require('path')
+const { once } = require('events')
+const youtube = require('./youtube')
+const cache = require('../cache')
+const os = require('os')
+const crypto = require('crypto')
+
+const HEIGHTS = [1080, 720, 480]
+const DOWNLOAD_TIMEOUT_MS = 15 * 60 * 1000
+const STALL_TIMEOUT_MS = 60 * 1000
+const VIDEO_ID = /^[\w-]{11}$/
+const jobs = new Map()
+
+function heightOf(value) {
+  return HEIGHTS.includes(Number(value)) ? Number(value) : 1080
+}
+
+function extensionOf(mime) {
+  return String(mime || '').toLowerCase().includes('webm') ? 'webm' : 'mp4'
+}
+
+function cachePath(cacheDir, videoId, height, ext) {
+  return path.join(cacheDir, `${videoId}-${height}.${ext}`)
+}
+
+function safePart(value, fallback) {
+  const text = String(value || '').normalize('NFC').replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '_').trim().slice(0, 100).replace(/[. ]+$/, '')
+  const name = text || fallback
+  return /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? `_${name}` : name
+}
+
+function systemVideosDir() {
+  try { return require('electron').app.getPath('videos') }
+  catch { return path.join(os.homedir(), 'Videos') }
+}
+
+function videosDir(options = {}) {
+  if (options.videosDir) return options.videosDir
+  // Keep downloaded videos separate from the audio artist/album layout.
+  const downloadRoot = require('../storageLocations').savedRoot('downloads')
+  return downloadRoot ? path.join(downloadRoot, 'Music Videos') : systemVideosDir()
+}
+
+function durablePath(dir, artist, title, videoId, height, ext) {
+  if (!VIDEO_ID.test(String(videoId || '')) || !['mp4', 'webm'].includes(ext) || !HEIGHTS.includes(Number(height))) throw new Error('Invalid music video path')
+  return path.join(dir, safePart(artist, 'Unknown Artist'), `${safePart(title, 'Music Video')} - ${videoId} - ${height}.${ext}`)
+}
+
+, 'i')
+  const files = []
+  for (const root of roots) {
+    const dir = path.join(root, safePart(options.artist, 'Unknown Artist'))
+    try {
+      files.push(...fs.readdirSync(dir).filter(name => pattern.test(name))
+        .map(name => path.join(dir, name)))
+    } catch {}
+  }
+  return files
 }
 
 function existingFile(cacheDir, videoId, height, touch = true) {
