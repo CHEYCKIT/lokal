@@ -2487,7 +2487,11 @@ activeCategory === 'data' ? usersTried
         >
           <div role="group" aria-label={t("Sidebar Cards")} className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
             {[['fused', 'Fused'], ['independent', 'Independent']].map(([value, label]) => {
-              const current = normalizeSidebarCardLayout(settings.sidebar_card_layout)
+              const current = normalizeSidebarCardLayout(
+                settings.sidebar_card_layout ?? (() => {
+                  try { return localStorage.getItem('lokal-sidebar-cards') } catch { return null }
+                })(),
+              )
               return (
                 <button
                   type="button"
