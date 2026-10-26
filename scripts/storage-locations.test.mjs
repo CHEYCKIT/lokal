@@ -57,8 +57,8 @@ test('cache location is independent of downloads, database and installation dire
 
 test('only an absolute, writeable directory can be selected', () => {
   assert.throws(() => storage.saveRoot('downloads', '../relative'))
-  assert.throws(() => storage.saveRoot('cache', ''))
-  // Reset is intentionally permitted, even though an empty selection is not.
+  // Reset intentionally accepts an empty selection; the picker only returns
+  // absolute paths, and invalid nonempty values must be rejected.
   assert.equal(storage.saveRoot('cache', ''), '')
   assert.throws(() => storage.saveRoot('unsupported', root))
   const file = path.join(root, 'not-a-directory')
