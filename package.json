@@ -83,6 +83,10 @@
     "directories": {
       "output": "release"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
     "win": {
       "icon": "public/lokal-icon.ico",
       "target": [
