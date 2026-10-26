@@ -35,6 +35,10 @@ function safePart(value, fallback) {
 
 function videosDir(options = {}) {
   if (options.videosDir) return options.videosDir
+  // Download destination covers saved music videos too, without mixing video
+  // files into the user's audio artist/album layout.
+  const downloadRoot = require('../storageLocations').savedRoot('downloads')
+  if (downloadRoot) return path.join(downloadRoot, 'Music Videos')
   try { return require('electron').app.getPath('videos') } catch { return path.join(os.homedir(), 'Videos') }
 }
 
