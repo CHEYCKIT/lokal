@@ -11,7 +11,7 @@ async function report() {
   const used = cache.usage()
   let web = 0
   try { web = await session.defaultSession.getCacheSize() } catch {}
-  return { motion: used.motion, playback: used.playback, musicVideo: used.musicVideo, cast: used.cast, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
+  return { motion: used.motion, playback: used.playback, musicVideo: used.musicVideo, addonAudio: used.addonAudio, cast: used.cast, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
 }
 
 // What the Cache Analysis page and its clean-up need: the open database, the
