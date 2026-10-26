@@ -33,23 +33,37 @@ function safePart(value, fallback) {
   return /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? `_${name}` : name
 }
 
-function videosDir(options = {}) {
-  if (options.videosDir) return options.videosDir
-  try { return require('electron').app.getPath('videos') } catch { return path.join(os.homedir(), 'Videos') }
+function systemVideosDir() {
+  try { return require('electron').app.getPath('videos') }
+  catch { return path.join(os.homedir(), 'Videos') }
 }
 
+function videosDir(options = {}) {
+  if (options.videosDir) return options.videosDir
+  // Keep music videos separate from the audio artist/album layout.
+  const downloadRoot = require('../storageLocations').savedRoot('downloads')
+  return downloadRoot ? path.join(downloadRoot, 'Music Videos') : systemVideosDir()
+}
 function durablePath(dir, artist, title, videoId, height, ext) {
   if (!VIDEO_ID.test(String(videoId || '')) || !['mp4', 'webm'].includes(ext) || !HEIGHTS.includes(Number(height))) throw new Error('Invalid music video path')
   return path.join(dir, safePart(artist, 'Unknown Artist'), `${safePart(title, 'Music Video')} - ${videoId} - ${height}.${ext}`)
 }
 
 function durableCandidates(options, videoId, height) {
-  const dir = path.join(videosDir(options), safePart(options.artist, 'Unknown Artist'))
-  try {
-    return fs.readdirSync(dir).filter(name => new RegExp(` - ${videoId} - ${height}(?: \\(\\d+\\))?\\.(?:mp4|webm)$`, 'i').test(name)).map(name => path.join(dir, name))
-  } catch { return [] }
+  const selected = videosDir(options)
+  // Keep previously downloaded videos discoverable after a drive change.
+  const roots = options.videosDir ? [selected] : [...new Set([selected, systemVideosDir()])]
+  const files = []
+  const pattern = new RegExp(` - ${videoId} - ${height}(?: \\(\\d+\\))?\\.(?:mp4|webm)$`, 'i')
+  for (const root of roots) {
+    const dir = path.join(root, safePart(options.artist, 'Unknown Artist'))
+    try {
+      files.push(...fs.readdirSync(dir).filter(name => pattern.test(name))
+        .map(name => path.join(dir, name)))
+    } catch {}
+  }
+  return files
 }
-
 function existingFile(cacheDir, videoId, height, touch = true) {
   for (const ext of ['mp4', 'webm']) {
     const file = cachePath(cacheDir, videoId, height, ext)

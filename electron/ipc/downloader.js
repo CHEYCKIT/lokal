@@ -202,7 +202,7 @@ function registerDownloaderHandlers(ipcMain) {
     const failure = playbackCopyFailure(info, ffmpeg)
     if (failure) return { path: null, error: failure }
 
-    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('../cache').cacheDir('playback') })
     // FFmpeg was available and the conversion was attempted. Only now should
     // the UI fall back to its generic "Can't play" message.
     return copy
@@ -245,6 +245,7 @@ function soulseekClient() {
     const { ManagedSlskd } = require('../download/slskdManaged')
     managedSoulseek = new ManagedSlskd({
       baseDir: require('path').join(app.getPath('userData'), 'soulseek'),
+      downloadRoot: () => require('../storageLocations').savedRoot('downloads'),
       download: (url, dest, onProgress) => require('./tools').downloadFileWithRetry(url, dest, onProgress, 2, 'Downloading the Soulseek client'),
       onChange: status => BrowserWindow.getAllWindows().forEach(win => { try { win.webContents.send('soulseek:clientStatus', status) } catch {} }),
     })

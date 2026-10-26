@@ -934,7 +934,7 @@ class DownloadManager {
     }
     const { ytdlp, ffmpeg } = check.tools
     const settings = this.settings()
-    const outputDir = job.opts.outputDir || settings.music_folder || path.join(os.homedir(), 'Music')
+    const outputDir = require('../storageLocations').downloadDirectory(settings, job.opts.outputDir)
     try { fs.ensureDirSync(outputDir) } catch {}
     const format = resolveFormat(job.opts, settings)
     job.opts.format = format.format
@@ -1064,7 +1064,7 @@ class DownloadManager {
         onVerificationComplete: () => this.update(job, { message: 'Verification complete. Retrying addon download…' }),
       })
       controller.signal.throwIfAborted()
-      const outputDir = job.opts.outputDir || job.settings.music_folder || path.join(os.homedir(), 'Music')
+      const outputDir = require('../storageLocations').downloadDirectory(job.settings, job.opts.outputDir)
       fs.ensureDirSync(outputDir)
       const title = String(job.title || 'Addon Track').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '').slice(0,180)
       const ext = path.extname(artifact.file)
@@ -1277,7 +1277,7 @@ class DownloadManager {
     }
     const clean = (s) => String(s || '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 120)
     const info = readInfo(found) || {}
-    const musicDir = job.opts.outputDir || job.settings.music_folder || path.join(os.homedir(), 'Music')
+    const musicDir = require('../storageLocations').downloadDirectory(job.settings, job.opts.outputDir)
     const artist = clean(String(info.artist || '').split(/;|\s\/\s/)[0]) || 'Unknown Artist'
     const album = clean(info.album) || clean(slskd.splitRemote(job.opts.filename).folder) || 'Singles'
     const base = path.basename(found)
@@ -1307,7 +1307,7 @@ class DownloadManager {
       let finalPath = filepath
       try {
         if (!job.stop) this.update(job, { message: `Adding lyrics: ${path.basename(filepath)}` })
-        const outputDir = job.opts.outputDir || job.settings?.music_folder || path.join(os.homedir(), 'Music')
+        const outputDir = require('../storageLocations').downloadDirectory(job.settings, job.opts.outputDir)
         // Apple Lossless and other codecs the player can't decode: FLAC (or AAC) first.
         const playable = await makePlayable(filepath, { ffmpeg: this.deps.findTools?.()?.ffmpeg })
         if (playable !== filepath) {
@@ -1331,7 +1331,7 @@ class DownloadManager {
         if (downloadFolder && !job.opts?.outputDir && !job.opts?.upgradeTrackId) {
           const assigned = job.downloadFolderNumbers || (job.downloadFolderNumbers = {})
           const originalPath = finalPath
-          const placed = require('../downloadFolder').placeDownload(this.db(), finalPath, downloadFolder, assigned)
+          const placed = require('../downloadFolder').placeDownload(this.db(), finalPath, downloadFolder, assigned, job.settings?.download_root)
           if (placed.filePath !== originalPath) {
             const fileIndex = job.filepaths.indexOf(originalPath)
             if (fileIndex >= 0) job.filepaths[fileIndex] = placed.filePath

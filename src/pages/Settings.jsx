@@ -380,6 +380,44 @@ export default function Settings() {
   // ListenBrainz: its token is saved only once ListenBrainz confirms it.
   const [lbStatus, setLbStatus] = useState(null)
   const [cacheInfo, setCacheInfo] = useState(null) // { motion, playback, musicVideo, web, limit, limits } | { busy }
+  const [storageLocations, setStorageLocations] = useState(null)
+  const [storageBusy, setStorageBusy] = useState('')
+  const [storageError, setStorageError] = useState('')
+  useEffect(() => {
+    if (!api.isElectron) return
+    let active = true
+    Promise.resolve(api.storageLocations?.()).then(value => {
+      if (active && value && !value.error) setStorageLocations(value)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [])
+  const changeStorageLocation = async (kind, reset = false) => {
+    if (storageBusy) return
+    setStorageBusy(kind)
+    setStorageError('')
+    try {
+      const result = await (reset
+        ? api.resetStorageLocation(kind)
+        : api.chooseStorageLocation(kind))
+      if (result?.error) throw new Error(result.error)
+      if (!result || result.canceled) return
+      const key = kind === 'cache' ? 'cache_root' : 'download_root'
+      // IPC has already validated the drive and committed to SQLite.
+      // Avoid a second unvalidated settings write.
+      touchedSettingsRef.current.add(key)
+      setSettings(previous => ({ ...previous, [key]: result.root || '' }))
+      setStorageLocations(previous => ({ ...previous, [kind]: result.root || '' }))
+      // Keep the shared settings snapshot consistent with this separately
+      // validated IPC write; other screens consult it without reopening Settings.
+      await Promise.resolve(api.getSettings?.()).catch(() => {})
+      if (kind === 'cache') refreshCache()
+    } catch (error) {
+      setStorageError(error?.message || String(error))
+    } finally {
+      setStorageBusy('')
+    }
+  }
+
   const refreshCache = () => { Promise.resolve(api.cacheUsage?.()).then(info => { if (info && !info.error) setCacheInfo(info) }).catch(() => {}) }
   const setCacheLimit = async (mb) => {
     await Promise.resolve(api.saveSettings({ cache_limit_mb: String(mb) })).catch(() => {})
@@ -1416,7 +1454,27 @@ activeCategory === 'data' ? usersTried
             )}
           </div>
         </Row>
-        <Row label={t("Download Folder")} desc={t("Optional folder inside your music library. Downloads are moved there and numbered in that folder; leave blank to keep the usual artist/album layout.")}>
+        {api.isElectron && (
+          <Row label={t("Download Location")} stacked desc={t("Choose a drive and folder for new music downloads. Existing files are not moved. The Download Folder option below creates a subfolder inside this location.")}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 break-all text-xs text-white">
+                {settings.download_root || t("Default music library location")}
+              </span>
+              <button type="button" disabled={!!storageBusy} onClick={() => changeStorageLocation('downloads')}
+                className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-white hover:border-accent/40 disabled:opacity-40">
+                {storageBusy === 'downloads' ? t("Selecting…") : t("Choose folder")}
+              </button>
+              {!!settings.download_root && (
+                <button type="button" disabled={!!storageBusy} onClick={() => changeStorageLocation('downloads', true)}
+                  className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
+                  {t("Use default")}
+                </button>
+              )}
+            </div>
+            {!!storageError && <p role="alert" className="text-xs text-red-400">{storageError}</p>}
+          </Row>
+        )}
+        <Row label={t("Download Folder")} desc={t("Optional subfolder inside the chosen download location (or music library by default). Leave blank to use artist/album folders.")}>
           <input type="text" value={settings.download_folder || ''} onChange={e => set('download_folder', e.target.value)}
             placeholder={t("e.g. Downloads")} aria-label={t("Download Folder")}
             className="w-52 max-w-full bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50" />
@@ -2644,15 +2702,33 @@ activeCategory === 'data' ? usersTried
 
       {api.isElectron && inCategory('data') && (
       <Section title={t("Cache")}>
-         <Row label={t("Cache Size Limit")} desc={t("Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos are kept in your Videos folder.")}>
+        <Row label={t("Cache Location")} stacked desc={t("Choose a disk for moving covers, converted audio and other Lokal media caches. New cache files use this folder; existing caches are not moved. Chromium web cache and sign-in data stay in the application data directory.")}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 break-all text-xs text-white">
+              {settings.cache_root || storageLocations?.defaultCache || t("Default application data location")}
+            </span>
+            <button type="button" disabled={!!storageBusy} onClick={() => changeStorageLocation('cache')}
+              className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-white hover:border-accent/40 disabled:opacity-40">
+              {storageBusy === 'cache' ? t("Selecting…") : t("Choose folder")}
+            </button>
+            {!!settings.cache_root && (
+              <button type="button" disabled={!!storageBusy} onClick={() => changeStorageLocation('cache', true)}
+                className="px-3 py-1.5 bg-card border border-border rounded-lg text-xs text-muted hover:text-white disabled:opacity-40">
+                {t("Use default")}
+              </button>
+            )}
+          </div>
+          {!!storageError && <p role="alert" className="text-xs text-red-400">{storageError}</p>}
+        </Row>
+         <Row label={t("Cache Size Limit")} desc={t("Moving covers, converted copies of songs (Apple Lossless, WMA…) and songs converted for casting are kept so they load faster. Past this size, the oldest are removed. Downloaded videos use your selected download drive (or the Videos folder by default).")}>
           <select aria-label={t("Cache size limit")} value={String(Math.round((cacheInfo?.limit || 4096 * 1048576) / 1048576))} onChange={e => setCacheLimit(Number(e.target.value))}
             className="bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent/50">
             {(cacheInfo?.limits || [512, 1024, 2048, 4096, 8192, 16384]).map(mb => <option key={mb} value={String(mb)}>{mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}</option>)}
           </select>
         </Row>
-         <Row label={t("In Use")} desc={cacheInfo ? t('Older video downloads {video} · Moving covers {covers} · Playable copies {playback} · Web cache {web}', { video: fmtBytes(cacheInfo.musicVideo), covers: fmtBytes(cacheInfo.motion), playback: fmtBytes(cacheInfo.playback), web: fmtBytes(cacheInfo.web) }) : t('Measuring…')}>
+         <Row label={t("In Use")} desc={cacheInfo ? t('Video cache {video} · Moving covers {covers} · Playable copies {playback} · Add-on audio {addons} · Web cache {web}', { video: fmtBytes(cacheInfo.musicVideo), covers: fmtBytes(cacheInfo.motion), playback: fmtBytes(cacheInfo.playback), addons: fmtBytes(cacheInfo.addonAudio), web: fmtBytes(cacheInfo.web) }) : t('Measuring…')}>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
+            <span className="text-sm text-white font-display">{cacheInfo ? fmtBytes((cacheInfo.motion || 0) + (cacheInfo.playback || 0) + (cacheInfo.musicVideo || 0) + (cacheInfo.addonAudio || 0) + (cacheInfo.cast || 0) + (cacheInfo.web || 0)) : '—'}</span>
             <button onClick={clearCache} disabled={!cacheInfo || cacheInfo.busy}
               className="px-4 py-1.5 rounded-lg text-xs font-display uppercase tracking-wider border border-border text-muted hover:text-white disabled:opacity-50 transition-colors">
               {cacheInfo?.busy ? t('Clearing…') : t('Clear Cache')}

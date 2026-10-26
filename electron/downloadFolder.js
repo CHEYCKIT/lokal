@@ -27,8 +27,8 @@ function configuredRoots(db) {
 }
 
 /** Create (if needed) a directory strictly inside the first configured music root. */
-function targetFolder(db, relativeFolder) {
-  const root = configuredRoots(db)[0]
+function targetFolder(db, relativeFolder, explicitRoot = '') {
+  const root = explicitRoot || configuredRoots(db)[0]
   const raw = typeof relativeFolder === 'string' ? relativeFolder.trim().replace(/\\/g, '/') : ''
   if (!root || !raw) return null
   const segments = raw.split('/')
@@ -96,11 +96,11 @@ function writeTrackNumber(filePath, number) {
  * assignedNumbers belongs to one download job, so files from a playlist get
  * consecutive numbers even before the scanner has inserted their database rows.
  */
-function placeDownload(db, filePath, relativeFolder, assignedNumbers = {}) {
+function placeDownload(db, filePath, relativeFolder, assignedNumbers = {}, explicitRoot = '') {
   if (!relativeFolder || !String(relativeFolder).trim() || !filePath || !fs.existsSync(filePath)) return { filePath, trackNum: null }
   if (!AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) return { filePath, trackNum: null }
   let dir
-  try { dir = targetFolder(db, relativeFolder) } catch (error) {
+  try { dir = targetFolder(db, relativeFolder, explicitRoot) } catch (error) {
     console.warn('[downloadFolder] Invalid folder:', error.message)
     return { filePath, trackNum: null, error: error.message }
   }

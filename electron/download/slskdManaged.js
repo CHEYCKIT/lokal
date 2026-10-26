@@ -101,9 +101,10 @@ function sha256File(file) {
 }
 
 class ManagedSlskd {
-  constructor({ baseDir, download, onChange = () => {}, spawnImpl = spawn, fetchImpl = (...a) => fetch(...a) }) {
+  constructor({ baseDir, download, downloadRoot = () => '', onChange = () => {}, spawnImpl = spawn, fetchImpl = (...a) => fetch(...a) }) {
     this.dirs = paths(baseDir, installedVersion(baseDir))
     this.download = download // (url, dest, onProgress) => Promise
+    this.downloadRoot = downloadRoot // selected root is read on the next connection
     this.onChange = onChange
     this.spawn = spawnImpl
     this.fetch = fetchImpl
@@ -205,7 +206,7 @@ class ManagedSlskd {
     const username = String(account?.username || '').trim()
     const password = String(account?.password || '')
     if (!username || !password) return Promise.reject(new Error('Sign in to Soulseek in Settings → Integrations first.'))
-    const key = `${username}\u0000${crypto.createHash('sha256').update(password).digest('hex')}\u0000${(account.shared || []).join(';')}`
+    const key = `${username}\u0000${crypto.createHash('sha256').update(password).digest('hex')}\u0000${(account.shared || []).join(';')}\u0000${this.downloadRoot()}`
     if (this.connection && this.connection.account === key) return Promise.resolve(this.connection)
     if (this.starting?.key === key) return this.starting.promise
     let generation
@@ -217,6 +218,16 @@ class ManagedSlskd {
       this.account = account
       await this.install()
       stillWanted()
+      // Large Soulseek .part files should not fill the system drive when a
+      // different download disk is selected. Keep its executable, app profile
+      // and credentials in their existing location.
+      const selected = this.downloadRoot()
+      const current = paths(this.dirs.base, this.dirs.version)
+      this.dirs = selected ? {
+        ...current,
+        downloads: path.join(selected, '.lokal-soulseek', 'downloads'),
+        incomplete: path.join(selected, '.lokal-soulseek', 'incomplete'),
+      } : current
       this.set({ phase: 'starting', error: '' })
       for (const dir of [this.dirs.app, this.dirs.downloads, this.dirs.incomplete]) fs.mkdirSync(dir, { recursive: true })
       const port = await freePort()

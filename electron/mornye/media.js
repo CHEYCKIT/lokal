@@ -7,6 +7,15 @@ const { service } = require('./packages')
 const { stereoPlaybackQuality } = require('./playbackQuality')
 const { progressiveMedia } = require('./progressiveMedia')
 
+// Keep custom/isolated package-service roots working as before. Only redirect
+// persistent playable bytes when the user explicitly picked another cache disk.
+function addonAudioCache(db) {
+  const external = require('../storageLocations').savedRoot('cache')
+  return external
+    ? path.join(external, 'mornye', 'audio-cache')
+    : path.join(service(db).root, 'audio-cache')
+}
+
 const jobs = new WeakMap()
 const MIME = { flac:'audio/flac',mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'audio/mp4',ogg:'audio/ogg',opus:'audio/ogg',wav:'audio/wav',webm:'audio/webm',aac:'audio/aac' }
 const redact=text=>String(text||'').replace(/(hmac|token|signature|sig|key|secret|grant|code)=([^&\s"]+)/gi,'$1=…').replace(/qbza_[\w-]+/g,'qbza_…').slice(0,500)
@@ -20,7 +29,7 @@ function logFailure(db,key,id,error){
 function state(db) {let value=jobs.get(db);if(!value){value=new Map();jobs.set(db,value)}return value}
 function cacheKey(db,key,id){const addon=service(db).find(key);if(!addon?.enabled)throw new Error('Addon is not available');const quality=stereoPlaybackQuality(addon,service(db).settings(addon));return crypto.createHash('sha256').update(JSON.stringify([key,id,addon.digest,quality || null])).digest('hex')}
 function cached(db,key,id){
-  const hash=cacheKey(db,key,id),dir=path.join(service(db).root,'audio-cache')
+  const hash=cacheKey(db,key,id),dir=addonAudioCache(db)
   for(const ext of Object.keys(MIME)){const file=path.join(dir,`${hash}.${ext}`);try{if(fs.statSync(file).size){const now=new Date();fs.utimesSync(file,now,now);return {type:'file',file,mime:MIME[ext],headers:{},format:ext}}}catch{}}
   return null
 }
@@ -37,7 +46,7 @@ function prepare(db,key,id,{force=false}={}){
   // A worker that ran out of memory is retried once, in a fresh worker.
   job.promise=fetchAudio().catch(error=>{if(job.controller.signal.aborted||!/memory limit|out of memory/i.test(error?.message))throw error;logFailure(db,key,id,error);job.message='Retrying…';return fetchAudio()}).then(async result=>{
     try{
-      const dir=path.join(service(db).root,'audio-cache');await fsp.mkdir(dir,{recursive:true})
+      const dir=addonAudioCache(db);await fsp.mkdir(dir,{recursive:true})
       // Played as it arrived: the cache keeps those very bytes (a rewritten
       // copy would put a later seek at different offsets than the stream had).
       const source=job.live?.ready&&job.live.done&&fs.existsSync(job.live.file)?job.live.file:result.file

@@ -100,7 +100,7 @@ async function meshFromRemoteURL(url) {
 }
 
 function motionCacheDir() {
-  return path.join(getStorageDir(), 'motion-covers')
+  return require('../cache').cacheDir('motion')
 }
 
 async function motionForTrack(trackId, ffmpeg) {

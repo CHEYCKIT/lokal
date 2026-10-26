@@ -2,15 +2,16 @@
 // them. Lokal's own files are in electron/cache.js; Chromium's web cache
 // (covers and pages it fetched) is the app session's.
 
-const { app, session } = require('electron')
+const { app, session, dialog, BrowserWindow } = require('electron')
 const db = require('./db')
 const cache = require('../cache')
+const storage = require('../storageLocations')
 
 async function report() {
   const used = cache.usage()
   let web = 0
   try { web = await session.defaultSession.getCacheSize() } catch {}
-  return { motion: used.motion, playback: used.playback, musicVideo: used.musicVideo, cast: used.cast, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
+  return { motion: used.motion, playback: used.playback, musicVideo: used.musicVideo, addonAudio: used.addonAudio, cast: used.cast, web, limit: cache.limitBytes(), limits: cache.LIMITS_MB }
 }
 
 // What the Cache Analysis page and its clean-up need: the open database, the
@@ -26,6 +27,38 @@ function analysisContext() {
 }
 
 function registerCacheHandlers(ipcMain) {
+
+  // Browse to another disk from Settings; never change Lokal's install path,
+  // database or Chromium sign-in data. Cancel means no change.
+  ipcMain.handle('storage:locations', () => ({
+    downloads: storage.savedRoot('downloads'),
+    cache: storage.savedRoot('cache'),
+    defaultDownloads: storage.downloadDirectory({}),
+    defaultCache: db.getStorageDir(),
+  }))
+  ipcMain.handle('storage:choose', async (event, kind) => {
+    if (!storage.KEYS[kind]) return { error: 'Unknown storage location' }
+    try {
+      const options = {
+        title: kind === 'cache' ? 'Select app cache location' : 'Select download location',
+        defaultPath: storage.savedRoot(kind) ||
+          (kind === 'cache' ? db.getStorageDir() : storage.downloadDirectory({})),
+        properties: ['openDirectory', 'createDirectory'],
+      }
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      const result = owner
+        ? await dialog.showOpenDialog(owner, options)
+        : await dialog.showOpenDialog(options)
+      if (result.canceled || !result.filePaths?.length) return { canceled: true }
+      return { root: storage.saveRoot(kind, result.filePaths[0]) }
+    } catch (error) {
+      return { error: error?.message || String(error) }
+    }
+  })
+  ipcMain.handle('storage:reset', (_, kind) => {
+    try { return { root: storage.saveRoot(kind, '') } }
+    catch (error) { return { error: error?.message || String(error) } }
+  })
   ipcMain.handle('cache:usage', () => report())
   // After the limit is changed: bring the caches under it now.
   ipcMain.handle('cache:trim', () => { cache.trim(); return report() })
