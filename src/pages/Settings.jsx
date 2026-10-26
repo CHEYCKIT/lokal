@@ -2,6 +2,7 @@ import OutputPrecisionSettings from '../components/OutputPrecisionSettings'
 import { usePanelWidths } from '../panelWidths.jsx'
 import { KEYBOARD_SHORTCUTS } from '../useKeyboardShortcuts'
 import SplitWordsSettings from '../components/SplitWordsSettings'
+import { normalizeSidebarCardLayout } from '../sideCardView'
 import { collectLocalPrefs, restoreLocalPrefs } from '../localPrefsBackup'
 import AppTabsSettings from '../components/AppTabsSettings'
 import { APP_LANGUAGES, useTranslation } from '../i18n'
@@ -2478,6 +2479,32 @@ activeCategory === 'data' ? usersTried
               <AlertTriangle size={11} /> {t("Couldn't save -- will retry on next change")}
             </p>
           )}
+          </div>
+        </Row>
+        <Row
+          label={t("Sidebar Cards")}
+          desc={t("Fused: show track details and synchronized lyrics together in Now Playing when lyrics exist. Independent: switch between the two cards as before. This does not change Queue or the full-height Lyrics panel.")}
+        >
+          <div role="group" aria-label={t("Sidebar Cards")} className="flex gap-0.5 p-0.5 bg-card rounded-lg border border-border/50">
+            {[['fused', 'Fused'], ['independent', 'Independent']].map(([value, label]) => {
+              const current = normalizeSidebarCardLayout(settings.sidebar_card_layout)
+              return (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={current === value}
+                  onClick={() => {
+                    set('sidebar_card_layout', value)
+                    try { localStorage.setItem('lokal-sidebar-cards', value) } catch {}
+                    // The sidebar must react immediately without remounting.
+                    window.dispatchEvent(new CustomEvent('lokal:sidebar-card-layout-changed', { detail: value }))
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-display uppercase tracking-wider transition-colors ${current === value ? 'bg-accent/20 text-accent' : 'text-muted hover:text-white'}`}
+                >
+                  {t(label)}
+                </button>
+              )
+            })}
           </div>
         </Row>
         <Row label={t("Open the Side Panel on Play")} desc={t("Open the side panel when you start a song, album or playlist.")}>
