@@ -245,6 +245,7 @@ function soulseekClient() {
     const { ManagedSlskd } = require('../download/slskdManaged')
     managedSoulseek = new ManagedSlskd({
       baseDir: require('path').join(app.getPath('userData'), 'soulseek'),
+      downloadRoot: () => require('../storageLocations').savedRoot('downloads'),
       download: (url, dest, onProgress) => require('./tools').downloadFileWithRetry(url, dest, onProgress, 2, 'Downloading the Soulseek client'),
       onChange: status => BrowserWindow.getAllWindows().forEach(win => { try { win.webContents.send('soulseek:clientStatus', status) } catch {} }),
     })
