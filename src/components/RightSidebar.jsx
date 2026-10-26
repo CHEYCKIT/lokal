@@ -218,7 +218,7 @@ export default function RightSidebar() {
   // pending) and overwriting the newer settings with stale ones.
   const settingsSeqRef = useRef(0)
   useEffect(() => {
-    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics' && infoCardView !== 'visualization') return
+    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics' && infoCardView !== 'visualization' && sidebarCardLayout !== 'fused') return
     const loadSettings = () => {
       const seq = ++settingsSeqRef.current
       api.getSettings()
@@ -231,7 +231,7 @@ export default function RightSidebar() {
     // the effect above wouldn't otherwise refire.
     window.addEventListener('lokal:settings-saved', loadSettings)
     return () => window.removeEventListener('lokal:settings-saved', loadSettings)
-  }, [sidePanelView, infoCardView])
+  }, [sidePanelView, infoCardView, sidebarCardLayout])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
   const sideVisualizer = (() => {
     const mode = settings.side_panel_visual || 'power-circle'
@@ -540,11 +540,11 @@ export default function RightSidebar() {
                         aria-label={t(fusedCards
                            ? (infoCardView === 'visualization' ? 'Hide visualization' : 'Show visualization')
                            : (infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details'))}
-                        aria-pressed={infoCardView !== 'info'}
+                        aria-pressed={fusedCards ? infoCardView === 'visualization' : infoCardView !== 'info'}
                         title={t(fusedCards
                            ? (infoCardView === 'visualization' ? 'Hide visualization' : 'Show visualization')
                            : (infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details'))}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView !== 'info' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
+                        className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${(fusedCards ? infoCardView === 'visualization' : infoCardView !== 'info') ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
                         {fusedCards
                            ? <Gamepad2 size={15} />
                            : infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <Gamepad2 size={15} />}
@@ -612,8 +612,11 @@ export default function RightSidebar() {
 
                   {currentTrack && (
                     <div className={fusedCards ? 'space-y-3' : ''}>
+                      {/* Fused is a single framed card with track details above
+                          lyrics, not two independently rounded cards. */}
+                      <div className={fusedCards ? `rounded-xl border overflow-hidden ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}` : ''}>
                       {visibleCards.includes('info') && (
-                        <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
+                        <div className={fusedCards ? 'px-4 py-1' : (fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1')}>
                       <InfoRow
                         fx={fx}
                         label={t("Album")}
@@ -644,10 +647,13 @@ export default function RightSidebar() {
                     </div>
                       )}
                       {visibleCards.includes('lyrics') && (
-                        <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                        <div className={fusedCards
+                          ? `relative h-[clamp(240px,42vh,420px)] min-h-[240px] overflow-hidden border-t ${fx ? 'border-white/10' : 'border-border'}`
+                          : `relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
                         <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
                       </div>
                       )}
+                      </div>
                       {visibleCards.includes('visualization') && (
                         <div className="group/fullscreen-visualizer relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
                         {showFullscreenVisualizer ? null : sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
