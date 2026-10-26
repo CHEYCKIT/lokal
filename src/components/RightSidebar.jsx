@@ -39,7 +39,9 @@ import ContextMenu, { useContextMenu } from './ContextMenu'
 import { openRadio } from '../radioActions'
 import LikeBurst from './LikeBurst'
 import { losslessMenuItem } from '../quality'
-import { sideCardViewAfterTrackChange } from '../sideCardView'
+import {
+  sideCardViewAfterTrackChange, sidebarCardSections, normalizeSidebarCardLayout,
+} from '../sideCardView'
 
 const folderPathForTrack = (trackPath, musicRoot) => {
   if (!trackPath || String(trackPath).startsWith('ghost://') || !musicRoot) return null
@@ -159,6 +161,47 @@ export default function RightSidebar() {
   const [settings, setSettings] = useState({})
   // The cover's Lyrics button swaps only the lower metadata card; it must not
   // open the full-height Lyrics overlay controlled by sidePanelView.
+  // Compact Info/Lyrics cards: distinct from Queue/Lyrics panel merging.
+  const [sidebarCardLayout, setSidebarCardLayout] = useState(() => {
+    try {
+      return normalizeSidebarCardLayout(
+        peekSettings()?.sidebar_card_layout ?? localStorage.getItem('lokal-sidebar-cards'),
+      )
+    } catch { return 'independent' }
+  })
+  const sidebarLayoutRequest = useRef(0)
+  const sidebarLayoutPendingChoice = useRef(null)
+  useEffect(() => {
+    let mounted = true
+    const load = () => {
+      const request = ++sidebarLayoutRequest.current
+      api.getSettings().then(saved => {
+        if (mounted && request === sidebarLayoutRequest.current && saved && !saved.error) {
+          const stored = normalizeSidebarCardLayout(saved.sidebar_card_layout)
+          // An unrelated settings save can complete while this selection's
+          // write is still pending. Never flash back to the older mode.
+          if (sidebarLayoutPendingChoice.current && sidebarLayoutPendingChoice.current !== stored) return
+          sidebarLayoutPendingChoice.current = null
+          setSidebarCardLayout(stored)
+        }
+      }).catch(() => {})
+    }
+    const changed = event => {
+      sidebarLayoutRequest.current++
+      const chosen = normalizeSidebarCardLayout(event.detail)
+      sidebarLayoutPendingChoice.current = chosen
+      setSidebarCardLayout(chosen)
+    }
+    load()
+    window.addEventListener('lokal:sidebar-card-layout-changed', changed)
+    window.addEventListener('lokal:settings-saved', load)
+    return () => {
+      mounted = false
+      sidebarLayoutRequest.current++
+      window.removeEventListener('lokal:sidebar-card-layout-changed', changed)
+      window.removeEventListener('lokal:settings-saved', load)
+    }
+  }, [])
   const [infoCardView, setInfoCardView] = useState(() => {
     try {
       return sideCardViewAfterTrackChange(localStorage.getItem('lokal-side-card-view'))
@@ -183,7 +226,7 @@ export default function RightSidebar() {
   // pending) and overwriting the newer settings with stale ones.
   const settingsSeqRef = useRef(0)
   useEffect(() => {
-    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics' && infoCardView !== 'visualization') return
+    if (sidePanelView !== 'lyrics' && infoCardView !== 'lyrics' && infoCardView !== 'visualization' && sidebarCardLayout !== 'fused') return
     const loadSettings = () => {
       const seq = ++settingsSeqRef.current
       api.getSettings()
@@ -196,7 +239,7 @@ export default function RightSidebar() {
     // the effect above wouldn't otherwise refire.
     window.addEventListener('lokal:settings-saved', loadSettings)
     return () => window.removeEventListener('lokal:settings-saved', loadSettings)
-  }, [sidePanelView, infoCardView])
+  }, [sidePanelView, infoCardView, sidebarCardLayout])
   const isAutoSynced = settings.unsynced_auto_sync === '1'
   const sideVisualizer = (() => {
     const mode = settings.side_panel_visual || 'power-circle'
@@ -215,6 +258,8 @@ export default function RightSidebar() {
   const [lyricsLookup, setLyricsLookup] = useState({ trackId: null, has: false })
   const cachedLyrics = currentTrack?.id ? peekLyrics(currentTrack.id) : undefined
   const songHasLyrics = cachedLyrics !== undefined ? hasLyricLines(cachedLyrics) : lyricsLookup.trackId === currentTrack?.id && lyricsLookup.has
+  const visibleCards = sidebarCardSections(sidebarCardLayout, infoCardView, songHasLyrics)
+  const fusedCards = sidebarCardLayout === 'fused'
   const lookUpLyrics = useCallback((track = currentTrack, autoSelect = false) => {
     if (!track?.id) return Promise.resolve(null)
     if (autoSelect) autoSelectLyricsRef.current = track.id
@@ -496,13 +541,21 @@ export default function RightSidebar() {
                         type="button"
                         onClick={() => {
                            autoSelectLyricsRef.current = null
-                           setInfoCardView(view => view === 'info' ? 'lyrics' : view === 'lyrics' ? 'visualization' : 'info')
+                           setInfoCardView(view => fusedCards
+                              ? (view === 'visualization' ? 'info' : 'visualization')
+                              : (view === 'info' ? 'lyrics' : view === 'lyrics' ? 'visualization' : 'info'))
                          }}
-                        aria-label={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
-                        aria-pressed={infoCardView !== 'info'}
-                        title={t(infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details')}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${infoCardView !== 'info' ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
-                        {infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <Gamepad2 size={15} />}
+                        aria-label={t(fusedCards
+                           ? (infoCardView === 'visualization' ? 'Hide visualization' : 'Show visualization')
+                           : (infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details'))}
+                        aria-pressed={fusedCards ? infoCardView === 'visualization' : infoCardView !== 'info'}
+                        title={t(fusedCards
+                           ? (infoCardView === 'visualization' ? 'Hide visualization' : 'Show visualization')
+                           : (infoCardView === 'info' ? 'Show lyrics' : infoCardView === 'lyrics' ? 'Show visualization' : 'Show details'))}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/lyrics:opacity-100 ${(fusedCards ? infoCardView === 'visualization' : infoCardView !== 'info') ? 'bg-white/85 text-black hover:bg-white' : 'bg-black/55 text-white hover:bg-black/70'}`}>
+                        {fusedCards
+                           ? <Gamepad2 size={15} />
+                           : infoCardView === 'info' ? <Info size={15} /> : infoCardView === 'lyrics' ? <Mic2 size={15} /> : <Gamepad2 size={15} />}
                       </button>
                     </div>
                   )}
@@ -566,22 +619,12 @@ export default function RightSidebar() {
                   })()}
 
                   {currentTrack && (
-                    infoCardView === 'lyrics' ? (
-                      <div className={`relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
-                        <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
-                      </div>
-                    ) : infoCardView === 'visualization' ? (
-                      // No card around it: the ring sits on the panel's own background.
-                      <div className="group/fullscreen-visualizer relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
-                        {showFullscreenVisualizer ? null : sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
-                        <button type="button" onClick={() => setShowFullscreenVisualizer(true)}
-                          title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')}
-                          className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/75 opacity-0 shadow-lg backdrop-blur-sm transition hover:bg-black/80 hover:text-white group-hover/fullscreen-visualizer:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-                          <Maximize2 size={14} />
-                        </button>
-                      </div>
-                    ) : (
-                    <div className={fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1'}>
+                    <div className={fusedCards ? 'space-y-3' : ''}>
+                      {/* Fused is a single framed card with track details above
+                          lyrics, not two independently rounded cards. */}
+                      <div className={fusedCards ? `rounded-xl border overflow-hidden ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}` : ''}>
+                      {visibleCards.includes('info') && (
+                        <div className={fusedCards ? 'px-4 py-1' : (fx ? 'bg-black/25 rounded-xl border border-white/10 px-4 py-1' : 'bg-card rounded-xl border border-border px-4 py-1')}>
                       <InfoRow
                         fx={fx}
                         label={t("Album")}
@@ -610,7 +653,26 @@ export default function RightSidebar() {
                       {!currentTrack.bitrate && <InfoRow fx={fx} label={t("Quality")} value={streamQualityLabel(currentTrack)} />}
                       <InfoRow fx={fx} label={t("Plays")} value={plays > 0 ? plays.toLocaleString() : null} />
                     </div>
-                    )
+                      )}
+                      {visibleCards.includes('lyrics') && (
+                        <div className={fusedCards
+                          ? `relative h-[clamp(240px,42vh,420px)] min-h-[240px] overflow-hidden border-t ${fx ? 'border-white/10' : 'border-border'}`
+                          : `relative h-[420px] min-h-[320px] overflow-hidden rounded-xl border ${fx ? 'border-white/10 bg-black/25' : 'border-border bg-card'}`}>
+                        <LyricsPanel track={currentTrack} progress={progress} darkMode wordSync={wordSync} fullscreen={false} textScale={1.4} isAutoSynced={isAutoSynced} hideToolbar compact />
+                      </div>
+                      )}
+                      </div>
+                      {visibleCards.includes('visualization') && (
+                        <div className="group/fullscreen-visualizer relative h-[clamp(160px,26vh,230px)] min-h-[160px] max-h-[230px] overflow-hidden">
+                        {showFullscreenVisualizer ? null : sideVisualizer || <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">{t('Visualization is off')}</p>}
+                        <button type="button" onClick={() => setShowFullscreenVisualizer(true)}
+                          title={t('Open full-screen visualizer')} aria-label={t('Open full-screen visualizer')}
+                          className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/75 opacity-0 shadow-lg backdrop-blur-sm transition hover:bg-black/80 hover:text-white group-hover/fullscreen-visualizer:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                          <Maximize2 size={14} />
+                        </button>
+                      </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

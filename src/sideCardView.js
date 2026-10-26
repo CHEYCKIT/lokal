@@ -9,3 +9,30 @@ export function sideCardViewAfterTrackChange(view, hasLyrics = false) {
   if (view === 'visualization') return 'visualization'
   return hasLyrics ? 'lyrics' : 'info'
 }
+
+/**
+ * Appearance > Layout > Sidebar Cards is independent from Side Panels
+ * (Queue/Lyrics as full-height panels). Preserve the old one-card behavior
+ * unless the user explicitly opts in to fused track metadata + lyrics.
+ */
+export const DEFAULT_SIDEBAR_CARD_LAYOUT = 'independent'
+
+export function normalizeSidebarCardLayout(value) {
+  return value === 'fused' ? 'fused' : DEFAULT_SIDEBAR_CARD_LAYOUT
+}
+
+/**
+ * Visible cards in the compact Now Playing details pane, in display order.
+ * In fused mode a manually selected visualizer remains accessible without
+ * replacing the always-visible Info and available Lyrics cards.
+ */
+export function sidebarCardSections(layout, view, hasLyrics) {
+  if (normalizeSidebarCardLayout(layout) === 'fused') {
+    return [
+      'info',
+      ...(hasLyrics ? ['lyrics'] : []),
+      ...(view === 'visualization' ? ['visualization'] : []),
+    ]
+  }
+  return [view === 'lyrics' ? 'lyrics' : view === 'visualization' ? 'visualization' : 'info']
+}
