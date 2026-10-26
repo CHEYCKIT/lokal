@@ -202,7 +202,7 @@ function registerDownloaderHandlers(ipcMain) {
     const failure = playbackCopyFailure(info, ffmpeg)
     if (failure) return { path: null, error: failure }
 
-    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('path').join(getStorageDir(), 'playback-cache') })
+    const copy = await playableCopy(known.file_path, { ffmpeg, cacheDir: require('../cache').cacheDir('playback') })
     // FFmpeg was available and the conversion was attempted. Only now should
     // the UI fall back to its generic "Can't play" message.
     return copy
