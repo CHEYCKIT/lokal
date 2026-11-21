@@ -51,6 +51,12 @@ test('both backend and frontend show actual Atmos rather than bitrate-derived Hi
   assert.equal(frontend.tierOf(ordinary), 'high')
 })
 
+test('lossy files without a reported bitrate use the same Low tier in both classifiers', () => {
+  const iosImport = { codec: 'AAC', lossless: 0, bitrate: null }
+  assert.equal(backend.tierOf(iosImport), 'low')
+  assert.equal(frontend.tierOf(iosImport), 'low')
+})
+
 test('quality label uses Atmos only for verified files', () => {
   assert.equal(frontend.TIERS.atmos.label, 'Dolby Atmos')
   assert.match(frontend.TIERS.atmos.className, /bg-black/)
