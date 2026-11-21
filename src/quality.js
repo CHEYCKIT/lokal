@@ -28,8 +28,7 @@ export function tierOf(track) {
   if (Number(track?.atmos_verified) === 1) return 'atmos'
   if (!track || track.lossless === null || track.lossless === undefined) return 'unknown'
   if (Number(track.lossless) === 1) return Number(track.bit_depth) > 16 || Number(track.sample_rate) > 48000 ? 'hires' : 'lossless'
-  const kbps = Number(track.bitrate)
-  if (!Number.isFinite(kbps) || kbps <= 0) return 'unknown'
+  const kbps = Number(track.bitrate) || 0
   return kbps >= (OPUS_LIKE.test(String(track.codec || '')) ? 160 : 256) ? 'high' : 'low'
 }
 
