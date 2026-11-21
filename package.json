@@ -28,6 +28,7 @@
     "test:loading-toasts": "node --test scripts/loading-toast-progress.test.mjs scripts/stream-buffer-progress.test.mjs scripts/recommendations.test.mjs scripts/recommendation-downloads.test.mjs scripts/ghost-downloads.test.mjs",
     "test:catalogue-quality": "node --test scripts/catalogue-quality.test.mjs",
     "test:mpris": "node --test scripts/mpris-config.test.mjs",
+    "test:linux-version": "node --test scripts/linux-version.test.mjs",
     "test:added-date": "node --test scripts/added-date.test.mjs",
     "test:download-folder": "node --test scripts/download-folder.test.mjs",
     "test:visualizer-analyser-startup": "node --test scripts/visualizer-analyser-startup.test.mjs",
