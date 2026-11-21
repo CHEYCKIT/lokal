@@ -17,6 +17,7 @@ log.errorHandler.startCatching()
 Object.assign(console, log.functions)
 
 const { autoUpdater } = require('electron-updater')
+const { getInstalledDebVersion, setUpdaterVersion } = require('./linuxVersion')
 const { initDB, getDB } = require('./ipc/db')
 const { registerScannerHandlers, registerExtraHandlers, registerV4Handlers, AUDIO_EXTS } = require('./ipc/scanner')
 const { registerMixesHandlers } = require('./ipc/mixes')
@@ -165,10 +166,13 @@ autoUpdater.autoInstallOnAppQuit = true
 // Latest release: 2.0.2 is older than 2.0.3-nightly.N (no prompt), and the
 // official 2.0.3 is newer (prompt).
 autoUpdater.allowPrerelease = false
+const DEB_VERSION = app.isPackaged ? getInstalledDebVersion() : null
+const APP_VERSION = DEB_VERSION || app.getVersion()
+if (DEB_VERSION) setUpdaterVersion(autoUpdater, DEB_VERSION)
 // Nightly builds don't look for updates at all: someone on a nightly chose
 // it, and being offered the stable release (older in features once the
 // nightly moves on) makes no sense. New nightlies come from GitHub Releases.
-const IS_NIGHTLY = /-nightly\./i.test(app.getVersion())
+const IS_NIGHTLY = /-nightly\./i.test(APP_VERSION)
 // The Microsoft Store (MSIX) build is updated by the Store itself; an
 // electron-updater install would fail inside the package anyway.
 const IS_WINDOWS_STORE = process.windowsStore === true
@@ -943,13 +947,13 @@ ipcMain.handle('updater:install', () => {
   }, 500);
 });
   ipcMain.handle('updater:check', () => {
-    if (IS_WINDOWS_STORE) return { store: true, version: app.getVersion() }
-    if (IS_NIGHTLY) return { nightly: true, version: app.getVersion() }
+    if (IS_WINDOWS_STORE) return { store: true, version: APP_VERSION }
+    if (IS_NIGHTLY) return { nightly: true, version: APP_VERSION }
     autoUpdater.checkForUpdates()
     return { checking: true }
   })
   ipcMain.handle('app:getVersion', () => {
-    return app.getVersion()
+    return APP_VERSION
   })
   ipcMain.handle('app:isWindowsStore', () => IS_WINDOWS_STORE)
 
@@ -981,7 +985,7 @@ ipcMain.handle('updater:install', () => {
   } else if (IS_WINDOWS_STORE) {
     console.log('[updater] Microsoft Store build: updates come from the Store')
   } else if (IS_NIGHTLY) {
-    console.log(`[updater] nightly build (${app.getVersion()}): not checking for stable updates`)
+    console.log(`[updater] nightly build (${APP_VERSION}): not checking for stable updates`)
   } else if ((() => { try { return require('./ipc/db').getDB().prepare("SELECT value FROM settings WHERE key = 'auto_update'").get()?.value === '0' } catch { return false } })()) {
     // Settings > About > Automatic Updates off: only "Check for updates" looks.
     console.log('[updater] automatic update checks are off')
