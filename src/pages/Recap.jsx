@@ -14,6 +14,7 @@ import RecapStory from '../components/RecapStory'
 import { showToast } from '../components/Toaster'
 import { saveAsPlaylist } from '../trackActions'
 import { openShareCard, coversOf } from '../shareCard'
+import { trackFullArtURL } from '../onlineTracks'
 
 
 function Metric({ label, value, icon: Icon }) {
@@ -476,6 +477,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
   const replayQueue = recap?.replayQueue || topTracks
   const heroTrack = topTracks[0]
   const heroArt = trackArt(heroTrack)
+  const heroCoverArt = heroTrack?.artwork_path ? trackFullArtURL(heroTrack) : heroArt
 
   // The share card: the period's top covers, its numbers and top artists.
   const shareRecap = () => {
@@ -672,7 +674,7 @@ function RecapContent({ user, sources = 'all', onSourcesChange }) {
               </div>
               <div className="rounded-xl border border-border bg-black/20 p-4">
                 <div className="aspect-square overflow-hidden rounded-lg bg-card">
-                  {heroArt ? <FadeImg src={heroArt} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>}
+                  {heroArt ? <FadeImg src={heroCoverArt} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-muted"><Disc3 size={32} /></div>}
                 </div>
                 <p className="mt-3 truncate text-sm font-medium text-white">{heroTrack?.title}</p>
                 <p className="truncate text-xs text-muted">{heroTrack?.artist}</p>
